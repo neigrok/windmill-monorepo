@@ -34,8 +34,9 @@
 	# endpoints, the OAuth discovery documents, the /t/:id share pages (served with per-tree
 	# unfurl meta), the /gallery public wall (gallery.html with the card grid spliced in), and the
 	# /og/:id.png unfurl cards the og:image tags point at. Hash-routed SPA otherwise (try_files is
-	# a net). NOTE /gallery is exact — the static gallery.html beside it must keep being served by
-	# the file server, or the template would recursively proxy to itself.
+	# a net). NOTE /gallery is exact, never /gallery* — the server reads the template off disk
+	# (GalleryApi.cpp, readWebFile) and a wider matcher would send /gallery.html here too, where
+	# nothing answers it. Its own 301 back to /gallery lives with the other aliases below.
 	# The product landings moved from /products/<name> to /<name> (2026-08-01). 301 so old
 	# links, bookmarks and search results follow; the static dirs moved with them. The /*
 	# arms catch old deep links (/products/journal/index.html was live); {query} keeps UTM
@@ -54,6 +55,18 @@
 	handle {
 		encode gzip zstd
 		root * /srv/windmill-web
+
+		# The extensionless twin of every shelf page. /pricing is what people type and paste, and
+		# it used to answer 200 with the brand root — a second URL for a page that already has one.
+		# 301 onto the .html each page's own canonical names, so links land where the canonical is.
+		@shelfAlias path /pricing /privacy /terms /refunds /changelog /connect
+		redir @shelfAlias {path}.html permanent
+
+		# The gallery is the one page whose file name is not its URL: the wall is server-rendered at
+		# /gallery (the backend splices the cards into this very file), and gallery.html canonicals
+		# itself there. Serving the empty template at its own URL too is one page under two links.
+		redir /gallery.html /gallery permanent
+
 		# Two files' worth of caching policy, stated at the origin because guessing is worse.
 		#
 		# /sw.js must never be stale: a browser replaces a service worker only when it fetches bytes
@@ -73,11 +86,36 @@
 		header @serviceWorker Cache-Control "no-cache"
 		@hashedAssets path /assets/*
 		header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
-		# {path} serves a real file (pricing.html); {path}/index.html serves a static landing directory
-		# (the per-product pages, /journal/ and /gym/); else falls to the hash-routed SPA — a path with
-		# no dir index (e.g. /roadmap) lands on the SPA, which renders that product's landing.
-		try_files {path} {path}/index.html /index.html
+		# /app is the only pathname the SPA answers that is nothing on disk — App.jsx's ownRoute is
+		# '/', '/app', '/app/*' and the product landings, and the landings ARE directories here
+		# (scripts/build-landing-shells.mjs writes /roadmap/index.html and its two siblings). Naming
+		# it is what lets try_files below end without a catch-all, and that is the point:
+		#
+		# until now try_files ended in /index.html, so EVERY unknown path answered 200 with the brand
+		# root. /email/logo.png, /typo, /wp-admin — all of them a copy of the homepage, none of them
+		# a 404. Google calls that a soft 404: it either indexes the copies or spends the crawl
+		# budget deciding not to. An unknown path is now a real 404 wearing the page below.
+		@appShell path /app /app/*
+		rewrite @appShell /index.html
+
+		try_files {path} {path}/index.html
 		file_server
+	}
+
+	# The 404 the file server now raises, dressed as a page: public/404.html is the shelf chrome
+	# with the whole house linked from it, and it is `noindex, follow` — it must not be indexed,
+	# but the links out of it are exactly what a crawler that arrived on a dead URL should follow.
+	# `status 404` keeps the code honest; serving that body with a 200 would be the soft 404 again.
+	handle_errors {
+		@notFound expression {err.status_code} == 404
+		handle @notFound {
+			root * /srv/windmill-web
+			rewrite * /404.html
+			file_server {
+				status 404
+			}
+		}
+		respond "{err.status_code} {err.status_text}" {err.status_code}
 	}
 }
 
@@ -90,6 +128,24 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
+		# This host answers /gallery and /t/:id with real, indexable HTML — the same pages the app
+		# host serves. Their canonicals name windmill.works (SharePageApi.cpp hardcodes the host),
+		# so a crawler that found them here would fold them back anyway, but only after crawling a
+		# whole second copy of the site. Say it at the door instead. Never index anything on the
+		# transitional hostname; the app host is the site.
+		X-Robots-Tag "noindex"
 	}
-	reverse_proxy server:8080
+	# A 404 on /robots.txt reads as "crawl everything" — and this host has no file server to answer
+	# it, so it 404s. Answer it here, in the only words this hostname has for a crawler.
+	handle /robots.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		respond <<ROBOTS
+			# The transitional API hostname. The site is https://windmill.works.
+			User-agent: *
+			Disallow: /
+			ROBOTS 200
+	}
+	handle {
+		reverse_proxy server:8080
+	}
 }

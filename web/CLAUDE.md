@@ -35,7 +35,11 @@ npm run build    # runs the same tests, then vite build, then the per-landing HT
 gate, not `vite build`: it runs the suite first, `prebuild` fetches the self-hosted
 embedding weights into `public/models`, and the postbuild step writes one static shell per
 landing so a crawler without JavaScript gets that landing's own head and body rather than
-the brand root's.
+the brand root's — then emits `sitemap.xml` from those shells and every page in `public/`,
+each listed under the URL its own `<link rel="canonical">` names and skipped if its own
+robots meta says `noindex`. There is no `sitemap.xml` in `public/` to edit; the pages are
+the source. The head each static page must carry to qualify is asserted at build time by
+`scripts/staticPageAssets.js`.
 
 `vite.config.js` carries a build-time tripwire: the roadmap's `DEFAULT_KINDS` /
 `GENESIS_STAMP` must stay byte-equal to `packages/api-contract/genesis.js`, or a

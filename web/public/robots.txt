@@ -19,4 +19,8 @@ Allow: /
 # Do NOT disallow /assets/ — crawlers must fetch the JS/CSS bundles to
 # render the client-side landing page. Blocking them would hide all content.
 
+# Generated at build from each page's own canonical (scripts/build-landing-shells.mjs),
+# so there is no sitemap.xml beside this file to keep in step. A path that is not in it
+# and not linked from a page is not a page — since 2026-08-12 an unknown path answers a
+# real 404 instead of the homepage.
 Sitemap: https://windmill.works/sitemap.xml

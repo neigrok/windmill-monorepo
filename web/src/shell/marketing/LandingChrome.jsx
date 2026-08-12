@@ -33,7 +33,7 @@ const LEGAL_LINKS = [
 ];
 
 // The shelf's second row is the products off the registry, then the two crawlable surfaces that
-// are pages rather than products. The eight static pages ship exactly these five — one shelf, one
+// are pages rather than products. Every static page ships exactly these five — one shelf, one
 // answer — and Connect is the only door left to /connect.html, which is why it may never go missing.
 const SURFACE_LINKS = [
   { href: '/gallery', label: 'Gallery' },

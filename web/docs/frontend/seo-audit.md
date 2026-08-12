@@ -14,6 +14,9 @@ _Audited 2026-07-12. Domain: `https://windmill.works`. Method: 7 parallel specia
 > own unfurl meta into the built shell — so a shared tree does get its own card, and
 > `sitemap.xml` lists eleven URLs where it once listed the root alone. Follow-ups 3, 4 and
 > the SSG half of 5 are still open.
+>
+> **A second pass ran 2026-08-12** — crawl integrity rather than on-page copy. Its record is
+> the last section of this file, and it is the one to read first: it is what the site does now.
 
 ## Executive summary
 
@@ -53,7 +56,10 @@ Verified: `vite build` passes; `dist/{robots.txt,sitemap.xml,site.webmanifest,fa
 
 ## Keyword strategy
 
-- **Recommended `<title>`** (shipped, 54 chars): `Windmill — Skill Tree Goal Tracker & Learning Roadmaps`
+- **Recommended `<title>`** (shipped that day, 54 chars): `Windmill — Skill Tree Goal Tracker & Learning Roadmaps`. **Superseded**: Windmill became three
+  products on one account, and the root now reads `Windmill — Roadmap, Journal & Gym for self-growth`
+  (`src/shell/marketing/landingHeads.js`), with the skill-tree terms carried by `/roadmap`'s own
+  title. The keyword list below is still the roadmap product's, not the brand's.
 - **`og:`/`twitter:` title** (brand voice, for share CTR): `Windmill — Any goal, as a skill tree`
 - **Primary head terms:** goal tracker app · learning roadmap app · skill tree goal tracker · gamified productivity · roadmap app · visual goal planner
 - **Secondary:** RPG skill tree app · roadmap.sh alternative · shareable/forkable roadmap · developer learning path tracker · MCP/agent-native roadmap
@@ -70,6 +76,34 @@ Verified: `vite build` passes; `dist/{robots.txt,sitemap.xml,site.webmanifest,fa
 4. **Font preload** — preload Baloo 2 700 + Nunito 400 woff2 (copy to `public/fonts/` for stable, un-fingerprinted URLs, or inject via a Vite `transformIndexHtml` hook). Skipped here to avoid a double-download/@font-face regression.
 5. **Per-path landing pages** (highest untapped demand): one crawlable page each for the dev paths (Frontend/Rust/ML/Ship v1.0 + the other 5 quests), a "roadmap.sh alternative" comparison page, use-case pages (bake/10k/room/side-project), and an MCP/"build with Claude" page.
 6. **Prerender/SSG the landing** (`vite-react-ssg`, single route) — wrap the WebGL scenes in a client-only boundary. The static `#root` fallback covers the immediate need; this makes the full hydrated copy indexable.
+
+## Second pass — 2026-08-12: crawl integrity
+
+_The first pass fixed what the root page **said**. This one fixed what the origin **answered** —
+found by probing the live site rather than reading the tree, which is why none of it appears above._
+
+| Finding | What was true | Fix | Files |
+|---|---|---|---|
+| **Soft 404 on every unknown path** (P0) | `try_files … /index.html` meant `/typo`, `/email/logo.png`, `/wp-admin` — anything — answered **200 with the brand root's page**. Infinite URLs, each a copy of the homepage; Google either indexes them or burns the crawl budget deciding not to. Measured live: `/nope-404` → `200 text/html`. | The SPA's only non-file pathname (`/app`, `/app/*` — App.jsx's `ownRoute`) is named explicitly, so `try_files` needs no catch-all; unknown paths raise a real 404, dressed by `handle_errors` in `public/404.html` (`noindex, follow`, links to the whole house) with `file_server { status 404 }`. | `backend/deploy/Caddyfile`, `web/public/404.html` |
+| **Second indexable hostname** (P1) | `$DOMAIN_API` proxies the same backend, so `api.windmill.works/gallery` served the wall in full and `/robots.txt` there **404'd** — which a crawler reads as "crawl everything". Canonicals point home, so the duplicate collapses, but only after a whole second site is crawled. | `X-Robots-Tag: noindex` on that host, and a `robots.txt` of its own that disallows all. | `backend/deploy/Caddyfile` |
+| **Two URLs per shelf page** (P2) | `/pricing` (no extension) and `/gallery.html` both answered 200 — the extensionless twin with the *homepage's* body, the other with the empty gallery template. | 301 → the URL each page's own canonical names. | `backend/deploy/Caddyfile` |
+| **Shelf pages unfurled bare** (P1) | Pricing, Connect, Changelog, Privacy, Terms, Refunds carried **no Open Graph or Twitter tags at all** — pasted into Slack or a DM they arrived as a naked URL. Connect is the MCP acquisition page. | Full OG/Twitter on all six + the gallery's missing half, each repeating that page's own title/description/canonical. Drift is a build failure now: `staticPageAssets.js` asserts `og:*`/`twitter:*` equal the head above them, and that any indexable page names a canonical. | `web/public/*.html`, `web/scripts/staticPageAssets.js` |
+| **A hand-kept sitemap** (P2) | `public/sitemap.xml` was written by hand and had drifted: `/gym` dated a week before gym opened, plus `priority`/`changefreq` values nobody had revisited (and Google ignores). | Deleted. The build now emits it from **each page's own `<link rel="canonical">`**, skipping anything whose own robots meta says `noindex` — so a new page is listed the moment it exists. No `lastmod`: nothing in the build knows a page's true edit date (CI checks out shallow), and a date we cannot stand behind is worse than none. | `web/scripts/build-landing-shells.mjs` |
+
+**Verified, not assumed.** The Caddyfile was adapted and run in a container against a copy of
+`dist/` (`caddy validate`, then live probes): `/` `/roadmap` `/gym/` `/pricing.html` → 200;
+`/pricing` `/connect` → 301 to `.html`; `/gallery.html` → 301 to `/gallery`; `/app` `/app/settings`
+→ 200 (the shell); `/nope-404` and `/email/logo.png` → **404** carrying `Page not found — Windmill`;
+the API host's `/robots.txt` → 200 `Disallow: /` with `X-Robots-Tag: noindex`. `npm run build`
+(suite + shells + sitemap) is green.
+
+**Deploy note:** the Caddyfile ships with `deploy.yml`, which a green `backend.yml` triggers — so
+the origin half lands on the next backend deploy, and the `dist/` half on the next web deploy.
+
+**Still open after this pass:** every product landing still unfurls the roadmap's share card
+(one `og-image.png` for the family — art, not copy); no `sameAs` on the Organization (no social
+accounts to name); `/t/:id` pages are discoverable only through the gallery wall, which today
+holds one card — a generated sitemap of public trees is worth building when that wall fills.
 
 ## Architectural ceiling: hash routing
 

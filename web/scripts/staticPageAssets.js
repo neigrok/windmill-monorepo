@@ -71,6 +71,33 @@ export function staticPageAssets() {
     if (missing.length) {
       throw new Error(`public/${page} does not link ${missing.map((s) => `/${s}`).join(' or ')} — it would render outside the family`);
     }
+
+    // The head a crawler and a chat window read. Two rules, both about the same drift: a page
+    // that names no canonical cannot be put in the sitemap (which is generated from these
+    // canonicals — scripts/build-landing-shells.mjs), and og/twitter must keep saying exactly
+    // what <title> and the description say, or the link unfurls as a page we stopped shipping.
+    // A noindex page (404, pause, the pricing stub) is exempt from the unfurl half: it is not a
+    // destination, it is what a visitor gets instead of one.
+    const canonical = /<link rel="canonical" href="([^"]+)"/.exec(html)?.[1];
+    const noindex = /<meta name="robots" content="[^"]*noindex/.test(html);
+    if (!canonical && !noindex) {
+      throw new Error(`public/${page} names no canonical and is not noindex — the sitemap is built from these, so the page would ship unlisted`);
+    }
+    if (noindex) continue;
+
+    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1];
+    const description = /<meta name="description" content="([^"]*)"/.exec(html)?.[1];
+    const said = (attribute, value) => html.includes(`${attribute} content="${value}" />`);
+    const wrong = [
+      ['og:title', 'property="og:title"', title],
+      ['og:description', 'property="og:description"', description],
+      ['og:url', 'property="og:url"', canonical],
+      ['twitter:title', 'name="twitter:title"', title],
+      ['twitter:description', 'name="twitter:description"', description],
+    ].filter(([, attribute, value]) => !value || !said(attribute, value));
+    if (wrong.length || !html.includes('name="twitter:card"') || !html.includes('property="og:image"')) {
+      throw new Error(`public/${page} unfurls as something other than itself — ${wrong.map(([tag]) => tag).join(', ') || 'no twitter:card or og:image'}. og/twitter must repeat this page's own <title>, description and canonical`);
+    }
   }
 
   return {

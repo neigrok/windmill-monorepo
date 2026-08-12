@@ -6,6 +6,28 @@
     <title>Privacy — Windmill</title>
     <meta name="description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
     <link rel="canonical" href="https://windmill.works/privacy.html" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Unfurl: this page's own title and description, and the family share card. A shelf page is
+         pasted into a chat as often as it is found in a search — without these it arrived as a bare
+         URL. staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Windmill" />
+    <meta property="og:title" content="Privacy — Windmill" />
+    <meta property="og:description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
+    <meta property="og:url" content="https://windmill.works/privacy.html" />
+    <meta property="og:image" content="https://windmill.works/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark." />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Privacy — Windmill" />
+    <meta name="twitter:description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
+    <meta name="twitter:image" content="https://windmill.works/og-image.png" />
+    <meta name="twitter:image:alt" content="The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark." />
+
     <meta name="theme-color" content="#F9F5EB" />
     <meta name="color-scheme" content="light" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
@@ -16,7 +38,7 @@
     <style>
       /* This page's own type only. The family chrome — frame, header, buttons, footer — and the
          faces both arrive on the two sheets linked above, served by scripts/staticPageAssets.js so
-         all eight static pages wear one geometry. Colours are light-theme token values resolved
+         every static page wears one geometry. Colours are light-theme token values resolved
          from src/styles/tokens/*.css; these pages are light-only. */
       .doc { max-width: 640px; padding: 40px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
