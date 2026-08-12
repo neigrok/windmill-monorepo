@@ -178,9 +178,12 @@ struct TodayScreen: View {
     // say which program it is about would be asking the lifter to open a diff on faith — and the
     // list a routine went missing from is one whose read failed, which is a reason to say less.
     //
-    // NO GATE AND NO PITCH. §D's Windmill One sell is screens 12 and 13 and it is not this wave's
-    // to draw; a proposal that exists is proof enough of a connection, and this client cannot read
-    // an entitlement to say anything else honestly.
+    // NO GATE AND NO PITCH, AND THE REASON CHANGED THIS WAVE. §D12 puts its sell on the proposal
+    // card as well as on Routines, and there is nothing left to sell: the connected log gates
+    // nothing, `hasWindmillOne` is read nowhere in this product, and the invitation now lives on
+    // Routines and in settings. On THIS card it would be worse than redundant — a proposal is a
+    // connection that already exists, so inviting a lifter to make one, on the object it made, is
+    // advertising at somebody for something they have.
     @ViewBuilder
     private var waiting: some View {
         if let head = store.proposals.first(where: { $0.isPending && !setAside.contains($0.id) }),

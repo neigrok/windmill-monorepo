@@ -22,6 +22,7 @@
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
+import { EXCHANGE, LEVEL_LINES, PRECONDITION } from '../connect/connect.js';
 import { mountMoat, mountSetLogger, mountRemembered, mountE1rmLine } from './gymScenes.js';
 import './gymLanding.css';
 
@@ -36,7 +37,14 @@ const SECTION_LINKS = [
 const LOG_HREF = '#/gym';
 const OPEN_LOG = 'Open your training log →';
 const RESUME = { href: LOG_HREF, label: 'Open your log' };
-const ACCOUNT_LINE = 'Your log lives on your Windmill account — one account and one subscription across Roadmap, Journal and Gym.';
+// WHAT THE ACCOUNT IS, AND NOT WHAT IT COSTS. This said "one account and one subscription" until
+// W8, and the subscription is a thing no visitor can have: `paidPlansOpen()` in shell/billing/
+// checkout.js is a hardcoded false, no surface offers a checkout, and BillingApi 503s one anyway.
+// The sentence stayed true-sounding by describing a shape rather than a purchase, which is exactly
+// how a false line survives — and it contradicted the connected-log section further down this same
+// page, which says in as many words that there is nothing here to buy. The brand root and the other
+// two landings still carry the older wording; that is theirs to fix, and it is on the ledger.
+const ACCOUNT_LINE = 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.';
 
 const PANEL_LABEL = {
   fontSize: 11, fontWeight: 800, letterSpacing: '.09em',
@@ -75,16 +83,21 @@ const AGENT_CAN = [
 // `create_routine` / `propose_routine_change` split). So `write` and `delete` are named here by what
 // they actually do — creating a new day INCLUDED, because a level line that named only the
 // proposing half would be selling a safety property this product does not have.
+// THE THREE LINES COME FROM THE PRODUCT, not from this page. They are the same sentences the
+// connected-log room prints (products/gym/connect/connect.js), so what `gym:write` buys cannot read
+// one way in a pitch and another in the room a lifter arrives in. What stays here is the
+// ILLUSTRATION — which of the three this imagined connection approved — because that is a picture
+// and not a claim about the catalog.
 const GRANT_LEVELS = [
-  { scope: 'gym:read', line: 'Read your log', granted: true },
-  { scope: 'gym:write', line: 'Record what happened · add a new day · propose changes to the days you have', granted: true },
-  { scope: 'gym:delete', line: 'Discard a workout · end a coach link · propose a removal', granted: false },
+  { scope: 'gym:read', line: LEVEL_LINES.read, granted: true },
+  { scope: 'gym:write', line: LEVEL_LINES.write, granted: true },
+  { scope: 'gym:delete', line: LEVEL_LINES.delete, granted: false },
 ];
 
 const BRAND_DUO = [
   {
     title: 'One account, three rooms',
-    copy: 'Roadmap, Journal and Gym — one account, one subscription, one history.',
+    copy: 'Roadmap, Journal and Gym — one account, one history.',
     glyph: <><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></>,
   },
   {
@@ -345,20 +358,36 @@ function ForTheBarbell() {
 // THE SECTION THAT PRICES THE PRODUCT, so it is the section a wave can most easily make lie. Until
 // W7 it sold a coach panel under one finished workout, gated on Windmill One: that panel is deleted
 // and Ask stands where it stood, over the WHOLE log rather than one workout, open to everyone with a
-// daily cap the room states in words (backend AskService: no plan predicate, kAskPerDay = 10). So
-// both halves of the old sentence had to go — the feature and the price — and what replaced them is
-// the one honest reading: nothing in gym is behind a plan, because nothing in Windmill can be bought
-// (shell/billing/checkout.js `paidPlansOpen()` is a hardcoded false).
+// daily cap the room states in words (backend AskService: kAskPerDay = 10, and no plan decides who
+// may ask). So both halves of the old sentence had to go — the feature and the price — and what
+// replaced them is the one honest reading: no feature in gym is behind a plan, and nothing in
+// Windmill can be bought (shell/billing/checkout.js `paidPlansOpen()` is a hardcoded false).
+//
+// ONE THING IN GYM DOES READ THE PLAN, and it is a ceiling rather than a door: AskService asks
+// `aiAllowanceFor`, which picks the monthly dollar allowance by `hasWindmillOne`. Same room, same
+// tools, two heights — and since nobody can buy One, every account alive is on the free one. Writing
+// "gym reads the plan nowhere" here would be the shorter sentence and the false one.
 //
 // Ask can also PROPOSE, which the panel could not — its grant is the reads plus the two tools that
 // mint a proposal — so a line calling it read-only would be a safety promise that is nearly true,
 // which is worth less than none.
+//
+// W8 ADDED THE EXCHANGE AND THE PRECONDITION, which is §D12's pitch minus its price. What the design
+// drew here was a paid gate ending in a Connect button under the words Windmill One; that gate
+// gates nothing (gym's MCP tools read no entitlement and never did), cannot be bought, and its
+// button would land on a checkout that answers 503. So the pitch is built and the price is deleted:
+// what is valuable was never the money, it is the concrete trade — one sentence typed on Sunday in a
+// tool that is not ours, one proposal waiting in gym on Monday — and the precondition under it.
+//
+// The three level lines are imported rather than written here, so this page and the room a visitor
+// lands in cannot describe `gym:write` differently.
 function ConnectedLog() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">The connected log</div>
       <h2 className="sectionTitle">Your log is an endpoint your own AI tools can use.</h2>
       <p className="sectionSub">The log is free — all of it, and so are these tools. So is Ask, the room in the app for a lifter who hasn’t got an agent of their own — about ten questions a day, and nothing in Gym is on sale.</p>
+      <Exchange />
       <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-2xl)', boxShadow: 'var(--shadow-sm)', padding: 'clamp(24px,3vw,36px)', marginTop: 40, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 'clamp(24px,3vw,40px)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
           <div style={PANEL_LABEL}>Works with</div>
@@ -379,7 +408,7 @@ function ConnectedLog() {
           <p style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 0' }}>
             It reads, it proposes, and it never rewrites a day you already have. That routine changes when
             you tap Apply on the diff — all of it or none — and never a moment before. A brand-new day it
-            adds lands right away: it takes nothing away, and you can edit or delete it yourself.
+            adds lands right away: it takes nothing away, and the day is yours to edit in Routines.
           </p>
           <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'var(--text-secondary)', margin: 0 }}>
             You decide what a connection may do — read, write, delete — and it can only see the tools for the
@@ -417,7 +446,36 @@ function ConnectedLog() {
           </div>
         </div>
       </div>
+      {/* THE PRECONDITION, ON THE PAGE AND NOT BEHIND IT. This section describes a feature that
+          needs something we do not sell and cannot give you — an AI tool of your own — so it says so
+          in the same frame as the pitch. A page that let a visitor read this far before finding out
+          would be selling a promise the product cannot keep on its own. */}
+      <p style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-tertiary)', maxWidth: 720, marginTop: 20 }}>
+        {PRECONDITION}
+      </p>
     </section>
+  );
+}
+
+// THE EXCHANGE (§D12) — the whole pitch as one trade rather than a diagram of a protocol: the
+// sentence you type on Sunday in a tool that is not ours, and the object that is waiting in gym on
+// Monday. It is the concrete thing, and it is the part that survived W8 deleting the price around it.
+function Exchange() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 18, marginTop: 36 }}>
+      <div className="gyw gycard" data-theme="dark" data-brand="gym">
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--gym-ink-faint)' }}>
+          {EXCHANGE.askedLabel}
+        </div>
+        <p style={{ margin: '9px 0 0', fontSize: 15, lineHeight: 1.5, color: 'var(--gym-ink)' }}>{EXCHANGE.asked}</p>
+      </div>
+      <div className="gyw gycard" data-theme="dark" data-brand="gym" style={{ borderColor: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-brand)' }}>
+          {EXCHANGE.landedLabel}
+        </div>
+        <p style={{ margin: '9px 0 0', fontSize: 15, lineHeight: 1.5, color: 'var(--gym-ink)' }}>{EXCHANGE.landed}</p>
+      </div>
+    </div>
   );
 }
 

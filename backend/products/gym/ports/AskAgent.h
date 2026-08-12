@@ -38,6 +38,11 @@ struct AskAnswer {
   std::string answer;   // what the lifter reads
   std::string error;    // set when ok is false; diagnostic, never shown raw
   std::vector<AskStep> steps;
+  // WHAT THE RUN COST, and it is here because `ok` does not say. A run that hit the iteration cap
+  // failed after eight paid vendor turns; a run whose upstream was dead failed after none. The day's
+  // ration is given back for the second and not the first — otherwise the cap a lifter is TOLD about
+  // never bites on the most expensive runs there are (AskService::ask).
+  int modelTurns = 0;
 };
 
 struct AskAgent {

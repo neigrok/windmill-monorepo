@@ -25,6 +25,10 @@ import WindmillPlatform
 struct SettingsScreen: View {
     @ObservedObject var store: TrainingStore
     let web: URL
+    // What actually reaches this log, read once by the room. The row below NAMES it rather than
+    // guessing at it — and says nothing at all when the read did not come back.
+    let connected: ConnectedLogState
+    let onConnectedLog: () -> Void
     let say: (String?) -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -206,23 +210,28 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 5 — the two doors out of the log, and both of them are on the web. Neither is rebuilt here
-    // on a guess: the export is a file this app has nowhere to put yet, and the grant state is an
-    // entitlements read this client does not have — a row naming a connection it had not checked
-    // would be worse than a row that says where to look.
+    // ROW 5 — the two doors out of the log. The export is still the web's, because a CSV is a file
+    // this app has nowhere to put yet.
     //
-    // "READ THIS LOG AND PROPOSE CHANGES" is the whole of what a connection can do, and this line
-    // used to say "read and write". It was true when it was written and stopped being true on
-    // 2026-08-12: a granted agent records what happened — sets, sessions, a new movement — and
-    // everything it wants to change about the PROGRAM arrives as a proposal that waits for a tap.
-    // The consent copy on every surface says the same thing or none of them can be trusted.
+    // THE CONNECTED LOG IS NO LONGER A LINK OUT, and what changed is that this client can now answer
+    // the question. The row used to point at the web because the grant state was "an entitlements
+    // read this client does not have" — it was never an entitlement, it is the account's own
+    // credentials, `GET /v1/oauth/grants` and `GET /v1/mcp-keys`, and the room reads both. So the
+    // row names the real state and opens the screen that spells out what a connection can and can
+    // never do (§D13); the web keeps the two acts it owns, making a connection and ending one.
+    //
+    // WHAT THE LINE SAYS WHEN THE READ DID NOT COME BACK IS NOTHING about the state. A door is a
+    // place to go rather than a claim, so it describes the destination and denies no connection.
     private var doors: some View {
         VStack(alignment: .leading, spacing: 9) {
             Link(destination: page("/#/settings")) {
-                door(title: "Export", line: "every set as CSV · yours, always", lit: false)
+                door(title: "Export", line: "every set as CSV · yours, always", lit: false, away: true)
             }
-            Link(destination: page("/#/connect")) {
-                door(title: "Connected log", line: "let Claude read this log and propose changes", lit: true)
+            Button(action: onConnectedLog) {
+                door(title: ConnectedLog.stateTitle,
+                     line: connected.settingsLine(now: Int64(Date().timeIntervalSince1970 * 1000))
+                        ?? ConnectedLog.settingsFallback,
+                     lit: true, away: false)
             }
         }
     }
@@ -246,7 +255,10 @@ struct SettingsScreen: View {
         Array(Set(GymPreferences.everyPlate + store.preferences.platesKg)).sorted(by: >)
     }
 
-    private func door(title: String, line: String, lit: Bool) -> some View {
+    // `away` is the glyph and the glyph is a promise about where the tap goes: the arrow leaves this
+    // app for a browser, the chevron stays in the room. A door that wore the wrong one would be the
+    // smallest lie on this screen and the one a thumb learns fastest.
+    private func door(title: String, line: String, lit: Bool, away: Bool) -> some View {
         HStack(spacing: WindmillSpace.x3) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -257,7 +269,7 @@ struct SettingsScreen: View {
                     .foregroundStyle(lit ? skin.inkDim : skin.inkFaint)
             }
             Spacer(minLength: 0)
-            Image(systemName: "arrow.up.right")
+            Image(systemName: away ? "arrow.up.right" : "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(lit ? skin.accent : skin.inkFaint)
         }
@@ -299,7 +311,7 @@ struct SettingsScreen: View {
         return Readout.clock(Int64(seconds) * 1000)
     }
 
-    // Both doors resolve against the account's own host, so a debug build pointed at a local server
+    // The export resolves against the account's own host, so a debug build pointed at a local server
     // opens that one rather than windmill.works.
     private func page(_ path: String) -> URL {
         URL(string: path, relativeTo: web) ?? web

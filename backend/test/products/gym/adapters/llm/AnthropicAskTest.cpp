@@ -255,6 +255,10 @@ TEST(ask_treats_the_eight_iteration_cap_as_a_failure) {
   CHECK_EQ(outcome.answer, std::string(""));
   CHECK_EQ(outcome.error, std::string("hit the 8-iteration cap without the model finishing"));
   CHECK_EQ(model.requests.size(), 8u);
+  // …and the cost travels with the failure, because it is what decides whether the day's question is
+  // given back. Eight billed turns is the most expensive run this product has; refunding it waived
+  // the stated cap on exactly the runs that spend most (AskService::ask).
+  CHECK_EQ(outcome.modelTurns, 8);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0],
            std::string("ask.run | hit the 8-iteration cap without the model finishing"));
@@ -272,6 +276,7 @@ TEST(ask_fails_and_reports_when_the_model_stops_early) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.answer, std::string(""));  // half an answer about training is a different answer
   CHECK_EQ(outcome.error, std::string("the model stopped early (stop_reason: max_tokens)"));
+  CHECK_EQ(outcome.modelTurns, 1);  // it was billed for the half answer it dropped
   REQUIRE_EQ(rec.failures.size(), 1u);
 }
 
@@ -285,6 +290,7 @@ TEST(ask_fails_on_an_unreadable_upstream_reply) {
 
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.error, std::string("the model call failed or returned an unreadable reply"));
+  CHECK_EQ(outcome.modelTurns, 0);  // nobody was billed, so nobody is charged a question
   CHECK_EQ(rec.failures.size(), 1u);
 }
 

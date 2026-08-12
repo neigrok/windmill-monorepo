@@ -19,6 +19,7 @@ import {
   routineMetaLabel, ROUTINES_HREF,
 } from './log.js';
 import { mintId } from './mint.js';
+import { ConnectInvitation } from './connect/ConnectLog.jsx';
 import { ProposalFlag, RoutineHistory } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
@@ -93,6 +94,12 @@ export function RoutinesList({ log }) {
           ))}
         </ul>
       )}
+      {/* THE INVITATION (§D12), under the program rather than over it. This is the screen where the
+          question it answers is live — the next block is written here — and it is an invitation and
+          not a gate: no lock, no chip, no price, and nothing behind it to buy. It draws itself only
+          for a lifter with nothing connected and no workout running; both conditions live inside it,
+          so its second host cannot forget either. */}
+      <ConnectInvitation training={log.session != null} />
     </>
   );
 }

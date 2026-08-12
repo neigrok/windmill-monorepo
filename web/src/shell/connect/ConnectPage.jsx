@@ -37,7 +37,7 @@ const CLIENTS = [
     steps: [['1', 'Add to config.toml and restart Codex'], ['2', 'Approve in the browser on the first call']] },
   { id: 'any', tab: 'Any client', who: 'your client', lang: 'STANDARD mcpServers JSON',
     copy: JSON_COPY, pre: JSON_TEXT,
-    steps: [['·', 'Streamable HTTP + OAuth 2.1 — SSE fallback at /sse for older clients']] },
+    steps: [['·', 'Streamable HTTP + OAuth 2.1 — no SSE transport; a GET answers 405']] },
 ];
 
 // The five verbs, each wearing its node hue (§4) — the canonical block, compact.

@@ -92,11 +92,18 @@ struct AgentLoopStep {
 
 // What the run produced: the final turn's text, the tools it took to get there, or the one diagnostic
 // that says why there is no answer. `ok` false always carries an error and never text.
+//
+// `modelTurns` is the one fact a caller cannot recover afterwards and has to be told: how many
+// metered vendor round trips this run COMPLETED. A reply came back, so it was billed — whatever the
+// loop then made of it. It is counted because `ok` says nothing about cost: a run that hit the
+// iteration cap failed after eight paid turns and a run whose upstream was dead failed after none,
+// and a caller rationing questions has to charge for the first and not the second.
 struct AgentLoopOutcome {
   bool ok = false;
   std::string text;
   std::string error;
   std::vector<AgentLoopStep> steps;
+  int modelTurns = 0;
 };
 
 // Drive Anthropic's standard tool loop until the model stops asking for tools, fails, or the cap is

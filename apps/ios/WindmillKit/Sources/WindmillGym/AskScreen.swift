@@ -41,7 +41,9 @@ import WindmillPlatform
 // does not describe.
 struct AskDoors {
     let send: ([AskTurn]) async -> Result<AskAnswer, AskRefusal>
-    // The free door (contract §5): the lifter's own Claude or ChatGPT, over the grant page.
+    // The free door (contract §5): the lifter's own assistant, reading this log over MCP. It lands
+    // on the room's invitation (ConnectedLog) rather than out in a browser — the pitch, the
+    // precondition and then the recipe, in that order.
     let connect: () -> Void
     let openProposal: (String) -> Void
     // Told once, when the deployment answers 404: there is no Ask here, so the entry goes.

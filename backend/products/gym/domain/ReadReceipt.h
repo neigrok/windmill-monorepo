@@ -19,9 +19,19 @@ namespace wm::gym {
 //
 // Three buckets, each counted by IDENTITY so two reads that overlap count once: ask twice about the
 // same workout and it is one workout. A read that serves a SUMMARY rather than rows contributes what
-// it actually named — `list_sessions` names thirty-four workouts and hands over no sets, so it adds
-// thirty-four sessions and not one set. That is the conservative direction on purpose: the receipt
-// never claims a row it did not hand to the model.
+// it actually named — a default page of `list_sessions` names twenty workouts and hands over no
+// sets, so it adds twenty sessions and not one set. That is the conservative direction on purpose:
+// the receipt never claims a row it did not hand to the model.
+//
+// SO THE LINE IS A FLOOR, AND IT IS MEANT TO BE READ AS ONE. `get_stats` is the honest limit: it
+// serves one point per session per movement, and those points carry no session id — only the
+// SESSION'S start instant, which two workouts can tie on (GymTools.cpp, the page cursor) — so
+// counting them by identity is not something this receipt can do, and counting them by instant would
+// merge two workouts into one. It therefore contributes its weeks and no sessions or sets at all,
+// and a run whose only read was `get_stats` says "read 12 weeks" under an answer about twelve
+// sessions of bench. Under-claiming keeps the promise; over-claiming would be the lie the whole
+// object exists to prevent. Widening it means a session id in `MovementTop` (domain/Statistics.h) and
+// in the store's projection, which is a W8 request and not a comment to leave here as if it were done.
 
 struct ReadTally {
   int sets = 0;

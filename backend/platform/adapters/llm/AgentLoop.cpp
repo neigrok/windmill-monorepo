@@ -148,6 +148,10 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
       report(spec.where, outcome.error);
       return outcome;
     }
+    // COUNTED THE MOMENT A REPLY EXISTS, and above every judgement about what it says. From here the
+    // vendor has answered and billed us; a reply that turns out to be unreadable, or a stop reason
+    // nobody wanted, cost exactly what a good one cost.
+    ++outcome.modelTurns;
 
     const Json::Value& content = (*reply)["content"];
     const Json::Value& stopReason = (*reply)["stop_reason"];

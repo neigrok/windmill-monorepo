@@ -28,6 +28,11 @@ struct RoutinesScreen: View {
     let onStart: (String) -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
+    // THE INVITATION (§D12), and nil is the whole of its rule: the room hands this over only while
+    // nothing is known to reach the log, so a lifter whose Claude already writes these proposals is
+    // never sold the thing they are already using. It is an invitation and not a gate — no lock, no
+    // chip, no price, and nothing on this screen is withheld while it goes unanswered.
+    let onConnect: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
 
@@ -43,6 +48,13 @@ struct RoutinesScreen: View {
                         .font(GymType.numeral(12))
                         .foregroundStyle(skin.inkFaint)
                         .lineSpacing(3)
+                        .padding(.top, WindmillSpace.x2)
+                }
+                // AT THE FOOT, UNDER THE PROGRAM AND NEVER IN FRONT OF IT — including when there is
+                // no program yet, which is the one moment an agent reading a written plan is worth
+                // the most.
+                if let onConnect {
+                    ConnectInvite(open: onConnect)
                         .padding(.top, WindmillSpace.x2)
                 }
             }

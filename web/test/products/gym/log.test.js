@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import {
   agoLabel, alsoReadsLabel, arrivedLabel, ASK_HREF, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
+  CONNECT_HREF,
   dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
   groupByExercise,
@@ -148,7 +149,7 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the eleven rooms a hash names', () => {
+test('screenOf — one grammar decides which of the twelve rooms a hash names', () => {
   assert.equal(screenOf('#/gym'), 'today');
   assert.equal(screenOf('#/gym/'), 'today');
   assert.equal(screenOf('#/gym/log'), 'log');
@@ -166,6 +167,14 @@ test('screenOf — one grammar decides which of the eleven rooms a hash names', 
   assert.equal(screenOf(ASK_HREF), 'ask');
   assert.equal(screenOf('#/gym/ask'), 'ask');
   assert.equal(screenOf('#/gym/ask?from=proposal'), 'ask');
+  // THE CONNECTED LOG (§D12/13) is a position in GYM and not a link out to the account's workbench,
+  // for the reason the settings row gives: the workbench is written about skill trees, and somebody
+  // who tapped "Connected log" in their training settings asked about their training. Like Ask it
+  // carries no id — it is about the log, not about one workout.
+  assert.equal(screenOf(CONNECT_HREF), 'connect');
+  assert.equal(screenOf('#/gym/connect'), 'connect');
+  assert.equal(screenOf('#/gym/connect/'), 'connect');
+  assert.equal(screenOf('#/gym/connect?from=routines'), 'connect');
   assert.equal(screenOf(routineHref(NEW_ROUTINE_ID)), 'routine');
   assert.equal(screenOf(MOVEMENTS_HREF), 'record');
   assert.equal(screenOf(recordHref('back-squat')), 'record');

@@ -410,10 +410,11 @@ int main() {
   // own. Same key as the roadmap composer and the tend agent: one Anthropic account, one credential,
   // three products asking it different questions. Dark when unconfigured, and dark here means
   // ABSENT: with no key there is no AskService, so gym::registerRoutes never mounts the path and
-  // every client hides the door on the 404. The narrowing that makes this safe is not here — it is
-  // the three levels AskService names at its own call site, plus AskTools, which hands the model
-  // gym's reads and the two tools that mint a proposal, and refuses everything that would change
-  // what a lifter logged.
+  // every client hides the door on the 404. The narrowing that makes this safe is not here and it is
+  // not the ToolScope either — gym's host does not gate, so naming gym's three levels keeps out no
+  // gym tool. It is `AskTools` (AskService.h), which hands the model gym's reads and the two tools
+  // that mint a proposal, refuses everything that would change what a lifter logged, and checks the
+  // caller's grant on the way past so a narrower scope would take tools away for real.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   std::shared_ptr<gym::AskService> gymAsk;
   if (gymAskAgent->configured())

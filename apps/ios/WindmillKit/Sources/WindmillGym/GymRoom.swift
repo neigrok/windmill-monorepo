@@ -64,6 +64,11 @@ public struct GymRoom: View {
     // Anthropic key answers the route's own 404, and the entry goes for the rest of the visit rather
     // than staying as a door onto a sentence.
     @State private var askOnThisDeployment = true
+    // Which tools of the lifter's own reach this log (§D13). Held by the ROOM because four screens
+    // ask the same question — Routines and the opening picker offer the invitation, settings names
+    // the state, and the connect screen draws it — and four reads of one account's credentials is
+    // how one room shows one account four answers. It starts `unknown`, which asserts nothing.
+    @State private var connected: ConnectedLogState = .unknown
 
     public init(account: Account) {
         self.account = account
@@ -99,9 +104,13 @@ public struct GymRoom: View {
         // ever "the chat is on screen", and a copy handed down the stack would be a second one.
         case ask
         // §I's five rows. It is HERE, on the room's own stack, because the native ProductModule seam
-        // has no settings slot for the shell to compose — see the head of SettingsScreen. Nothing
-        // ever stacks over it, so its label is only ever read by a way back that cannot be drawn.
+        // has no settings slot for the shell to compose — see the head of SettingsScreen. The
+        // connect screen stacks OVER it, which is why its label is drawn after all.
         case settings
+        // §D12/13 — the invitation, and the words gym puts around a grant the shell owns. It carries
+        // no argument: what it draws is the room's own `connected`, so a copy handed down the stack
+        // would be a second answer about one account.
+        case connect
 
         // What the way back NAMES when this is the screen underneath.
         func label(in catalog: [Exercise]) -> String {
@@ -111,6 +120,7 @@ public struct GymRoom: View {
             case .proposal: return "Proposal"
             case .ask: return Ask.title
             case .settings: return "Gym"
+            case .connect: return "Connected log"
             }
         }
     }
@@ -153,8 +163,21 @@ public struct GymRoom: View {
                   let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
             await store.choose(movement)
         }
+        // A SECOND TASK AND NOT A LINE IN THE FIRST ONE: the read above decides whether a lifter
+        // lands back inside the workout they are standing in, and a credential list is never allowed
+        // to hold that up. Signed out the answer is known without asking — there is no account for a
+        // grant or a key to hang on — and asking anyway would turn a 401 into "nobody is connected".
+        .task(id: account.user?.id) {
+            connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { Task { await store.flushPendingSets() } }
+            // Coming back from the web is HOW a connection is made, so the room re-reads rather than
+            // standing on an answer from before the walk. `onChange` never fires for the value the
+            // scene launched at, so this is not a second read on arrival.
+            if phase == .active, account.isSignedIn {
+                Task { connected = await ConnectedLog.read(with: account.api) }
+            }
         }
         // Leaving the room ENDS the undo window as well as draining the queue: the affordance goes
         // with the subtree, so the gesture the window was protecting is no longer on screen.
@@ -174,7 +197,10 @@ public struct GymRoom: View {
                          onDone: { self.finished = nil })
         } else if store.session != nil {
             LoggerScreen(store: store, isSignedIn: account.isSignedIn,
-                         onBuildRoutine: openConnect,
+                         // The picker's card, on the SAME rule Routines' invitation keeps — offered
+                         // only while nothing is known to reach the log. It is the one solicitation
+                         // a lifter would otherwise meet every session, forever.
+                         onBuildRoutine: connected.invites ? openConnect : nil,
                          say: { note = $0 }, onFinish: { Task { await close() } })
         } else if let showing {
             switch showing {
@@ -191,7 +217,11 @@ public struct GymRoom: View {
             case .ask:
                 AskScreen(store: store, exchanges: $askThread, doors: askDoors)
             case .settings:
-                SettingsScreen(store: store, web: account.api.baseURL, say: { note = $0 })
+                SettingsScreen(store: store, web: account.api.baseURL, connected: connected,
+                               onConnectedLog: { look(at: .connect) }, say: { note = $0 })
+            case .connect:
+                ConnectScreen(state: connected, isSignedIn: account.isSignedIn,
+                              web: account.api.baseURL, onConnect: openConnect)
             }
         } else {
             switch tab {
@@ -211,7 +241,11 @@ public struct GymRoom: View {
             case .routines:
                 RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } },
                                onMovement: { look(at: .movement($0)) },
-                               onProposal: { look(at: .proposal($0)) })
+                               onProposal: { look(at: .proposal($0)) },
+                               // Offered where the program is, and withdrawn the moment something
+                               // actually reaches this log: an invitation to do the thing you have
+                               // already done is advertising.
+                               onConnect: connected.invites ? { look(at: .connect) } : nil)
             }
         }
     }
@@ -318,7 +352,10 @@ public struct GymRoom: View {
                 do { return .success(try await gym.ask(turns)) }
                 catch { return .failure(AskRefusal(error)) }
             },
-            connect: openConnect,
+            // Ask's own paragraph about how to stop needing Ask lands on the invitation rather than
+            // in Safari: the pitch, the precondition and the recipe in that order, and the walk to
+            // the web is the last step rather than the first.
+            connect: { look(at: .connect) },
             openProposal: { look(at: .proposal($0)) },
             absent: { askOnThisDeployment = false })
     }
@@ -351,13 +388,17 @@ public struct GymRoom: View {
         firstSessionOpened = true
     }
 
-    // THE FREE DOOR, and both screens that offer it come here: §J22's card in the logger, and the
-    // paragraph in Ask's empty state that tells a lifter how to stop needing Ask. Signed out it opens
-    // the shell's door — the account is the shell's business, and everything already logged is
-    // claimed on the way back. Signed in the door is already open and what is left is the grant,
-    // which lives on the web page that owns it (the same door §I's settings draw), because this
-    // client cannot read entitlements and a screen naming a connection it never checked would be
-    // worse than the door.
+    // THE FREE DOOR — where connecting actually happens, which is a page on a computer: you paste
+    // one address into the tool you already run and approve it in the browser. Signed out it opens
+    // the shell's door instead — the account is the shell's business, and everything already logged
+    // is claimed on the way back.
+    //
+    // TWO KINDS OF DOOR REACH IT AND ONLY ONE COMES STRAIGHT HERE. The invitation (§D12) is a room
+    // screen, so Routines, settings and Ask walk to `ConnectScreen` and it spends this at the foot.
+    // §J22's card in the OPENING PICKER cannot: it is drawn inside a running session, where a live
+    // workout outranks every away screen, so a tap that pushed one would land on nothing. That card
+    // keeps the direct door — which is also the rule the wave states, that the pitch is never drawn
+    // mid-session. Both are withdrawn on the same condition, `connected.invites`.
     private func openConnect() {
         guard account.isSignedIn else {
             shell.openYou()

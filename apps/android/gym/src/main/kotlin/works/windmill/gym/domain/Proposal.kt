@@ -8,7 +8,12 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-// IT READS. IT PROPOSES. IT NEVER WRITES TO YOUR PROGRAM.
+// IT READS. IT PROPOSES. IT NEVER REWRITES A DAY THAT ALREADY STANDS.
+//
+// The third clause was "it never writes to your program" and that is false of the catalog it claims
+// to describe: `create_routine` is `gym:write` and lands a day that did not exist immediately, with
+// no tap at all. The paragraph below always said the split correctly, so the headline was arguing
+// with its own body — and with `ConnectedLog`, which refuses the same sentence one file away.
 //
 // The split the whole object exists to carry: a mutation that RECORDS something that already
 // happened lands at every door — a set is logged, a session starts and finishes, a movement is
@@ -25,8 +30,10 @@ import kotlinx.serialization.encoding.Encoder
 //
 // PROPOSALS ARE SIGNED-IN ONLY. No account, no agent, no proposal: the shelf never holds one, the
 // claim never replays one, and a signed-out lifter sees NOTHING about them — no card, no chip, no
-// empty history and no pitch. A room that advertised a paid surface to somebody with no account
-// would be selling where this product answers questions.
+// empty history and no pitch. Not because there is something to sell here: nothing about the
+// connected log is paid, the tools read no entitlement, and W8's invitation says outright that
+// connecting is free. It is that a grant is granted against an ACCOUNT, so a room pitching one to
+// somebody who has none would be asking for a sign-in where this product answers questions.
 //
 // It reads the gym wire conventions Training.kt states — epoch-ms instants, signed kg, an absent
 // optional omitted rather than null, and reads that DEFAULT rather than throw, so a word from a
@@ -163,6 +170,28 @@ data class ProposalChange(
             if (kept == 0) return "removed from the routine · never logged"
             val sets = if (kept == 1) "1 logged set" else "$kept logged sets"
             return "removed from the routine · $sets kept"
+        }
+
+    // THE SAME CHANGE AT CARD SIZE — one line, for the summons Ask draws in the message stream when
+    // a conversation mints a proposal. It lives HERE, beside the two lines above, because a diff
+    // spelled in a screen file is a second grammar for the same change: the card and the document it
+    // opens saying one removal two ways is the drift this product keeps a `Readout` to prevent, and
+    // the room already learned it once with weights.
+    //
+    // Every word is the diff screen's own — `removedLine` verbatim, an addition's targets in `asks`,
+    // a retarget in the FIELD MOVES screen 14 draws one under another. What the compact line drops
+    // is the POSITION an addition lands at: that is a fact about the routine's order and belongs to
+    // the review, not to a card whose whole job is to get somebody to open it.
+    val compactLine: String
+        get() {
+            if (kind == ChangeKind.Added) return after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
+            if (kind == ChangeKind.Removed) return "− $removedLine"
+            // A retarget, and everything this build cannot name with it: both read off whichever of
+            // the two sides actually arrived, exactly as the full row does, so a kind from a newer
+            // server still draws what the line would end up asking for.
+            val moved = before?.let { was -> after?.let { now -> Proposal.moves(was, now) } }.orEmpty()
+            if (moved.isNotEmpty()) return moved.joinToString(" · ") { "${it.before} → ${it.after}" }
+            return (after ?: before)?.let { Proposal.asks(it) } ?: "no targets"
         }
 }
 

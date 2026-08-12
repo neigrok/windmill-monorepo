@@ -276,7 +276,11 @@ test('an empty Ask says the free door is better, and walks to it', () => {
   assert.equal(said.includes('it knows the rest of your life'), true);
   const room = read('ask/AskRoom.jsx');
   assert.equal(room.includes('{turns.length === 0 && <FreeDoor />}'), true);
-  assert.equal(room.includes('<a className="gym-ask-free-door" href="#/connect">{FREE_DOOR_VERB}</a>'), true);
+  // W8 MOVED WHERE IT LANDS, and not what it says. It used to open the account's /connect workbench,
+  // which hands out a URL and per-client steps for planting skill trees; what somebody standing in
+  // Ask is asking is what the OTHER door actually gets them, and that is gym's own room (§D12/13),
+  // which answers it and walks on to the workbench.
+  assert.equal(room.includes('<a className="gym-ask-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>'), true);
 });
 
 // `ADDED TODAY` IS SAID ONCE, ON THE FIRST WORKING SET — and which set that is, is decided in the
@@ -540,13 +544,34 @@ test('the export is one row of the section, and only for an account with a log',
 });
 
 // THE GRANT IS NAMED HERE AND OWNED ELSEWHERE. The row says which tools reach the training log and
-// walks to the workbench; a revoke drawn here would be a second door onto one decision, which is the
-// same rule that keeps the account's close in the shell alone.
+// walks to the room that explains what they may do to it; a revoke drawn here would be a second door
+// onto one decision, which is the same rule that keeps the account's close in the shell alone.
+//
+// WHERE IT WALKS CHANGED IN W8. It opened the account's /connect workbench directly — a page whose
+// five capability chips are all about planting roadmaps — so a lifter who tapped "Connected log" in
+// their TRAINING settings was answered about skill trees. #/gym/connect is gym's own words around
+// the same account-level grant, and the workbench is one tap on from there.
 test('the connected-log row names the grant state without rebuilding it', () => {
   const source = read('settings/GymSettingsSection.jsx');
   assert.equal(source.includes('listGrants'), true);
   assert.equal(source.includes('revokeGrant'), false);
-  assert.equal(source.includes("href=\"#/connect\""), true);
+  assert.equal(source.includes('href={CONNECT_HREF}'), true);
+  // The old destination, gone rather than kept beside the new one: two doors onto one decision is
+  // how they drift.
+  assert.equal(source.includes('"#/connect"'), false);
+  // AND WHAT REACHES THE LOG IS ONE RULE, not one per surface. This row wrote the predicate out for
+  // itself — read the scope, keep the legacy account-wide grant, keep anything naming gym — and the
+  // room it walks to needs the same answer; a second copy is a second thing that can start calling a
+  // live connection absent.
+  assert.equal(source.includes('connectionsToTheLog(grants, keys)'), true);
+  assert.equal(source.includes('readScope'), false);
+  // AND IT TAKES BOTH DOORS OR NEITHER. A static personal key is minted account-wide and never
+  // appears in a grant row, so a row that read grants alone told an account whose key can discard a
+  // workout that nothing reads their log. Promise.all is what makes half an answer no answer.
+  assert.equal(source.includes('Promise.all([listGrants(), listMcpKeys()])'), true);
+  // One vocabulary for one object: the state line is the room's, so a key cannot be "minted" in one
+  // place and "connected" in the other.
+  assert.equal(source.includes('${connectedLabel(row)}'), true);
 });
 
 // THE PICKER'S META IS ASKED FOR ONCE, WHEN THE PICKER OPENS (§B7). The read is per-picker rather
@@ -739,19 +764,32 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
     'Add sets, movements and routines',
     'Delete workouts and routines',
     'never writes to your program',
+    // AND THE JUSTIFICATION FOR LANDING A NEW DAY UNASKED, which is only half true. The lifter can
+    // edit it — the routine editor is a real screen — and cannot delete it: `gymApi.deleteRoutine`
+    // has no caller in this app, and neither do its iOS and Android twins. The catalog says the same
+    // sentence to the agent; that one is the backend's to fix.
+    'delete it yourself',
   ]) {
     assert.equal(landing.includes(claim), false, claim);
   }
+  assert.equal(speech('marketing/GymLanding.jsx').includes('the day is yours to edit in Routines'), true);
   // And what stands in their place is the rule itself, on the page rather than in the margin — both
   // halves of it, the direct write included.
   const said = speech('marketing/GymLanding.jsx');
   assert.equal(said.includes('it never rewrites a day you already have'), true);
   assert.equal(said.includes('adds lands right away: it takes nothing away'), true);
   assert.equal(said.includes('Propose next week’s routine — you read the diff and tap Apply.'), true);
-  assert.equal(said.includes('Record what happened · add a new day · propose changes to the days you have'), true);
-  assert.equal(said.includes('Discard a workout · end a coach link · propose a removal'), true);
+  // THE THREE LEVEL LINES MOVED INTO THE PRODUCT in W8 and the landing imports them, so what
+  // `gym:write` buys cannot read one way in a pitch and another in the room a visitor lands in.
+  // They are pinned where they now live; connect.test.js holds them against the catalog.
+  const levels = fs.readFileSync(path.join(GYM, 'connect', 'connect.js'), 'utf8');
+  assert.equal(levels.includes('Record what happened · add a new day or a new movement · propose changes to the days you have'), true);
+  assert.equal(levels.includes('Discard a workout · end a share link · propose a removal'), true);
+  assert.equal(said.includes('LEVEL_LINES.write'), true);
+  assert.equal(said.includes('LEVEL_LINES.delete'), true);
   // The three `gym:delete` tools are discard_session, propose_routine_removal AND revoke_share, so
-  // the caption under them names three effects rather than two.
+  // the caption under them names three effects rather than two. It keeps the word coach, because the
+  // link it names is one a lifter hands to a person who coaches them.
   assert.equal(said.includes('end a coach link, or ask to remove a routine.'), true);
 
   // The MCP workbench's own page says the same thing in its own voice, and no longer says an agent
@@ -760,6 +798,138 @@ test('no gym copy claims an agent changes a routine of yours directly, or that i
   assert.equal(connect.includes('keep your routines'), false);
   assert.equal(connect.includes('What it cannot do is change a routine you already have'), true);
   assert.equal(connect.includes('nothing moves until you tap Apply'), true);
+});
+
+// ── The connected log (§D12/13) ─────────────────────────────────────────────────────────────────
+
+// THE INVITATION IS DRAWN UNDER TWO CONDITIONS AND BOTH LIVE INSIDE IT, which is the same rule
+// AskDoor keeps: a guard written at each call site is the one a third host forgets. Never
+// mid-session — a lifter with a bar in their hands is not deciding about MCP — and never to somebody
+// already connected, because an invitation to do what you have already done is what turns an
+// invitation into a nag. A mounted-component test cannot see this: the difference is whether the
+// card is in the tree at all, and both hosts render perfectly well without it.
+test('the connected-log invitation is drawn from two rooms, and neither decides when', () => {
+  assert.equal(read('Routines.jsx').includes('<ConnectInvitation training={log.session != null} />'), true);
+  assert.equal(read('Proposals.jsx').includes('<ConnectInvitation training={log.session != null} />'), true);
+  const card = read('connect/ConnectLog.jsx');
+  // The session guard is answered ABOVE the read, in a component that calls no hook, so a lifter
+  // mid-workout is not spending two credentialed requests per Routines mount on a card that has
+  // already decided to draw nothing.
+  assert.equal(card.includes('if (training) return null;\n  return <InvitationCard />;'), true);
+  // The second guard is the read, and an unanswered one draws NOTHING: silence is an omission, while
+  // a card drawn off a half-read asserts that no tool reads this log — the one thing it could be
+  // wrong about.
+  assert.equal(
+    card.includes("if (reach.phase !== 'ready' || reach.data.length > 0) return null;"),
+    true,
+  );
+  // And nothing counts how often it was walked past (§D3). The blanket decline scan below covers
+  // every gym file; this is the same rule stated where the temptation is newest.
+  assert.equal(/timesShown|shownCount|nagged|dismissedAt/i.test(card), false);
+});
+
+// THE ROOM IS ONE HASH AND ONE MOUNT. It is not a fourth tab — the bar is the app's three rooms —
+// and it is reached from settings, from Ask's empty state and from the invitation, all of which name
+// the same constant rather than spelling the hash out.
+test('the connected log is a room off one hash, and never a tab', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes("{screen === 'connect' && <ConnectLog />}"), true);
+  assert.equal(app.includes("const TAB_SCREENS = ['today', 'log', 'routines'];"), true);
+  for (const file of ['settings/GymSettingsSection.jsx', 'ask/AskRoom.jsx', 'connect/ConnectLog.jsx']) {
+    assert.equal(read(file).includes('CONNECT_HREF'), true, file);
+  }
+});
+
+// GYM CONTRIBUTES WORDS AND A LINK, AND NOT A SECOND CONSENT FLOW (§D13). The OAuth grant screen and
+// the revoke belong to the account; this room READS the grants it can see and walks to the workbench
+// that holds the URL. A revoke drawn here would be a second door onto one decision — the same rule
+// that keeps the account's close in the shell alone — and a consent post here would be a second
+// implementation of the thing the whole safety model rests on.
+test('the connected-log room reads the grant and rebuilds none of it', () => {
+  const room = read('connect/ConnectLog.jsx');
+  assert.equal(room.includes('listGrants'), true);
+  // It reads the personal keys too — that is the second door onto this log and the grant list cannot
+  // see it — but reading a list is not owning the credential: minting and revoking stay the
+  // account's, in the panel and the section that already hold them.
+  assert.equal(room.includes('listMcpKeys'), true);
+  for (const machinery of [
+    'revokeGrant', 'postDecision', 'fetchConsentClient', 'McpKeyPanel', 'mintKey', 'createMcpKey',
+    'revokeMcpKey',
+  ]) {
+    assert.equal(room.includes(machinery), false, machinery);
+  }
+  // The one door out is the account's workbench, named once, in the words module.
+  assert.equal(read('connect/connect.js').includes("export const WORKBENCH_HREF = '#/connect';"), true);
+});
+
+// NO PRICE, NO LOCK, NO TIER, AND NO CHECKOUT — W8's whole ruling, and this surface is where it would
+// be undone first, because §D's own headline for it was "The log is free. The connected log is
+// Windmill One." That tier gates nothing in gym (the MCP tools read no entitlement and never did),
+// nobody can buy it (`paidPlansOpen()` is a hardcoded false), and its button would land on a
+// BillingApi that 503s. The scan is for the APIs as well as the words: copy can be reworded, an
+// import cannot.
+test('the connected log reads no entitlement and offers nothing to buy', () => {
+  for (const file of ['connect/connect.js', 'connect/ConnectLog.jsx']) {
+    const said = speech(file);
+    for (const door of ['useEntitlements', 'paidPlansOpen', 'beginUpgrade', 'windmillOne', 'checkout', 'Paddle']) {
+      assert.equal(said.includes(door), false, `${file} reaches for ${door}`);
+    }
+    assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d|[Ll]ocked|free for now/.test(said), false, file);
+  }
+  // And the stylesheet paints no locked face for one to inherit.
+  assert.equal(/\.gym-connect[a-z-]*\.is-locked/.test(read('gym.css')), false);
+});
+
+// THE CARD DOES NOT INVENT A FRESHNESS IT CANNOT OBSERVE. §D draws `connected · read 2h ago`, and
+// nothing in this system records a per-connection last READ of the training log: `lastUsedMs` on the
+// account's grant row is touched by any token use, counts writes, is throttled, and is account-wide,
+// so a connection that also reaches roadmap advances it by planting a node in a skill tree. A card
+// that spelled an hour count off that would be the same defect as a receipt counting rows it never
+// served, which this programme has already had once — so the field is not read here at all.
+//
+// The scan is over the SPEECH, which is the same rule every other scan in this file follows: a field
+// read survives the comment strip and prose about one does not, so a comment stays free to name the
+// stamp it is refusing to draw.
+test('nothing on the connected-log surface reads a last-used stamp, or spells a read time', () => {
+  for (const file of ['connect/connect.js', 'connect/ConnectLog.jsx', 'settings/GymSettingsSection.jsx']) {
+    const said = speech(file);
+    assert.equal(said.includes('lastUsedMs'), false, file);
+    assert.equal(/read \d+h ago|hours ago|minutes ago/.test(said), false, file);
+  }
+});
+
+// THE PITCH IS ONE CONCRETE EXCHANGE, and it reaches the two surfaces a lifter meets it on: the
+// landing, and the crawlable workbench a search engine reads. §D12 is a card about a trade — one
+// sentence typed on Sunday in a tool that is not ours, one proposal waiting on Monday — and the
+// precondition under it is the most honest line on the board, so both are checked as copy that
+// actually shipped rather than as constants nobody rendered.
+test('the exchange and the precondition are on the landing and on the crawlable workbench', () => {
+  const landing = speech('marketing/GymLanding.jsx');
+  assert.equal(landing.includes('<Exchange />'), true);
+  assert.equal(landing.includes('{PRECONDITION}'), true);
+  assert.equal(landing.includes('{EXCHANGE.asked}'), true);
+  assert.equal(landing.includes('{EXCHANGE.landed}'), true);
+
+  const connect = fs.readFileSync(path.join(GYM, '../../../public/connect.html'), 'utf8');
+  assert.equal(connect.includes('Write me a four-week block'), true);
+  assert.equal(connect.includes('an AI tool of your own that speaks MCP'), true);
+  assert.equal(connect.includes('connecting your log costs nothing'), true);
+  // And it still says the one thing about this transport that is true: there is no SSE endpoint in
+  // the backend at all (McpHttpEndpoint answers GET with a 405).
+  assert.equal(connect.includes('There is no SSE transport'), true);
+});
+
+// A SUBSCRIPTION IS A THING NOBODY CAN HAVE, so gym's own pages stopped describing one. The line
+// read "one account and one subscription across Roadmap, Journal and Gym" — a shape rather than a
+// purchase, which is exactly how a false sentence survives a review — and it sat on the same page as
+// a section saying in as many words that there is nothing in Gym to buy.
+test('no gym landing copy sells a subscription, on the page or in the crawlable shell', () => {
+  const landing = speech('marketing/GymLanding.jsx');
+  const head = fs.readFileSync(path.join(GYM, 'marketing', 'landingHead.js'), 'utf8');
+  for (const source of [landing, head]) {
+    assert.equal(/one subscription|One subscription/.test(source), false);
+  }
+  assert.equal(landing.includes('one account across Roadmap, Journal and Gym'), true);
 });
 
 // NOTHING COUNTS HOW MANY TIMES ANYONE DECLINED ANYTHING — §J's own words, and the finish screen is

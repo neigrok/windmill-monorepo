@@ -27,7 +27,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from '../gymApi.js';
-import { ASK_HREF, proposalHref } from '../log.js';
+import { ASK_HREF, CONNECT_HREF, proposalHref } from '../log.js';
 import { changeLabel, diffRows, reviewLabel } from '../proposals.js';
 import { DiffRow } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
@@ -241,11 +241,14 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
 // THE EMPTY ROOM POINTS AT THE FREE DOOR — and it is the only thing an empty room says, because Ask
 // does not speak first. No greeting, no suggestions, no "what would you like to know": the sentence
 // on screen is about the better option, and the better option is not this one.
+// The door lands on gym's own connected-log room (§D12/13) rather than on the account's workbench:
+// the workbench hands out a URL and per-client steps, and what somebody standing in Ask is asking is
+// what the OTHER door actually gets them. That room answers it and walks on to the workbench.
 function FreeDoor() {
   return (
     <section className="gym-ask-empty">
       <p className="gym-ask-free">{FREE_DOOR_LINE}</p>
-      <a className="gym-ask-free-door" href="#/connect">{FREE_DOOR_VERB}</a>
+      <a className="gym-ask-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>
     </section>
   );
 }

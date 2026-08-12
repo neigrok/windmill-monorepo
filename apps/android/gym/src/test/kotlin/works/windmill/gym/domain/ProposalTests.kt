@@ -328,6 +328,34 @@ class ProposalTests {
             gone.copy(loggedSets = null).removedLine)
     }
 
+    // THE SAME CHANGE AT CARD SIZE, and it is the diff screen's own grammar rather than a second
+    // one: the removal is `removedLine` verbatim, the addition asks in the routine card's words, and
+    // a retarget reads as the FIELDS that moved — the same list screen 14 stacks one under another.
+    // A card and the document it opens describing one change two ways is the drift a summons can do
+    // the most damage with, because the card is what somebody decides to open on.
+    //
+    // What the compact line drops is the POSITION an addition lands at: that belongs to the review.
+    @Test
+    fun testAChangeSpellsItselfAtCardSizeInTheDiffScreensOwnGrammar() {
+        val added = ProposalChange(position = 2, kind = ChangeKind.Added,
+            exerciseId = "incline-db-press", after = targets(3, 10, 24.0))
+        assertEquals("+ added · 3 × 10 · 24", added.compactLine)
+        assertEquals("+ added", added.copy(after = null).compactLine)
+
+        val gone = ProposalChange(position = 4, kind = ChangeKind.Removed, exerciseId = "cable-fly",
+            before = targets(3, 12, 22.5), loggedSets = 41)
+        assertEquals("− removed from the routine · 41 logged sets kept", gone.compactLine)
+
+        val moved = ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
+            before = targets(5, 5, 82.5), after = targets(5, 3, 90.0))
+        assertEquals("5 × 5 → 5 × 3 · 82.5 → 90", moved.compactLine)
+
+        assertEquals("a row with one side missing prints what the line would end up asking for",
+            "5 × 3 · 90", moved.copy(before = null).compactLine)
+        assertEquals("and a row with neither says so rather than drawing a blank",
+            "no targets", moved.copy(before = null, after = null).compactLine)
+    }
+
     // APPLIED OR DISMISSED, IT IS A DATED RECORD ON THE ROUTINE — the program's history rather than
     // a toast that disappeared. A dismissal keeps its row exactly as an apply does, and a superseded
     // one is here too: nothing piles up and nothing vanishes.

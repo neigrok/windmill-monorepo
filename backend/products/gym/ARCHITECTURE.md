@@ -2411,27 +2411,33 @@ object and keeps its name: that one really is a coach, a human being holding a l
 W7 widened the panel this replaces rather than building a second thing beside it: same loop, same
 catalog, same refusal ladder — pointed at the LOG instead of at one finished workout.
 
-### 12.1 The narrowing, in two independent layers
+### 12.1 The narrowing, and where it actually is
 
 `GymTools` does not gate — deliberately, because over MCP the grant was settled above it by
 `CompositeToolHost` — so a chat wired straight to it would be a door with no lock, and a hallucinated
-`discard_session` would execute. Two things stand in the way, and they stack rather than merge,
-exactly as `ScopedToolHost` and the composite do for a tend:
+`discard_session` would execute.
 
-- **The scope, stated at the call site.** `AskService::ask` constructs
-  `ToolCaller{caller, ToolScope({{"gym", read}, {"gym", write}, {"gym", del}})}` on the line that
-  dispatches the run — three levels named one by one rather than `everything()`, so a fourth level or
-  a second product never rides along on a token nobody widened.
-- **`AskTools`, which is gym's `ScopedToolHost`.** It offers every `Access::read` declaration plus
-  `mintsProposal(name)` — the two `propose_` tools — and refuses everything else by reading the
-  DECLARATIONS rather than a list of names that could drift from them. So Ask can read the log and
-  hand the lifter a diff, and cannot log a set, finish a workout, mint a share, create a movement or
-  discard anything.
+**`AskTools` is that lock, and it is the whole of it.** It offers every `Access::read` declaration
+plus `mintsProposal(name)` — the two `propose_` tools — and refuses everything else by reading the
+DECLARATIONS rather than a list of names that could drift from them. So Ask can read the log and hand
+the lifter a diff, and cannot log a set, finish a workout, mint a share, create a movement or discard
+anything.
 
-Either layer alone would hold today. Both is what survives someone widening the other by accident.
-And underneath both sits the rule W6 made structural: **no tool at any level edits or deletes a
-logged set**, so Ask's most important refusal is not a sentence in its prompt at all — a prompt-level
-refusal is a lie waiting for the right jailbreak.
+The scope `AskService::ask` states at its call site —
+`ToolCaller{caller, ToolScope({{"gym", read}, {"gym", write}, {"gym", del}})}` — is **not a second
+layer, and this file used to claim it was.** All three levels are gym's own, gym's host does not gate,
+and there is no other product on it: against `GymTools` alone that scope offers all seventeen tools and
+executes `discard_session`. What it is, is honest wiring — who Ask acts as, named one level at a time
+rather than taken as `everything()`, so a fourth level or a second product never rides along on a
+token nobody widened. `AskTools` reads it on the way past, in `callTool` as well as in the catalog
+`listTools` filters, which is what makes narrowing it later take tools away in fact: arm the One gate,
+or drop `del` to take `propose_routine_removal` off Ask, and the call is refused and not merely
+hidden. Until W7's fix pass that check was in the catalog only, so a narrowed scope would have shown
+a shorter `tools/list` and run every call in it.
+
+Underneath it sits the rule W6 made structural: **no tool at any level edits or deletes a logged
+set**, so Ask's most important refusal is not a sentence in its prompt at all — a prompt-level refusal
+is a lie waiting for the right jailbreak.
 
 `AskTools` also keeps the schema promise the OTHER door keeps, and that is parity rather than a third
 layer: every declaration publishes `additionalProperties: false`, over MCP `CompositeToolHost`
@@ -2452,7 +2458,7 @@ hang it off `ToolDeclaration`, where both doors would read one copy.
 | Iterations | 8, and hitting it is a **failure** | the log is wider than one workout; an unfinished answer is still worse than "Ask didn't answer" |
 | Turns | 8, 1000 bytes each | the server is stateless, so the request body *is* the prompt somebody pays for |
 | Entitlement | **none — it ships open** | Windmill One cannot be bought, so a locked Ask would advertise a 503 (§0). The gate is one predicate away, on the allowance line |
-| Daily limit | ~10 a day, 3 back to back, per **account** (`AskRation`) | the first Windmill feature with a marginal cost per use, so the ration is stated on screen instead of hidden as a weaker model. A bucket in memory, so a deploy refills it — soft on purpose, because the row below is what has to be hard. **Taken last and given back**: every other refusal above it costs nothing, and a run the vendor never answered is returned, because the cap's copy is a promise and three outages must not spend a burst that answered nobody. That return is why the bucket is gym's own and not platform's `RateLimiter`, which has no way to hand a token back |
+| Daily limit | ~10 a day, 3 back to back, per **account** (`AskRation`) | the first Windmill feature with a marginal cost per use, so the ration is stated on screen instead of hidden as a weaker model. A bucket in memory, so a deploy refills it — soft on purpose, because the row below is what has to be hard. **Taken last and given back when the run COST NOTHING**: every refusal above it costs nothing, and neither does a fuse trip, a wedged vendor or a log we could not open, because the cap's copy is a promise and three outages must not spend a burst that answered nobody. The test is `AskAnswer::modelTurns` — metered vendor round trips — and not `ok`: hitting the 8-iteration cap costs eight billed turns and stopping at `max_tokens` costs one, and refunding those (as W7 first shipped) waived the ration on precisely the most expensive runs the product has. That return is why the bucket is gym's own and not platform's `RateLimiter`, which has no way to hand a token back |
 | Dollar ceiling | the platform's own: `AiFuse` hourly + `aiAllowanceFor` over 30 days | ours, never shown as money to anybody, and the same rows the owner page reads |
 | Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ no `AskService` ⇒ `registerRoutes` never mounts the path |
 
@@ -2466,13 +2472,24 @@ Claude over MCP therefore reads exactly the accounting the app prints, and a num
 in a UI layer — a number the model could simply have made up — has nowhere to be invented.
 
 Four rules keep it honest: it counts by **identity**, so one workout read twice is one workout; a
-read that serves a SUMMARY claims only what it NAMED (`list_sessions` adds thirty-four sessions and
-not one set); a REFUSED read counts nothing, because a refusal hands the model one sentence and no
-rows — so the run's line only ever merges a reply the model actually got, and every read settles its
-arguments before it marks anything; and a reply that served no log rows says nothing at all rather
-than `read 0 sets`. The
+read that serves a SUMMARY claims only what it NAMED (a default page of `list_sessions` adds twenty
+sessions and not one set); a REFUSED read counts nothing, because a refusal hands the model one
+sentence and no rows — so the run's line only ever merges a reply the model actually got, and every
+read settles its arguments before it marks anything; and a reply that served no log rows says nothing
+at all rather than `read 0 sets`. The
 run's total is merged inside `GymTools`, where the ids are, because a layer above could only have
 summed the replies — and a sum counts the same set twice.
+
+**So the line is a FLOOR, and §L's `read 214 sets · 12 weeks · 34 sessions` is the design's
+illustration rather than a typical answer.** Sets are claimed by `get_session` and `last_time` alone;
+`list_sessions` names workouts and hands over no set rows; `get_stats` serves a projection — one
+point per session per movement — whose points carry no session id, only the session's start instant,
+which two workouts can tie on, so it claims its weeks and nothing else. A realistic run (the opening
+page + `get_stats` + `last_time`) over a 34-session, 272-set log prints `read 8 sets · 34 weeks · 20
+sessions`. Under-claiming keeps the promise the object exists for — it never claims a row it did not
+hand over — and over-claiming would break it. Raising the floor means carrying a session id through
+`MovementTop` and the store's projection, which is a **W8 request**, not a thing to describe here as
+if it were done.
 
 The proposals in the reply are observed the same way: `AskTools` takes the id off the tool's own
 result, never out of the answer's prose, so the app has the diff to open whether or not the model
@@ -2488,8 +2505,9 @@ remembered to mention it.
   `AskService` owns a two-thread pool and the handler hands its callback over. Four handler threads
   parked on a model is a training log that stops answering everybody. The run is guarded on that
   thread, because **nothing sits above a worker loop**: an exception leaving it would be every product
-  on the box, and a request nobody answers. It becomes the same 502 a dead upstream gets — and, like
-  one, gives the day's question back.
+  on the box, and a request nobody answers. It becomes the same 502 a dead upstream gets, and gives
+  the day's question back for a different reason than a dead upstream does: the turn count died with
+  the stack, so whatever it spent is unknown — and a crash of ours is not a question of theirs.
 - **No second loop.** W7 lifted the tool loop into `platform/adapters/llm/AgentLoop.h`, where it sits
   beside the ToolHost it drives. What stays in gym is the prompt and what the answer is made of; no
   domain code knows an Anthropic API exists. Roadmap's tend still carries its own copy of the same

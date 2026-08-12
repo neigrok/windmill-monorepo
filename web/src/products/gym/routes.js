@@ -2,8 +2,9 @@
 // composes all three through one loop. #/gym is Today, #/gym/log the log and #/gym/routines the
 // routines — three TABS and deliberately no fourth (§B cuts the Insights tab); one session, one
 // routine, one movement's record, one finished session, one proposal an agent wrote (#/gym/proposals/…,
-// the deep link its receipt hands out), the past-workout door and #/gym/ask — the chat, which is a
-// room reached from Today's band and from a proposal rather than a fourth tab (§L) — hang off those
+// the deep link its receipt hands out), the past-workout door, #/gym/ask — the chat, which is a
+// room reached from Today's band and from a proposal rather than a fourth tab (§L) — and
+// #/gym/connect, gym's own words around the account's grant (§D12/13), hang off those
 // (log.js holds the grammar). GymApp resolves the exact position off the hash — including
 // #/gym/shared/…, the coach's read-only workout, which is the one position here that resolves for a
 // visitor with no account at all.

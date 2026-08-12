@@ -34,7 +34,13 @@ export const gymLandingHead = {
     ],
     // The precondition, said at the door rather than behind it: gym answers a visitor with no
     // account with a sign-in pitch, and a log kept on an account is the honest reason why.
-    trust: 'Your log lives on your Windmill account — one account and one subscription across Roadmap, Journal and Gym.',
+    //
+    // IT NAMES THE ACCOUNT AND NOT A SUBSCRIPTION (W8). This line read "one account and one
+    // subscription" and was byte-identical to the landing's own ACCOUNT_LINE, which is the whole
+    // reason to keep it that way — but a subscription is a thing nobody can have: `paidPlansOpen()`
+    // is a hardcoded false and BillingApi 503s a checkout. The crawlable shell is the copy a visitor
+    // with no JavaScript reads, so a false line here is the one that reaches them first.
+    trust: 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.',
     notes: [
       'How it works: Log the set → It remembers → See the line.',
       'e1RM per lift over time, a link that hands one workout to your coach, and a CSV of every set.',

@@ -20,7 +20,9 @@ struct LoggerScreen: View {
     // that is different signed in. Nothing else on this screen changes with the account: logging is
     // the same act with or without one.
     let isSignedIn: Bool
-    let onBuildRoutine: () -> Void
+    // nil while something already reaches this log: the card is an invitation, and the room
+    // withdraws it the moment it would be selling a connection the lifter has already made.
+    let onBuildRoutine: (() -> Void)?
     // The room bar's leading slot, lent to this screen. Both writes the logger can make happen behind
     // a sheet that closes either way, and a write that did not land is the one thing a room may not
     // draw as though it had.

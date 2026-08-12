@@ -248,6 +248,9 @@ TEST(the_iteration_cap_is_a_failure_and_names_its_own_number) {
   CHECK_EQ(outcome.text, std::string(""));
   CHECK_EQ(outcome.error, std::string("hit the 4-iteration cap without the model finishing"));
   CHECK_EQ(model.requests.size(), 4u);  // stopped at the cap, not one more
+  // …and every one of those four was billed. This is the most expensive way a run can fail, so a
+  // caller rationing questions has to be able to tell it from a run that reached nobody.
+  CHECK_EQ(outcome.modelTurns, 4);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0],
            std::string("test.run | hit the 4-iteration cap without the model finishing"));
@@ -265,7 +268,45 @@ TEST(a_model_that_stopped_early_is_a_failure_and_the_half_answer_is_dropped) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.text, std::string(""));
   CHECK_EQ(outcome.error, std::string("the model stopped early (stop_reason: max_tokens)"));
+  CHECK_EQ(outcome.modelTurns, 1);  // it answered, at length, and then ran out of room: billed
   REQUIRE_EQ(rec.failures.size(), 1u);
+}
+
+// WHAT A RUN COST, WHICH `ok` DOES NOT SAY. Every failure below reaches a person as the same
+// nothing-came-back, and they are not the same fact to whoever is holding a budget: a reply that
+// arrived was billed however unusable it turned out to be, and a call that never returned one was
+// not. Gym's daily ration reads exactly this to decide whether a failed question is given back.
+TEST(the_run_counts_the_vendor_turns_it_actually_completed) {
+  FakeToolHost host;
+  host.catalog.push_back(ToolDeclaration{mcpTool("get_stats", "The long view."), "gym", Access::read});
+
+  // Two paid turns and an answer: the tool round trip, then the sentence.
+  FakeModel answered;
+  answered.replies.push_back(toolUseReply("get_stats", "toolu_1"));
+  answered.replies.push_back(textReply("end_turn", "Bench held at 82.5."));
+  Recorder rec;
+  CHECK_EQ(driveAgentLoop(spec("how is bench?"), host, kCaller, answered.asCall(), rec.report())
+               .modelTurns,
+           2);
+
+  // A reply came back and was unreadable — the vendor still billed for it.
+  FakeModel garbled;
+  garbled.replies.push_back(Json::Value(Json::objectValue));
+  CHECK_EQ(driveAgentLoop(spec("how is bench?"), host, kCaller, garbled.asCall(), rec.report())
+               .modelTurns,
+           1);
+
+  // Nothing came back at all — a dead upstream, or the fuse refusing to call. Free.
+  FakeModel dead;
+  CHECK_EQ(
+      driveAgentLoop(spec("how is bench?"), host, kCaller, dead.asCall(), rec.report()).modelTurns,
+      0);
+
+  // …and a run that never reached the vendor never counted one.
+  AgentLoopSpec bare = spec("unused");
+  bare.messages = Json::Value(Json::arrayValue);
+  FakeModel untouched;
+  CHECK_EQ(driveAgentLoop(bare, host, kCaller, untouched.asCall(), rec.report()).modelTurns, 0);
 }
 
 TEST(an_answer_that_said_nothing_is_refused_when_one_was_required) {

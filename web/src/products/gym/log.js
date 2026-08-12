@@ -16,7 +16,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // #/gym/movement/… one movement's record, #/gym/routines/rt_… one routine's editor,
 // #/gym/session/ses_… one session, #/gym/finish/ses_… the end of the one just closed,
 // #/gym/backfill the past-workout form, #/gym/proposals/prop_… one proposal read as a diff,
-// #/gym/ask the chat onto the log (§L), #/gym/shared/… one workout as a coach reads it.
+// #/gym/ask the chat onto the log (§L), #/gym/connect the connected log (§D12/13),
+// #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
 // never drift.
 export function sessionIdOf(hash) {
@@ -62,6 +63,13 @@ export const BACKFILL_HREF = '#/gym/backfill';
 // rooms, and a chat is not a place you live. It carries no id because it is about the LOG and not
 // about one workout, which is the whole difference between it and the panel it replaces.
 export const ASK_HREF = '#/gym/ask';
+
+// THE CONNECTED LOG (§D12/13) — gym's own words around a grant the ACCOUNT owns, so it is a position
+// in gym rather than a link straight out to the shell's workbench: the workbench is written for
+// skill trees, and a lifter who tapped "Connected log" in their training settings asked what an
+// agent may do to their TRAINING. It carries no id for the same reason Ask carries none — it is
+// about the log, not about one workout.
+export const CONNECT_HREF = '#/gym/connect';
 
 // ONE PROPOSAL, READ AS A DIFF (§D14). The id is minted by whoever wrote the proposal — an agent
 // over MCP — and the deep link in its receipt is this URL, so the parse has to take the whole id
@@ -121,6 +129,7 @@ export function screenOf(hash) {
   if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
   if (/^#\/gym\/ask(\/|$|\?)/.test(hash || '')) return 'ask';
+  if (/^#\/gym\/connect(\/|$|\?)/.test(hash || '')) return 'connect';
   // #/gym/stats WAS the statistics tab, and §H retires it: there is no dashboard in this product,
   // and what replaces it is one movement's page. The old URL resolves here rather than falling
   // through to Today, because somebody who kept it wanted a number about a movement and this is the

@@ -34,10 +34,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Units
@@ -57,14 +59,28 @@ import works.windmill.platform.design.WindmillSpace
 // value on the next frame whether or not there is an account behind it. What the log refuses is
 // SAID through the room's own note; what the log never answers is kept and carried by the claim.
 //
-// TWO OF §I'S ROWS ARE NOT HERE, and they are absent rather than faked. `Export` needs a route that
-// answers CSV rather than JSON, which this app's one API client cannot read; `Connected log` names
-// an MCP grant state no native surface can read yet. A row that opened nothing would be the exact
-// dishonest control this wave was written to refuse, so the closing note says where both live
-// instead.
+// ONE OF §I'S ROWS IS STILL NOT HERE, and it is absent rather than faked: `Export` needs a route
+// that answers CSV rather than JSON, which this app's one API client cannot read. A row that opened
+// nothing would be the exact dishonest control this section was written to refuse, so the closing
+// note says where it lives instead.
+//
+// `CONNECTED LOG` IS HERE NOW (W8), and what it draws is the honest half of §D screen 13: what a
+// connected tool may do to this log, what it may not, and a door onto the account's own list of
+// connections, which is where Disconnect lives. What it does NOT draw is the design's named clients
+// each wearing
+// `connected · read 2h ago` — those connections belong to the ACCOUNT, gym does not read them, and a
+// row inventing a freshness it never observed is the same defect as a receipt counting rows it never
+// served. The row says it names none, which is the true version of the same sentence.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(store: TrainingStore, backLabel: String, onBack: () -> Unit, say: (String?) -> Unit) {
+fun SettingsScreen(
+    store: TrainingStore,
+    isSignedIn: Boolean,
+    origin: String,
+    backLabel: String,
+    onBack: () -> Unit,
+    say: (String?) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
     var typingBar by remember { mutableStateOf(false) }
@@ -108,6 +124,7 @@ fun SettingsScreen(store: TrainingStore, backLabel: String, onBack: () -> Unit, 
             onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
             onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
         )
+        ConnectedLogRow(isSignedIn, origin)
         ClosingNote()
     }
 
@@ -321,9 +338,89 @@ private fun ConfirmRow(
     }
 }
 
+// ROW 5 — THE CONNECTED LOG, and the only row in this section that changes nothing at the rack. It
+// is here because §I puts it here and because this is where a lifter comes looking for it: both
+// verbs the design hangs on it, connecting and disconnecting, happen on the web, so the row is what
+// gym has to say about a grant it does not own, plus the door.
+//
+// THE DOOR GOES TO THE CONNECTIONS LIST AND NOT TO THE SETUP PAGE, because that is where the two
+// things a lifter opens this row for actually are: what is connected right now, and Disconnect. §D
+// sends them to "Settings → Gym → Connected log" for that, and no such control exists on any
+// surface — the list is the SHELL's, in account settings, since a grant belongs to the account
+// rather than to one product. Setting a NEW one up is the invitation's door (ConnectInvitation), and
+// the page this one opens carries its own way there.
+//
+// NOTHING ON IT IS SOLD. There is no price, no tier, no lock and no checkout behind the chevron —
+// no entitlement gates a tool, a screen or a tap in this product (the plan is read once, under Ask,
+// and only to size a ceiling — ConnectedLog says where), so a row implying one would advertise
+// something the code does not do. `ConnectedLog` holds every sentence and says which line of the
+// server's tool catalog each one was read off.
+//
+// SIGNED OUT IT IS STILL DRAWN, and it gains one line rather than losing the rest. What a connected
+// tool can and cannot do is a fact about this product either way; what changes is that there is no
+// account log to reach yet, and this room is anonymous-first, so that is said plainly instead of
+// left for a lifter to discover on a page that asks them to sign in.
+@Composable
+private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
+    // Told to fail QUIETLY, as every other door onto the web in this room is: a phone with no
+    // browser is the only way this misses, and everything the row says is still true without it.
+    val web = LocalUriHandler.current
+    SettingCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .clickable { runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) } },
+        ) {
+            Text(ConnectedLog.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+            Spacer(Modifier.weight(1f))
+            Text("your connections  ›", style = GymType.numeral(13), color = GymSkin.accent)
+        }
+        Text(
+            ConnectedLog.free,
+            style = GymType.numeral(12).copy(lineHeight = 18.sp),
+            color = GymSkin.inkDim,
+        )
+        if (!isSignedIn) Caption(ConnectedLog.deviceOnly)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(GymSkin.canvas, RoundedCornerShape(WindmillRadius.md))
+                .padding(WindmillSpace.x3),
+        ) {
+            Text(
+                ConnectedLog.canDoHead,
+                style = GymType.numeral(10, FontWeight.Bold),
+                color = GymSkin.setDone,
+            )
+            Text(
+                ConnectedLog.canDo,
+                style = WindmillFont.body(13).copy(lineHeight = 20.sp),
+                color = GymSkin.inkDim,
+            )
+            Text(
+                ConnectedLog.cannotDoHead,
+                style = GymType.numeral(10, FontWeight.Bold),
+                color = GymSkin.alarmInk,
+                modifier = Modifier.padding(top = WindmillSpace.x2),
+            )
+            Text(
+                ConnectedLog.cannotDo,
+                style = WindmillFont.body(13).copy(lineHeight = 20.sp),
+                color = GymSkin.inkDim,
+            )
+        }
+        Caption(ConnectedLog.deleteLevel)
+        Caption(ConnectedLog.whereItLives)
+        Caption(ConnectedLog.notNamedHere)
+    }
+}
+
 // The closing note §I ends on, saying where everything this section deliberately does not hold
-// lives — plus the two of its own rows this surface has not built, named rather than drawn as
-// doors that open nothing.
+// lives — plus the one of its own rows this surface has not built, named rather than drawn as a
+// door that opens nothing.
 @Composable
 private fun ClosingNote() {
     Column(
@@ -339,8 +436,11 @@ private fun ClosingNote() {
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )
+        // THE CONNECTED LOG CAME OUT OF THIS SENTENCE IN W8 and into a row of its own, so what is
+        // left is the export — still a web page, and still not drawn as a door here, because this
+        // app's one API client reads JSON and the export route answers CSV.
         Text(
-            "Your CSV export and the connected-log grant are on the web for now — neither is built on this phone yet, so neither is drawn here as a door.",
+            "Your CSV export is a web page for now — it has no screen on this phone yet, so it is not drawn here as a door.",
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )

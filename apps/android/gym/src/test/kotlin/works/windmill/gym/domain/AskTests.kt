@@ -192,6 +192,57 @@ class AskTests {
         assertEquals("get_stats · no answer", AskStep("get_stats", failed = true).line)
     }
 
+    // A STEP IS A NAME, so a step with no name is not one. Defaulted to the empty string it would
+    // draw as a blank row under an answer, or as a bare " · no answer" — a tool call the lifter is
+    // shown and cannot identify. Required, the reply fails the read and the room says nobody
+    // answered, which is the same rule the receipt above lives under and the same one the iOS room
+    // decodes this field by.
+    @Test
+    fun aStepWithNoNameIsNotAStep() {
+        assertEquals(
+            listOf(AskStep("get_stats"), AskStep("last_time", failed = true)),
+            WindmillJson.decodeFromString(
+                AskAnswer.serializer(),
+                """{"answer":"bench is flat.","read":{"sets":1,"sessions":1,"weeks":1},""" +
+                    """"steps":[{"tool":"get_stats"},{"tool":"last_time","failed":true}]}""",
+            ).steps,
+        )
+
+        assertThrows(SerializationException::class.java) {
+            WindmillJson.decodeFromString(
+                AskAnswer.serializer(),
+                """{"answer":"a","read":{"sets":1,"sessions":1,"weeks":1},"steps":[{"failed":true}]}""",
+            )
+        }
+    }
+
+    // WHOSE THREAD THIS IS, and the frame that made the naive answer wrong. `/v1/me` has not
+    // answered on the first pass of every launch — the one after an activity recreation included,
+    // where the saved thread is already back — so a null seat there is the app not knowing yet and
+    // never a different lifter. Read as a change, it would empty the conversation on every restart
+    // and make the saver, the interrupted question and its retry unreachable code.
+    @Test
+    fun aSeatNobodyHasReadYetIsNotAChangeOfLifter() {
+        assertFalse("the frame before /v1/me answers, with u1's thread restored",
+            Ask.handedOver("u1", standing = null, known = false))
+        assertFalse("and then it answers, and it is the same lifter",
+            Ask.handedOver("u1", standing = "u1", known = false))
+        assertFalse("nobody has ever signed in on this install",
+            Ask.handedOver("", standing = null, known = false))
+    }
+
+    // AND THE HAZARD THE RULE EXISTS FOR IS STILL CLOSED. Once the room has met the lifter, an empty
+    // seat is a real sign-out and a different id is a different person — both take the thread, which
+    // is somebody's own training read out loud.
+    @Test
+    fun aSeatTheRoomHasReadTakesTheThreadWithIt() {
+        assertTrue("signed out with the room already standing",
+            Ask.handedOver("u1", standing = null, known = true))
+        assertTrue("somebody else signed in", Ask.handedOver("u1", standing = "u2", known = false))
+        assertTrue("and the first sign-in of a room that opened anonymous",
+            Ask.handedOver("", standing = "u1", known = false))
+    }
+
     // THE RECEIPT IS NOT OPTIONAL. A body with no `read` in it is not an answer this room may draw:
     // defaulted to zeros it would print "read nothing from your log", which is a claim ABOUT THE LOG
     // made out of a missing field. Required, the parse fails and the room says nobody answered.

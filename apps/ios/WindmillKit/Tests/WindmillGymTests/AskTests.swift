@@ -360,11 +360,17 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertTrue(Ask.subtitle.contains("proposes only"))
     }
 
+    // AND IT NAMES THE SAME TOOLS THE DOOR IT OPENS NAMES. `Ask.connect` pushes the room's
+    // invitation, whose precondition lists what web/src/shell/connect/ConnectPage.jsx actually
+    // carries a recipe for — Claude Desktop, Claude Code, Cursor, Codex, any MCP client, and nothing
+    // for ChatGPT. Two lists on one surface is how a promise gets made that no page keeps.
     func testTheEmptyStatePointsAtTheFreeDoor() {
-        XCTAssertTrue(Ask.freeDoor.contains("Claude or ChatGPT"))
-        XCTAssertTrue(Ask.freeDoor.contains("connect them instead"))
+        XCTAssertTrue(Ask.freeDoor.contains("Claude, Cursor, Codex or anything else that speaks MCP"))
+        XCTAssertTrue(Ask.freeDoor.contains("connect it instead"))
         XCTAssertTrue(Ask.freeDoor.contains("it’s free"))
         XCTAssertTrue(Ask.freeDoor.contains("it knows the rest of your life"))
+        XCTAssertFalse(Ask.freeDoor.contains("ChatGPT"))
+        XCTAssertFalse(ConnectedLog.precondition.contains("ChatGPT"))
     }
 
     // What is promised under a proposal in the stream, before the lifter has walked to the diff.

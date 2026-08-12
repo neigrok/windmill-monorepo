@@ -33,6 +33,12 @@ namespace wm::gym {
 //   to it that no tool at any level edits or deletes a logged set, so this narrowing does not stand
 //   alone either.
 //
+// THIS IS THE ONLY LOCK ON THE ASK DOOR, and saying otherwise would be the comfortable lie. The
+// ToolScope AskService names at its call site is gym's own three levels against a host that does not
+// gate, so it stops nothing gym publishes; it says who Ask acts as, and it is read HERE — both in
+// the catalog `listTools` filters and in `callTool` — so that narrowing it later takes tools away in
+// fact and not only on paper. One lock that obeys the grant beats two that were only ever counted.
+//
 // It also OBSERVES, which is the second half of its job and the reason it is a class rather than a
 // filter: what the run actually read (`read()`) and what it actually minted (`proposals()`) are facts
 // the server holds, and both are printed to the lifter. Neither is ever taken from the model's prose.
@@ -112,10 +118,11 @@ constexpr double kAskBackToBack = 3.0;
 // household behind one address should not share a ration.
 //
 // It is gym's own rather than platform's `RateLimiter`, and the one operation that limiter cannot
-// offer is the whole reason: a run the vendor never answered has to be GIVEN BACK. Three dead
-// upstreams used to spend a lifter's whole burst and then tell them — in the cap's own copy, the one
-// sentence this product rules must be plainly honest — that they had used the day's questions,
-// having been answered none of them.
+// offer is the whole reason: a run that reached nobody has to be GIVEN BACK. Three dead upstreams
+// used to spend a lifter's whole burst and then tell them — in the cap's own copy, the one sentence
+// this product rules must be plainly honest — that they had used the day's questions, having been
+// answered none of them. The test for that is `AskAnswer::modelTurns`, which is what a run COST, and
+// not `ok`, which is only whether it landed: a cap hit after eight billed turns is charged.
 // The platform limiter is an IP brake at the HTTP edge with no way to return a token, and its idle
 // sweep would hand a whole fresh burst to anyone who waited five minutes; the REQUEST beside this
 // wave is a `giveBack` there, after which this collapses into it.
@@ -123,8 +130,10 @@ class AskRation {
 public:
   // One of today's questions, or false when the account has spent them.
   bool take(const std::string& account);
-  // A question that reached nobody, un-spent. Clamped at full, so a stray return cannot mint a
-  // fourth question out of a burst of three.
+  // A question that COST NOTHING, un-spent — never merely one that failed. A run that burned vendor
+  // turns and then failed is charged like any other, or the ration would be waived on exactly the
+  // runs that spend the most. Clamped at full, so a stray return cannot mint a fourth question out
+  // of a burst of three.
   void giveBack(const std::string& account);
 
 private:

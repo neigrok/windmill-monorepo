@@ -109,11 +109,23 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
     return ToolResult::failure(name + ": no such tool — call tools/list for what Ask may do.");
   if (declared->access != Access::read && !mintsProposal(name))
     // The sentence the model reads is the sentence the lifter reads back, because §L's refusal is
-    // said out loud and hands the job over rather than failing quietly.
+    // said out loud and hands the job over rather than failing quietly. It is asked FIRST, before the
+    // grant below, so what Ask refuses is answered with Ask's own sentence at every grant there is —
+    // a tool this door never offers is never a story about levels.
     return ToolResult::failure(name +
                                ": Ask reads the log and proposes; it cannot change what a lifter "
                                "logged. Tell them that one is theirs to change, and name the workout "
                                "and the movement so they can find it.");
+  // THE GRANT, CHECKED WHERE THE CALL IS AND NOT ONLY WHERE THE CATALOG IS. `listTools` has always
+  // filtered by the caller's scope; this door executed without ever reading it, so the two halves of
+  // one rule disagreed — narrow the scope and the tool vanished from the catalog while the call still
+  // ran. Ask hands itself the full gym grant today, so nothing was reachable through the gap; what it
+  // was, was a trap for the first person to narrow that scope, which is precisely what arming the One
+  // gate or dropping `del` to take propose_routine_removal away would do. It is the composite's
+  // sentence over MCP, said here for the door that does not pass through it.
+  if (!caller.scope.allows(declared->product, declared->access))
+    return ToolResult::failure(name + ": this connection was not granted " + declared->product + ":" +
+                               toString(declared->access) + ", so it cannot run this tool.");
   if (std::optional<std::string> unknown =
           unknownArgument(declared->descriptor["inputSchema"], arguments))
     return ToolResult::failure(name + ": " + *unknown);
@@ -193,9 +205,14 @@ void AskService::ask(const UserId& caller, const std::string& email, std::vector
       [this, caller, turns = std::move(turns), done = std::move(done)]() mutable {
         // THE GRANT, SAID OUT LOUD AT THE CALL SITE. Ask acts as the signed-in account, and the three
         // levels are named one by one rather than taken as `everything()` — so a fourth level, or a
-        // second product, never rides along on a token nobody widened. What the model actually SEES
-        // is narrower still: AskTools hands it the reads and the two proposal mints, and the levels
-        // here are only what lets those two through the catalog filter.
+        // second product, never rides along on a token nobody widened.
+        //
+        // BUT IT IS NOT THE LOCK, AND IT WOULD BE DISHONEST TO READ IT AS ONE: gym's tool host does
+        // not gate, so this scope narrows nothing gym publishes — all three levels are gym's own, and
+        // there is no second product on this host for it to keep out. The whole ceiling is `AskTools`
+        // below, which offers the reads and the two proposal mints and refuses everything else, and
+        // which reads THIS scope on the way past so a narrower one would take tools away for real.
+        // What the three levels buy today is that: honest wiring, and a lock that already obeys it.
         const ToolCaller actor{caller, ToolScope({{"gym", Access::read},
                                                   {"gym", Access::write},
                                                   {"gym", Access::del}})};
@@ -214,11 +231,21 @@ void AskService::ask(const UserId& caller, const std::string& email, std::vector
           LOG_ERROR << "gym ask run threw: " << failed.what();
           reply.answer = AskAnswer{false, "", failed.what(), {}};
         }
-        // A RUN THAT NEVER ANSWERED IS NOT ONE OF THE DAY'S QUESTIONS. `ok` false is a dead upstream,
-        // an early stop, a cap hit mid-loop — the lifter reads "Ask didn't answer" (AskApi.cpp) and
-        // has nothing. Charging them for it would make the cap's own copy false: three outages in a
-        // row used to leave a lifter with zero answers and the sentence that they had used the day.
-        if (!reply.answer.ok) perAccount_.giveBack(caller.str());
+        // A RUN THAT REACHED NOBODY IS NOT ONE OF THE DAY'S QUESTIONS — AND THE TEST IS WHETHER IT
+        // COST ANYTHING, NOT WHETHER IT ANSWERED. Three dead upstreams used to spend a lifter's whole
+        // burst and then tell them, in the cap's own copy, that they had used the day having been
+        // answered nothing; that is what `modelTurns == 0` gives back — a fuse trip, a wedged vendor,
+        // a log we could not open, all of them before a token was billed.
+        //
+        // What is NOT given back is the failure that spent: hitting the iteration cap costs eight
+        // metered turns and stopping at max_tokens costs one, and both reach the lifter as the same
+        // "Ask didn't answer". Refunding those made the cap's OWN copy the false one — "about ten
+        // questions a day" never bit on the most expensive runs the product has, because the runs
+        // that burn the most turns are exactly the ones that end without an answer.
+        //
+        // A run that THREW is given back whatever it spent: the count died with the stack, and a
+        // crash of ours is not a question of theirs.
+        if (reply.answer.modelTurns == 0) perAccount_.giveBack(caller.str());
         reply.read = hands.read().tally();
         reply.proposals = hands.proposals();
         done(std::move(reply));

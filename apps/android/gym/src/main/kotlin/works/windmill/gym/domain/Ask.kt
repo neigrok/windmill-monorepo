@@ -154,29 +154,29 @@ object Ask {
         "It answers about ten questions a day, three back to back — the cap that keeps Ask open to " +
             "everyone. There is nothing to buy here."
 
-    // §L's own paragraph, and the reason it is not a retreat to ship it: an in-app chat that tells
-    // you how to stop paying us costs one paragraph and is the strongest proof the connected log is
-    // real. The grant itself is a WEB PAGE — this phone has no screen for it and W7 does not build
-    // one — so the offer under this paragraph opens a browser rather than a room, which is the most
-    // a surface can honestly do about a door it does not hold.
+    // §L's own paragraph, and the reason it is not a retreat to ship it: an in-app chat that sends
+    // you somewhere better costs one paragraph and is the strongest proof the connected log is real.
+    // (§L wrote it as "how to stop paying us"; nothing in gym is paid, so what it actually points at
+    // is the door that costs us money and the lifter nothing.) The grant itself is a WEB PAGE — this
+    // phone has no screen for it and W7 does not build one — so the offer under this paragraph opens
+    // a browser rather than a room, which is the most a surface can honestly do about a door it does
+    // not hold.
+    //
+    // THE CLIENTS NAMED ARE THE ONES THE PAGE UNDER THE BUTTON ACTUALLY WALKS THROUGH. This said
+    // "Claude or ChatGPT" until W8, and the button beneath it opens `#/connect` — whose roster is
+    // Claude Desktop, Claude Code, Cursor, Codex and any other MCP client, with no ChatGPT path
+    // anywhere on it or on connect.html. That is not a claim about somebody else's product; it is a
+    // claim about what OUR setup page covers, made directly above the button that opens it, and a
+    // lifter who arrived there on the strength of the word would find nothing to follow.
     const val freeDoor =
-        "If you already use Claude or ChatGPT, connect them instead — it's free, and it's better, " +
-            "because it knows the rest of your life."
+        "If you already use Claude — or Cursor, Codex, any tool of yours that speaks MCP — connect " +
+            "it instead: it's free, and it's better, because it knows the rest of your life."
 
     const val connect = "Connect your own"
 
-    // WHERE THAT DOOR ACTUALLY IS — and it is spelled off the ACCOUNT's own origin, so a build
-    // pointed at a local server sends a lifter to that server and never to windmill.works.
-    //
-    // WHICH IS A GUESS THIS PHONE IS MAKING, AND THE SHARE LINK IS WHERE THAT GUESS IS ALREADY
-    // WRITTEN DOWN (`CoachShare.link`): this app knows where the API answers and does NOT know where
-    // the browser app is served. In production they are one host and this is exact. Against a stack
-    // where they are two — the emulator on `10.0.2.2:8088` with vite on another port — it opens the
-    // API host, which does not serve this page. The share got out of that by preferring a URL the
-    // SERVER composes and falling back to this only against an older backend; the ask reply carries
-    // no such field, so there is nothing here to prefer. A `connectUrl` on the wire would close it,
-    // and until then this is a dev-only wrong host rather than a link that opens the wrong thing.
-    fun connectUrl(origin: String): String = "${origin.removeSuffix("/")}/#/connect"
+    // WHERE THAT DOOR GOES is `ConnectedLog.setupUrl`, and it is spelled there rather than here: W8 gave
+    // the connected log a card and a settings row of its own, and one room may not hold two
+    // spellings of one address — the day the server sends a connect URL, one line moves.
 
     // Said under a proposal minted in the conversation, verbatim from the design: the apply tap
     // happens on the diff, all-or-none, and a logged set is never part of one.
@@ -273,6 +273,30 @@ object Ask {
             if (!exchange.pending) exchange
             else exchange.copy(trouble = interrupted, again = true)
         }
+    }
+
+    // WHETHER THE PHONE CHANGED HANDS UNDER A CONVERSATION — asked by the room on every pass, and a
+    // function here rather than a comparison at the call site because the two ways to get it wrong
+    // are opposite and both silent.
+    //
+    // One way is keeping a thread across a seat: every question and every answer is somebody's own
+    // training, so the next person holding this phone must not read it.
+    //
+    // The other way is what a naive comparison does, and it is the one that actually bit. `standing`
+    // is NULL while the app has not yet asked `/v1/me` — the state EVERY launch begins in, including
+    // the launch that follows the activity being recreated, where the saved thread is restored a
+    // frame before anybody knows who is signed in. Read as "nobody", that first frame empties the
+    // conversation on every restart, which is precisely the loss the saver exists to prevent: the
+    // saver, `settled` and the interrupted retry would all be unreachable code.
+    //
+    // So null is NOT nobody. Only a seat the room has actually READ can take a thread away from the
+    // seat that saved it, and `known` is what says it has been read — a fact about THIS ROOM's life,
+    // never saved beside the thread, because a saved one would restore as true and be the same bug
+    // wearing a different name. Once the room has met the lifter, an empty seat is a real sign-out
+    // and the thread goes.
+    fun handedOver(saved: String, standing: String?, known: Boolean): Boolean {
+        if (standing == null && !known) return false
+        return (standing ?: "") != saved
     }
 
     // Whether this is a question at all, asked before the send rather than after the refusal. Blank

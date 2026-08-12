@@ -43,8 +43,10 @@ Everything above the "Gym" heading is **roadmap's** narrative. Journal's design 
 > and still is: since 2026-08-09 it asks a per-user AI COST ceiling, which is a spend brake and not
 > an entitlement, and skips an over-budget user for that pass rather than failing them),
 > and journal's Talk (`VoiceApi.cpp:26`, the one hard refusal). **Superseded 2026-08-07:** there is
-> a fourth, gym's coach panel. **Superseded 2026-08-12 (W7):** that panel became Ask, which reads no
-> entitlement at all — gym reads `hasWindmillOne` nowhere today. What is still true is the *restraint*: no
+> a fourth, gym's coach panel. **Superseded 2026-08-12 (W7):** that panel became Ask, and gym now
+> GATES nothing on the plan — no route, tool or screen is withheld from a free lifter. One read
+> survives and it is a budget rather than a gate: Ask's monthly AI spend ceiling comes from
+> `aiAllowanceFor`, which picks the pro or free allowance off `hasWindmillOne`. What is still true is the *restraint*: no
 > price is open
 > (`paidPlansOpen()` in `web/src/shell/billing/checkout.js` still returns `false` — the constant
 > `PAID_PLANS_OPEN` this line used to name is gone, see the shell-inversion note below), and no
@@ -475,7 +477,7 @@ Whether to move it is an open product decision; until it is taken, no surface ma
 log.
 
 **Amended again 2026-08-12 (W7).** The open decision above was taken, and not either way it was
-posed: gym now reads `hasWindmillOne` **nowhere**. The coach panel became **Ask**, and Ask ships
+posed: gym now GATES nothing on the plan. The coach panel became **Ask**, and Ask ships
 open to everyone behind a stated daily cap rather than behind the paid line — because Windmill One
 cannot be bought (`paidPlansOpen()` is false, `BillingApi` 503s), and a locked chat offering an
 upgrade would advertise a checkout that answers 503. The gate is one predicate away, at
@@ -798,8 +800,11 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
   tools and gym opened on 2026-08-08 with the claim true. The residue is the connect surface for a
   lifter with no agent of their own (gym `ARCHITECTURE.md`, phase 2). **One correction the thesis
   above still needs:** the connected log is FREE. Nothing in gym's MCP stack reads an entitlement;
-  gym reads `hasWindmillOne` nowhere at all since W7 (2026-08-12): the in-app panel became Ask, and
-  Ask ships open behind a stated daily cap rather than behind a paid line nobody can buy.
+  gym gates nothing on the plan since W7 (2026-08-12): the in-app panel became Ask, and Ask ships
+  open behind a stated daily cap rather than behind a paid line nobody can buy. The one read that
+  survives is a BUDGET and not a gate — `AskService` asks `aiAllowanceFor`, which picks the pro or
+  free monthly AI allowance off `hasWindmillOne`. A free lifter is refused no feature; they are
+  simply metered against the free ceiling, which is the same shape journal's echo sweep already uses.
 - **Exercise identity is the bug we must not inherit.** Root of Lift's mid-workout crash, its
   duplicate-name collapse, its rename-forks-history behaviour, and its coach's exact-string failures.
   It costs one column now and a migration across every set ever logged later.

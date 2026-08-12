@@ -24,11 +24,12 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Switch } from '../../../design-system';
+import { listMcpKeys } from '../../../shell/auth/McpKeyClient.js';
 import { listGrants } from '../../../shell/auth/OAuthClient.js';
-import { readScope } from '../../../shell/auth/scopes.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
+import { connectedLabel, connectionsToTheLog, NOTHING_CONNECTED } from '../connect/connect.js';
 import { EXPORT_HREF, gymApi } from '../gymApi.js';
-import { fmtKg, shortDayLabel } from '../log.js';
+import { CONNECT_HREF, fmtKg } from '../log.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
 import { finestStepKg } from './plates.js';
 import {
@@ -177,44 +178,56 @@ export function GymSettingsSection({ api = gymApi } = {}) {
 export default GymSettingsSection;
 
 // THE ROW THAT NAMES THE GRANT STATE, and it names it rather than owning it: the grant itself lives
-// once, in the shell's own Connected tools section and the /connect workbench, so this reads which
-// tools reach the training log and walks there. Rebuilding a revoke here would be a second door onto
-// one decision.
+// once, in the shell's own Connected tools section, so this reads which tools reach the training log
+// and walks to the room that explains what they may do to it. Rebuilding a revoke here would be a
+// second door onto one decision.
+//
+// WHERE IT WALKS CHANGED IN W8. It used to open the shell's /connect workbench directly, which is a
+// page written about skill trees — a lifter who tapped this row in their TRAINING settings asked
+// what an agent may do to their training, and got five verbs about planting roadmaps. #/gym/connect
+// is gym's own words around the same account-level grant, and the workbench is one tap on from it.
 //
 // A read that did not come back says nothing about the state. The door still stands — it is a place
 // to go, not a claim — and no sentence under it invents a connection or denies one.
+// WHICH CREDENTIALS REACH THE LOG IS ONE RULE AND IT IS NOT THIS FILE'S. It was written out here —
+// read the scope, keep the legacy account-wide grant, keep anything naming gym — and the room this
+// row walks to needs exactly the same answer. Two copies of a predicate about what a token can reach
+// is two chances for one of them to start saying a connection is absent while it is reading; so the
+// rule lives once, beside the words that describe it (connect/connect.js), and it takes BOTH doors:
+// an approved OAuth grant and a static personal key, which is minted account-wide and reads, writes
+// and deletes in gym without ever appearing in a grant row.
+//
+// Both reads or neither, for the same reason the room takes them together: "no tool reads your log"
+// is an assertion, and half an answer to it is a wrong one rather than a smaller one.
 function ConnectedLog() {
-  const [grants, setGrants] = useState(null);
+  const [connections, setConnections] = useState(null);
 
   useEffect(() => {
     let live = true;
-    listGrants()
-      .then((rows) => { if (live) setGrants(rows.filter(reachesTheLog)); })
+    Promise.all([listGrants(), listMcpKeys()])
+      .then(([grants, keys]) => { if (live) setConnections(connectionsToTheLog(grants, keys)); })
       .catch(() => {});
     return () => { live = false; };
   }, []);
 
   return (
-    <a href="#/connect" style={{ ...look.door, borderColor: 'var(--color-brand)' }}>
+    <a href={CONNECT_HREF} style={{ ...look.door, borderColor: 'var(--color-brand)' }}>
       <span style={look.doorMain}>
         <span style={{ ...styles.primaryText, color: 'var(--color-brand)' }}>Connected log</span>
-        {grants?.length > 0 && (
+        {/* The name and the day it arrived, and no freshness beside them: nothing in this system
+            records when a connection last READ this log (connect.js says which stamp exists and why
+            it is a different fact). The state line is the ROOM's — one vocabulary for one object, so
+            a personal key cannot be "minted" through one door and "connected" through the other. */}
+        {connections?.length > 0 && (
           <span style={styles.metaText}>
-            {grants.map((grant) => `${grant.name} · connected ${shortDayLabel(grant.grantedMs)}`).join('   ·   ')}
+            {connections.map((row) => `${row.name} · ${connectedLabel(row)}`).join('   ·   ')}
           </span>
         )}
-        {grants?.length === 0 && <span style={styles.metaText}>No tool reads your log yet.</span>}
+        {connections?.length === 0 && <span style={styles.metaText}>{NOTHING_CONNECTED}</span>}
       </span>
       <span aria-hidden="true" style={{ ...look.chevron, color: 'var(--color-brand)' }}>›</span>
     </a>
   );
-}
-
-// The legacy account-wide grant reaches every product, including this one — a token minted before
-// scopes existed carries an empty scope and is not a token that reaches nothing.
-function reachesTheLog(grant) {
-  const scope = readScope(grant.scope);
-  return scope.accountWide || scope.products.some((each) => each.product === 'gym');
 }
 
 function Row({ title, aside, children }) {

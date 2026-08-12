@@ -58,9 +58,23 @@ import works.windmill.platform.design.WindmillSpace
 // (`ORDER BY last_trained_ms DESC NULLS LAST`) — so the footer line is a statement about this list
 // and never a wish. It is restated here because the device's own unclaimed routines arrive after
 // the server's and would otherwise sit at the bottom whatever their last session was.
+//
+// AND IT IS WHERE THE CONNECTED LOG IS OFFERED (§D screen 12). This is the tab about the PROGRAM,
+// which is the thing a connected agent writes proposals against, so the offer stands at the foot of
+// the days it would change — one screen away from the diff it would produce. It is an invitation and
+// not a gate: it wears no lock, names no tier and no price, and leads to no checkout.
+//
+// TWO CONDITIONS, AND BOTH ARE ABOUT THE OFFER BEING TAKEABLE rather than about selling it harder.
+// Signed out it is absent, because a grant is granted against an ACCOUNT and this room's log is on
+// the device until a sign-in claims it — the same rule that withholds Ask's door and the proposal
+// card. And it sits under the LIST, which the empty state returns before ever reaching: the pitch is
+// about training already logged, and a lifter with nothing written down is being shown an exchange
+// that would come back empty.
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
+    isSignedIn: Boolean,
+    origin: String,
     onStart: (String) -> Unit,
     onOpenRoutine: (String) -> Unit,
     onOpenMovement: (String) -> Unit,
@@ -102,6 +116,8 @@ fun RoutinesScreen(
             color = GymSkin.inkFaint,
             modifier = Modifier.padding(top = WindmillSpace.x2),
         )
+
+        if (isSignedIn) ConnectInvitation(origin)
     }
 }
 

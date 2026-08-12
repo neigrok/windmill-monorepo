@@ -2,8 +2,8 @@ import Foundation
 import WindmillPlatform
 
 // ASK (§L, screens 26–27) — gym's own chat, and the SECOND DOOR onto the engine the connected log
-// already describes: same reads, same typed diffs, same tap, for the lifter who does not have a
-// Claude or a ChatGPT of their own. This file is everything Ask decides; AskScreen.swift only draws
+// already describes: same reads, same typed diffs, same tap, for the lifter who does not have an
+// assistant of their own. This file is everything Ask decides; AskScreen.swift only draws
 // it, which is why every rule worth a test is a value or a function here.
 //
 // WHAT IT IS NOT IS A COACH. It answers questions about numbers the lifter owns and it can still
@@ -237,9 +237,14 @@ public enum Ask {
     // THE LINE THAT TELLS YOU HOW TO STOP NEEDING THIS SCREEN (contract §5). An in-app chat that
     // points at the free door costs one paragraph and is the strongest proof we have that the MCP
     // thesis is real — shipping Ask without it would be the retreat.
+    //
+    // IT NAMES THE SAME LIST THE DOOR IT OPENS NAMES. This paragraph used to say "Claude or ChatGPT"
+    // and the button under it now lands on `ConnectedLog.precondition`, which drops ChatGPT because
+    // web/src/shell/connect/ConnectPage.jsx carries a recipe for Claude Desktop, Claude Code, Cursor,
+    // Codex and any MCP client and none for ChatGPT. One surface may not offer two lists.
     public static let freeDoor = """
-        If you already use Claude or ChatGPT, connect them instead — it’s free, and it’s better, \
-        because it knows the rest of your life.
+        If you already use Claude, Cursor, Codex or anything else that speaks MCP, connect it \
+        instead — it’s free, and it’s better, because it knows the rest of your life.
         """
 
     public static let connect = "Connect your own"

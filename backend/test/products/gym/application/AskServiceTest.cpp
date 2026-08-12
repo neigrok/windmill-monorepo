@@ -25,8 +25,13 @@ namespace {
 struct FakeAsk : AskAgent {
   bool wired = true;
   // A vendor that answers, or one that does not: a dead upstream, an early stop, a cap hit mid-loop —
-  // every one of them reaches the lifter as "Ask didn't answer" and none of them may cost a question.
+  // every one of them reaches the lifter as "Ask didn't answer". What decides whether it cost a
+  // question is not that, it is `turnsSpent` below.
   bool answers = true;
+  // Metered vendor round trips this run completed. Zero is a run that reached nobody — a fuse trip, a
+  // dead upstream — and anything else is a run somebody paid for, answer or no answer. One is the
+  // honest default, because a run that came back with a paragraph asked the vendor for it.
+  int turnsSpent = 1;
   // …and the harsher one: a run that throws where nothing above it catches.
   bool throwsUp = false;
   int runs = 0;
@@ -47,6 +52,7 @@ struct FakeAsk : AskAgent {
     seenCatalog = tools.listTools(caller);
     seenTurns = turns;
     AskAnswer out;
+    out.modelTurns = turnsSpent;
     for (const std::pair<std::string, Json::Value>& step : plan) {
       const ToolResult result = tools.callTool(step.first, step.second, caller);
       out.steps.push_back(AskStep{step.first, result.isError});
@@ -149,10 +155,18 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   CHECK_FALSE(holds(offered, "discard_session"));
   CHECK_FALSE(holds(offered, "revoke_share"));
 
-  std::size_t allowed = 0;
-  for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.access == Access::read || mintsProposal(tool.name())) ++allowed;
-  CHECK_EQ(offered.size(), allowed);
+  // AND THE LIST ITSELF, LITERALLY, because `mintsProposal` is a NAME PREFIX: any future `propose_*`
+  // tool at any access level joins what a model reachable by every account may call, without one line
+  // of AskService changing. That is the contract W6 chose and it is the right one — no `propose_`
+  // tool lands anything — but it has to stay a decision. A tenth name here fails this line, which is
+  // the conversation.
+  std::vector<std::string> names;
+  for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
+  std::sort(names.begin(), names.end());
+  CHECK_EQ(names, (std::vector<std::string>{"get_preferences", "get_session", "get_stats",
+                                            "last_time", "list_exercises", "list_routines",
+                                            "list_sessions", "propose_routine_change",
+                                            "propose_routine_removal"}));
 }
 
 // THE ONE THAT MATTERS. GymTools does not gate — over MCP the grant was settled above it — so if Ask
@@ -176,6 +190,43 @@ TEST(ask_tools_refuse_a_write_tool_even_when_the_arguments_are_perfect) {
 
   CHECK(hands.callTool("share_session", sessionArgs(h.session), actor).isError);
   CHECK(h.repo.shares.empty());  // no coach link was minted behind the lifter's back
+}
+
+// THE CATALOG AND THE CALL READ THE SAME GRANT. `listTools` has always filtered by the caller's
+// scope; `AskTools::callTool` did not read it at all, so a narrowed grant took the tool out of the
+// catalog and ran it anyway. Nothing was reachable through that gap — Ask hands itself gym's whole
+// grant — but arming the One gate, or dropping `del` to take propose_routine_removal away, is exactly
+// the narrowing that would have found it.
+TEST(ask_tools_refuse_a_tool_the_callers_grant_does_not_reach) {
+  Harness h;
+  AskTools hands(h.gymTools);
+  const ToolCaller ungranted{h.lifter, ToolScope{}};  // grants nothing, the fail-closed default
+
+  CHECK_EQ(hands.listTools(ungranted).size(), 0u);  // the catalog says nothing is reachable…
+  const ToolResult refused =
+      hands.callTool("list_sessions", Json::Value(Json::objectValue), ungranted);
+  REQUIRE(refused.isError);  // …and the call agrees, which is the half that was missing
+  CHECK(refused.content[0]["text"].asString().find("was not granted gym:read") != std::string::npos);
+  CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
+
+  // …and a grant that reaches the reads but not `del` keeps the removal mint out of both halves.
+  const ToolCaller readOnly{h.lifter, ToolScope({{"gym", Access::read}, {"gym", Access::write}})};
+  CHECK_FALSE(hands.callTool("list_sessions", Json::Value(Json::objectValue), readOnly).isError);
+  const ToolResult removal =
+      hands.callTool("propose_routine_removal", Json::Value(Json::objectValue), readOnly);
+  REQUIRE(removal.isError);
+  CHECK(removal.content[0]["text"].asString().find("was not granted gym:delete") !=
+        std::string::npos);
+
+  // What Ask refuses on its OWN terms is refused in Ask's own words at every grant there is, because
+  // a tool this door never offers is not a story about levels: the lifter reads this sentence back.
+  const ToolCaller widest{h.lifter, ToolScope::everything()};
+  for (const ToolCaller& actor : {ungranted, readOnly, widest})
+    CHECK(hands.callTool("discard_session", sessionArgs(h.session), actor)
+              .content[0]["text"]
+              .asString()
+              .find("theirs to change") != std::string::npos);
+  CHECK(h.log.detail(h.lifter, h.session).has_value());
 }
 
 TEST(ask_tools_refuse_a_name_no_catalog_holds) {
@@ -414,6 +465,7 @@ TEST(the_daily_limit_refuses_the_fourth_question_in_a_burst) {
 TEST(a_run_the_vendor_never_answered_gives_the_question_back) {
   Harness h;
   h.agent.answers = false;
+  h.agent.turnsSpent = 0;  // the fuse tripped, or the upstream never picked up: nothing was billed
 
   for (int attempt = 0; attempt < 3; ++attempt) {
     const AskReply dead = h.question(asked("how did the squats go?"));
@@ -422,11 +474,32 @@ TEST(a_run_the_vendor_never_answered_gives_the_question_back) {
   }
 
   h.agent.answers = true;
+  h.agent.turnsSpent = 1;
   const AskReply answered = h.question(asked("how did the squats go?"));
 
   CHECK(answered.refusal == AskRefusal::none);
   CHECK(answered.answer.ok);
   CHECK_EQ(h.agent.runs, 4);
+}
+
+// …AND A FAILURE THAT SPENT IS CHARGED LIKE ANY OTHER QUESTION. The two failures that cost the most
+// are the two that answer nobody: the 8-iteration cap bills eight turns and a `max_tokens` stop bills
+// one, and both reach the lifter as "Ask didn't answer". W7 first shipped a refund on every `ok ==
+// false`, which waived the stated cap on exactly the most expensive runs the product has — twelve
+// asks, ninety-six billed turns, and a ration that never bit.
+TEST(a_failure_that_burned_vendor_turns_still_costs_one_of_the_days_questions) {
+  Harness h;
+  h.agent.answers = false;
+  h.agent.turnsSpent = 8;  // the iteration cap: eight metered round trips, no answer
+
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    const AskReply spent = h.question(asked("tell me everything"));
+    CHECK(spent.refusal == AskRefusal::none);
+    CHECK_FALSE(spent.answer.ok);
+  }
+
+  CHECK(h.question(asked("and once more")).refusal == AskRefusal::dailyLimit);
+  CHECK_EQ(h.agent.runs, 3);
 }
 
 // AND A RUN THAT THREW TAKES NOTHING WITH IT. Nothing sits above a worker loop to catch an exception,

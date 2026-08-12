@@ -44,10 +44,9 @@ import kotlinx.serialization.builtins.ListSerializer
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
@@ -259,7 +258,7 @@ private fun Opening(origin: String) {
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                    .clickable { runCatching { web.openUri(Ask.connectUrl(origin)) } },
+                    .clickable { runCatching { web.openUri(ConnectedLog.setupUrl(origin)) } },
             ) {
                 Text(Ask.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
             }
@@ -353,9 +352,10 @@ private fun Answer(
 // what it would do in the routine's own grammar, and the one door onto the diff where the tap
 // happens. Three rows at most, because this is a summons to the decision and not the decision.
 //
-// It is the SAME OBJECT the routines list and Today carry, drawn one size smaller here, and the
-// numbers in it are spelled by the domain that spells every other target in the room — a card that
-// formatted its own weights would be the second place in this product rounding a load.
+// It is the SAME OBJECT the routines list and Today carry, drawn one size smaller here, and every
+// word of it is the domain's: the counts, the labels and `ProposalChange.compactLine`, which is the
+// diff screen's own grammar at card size. A screen that spelled its own diff — or rounded its own
+// load — would be the second place in this product describing one change.
 @Composable
 private fun Minted(
     proposal: Proposal,
@@ -393,7 +393,7 @@ private fun Minted(
                         maxLines = 1,
                         modifier = Modifier.width(96.dp),
                     )
-                    Text(compactLine(change), style = GymType.numeral(12), color = GymSkin.inkDim)
+                    Text(change.compactLine, style = GymType.numeral(12), color = GymSkin.inkDim)
                 }
             }
             if (proposal.drawn.size > 3) {
@@ -420,19 +420,6 @@ private fun Minted(
             Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
         }
         Text(Ask.promise, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
-    }
-}
-
-// One line of the diff at card size, in the same grammar the diff screen uses one size up: what the
-// line would end up asking for, and what it asked for before. `Proposal.asks` is the routine card's
-// own spelling, so a load reads the same here as it does everywhere else in the room.
-private fun compactLine(change: ProposalChange): String = when (change.kind) {
-    ChangeKind.Added -> change.after?.let { "+ added · ${Proposal.asks(it)}" } ?: "+ added"
-    ChangeKind.Removed -> "− ${change.removedLine}"
-    else -> {
-        val after = change.after ?: change.before
-        val asked = after?.let { Proposal.asks(it) } ?: "no targets"
-        change.before?.takeIf { change.after != null }?.let { "${Proposal.asks(it)} → $asked" } ?: asked
     }
 }
 

@@ -201,14 +201,23 @@ fun GymRoom(account: Account) {
     // A STACK AND NOT A SLOT, because §H's premise makes one pushed screen reach another: an
     // exercise name inside a past session lands on that movement's record, and a way back that
     // named the tab from there would be a chevron skipping the screen it was standing on.
+    //
+    // IT IS NOT SAVED, and that is the room's oldest decision rather than an oversight this wave
+    // left standing: a recreation puts the lifter back on their tab, not back inside a pushed
+    // screen. What that costs is one tap on the way back in, and what it buys is that no screen here
+    // is ever drawn over a store that has not read the disk yet — a restored proposal, record or
+    // session would spend its first frames saying the log has no such thing. The activity survives
+    // rotation and every other configuration change on its own (`configChanges` in the manifest), so
+    // "recreated" here means the process was reclaimed. What must outlive that is saved below.
     var away by remember { mutableStateOf<List<Away>>(emptyList()) }
     var keptRoutine by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    // Saveable, and it is the one piece of this room's state that has to be: everything else is
-    // rebuilt from disk when the activity is recreated, but which tab was open exists nowhere but
-    // here — and a rotation that dropped a lifter back on Today would be the room forgetting where
-    // they were standing.
+    // Saveable, and the first of the few that have to be: the log, the queue and the rack are all
+    // read back off disk when the activity is recreated, but which tab was open exists nowhere but
+    // here — and a recreation that dropped a lifter back on Today would be the room forgetting where
+    // they were standing. (The put-off card below is the second, and the conversation with the seat
+    // it belongs to is the third.)
     var tab by rememberSaveable { mutableStateOf(Tab.Today) }
     // The one proposal Today has been asked not to draw for now. Saveable for the reason the tab is
     // — an activity recreation must not put back a card the lifter just put down — and empty rather
@@ -229,9 +238,17 @@ fun GymRoom(account: Account) {
     // on a second one has to outlive it too.
     var asking by remember { mutableStateOf(false) }
     // Which seat the thread above belongs to — the empty string for the anonymous one, which can
-    // never hold a conversation anyway. It is saved with the thread and for the same reason: a
-    // recreation must not read its own restart as a lifter changing.
+    // never hold a conversation anyway. Saved with the thread, because a thread restored without the
+    // seat it belongs to could only be read as somebody else's. Saving it is HALF the rule; the
+    // other half is the flag below, and neither works alone.
     var seat by rememberSaveable { mutableStateOf(account.user?.id ?: "") }
+    // WHETHER THIS ROOM HAS ACTUALLY MET THE LIFTER, and it is deliberately NOT saved. `account.user`
+    // is null until `/v1/me` answers, so the first frame of every launch — including the one after a
+    // recreation, where the saved thread is already restored — looks exactly like nobody being signed
+    // in. Saved, this flag would come back true and hand that first frame the authority to empty a
+    // conversation that belongs to the lifter about to be handed back. `Ask.handedOver` is where the
+    // rule is written and where it is tested.
+    var seatRead by remember { mutableStateOf(account.user != null) }
     // THIS DEPLOYMENT HAS NO ASK — a bare 404 from the route, which means the feature is absent
     // rather than that something failed. The door goes for the life of the room and is deliberately
     // NOT remembered past it: whether a server has a model configured is the server's fact, and a
@@ -283,14 +300,19 @@ fun GymRoom(account: Account) {
     LaunchedEffect(account.user?.id) {
         // A CONVERSATION BELONGS TO THE LOG IT WAS ABOUT, and this is where it changes hands: every
         // question and every answer in a thread is somebody's own training, so a phone that changed
-        // seats would be showing one lifter's numbers to the next person holding it. Compared
-        // against the seat this room last stood in — SAVEABLE, so a recreation restores the thread
-        // it belongs to rather than reading its own restart as a change of lifter.
-        val standing = account.user?.id ?: ""
-        if (standing != seat) {
+        // seats would be showing one lifter's numbers to the next person holding it.
+        //
+        // THE GHOST SEAT IS NOT A CHANGE OF LIFTER. This effect runs first at composition, when
+        // `/v1/me` has not answered and `account.user` is null for everybody — signed in, signed out
+        // and never-signed-in alike — so a bare `standing != seat` would empty the thread on the way
+        // back from every recreation and take the saver, the interrupted question and its retry with
+        // it. The rule and its two failures live in `Ask.handedOver`, where a test can stand.
+        val standing = account.user?.id
+        if (Ask.handedOver(seat, standing, seatRead)) {
             conversation = emptyList()
-            seat = standing
+            seat = standing ?: ""
         }
+        if (standing != null) seatRead = true
         // A QUESTION THE ACTIVITY WENT DOWN UNDER, settled on the way back in. The thread is saved
         // and the request is not, so a recreation mid-answer restores a question with nothing under
         // it and nothing coming — left alone it would sit there un-retryable for the life of the
@@ -597,6 +619,11 @@ fun GymRoom(account: Account) {
                 )
                 standing is Away.Settings -> SettingsScreen(
                     store = store,
+                    isSignedIn = account.isSignedIn,
+                    // The same origin the share link and Ask's free door are spelled off, and for
+                    // the same reason: the connected log's grant is a page on the server this build
+                    // talks to.
+                    origin = origin,
                     backLabel = beneath,
                     onBack = { back() },
                     say = { note = it },
@@ -660,6 +687,11 @@ fun GymRoom(account: Account) {
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
                 tab == Tab.Routines -> RoutinesScreen(
                     store = store,
+                    // §D'S INVITATION LIVES ON THIS TAB, and both of these decide whether it is
+                    // drawn rather than how: a grant is granted against an account, and the page it
+                    // is approved on is served by whichever backend this build talks to.
+                    isSignedIn = account.isSignedIn,
+                    origin = origin,
                     onStart = { routineId -> open(routineId) },
                     onOpenRoutine = { look(Away.Program(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },

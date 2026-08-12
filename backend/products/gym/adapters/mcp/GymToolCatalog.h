@@ -29,6 +29,12 @@ constexpr int kMaxLogLimit = 200;
 // a second list of names beside the catalog is the thing that drifts from it. Ask holds every read
 // plus exactly these: the safeguard ladder's middle rung (§L), and the whole of what an in-app chat
 // is allowed to reach.
+//
+// A PREFIX IS A GRANT THAT COULD GROW BY NAMING, so it is pinned where it would grow: any future
+// `propose_*` tool, at any access level, joins what a model reachable by every account may call
+// without one line of AskService changing. That is the intended contract and not an accident — no
+// `propose_` tool lands anything — but it must stay a DECISION, so `AskServiceTest` asserts Ask's
+// nine offered names literally. Add a tenth and that test fails, which is the conversation.
 inline bool mintsProposal(const std::string& toolName) {
   return toolName.rfind("propose_", 0) == 0;
 }

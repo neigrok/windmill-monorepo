@@ -262,7 +262,8 @@ struct OpeningPicker: View {
     let isSignedIn: Bool
     let onPick: (String) -> Void
     let onCreate: (String) -> Void
-    let onBuildRoutine: () -> Void
+    // The one account verb, and nil is the whole of its rule — see `agent`.
+    let onBuildRoutine: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin
     @State private var query = ""
@@ -291,29 +292,38 @@ struct OpeningPicker: View {
     }
 
     // The verb changes with the account and the sentence changes with it, because only one of them
-    // is ever true: signed out the agent needs an account, and signed in it needs the grant, which
-    // is a web page this app does not rebuild (SettingsScreen's own door says the same thing).
-    // Nothing here counts how many times the card was passed over.
+    // is ever true: signed out the agent needs an account, and signed in it needs a grant, which is
+    // made at a computer — so this card opens the page holding the recipe rather than the room's own
+    // invitation screen. It cannot open that one: the picker is drawn INSIDE a running session, and
+    // a live workout outranks every away screen, so a tap that pushed one would land on nothing.
+    //
+    // AND IT IS WITHDRAWN THE MOMENT SOMETHING ALREADY REACHES THIS LOG — the room hands `onBuild`
+    // over only while `connected.invites`, exactly as Routines gets `ConnectInvite`. An invitation
+    // to do the thing you have already done is advertising, and this is the one solicitation a
+    // lifter would meet every single session. Nothing here counts how many times it was passed over.
+    @ViewBuilder
     private var agent: some View {
-        Button(action: onBuildRoutine) {
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                Text(isSignedIn
-                     ? "Following a written program? Your agent can build the routine from it — connect it to this log."
-                     : "Following a written program? Your agent can build the routine from it — that one needs an account.")
-                    .font(WindmillFont.body(14))
-                    .foregroundStyle(skin.inkDim)
-                    .lineSpacing(3)
-                    .multilineTextAlignment(.leading)
-                Text("Build my routine →")
-                    .font(WindmillFont.body(14, .bold))
-                    .foregroundStyle(skin.accent)
+        if let onBuildRoutine {
+            Button(action: onBuildRoutine) {
+                VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+                    Text(isSignedIn
+                         ? "Following a written program? Your agent can build the routine from it — connect it to this log."
+                         : "Following a written program? Your agent can build the routine from it — that one needs an account.")
+                        .font(WindmillFont.body(14))
+                        .foregroundStyle(skin.inkDim)
+                        .lineSpacing(3)
+                        .multilineTextAlignment(.leading)
+                    Text("Build my routine →")
+                        .font(WindmillFont.body(14, .bold))
+                        .foregroundStyle(skin.accent)
+                }
+                .padding(WindmillSpace.x4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
+                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    .foregroundStyle(skin.accent))
             }
-            .padding(WindmillSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                .foregroundStyle(skin.accent))
         }
     }
 

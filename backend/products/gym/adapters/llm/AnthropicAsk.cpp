@@ -155,6 +155,7 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   outcome.ok = ran.ok;
   outcome.answer = ran.text;
   outcome.error = ran.error;
+  outcome.modelTurns = ran.modelTurns;  // what it cost, which `ok` does not say
   for (const AgentLoopStep& step : ran.steps) outcome.steps.push_back(AskStep{step.tool, step.failed});
   return outcome;
 }

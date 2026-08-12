@@ -21,6 +21,7 @@
 
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { ConnectInvitation } from './connect/ConnectLog.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import { arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF } from './log.js';
 import {
@@ -260,6 +261,13 @@ export function ProposalDiff({ id, log }) {
           Not while a workout is running: Ask is never offered mid-session, and the server refuses
           one anyway. */}
       {!log.session && <a className="gym-ask-aside" href={ASK_HREF}>Ask about your training ›</a>}
+
+      {/* THE INVITATION (§D12), on the one screen where the thing it promises is already on the
+          table: this diff IS the object the pitch describes, and a lifter reading one Ask wrote is
+          exactly the person whose own Claude could have written it. It draws nothing for somebody
+          already connected — which is every lifter whose agent wrote this proposal — so the card
+          lands where it is news and nowhere else. */}
+      <ConnectInvitation training={log.session != null} />
     </>
   );
 }
