@@ -5,8 +5,15 @@ name: iOS CI
 # the weight ladder's truth is packages/api-contract/gym-ladder.json and all three copies of the
 # rule (Swift, web and Kotlin) run it as a test, so editing the golden fires this workflow AND
 # web.yml AND android.yml — web.yml's `npm run build` runs the JS suite first. That is the drift
-# gate doing its job — a rule changed in one language fails in the others. All three arm on push
-# and on pull_request, so no language can be the only one watching.
+# gate doing its job — a rule changed in one language fails in the others. web.yml and android.yml
+# arm on push and on pull_request; this one arms on push to main only, so no language is unwatched,
+# but iOS is the one that reports after the merge rather than before it.
+#
+# Why iOS alone is push-only: macos runners bill at 10x on a private repo, and this workflow was
+# most of the account's Actions spend — paying twice per commit for a gate that ships nothing. The
+# trade is deliberate: a Swift-only break lands on main and is caught minutes later by the push run,
+# not by the PR. If iOS ever gains a release path, or main stops being cheap to fix, put the
+# pull_request trigger back.
 #
 # This runs xcodebuild against a simulator rather than `swift build`: the package is iOS-only (see
 # apps/ios/README.md), and building the app target is a far stronger gate than compiling the
@@ -15,11 +22,6 @@ name: iOS CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/ios/**'
-      - 'packages/api-contract/**'
-      - '.github/workflows/ios.yml'
-  pull_request:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/**'
