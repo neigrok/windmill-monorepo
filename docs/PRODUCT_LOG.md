@@ -43,7 +43,8 @@ Everything above the "Gym" heading is **roadmap's** narrative. Journal's design 
 > and still is: since 2026-08-09 it asks a per-user AI COST ceiling, which is a spend brake and not
 > an entitlement, and skips an over-budget user for that pass rather than failing them),
 > and journal's Talk (`VoiceApi.cpp:26`, the one hard refusal). **Superseded 2026-08-07:** there is
-> a fourth, gym's coach panel (`CoachService.cpp:82`). What is still true is the *restraint*: no
+> a fourth, gym's coach panel. **Superseded 2026-08-12 (W7):** that panel became Ask, which reads no
+> entitlement at all — gym reads `hasWindmillOne` nowhere today. What is still true is the *restraint*: no
 > price is open
 > (`paidPlansOpen()` in `web/src/shell/billing/checkout.js` still returns `false` — the constant
 > `PAID_PLANS_OPEN` this line used to name is gone, see the shell-inversion note below), and no
@@ -469,9 +470,18 @@ plug-in seam that is one `gym::registerRoutes(app, GymDeps&)` call.
 
 **Amended 2026-08-09:** the second sentence is not what shipped. Gym's fifteen MCP tools read no
 entitlement at all — the connected log is free like the log. Gym's only `hasWindmillOne` read is the
-in-app coach panel (`CoachService.cpp:82`), so the paid line in gym is the coach, not the connection.
+in-app coach panel, so the paid line in gym is the coach, not the connection.
 Whether to move it is an open product decision; until it is taken, no surface may sell the connected
 log.
+
+**Amended again 2026-08-12 (W7).** The open decision above was taken, and not either way it was
+posed: gym now reads `hasWindmillOne` **nowhere**. The coach panel became **Ask**, and Ask ships
+open to everyone behind a stated daily cap rather than behind the paid line — because Windmill One
+cannot be bought (`paidPlansOpen()` is false, `BillingApi` 503s), and a locked chat offering an
+upgrade would advertise a checkout that answers 503. The gate is one predicate away, at
+`AskService::ask`, and arms in the wave that opens the till. So: the connected log is free, Ask is
+free-with-a-cap, and gym still sells nothing — which is why no surface may sell the connected log
+remains exactly as true as it was.
 
 Every competitor sells "tracker free, AI coach paid" — Hevy, Strong, Fitbod, and every wrapper
 shipped since 2023. Building a fifth in-app chatbot is not a product bet, it is a subscription to
@@ -735,7 +745,11 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
   the same LogService, the same grant model, reachable either from the lifter's own Claude or from a
   panel for someone who has no agent. So gym does ship a second tool loop
   (`gym/adapters/llm/AnthropicCoach`, a sibling of roadmap's rather than a lift of it — a *third*
-  consumer is what would earn promoting the shape into platform). What did not come back: streaming,
+  consumer is what would earn promoting the shape into platform). **That prediction was wrong, and
+  the SECOND consumer earned it:** W7 promoted the loop to `platform/adapters/llm/AgentLoop` when
+  gym's became Ask, because two line-for-line siblings in one binary is the drift the rule exists to
+  stop, not a threshold to wait past. Roadmap still carries its own copy and is the migration that
+  makes "the engine is one" true of the whole binary rather than of gym alone. What did not come back: streaming,
   proposal chrome, and any chat not attached to one workout that already happened. The bounds it
   ships under are read-only scope, one session, six iterations, Windmill One, and absent-when-unkeyed.
 - **BYO API keys, the four-provider picker, on-device inference — cut permanently.** They exist in
@@ -784,7 +798,8 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
   tools and gym opened on 2026-08-08 with the claim true. The residue is the connect surface for a
   lifter with no agent of their own (gym `ARCHITECTURE.md`, phase 2). **One correction the thesis
   above still needs:** the connected log is FREE. Nothing in gym's MCP stack reads an entitlement;
-  gym's only `hasWindmillOne` read is the in-app coach panel (`CoachService.cpp:82`).
+  gym reads `hasWindmillOne` nowhere at all since W7 (2026-08-12): the in-app panel became Ask, and
+  Ask ships open behind a stated daily cap rather than behind a paid line nobody can buy.
 - **Exercise identity is the bug we must not inherit.** Root of Lift's mid-workout crash, its
   duplicate-name collapse, its rename-forks-history behaviour, and its coach's exact-string failures.
   It costs one column now and a migration across every set ever logged later.

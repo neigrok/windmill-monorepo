@@ -11,8 +11,9 @@
 > product"; the inventory they were written from is `docs/lift-dossier.md`.
 >
 > **Their `00-README` status block is stale** (checked 2026-08-07): it calls G4–G7 unbuilt and G8
-> untouched, when routines, the finish, statistics, the coach panel, the backfill door and fifteen
-> MCP tools all ship. Read the repo for what exists; read the briefs for what was designed.
+> untouched, when routines, the finish, the log, a movement's record, the fix-it path, settings,
+> proposals, Ask, the backfill door and seventeen MCP tools all ship. (Statistics as a surface was
+> RETIRED on 2026-08-12 — the engine stays, the tab does not — and the coach panel became Ask.) Read the repo for what exists; read the briefs for what was designed.
 
 The design system lives at claude.ai/design (project `a8e8995c…`, "Windmill Design
 System") — a full token/component/guideline canon with spec codes (X1–X7, F1–F17). This
