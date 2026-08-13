@@ -14,6 +14,11 @@
 //
 // AND WHAT EACH ROW IT DOES OFFER SAYS UNDER THE NAME — the lifter's own last set of that movement,
 // or the fact that there has never been one. Same file, because it is the same row.
+//
+// A row is matched by its NAME and by every name this account used to call it (§N). The search and
+// the mint are one module for the same reason the four silences are: which of them a query lands in
+// decides whether there is a door out, and an alias that did not match would offer to create a
+// second copy of a movement the lifter renamed last week.
 
 import { agoLabel, setLoadLabel } from '../log.js';
 
@@ -51,31 +56,64 @@ export function lastSetLabel(last, now = Date.now()) {
   return `last ${setLoadLabel(last)} · ${agoLabel(last.at, now)}`;
 }
 
-// The two fields the wire requires of a created movement, and the picker asks for neither: canon
-// screen 7 is a name and a button, and there is no taxonomy screen in this product. So the pair
-// claims as little as it can. `isolation` is the catch-all bucket rather than a statement about what
-// the movement trains, and equipment decides exactly one thing — the store's default ladder step,
-// where barbell's 2.5 kg is the modal step across the whole table. Neither is read back on this
-// surface: the web's ladder derives its steps from the weight itself (ladder.js).
-export const CREATED_MOVEMENT = { pattern: 'isolation', equipment: 'barbell' };
+// CREATING ONE ASKS EXACTLY TWO THINGS (§N screen 31): what you call it, and how it is loaded. The
+// second is the one that matters — it decides what the ladder and the plate readout do at the rack —
+// and everything else is admin: no approval, no moderation, no muscle-group tagging, no category
+// tree, no "is this the same as Bench Press?" at creation time.
+//
+// So `pattern` is not asked for and claims as little as it can: `isolation` is the catch-all bucket
+// rather than a statement about what the movement trains. Equipment IS asked for now, and it is read
+// back — the movement's own page prints it under the name (record.js) — where before it was a silent
+// `barbell` on every movement a lifter ever minted, including the machine ones.
+export const CREATED_PATTERN = 'isolation';
+
+// FOUR, AND THE SCHEMA HOLDS SIX. `cable` and `kettlebell` stay valid everywhere and seeded
+// movements use them; a creation screen is not a taxonomy, and these are the four the board draws.
+// `barbell` opens selected because it is the modal answer and was the silent assumption before this
+// screen existed — one tap moves it, and now the tap is the lifter's.
+export const EQUIPMENT_CHOICES = ['barbell', 'dumbbell', 'machine', 'bodyweight'];
+export const DEFAULT_EQUIPMENT = 'barbell';
+
+// A MOVEMENT IS FOUND BY WHAT THIS ACCOUNT CALLS IT AND BY WHAT IT USED TO CALL IT (§N). Renaming is
+// a label moving over a stable id, so the old name stays as an alias and keeps finding the movement
+// here — muscle memory outlives a rename, and a picker that only matched the new name would make a
+// lifter hunt for a lift they have logged for a year. The aliases are on the catalog read, so this
+// is one list matched two ways rather than a second search over a second read.
+//
+// The alias the match came THROUGH, which is null whenever the name itself matched: the row says why
+// it is on the list, and a movement found by its own name needs no explanation. An empty query
+// matches every name, so it can never be answered by an alias.
+function aliasHit(exercise, term) {
+  if (term === '' || exercise.name.toLowerCase().includes(term)) return null;
+  return (exercise.aliases ?? []).find((alias) => alias.toLowerCase().includes(term)) ?? null;
+}
+
+function matchesQuery(exercise, term) {
+  return exercise.name.toLowerCase().includes(term) || aliasHit(exercise, term) != null;
+}
 
 export function movementOptions({ catalog = [], order = [], query = '' }) {
   const term = query.trim().toLowerCase();
   const available = catalog.filter((each) => !order.includes(each.id));
-  const matches = available
-    .filter((each) => each.name.toLowerCase().includes(term))
-    .slice(0, PICKER_MATCHES);
-  if (matches.length > 0) return { matches, empty: null, create: null };
+  // A ROW, not the catalog entry it came from: the alias is part of what this row says and it is a
+  // fact about the SEARCH rather than about the movement, so it is composed where the match is made.
+  // Drawn only when the match came through it — an alias printed under every row would be a second
+  // name on a screen whose whole job is picking one.
+  const rows = available
+    .filter((each) => matchesQuery(each, term))
+    .slice(0, PICKER_MATCHES)
+    .map((each) => ({ id: each.id, name: each.name, custom: each.custom === true, alias: aliasHit(each, term) }));
+  if (rows.length > 0) return { matches: rows, empty: null, create: null };
   if (catalog.length === 0) {
-    return { matches, empty: 'The catalog didn’t load. It comes back when you have signal.', create: null };
+    return { matches: rows, empty: 'The catalog didn’t load. It comes back when you have signal.', create: null };
   }
   if (available.length === 0) {
-    return { matches, empty: 'Every movement in the catalog is already in this session.', create: null };
+    return { matches: rows, empty: 'Every movement in the catalog is already in this session.', create: null };
   }
-  if (catalog.some((each) => each.name.toLowerCase().includes(term))) {
-    return { matches, empty: 'That movement is already in this session.', create: null };
+  if (catalog.some((each) => matchesQuery(each, term))) {
+    return { matches: rows, empty: 'That movement is already in this session.', create: null };
   }
   // An empty query matches every available movement, so reaching here means something was typed —
   // the button can quote it without asking whether there is anything to quote.
-  return { matches, empty: 'No movement by that name.', create: `Create “${query.trim()}”` };
+  return { matches: rows, empty: 'No movement by that name.', create: `Create “${query.trim()}”` };
 }

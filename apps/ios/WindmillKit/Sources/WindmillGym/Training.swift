@@ -41,19 +41,25 @@ public struct Exercise: Equatable, Codable, Sendable, Identifiable {
     public let equipment: String
     public let stepKg: Double?
     public let custom: Bool
+    // WHAT THIS ACCOUNT USED TO CALL IT, newest first, at most five (§N). It rides on the catalog
+    // rather than on a read of its own, because an alias IS a name and a picker fetching names from
+    // two places would search one of them a frame late. Omitted on the wire when empty, so an
+    // ordinary catalog is byte-identical to the one before this wave.
+    public let aliases: [String]
 
     public init(id: String, name: String, pattern: String = "", equipment: String = "",
-                stepKg: Double? = nil, custom: Bool = false) {
+                stepKg: Double? = nil, custom: Bool = false, aliases: [String] = []) {
         self.id = id
         self.name = name
         self.pattern = pattern
         self.equipment = equipment
         self.stepKg = stepKg
         self.custom = custom
+        self.aliases = aliases
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, pattern, equipment, stepKg, custom
+        case id, name, pattern, equipment, stepKg, custom, aliases
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +70,15 @@ public struct Exercise: Equatable, Codable, Sendable, Identifiable {
         equipment = try fields.decodeIfPresent(String.self, forKey: .equipment) ?? ""
         stepKg = try fields.decodeIfPresent(Double.self, forKey: .stepKg)
         custom = try fields.decodeIfPresent(Bool.self, forKey: .custom) ?? false
+        aliases = try fields.decodeIfPresent([String].self, forKey: .aliases) ?? []
+    }
+
+    // Whether this account has ever called it that — the picker's own match, so muscle memory keeps
+    // finding a movement under the name it used to have. Blind to case on BOTH sides, because a
+    // caller that had lowered only one of them would fail silently and look like a missing alias.
+    public func answersTo(_ term: String) -> Bool {
+        let wanted = term.lowercased()
+        return aliases.contains { $0.lowercased().contains(wanted) }
     }
 }
 
@@ -73,14 +88,20 @@ public struct Exercise: Equatable, Codable, Sendable, Identifiable {
 //
 // `reps` is absent the same way and means MAX: a chin-up taken to whatever it gives that day. It is
 // not a zero, it is not a blank, and it asks the prefill for nothing.
+//
+// `sets` ABSENT IS THE OPEN LINE, FROZEN (§M). The routine declined to name a target at all and the
+// movement asks at the rack — so the line carries no reps and no weight either, which the server
+// refuses to store any other way. Never a zero: nothing on any screen may draw "0 sets of nothing".
 public struct PlanEntry: Equatable, Codable, Sendable {
     public let exerciseId: String
-    public let sets: Int
+    public let sets: Int?
     public let reps: Int?
     public let weightKg: Double?
     public let restSeconds: Int?
 
-    public init(exerciseId: String, sets: Int, reps: Int? = nil,
+    public var isOpen: Bool { sets == nil }
+
+    public init(exerciseId: String, sets: Int? = nil, reps: Int? = nil,
                 weightKg: Double? = nil, restSeconds: Int? = nil) {
         self.exerciseId = exerciseId
         self.sets = sets
@@ -426,15 +447,24 @@ public struct LastSet: Equatable, Codable, Sendable, Identifiable {
 // `targetReps` absent is the routine declining to name one — `3 × max`, a movement taken to whatever
 // it gives that day. The same absence the plan snapshot carries, because the snapshot is frozen off
 // these rows.
+//
+// `targetSets` ABSENT IS THE OPEN ROW (§M): the routine names nothing at all and the movement is
+// decided at the rack. It is the state a routine built at home saves in while its numbers are still
+// in a notebook, and it is what makes a routine SAVABLE WHILE INCOMPLETE. An open row carries no
+// reps and no weight — the server refuses the half-open line — so nothing can draw "5 reps of
+// nothing"; rest is still allowed on it, because rest is how long you wait and not what you are
+// asked to do.
 public struct RoutineEntry: Equatable, Codable, Sendable {
     public let position: Int
     public let exerciseId: String
-    public let targetSets: Int
+    public let targetSets: Int?
     public let targetReps: Int?
     public let targetWeightKg: Double?
     public let restSeconds: Int?
 
-    public init(position: Int, exerciseId: String, targetSets: Int, targetReps: Int? = nil,
+    public var isOpen: Bool { targetSets == nil }
+
+    public init(position: Int, exerciseId: String, targetSets: Int? = nil, targetReps: Int? = nil,
                 targetWeightKg: Double? = nil, restSeconds: Int? = nil) {
         self.position = position
         self.exerciseId = exerciseId
@@ -454,7 +484,7 @@ public struct RoutineEntry: Equatable, Codable, Sendable {
 // until the routine has been trained once — the list sorts by it, and a never-trained routine sorts
 // on the absence rather than on a zero pretending to be 1970.
 //
-// THE WIRE CARRIES TWO MORE FIELDS AND NEITHER IS DECODED, deliberately. `revision` is the token an
+// TWO MORE WIRE FIELDS ARE NOT DECODED, deliberately. `revision` is the token an
 // agent's proposal is applied against — read-only, never sent, and the one question it could answer
 // here ("does this diff's base still stand?") belongs to the server, which is the only place that
 // sees both halves at once under the lock that owns them. `pendingProposal` is the same fact
@@ -467,14 +497,27 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
     public let position: Int
     public let lastTrainedAtMs: Int64?
     public let entries: [RoutineEntry]
+    // WHERE THIS DAY CAME FROM AND WHAT HAS BEEN PROPOSED FOR IT, newest first. It rides ONLY on
+    // `GET /v1/gym/routines/{id}` — the list read carries none — so it is empty on every routine in
+    // `TrainingStore.routines` and filled on the one a routine page has read for itself.
+    public let history: [RoutineEvent]
+
+    // UNTESTED IS THE ABSENCE OF A LAST-TRAINED STAMP AND THERE IS NO OTHER FIELD (§M). A routine
+    // built at home has never been run, and the word stays until its first session — which is what
+    // lets that first session disagree with it. Nothing stores this: a flag would still read
+    // `untested` the day the routine is trained, and still read tested the day its only session is
+    // discarded.
+    public var isUntested: Bool { lastTrainedAtMs == nil }
 
     public init(id: String, name: String, position: Int,
-                lastTrainedAtMs: Int64? = nil, entries: [RoutineEntry] = []) {
+                lastTrainedAtMs: Int64? = nil, entries: [RoutineEntry] = [],
+                history: [RoutineEvent] = []) {
         self.id = id
         self.name = name
         self.position = position
         self.lastTrainedAtMs = lastTrainedAtMs
         self.entries = entries
+        self.history = history
     }
 
     // Newest-trained first, and never by when they were made — that is how a lifter picks one, and
@@ -493,18 +536,24 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
     // routine that comes back is this one with a single target moved, and a movement the routine
     // does not hold leaves it untouched — the offer is only ever raised against a planned weight,
     // so an entry that is not there means the offer was answered for some other routine.
+    //
+    // AN OPEN ROW IS LEFT OPEN for the same reason, one step further in: the offer is raised against
+    // a planned weight and an open row has none, so it cannot be the row this is about. A weight
+    // written onto it would make the half-open line the server refuses outright (§M) — and would
+    // quietly answer, on the lifter's behalf, the one question they left for the rack.
     public func retargeting(_ exerciseId: String, toWeightKg weightKg: Double) -> Routine {
         Routine(id: id, name: name, position: position, lastTrainedAtMs: lastTrainedAtMs,
                 entries: entries.map { entry in
-                    guard entry.exerciseId == exerciseId else { return entry }
+                    guard entry.exerciseId == exerciseId, !entry.isOpen else { return entry }
                     return RoutineEntry(position: entry.position, exerciseId: entry.exerciseId,
                                         targetSets: entry.targetSets, targetReps: entry.targetReps,
                                         targetWeightKg: weightKg, restSeconds: entry.restSeconds)
-                })
+                },
+                history: history)
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, position, entries
+        case id, name, position, entries, history
         case lastTrainedAtMs = "lastTrainedAt"
     }
 
@@ -515,6 +564,77 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
         position = try fields.decodeIfPresent(Int.self, forKey: .position) ?? 0
         lastTrainedAtMs = try fields.decodeIfPresent(Int64.self, forKey: .lastTrainedAtMs)
         entries = try fields.decodeIfPresent([RoutineEntry].self, forKey: .entries) ?? []
+        history = try fields.decodeIfPresent([RoutineEvent].self, forKey: .history) ?? []
+    }
+
+    // WRITTEN OUT WITHOUT ITS HISTORY, which is why this is spelled rather than synthesized. The
+    // only thing that encodes a routine is this device's own shelf, and what it holds is a routine
+    // this device MADE and still owes the log — a row with no history to have. Keeping a copy of the
+    // log's answer on disk would be a second, ageing account of who proposed what.
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(id, forKey: .id)
+        try fields.encode(name, forKey: .name)
+        try fields.encode(position, forKey: .position)
+        try fields.encodeIfPresent(lastTrainedAtMs, forKey: .lastTrainedAtMs)
+        try fields.encode(entries, forKey: .entries)
+    }
+}
+
+// ONE ROW OF A ROUTINE'S HISTORY (§M screen 30) — two kinds under one shape, because they are one
+// section of one screen read in one call. `created` is always there and always last; the proposals
+// above it are the newest twenty.
+//
+// THE ABSENCE OF `by` IS THE CLAIM: nothing means the lifter's own hand, and the row reads `created
+// by you`. A door that IS named means an agent typed the day — `create_routine` over MCP lands
+// immediately — and drawing "by you" over that would be putting words in a lifter's mouth. So the
+// sentence is composed from the absence and never from a default.
+//
+// `movements` is how many the day was CREATED with, and a routine written before this wave has
+// none. It is drawn when it is there and the row simply says less when it is not — today's entry
+// count is a different number and would be a fact about now printed under a date in the past.
+//
+// A kind this build has never heard of reads as `.unknown` and is DROPPED by the screen rather than
+// guessed at. It cannot be folded to `created`, which would invent a second creation row, nor to
+// `proposal`, which would draw a diff row with no diff behind it.
+// It is `Decodable` and not `Codable` for the same reason every proposal type is: the one direction
+// it travels is inward. Nothing on this device writes a routine's history and nothing keeps one.
+public struct RoutineEvent: Equatable, Decodable, Sendable {
+    public enum Kind: String, Decodable, Sendable {
+        case created, proposal, unknown
+
+        public init(parsing text: String) {
+            self = Kind(rawValue: text) ?? .unknown
+        }
+    }
+
+    public let kind: Kind
+    public let atMs: Int64
+    public let by: String?
+    public let movements: Int?
+    public let proposal: ProposalHead?
+
+    public init(kind: Kind, atMs: Int64, by: String? = nil, movements: Int? = nil,
+                proposal: ProposalHead? = nil) {
+        self.kind = kind
+        self.atMs = atMs
+        self.by = by
+        self.movements = movements
+        self.proposal = proposal
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, by, movements, proposal
+        case atMs = "at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        kind = Kind(parsing: try fields.decodeIfPresent(String.self, forKey: .kind) ?? "")
+        atMs = try fields.decodeIfPresent(Int64.self, forKey: .atMs) ?? 0
+        by = try fields.decodeIfPresent(String.self, forKey: .by)
+        movements = try fields.decodeIfPresent(Int.self, forKey: .movements)
+        proposal = try fields.decodeIfPresent(ProposalHead.self, forKey: .proposal)
     }
 }
 
@@ -620,15 +740,18 @@ public struct Against: Equatable, Codable, Sendable {
         }
     }
 
-    // What was written down. `weightKg` and `reps` are optional for the same reason PlanEntry's are:
-    // a routine line may name sets alone and leave the load to last time and the reps to the day,
-    // and a strict read would fail the whole finish screen on a plan that did exactly that.
+    // What was written down. Every field is optional for the same reason PlanEntry's are: a routine
+    // line may name sets alone and leave the load to last time and the reps to the day, and it may
+    // name NOTHING at all — the open row (§M) — where there is no target for the session to be
+    // measured against. A strict read would fail the whole finish screen on a plan that did either.
     public struct Target: Equatable, Codable, Sendable {
-        public let sets: Int
+        public let sets: Int?
         public let reps: Int?
         public let weightKg: Double?
 
-        public init(sets: Int, reps: Int? = nil, weightKg: Double? = nil) {
+        public var isOpen: Bool { sets == nil }
+
+        public init(sets: Int? = nil, reps: Int? = nil, weightKg: Double? = nil) {
             self.sets = sets
             self.reps = reps
             self.weightKg = weightKg
@@ -815,8 +938,11 @@ public struct SessionFinish: Equatable, Codable, Sendable {
     }
 }
 
-// A custom movement, created from the picker's `Create "{query}"`. `stepKg` is omitted to take the
-// equipment's default — the ladder is the server's to decide for a movement nobody has weighed.
+// A custom movement, created from the picker's `Create "{query}"` by way of §N screen 31 — two
+// questions, and the second one is `equipment`, because it is what decides what the plate readout
+// does. `pattern` is not asked and stays the domain's own value for "unknown": a movement nobody
+// classified is not a movement classified wrongly. `stepKg` is omitted to take the equipment's
+// default — the ladder is the server's to decide for a movement nobody has weighed.
 public struct ExerciseWrite: Equatable, Codable, Sendable {
     public let id: String
     public let name: String
@@ -856,14 +982,20 @@ public struct ExerciseRename: Equatable, Codable, Sendable {
 public struct RoutineWrite: Equatable, Codable, Sendable {
     // No `position`: entry ORDER is the routine order, and a client that numbered its own lines
     // would be sending the server a fact the server derives — twice, and eventually differently.
+    //
+    // AN OPEN LINE OMITS `targetSets` and carries no reps and no weight with it: the absence is the
+    // state, and Swift's synthesized encoder drops a nil optional, which is that rule already. A
+    // zero would be a target of nothing and the server refuses it.
     public struct Entry: Equatable, Codable, Sendable {
         public let exerciseId: String
-        public let targetSets: Int
+        public let targetSets: Int?
         public let targetReps: Int?
         public let targetWeightKg: Double?
         public let restSeconds: Int?
 
-        public init(exerciseId: String, targetSets: Int, targetReps: Int? = nil,
+        public var isOpen: Bool { targetSets == nil }
+
+        public init(exerciseId: String, targetSets: Int? = nil, targetReps: Int? = nil,
                     targetWeightKg: Double? = nil, restSeconds: Int? = nil) {
             self.exerciseId = exerciseId
             self.targetSets = targetSets

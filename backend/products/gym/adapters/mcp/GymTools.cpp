@@ -290,7 +290,8 @@ ToolResult finishSession(LogService& log, const UserId& caller, const Json::Valu
 // with the stored row. A stored routine it does NOT match is this tool's name disagreeing with the
 // predicate — a change to a day that already stands — and it is sent to the tool whose name is true
 // for that case rather than quietly replaying and leaving the caller's edit silently undone.
-ToolResult createRoutine(LogService& log, const UserId& caller, const Json::Value& args) {
+ToolResult createRoutine(LogService& log, const UserId& caller, const Json::Value& args,
+                         ProposalDoor door) {
   static_assert(classify(Subject::program, Standing::fresh) == Mutation::record);
   const RoutineWrite incoming = parseRoutineWrite(args);
   if (std::optional<Routine> standing = log.routine(caller, incoming.id)) {
@@ -305,7 +306,10 @@ ToolResult createRoutine(LogService& log, const UserId& caller, const Json::Valu
                                "a typed diff and changes nothing until they tap Apply.");
   }
 
-  RoutineWriteOutcome outcome = log.createRoutine(caller, incoming);
+  // The door rides onto the creation row of the routine's history, because "who made this day of my
+  // program" is a question a lifter is entitled to an answer to — and `created by you` about a day
+  // an agent typed would be this product putting words in their mouth.
+  RoutineWriteOutcome outcome = log.createRoutine(caller, incoming, door);
   if (outcome.error == RoutineWriteError::idTaken)
     return ToolResult::failure("that routine id is already spent. Mint a different one and send it "
                                "again.");
@@ -551,7 +555,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "start_session")   return startSession(log_, caller, arguments);
   if (name == "log_set")         return logSet(log_, caller, arguments);
   if (name == "finish_session")  return finishSession(log_, caller, arguments);
-  if (name == "create_routine")  return createRoutine(log_, caller, arguments);
+  if (name == "create_routine")  return createRoutine(log_, caller, arguments, door);
   if (name == "propose_routine_change")
     return proposeRoutineChange(log_, caller, arguments, door, appBaseUrl_);
   if (name == "create_exercise") return createExercise(log_, caller, arguments);

@@ -130,6 +130,22 @@ final class ProposalDiffTests: XCTestCase {
         XCTAssertEqual(moves[1].after, "87.5")
     }
 
+    // A SIDE WITH NO SET COUNT IS THE OPEN ROW (§M) and reads as that one word — the agent is
+    // offering to take a target off, or to put one onto a row that never had one. It is not the
+    // missing side of the diff: which side is missing is `kind`, and reading a null set count as an
+    // absence would turn "give this row a target" into a change with nothing before it.
+    func testAnOpenSideOfADiffReadsAsOpenAndIsStillBothSides() {
+        let moves = change(.retargeted, "barbell-row",
+                           before: ProposalChange.Targets(),
+                           after: ProposalChange.Targets(sets: 4, reps: 8, weightKg: 70)).moves
+
+        XCTAssertEqual(moves.map(\.field), ["sets", "weight"])
+        XCTAssertEqual(moves[0].before, "open")
+        XCTAssertEqual(moves[0].after, "4 × 8")
+        XCTAssertEqual(moves[1].before, "—")
+        XCTAssertEqual(moves[1].after, "70")
+    }
+
     // A target the proposal declines to name is the product's own mark for a fact it does not have,
     // and never a zero: `3 × max` is a movement taken to whatever it gives that day, and an absent
     // weight is whatever you did last time. Printing 0 would put a number nobody chose on screen.

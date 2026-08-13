@@ -139,19 +139,24 @@ object Finish {
     // `sets: 3`, and a set-count term told a lifter who finished the workout that they did not.
     // Reps are the only axis this wire can be read short on — and only when the bar did not go up,
     // because heavier for fewer is a different session rather than a smaller one.
+    //
+    // AN OPEN ROW IS NOT A PLAN and is never drawn as one: a routine that declined to name a target
+    // froze as an absence, so the arrow points from last time — the same reference a movement no
+    // plan named at all gets — rather than from a `3 × max` this session was never asked for.
     private fun detail(movement: AgainstMovement): String {
         val planned = movement.planned
-        val target = planned?.reps
-        if (planned != null && target != null && movement.now.reps < target &&
+        val sets = planned?.sets
+        if (planned == null || sets == null) {
+            val before = movement.before ?: return top(movement.now)
+            return "${top(before)} → ${top(movement.now)}"
+        }
+        val target = planned.reps
+        if (target != null && movement.now.reps < target &&
             (planned.weightKg == null || movement.now.weightKg <= planned.weightKg)
         ) {
-            return "planned ${count(planned.sets, target)} · did ${count(movement.now.sets, movement.now.reps)}"
+            return "planned ${count(sets, target)} · did ${count(movement.now.sets, movement.now.reps)}"
         }
-        if (planned != null) {
-            return "${top(planned.sets, planned.reps, planned.weightKg)} → ${top(movement.now)}"
-        }
-        val before = movement.before ?: return top(movement.now)
-        return "${top(before)} → ${top(movement.now)}"
+        return "${top(sets, planned.reps, planned.weightKg)} → ${top(movement.now)}"
     }
 
     // Spaced when the target is absent and tight when it is named — `3 × max` beside `5×5` — which
@@ -408,7 +413,11 @@ private fun KeepAsRoutine(
                     color = GymSkin.inkDim,
                 )
                 Spacer(Modifier.weight(1f))
-                Text(target(entry), style = GymType.numeral(13), color = GymSkin.targetInk)
+                Text(
+                    Readout.target(entry.targetSets, entry.targetReps, entry.targetWeightKg),
+                    style = GymType.numeral(13),
+                    color = GymSkin.targetInk,
+                )
             }
         }
 
@@ -488,11 +497,4 @@ private fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () ->
     ) {
         Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
     }
-}
-
-private fun target(entry: RoutineEntryWrite): String {
-    val count = "${entry.targetSets} × ${Readout.repTarget(entry.targetReps)}"
-    val weight = entry.targetWeightKg
-    if (weight == null || weight == 0.0) return count
-    return "$count · ${Readout.weight(weight)}"
 }

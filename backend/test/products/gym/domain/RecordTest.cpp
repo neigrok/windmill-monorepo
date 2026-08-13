@@ -42,10 +42,13 @@ Set squatSet(const std::string& id, double weightKg, int reps, std::uint64_t com
 // A movement in the catalog nobody has lifted: the counts are real zeros and every list is empty,
 // so the page says `never logged` rather than drawing a chart frame with nothing in it.
 TEST(gym_record_of_a_movement_never_lifted_draws_nothing_at_all) {
-  const MovementRecord page = movementRecord(squat(), MovementHistory{squat(), 2, {}, {}}, kNow);
+  const MovementRecord page =
+      movementRecord(squat(), MovementHistory{squat(), {"Push A", "Legs"}, {}, {}}, kNow);
 
   CHECK_EQ(page.exercise.id, ExerciseId{"back-squat"});
-  CHECK_EQ(page.routines, 2);
+  // The days that name it come back as their NAMES, and a movement nobody has lifted still sits in
+  // two of them — the count on the page is that list's length and never a second read.
+  CHECK_EQ(page.routines, (std::vector<std::string>{"Push A", "Legs"}));
   CHECK_EQ(page.sessions, 0);
   CHECK_EQ(page.bestE1rm, std::nullopt);
   CHECK_EQ(page.heaviest, std::nullopt);
@@ -59,7 +62,7 @@ TEST(gym_record_of_a_movement_never_lifted_draws_nothing_at_all) {
 // The tile agrees with the tallest bar because it is read off the same walk.
 TEST(gym_record_plots_the_best_estimate_of_a_session_and_not_its_top_set) {
   const MovementHistory history{
-      squat(), 1,
+      squat(), {"Push A"},
       {ran("ses_00000011", kNow - kWeek, {load(100, 5, kNow - kWeek), load(95, 10, kNow - kWeek)})},
       {}};
 
@@ -80,7 +83,7 @@ TEST(gym_record_plots_the_best_estimate_of_a_session_and_not_its_top_set) {
 // opening session sets the standing best and claims nothing.
 TEST(gym_record_ladder_holds_every_session_that_beat_the_one_standing_and_never_the_first) {
   const MovementHistory history{squat(),
-                                0,
+                                {},
                                 {ran("ses_00000011", kNow - 3 * kWeek, {load(100, 5, kNow - 3 * kWeek)}),
                                  ran("ses_00000012", kNow - 2 * kWeek, {load(100, 4, kNow - 2 * kWeek)}),
                                  ran("ses_00000013", kNow - kWeek, {load(102.5, 5, kNow - kWeek)}),
@@ -103,7 +106,7 @@ TEST(gym_record_ladder_holds_every_session_that_beat_the_one_standing_and_never_
 // loudest false number in the product.
 TEST(gym_record_windows_the_chart_to_twelve_weeks_and_nothing_else) {
   const MovementHistory history{squat(),
-                                0,
+                                {},
                                 {ran("ses_00000011", kNow - 20 * kWeek, {load(140, 5, kNow - 20 * kWeek)}),
                                  ran("ses_00000012", kNow - 2 * kWeek, {load(100, 5, kNow - 2 * kWeek)})},
                                 {}};
@@ -125,7 +128,7 @@ TEST(gym_record_windows_the_chart_to_twelve_weeks_and_nothing_else) {
 TEST(gym_record_of_an_unloaded_movement_draws_the_heaviest_tile_and_no_chart) {
   const MovementHistory history{
       chinUp(),
-      0,
+      {},
       {MovementSession{SessionId{"ses_00000011"},
                        kNow - kWeek,
                        {PriorMark{ExerciseId{"chin-up"}, 0, 10, kNow - kWeek},
@@ -150,7 +153,7 @@ TEST(gym_record_hands_the_recent_days_through_as_the_store_grouped_them) {
                           {squatSet("set_00000001", 105, 5, kNow),
                            squatSet("set_00000002", 105, 4, kNow + 1)}};
   const MovementHistory history{
-      squat(), 0, {ran("ses_00000001", kNow, {load(105, 5, kNow)})}, {today}};
+      squat(), {}, {ran("ses_00000001", kNow, {load(105, 5, kNow)})}, {today}};
 
   const MovementRecord page = movementRecord(squat(), history, kNow);
 

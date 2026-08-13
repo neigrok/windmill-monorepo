@@ -77,11 +77,18 @@ struct RecordScreen: View {
         // counts the next time this page is opened.
         .task { await read() }
         .sheet(isPresented: $renaming) {
+            // THE PROOF COMES OFF THE READ THIS PAGE ALREADY MADE (§N screen 32) — not a second
+            // call, and not a constant. It is why the sheet cannot be opened before the page has
+            // landed: `Rename` lives inside `head`, which only draws once there is something true
+            // to say under it.
             RenameSheet(current: page?.name ?? "",
+                        title: "Rename this movement",
+                        prompt: "Movement name",
+                        proof: page?.proof ?? [],
                         save: { await rename(to: $0) },
                         onClose: { renaming = false })
                 .presentationBackground(skin.surface)
-                .presentationDetents([.medium])
+                .presentationDetents([.large])
         }
     }
 
@@ -389,86 +396,6 @@ struct MovementDoor: View {
     }
 }
 
-// RENAME — the identity proof, and the only write on this page. The id never moves, so every set,
-// routine entry and frozen plan snapshot still points at the same movement: that is the whole reason
-// the catalog exists and this is where a lifter gets to see it.
-//
-// The sheet stays up until the log answers. A rename that did not happen may not close as though it
-// had, and the refusal is repeated in the log's own words where it sent any.
-private struct RenameSheet: View {
-    let save: (String) async -> TrainingStore.WriteFailure?
-    let onClose: () -> Void
-
-    @Environment(\.gymSkin) private var skin
-    @State private var name: String
-    @State private var failure: TrainingStore.WriteFailure?
-    @State private var saving = false
-
-    init(current: String, save: @escaping (String) async -> TrainingStore.WriteFailure?,
-         onClose: @escaping () -> Void) {
-        self.save = save
-        self.onClose = onClose
-        _name = State(initialValue: current)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            HStack {
-                Text("Rename")
-                    .font(WindmillFont.display(20))
-                    .foregroundStyle(skin.ink)
-                Spacer()
-                Button("Cancel", action: onClose)
-                    .font(WindmillFont.body(16))
-                    .foregroundStyle(skin.inkDim)
-                    .frame(minHeight: GymTap.minimum)
-            }
-
-            TextField("", text: $name, prompt: Text("Movement name").foregroundStyle(skin.inkFaint))
-                .font(WindmillFont.body(17))
-                .foregroundStyle(skin.ink)
-                .textFieldStyle(.plain)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
-                .padding(.horizontal, WindmillSpace.x4)
-                .frame(height: GymTap.minimum + 4)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.raised))
-
-            Text("Every set, every routine and every past session follows the new name. This stays one movement — the name is only what you call it.")
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-                .lineSpacing(3)
-
-            if let failure {
-                Text(failure.line("the name didn’t change"))
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.alarmInk)
-                    .lineSpacing(3)
-            }
-
-            // WHITESPACE AND NEWLINES BOTH, and the two must be the same trim. `.whitespaces` is
-            // spaces and tabs and NOT `\n`, so a pasted newline passed this guard as a name — and on
-            // a movement still on this device's shelf there is no server behind it to state the
-            // emptiness rule, which left the room drawing a blank at 28pt. What a name may be is
-            // still the log's to say; that it is not blank is a thing this sheet already claimed to
-            // check, and it now checks it.
-            Button {
-                Task {
-                    saving = true
-                    failure = await save(name.trimmingCharacters(in: .whitespacesAndNewlines))
-                    saving = false
-                }
-            } label: {
-                Text(saving ? "Saving…" : "Save name")
-                    .font(WindmillFont.body(17, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-            }
-            .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .padding(WindmillSpace.x5)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(skin.surface)
-    }
-}
+// RENAME lives in RenameSheet.swift now, because §N gives a ROUTINE the same sheet from its own
+// header (screen 30) — the paragraph that used to sit here, explaining that a rename is safe, was
+// replaced by the block that PROVES it out of this page's own read.

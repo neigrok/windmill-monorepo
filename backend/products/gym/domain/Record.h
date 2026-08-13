@@ -59,9 +59,15 @@ struct MovementDay {
 // drop set would be claiming to be complete and not be. A session holding only drops of a movement
 // is therefore in the list and not in the count, which is the same difference the log row's two set
 // counts make.
+// `routines` are the days of the program that NAME this movement, by the name the lifter calls each
+// of them, in their own program order. They are names rather than a count because the count is
+// `routines.size()` and the rename sheet (§N32) needs the words — *`routines  Push A · Legs`* is a
+// promise about which days follow the rename, and a page that could only say "2" would be asking a
+// lifter to take that on faith. One read answers both, so the header's count and the sheet's list
+// cannot be assembled from two calls and come back disagreeing.
 struct MovementHistory {
   std::optional<Exercise> exercise;
-  int routines = 0;                        // how many of this account's routines name it
+  std::vector<std::string> routines;       // the days that name it, in program order
   std::vector<MovementSession> sessions;   // oldest first
   std::vector<MovementDay> recent;         // newest first
 
@@ -118,7 +124,7 @@ struct RecordPoint {
 // answered "which of my workouts earned something" is the log, which already does.
 struct MovementRecord {
   Exercise exercise;
-  int routines;
+  std::vector<std::string> routines;   // the days of the program that name it, in program order
   int sessions;
   std::optional<Best> bestE1rm;
   std::optional<Best> heaviest;

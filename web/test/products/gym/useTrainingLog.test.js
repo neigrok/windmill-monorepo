@@ -884,14 +884,20 @@ test('a created movement lands in the catalog, and a refusal is said in the one 
   };
 
   const view = await open(t, backend.api);
-  const made = await view.log.createMovement('  Face Pull ');
+  const made = await view.log.createMovement({ name: '  Face Pull ', equipment: 'machine' });
   await settle();
 
   assert.equal(made.name, 'Face Pull');
   assert.equal(view.log.catalog.some((each) => each.name === 'Face Pull'), true);
+  // BOTH ANSWERS TRAVEL (§N screen 31), and the one the lifter was asked for is the one that is
+  // stored: equipment is what the ladder and the plate readout read, and it was a silent `barbell`
+  // on every movement ever minted here before the question existed. `pattern` is the field nobody is
+  // asked about, so it claims the least it can.
+  assert.equal(made.equipment, 'machine');
+  assert.equal(made.pattern, 'isolation');
 
   refuse = true;
-  const refused = await view.log.createMovement('Nope');
+  const refused = await view.log.createMovement({ name: 'Nope', equipment: 'barbell' });
   await settle();
   assert.equal(refused, null);
   assert.equal(
@@ -912,7 +918,7 @@ test('a movement the store refuses as written is not blamed on the signal', asyn
   };
 
   const view = await open(t, backend.api);
-  const refused = await view.log.createMovement('x'.repeat(300));
+  const refused = await view.log.createMovement({ name: 'x'.repeat(300), equipment: 'barbell' });
   await settle();
 
   assert.equal(refused, null);

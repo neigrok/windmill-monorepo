@@ -438,13 +438,23 @@ export function hasRecord(session) {
   return session?.record === true;
 }
 
+// A ROUTINE NOBODY HAS TRAINED YET, and there is no field for it: `lastTrainedAt` is the store's
+// aggregate over the log, so its absence IS the state and nothing else spells it (gymApi.js). The
+// word is canon's — `untested`, because the routine is a bet nobody has taken yet, which is exactly
+// why the first session is allowed to disagree with it (§M).
+export const UNTESTED = 'untested';
+
+export function isUntested(routine) {
+  return routine?.lastTrainedAt == null;
+}
+
 // A routine row says what it holds and when it was last used, because that is how a lifter picks
 // one — and it is the same fact the list is sorted by, so the row never has to explain its own
 // order. A routine nobody has trained yet says exactly that rather than borrowing today.
 export function routineMetaLabel(routine, now = Date.now()) {
   const count = routine.entries?.length ?? 0;
   const movements = count === 1 ? '1 exercise' : `${count} exercises`;
-  if (routine.lastTrainedAt == null) return `${movements} · never trained`;
+  if (isUntested(routine)) return `${movements} · ${UNTESTED}`;
   return `${movements} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
 }
 
@@ -460,6 +470,12 @@ export function targetLoadOf(weightKg) {
   return round(weightKg);
 }
 
+// THE LINE THAT ASKS FOR NOTHING (§M). A routine is savable while incomplete: an entry with no set
+// target is OPEN, and an open line simply asks at the rack. The absence of `targetSets` is the whole
+// of that state — there is no flag and no zero, and the wire refuses an open line that still names
+// reps or a weight — so this word is read off one missing field and can say nothing else.
+export const OPEN_TARGET = 'open';
+
 // What a routine asks a movement for, in one line: the editor's row, Today's preview of the routine
 // due next, and the finish screen's offer all print it, so a target reads the same wherever it is
 // read. An absent weight is "whatever you did last time" and prints nothing, by the rule above.
@@ -467,6 +483,7 @@ export function targetLoadOf(weightKg) {
 // An absent REP target is canon screen 6's `3 × max` — a movement taken to whatever it gives that
 // day. It is not a zero and it is not a blank, and the wire spells it by omission (gymApi.js).
 export function entryLabel(entry) {
+  if (entry.targetSets == null) return OPEN_TARGET;
   const reps = entry.targetReps ?? 'max';
   const target = targetLoadOf(entry.targetWeightKg);
   if (target == null) return `${entry.targetSets} × ${reps}`;
@@ -516,8 +533,37 @@ export function topSetLabel(top) {
 // A movement is a stable id everywhere except on screen, where it is the catalog's display name.
 // Falling back to the id keeps a sentence readable when the catalog hasn't answered yet — a slug
 // a lifter can still recognise beats a blank where the movement should be.
+export function movementOf(catalog, exerciseId) {
+  return catalog?.find((exercise) => exercise.id === exerciseId) ?? null;
+}
+
 export function nameOfMovement(catalog, exerciseId) {
-  return catalog?.find((exercise) => exercise.id === exerciseId)?.name ?? exerciseId;
+  return movementOf(catalog, exerciseId)?.name ?? exerciseId;
+}
+
+// WHAT A LIFTER MAY TYPE INTO A NAME — a routine's and a movement's alike, because it is one
+// question asked on four surfaces and two ceilings would be two things to keep true. The store's
+// own ceiling is EIGHTY BYTES and this is deliberately tighter: a field bound under the column's
+// costs nothing, while a name typed to the column's edge would be refused in a language whose
+// letters are three bytes each. Sixty is the number the counter on screen says out loud (§N).
+//
+// It counts UTF-16 units because that is what `maxLength` counts, and a counter that disagreed with
+// the field it sits under would run past 60 and stop, or stop before it. Sixty EMOJI are still
+// refused by the store, in the product's own voice — no client rule can make that case land, and
+// none here pretends to: the cap is a length, and §N allows any language, spelling and punctuation.
+export const NAME_MAX = 60;
+
+export function nameCountLabel(typed) {
+  return `${(typed ?? '').length}/${NAME_MAX}`;
+}
+
+// AND A NAME CAN ARRIVE OVER IT WITHOUT ANYONE TYPING PAST IT. `maxLength` stops a key and a paste,
+// but every field that asks for a name OPENS ON ONE — the movement's own, out of a store that keeps
+// eighty, or the search box's query, which caps nothing — so a movement an agent minted with seventy
+// characters opens the rename field reading `70/60`. That count is true and stays true; this is the
+// flag the counter wears so a field that has quietly stopped accepting keys has said why.
+export function isNameOverCap(typed) {
+  return (typed ?? '').length > NAME_MAX;
 }
 
 // A session is over when the server says it has an end instant — and only then. Zero is an

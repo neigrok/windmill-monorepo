@@ -1,10 +1,12 @@
 // PROPOSALS — what an agent may do to your program, which is ask. It reads, it proposes, and it
 // never writes to a routine you already have (backend §2.9, canon §D14 and §L's safeguard ladder):
-// every change it wants waits here, as a typed diff, until a thumb lands on Apply. This file is the
-// three places that fact reaches a lifter — the card that says a proposal is waiting, the routine's
-// dated history of every one ever written against it, and the diff itself. Ask draws a fourth, in
-// its own room, off `DiffRow` below: a proposal minted by our model and one minted by a lifter's own
-// Claude are the same object read the same way, which is exactly what `source` being a column buys.
+// every change it wants waits here, as a typed diff, until a thumb lands on Apply. This file is two
+// of the places that fact reaches a lifter — the card that says a proposal is waiting, and the diff
+// itself. The routine's own dated history is a third and lives with the routine (Routines.jsx),
+// because it holds the day the routine was written as well as every proposal since; Ask draws a
+// fourth, in its own room, off `DiffRow` below. A proposal minted by our model and one minted by a
+// lifter's own Claude are the same object read the same way, which is exactly what `source` being a
+// column buys.
 //
 // THE WEB IS THE DESK, AND READING A DIFF IS A SITTING-DOWN ACT. Everything else in gym's web
 // surface is a mirror of a workout happening somewhere else (§11.2); this is the one screen the desk
@@ -25,7 +27,7 @@ import { ConnectInvitation } from './connect/ConnectLog.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import { arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF } from './log.js';
 import {
-  applyLabel, atomicLine, diffRows, documentLine, historyLabel, intentLine, isPending, reviewLabel,
+  applyLabel, atomicLine, diffRows, documentLine, intentLine, isPending, reviewLabel,
   settledLine, sourceLabel, stateChip, summaryLine,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
@@ -72,8 +74,10 @@ function ProposalCard({ routine }) {
 }
 
 // The dot the card, the routine's row and the history share — one mark for "something is waiting",
-// so a lifter who learned it on Today reads it on the routines list without being told again.
-function ProposalDot() {
+// so a lifter who learned it on Today reads it on the routines list without being told again. It is
+// exported for the routine's own history section, which draws proposals among the days the routine
+// was written on (Routines.jsx): one mark, in one place, whoever draws it.
+export function ProposalDot() {
   return <span className="gym-proposal-dot" aria-hidden="true" />;
 }
 
@@ -92,34 +96,11 @@ export function ProposalFlag() {
   );
 }
 
-// THE ROUTINE'S HISTORY (canon screen 6) — every proposal ever written against this routine, applied,
-// dismissed, superseded or still waiting. An agent's suggestion is part of the program's history: the
-// ledger supersedes rather than deletes, so a diff that was turned down is still here in case it was
-// turned down too fast.
-//
-// A routine with no history draws no section at all, and so does one whose read has not answered:
-// an empty "History" heading over nothing is a room telling a lifter about a feature rather than
-// about their program.
-export function RoutineHistory({ routineId }) {
-  const view = useGymRead(() => gymApi.proposals({ routineId }), [routineId]);
-  if (view.phase !== 'ready' || view.data.length === 0) return null;
-  return (
-    <section className="gym-history">
-      <h2 className="gym-history-head">History</h2>
-      <ul className="gym-history-rows">
-        {view.data.map((head) => (
-          <li key={head.id}>
-            <a className="gym-history-row" href={proposalHref(head.id)}>
-              {isPending(head) && <ProposalDot />}
-              <span className="gym-history-line">{historyLabel(head)}</span>
-              <span className="gym-history-go" aria-hidden="true">›</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+// THE ROUTINE'S HISTORY MOVED TO THE ROUTINE (Routines.jsx). It was a read of its own here — the
+// whole proposal ledger, filtered by routine — and it is now one section of the routine's own read,
+// beside the day the routine was created, which is a row this ledger never held and could not.
+// Nothing about a proposal is spelled there: `historyLabel` and `isPending` in proposals.js are what
+// a row says, so a row on that screen and the card above it stay one object read twice.
 
 // SCREEN 14 — the diff, and the only place in this product where a routine an agent wrote to moves.
 // Both verbs are here and neither is anywhere else: no list applies, no card applies, and no tool at

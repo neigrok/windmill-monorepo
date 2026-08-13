@@ -15,15 +15,10 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from './gymApi.js';
-import { recordHref } from './log.js';
+import { isNameOverCap, NAME_MAX, nameCountLabel, recordHref } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
-import { NEVER_LOGGED, NEVER_LOGGED_LINE, recordView } from './record.js';
+import { NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
 import { useGymRead } from './useGymRead.js';
-
-// The wire refuses a name over eighty bytes. This counts UTF-16 units, so a name of eighty emoji is
-// still refused by the store — and says so in the product's own voice rather than being silently
-// trimmed to something the lifter did not type.
-const NAME_MAX = 80;
 
 // Back to Today rather than back to wherever this was opened from. §H's three doors are a session,
 // a routine and the picker, and the browser's own Back is what returns to the one you came through;
@@ -152,6 +147,11 @@ function OneMovement({ id, log }) {
       {renaming && (
         <RenameSheet
           name={model.name}
+          // THE PROOF IS THIS PAGE'S OWN READ (§N screen 32). The sheet stands over a record that
+          // has already answered how many sessions hold this movement, which records it has and
+          // which routines name it — so the block under the field is the same numbers the page is
+          // drawing, and there is no second call and nothing for two answers to disagree about.
+          record={view.data}
           onClose={() => setRenaming(false)}
           onSave={async (typed) => {
             const renamed = await log.renameMovement(id, typed);
@@ -202,33 +202,56 @@ function Chart({ chart }) {
   );
 }
 
-// ONE FIELD, AND THE ID UNDER IT NEVER MOVES. Renaming Back Squat renames it for this account and
-// leaves every set, routine entry and frozen plan snapshot pointing at the same movement — which is
-// the promise this whole page exists to make visible, so the sheet says it in a line.
-function RenameSheet({ name, onClose, onSave }) {
+// SCREEN 32 — one field, and the id under it never moves. Renaming Back Squat renames it for this
+// account and leaves every set, routine entry and frozen plan snapshot pointing at the same
+// movement, so nothing is lost and nothing forks.
+//
+// AND THE SHEET PROVES IT RATHER THAN PROMISING IT. The block under the field is this movement's own
+// counts — the sessions, the records, the routines that name it — read off the page behind the sheet
+// (record.js). A sentence saying history is safe is a claim; the same sentence with a lifter's own 34
+// beside it is a receipt, and that difference is the whole of why this screen exists.
+function RenameSheet({ name, record, onClose, onSave }) {
   const [typed, setTyped] = useState(name);
   const [saving, setSaving] = useState(false);
   const ready = typed.trim() !== '' && !saving;
+  const proof = renameProofOf(record);
 
   return (
     <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
       <div className="gym-sheet" role="dialog" aria-label="Rename movement" onClick={(event) => event.stopPropagation()}>
         <div className="gym-sheet-head">
-          <span className="gym-sheet-title">Rename</span>
-          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
+          <span className="gym-sheet-title">Rename this movement</span>
         </div>
-        <input
-          className="gym-rename-input"
-          value={typed}
-          maxLength={NAME_MAX}
-          aria-label="Movement name"
-          onChange={(event) => setTyped(event.target.value)}
-          autoFocus
-        />
-        <p className="gym-rename-line">The history stays with the movement. Nothing you have logged moves.</p>
+        <div className="gym-name-field">
+          <input
+            className="gym-name-input"
+            value={typed}
+            maxLength={NAME_MAX}
+            aria-label="Movement name"
+            onChange={(event) => setTyped(event.target.value)}
+            autoFocus
+          />
+          <span className={isNameOverCap(typed) ? 'gym-name-count is-over' : 'gym-name-count'}>
+            {nameCountLabel(typed)}
+          </span>
+        </div>
+        <section className="gym-follows">
+          <p className="gym-follows-head">
+            <span className="gym-follows-tick" aria-hidden="true">✓</span>
+            {RENAME_PROOF}
+          </p>
+          <ul className="gym-follows-rows">
+            {proof.map((row) => (
+              <li className="gym-follows-row" key={row.label}>
+                <span className="gym-follows-label">{row.label}</span>
+                <span className="gym-follows-value">{row.value}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
         <button
           type="button"
-          className={ready ? 'gym-rename-save' : 'gym-rename-save is-inert'}
+          className={ready ? 'gym-name-save' : 'gym-name-save is-inert'}
           onClick={async () => {
             if (!ready) return;
             setSaving(true);
@@ -239,8 +262,12 @@ function RenameSheet({ name, onClose, onSave }) {
             setSaving(false);
           }}
         >
-          Save the name
+          Rename
         </button>
+        {/* `Rename` / `Cancel`, in that order and in those words (§N screen 32). The way out is
+            under the commit rather than a glyph in the head: this sheet asks for a decision about a
+            name a lifter already has, and leaving it alone is one of the two answers. */}
+        <button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );

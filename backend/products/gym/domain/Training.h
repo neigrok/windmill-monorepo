@@ -66,7 +66,16 @@ constexpr std::uint64_t kMaxInstantMs = 253402300799000ull;
 // The ceiling on every display name a lifter types — a routine's and a movement's alike, because
 // they are the same kind of string and the editor and the picker draw them side by side. Counted in
 // BYTES, which is the unit the text column and the wire both count in.
-constexpr std::size_t kMaxNameLength = 80;
+//
+// 240 AND NOT 80, AND THE REASON IS THE UNIT. The clients cap at 60 CHARACTERS and draw a counter
+// saying so, because canon says "any language, any spelling, any punctuation, capped at 60
+// characters". Those two caps only agreed while a lifter typed ASCII: a 45-character Cyrillic
+// routine name is 83 bytes and a 30-character Japanese one is 90, so the counter read 45/60 and the
+// save came back refused. UTF-8 spends at most four bytes on a code point, so 60 characters can
+// never exceed 240 — which makes the CLIENT's cap the one a lifter meets, in every script, and
+// leaves this one what it should be: a bound on what the column can hold, not a second opinion on
+// how long a name may be.
+constexpr std::size_t kMaxNameLength = 240;
 
 // The one normalization every display name goes through, applied by both entities that hold one so
 // they cannot answer differently: the ends trimmed. " Bench Press " and "Bench Press" are one name
@@ -108,6 +117,17 @@ constexpr int kMaxRestSeconds = 900;
 
 // The catalog row: a STABLE slug id that never renders, a mutable display name, and a per-movement
 // increment. custom marks a created_by row; seeds are custom = false.
+//
+// `aliases` are what THIS account used to call it — the names it has been renamed away from, newest
+// first — and they are here beside the name because they are the same kind of thing: a per-account
+// label on a stable id. The picker searches them, so the word a lifter had in their hands last week
+// still finds the movement after a rename (§N32). They are the STORE's to fill and no write takes
+// them: a rename is what makes one, and the same rename is what prunes the list to the cap below.
+// It is bounded there rather than refused here, because this row ships on the product's most-fired
+// read and a lifter's fiftieth try at a name is not muscle memory — while a stored list that
+// somehow ran long must still be readable rather than taking the whole catalog down with it.
+constexpr std::size_t kMaxAliases = 5;
+
 struct Exercise {
   ExerciseId id;
   std::string name;
@@ -115,9 +135,10 @@ struct Exercise {
   Equipment equipment;
   double stepKg;
   bool custom;
+  std::vector<std::string> aliases;
 
   Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
-           bool custom);
+           bool custom, std::vector<std::string> aliases = {});
 
   bool operator==(const Exercise&) const = default;
 };
@@ -138,10 +159,13 @@ double defaultStepKg(Equipment equipment);
 // past. The snapshot holds the plan's numbers and not the routine's identity, because a copy has
 // nothing to point back at: routine_id stays on the session row, informational, and nulls on delete.
 // An absent `reps` is the line the canon draws as `3 × max` — a chin-up names no rep target, and a
-// zero would read as a real one — and it copies the routine entry's absence through unchanged.
+// zero would read as a real one — and it copies the routine entry's absence through unchanged. An
+// absent `sets` is the OPEN line (domain/Routine.h), and the snapshot has to carry that absence for
+// the same reason it carries the other three: a session started under a half-built routine must be
+// able to tell "3 × 5" from "you decide", and a frozen zero would tell it neither.
 struct PlanEntry {
   ExerciseId exercise;
-  int sets;
+  std::optional<int> sets;
   std::optional<int> reps;
   std::optional<double> weightKg;
   std::optional<int> restSeconds;

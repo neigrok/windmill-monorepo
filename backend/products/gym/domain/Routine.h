@@ -12,22 +12,31 @@ namespace wm::gym {
 // One line of the program: this movement, this many sets of this many reps, at this load. It
 // carries NO id, because the table's key is (routine_id, position) — which is what makes the same
 // movement twice in one routine (bench heavy, then bench back-off) representable at all; Lift
-// collapsed the pair into one set counter. Three of its fields mean something by their ABSENCE and
-// never by a zero: an absent targetReps is `3 × max` — the chin-up line, a program a required rep
-// target could not express at all — an absent targetWeightKg is "whatever you did last time", and
-// an absent restSeconds falls back to the lifter's global rest target (gym_preferences), which is a
-// value a client can now READ rather than invent — though the fallback is applied by the surface
-// running the timer and never here: this server stores the absence and fills in nothing.
+// collapsed the pair into one set counter. FOUR of its fields mean something by their ABSENCE and
+// never by a zero: an absent targetSets is an OPEN line — see below — an absent targetReps is
+// `3 × max` — the chin-up line, a program a required rep target could not express at all — an
+// absent targetWeightKg is "whatever you did last time", and an absent restSeconds falls back to
+// the lifter's global rest target (gym_preferences), which is a value a client can now READ rather
+// than invent — though the fallback is applied by the surface running the timer and never here:
+// this server stores the absence and fills in nothing.
+//
+// AN OPEN LINE IS A LINE WITH NO TARGET AT ALL, and it is what makes a routine savable while
+// incomplete (§M): the movement is in the day, and what to do with it is decided at the rack. It is
+// the absence of targetSets and never a zero — a zero is a target of nothing, which is a different
+// and untrue sentence — and the two other targets go with it, because half a target is a line no
+// screen in this product can draw. Rest is not a target and stays legal on an open line: it is how
+// long you wait, not what you are asked to do.
 struct RoutineEntry {
   int position;
   ExerciseId exercise;
-  int targetSets;
+  std::optional<int> targetSets;
   std::optional<int> targetReps;
   std::optional<double> targetWeightKg;
   std::optional<int> restSeconds;
 
-  RoutineEntry(int position, ExerciseId exercise, int targetSets, std::optional<int> targetReps,
-               std::optional<double> targetWeightKg, std::optional<int> restSeconds);
+  RoutineEntry(int position, ExerciseId exercise, std::optional<int> targetSets,
+               std::optional<int> targetReps, std::optional<double> targetWeightKg,
+               std::optional<int> restSeconds);
 
   bool operator==(const RoutineEntry&) const = default;
 };

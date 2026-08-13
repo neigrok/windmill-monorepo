@@ -35,11 +35,16 @@ public enum PickerOptions {
 
     // A movement as this list draws it: the name, whether the lifter minted it, and the one line of
     // their own history under it. `meta` is optional and the distinction is the point — see `line`.
+    //
+    // `was` is drawn ONLY when the match came from an alias (§N). An old name printed under every
+    // row would be a second name competing with the one the lifter chose; printed on the row their
+    // typing actually found is the answer to "why is this here".
     public struct Row: Equatable, Identifiable {
         public let id: String
         public let name: String
         public let yours: Bool
         public let meta: String?
+        public var was: String? = nil
     }
 
     public struct Result: Equatable {
@@ -64,13 +69,24 @@ public enum PickerOptions {
         let featured = term.isEmpty
             ? six.compactMap { id in available.first { $0.id == id } }
             : []
+        // THE MATCH IS OVER THE NAME AND EVERY NAME THIS ACCOUNT USED TO GIVE IT (§N). An alias is
+        // a name — the one the lifter's muscle memory still types — so a picker that searched only
+        // the current one would lose a movement the moment it was renamed. The row that matched by
+        // an alias says which, and no other row mentions one.
+        let wanted = term.lowercased()
         let matches = available
-            .filter { term.isEmpty || $0.name.lowercased().contains(term.lowercased()) }
+            .filter { term.isEmpty || $0.name.lowercased().contains(wanted) || $0.answersTo(wanted) }
             .filter { movement in !featured.contains { $0.id == movement.id } }
             .prefix(shown)
         guard matches.isEmpty, featured.isEmpty else {
             return Result(six: featured.map { row($0, lastSets: lastSets, now: now) },
-                          matches: matches.map { row($0, lastSets: lastSets, now: now) },
+                          matches: matches.map { movement in
+                              var found = row(movement, lastSets: lastSets, now: now)
+                              if !movement.name.lowercased().contains(wanted), !wanted.isEmpty {
+                                  found.was = movement.aliases.first { $0.lowercased().contains(wanted) }
+                              }
+                              return found
+                          },
                           empty: nil, create: nil)
         }
         if catalog.isEmpty {
@@ -185,6 +201,12 @@ struct MovementList: View {
                             .foregroundStyle(skin.accent)
                     }
                     Spacer(minLength: 0)
+                }
+                // Only on the row the typing actually found by an old name — see PickerOptions.Row.
+                if let was = movement.was {
+                    Text("was “\(was)”")
+                        .font(GymType.numeral(11.5))
+                        .foregroundStyle(skin.accent)
                 }
                 // Absent while the log has not answered — see PickerOptions.line.
                 if let meta = movement.meta {

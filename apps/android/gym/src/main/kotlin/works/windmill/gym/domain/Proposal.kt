@@ -109,9 +109,13 @@ data class ProposalSource(
 // mean everywhere else in this product: no reps is `max`, no weight is "whatever you did last
 // time", no rest is the global dial (Rest.target) — so each has a WORD here rather than a blank,
 // because a diff row with one side empty reads as a field being emptied.
+// No `sets` is the OPEN line here too, and it is the fourth absence in the list: a side that names
+// no set target is a row that will ask at the rack. It is never a zero — WHICH SIDE IS MISSING is
+// `kind` and nothing else, so a `before` with no sets is a line that used to be open and never a
+// line that was not there.
 @Serializable
 data class ProposalTargets(
-    val sets: Int = 0,
+    val sets: Int? = null,
     val reps: Int? = null,
     val weightKg: Double? = null,
     val restSeconds: Int? = null,
@@ -379,8 +383,12 @@ data class Proposal(
         fun asks(targets: ProposalTargets): String =
             Readout.target(targets.sets, targets.reps, targets.weightKg)
 
-        fun countOf(targets: ProposalTargets): String =
-            "${targets.sets} × ${Readout.repTarget(targets.reps)}"
+        // The sets-and-reps field of one side, as one string — `open` where there is no set target
+        // at all, which is the same word the routine's own row uses for the same absence.
+        fun countOf(targets: ProposalTargets): String {
+            val sets = targets.sets ?: return Readout.openTarget
+            return "$sets × ${Readout.repTarget(targets.reps)}"
+        }
 
         fun loadOf(weightKg: Double?): String =
             weightKg?.let { Readout.weight(it) } ?: "last time"

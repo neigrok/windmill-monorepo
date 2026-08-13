@@ -219,6 +219,41 @@ test('diffRows — an omitted target reads as the word the wire means by omittin
   }]);
 });
 
+// AND THE FOURTH ABSENCE IS THE OPEN LINE (§M). A side with no `sets` is a row that asks at the
+// rack, which is a target like any other as far as this diff is concerned: it moves to one, or one
+// moves to it, and both readings are the word every other screen prints.
+//
+// WHICH SIDE IS MISSING IS THE ROW'S `kind` AND NOTHING ELSE. An added line has no `before` and a
+// removed one has no `after`; a screen that read an absent `sets` as an absent side would draw
+// `+ Deadlift` with nothing added to it.
+test('diffRows — a line that asks at the rack reads as open, on either side of the arrow', () => {
+  const rows = diffRows(proposal({
+    changeCount: 2,
+    changes: [
+      {
+        position: 1,
+        kind: 'retargeted',
+        exerciseId: 'barbell-row',
+        before: { sets: 4, reps: 8, weightKg: 70 },
+        after: { restSeconds: 120 },
+      },
+      { position: 2, kind: 'added', exerciseId: 'deadlift', after: {} },
+    ],
+  }));
+  assert.deepEqual(rows, [
+    {
+      kind: 'retargeted',
+      exerciseId: 'barbell-row',
+      moves: [
+        { field: 'sets', from: '4 × 8', to: 'open' },
+        { field: 'weight', from: '70', to: 'last time' },
+        { field: 'rest', from: 'your rest target', to: '2:00' },
+      ],
+    },
+    { kind: 'added', exerciseId: 'deadlift', targets: 'open', rest: null, follows: 'barbell-row' },
+  ]);
+});
+
 // A weight is read in the account's own unit, here as everywhere: the diff is a reading, not a
 // field, so a lifter in pounds decides on the numbers their log speaks in.
 test('diffRows — the weights move with the unit the account reads in', () => {

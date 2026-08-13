@@ -30,6 +30,12 @@ object SetKindSerializer : KSerializer<SetKind> {
     override fun deserialize(decoder: Decoder): SetKind = SetKind.parse(decoder.decodeString())
 }
 
+// `aliases` is what THIS ACCOUNT used to call this movement, newest first — the log keeps at most
+// five and omits the key entirely when there are none, so an ordinary catalog reads exactly as it
+// did before §N. The picker matches a name AND its aliases, which is the whole point of keeping
+// them: a lifter who renamed `Bench Press` to `Flat press` in March still finds it by the word
+// their hands learned. They are never drawn as a second row unless the match came from one — an
+// alias is a name, not a label.
 @Serializable
 data class Exercise(
     val id: String,
@@ -38,7 +44,20 @@ data class Exercise(
     val equipment: String = "barbell",
     val stepKg: Double? = null,
     val custom: Boolean = false,
-)
+    val aliases: List<String> = emptyList(),
+) {
+    // How this movement is loaded, as §N's second question asks it — the ONE thing about a created
+    // movement that is not admin. Four are offered at creation and the schema keeps six: `cable` and
+    // `kettlebell` are what seeded movements use, and a creation screen is not a taxonomy.
+    companion object {
+        val loadings = listOf("barbell", "dumbbell", "machine", "bodyweight")
+
+        // The domain's own value for "we did not ask": the picker asks a name and a loading, and
+        // nothing on this surface reads the pattern — the ladder is taken off the MAGNITUDE of the
+        // load and never off the equipment.
+        const val unclassified = "isolation"
+    }
+}
 
 // THE SIX — the barbell movements a written program is made of, and the one slice of the catalog
 // this client carries itself (§J22 lists them on the first screen, each reading `never logged`).
@@ -69,10 +88,14 @@ object TheSix {
         movements.filter { six -> catalog.none { it.id == six.id } }
 }
 
+// NO `sets` IS THE OPEN LINE, FROZEN. A routine row that names no target asks at the rack, and the
+// snapshot keeps that absence rather than freezing a zero nobody wrote — so the logger's counter
+// says `set 3` instead of `set 3 of 0`, and the prefill has nothing to reach for and reaches for
+// last time instead.
 @Serializable
 data class PlanEntry(
     val exerciseId: String,
-    val sets: Int,
+    val sets: Int? = null,
     val reps: Int? = null,
     val weightKg: Double? = null,
     val restSeconds: Int? = null,
@@ -275,11 +298,16 @@ data class LastSet(
     }
 }
 
+// THE OPEN ROW — no `targetSets` is a line that decides at the rack, and the ABSENCE is the state:
+// there is no flag beside it, no zero standing in for it, and no other field to read. An open row
+// carries no reps and no weight either (the log refuses a half-open line outright), so `open` is
+// the whole of what it has to say. Rest is still legal on one — how long you wait is not what you
+// are asked to do.
 @Serializable
 data class RoutineEntry(
     val position: Int = 0,
     val exerciseId: String,
-    val targetSets: Int,
+    val targetSets: Int? = null,
     val targetReps: Int? = null,
     val targetWeightKg: Double? = null,
     val restSeconds: Int? = null,
@@ -304,7 +332,16 @@ data class Routine(
     val entries: List<RoutineEntry> = emptyList(),
     val revision: Int = 1,
     val pendingProposal: Proposal? = null,
+    // ONE READ ONLY — `GET /v1/gym/routines/{id}` carries this and the list read does not, because
+    // it is one section of one screen. Newest first, and the `created` row is always last.
+    val history: List<RoutineEvent> = emptyList(),
 ) {
+    // NO `lastTrainedAt` == UNTESTED, and there is no other field: a routine built at home has
+    // never been trained, and the day its first session starts the log's own aggregate fills in.
+    // Derived rather than stored for that reason — a flag would still read `untested` the day the
+    // routine was trained, and still read tested the day that only session was discarded.
+    val untested: Boolean get() = lastTrainedAtMs == null
+
     // The signed-out create: the routine the write describes, numbered 1..n exactly as the server
     // would number it — so the claim can later send the same document and land the same routine.
     constructor(write: RoutineWrite) : this(
@@ -318,11 +355,52 @@ data class Routine(
         },
     )
 
+    // The mid-session "Save 87.5 to Push A" (§8), and it may only move a row that HAS a target. A
+    // weight on a row with no sets is a half-open line, which the log refuses outright — so an open
+    // row is left open rather than turned into a document that cannot be written. The offer never
+    // raises for one anyway (an open line has no planned weight to have been beaten), and this is
+    // the race where it could still arrive: the routine opened that row from another surface while
+    // the session that froze its old target was still running.
     fun retargeting(exerciseId: String, toWeightKg: Double): Routine = copy(
         entries = entries.map {
-            if (it.exerciseId == exerciseId) it.copy(targetWeightKg = toWeightKg) else it
+            if (it.exerciseId == exerciseId && it.targetSets != null) it.copy(targetWeightKg = toWeightKg)
+            else it
         }
     )
+}
+
+// A DAY OF THE PROGRAM, DATED — how the routine came to exist and every proposal made about it
+// since, in one list, newest first. The `created` row is always last and never falls off, whatever
+// the ledger above it holds.
+//
+// `by` ABSENT IS THE LIFTER'S OWN HAND, and that absence is the claim: `create_routine` lands
+// immediately over MCP, so drawing "created by you" over a day an agent typed would be putting
+// words in somebody's mouth. `movements` is the count the day was BUILT with — absent on a routine
+// made before this wave, where the row draws without a count rather than borrowing today's.
+//
+// `kind` stays a String and the LINE is what parses it: a word this build has never heard of draws
+// nothing at all, because a row it cannot name is a row it cannot describe, and a fallback that
+// picked either sentence would date somebody's program with a guess.
+@Serializable
+data class RoutineEvent(
+    val kind: String = "",
+    @SerialName("at") val atMs: Long = 0,
+    val by: String? = null,
+    val movements: Int? = null,
+    val proposal: Proposal? = null,
+) {
+    fun line(nowMs: Long): String? {
+        if (kind == "proposal") return proposal?.historyLine(nowMs)
+        if (kind != "created") return null
+        val said = mutableListOf(Readout.shortDate(atMs, nowMs))
+        said += if (by == null) "created by you" else "created by an agent"
+        movements?.let { said += if (it == 1) "1 movement" else "$it movements" }
+        return said.joinToString(" · ")
+    }
+
+    // The pending one is the CARD and is drawn as one, over this list rather than inside it — the
+    // same rule the settled history has always followed.
+    val isPending: Boolean get() = proposal?.isPending == true
 }
 
 @Serializable
@@ -343,8 +421,14 @@ data class PersonalRecord(
 data class Effort(val sets: Int, val reps: Int, val weightKg: Double)
 
 // planned.reps absent = "max"; planned.weightKg absent = "last time" — absences that mean things.
+//
+// AND `sets` ABSENT IS THE OPEN ROW, arriving here the way it arrives everywhere else in this room:
+// as the absence itself. The comparison of a session run under a routine that decided at the rack
+// carries `"planned": {}` — every field omitted, the object still there — so a required `sets` here
+// took the whole finish screen down with a MissingFieldException, and the room reported it as "the
+// log didn’t answer".
 @Serializable
-data class Target(val sets: Int, val reps: Int? = null, val weightKg: Double? = null)
+data class Target(val sets: Int? = null, val reps: Int? = null, val weightKg: Double? = null)
 
 @Serializable
 data class AgainstMovement(
@@ -428,6 +512,12 @@ data class RecordDay(
 data class MovementRecord(
     val exercise: Exercise,
     val routineCount: Int? = null,
+    // WHICH routines, by name, in program order — the third line of §N's proof block, and the
+    // reason it is a real read rather than a constant: `routines Push A · Legs` is the promise a
+    // rename makes, and a sheet that named them from anywhere but the log would be the product
+    // asserting something it did not check. It is exactly `routineCount` long, and omitted rather
+    // than empty, as every list on this read is.
+    val routines: List<String> = emptyList(),
     val sessionCount: Int? = null,
     val bestE1rm: RecordMark? = null,
     val heaviest: RecordMark? = null,
@@ -463,11 +553,13 @@ data class MovementRecord(
                 }
                 .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
 
+            val named = routines
+                .filter { routine -> routine.entries.any { it.exerciseId == exercise.id } }
+                .map { it.name }
             return MovementRecord(
                 exercise = exercise,
-                routineCount = routines.count { routine ->
-                    routine.entries.any { it.exerciseId == exercise.id }
-                },
+                routineCount = named.size,
+                routines = named,
                 sessionCount = worked.size,
                 heaviest = heaviest,
                 recentDays = closed
@@ -560,10 +652,15 @@ data class ExerciseWrite(
 @Serializable
 data class ExerciseRename(val name: String)
 
+// THE OPEN ROW, GOING OUT — and `null` is the only default this field may ever have. WindmillJson
+// omits a value that equals its declared default, so a non-null default here would drop a real
+// target off the wire and land on the server as an open line: the lifter's 3 × 5 quietly becoming
+// "decide at the rack". OMIT the key, never send 0 — the log refuses a target of nothing, and
+// refuses reps or a weight on a row with no sets.
 @Serializable
 data class RoutineEntryWrite(
     val exerciseId: String,
-    val targetSets: Int,
+    val targetSets: Int? = null,
     val targetReps: Int? = null,
     val targetWeightKg: Double? = null,
     val restSeconds: Int? = null,

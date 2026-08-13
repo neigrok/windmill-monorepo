@@ -1087,6 +1087,33 @@ create table if not exists gym_exercise_names (
   primary key (user_id, exercise_id)
 );
 
+-- What this account USED to call a movement (W10, 2026-08-13). Every gym has a machine with no real
+-- name and a lifter who calls the incline bench "the slanty one", so renaming is not an admin chore
+-- here — and the whole promise of a rename is that nothing is lost. The old name lands here and the
+-- picker searches it beside the current one, so the word that is in a lifter's hands on Tuesday
+-- still finds the movement they renamed on Sunday.
+--
+-- It is a ROW rather than a column beside gym_exercise_names for two reasons that each rule the
+-- column out on their own: that table holds a line only for a SEED the account renamed — a movement
+-- the lifter created renames on its own row and has no line there to hang an alias off — and a
+-- lifter renames more than once, so one column would keep the oldest name or the newest and lose
+-- the other. The name is part of the primary key, which is what makes renaming BACK a delete of one
+-- row rather than a second copy of a name that is no longer a memory (products/gym/adapters/
+-- postgres/PgTrainingRepository.cpp states the three statements). The list is capped per movement by
+-- that same write (domain/Training.h's kMaxAliases): this row set ships on the catalog read, which
+-- is the product's most-fired read, and a lifter's fiftieth try at a name is not muscle memory.
+--
+-- Owner-scoped like every other gym row, on PgAccountFootprint's owned list in main.cpp (a name
+-- someone gave a movement is their data), and it cascades from both sides.
+create table if not exists gym_exercise_aliases (
+  user_id     uuid not null references users(id) on delete cascade,
+  exercise_id text not null references gym_exercises(id) on delete cascade,
+  name        text not null,
+  created_at  timestamptz not null default now(),
+  primary key (user_id, exercise_id, name)
+);
+create index if not exists gym_exercise_aliases_user on gym_exercise_aliases (user_id);
+
 -- The plan. Entries are RELATIONAL, not a JSON blob — Lift persisted per-set pyramid targets as
 -- an opaque blob ("the database can never query or aggregate it") and decode failures silently
 -- returned [], losing the program. The one legitimate blob is the session's frozen snapshot
@@ -1111,30 +1138,54 @@ create index if not exists gym_routines_user on gym_routines (user_id, position)
 -- is re-applied on every deploy and carries no migration machinery.
 alter table gym_routines add column if not exists revision int not null default 1;
 
+-- THE CREATION ROW OF THE ROUTINE'S HISTORY (W10, 2026-08-13), which §M30 draws as
+-- `9 Aug · created by you · 4 movements`. Both columns are written by the create and by nothing
+-- else, and both are NULLABLE because a day made before this wave cannot be asked what it was:
+--   · created_entries is how many lines the routine was BUILT with. It is stored rather than
+--     counted at read time because the count at read time is a different number the moment a lifter
+--     edits the day — and a history row that quietly reported today's document as the one it was
+--     created with would be the ledger lying about the past, which is the one thing a ledger is for.
+--   · created_door is which AGENT door made it, and null is the lifter's own hand — the ordinary
+--     case, the one §M is about, and the only one the app's route can produce. `create_routine` over
+--     MCP is a real door onto this table (a day that does not exist yet takes nothing away, so it
+--     lands immediately rather than as a proposal), and a history that said "created by you" about
+--     it would be putting words in a lifter's mouth about their own program.
+-- created_at is written explicitly by the same insert now, from the service's clock rather than the
+-- database's, exactly as gym_proposals.created_at is: one clock decides, and a test can drive it.
+-- The default stays for any row a hand writes.
+alter table gym_routines add column if not exists created_entries int;
+alter table gym_routines add column if not exists created_door text
+  check (created_door in ('mcp','ask'));
+
 -- The same movement twice in one routine — bench heavy, then bench back-off — is two rows with
 -- two positions (Lift collapsed them into one set counter). Positions are dense and 1-based, and
 -- a replace lays the whole run down again: entries have no id to churn, their key IS their
--- position. Three columns mean something by being null: a null target_reps is "as many as you
--- can" (the canon's `3 × max` — a chin-up names no rep target), a null target weight means
--- "whatever you did last time", and a null rest_seconds is the client's own default.
+-- position. FOUR columns mean something by being null: a null target_sets is an OPEN line — the
+-- movement is in the day and what to do with it is decided at the rack — a null target_reps is "as
+-- many as you can" (the canon's `3 × max` — a chin-up names no rep target), a null target weight
+-- means "whatever you did last time", and a null rest_seconds is the client's own default.
 create table if not exists gym_routine_entries (
   routine_id       text not null references gym_routines(id) on delete cascade,
   position         int  not null check (position >= 1),
   exercise_id      text not null references gym_exercises(id),
-  target_sets      int  not null default 3 check (target_sets between 1 and 20),
+  target_sets      int  check (target_sets between 1 and 20),                   -- null = open
   target_reps      int  check (target_reps between 1 and 100),                  -- null = max
   target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
   rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
   primary key (routine_id, position)
 );
--- target_reps was `not null default 8` until routines met the chin-up. This run is re-applied on
--- every deploy and carries no ALTER machinery, so the change is its own pair of idempotent
--- statements beside the table: dropping a constraint or a default that is already gone succeeds, so
--- a second apply is a no-op, and a database created before this line ends up shaped exactly like
--- one created after it. The default goes with the NOT NULL because 8 is a rep target nobody asked
--- for, and this column's absence now MEANS something.
+-- target_reps was `not null default 8` until routines met the chin-up, and target_sets was
+-- `not null default 3` until a routine could be SAVED WHILE INCOMPLETE (W10, 2026-08-13). This run
+-- is re-applied on every deploy and carries no ALTER machinery, so each change is its own pair of
+-- idempotent statements beside the table: dropping a constraint or a default that is already gone
+-- succeeds, so a second apply is a no-op, and a database created before these lines ends up shaped
+-- exactly like one created after them. The default goes with the NOT NULL both times, because 8 is
+-- a rep target nobody asked for and 3 is a set target nobody asked for — and each column's absence
+-- now MEANS something, which a default would quietly fill in with a number the lifter never typed.
 alter table gym_routine_entries alter column target_reps drop not null;
 alter table gym_routine_entries alter column target_reps drop default;
+alter table gym_routine_entries alter column target_sets drop not null;
+alter table gym_routine_entries alter column target_sets drop default;
 
 -- THE PROPOSAL LEDGER (W6, 2026-08-12). An agent reads this log, and when it wants to change a day
 -- of the program it does not: it mints a row here, and nothing moves until the lifter opens the

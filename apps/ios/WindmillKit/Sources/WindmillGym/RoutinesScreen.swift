@@ -2,30 +2,30 @@ import SwiftUI
 import WindmillPlatform
 
 // ROUTINES — the written-down days of the program, and the third of the room's three tabs (§F). It
-// is a list and two ways in: a routine, what it asks for, a Start on the one you are looking at, and
+// is a list and three ways in: `New routine` at the head, a routine's own page behind its name, and
 // every movement it names a door onto that movement's record (§H).
 //
-// IT DRAWS NO EDITOR, NO `New` AND NO DUPLICATE, and that is a fact about this surface rather than a
-// gap in this screen. §B screen 5 gives all three a row action, and every one of them writes a
-// routine — which is the web's half of the split (canon §11: the phone owns the open session, the
-// web owns the desk work). A control that opened nothing would be the defect this room refuses
-// everywhere else. The two ways a routine is written from a phone both already exist and are both
-// at the moment they make sense: "Keep this as a routine" at the finish, and the change offer
-// mid-session.
+// IT DRAWS AN EDITOR SINCE §M (2026-08-13), and the comment that stood here said the opposite: this
+// surface deliberately had none, on canon §11's split — the phone owns the open session, the web
+// owns the desk work. §M overturns exactly that for the one case it is about. Nobody assembles a
+// program standing in a gym, which is an argument FOR this screen rather than against it: the
+// lifter with a program in a notebook is at a kitchen table on Sunday, and the phone is what is
+// beside them. The two older doors are untouched and neither is replaced — "Keep this as a routine"
+// at the finish, and an agent's proposal.
 //
 // The order is the log's own — trained most recently first — so the footer line is a statement about
 // this list and not a wish: `Routine.byLastTrained` puts the device's unclaimed routines in the same
 // order the server sends the rest.
 //
-// IT IS ALSO WHERE §B SCREEN 6's HISTORY SECTION LANDS. The board hangs History off the routine
-// EDITOR, and this surface has none — so it hangs off the card that opens the routine out instead,
-// which on this phone is the same object read the same way, minus the writing. Every proposal an
-// agent ever made against a routine stays under it, applied and dismissed and set aside alike:
-// an agent's suggestion is part of the program's history whichever way it went.
+// THE ROW OPENS THE ROUTINE AND NO LONGER STARTS IT. The Start moved to §M screen 30, where it sits
+// under everything the day asks for — which is the order a lifter reads it in, and the only place
+// `untested`, the open rows and the history have room to be said. What the row keeps is the pending
+// marker: a proposal is about the routine and the tap onto it belongs beside its name.
 
 struct RoutinesScreen: View {
     @ObservedObject var store: TrainingStore
-    let onStart: (String) -> Void
+    let onOpen: (String) -> Void
+    let onNew: () -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
     // THE INVITATION (§D12), and nil is the whole of its rule: the room hands this over only while
@@ -63,23 +63,35 @@ struct RoutinesScreen: View {
     }
 
     private var head: some View {
-        Text("Routines")
-            .font(WindmillFont.display(32))
-            .foregroundStyle(skin.ink)
-            .padding(.bottom, WindmillSpace.x1)
+        HStack(alignment: .firstTextBaseline) {
+            Text("Routines")
+                .font(WindmillFont.display(32))
+                .foregroundStyle(skin.ink)
+            Spacer(minLength: WindmillSpace.x3)
+            Button(action: onNew) {
+                Text("New")
+                    .font(WindmillFont.body(13.5, .bold))
+                    .foregroundStyle(skin.accent)
+                    .padding(.horizontal, WindmillSpace.x3)
+                    .frame(minHeight: GymTap.minimum)
+                    .background(Capsule().strokeBorder(skin.accent, lineWidth: 1))
+            }
+        }
+        .padding(.bottom, WindmillSpace.x1)
     }
 
-    // The same sentence Today's empty state makes, because it is the same fact: this lifter already
-    // has a program and the app's job is to catch it, not to make them type it in first.
+    // BOTH DOORS, because both are true and a lifter arrives through one or the other: the program
+    // that falls out of the session you are about to do, and the one already written on paper beside
+    // you. The sentence used to name only the first, on a surface where the second did not exist.
     private var nothingYet: some View {
-        Text("Nothing written down yet. Log a session and name it at the end — that is how a routine gets made here.")
+        Text("Nothing written down yet. Log a session and name it at the end — or type one out now, if you already have a program.")
             .font(WindmillFont.body(16))
             .foregroundStyle(skin.inkDim)
             .lineSpacing(5)
             .padding(.top, WindmillSpace.x2)
     }
 
-    // THE START IS THE HEADER AND NOT THE WHOLE CARD, since the movement names below it became doors
+    // THE DOOR IS THE HEADER AND NOT THE WHOLE CARD, since the movement names below it are doors
     // onto their own records (§H): a button inside a button is not a second tap target on iOS, it is
     // one that swallows the other. The header is where §B screen 5 draws the row anyway — the name,
     // its meta and the chevron — and the entries under it are this surface's own preview of what the
@@ -90,11 +102,21 @@ struct RoutinesScreen: View {
         // nothing.
         let pending = store.pending(of: routine.id)
         return VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            Button { onStart(routine.id) } label: {
+            Button { onOpen(routine.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                     Text(routine.name)
                         .font(WindmillFont.body(17, .bold))
                         .foregroundStyle(skin.ink)
+                    // The word §M puts on a routine that has never been run, said where the list can
+                    // say it too: it is the same absence, read the same way, and a lifter scanning
+                    // for what to do tonight has earned knowing which of these is untried.
+                    if routine.isUntested {
+                        Text("untested")
+                            .font(GymType.numeral(10))
+                            .tracking(0.5)
+                            .textCase(.uppercase)
+                            .foregroundStyle(skin.inkFaint)
+                    }
                     Spacer(minLength: 0)
                     Text(meta(routine))
                         .font(GymType.numeral(11.5))
@@ -118,7 +140,7 @@ struct RoutinesScreen: View {
                     Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
                                         weightKg: entry.targetWeightKg))
                         .font(GymType.numeral(12.5))
-                        .foregroundStyle(skin.targetInk)
+                        .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
                 }
             }
             history(of: routine)
@@ -131,8 +153,8 @@ struct RoutinesScreen: View {
     }
 
     // `● 1 proposal` (§B screen 5), and on this surface it is the DOOR as well as the mark: the
-    // board reaches the diff through the editor's chevron and this room's rows start a session
-    // instead, so the marker carries the tap.
+    // row's own tap opens the routine, so a diff reached only through it would be two taps from a
+    // list whose whole job is to say something is waiting.
     //
     // IT COUNTS WHAT IS WAITING AND OPENS THE NEWEST. The ledger keeps one pending proposal per
     // door, so two doors put two on one routine — a mark that said "1" over both would be wrong
@@ -203,10 +225,13 @@ struct RoutinesScreen: View {
         }
     }
 
+    // `6 exercises · trained 5 days ago`. A routine that has never been run says only its count
+    // here: the `untested` word beside the name is the same fact, and a row that carried both would
+    // be saying one thing twice in one line.
     private func meta(_ routine: Routine) -> String {
         let count = routine.entries.count
         let movements = count == 1 ? "1 exercise" : "\(count) exercises"
-        guard let trained = routine.lastTrainedAtMs else { return "\(movements) · never trained" }
+        guard let trained = routine.lastTrainedAtMs else { return movements }
         return "\(movements) · trained \(Readout.ago(trained, now: Int64(Date().timeIntervalSince1970 * 1000)))"
     }
 }

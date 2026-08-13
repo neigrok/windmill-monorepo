@@ -40,7 +40,7 @@ import works.windmill.platform.net.WindmillApiException
 //   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
 //   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
-//   GET  /v1/gym/proposals?routineId= ·  GET  /v1/gym/proposals/:id
+//   GET  /v1/gym/proposals/:id
 //   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
@@ -130,12 +130,6 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun deleteRoutine(id: String) {
         api.send<Unit>("DELETE", "/v1/gym/routines/$id")
     }
-
-    // The routine's own history, newest first. `state` is deliberately not sent: the pending one is
-    // wanted here too — the History section draws the settled rows and the card draws the pending
-    // one, and two reads for one list would be two chances to disagree.
-    override suspend fun proposals(routineId: String): List<Proposal> =
-        api.get<Proposals>("/v1/gym/proposals?routineId=${escaped(routineId)}").proposals
 
     override suspend fun proposal(id: String): Proposal? = try {
         api.get<Proposal>("/v1/gym/proposals/$id")
@@ -230,8 +224,3 @@ private data class Log(val sessions: List<SessionSummary>)
 
 @Serializable
 private data class Routines(val routines: List<Routine>)
-
-// Always present and `[]` for a routine no agent has ever proposed anything about — so the History
-// section draws nothing from an answer rather than from a failure, and the two are never the same.
-@Serializable
-private data class Proposals(val proposals: List<Proposal> = emptyList())

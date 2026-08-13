@@ -175,6 +175,9 @@ int main() {
                 // account on the server non-empty and break this door the other way round.
                 {"gym_exercises", "created_by"},
                 {"gym_exercise_names", "user_id"},    // gym — a movement someone RENAMED, likewise
+                // gym — and what they called it BEFORE that rename, which is the same fact one
+                // step back: an account whose only gym row is an alias renamed something.
+                {"gym_exercise_aliases", "user_id"},
                 // gym_preferences is DELIBERATELY ABSENT, and the reason is the sentence above read
                 // the other way round: this list decides whether the link door may delete an
                 // account, so a table on it must be data the account HOLDS. Settings are how a room

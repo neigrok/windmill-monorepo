@@ -106,13 +106,18 @@ object LiveLines {
     // movement with no target says so rather than borrowing a number from somewhere else. A plan line
     // that names sets but no rep target reads `plan 3 × max`: the routine asked for whatever the
     // movement gives that day.
+    //
+    // AN OPEN LINE IS THE SAME ANSWER AS NO LINE AT ALL, and that is the whole of what the frozen
+    // absence buys: a routine row that decided at the rack has no count to be the third of and no
+    // reps to name, so the counter says `set 3` and the target says `no target`. Never `set 3 of 0`.
     fun counter(workingSetsToday: Int, planEntry: PlanEntry?): Counter {
-        if (planEntry == null) {
+        val sets = planEntry?.sets
+        if (planEntry == null || sets == null) {
             return Counter(count = "set ${workingSetsToday + 1}", plan = "no target")
         }
         val load = planEntry.weightKg?.let { " @ ${Readout.weight(it)}" } ?: ""
-        return Counter(count = "set ${workingSetsToday + 1} of ${planEntry.sets}",
-                       plan = "plan ${planEntry.sets} × ${Readout.repTarget(planEntry.reps)}$load")
+        return Counter(count = "set ${workingSetsToday + 1} of $sets",
+                       plan = "plan $sets × ${Readout.repTarget(planEntry.reps)}$load")
     }
 
     // FOUR STATES, NOT TWO, and the difference between them is the whole reason this card exists.
@@ -190,8 +195,12 @@ object LiveLines {
         return order.map { exerciseId ->
             val performed = sets.filter { it.exerciseId == exerciseId }
             val done = workingCount(performed)
-            val planned = plan?.entry(exerciseId)?.sets
-            val justAdded = performed.isEmpty() && exerciseId == foot && planned == null
+            val entry = plan?.entry(exerciseId)
+            val planned = entry?.sets
+            // Off the LINE and never off its set target: an open row is a movement the program
+            // wrote down and declined to give a number to, so tagging it `just added` would date a
+            // written line to this afternoon.
+            val justAdded = performed.isEmpty() && exerciseId == foot && entry == null
             MovementRow(
                 id = exerciseId,
                 name = Readout.movement(exerciseId, catalog),

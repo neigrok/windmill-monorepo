@@ -1636,7 +1636,14 @@ TEST(gym_routines_round_trip_the_whole_document) {
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5}],)"
                        R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
   CHECK_EQ(dump(bodyOf(listed)), R"({"routines":[)" + dump(bodyOf(created)) + R"(]})");
-  CHECK_EQ(dump(bodyOf(one)), dump(bodyOf(created)));
+  // The single read is the create's reply plus the day's own history, which the LIST does not carry:
+  // §M30 draws that section and a routines screen does not. The creation row names no door, and
+  // that absence is what the screen draws as `created by you`.
+  CHECK_EQ(dump(bodyOf(one)),
+           std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
+                       R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5}],)"
+                       R"("history":[{"at":1700000000000,"kind":"created","movements":1}],)"
+                       R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
 }
 
 TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
@@ -1662,7 +1669,7 @@ TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
                        R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
 }
 
-// `Chin-up 3 × max` on the wire. targetReps is the third omission that MEANS something, and it is
+// `Chin-up 3 × max` on the wire. targetReps is one of the four omissions that MEAN something, and it is
 // omitted on the way out exactly as it was on the way in — never null, and never a zero a client
 // would draw as a target. The frozen plan carries the same absence onto the session.
 TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
@@ -1702,6 +1709,56 @@ TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
       send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", nulled, "s-live"));
   CHECK_EQ(sentNull->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(sentNull)["entries"]), dump(bodyOf(created)["entries"]));
+}
+
+// §M's third door: a routine copied out of a notebook on Sunday night, SAVED while it is still
+// incomplete. The open line omits targetSets on the way in and on the way out — the absence is the
+// state, and a zero would be a target of nothing — and the frozen plan carries the same absence
+// onto the session, which is what lets the logger ask at the rack instead of reading `0 × 5`.
+TEST(gym_a_routine_saves_with_an_open_line_and_the_plan_freezes_it_open) {
+  Harness h;
+  h.signIn("s-live");
+  h.repo.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
+                       2.5, false});
+  Json::Value body = routineBody();
+  Json::Value open(Json::objectValue);
+  open["exerciseId"] = "barbell-row";
+  body["entries"].append(open);
+
+  drogon::HttpResponsePtr created =
+      send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", body, "s-live"));
+  Json::Value start = startBody();
+  start["routineId"] = "rt_11111111";
+  drogon::HttpResponsePtr started =
+      send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", start, "s-live"));
+
+  CHECK_EQ(created->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(created)),
+           std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
+                       R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5},)"
+                       R"({"exerciseId":"barbell-row","position":2}],)"
+                       R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
+  CHECK_EQ(started->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(started)["plan"]),
+           std::string(R"({"entries":[{"exerciseId":"bench-press","reps":5,"restSeconds":180,)"
+                       R"("sets":5,"weightKg":82.5},{"exerciseId":"barbell-row"}],)"
+                       R"("routine":"Push A"})"));
+}
+
+// Half a target is not a target: the sheet that leaves a line open clears the whole row, so a line
+// naming reps with no sets is refused where every unstorable value is.
+TEST(gym_a_routine_line_with_reps_but_no_sets_is_400) {
+  Harness h;
+  h.signIn("s-live");
+  Json::Value body = routineBody();
+  body["entries"][0].removeMember("targetSets");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", body, "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that routine"})"));
+  CHECK(h.repo.routineRows.empty());
 }
 
 TEST(gym_create_routine_with_an_id_another_account_holds_is_409) {
@@ -1746,7 +1803,7 @@ TEST(gym_a_routine_that_could_not_be_stored_as_written_is_400) {
   Json::Value nameless = routineBody();
   nameless["name"] = "";
   Json::Value tooLong = routineBody();
-  tooLong["name"] = std::string(81, 'x');
+  tooLong["name"] = std::string(kMaxNameLength + 1, 'x');
   Json::Value badId = routineBody("short");
   Json::Value badEntry = routineBody();
   badEntry["entries"][0]["targetSets"] = 21;
@@ -2385,9 +2442,44 @@ TEST(gym_rename_answers_the_movement_under_its_new_name_and_its_unchanged_id) {
            patchRequest("/v1/gym/exercises/back-squat", renameBody(), "s-live"), "back-squat");
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  // The id never moved, and the name it had a moment ago rides back as an alias — the picker
+  // searches it, so the word in a lifter's muscle memory still finds the movement (§N32).
   CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"custom":false,"equipment":"barbell","id":"back-squat",)"
-                       R"("name":"Low-bar Squat","pattern":"squat","stepKg":2.5})"));
+           std::string(R"({"aliases":["Back Squat"],"custom":false,"equipment":"barbell",)"
+                       R"("id":"back-squat","name":"Low-bar Squat","pattern":"squat",)"
+                       R"("stepKg":2.5})"));
+}
+
+// §N32's *old name searchable as an alias*, and the rule that keeps it honest: renaming BACK does
+// not leave the old name standing as an alias of itself. A picker that matched `Back Squat` twice —
+// once as the name and once as a memory of it — would be shadowing the truth with the very list
+// that exists to protect it.
+TEST(gym_the_old_name_stays_searchable_and_renaming_back_takes_it_off_again) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr renamed =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody(), "s-live"), "back-squat");
+  drogon::HttpResponsePtr listed =
+      send(h.api, &GymApi::listExercises, getRequest("/v1/gym/exercises", "s-live"));
+  drogon::HttpResponsePtr back =
+      send(h.api, &GymApi::renameExercise,
+           patchRequest("/v1/gym/exercises/back-squat", renameBody("Back Squat"), "s-live"),
+           "back-squat");
+
+  CHECK_EQ(dump(bodyOf(renamed)["aliases"]), std::string(R"(["Back Squat"])"));
+  // The catalog is where the picker searches, so the alias has to be ON that read and not behind a
+  // second one — a movement whose old name arrived a frame late is a movement you cannot find.
+  // (The list is ordered by pattern then name, so the squat sits behind the press.)
+  CHECK_EQ(dump(bodyOf(listed)["exercises"][1]["aliases"]), std::string(R"(["Back Squat"])"));
+  // Renamed BACK: the name it is called now is off the alias list, and the one it was called for
+  // the last few days is on it. A name is either what the movement is called or a memory of it.
+  CHECK_EQ(bodyOf(back)["name"].asString(), std::string("Back Squat"));
+  CHECK_EQ(dump(bodyOf(back)["aliases"]), std::string(R"(["Low-bar Squat"])"));
+  // And a movement nobody has renamed carries no key at all: the ordinary catalog is byte-identical
+  // to what it was before names grew a memory — omitted, never an empty array.
+  CHECK(!bodyOf(listed)["exercises"][0].isMember("aliases"));
 }
 
 // A rename carries ONE field. A body naming anything else would be answered 200 with that field
@@ -2467,6 +2559,29 @@ TEST(gym_record_answers_the_whole_page_in_one_read) {
                        R"("setNumber":4,"weightKg":82.5}],)"
                        R"("startedAt":1700000000000}],)"
                        R"("routineCount":0,"sessionCount":1})"));
+}
+
+// THE RENAME SHEET'S PROOF (§N32), and every number in it comes off THIS read: how many sessions
+// hold the movement, how many PRs it has earned and the best estimate standing, and the days of the
+// program that name it BY NAME. One read, so a sheet cannot assemble `34 sessions` from one call
+// and `Push A · Legs` from another and show a lifter a torn claim about their own history.
+TEST(gym_record_carries_the_days_that_name_the_movement_beside_their_count) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.routineRows.push_back(
+      Routine{rtId("rt_22222222"), caller, "Legs", 1, {benchEntry(), benchEntry(2)}});
+  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::exerciseRecord,
+           getRequest("/v1/gym/exercises/bench-press/record", "s-live"), "bench-press");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  // The count is the list's own length — the same fact twice would be two facts to keep in step.
+  CHECK_EQ(bodyOf(response)["routineCount"].asInt(), 2);
+  CHECK_EQ(dump(bodyOf(response)["routines"]), std::string(R"(["Push A","Legs"])"));
+  CHECK_EQ(bodyOf(response)["sessionCount"].asInt(), 1);
 }
 
 // A movement in the catalog nobody has lifted: two zero counts, and not one empty list beside them

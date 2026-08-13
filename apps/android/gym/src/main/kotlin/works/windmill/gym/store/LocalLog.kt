@@ -59,8 +59,21 @@ class LocalLog(private val file: File) {
     }.getOrElse { Held() }
 
     val exercises: List<Exercise> get() = held.exercises ?: emptyList()
-    val routines: List<Routine> get() = held.routines ?: emptyList()
     val finished: List<FinishedSession> get() = held.finished ?: emptyList()
+
+    // THE DAY A ROUTINE WAS LAST TRAINED IS DERIVED HERE AND NEVER STORED — the shelf's own version
+    // of the aggregate the log computes (`max(started_at)` over the sessions run under it), read off
+    // the finished sessions two lines up. Stored, it would have two ways to lie: it would still name
+    // a day after that session was discarded, and it would say `never trained` over a workout this
+    // same device recorded. Which is exactly what a signed-out routine used to say — and what the
+    // word `untested` would have inherited.
+    val routines: List<Routine> get() = stored.map { routine ->
+        routine.copy(lastTrainedAtMs = finished
+            .filter { it.session.routineId == routine.id }
+            .maxOfOrNull { it.session.startedAtMs })
+    }
+
+    private val stored: List<Routine> get() = held.routines ?: emptyList()
 
     fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
@@ -105,7 +118,7 @@ class LocalLog(private val file: File) {
     fun remintExercise(old: String, fresh: String) {
         held = held.copy(
             exercises = exercises.map { if (it.id == old) it.copy(id = fresh) else it },
-            routines = routines.map { routine ->
+            routines = stored.map { routine ->
                 routine.copy(entries = routine.entries.map {
                     if (it.exerciseId == old) it.copy(exerciseId = fresh) else it
                 })
@@ -120,20 +133,23 @@ class LocalLog(private val file: File) {
         flush()
     }
 
-    // Add or replace by id — the signed-out create AND the signed-out retarget come through here.
+    // Add or replace by id — the signed-out create, the signed-out retarget and the builder's own
+    // save all come through here. The last-trained instant is stripped on the way in for the reason
+    // the getter derives it: a derived value written to disk is a second answer waiting to go stale.
     fun hold(routine: Routine) {
-        held = held.copy(routines = routines.filterNot { it.id == routine.id } + routine)
+        held = held.copy(routines = stored.filterNot { it.id == routine.id } +
+            routine.copy(lastTrainedAtMs = null))
         flush()
     }
 
     fun claimRoutine(id: String) {
-        held = held.copy(routines = routines.filterNot { it.id == id })
+        held = held.copy(routines = stored.filterNot { it.id == id })
         flush()
     }
 
     fun remintRoutine(old: String, fresh: String) {
         held = held.copy(
-            routines = routines.map { if (it.id == old) it.copy(id = fresh) else it },
+            routines = stored.map { if (it.id == old) it.copy(id = fresh) else it },
             finished = finished.map { past ->
                 if (past.session.routineId != old) past
                 else past.copy(session = past.session.copy(routineId = fresh))
@@ -205,7 +221,7 @@ class LocalLog(private val file: File) {
     // reference — dropping only the id, so they replay ad-hoc rather than being refused.
     fun orphanRoutine(id: String) {
         held = held.copy(
-            routines = routines.filterNot { it.id == id },
+            routines = stored.filterNot { it.id == id },
             finished = finished.map { past ->
                 if (past.session.routineId != id) past
                 else past.copy(session = past.session.copy(routineId = null))

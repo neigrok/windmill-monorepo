@@ -957,6 +957,45 @@ TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
   CHECK_EQ(h.repo.routineRows[0].name, std::string("Push A"));   // the edit did not land
 }
 
+// An agent copying a program out of a lifter's notebook can write the day down before it knows
+// every number in it: a line with no `targetSets` is OPEN, and the rack decides. The schema stopped
+// requiring the field in W10, which is what keeps an agent from inventing one — and the created day
+// names the door it came through, so the routine's history never says `created by you` about a day
+// somebody's Claude typed.
+TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
+  Harness h;
+  h.repo.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
+                       2.5, false});
+  Json::Value open(Json::objectValue);
+  open["exerciseId"] = "barbell-row";
+  Json::Value args(Json::objectValue);
+  args["id"] = "rt_00000001";
+  args["name"] = "Heavy Thursday";
+  args["position"] = 0;
+  args["entries"] = Json::Value(Json::arrayValue);
+  args["entries"].append(open);
+
+  const ToolResult created = h.call("create_routine", args);
+
+  REQUIRE(!created.isError);
+  CHECK(body(created)["entries"][0]["targetSets"].isNull());   // omitted: the line asks at the rack
+  const std::vector<RoutineEvent> history =
+      h.service.routineHistory(uid(), RoutineId{"rt_00000001"});
+  REQUIRE_EQ(history.size(), std::size_t{1});
+  CHECK_EQ(history[0].door, std::optional<ProposalDoor>(ProposalDoor::mcp));
+  CHECK_EQ(history[0].movements, std::optional<int>(1));
+
+  // And the published schema no longer demands the field, so an agent reading it does not have to
+  // invent a number to satisfy the surface it is writing to.
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "create_routine") {
+      const Json::Value& required =
+          tool.descriptor["inputSchema"]["properties"]["entries"]["items"]["required"];
+      REQUIRE_EQ(required.size(), 1u);
+      CHECK_EQ(required[0].asString(), std::string("exerciseId"));
+    }
+}
+
 // Refused at the MINT, not at the tap. A proposal a lifter reads and cannot apply is worse than no
 // proposal at all: the refusal would arrive at the one moment they had already decided to trust it.
 TEST(gym_a_proposal_naming_no_movement_is_refused_before_it_is_ever_minted) {

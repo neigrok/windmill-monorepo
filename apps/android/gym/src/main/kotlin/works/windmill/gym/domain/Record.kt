@@ -56,6 +56,43 @@ object Record {
 
     data class Day(val day: String, val sets: String)
 
+    // §N'S PROOF — the block under the rename field, and the reason it is composed here: every line
+    // of it is a READ, and a constant on the one screen whose whole job is proof would be the
+    // product asserting something it did not check. A name is a label on a stable id, so nothing
+    // below moves when it changes; these lines are how a lifter can see that before they tap.
+    //
+    // A LINE WITH NOTHING BEHIND IT IS NOT DRAWN. An older server sends no counts, a movement in no
+    // routine has no routines, and a movement nobody has lifted has neither — so each row is
+    // dropped rather than printed with a zero in it, and a rename with nothing to prove draws no
+    // block at all. Zero itself never reaches here as a claim: `0 sessions · unchanged` under a
+    // heading that says everything follows is furniture, not proof.
+    data class Proof(val label: String, val value: String)
+
+    fun proof(record: MovementRecord, aliased: Boolean): List<Proof> {
+        val proof = mutableListOf<Proof>()
+        record.sessionCount?.takeIf { it > 0 }?.let { proof.add(Proof("sessions", "$it · unchanged")) }
+        marks(record)?.let { proof.add(Proof("records", it)) }
+        record.routines.takeIf { it.isNotEmpty() }
+            ?.let { proof.add(Proof("routines", it.joinToString(" · "))) }
+        // The alias is the ACCOUNT's row, so it is only promised where the rename lands on the
+        // account: a movement this device minted and no claim has carried yet renames on the shelf,
+        // which has no alias table and no picker rule reading one.
+        if (aliased) proof.add(Proof("old name", "searchable as an alias"))
+        return proof
+    }
+
+    // `3 PRs · e1RM 122.5 kept` — the ladder of records and the standing best, each dropped where
+    // it does not exist. A movement Epley has nothing to say about (bodyweight, band-assisted) has
+    // no estimate to keep and says so by leaving that half out.
+    private fun marks(record: MovementRecord): String? {
+        val ladder = record.records.size.takeIf { it > 0 }
+            ?.let { if (it == 1) "1 PR" else "$it PRs" }
+        val standing = record.bestE1rm?.e1rm?.let { Readout.estimate(it) }
+        if (ladder == null) return standing?.let { "$it kept" }
+        if (standing == null) return "$ladder kept"
+        return "$ladder · $standing kept"
+    }
+
     data class Page(
         val name: String,
         val subhead: String,

@@ -107,13 +107,17 @@ public enum Finish {
     // is a different session rather than a smaller one, and this row is a fact with a direction and
     // never a grade.
     private static func detail(_ movement: Against.Movement) -> String {
-        if let planned = movement.planned, let target = planned.reps,
+        // AN OPEN TARGET (§M) IS NOTHING TO MEASURE AGAINST, so the row falls through to last time
+        // exactly as a movement with no plan line does. The routine declined to name a number; an
+        // arrow drawn from `open` would be the comparison inventing the left-hand side of itself.
+        let planned = movement.planned.flatMap { $0.isOpen ? nil : $0 }
+        if let planned, let target = planned.reps, let sets = planned.sets,
            movement.now.reps < target,
            planned.weightKg.map({ movement.now.weightKg <= $0 }) ?? true {
-            return "planned \(count(planned.sets, target)) · did \(count(movement.now.sets, movement.now.reps))"
+            return "planned \(count(sets, target)) · did \(count(movement.now.sets, movement.now.reps))"
         }
-        if let planned = movement.planned {
-            return "\(top(planned.sets, planned.reps, planned.weightKg)) → \(top(movement.now))"
+        if let planned, let sets = planned.sets {
+            return "\(top(sets, planned.reps, planned.weightKg)) → \(top(movement.now))"
         }
         if let before = movement.before {
             return "\(top(before)) → \(top(movement.now))"
@@ -416,9 +420,9 @@ struct FinishScreen: View {
         }
     }
 
+    // The one place gym spells a target, borrowed rather than written out again — this preview and
+    // the routine card have to agree about what a line of a program says.
     private func target(_ entry: RoutineWrite.Entry) -> String {
-        let count = "\(entry.targetSets) × \(Readout.repTarget(entry.targetReps))"
-        guard let weight = entry.targetWeightKg, weight != 0 else { return count }
-        return "\(count) · \(Readout.weight(weight))"
+        Readout.target(sets: entry.targetSets, reps: entry.targetReps, weightKg: entry.targetWeightKg)
     }
 }

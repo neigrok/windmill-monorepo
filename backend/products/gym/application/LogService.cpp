@@ -239,15 +239,21 @@ std::optional<Routine> LogService::routine(const UserId& user, const RoutineId& 
   return repo_.routine(user, id);
 }
 
+std::vector<RoutineEvent> LogService::routineHistory(const UserId& user, const RoutineId& id) {
+  return repo_.routineHistory(user, id);
+}
+
 // Both routine writes are one construction and one call, and that is the whole point of the shape:
 // the entity's constructor is the entire validation (it throws InvalidTraining, which the wire
 // turns into a 400), and the store's outcome is the entire refusal set. Neither write reads before
 // it writes — a load-then-decide here would be a race the SQL already settles, and the create's
 // idempotency is the id, not a lookup: a create that lost its reply and was sent again reads back
 // the STORED routine untouched, exactly as a replayed start does.
-RoutineWriteOutcome LogService::createRoutine(const UserId& user, const RoutineWrite& incoming) {
+RoutineWriteOutcome LogService::createRoutine(const UserId& user, const RoutineWrite& incoming,
+                                             std::optional<ProposalDoor> byAgent) {
   return repo_.insertRoutine(
-      Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries});
+      Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries}, byAgent,
+      clock_.nowMs());
 }
 
 RoutineWriteOutcome LogService::replaceRoutine(const UserId& user, const RoutineId& id,

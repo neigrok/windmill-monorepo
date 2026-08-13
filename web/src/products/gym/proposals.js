@@ -20,7 +20,9 @@
 // hand the reading to `entryLabel`. A diff that spelled a weight its own way would be the product
 // disagreeing with itself about one number on two screens.
 
-import { agoLabel, entryLabel, fmt, numberWord, shortDayLabel, targetLoadOf, timeLabel } from './log.js';
+import {
+  agoLabel, entryLabel, fmt, numberWord, OPEN_TARGET, shortDayLabel, targetLoadOf, timeLabel,
+} from './log.js';
 import { restLabel } from './settings/preferences.js';
 
 // A proposal nobody has decided yet. Every other state is settled and stays settled — the wire has
@@ -142,7 +144,12 @@ export function settledLine(proposal, now = Date.now()) {
 // The two readings a routine entry has on this screen, in the plan snapshot's vocabulary. `sets` is
 // the pair — canon draws `sets 5 × 5 → 5 × 3`, which is the sets and the reps moving together — and
 // an absent rep target is `max`, the same movement-to-whatever-it-gives every other surface spells.
+//
+// AN ABSENT `sets` IS THE OPEN LINE and never a missing side. Which side is missing is the row's
+// `kind` and nothing else — `added` carries no before, `removed` carries no after (gymApi.js) — so
+// a diff that read an absent sets as an absent side would draw `+ Deadlift` with nothing added.
 function setsReading(side) {
+  if (side.sets == null) return OPEN_TARGET;
   return `${side.sets} × ${side.reps ?? 'max'}`;
 }
 

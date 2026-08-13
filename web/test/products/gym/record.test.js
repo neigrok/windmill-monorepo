@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  chartOf, daysOf, recordsOf, recordView, subheadOf, tilesOf, whenOf,
+  chartOf, daysOf, recordsOf, recordView, RENAME_PROOF, renameProofOf, subheadOf, tilesOf, whenOf,
 } from '../../../src/products/gym/record.js';
 
 // The design board's own movement, at the design board's own numbers: 19 May → 10 Aug, 105 × 5,
@@ -26,6 +26,9 @@ const MAY_19 = new Date(2026, 4, 19, 18, 0).getTime();
 const BACK_SQUAT = {
   exercise: { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
   routineCount: 2,
+  // The names as well as the count, because the rename sheet's proof answers "which of my days
+  // still say this" and a number cannot. `routineCount` is exactly `routines.length` on the wire.
+  routines: ['Push A', 'Legs'],
   sessionCount: 34,
   bestE1rm: { weightKg: 105, reps: 5, at: TODAY, e1rm: 122.5 },
   heaviest: { weightKg: 105, reps: 5, at: TODAY, e1rm: 122.5 },
@@ -65,6 +68,7 @@ const BACK_SQUAT = {
 const CHIN_UP = {
   exercise: { id: 'chin-up', name: 'Chin-up', pattern: 'pull', equipment: 'bodyweight', stepKg: 1, custom: false },
   routineCount: 1,
+  routines: ['Pull A'],
   sessionCount: 9,
   heaviest: { weightKg: 0, reps: 12, at: JUL_27 },
   recentDays: [{
@@ -253,4 +257,46 @@ test('recordView — a movement only ever dropped is in the log, and says so abo
   assert.equal(view.chart, null);
   assert.deepEqual(view.records, []);
   assert.deepEqual(view.days, [{ sessionId: 'ses_jul27', when: '27 Jul', sets: '60 × 12 drop' }]);
+});
+
+// ── The rename sheet's proof (§N screen 32) ─────────────────────────────────────────────────────
+
+// A NAME IS A LABEL ON A STABLE ID, so renaming is not destructive and never forks a record — and
+// this block PROVES that rather than promising it. Every line of it is read off the page's own read.
+// A constant here would be the product asserting something it did not check, on the one screen whose
+// whole job is proof, which is why the board's own four lines are pinned against the board's own
+// movement: 34 sessions, 3 PRs, e1RM 122.5, Push A · Legs.
+test('renameProofOf — the four lines, every one of them off the read behind the sheet', () => {
+  assert.equal(RENAME_PROOF, 'Everything follows the name');
+  assert.deepEqual(renameProofOf({ ...BACK_SQUAT, records: [...BACK_SQUAT.records, { at: MAY_19, weightKg: 100, reps: 5, e1rm: 116.7 }] }), [
+    { label: 'sessions', value: '34 · unchanged' },
+    { label: 'records', value: '3 PRs · e1RM 122.5 kept' },
+    { label: 'routines', value: 'Push A · Legs' },
+    { label: 'old name', value: 'searchable as an alias' },
+  ]);
+  // The label is the column and the value is the fact, so the count is bare under `sessions` and
+  // spelled out in the subhead above — `sessions · 34 sessions · unchanged` says the word twice.
+  // The label stays plural over one of anything, exactly as `routines` does over a single name.
+  assert.deepEqual(renameProofOf({ ...BACK_SQUAT, sessionCount: 1, records: [BACK_SQUAT.records[0]], routines: ['Push A'] }), [
+    { label: 'sessions', value: '1 · unchanged' },
+    { label: 'records', value: '1 PR · e1RM 122.5 kept' },
+    { label: 'routines', value: 'Push A' },
+    { label: 'old name', value: 'searchable as an alias' },
+  ]);
+});
+
+// A ROW WITH NOTHING TO PROVE IS OMITTED, exactly as every list on this wire is. `0 sessions ·
+// unchanged` is not a promise a movement nobody has worked can make, and a movement with no estimate
+// — a chin-up, where Epley has no answer — has no PR ladder to keep. What always stands is the alias:
+// it is the one thing a rename DOES rather than preserves.
+test('renameProofOf — a movement with nothing to keep claims nothing, and still says the alias', () => {
+  assert.deepEqual(renameProofOf(NEVER), [{ label: 'old name', value: 'searchable as an alias' }]);
+  assert.deepEqual(renameProofOf(CHIN_UP), [
+    { label: 'sessions', value: '9 · unchanged' },
+    { label: 'routines', value: 'Pull A' },
+    { label: 'old name', value: 'searchable as an alias' },
+  ]);
+  // A count with no names beside it is a read from a store that sends none: the row is dropped
+  // rather than filled in with a number, because this row's whole job is to say WHICH routines.
+  assert.deepEqual(renameProofOf({ ...NEVER, routineCount: 2 }), [{ label: 'old name', value: 'searchable as an alias' }]);
 });

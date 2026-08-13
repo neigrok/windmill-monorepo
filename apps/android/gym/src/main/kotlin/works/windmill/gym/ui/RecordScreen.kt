@@ -17,10 +17,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,9 +41,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -66,7 +65,9 @@ import works.windmill.platform.design.WindmillSpace
 // It is also the page that makes stable exercise identity visible. Rename Back Squat here and the
 // history stays whole, because the rename moves a NAME and never an id — every set, routine line
 // and frozen plan snapshot still points at the same movement, and this is the one screen where a
-// lifter can watch that happen.
+// lifter can watch that happen. §N's sheet (screen 32) is where it is now done, and it PROVES that
+// claim rather than asserting it: the counts under the field come off the read this page has
+// already made, so the promise and the page behind it are the same numbers.
 //
 // A CHART ON A PHONE HAS NO SCRUB AND NO HOVER, so the two things a mark would otherwise reveal on
 // touch are printed: the number a full-height bar would be stands in the tile above the chart —
@@ -83,6 +84,7 @@ import works.windmill.platform.design.WindmillSpace
 // page and NOTHING IN THIS PRODUCT MERGES TWO MOVEMENTS YET — rewriting exercise identity across a
 // lifter's whole history is an operation that wants its own wave on every surface at once, and a
 // control that opened nothing would be the defect this room refuses everywhere else.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -96,6 +98,13 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
     var renaming by rememberSaveable(exerciseId) { mutableStateOf(false) }
     var draft by rememberSaveable(exerciseId) { mutableStateOf("") }
     var refused by remember(exerciseId) { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // The sheet's own hide animation, exactly as the logger's close is: Compose fires no dismiss
+    // callback on a programmatic close, so nothing here waits for one.
+    fun close() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { renaming = false }
+    }
 
     // Read on the way in and shaped once, outside a drawing. There is no cache to key on a
     // collection's length and get wrong: a second visit asks the log again, and a set logged in
@@ -111,14 +120,12 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
     Column(Modifier.fillMaxSize()) {
         // The way back and the rename sit on ONE row, which is why this screen draws its own head
         // rather than standing under the room's: §H hangs an action off the right of the back row,
-        // and a screen that owns an action in that row owns the row. In rename mode both ends
-        // change — leaving without saving has to be as reachable as saving.
+        // and a screen that owns an action in that row owns the row.
         Head(
             backLabel = backLabel,
-            renaming = renaming,
             // A door onto nothing is the same defect as a chevron that goes nowhere: until the read
-            // lands there is no name to edit, and Save on an empty field would be a refusal the
-            // lifter walked into.
+            // lands there is no name to rename and no counts to prove anything with, which is half
+            // of what the sheet behind this word is.
             renameable = record != null,
             onBack = onBack,
             onRename = {
@@ -126,39 +133,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
                 draft = record?.exercise?.name.orEmpty()
                 renaming = true
             },
-            onCancel = {
-                refused = null
-                renaming = false
-            },
-            onSave = {
-                scope.launch {
-                    when (val written = store.rename(exerciseId, draft)) {
-                        is GymResult.Failed -> refused = written.why.line("that movement kept its name")
-                        is GymResult.Ok -> {
-                            renaming = false
-                            // The movement THE LOG CONFIRMED goes onto the page at once and the page
-                            // is re-read behind it. Both, and in that order: the store answers Ok
-                            // only where the write landed, and a refresh that then fails must not
-                            // put the old name back over a rename that really happened.
-                            record = record?.copy(exercise = written.value)
-                            asked += 1
-                        }
-                    }
-                }
-            },
         )
-
-        // A rename that did not land is said where the field is, not at the foot of a page that
-        // may be scrolled past it — and in alarm ink, which fires on a write that failed and on
-        // nothing else in this room.
-        refused?.let {
-            Text(
-                it,
-                style = GymType.numeral(12),
-                color = GymSkin.alarmInk,
-                modifier = Modifier.padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x1),
-            )
-        }
 
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
@@ -171,7 +146,7 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
             val read = record
             val silent = failure
             when {
-                read != null -> Body(Record.page(read, nowMs), renaming, draft) { draft = it }
+                read != null -> Body(Record.page(read, nowMs))
                 // In the log's own words when it sent any. A 500 that said "internal error" is not
                 // a phone with no signal, and this page may not report it as one.
                 silent != null -> Silence(silent.line("this movement isn’t drawn"), retry = { asked += 1 })
@@ -179,17 +154,56 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
             }
         }
     }
+
+    // SCREEN 32 — over the page rather than in place of it, which is what makes the promise legible:
+    // the record underneath does not change, and the block inside the sheet says so with this
+    // account's own numbers.
+    val read = record
+    if (renaming && read != null) {
+        ModalBottomSheet(
+            onDismissRequest = { close() },
+            sheetState = sheetState,
+            containerColor = GymSkin.surface,
+            dragHandle = null,
+        ) {
+            RenameSheet(
+                title = "Rename this movement",
+                from = read.exercise.name,
+                value = draft,
+                proof = Record.proof(read, aliased = store.renameKeepsAnAlias(exerciseId)),
+                refused = refused,
+                onValue = { draft = it },
+                onCancel = {
+                    refused = null
+                    close()
+                },
+                onRename = {
+                    scope.launch {
+                        when (val written = store.rename(exerciseId, draft)) {
+                            is GymResult.Failed -> refused = written.why.line("that movement kept its name")
+                            is GymResult.Ok -> {
+                                close()
+                                // The movement THE LOG CONFIRMED goes onto the page at once and the
+                                // page is re-read behind it. Both, and in that order: the store
+                                // answers Ok only where the write landed, and a refresh that then
+                                // fails must not put the old name back over a rename that happened.
+                                record = record?.copy(exercise = written.value)
+                                asked += 1
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
 }
 
 @Composable
 private fun Head(
     backLabel: String,
-    renaming: Boolean,
     renameable: Boolean,
     onBack: () -> Unit,
     onRename: () -> Unit,
-    onCancel: () -> Unit,
-    onSave: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -199,12 +213,6 @@ private fun Head(
             .heightIn(min = GymTap.minimum)
             .padding(horizontal = WindmillSpace.x4),
     ) {
-        if (renaming) {
-            HeadAction("Cancel", GymSkin.inkDim, FontWeight.SemiBold, onCancel)
-            Spacer(Modifier.weight(1f))
-            HeadAction("Save", GymSkin.accent, FontWeight.Bold, onSave)
-            return@Row
-        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
@@ -236,13 +244,9 @@ private fun HeadAction(label: String, ink: Color, weight: FontWeight, onTap: () 
 }
 
 @Composable
-private fun Body(page: Record.Page, renaming: Boolean, draft: String, onDraft: (String) -> Unit) {
+private fun Body(page: Record.Page) {
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        if (renaming) {
-            NameField(draft, onDraft)
-        } else {
-            Text(page.name, style = WindmillFont.display(30), color = GymSkin.ink)
-        }
+        Text(page.name, style = WindmillFont.display(30), color = GymSkin.ink)
         Text(page.subhead, style = GymType.numeral(12), color = GymSkin.inkFaint)
     }
 
@@ -299,30 +303,6 @@ private fun Body(page: Record.Page, renaming: Boolean, draft: String, onDraft: (
             }
         }
     }
-}
-
-// The name, editable in place — no sheet and no dialog, because the thing being renamed is on the
-// screen and a modal over it would hide the one fact that makes the rename safe: the page under it
-// does not change.
-@Composable
-private fun NameField(draft: String, onDraft: (String) -> Unit) {
-    BasicTextField(
-        value = draft,
-        onValueChange = onDraft,
-        singleLine = true,
-        textStyle = WindmillFont.display(30).copy(color = GymSkin.ink),
-        cursorBrush = SolidColor(GymSkin.accent),
-        keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.Words,
-            autoCorrectEnabled = false,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(GymSkin.raised)
-            .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
-    )
 }
 
 @Composable

@@ -323,7 +323,7 @@ final class AnonymousGymTests: XCTestCase {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
 
-        guard case .success(let made) = await store.create("Zercher Squat") else {
+        guard case .success(let made) = await store.create("Zercher Squat", loadedAs: "barbell") else {
             return XCTFail("a movement can be minted onto this device")
         }
         XCTAssertTrue(made.custom)
@@ -524,7 +524,7 @@ final class AnonymousGymTests: XCTestCase {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
 
-        guard case .success(let made) = await anonymous.create("Zercher Squat") else {
+        guard case .success(let made) = await anonymous.create("Zercher Squat", loadedAs: "barbell") else {
             return XCTFail("no movement")
         }
         guard case .success(let first) = await anonymous.start(routineId: "rt_local") else {
@@ -734,7 +734,7 @@ final class AnonymousGymTests: XCTestCase {
     func testAClaimWriteRefusedOutrightIsLetGoAndItsSetsAreSaid() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        guard case .success(let made) = await anonymous.create("Zercher Squat") else {
+        guard case .success(let made) = await anonymous.create("Zercher Squat", loadedAs: "barbell") else {
             return XCTFail("no movement")
         }
         _ = await anonymous.start()

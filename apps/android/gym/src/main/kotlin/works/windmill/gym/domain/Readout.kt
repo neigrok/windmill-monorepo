@@ -48,7 +48,15 @@ object Readout {
     //
     // The plan and the routine spell their targets with different field names and the same three
     // numbers, so both hand them over rather than each writing the grammar out again.
-    fun target(sets: Int, reps: Int?, weightKg: Double?): String {
+    // A row with no SET target is `open` — the routine declined to say, so it asks at the rack. It
+    // is the one target that answers with a word instead of numbers, and it is spelled here for the
+    // reason `max` is: the routine card, the routines tab, the builder's list and the routine's own
+    // page all print it, and four screens inventing four words for one absence is the drift this
+    // object exists to prevent. An open row carries no reps and no weight, so nothing else is read.
+    const val openTarget = "open"
+
+    fun target(sets: Int?, reps: Int?, weightKg: Double?): String {
+        if (sets == null) return openTarget
         val count = "$sets × ${repTarget(reps)}"
         if (weightKg == null || weightKg == 0.0) return count
         return "$count · ${weight(weightKg)}"
@@ -170,6 +178,22 @@ object Readout {
         val zone = ZoneId.systemDefault()
         val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
         if (then == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) return "today"
+        return shortDate(ms, now)
+    }
+
+    // A day said the way a person says one they can still picture: today, yesterday, then the
+    // weekday for the rest of the week behind them, and a DATE the moment a name can no longer
+    // place it. `built Sunday` is true on Monday and a lie in September, which is the whole of why
+    // this falls through rather than printing a weekday forever — the same reason `ago` counts in
+    // calendar days rather than in elapsed hours, and it counts them the same way.
+    fun recentDay(ms: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val then = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val days = ChronoUnit.DAYS.between(then, today)
+        if (days == 0L) return "today"
+        if (days == 1L) return "yesterday"
+        if (days in 2..6) return weekday(ms)
         return shortDate(ms, now)
     }
 

@@ -149,12 +149,20 @@ object Performed {
     // session that may have walked them in any order. Such a movement is annotated with nothing at
     // all; a wrong "two short" beside somebody's training is worse than a blank. Entry ids would
     // settle it, and this is what asks for them.
+    //
+    // AN OPEN ROW IS SILENT, and that is the same answer the logger's counter gives it (`no target`,
+    // never `set 3 of 0`): the routine wrote the movement down and declined to give it a number, so
+    // the frozen plan has nothing to say about what was done. It is not `Unplanned` either — the day
+    // did name this movement, and `not in the plan` over a line somebody wrote last week is as
+    // wrong as a `plan max reps` it never asked for.
     private fun planned(plan: PlanSnapshot?, exerciseId: String): Against {
         if (plan == null) return Against.Silent
         val named = plan.entries.filter { it.exerciseId == exerciseId }
         if (named.isEmpty()) return Against.Unplanned
         if (named.size > 1) return Against.Silent
-        return Against.Plan(named.single(), planLine(named.single()))
+        val entry = named.single()
+        if (entry.sets == null) return Against.Silent
+        return Against.Plan(entry, planLine(entry))
     }
 
     // What the plan makes of one set, fail-fast in the order the facts outrank each other: the load

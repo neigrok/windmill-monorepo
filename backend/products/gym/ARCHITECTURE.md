@@ -219,6 +219,22 @@ create table if not exists gym_exercise_names (
   updated_at  timestamptz not null default now(),
   primary key (user_id, exercise_id)
 );
+
+-- What this account USED to call a movement (W10), seeds and its own alike. The whole promise of a
+-- rename is that nothing is lost, and the picker searches these beside the current name — so the
+-- word in a lifter's hands on Tuesday still finds the movement they renamed on Sunday. A ROW rather
+-- than a column beside the name above, for two reasons that each rule the column out alone: that
+-- table holds a line only for a SEED an account renamed, while a movement the lifter created has
+-- none, and a lifter renames more than once. The name is part of the key, which is what makes
+-- renaming BACK a delete of one row rather than a stale alias shadowing the truth in the picker.
+-- The rename caps the list at kMaxAliases (5): this row set ships on the catalog read.
+create table if not exists gym_exercise_aliases (
+  user_id     uuid not null references users(id) on delete cascade,
+  exercise_id text not null references gym_exercises(id) on delete cascade,
+  name        text not null,
+  created_at  timestamptz not null default now(),
+  primary key (user_id, exercise_id, name)
+);
 ```
 
 The seed is 64 movements across the seven patterns (the flat `legs`-vs-three-arm-buckets
@@ -336,16 +352,28 @@ create table if not exists gym_routine_entries (
   routine_id       text not null references gym_routines(id) on delete cascade,
   position         int  not null check (position >= 1),
   exercise_id      text not null references gym_exercises(id),
-  target_sets      int  not null default 3 check (target_sets between 1 and 20),
+  target_sets      int  check (target_sets between 1 and 20),                   -- null = open
   target_reps      int  check (target_reps between 1 and 100),                  -- null = max
   target_weight_kg numeric(6,2) check (target_weight_kg between -500 and 500),  -- null = last time
   rest_seconds     int check (rest_seconds between 15 and 900),                 -- null = client default
   primary key (routine_id, position)
 );
--- target_reps was `not null default 8` until routines met the chin-up; the run carries no ALTER
--- machinery, so the change is its own pair of idempotent statements beside the table.
+-- target_reps was `not null default 8` until routines met the chin-up, and target_sets was
+-- `not null default 3` until a routine could be SAVED WHILE INCOMPLETE (W10); the run carries no
+-- ALTER machinery, so each change is its own pair of idempotent statements beside the table.
 alter table gym_routine_entries alter column target_reps drop not null;
 alter table gym_routine_entries alter column target_reps drop default;
+alter table gym_routine_entries alter column target_sets drop not null;
+alter table gym_routine_entries alter column target_sets drop default;
+
+-- The creation row of the routine's history (§M30's `9 Aug · created by you · 4 movements`), and
+-- both are nullable because a day made before W10 cannot be asked what it was: created_entries is
+-- how many lines the day was BUILT with — stored, because counting today's document would be a
+-- different number the moment the lifter edits it — and created_door is the agent door that made
+-- it, null meaning the lifter's own hand.
+alter table gym_routines add column if not exists created_entries int;
+alter table gym_routines add column if not exists created_door text
+  check (created_door in ('mcp','ask'));
 ```
 
 The same movement twice in one routine — bench heavy, then bench back-off — is two rows with
@@ -353,9 +381,13 @@ two positions. Lift collapsed them into one set counter with `uniquingKeysWith`;
 key is position, so the legitimate program is representable by construction. `rest_seconds`
 is the target the device's own rest timer counts down.
 
-**Three of the entry's columns mean something by being null**, and `target_reps` is the one that
-came late: the canon draws `Chin-up 3 × max` on three screens, and a required rep target could not
-express that line at all — no number stands in for "as many as you can", since 0 is out of range and
+**Four of the entry's columns mean something by being null**, and two of them came late.
+`target_sets` is the newest: §M's third door onto a routine is a lifter copying a program out of a
+notebook at the kitchen table, and a day like that is **savable while it is still incomplete** — a
+line with no target at all is `open`, and it asks at the rack. It is the ABSENCE and never a zero,
+which would be a target of nothing; `Routine` refuses reps or a load beside it, because half a
+target is a line no screen here can draw. `target_reps` came the wave before: the canon draws
+`Chin-up 3 × max` on three screens, and a required rep target could not express that line at all — no number stands in for "as many as you can", since 0 is out of range and
 1 is a single. So the absence *is* the target, everywhere it travels: the column, the entity, the
 frozen snapshot, the wire, and the `max` every surface draws. A null target weight is "whatever you
 did last time" and a null rest falls back to the lifter's global rest target (§2.8), under the same
@@ -380,8 +412,10 @@ When a session starts from a routine, `gym_sessions.plan` freezes:
                  "weightKg": 82.5, "restSeconds": 180 } ] }
 ```
 
-Every field of a line but `exerciseId` and `sets` is omitted when the routine named none — `reps`
-included, which is the frozen half of §2.4's `3 × max`.
+Every field of a line but `exerciseId` is omitted when the routine named none — `reps` included,
+which is the frozen half of §2.4's `3 × max`, and `sets`, which is the frozen half of its `open`:
+a session started under a half-built routine has to be able to say *you decide* about a movement,
+and a snapshot that filled the number in is where that would have been lost.
 
 **The server composes it, always** — from its own routine row, inside `LogService::start`. A
 client-composed snapshot would freeze whatever that client last read, which is exactly the staleness
@@ -749,7 +783,8 @@ struct Set      { SetId id; SessionId session; ExerciseId exercise; int setNumbe
                   double weightKg; int reps; SetKind kind; std::optional<double> rpe;
                   std::string note; std::uint64_t completedAtMs; };
 
-struct PlanEntry    { ExerciseId exercise; int sets; std::optional<int> reps;
+struct PlanEntry    { ExerciseId exercise; std::optional<int> sets;   // absent = open (§2.4)
+                      std::optional<int> reps;
                       std::optional<double> weightKg; std::optional<int> restSeconds; };
 struct PlanSnapshot { std::string routineName; std::vector<PlanEntry> entries; };   // §2.5
 
@@ -757,7 +792,8 @@ double defaultStepKg(Equipment);   // the seed's own table: barbell 2.5 · dumbb
                                    // · cable 2.5 · bodyweight 2.5 · kettlebell 4.0
 
 // domain/Routine.h — the plan, beside the log rather than inside it
-struct RoutineEntry { int position; ExerciseId exercise; int targetSets;
+struct RoutineEntry { int position; ExerciseId exercise;
+                      std::optional<int> targetSets;      // absent = `open` (§2.4)
                       std::optional<int> targetReps;      // absent = `max` (§2.4)
                       std::optional<double> targetWeightKg; std::optional<int> restSeconds; };
 struct Routine      { RoutineId id; UserId user; std::string name; int position;
@@ -863,7 +899,8 @@ both display names go through) and then non-empty, at most `kMaxNameLength`
 appears, and what makes `" Back Squat "` the seed's own name, so renaming back to it still clears
 the override instead of pinning a copy one byte different. Then: at least one entry and at most
 `kMaxRoutineEntries` (50);
-positions `1..n` in order; `targetSets` 1–20, `targetReps` 1–100 *when it names one*,
+positions `1..n` in order; `targetSets` 1–20 *when it names one*, `targetReps` 1–100 *when it names
+one*,
 `targetWeightKg` within ±500, `restSeconds` 15–900 — the column checks, refused before the column
 can refuse them.
 
@@ -1118,12 +1155,19 @@ struct TrainingRepository {
   virtual bool deleteSession(const UserId&, const SessionId&) = 0;         // the discard; sets cascade
   virtual std::vector<Routine> routines(const UserId&) = 0;       // most recently trained first
   virtual std::optional<Routine> routine(const UserId&, const RoutineId&) = 0;
-  virtual RoutineWriteOutcome insertRoutine(const Routine&) = 0;  // conflict = the stored routine
+  // The day's dated ledger (§M30): its proposals newest first, its creation row last. ONE read and
+  // one shape for both kinds, so no screen merges two lists by date itself.
+  virtual std::vector<RoutineEvent> routineHistory(const UserId&, const RoutineId&) = 0;
+  // `byAgent` is who MADE the day — absent is the lifter's own hand — and it rides beside the
+  // entity because it is a fact about the write, not about the document a later replace carries.
+  virtual RoutineWriteOutcome insertRoutine(const Routine&, std::optional<ProposalDoor> byAgent,
+                                            std::uint64_t nowMs) = 0;   // conflict = the stored
   virtual RoutineWriteOutcome replaceRoutine(const Routine&) = 0; // whole-document replace
   virtual bool deleteRoutine(const UserId&, const RoutineId&) = 0;
   virtual ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise&) = 0;
   // The rename (§4). A movement the caller CREATED renames in place; a seed is a global row and
-  // takes a per-account display name instead. Absent = this account's catalog holds no such id.
+  // takes a per-account display name instead — and either way the name it was called a moment ago
+  // joins its aliases, while the name it takes on leaves them. Absent = no such id here.
   virtual std::optional<Exercise> renameExercise(const UserId&, const ExerciseId&,
                                                  const std::string& name) = 0;
   virtual MovementHistory movementHistory(const UserId&, const ExerciseId&) = 0;  // the record (§5)
@@ -1470,7 +1514,12 @@ query, ordered by pattern then name. Identity rules, stated once:
   that quietly meant "your best this quarter" would be the loudest false number in the product. The
   **recent days** are a separate statement because the ladder collapses a session's sets and the
   page prints them (`105 × 5 · 105 × 5 · 105 × 4` is three sets and two loads); warmups are not
-  among them, for the reason the prefill block excludes them.
+  among them, for the reason the prefill block excludes them. The fourth statement is the days of
+  the program that NAME the movement, by name, deduplicated and in program order — `routineCount` is
+  that list's own length. It is names rather than a count because the RENAME SHEET (§N32) promises
+  *`routines  Push A · Legs`*, and a sheet whose whole job is to prove a rename costs nothing may
+  not assemble that claim from three calls; this one read is where `34 sessions`, `3 PRs · e1RM
+  122.5 kept` and the two day names all come from.
 
   Everything on the page is dated by the **session's own start**, never by a set's `completed_at`
   (§5's statistics rule, same reason). The record **ladder** is every session whose best estimate
@@ -1599,7 +1648,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/exercises/last` | the picker's meta — one line per movement this lifter has trained (`{exerciseId, weightKg, reps, at}`), and none for the rest, which is `never logged`. Beside the catalog row rather than on it (§5); `last` can never be a movement id, which needs eight characters | 2 |
 | `POST /v1/gym/exercises` | create a movement — `{id, name, pattern, equipment, stepKg?}` | 2 |
 | `PATCH /v1/gym/exercises/{id}` | rename a movement — `{name}` and nothing else; a seed takes a per-account name, the caller's own row renames in place, the id never moves (§4) | 2 |
-| `GET  /v1/gym/exercises/{id}/record` | a movement's record — the two tiles, twelve weeks of bars, the record ladder and the recent days, in ONE read (§5) | 2 |
+| `GET  /v1/gym/exercises/{id}/record` | a movement's record — the two tiles, twelve weeks of bars, the record ladder, the recent days, and the days of the program that name it, in ONE read (§5). It is also the RENAME SHEET's proof (§N32): every number that sheet prints is one of these | 2 |
 | `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent; joins an open session unless the caller says it will not (§11.4); a named routine is frozen onto the row (§2.5) | 0 |
 | `POST /v1/gym/sessions/{id}/sets` | append a set — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}`. A replay of an id this account **deleted** is `409 set-deleted`, not a re-mint (§3.3) | 0 |
 | `PATCH /v1/gym/sessions/{id}/sets/{setId}` | **fix a set** — `{weightKg?, reps?, kind?, rpe?, note?}` and nothing else; answers the stored row, so a retry is a no-op. `404 set-not-found` covers absent, another account's and this account's set in another workout alike; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`) and a value the store cannot hold. **No MCP tool, at any level** (§6, below) | 2 |
@@ -1612,7 +1661,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/last?exercise=` | last-time prefill | 1 |
 | `GET  /v1/gym/routines` | the plan, most recently trained first — each routine carrying its `revision` and the `pendingProposal` waiting on it | 2 |
 | `POST /v1/gym/routines` | create a routine — the whole document, idempotent on its id | 2 |
-| `GET  /v1/gym/routines/{id}` | one routine | 2 |
+| `GET  /v1/gym/routines/{id}` | one routine, plus its `history` — the day's creation and every proposal ever minted against it, one list, newest first with the creation row last (§M30). The LIST read carries none of it | 2 |
 | `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document. Moves `revision` and supersedes every pending proposal on it **only when the document or the name actually moved** (§2.9) | 2 |
 | `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries, its proposals and their change rows cascade, sessions keep their snapshots | 2 |
 | `GET  /v1/gym/proposals` | the ledger, newest first. `?routineId=` narrows to one day of the program (the routine editor's History), `?state=pending` to what is waiting (Today's card) | 6 |
@@ -1733,8 +1782,8 @@ Instants are epoch-ms numbers, weights are
 numbers in kg, sets serialize as
 `{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`, sessions as
 `{id, startedAt, finishedAt?, routineId?, plan?}`, routines as
-`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, targetSets,
-targetReps?, targetWeightKg?, restSeconds?}], pendingProposal?}`; list replies wrap
+`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, targetSets?,
+targetReps?, targetWeightKg?, restSeconds?}], pendingProposal?, history?}`; list replies wrap
 (`{"exercises":[…]}`, `{"sessions":[…]}`, `{"routines":[…]}`, `{"proposals":[…]}`, detail
 `{"session":…, "sets":[…]}`). A proposal's head is
 `{id, routineId, intent, state, summary, changeCount, createdAt, settledAt?,
@@ -1751,7 +1800,24 @@ field before `.as*()` and throws
 
 **An absent `targetReps` is `max`, not a missing value.** It is omitted on the way in and omitted on
 the way out — on the routine entry, on the frozen plan's line, and on the review's `planned` — under
-the same rule every other optional here obeys, and every surface draws it as `3 × max` (§2.4).
+the same rule every other optional here obeys, and every surface draws it as `3 × max` (§2.4). **An
+absent `targetSets` is `open`** and travels exactly the same way, on the same three shapes plus a
+proposal's two sides; on a diff row, which SIDE is missing is `kind`'s to say and never a null
+`sets`.
+
+**An absent `lastTrainedAt` is `untested`** (§M30) — the routine has never been trained. There is no
+field beside it saying so: the absence already does, and a stored flag would still read `untested`
+the day a lifter trained the day, or still read tested the day they discarded the only session that
+ever ran it.
+
+**`history` rides on the single-routine read alone**, never on the list: it is one section of one
+screen, and a routines screen prints names. Its rows are
+`{kind:"created", at, by?, movements?}` and `{kind:"proposal", at, proposal}` — one list, both kinds
+of thing that happen to a day of the program, newest first with the creation row last. `by` is
+absent when the day was the lifter's own hand, which is what a surface draws as *created by you*;
+`create_routine` over MCP is a real door onto that table, so the field exists rather than the screen
+assuming. `movements` is how many lines the day was created with, absent for a day made before the
+ledger recorded it.
 
 The review is the one shape that travels **one way** and so has no parse half — every number in it
 is computed from stored rows on each read, and there is nothing for a client to send back:
@@ -1966,8 +2032,10 @@ The full cost of mounting the third product, itemized against the actual seams:
   share's secret, from the same mint that makes a session cookie, so the one unguessable string gym
   hands out is the platform's and not gym's own. `{"gym_session_shares", "user_id"}` joins
   `gym_sessions`/`gym_sets`/`gym_routines` in `PgAccountFootprint`'s owned list: a live coach link
-  is data, and an account holding one is not empty. So do `{"gym_exercises", "created_by"}` and
-  `{"gym_exercise_names", "user_id"}` — a movement someone created or renamed is their data, and a
+  is data, and an account holding one is not empty. So do `{"gym_exercises", "created_by"}`,
+  `{"gym_exercise_names", "user_id"}` and `{"gym_exercise_aliases", "user_id"}` — a movement someone
+  created or renamed is their data, and what they called it before that is the same fact one step
+  back; a
   lifter holding only one of those was reported empty until 2026-08-12, which is an account the
   link door had proved deletable. The column there is `created_by` and **not** `user_id` precisely
   because the 64 seeds carry it NULL: a probe that matched the seeds would report every account on

@@ -90,13 +90,18 @@ public enum LiveLines {
     // movement with no target says so rather than borrowing a number from somewhere else. A plan line
     // that names sets but no rep target reads `plan 3 × max`: the routine asked for whatever the
     // movement gives that day.
+    //
+    // AN OPEN LINE (§M) READS EXACTLY LIKE NO PLAN AT ALL, because that is what it is at the rack:
+    // the routine named nothing, so there is no set count to count towards and no target to state.
+    // The one thing it may not do is borrow — `set 3 of 0` over a row the lifter deliberately left
+    // open would be the routine answering the question it left them.
     public static func counter(workingSetsToday: Int, planEntry: PlanEntry?) -> Counter {
-        guard let planEntry else {
+        guard let planEntry, let sets = planEntry.sets else {
             return Counter(count: "set \(workingSetsToday + 1)", plan: "no target")
         }
         let load = planEntry.weightKg.map { " @ \(Readout.weight($0))" } ?? ""
-        return Counter(count: "set \(workingSetsToday + 1) of \(planEntry.sets)",
-                       plan: "plan \(planEntry.sets) × \(Readout.repTarget(planEntry.reps))\(load)")
+        return Counter(count: "set \(workingSetsToday + 1) of \(sets)",
+                       plan: "plan \(sets) × \(Readout.repTarget(planEntry.reps))\(load)")
     }
 
     // This movement's sets in the order performed, which is why the row carries no wall-clock any
@@ -177,7 +182,9 @@ public enum LiveLines {
                            meta: justAdded
                                ? "just added"
                                : meta(done: workingCount(sets, of: exerciseId),
-                                      planned: plan?.entry(for: exerciseId)?.sets),
+                                      // Absent for a movement the plan does not name AND for one it
+                                      // left open — neither has a number of sets to count towards.
+                                      planned: plan?.entry(for: exerciseId).flatMap(\.sets)),
                            note: performed.isEmpty ? "no sets yet — logging one starts it" : nil,
                            isJustAdded: justAdded,
                            sets: rows(performed, stalled: stalled),

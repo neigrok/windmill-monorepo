@@ -778,10 +778,19 @@ test('a pending proposal waits on Today and on the routine it touches, as a door
   assert.equal(read('Routines.jsx').includes('{routine.pendingProposal && <ProposalFlag />}'), true);
   const source = read('Proposals.jsx');
   assert.equal(source.includes('<a className="gym-proposal-review" href={proposalHref(head.id)}>{reviewLabel(head)}</a>'), true);
-  // The routine editor grows the History section (screen 6) and every row of it is a door too — a
-  // routine being written for the first time has no history and is not asked for one.
-  assert.equal(read('Routines.jsx').includes('{!fresh && <RoutineHistory routineId={draft.id} />}'), true);
-  assert.equal(source.includes('<a className="gym-history-row" href={proposalHref(head.id)}>'), true);
+  // The routine screen carries the History section (screens 6 and 30) and every proposal row of it
+  // is a door too. It reads NOTHING of its own: the rows ride the routine's own read, which is also
+  // the only read that carries the day the routine was created — so the section costs that screen no
+  // second request, and a routine nobody has saved has nothing to draw.
+  const routines = read('Routines.jsx');
+  assert.equal(routines.includes('<RoutineHistory routine={view.data} />'), true);
+  assert.equal(routines.includes('const rows = historyRows(routine);'), true);
+  assert.equal(routines.includes('gymApi.proposals'), false);
+  assert.equal(routines.includes('<a className="gym-history-row" href={row.href}>'), true);
+  // And the mark on a waiting row is the one every other surface wears — one dot, drawn in one
+  // place, whoever is drawing it.
+  assert.equal(source.includes('export function ProposalDot()'), true);
+  assert.equal(routines.includes('{row.pending && <ProposalDot />}'), true);
 });
 
 // THE SENTENCE THIS WHOLE WAVE EXISTS TO MAKE TRUE has to reach a lifter, on the screen where the
@@ -1022,4 +1031,164 @@ test('no gym surface counts a decline, on the device or on the wire', () => {
   // forgotten the moment the screen closes.
   assert.equal(read('Finish.jsx').includes('const [offered, setOffered] = useState(true);'), true);
   assert.equal(read('Finish.jsx').includes('onClick={() => setOffered(false)}'), true);
+});
+
+// ── §M · a program typed in at the desk, and §N · the names are the user's ──────────────────────
+
+// NAME FIRST, AND IT IS A REAL QUESTION ASKED ONCE (screen 28). A routine built on purpose deserves
+// the word you already call it, and `Workout 3` is what a program gets called when nobody asked. The
+// step exists only on the way IN — a routine already saved opens straight onto its own list — which
+// is a fact about which branch a component takes and nothing a pure module can be asked.
+test('a routine written from scratch is named before it is filled in, and only then', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('const [naming, setNaming] = useState(fresh);'), true);
+  assert.equal(source.includes('if (naming) {'), true);
+  assert.equal(source.includes('Next · add movements'), true);
+  // The suggestions FILL THE FIELD and are never a set to choose from: one tap writes the name and
+  // typing over it is the expected case, so nothing here records which one was tapped.
+  assert.equal(source.includes('onClick={() => onName(suggestion)}'), true);
+  assert.equal(/suggestion === |selectedSuggestion|chosenName/.test(source), false);
+  // NOTHING IS CREATED BY NAMING IT. The step carries the name into the editor and Done is still the
+  // only thing on this screen that writes — a create fired here would leave a routine with no
+  // movements in the program of anybody who changed their mind.
+  const step = source.slice(source.indexOf('function NameTheRoutine'), source.indexOf('function RoutineHistory'));
+  assert.equal(/createRoutine|replaceRoutine/.test(step), false);
+});
+
+// THE SAME LADDER AS THE RACK (screen 29), and it is the one that exists: the sheet calls `bump` and
+// `ladderLabels`, so at 140 kg the row reads −10 · −2.5 · +2.5 · +10 because the golden says so and
+// not because this screen agrees. Lift had this rule pasted into three targets and let them drift.
+test('the target sheet steps a weight on the logger’s ladder and states no step size of its own', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes("import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';"), true);
+  assert.equal(source.includes('const rungs = ladderLabels(draft.targetWeightKg ?? EMPTY_BAR_KG);'), true);
+  assert.equal(source.includes('bump(held.targetWeightKg, rung.direction, rung.big)'), true);
+  // The sheet writes no step of its own: a step in this product is 1, 2.5, 5 or 10 kg, and the
+  // fractional ones are unmistakable — so no number with a decimal point survives in this file's
+  // speech. The icon stroke is the one exception and is not a weight, so it comes out first.
+  assert.equal(/\d\.\d/.test(speech('Routines.jsx').replace(/strokeWidth=\{[\d.]+\}/g, '')), false);
+});
+
+// A ROUTINE BUILT AT HOME HAS NO HISTORY, SO THE SHEET SAYS SO (§M) — rather than prefilling a guess,
+// which is the lie this line exists to prevent. The claim is the STORE's about the routine and the
+// DRAFT's about the row (routines.js), and nothing on this path reaches for a last time, because
+// there is none to reach for. The screen decides none of it: a condition written here is a condition
+// no test without a browser can read.
+test('the target sheet says there is nothing to prefill from, and prefills nothing', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('neverLogged={saysNeverLogged(view.data, draft.entries[target])}'), true);
+  assert.equal(
+    source.includes('{neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}'),
+    true,
+  );
+  // And the sentence is nowhere near `isUntested` alone: the routine's own flag draws the `untested`
+  // chip on screen 30 and never this line, which was it over a movement with years behind it.
+  assert.equal(source.includes('untested={'), false);
+  // The one read that could answer "what did you lift last time" is not called from this screen, and
+  // is not called from anywhere on this surface at all — capture lives on the phones (§11).
+  for (const file of gymFiles()) {
+    if (path.basename(file) === 'gymApi.js') continue;
+    assert.equal(fs.readFileSync(file, 'utf8').includes('lastTime('), false, file);
+  }
+});
+
+// A ROUTINE IS SAVABLE WHILE INCOMPLETE (§M): the row with no target is `open` and asks at the rack,
+// and the sentence naming those rows is a fact about the DAY — the lifter's own training — which is
+// why it is on the glass rather than on the board.
+test('a line can be left open from the sheet, and the screen says which lines will ask', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('Leave it open'), true);
+  assert.equal(source.includes('decide at the rack'), true);
+  assert.equal(source.includes('const openTargets = openTargetsLine(draft.entries, log.catalog);'), true);
+  assert.equal(source.includes('{openTargets && <p className="gym-editor-open">{openTargets}</p>}'), true);
+  // `untested` is not an alarm and is not painted like one: it says the first session is allowed to
+  // disagree with the routine, which is the point of writing one out before you have trained it.
+  assert.equal(/\.gym-editor-untested \{[^}]*var\(--alarm-ink\)/.test(read('gym.css')), false);
+});
+
+// CREATING A MOVEMENT IS THE TWO QUESTIONS AND NOT A SECOND DOOR BESIDE THEM (§N screen 31). The
+// picker's `Create "…"` used to mint straight from the search box with a silent `barbell` on it —
+// so how it is loaded, the one answer that changes what the ladder and the plate readout do, was
+// ours to guess. Now the button opens the sheet and nothing is written until `Create and add`.
+test('the create door asks how a movement is loaded, and mints nothing before it is answered', () => {
+  const picker = read('logger/MovementPicker.jsx');
+  assert.equal(picker.includes('onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}'), true);
+  assert.equal(picker.includes('function NewMovement({ draft, onChange, onCancel, onCreate }) {'), true);
+  assert.equal(picker.includes('Create and add'), true);
+  assert.equal(picker.includes('How is it loaded?'), true);
+  // The four are the module's, in one place, so the screen cannot offer a fifth or a different four.
+  assert.equal(picker.includes('{EQUIPMENT_CHOICES.map((choice) => ('), true);
+  assert.equal(/'(cable|kettlebell)'/.test(picker), false);
+  // And the mint carries both answers to the one place that writes them (useTrainingLog.js).
+  assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
+  assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name: name.trim(), equipment, pattern: CREATED_PATTERN,'), true);
+  // THE WAY OUT IS NAMED (screen 31's head). A sheet that only shows something closes on a glyph; a
+  // sheet that asks two questions says the word — one aimed exit, and it is the board's own.
+  assert.equal(picker.includes('<button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>'), true);
+  const sheet = picker.slice(picker.indexOf('function NewMovement'));
+  assert.equal(sheet.includes('gym-sheet-close'), false);
+});
+
+// TWO BOARDS, TWO WORDS, FOR THE ONE `custom` FLAG. The picker is screen 7 and says `yours`; a
+// routine's row is §M screen 30 and says `· mine`. Neither is this surface's to reconcile on its own
+// — the phones draw the same pair in the same wave — so the web says what each board says and the
+// disagreement is filed rather than papered over here.
+test('a movement this account minted is tagged in each screen’s own word', () => {
+  assert.equal(read('logger/MovementPicker.jsx').includes('<span className="gym-picker-tag">yours</span>'), true);
+  assert.equal(read('Routines.jsx').includes('<span className="gym-entry-mine">mine</span>'), true);
+});
+
+// THE RENAME SHEET PROVES WHAT IT CLAIMS (§N screen 32). The counts on it come from real reads — the
+// record page's own, made before the sheet was opened — and a constant on that block would be the
+// product asserting something it did not check, on the one screen whose whole job is proof.
+test('the rename sheet’s proof is the page’s own read, and no number on it is typed in', () => {
+  const source = read('Record.jsx');
+  assert.equal(source.includes('record={view.data}'), true);
+  assert.equal(source.includes('const proof = renameProofOf(record);'), true);
+  // No second call behind the sheet: the read the page already made answers all four lines.
+  assert.equal((source.match(/useGymRead\(/g) ?? []).length, 1);
+  assert.equal(source.includes('gymApi.record'), true);
+  // Nothing on this screen spells a count of its own — every number arrives from record.js, which is
+  // where the sentences are written and where the tests can read them.
+  const sheet = source.slice(source.indexOf('function RenameSheet'));
+  assert.equal(/\d+ sessions|\d+ PRs|unchanged|kept/.test(spoken(sheet)), false);
+  // `Rename` / `Cancel`, in that order and in those words (screen 32) — the way out is under the
+  // commit rather than a glyph in the head, because leaving a name alone is one of the two answers
+  // this sheet asks for. One aimed exit, like every other sheet here.
+  assert.equal(sheet.includes('<button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>'), true);
+  assert.equal(sheet.indexOf('gym-name-save') < sheet.indexOf('gym-name-cancel'), true);
+  assert.equal(sheet.includes('gym-sheet-close'), false);
+});
+
+// THE CAP THE COUNTER SAYS IS THE CAP THE FIELD KEEPS, on all three surfaces that ask for a name —
+// and it is one number for the product, under the store's own eighty bytes on purpose (log.js).
+// A field bound to one number over a counter drawn from another is a stop nobody can see coming.
+test('every name a lifter types is capped once, and the counter counts the same field', () => {
+  for (const file of ['Routines.jsx', 'Record.jsx', 'logger/MovementPicker.jsx']) {
+    const source = read(file);
+    assert.equal(source.includes('maxLength={NAME_MAX}'), true, file);
+    assert.equal(/const NAME_MAX = \d+/.test(source), false, file);
+  }
+  for (const file of ['Record.jsx', 'logger/MovementPicker.jsx']) {
+    assert.equal(read(file).includes('nameCountLabel('), true, file);
+    // Both of these fields OPEN ON A NAME they did not type — the store's, which keeps eighty, and
+    // the search box's, which caps nothing — so both can open already over the cap and both say so.
+    // The routine's own field cannot: it opens empty and is only ever typed into.
+    assert.equal(read(file).includes('isNameOverCap('), true, file);
+  }
+  assert.equal(/export const NAME_MAX = 60;/.test(read('log.js')), true);
+});
+
+// A ROUTINE RENAMES THROUGH THE DOCUMENT IT ALREADY HOLDS (§N's Follows note, and the wire's). There
+// is no rename route for a routine: the name is one field of the whole-document PUT, which is what
+// moves `revision` and supersedes a pending proposal — and a second door onto that write would be a
+// second place that rule could drift. Nor is there a proof block on it: the board draws counts for a
+// MOVEMENT, and inventing "12 sessions · unchanged" for a routine is exactly the constant this wave
+// exists to refuse.
+test('a routine’s name moves with its own document, and claims nothing about what follows it', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('renameRoutine'), false);
+  assert.equal(source.includes('gymApi.replaceRoutine(draft.id, write)'), true);
+  assert.equal(source.includes('renameProofOf'), false);
+  assert.equal(speech('Routines.jsx').includes('unchanged'), false);
 });

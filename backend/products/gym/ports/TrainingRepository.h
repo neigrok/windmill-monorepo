@@ -199,15 +199,45 @@ struct RoutineWriteOutcome {
 };
 
 // What a surface is asking the proposal ledger for. Today's card reads the pending ones across
-// every routine; the routine editor's History section reads one routine's whole run, settled rows
-// included, because an applied or dismissed proposal is part of the program's history rather than
-// a toast that disappeared.
+// every routine; the dot on the routines list reads one routine's pending, because an applied or
+// dismissed proposal is part of the program's history rather than a toast that disappeared — and
+// that history is now read through `routineHistory` below rather than through this query.
 struct ProposalQuery {
   std::optional<RoutineId> routine;
   bool pendingOnly = false;
 
   bool operator==(const ProposalQuery&) const = default;
 };
+
+// One dated row of a routine's own history (§M30's `9 Aug · created by you · 4 movements`), and
+// BOTH kinds of thing that happen to a day of the program ride in it: the day being created, and
+// every proposal an agent has ever minted against it. One shape and one read, because a screen
+// handed two lists would have to merge them by date itself — three surfaces, three merges, and
+// three chances to date the same event differently.
+//
+// Each kind carries its own descriptor and nothing carries two meanings. `proposal` is present
+// exactly when kind is `proposal`, and the actor of one is inside it (`source.door`). `door` and
+// `movements` belong to the CREATED row alone: an absent door is the lifter's own hand — the case
+// §M is about — and `movements` is how many lines the day was created with, which is a fact only
+// the write that created it could record, so it is absent on rows written before this wave rather
+// than backfilled from a document that has been edited since.
+enum class RoutineEventKind { created, proposal };
+
+struct RoutineEvent {
+  RoutineEventKind kind;
+  std::uint64_t atMs;
+  std::optional<ProposalDoor> door;       // created only; absent = the lifter's own hand
+  std::optional<int> movements;           // created only; absent = never recorded
+  std::optional<ProposalHead> proposal;   // present exactly when kind == proposal
+
+  bool operator==(const RoutineEvent&) const = default;
+};
+
+// How far back a routine's history reads. The creation row is always the last one and never counts
+// against this — it is the anchor of the list, and it is one row of the routine's own record — so
+// this bounds the proposals above it. A ledger nobody scrolls to the end of does not need a
+// lifetime of rows in it, the same bound `kRecentDays` makes on the record page.
+constexpr int kRoutineHistoryProposals = 20;
 
 // What became of a mint, under the same rule every other write in this port obeys: each refusal is
 // the store's own fact and crosses as a VALUE.
@@ -409,12 +439,27 @@ struct TrainingRepository {
 
   // The plan. Both reads carry lastTrainedAtMs, which is an aggregate over the log rather than a
   // column, so the list can sort by the thing the routines screen sorts by and one routine can say
-  // the same word as its row in that list.
+  // the same word as its row in that list — and it is also the whole of `untested` (§M30): a
+  // routine that has never been trained has no newest session to name, so the absence IS the badge
+  // and no flag is stored that a discarded workout could leave standing.
   virtual std::vector<Routine> routines(const UserId& user) = 0;   // most recently trained first
   virtual std::optional<Routine> routine(const UserId& user, const RoutineId& id) = 0;
+  // The routine's dated history, newest first, with its creation row last. It is one read over two
+  // tables rather than a list per kind, for the reason RoutineEvent gives.
+  virtual std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) = 0;
   // The routine row and its entries land in ONE transaction — the two writes are one document, and
   // a routine with no entries is a plan the domain refuses to build and the editor cannot draw.
-  virtual RoutineWriteOutcome insertRoutine(const Routine& incoming) = 0;   // conflict = the stored
+  //
+  // `byAgent` is who made the day, and it is an argument rather than a field on the entity because
+  // it is a fact about the WRITE and not about the document: a later replace carries the same
+  // document from a different hand and must not rewrite who created it. Absent is the lifter's own
+  // — the app's create, which is every create §M is about — and present is the door an agent's
+  // `create_routine` came through. `nowMs` dates the creation row from the one clock the service
+  // holds rather than from the database's, exactly as the proposal ledger's mint does, so a test
+  // can drive it.
+  virtual RoutineWriteOutcome insertRoutine(const Routine& incoming,
+                                            std::optional<ProposalDoor> byAgent,
+                                            std::uint64_t nowMs) = 0;   // conflict = the stored
   // The whole-document replace, and THE HUMAN'S HAND: this is what `PUT /v1/gym/routines/{id}`
   // reaches, and no MCP tool reaches it at any grant level. It moves the revision and, in the SAME
   // transaction, supersedes every proposal still pending on that routine — which is what stops the
@@ -433,6 +478,14 @@ struct TrainingRepository {
   // about identity moves either way: every set, routine entry and frozen plan snapshot still points
   // at the same id, which is the promise §4 exists to keep. Absent, and another account's private
   // movement, are the one answer every read here gives.
+  //
+  // IT ALSO KEEPS THE OLD NAME (§N32's *old name searchable as an alias*): the name this account
+  // was calling the movement a moment ago joins its aliases, so the word in a lifter's muscle
+  // memory still finds it in the picker. Per account like the display name itself, and it comes
+  // back on `Exercise::aliases` beside that name rather than on a read of its own — an alias IS a
+  // name, and a picker that had to fetch names from two places would search one of them a frame
+  // late. Renaming BACK to a name this account already used takes that name off the alias list in
+  // the same write, because a name cannot be both what a movement is called and what it used to be.
   virtual std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
                                                  const std::string& name) = 0;
 

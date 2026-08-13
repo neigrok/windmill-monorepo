@@ -120,7 +120,7 @@ test('every field a lifter types into spells the kilogram, not the reading', () 
 test('every kilogram field on a screen carries the word kg', () => {
   assert.equal(/\$\{fmtKg\(line\.weightKg\)\} kg`/.test(read('Backfill.jsx')), true);
   assert.equal(read('FixSheet.jsx').includes('<span className="gym-fix-unit">kg</span>'), true);
-  assert.equal(/\$\{fmtKg\(entry\.targetWeightKg\)\} kg`/.test(read('Routines.jsx')), true);
+  assert.equal(/\$\{fmtKg\(draft\.targetWeightKg\)\} kg`/.test(read('Routines.jsx')), true);
   assert.equal(/WEIGHT_HINT = 'kg\b/.test(read('logger/entry.js')), true);
 });
 

@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
 import { mintId } from './mint.js';
-import { CREATED_MOVEMENT } from './logger/movements.js';
+import { CREATED_PATTERN } from './logger/movements.js';
 import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js';
 import { spellWeightsIn } from './units.js';
 
@@ -255,18 +255,20 @@ export function useTrainingLog({ api = gymApi } = {}) {
     };
   }, [api, session?.id, reloadLog]);
 
-  // A movement the catalog does not hold, minted from the picker's own search box (screen 7). It
-  // lands in the catalog here, in the one instance of it this product has, so the movement the
-  // lifter just created is on every picker in the app a render later — the routine editor's and the
-  // backfill form's.
-  const createMovement = useCallback(async (name) => {
+  // A movement the catalog does not hold, minted from the picker's two questions (§N screen 31): a
+  // name and how it is loaded. It lands in the catalog here, in the one instance of it this product
+  // has, so the movement the lifter just created is on every picker in the app a render later — the
+  // routine editor's and the backfill form's.
+  const createMovement = useCallback(async ({ name, equipment }) => {
     // The toast speaks through failureReason: a 400 is the store refusing the document — it read it
     // and would not take it — and telling that lifter to try again when they have signal blames the
     // network for the store's own answer, on a retry that fails identically forever.
     let refused = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const made = await api.createExercise({ id: mintId('ex_'), name: name.trim(), ...CREATED_MOVEMENT });
+        const made = await api.createExercise({
+          id: mintId('ex_'), name: name.trim(), equipment, pattern: CREATED_PATTERN,
+        });
         setCatalog((current) => [...current, made]);
         return made;
       } catch (error) {

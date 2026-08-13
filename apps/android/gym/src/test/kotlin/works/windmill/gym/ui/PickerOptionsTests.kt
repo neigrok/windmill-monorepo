@@ -203,4 +203,38 @@ class PickerOptionsTests {
         assertEquals(PickerOptions.shown,
                      PickerOptions.matching(query = "press", catalog = long, taken = emptyList()).matches.size)
     }
+
+    // THE ALIAS KEEPS MUSCLE MEMORY WORKING. A lifter who renamed Bench Press in March and types
+    // "bench" gets the row back — and the row says WHICH word found it, because a match a name
+    // cannot explain reads as a bug rather than as the rename being honoured.
+    @Test
+    fun testTheFilterReadsAliasesAndTheRowNamesTheWordThatFoundIt() {
+        val renamed = listOf(
+            Exercise(id = "bench-press", name = "Flat press", aliases = listOf("Bench Press")),
+            Exercise(id = "back-squat", name = "Back Squat"),
+        )
+
+        val found = PickerOptions.matching(query = "bench", catalog = renamed, taken = emptyList())
+        assertEquals(listOf("Flat press"), found.matches.map { it.name })
+        assertEquals("Bench Press", found.matches.single().alias)
+
+        // Matched by its own name, so the old one is not printed: an alias is a name and never a
+        // permanent second line under every row.
+        val plain = PickerOptions.matching(query = "flat", catalog = renamed, taken = emptyList())
+        assertEquals(listOf("Flat press"), plain.matches.map { it.name })
+        assertNull(plain.matches.single().alias)
+
+        // And a query neither the name nor the alias holds still has its door.
+        val neither = PickerOptions.matching(query = "zottman", catalog = renamed, taken = emptyList())
+        assertEquals("Create “zottman”", neither.create)
+    }
+
+    // An empty query lists everything and names nothing: an alias is not a match when nobody typed.
+    @Test
+    fun testAnUntypedFieldNamesNoAliases() {
+        val renamed = listOf(Exercise(id = "bench-press", name = "Flat press", aliases = listOf("Bench Press")))
+        val options = PickerOptions.matching(query = "", catalog = renamed, taken = emptyList())
+        assertEquals(listOf("Flat press"), options.matches.map { it.name })
+        assertNull(options.matches.single().alias)
+    }
 }

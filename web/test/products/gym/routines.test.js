@@ -7,10 +7,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  blankRoutine, draftFrom, duplicateRoutine, ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX,
-  ENTRY_SETS_MIN, NAME_MAX, NEW_ENTRY_REPS, NEW_ENTRY_SETS, reorderEntries, routineFromSession,
-  routineWrite, withEntryAdded, withEntryChanged, withEntryRemoved,
+  blankRoutine, builtLabel, draftFrom, duplicateRoutine, ENTRY_REPS_MAX, ENTRY_REPS_MIN,
+  ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, historyRows, NAME_SUGGESTIONS, NEW_ENTRY_REPS,
+  NEW_ENTRY_SETS, openTargetsLine, reorderEntries, routineFromSession, routineWrite, saysNeverLogged,
+  targetDraftOf, withEntryAdded, withEntryChanged, withEntryOpened, withEntryRemoved,
 } from '../../../src/products/gym/routines.js';
+import { entryLabel, NAME_MAX } from '../../../src/products/gym/log.js';
 
 const AT = 1_900_000_000_000;
 
@@ -148,8 +150,8 @@ test('duplicateRoutine — a new id over the same entries, and a copy has never 
   });
 });
 
-// A duplicate must never bounce off a refusal we could see coming: the store takes 80 characters
-// and " copy" is five of ours. The original is what gives way — a copy whose suffix was cut off
+// A duplicate must never bounce off a refusal we could see coming: this client stops at sixty
+// characters — under the store's own eighty bytes, on purpose (log.js) — and " copy" is five of ours. The original is what gives way — a copy whose suffix was cut off
 // would be a second routine wearing the first one's name.
 test('duplicateRoutine — the default name fits the store, and the suffix is what survives', () => {
   const long = 'P'.repeat(NAME_MAX);
@@ -216,6 +218,9 @@ test('draftFrom — the draft is a whole routine, and editing it leaves the orig
   draft.name = 'Push A (heavy)';
   draft.entries = withEntryAdded(draft.entries, 'barbell-row');
   draft.entries[0].targetWeightKg = 90;
+  // The movement that just joined asks for nothing yet, and the two that were already there are
+  // untouched by its arrival.
+  assert.deepEqual(draft.entries[2], { exerciseId: 'barbell-row' });
   assert.equal(routine.name, 'Push A');
   assert.equal(routine.entries.length, 2);
   assert.equal(routine.entries[0].targetWeightKg, 82.5);
@@ -229,7 +234,7 @@ test('draftFrom — the draft is a whole routine, and editing it leaves the orig
     entries: [
       { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 90 },
       { exerciseId: 'chin-up', targetSets: 3, targetReps: 8 },
-      { exerciseId: 'barbell-row', targetSets: NEW_ENTRY_SETS, targetReps: NEW_ENTRY_REPS },
+      { exerciseId: 'barbell-row' },
     ],
   });
 });
@@ -283,16 +288,17 @@ test('routineFromSession — a session too big to ask for is clamped to what a r
   assert.equal(marathon.entries[0].targetSets, 2);
 });
 
-// A movement joins on three sets of five and no load: five is the opening value of nearly every
-// barbell program there is, it is on screen, and one tap moves it — including one tap onto `max`,
-// which is where a chin-up line ends up. The load is the one target it declines to set from the
-// start, because "whatever you did last time" is right before the lifter has said anything.
+// A MOVEMENT JOINS THE DAY OPEN (§M screen 29: `Deadlift open`, `Barbell Row open`, with the sheet
+// standing on one of them). The routine names the movement before it says what to do with it, so the
+// only numbers in a routine built at the desk are numbers a lifter typed — and `open`, the row the
+// board draws, is where the ordinary path lands rather than a detour through a sheet you decline.
+// Three of five is still the sheet's opening value, and only the sheet's.
 test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three membership changes', () => {
   assert.deepEqual(blankRoutine({ id: 'rt_new' }), { id: 'rt_new', name: '', position: 0, entries: [] });
   assert.deepEqual(blankRoutine({ id: 'rt_new', position: 3 }).position, 3);
 
   const one = withEntryAdded([], 'bench-press');
-  assert.deepEqual(one, [{ exerciseId: 'bench-press', targetSets: 3, targetReps: 5 }]);
+  assert.deepEqual(one, [{ exerciseId: 'bench-press' }]);
   assert.equal(NEW_ENTRY_SETS, 3);
   assert.equal(NEW_ENTRY_REPS, 5);
 
@@ -300,16 +306,220 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
   assert.deepEqual(two.map((entry) => entry.exerciseId), ['bench-press', 'chin-up']);
   assert.equal(one.length, 1);
 
+  // NAMED, AND ASKING FOR NOTHING, ALL THE WAY TO THE WIRE: a routine saved the moment its movements
+  // are in carries no target anybody invented, so the rack asks rather than grading a set against a
+  // number nobody chose.
+  assert.deepEqual(routineWrite({ id: 'rt_1', name: 'Heavy Thursday', position: 0, entries: two }).entries, [
+    { exerciseId: 'bench-press' },
+    { exerciseId: 'chin-up' },
+  ]);
+  assert.equal(entryLabel(two[0]), 'open');
+
   assert.deepEqual(withEntryRemoved(two, 0).map((entry) => entry.exerciseId), ['chin-up']);
   assert.deepEqual(withEntryRemoved(two, 1).map((entry) => entry.exerciseId), ['bench-press']);
   assert.deepEqual(withEntryRemoved(two, 7), two);
   assert.equal(two.length, 2);
 
   // And the way to canon screen 6's `Chin-up 3 × max` — the one target the editor CLEARS rather
-  // than dials, exactly as the load already is, and the wire spells both by omission.
-  const maxed = withEntryChanged(two, 1, { targetReps: null });
+  // than dials, exactly as the load already is, and the wire spells both by omission. It is the
+  // sheet that sets a line, so this is the sheet's draft coming back through `Set`.
+  const sheet = targetDraftOf(two[1]);
+  const maxed = withEntryChanged(two, 1, { ...sheet, targetReps: null });
   assert.deepEqual(maxed[1], { exerciseId: 'chin-up', targetSets: NEW_ENTRY_SETS, targetReps: null });
   assert.deepEqual(routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: maxed }).entries[1], {
     exerciseId: 'chin-up', targetSets: NEW_ENTRY_SETS,
   });
+});
+
+// THE SENTENCE THAT SAYS THERE IS NOTHING BEHIND THESE NUMBERS, drawn on both halves of what makes
+// it true (§M screen 29). The first routine most lifters ever have is kept from a session they just
+// did, so it is untested on the day it is born with every number in it out of the log — and the
+// sheet over one of those rows must not tell them it was never logged.
+test('saysNeverLogged — an untested routine, and a row that has not been filled in', () => {
+  const built = { id: 'rt_1', name: 'Heavy Thursday', lastTrainedAt: null };
+  const kept = { id: 'rt_2', name: 'Push A', lastTrainedAt: null };
+  const trained = { id: 'rt_3', name: 'Legs', lastTrainedAt: AT };
+
+  assert.equal(saysNeverLogged(built, { exerciseId: 'deadlift' }), true);
+  // The row the session composed carries the weights actually used, so nothing about it is unlogged.
+  assert.equal(saysNeverLogged(kept, { exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 }), false);
+  // A routine that HAS been trained says nothing at all, whatever the row holds.
+  assert.equal(saysNeverLogged(trained, { exerciseId: 'deadlift' }), false);
+  assert.equal(saysNeverLogged(trained, { exerciseId: 'deadlift', targetSets: 3, targetReps: 5 }), false);
+  // A routine nobody has saved yet is untested by the same absence, so a fresh day says it too.
+  assert.equal(saysNeverLogged(blankRoutine({ id: 'rt_new' }), { exerciseId: 'deadlift' }), true);
+});
+
+// ── The third door: a program typed in at the desk (§M) ─────────────────────────────────────────
+
+// A ROUTINE IS SAVABLE WHILE INCOMPLETE, and this is the whole of what that costs the document: the
+// row keeps its place in the day and stops asking for anything. All three targets go together —
+// the store refuses a line with reps and no sets to do them for, 400, on a save no retry repairs —
+// and rest stays, being how long you wait rather than what you are asked to do.
+test('withEntryOpened — an open row keeps its place, its rest, and no target at all', () => {
+  const entries = [
+    { position: 1, exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 },
+    { position: 2, exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70, restSeconds: 120 },
+  ];
+  const opened = withEntryOpened(entries, 1);
+  assert.deepEqual(opened, [
+    { position: 1, exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 },
+    { exerciseId: 'barbell-row', restSeconds: 120 },
+  ]);
+  // The list it was given is untouched, like every other change in this module.
+  assert.equal(entries[1].targetSets, 4);
+  // An index that names no row changes nothing.
+  assert.deepEqual(withEntryOpened(entries, 9), entries);
+
+  // AND THE WRITE CARRIES THE ABSENCE. A `targetSets` sent as null or as a zero would be a target of
+  // nothing rather than the open line, and reps or a weight beside no sets is the refusal above.
+  const write = routineWrite({ id: 'rt_1', name: 'Heavy Thursday', position: 0, entries: opened });
+  assert.deepEqual(write.entries[1], { exerciseId: 'barbell-row', restSeconds: 120 });
+  assert.deepEqual(Object.keys(write.entries[1]), ['exerciseId', 'restSeconds']);
+
+  // Even handed a half-open line — a shape no action here produces — the write is the last gate
+  // before a 400 nobody can repair, so it drops what an open line may not carry.
+  const half = routineWrite({
+    id: 'rt_1',
+    name: 'Heavy Thursday',
+    position: 0,
+    entries: [{ exerciseId: 'deadlift', targetReps: 5, targetWeightKg: 140 }],
+  });
+  assert.deepEqual(half.entries[0], { exerciseId: 'deadlift' });
+});
+
+// WHICH LINES WILL ASK AT THE RACK, said as a fact about the day. It is composed from the entries
+// themselves, so it is never a sentence about a routine other than the one on screen.
+test('openTargetsLine — the open rows are named, and a routine with none says nothing', () => {
+  const catalog = [
+    { id: 'back-squat', name: 'Back Squat' },
+    { id: 'barbell-row', name: 'Barbell Row' },
+    { id: 'deadlift', name: 'Deadlift' },
+  ];
+  const targeted = { exerciseId: 'back-squat', targetSets: 5, targetReps: 3 };
+  assert.equal(openTargetsLine([targeted], catalog), null);
+  assert.equal(openTargetsLine([], catalog), null);
+  assert.equal(
+    openTargetsLine([targeted, { exerciseId: 'barbell-row' }], catalog),
+    'Barbell Row has no target — it will ask at the rack.',
+  );
+  assert.equal(
+    openTargetsLine([{ exerciseId: 'barbell-row' }, { exerciseId: 'deadlift' }], catalog),
+    'Barbell Row and Deadlift have no target — they will ask at the rack.',
+  );
+  assert.equal(
+    openTargetsLine([{ exerciseId: 'barbell-row' }, { exerciseId: 'deadlift' }, { exerciseId: 'back-squat' }], catalog),
+    'Barbell Row, Deadlift and Back Squat have no target — they will ask at the rack.',
+  );
+  // A catalog that has not answered still names the movement, by its id, exactly as every other
+  // sentence in this product does rather than leaving a hole where the movement should be.
+  assert.equal(openTargetsLine([{ exerciseId: 'barbell-row' }], []), 'barbell-row has no target — it will ask at the rack.');
+});
+
+// The sheet opens an open row at the OPENING VALUES and the row stays open until `Set` brings them
+// back: a number on screen to be typed over, and never a prefill — a routine built at home has no
+// history to prefill from, which is the line the sheet itself says out loud.
+test('targetDraftOf — an open row opens the sheet at three of five, and takes nothing on its own', () => {
+  const open = { exerciseId: 'deadlift', restSeconds: 120 };
+  assert.deepEqual(targetDraftOf(open), {
+    exerciseId: 'deadlift', restSeconds: 120, targetSets: NEW_ENTRY_SETS, targetReps: NEW_ENTRY_REPS,
+  });
+  // No weight is invented with them: "whatever you did last time" is still the one right answer for
+  // a load nobody has named.
+  assert.equal(targetDraftOf(open).targetWeightKg, undefined);
+  assert.equal(open.targetSets, undefined);
+
+  const set = { exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 };
+  assert.deepEqual(targetDraftOf(set), set);
+  assert.notEqual(targetDraftOf(set), set);
+});
+
+// Three openers past a blank field, and they are the same three every time: an opener that changed
+// with the day would read as the app knowing something about the program.
+test('NAME_SUGGESTIONS — three fixed openers, and none of them is derived from anything', () => {
+  assert.deepEqual(NAME_SUGGESTIONS, ['Push C', 'Lower B', 'Thursday']);
+  for (const suggestion of NAME_SUGGESTIONS) assert.equal(suggestion.length <= NAME_MAX, true);
+});
+
+// Where you are in the day, on the sheet asking for one line's numbers. A routine still being named
+// is a state this editor genuinely has, and the label drops the separator rather than the fact.
+test('entryPlaceLabel — the position in the run, and the routine when it has a name', () => {
+  assert.equal(entryPlaceLabel(1, 4, 'Heavy Thursday'), '2 of 4 · Heavy Thursday');
+  assert.equal(entryPlaceLabel(0, 1, 'Legs'), '1 of 1 · Legs');
+  assert.equal(entryPlaceLabel(1, 4, '   '), '2 of 4');
+  assert.equal(entryPlaceLabel(1, 4, ''), '2 of 4');
+});
+
+// WHEN THE DAY WAS WRITTEN, AND HOW BIG IT WAS THEN. The count is the store's `movements` — what the
+// routine was CREATED with — and a routine written before that column existed carries none: today's
+// entry count is not a substitute, because a day built with four and cut to three would claim it was
+// born at three. Past six days the weekday stops being unambiguous and the date is what is left.
+test('builtLabel — the day the routine was written, and only a count the store sent', () => {
+  const now = new Date(2026, 7, 12, 20, 0).getTime();          // Wed 12 Aug 2026
+  const sunday = new Date(2026, 7, 9, 11, 0).getTime();        // Sun 9 Aug 2026
+  const fortnight = new Date(2026, 6, 29, 11, 0).getTime();    // Wed 29 Jul 2026
+  const built = (at, movements) => ({
+    history: [{ kind: 'created', at, ...(movements == null ? {} : { movements }) }],
+  });
+
+  assert.equal(builtLabel(built(sunday, 4), now), 'built Sunday · 4 movements');
+  assert.equal(builtLabel(built(sunday, 1), now), 'built Sunday · 1 movement');
+  assert.equal(builtLabel(built(sunday), now), 'built Sunday');
+  assert.equal(builtLabel(built(fortnight, 4), now), 'built 29 Jul · 4 movements');
+  // A routine that has not been saved has no history at all, and is asked for nothing.
+  assert.equal(builtLabel({ history: [] }, now), null);
+  assert.equal(builtLabel({}, now), null);
+  assert.equal(builtLabel(null, now), null);
+});
+
+// THE ROUTINE'S HISTORY IS ONE LIST OF TWO KINDS, in the order the store sent it: newest first, the
+// created row last and always there. A created row with no `by` is the lifter's own hand — the
+// absence IS the claim — and one with a door names the agent instead, because `created by you` over
+// an agent's day would be putting words in a lifter's mouth.
+test('historyRows — the day it was written and every proposal since, each spelled once', () => {
+  const proposal = {
+    id: 'prop_1',
+    routineId: 'rt_1',
+    intent: 'update',
+    state: 'pending',
+    summary: '',
+    changeCount: 3,
+    createdAt: new Date(2026, 7, 10, 21, 14).getTime(),
+    source: { door: 'mcp' },
+  };
+  const rows = historyRows({
+    history: [
+      { kind: 'proposal', at: proposal.createdAt, proposal },
+      { kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), movements: 4 },
+    ],
+  });
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], {
+    key: 'prop_1',
+    pending: true,
+    href: '#/gym/proposals/prop_1',
+    line: '10 Aug · 3 changes from your connected agent · waiting for you',
+  });
+  assert.deepEqual(rows[1], {
+    key: 'created-1',
+    pending: false,
+    href: null,
+    line: '9 Aug · created by you · 4 movements',
+  });
+
+  // An agent's day names the door it came through, and never the lifter.
+  const byAgent = historyRows({
+    history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'ask', movements: 2 }],
+  });
+  assert.equal(byAgent[0].line, '9 Aug · created by Ask · 2 movements');
+  assert.equal(byAgent[0].line.includes('by you'), false);
+  assert.equal(
+    historyRows({ history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'mcp' }] })[0].line,
+    '9 Aug · created by your connected agent',
+  );
+
+  // A routine nobody has saved, and one read from a store that sends no history, both draw nothing.
+  assert.deepEqual(historyRows({ history: [] }), []);
+  assert.deepEqual(historyRows({}), []);
+  assert.deepEqual(historyRows(null), []);
 });

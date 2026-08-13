@@ -379,4 +379,92 @@ class RecordTests {
         assertEquals("Nothing logged for this movement yet. The first set you log lands here.",
                      Record.page(record, now = today).nothingYet)
     }
+
+    // §N'S PROOF BLOCK — every line of it a READ. A name is a label on a stable id, so nothing under
+    // it moves when the name does; these are the numbers that let a lifter see that before they tap,
+    // and a constant among them would be the one screen whose job is proof asserting something it
+    // never checked.
+    @Test
+    fun testTheRenameProofIsFourReadsAndNeverAConstant() {
+        val record = MovementRecord(
+            exercise = squat,
+            routineCount = 2,
+            routines = listOf("Push A", "Legs"),
+            sessionCount = 34,
+            bestE1rm = RecordMark(110.0, 5, today, e1rm = 122.5),
+            records = listOf(RecordMark(110.0, 5, today, e1rm = 122.5),
+                             RecordMark(105.0, 5, today, e1rm = 117.5),
+                             RecordMark(100.0, 5, today, e1rm = 112.5)),
+        )
+
+        assertEquals(
+            listOf(Record.Proof("sessions", "34 · unchanged"),
+                   Record.Proof("records", "3 PRs · e1RM 122.5 kept"),
+                   Record.Proof("routines", "Push A · Legs"),
+                   Record.Proof("old name", "searchable as an alias")),
+            Record.proof(record, aliased = true))
+    }
+
+    // A LINE WITH NOTHING BEHIND IT IS NOT DRAWN. An older server sends no counts, a movement in no
+    // routine has no routines, and `0 sessions · unchanged` under a heading that says everything
+    // follows is furniture rather than proof.
+    @Test
+    fun testAProofLineWithNothingBehindItIsDroppedRatherThanZeroed() {
+        val untouched = MovementRecord(exercise = squat, sessionCount = 0)
+        assertEquals(emptyList<Record.Proof>(), Record.proof(untouched, aliased = false))
+
+        val older = MovementRecord(exercise = squat, routines = listOf("Push A"))
+        assertEquals(listOf(Record.Proof("routines", "Push A")), Record.proof(older, aliased = false))
+    }
+
+    // The alias is the ACCOUNT's row, so it is promised only where the rename lands there — a
+    // movement this device minted and no claim has carried yet renames on a shelf with no alias
+    // table and no picker rule reading one.
+    @Test
+    fun testTheAliasIsPromisedOnlyWhereTheRenameLandsOnTheAccount() {
+        val record = MovementRecord(exercise = squat, sessionCount = 3)
+        assertEquals(listOf(Record.Proof("sessions", "3 · unchanged")),
+                     Record.proof(record, aliased = false))
+        assertEquals(listOf(Record.Proof("sessions", "3 · unchanged"),
+                            Record.Proof("old name", "searchable as an alias")),
+                     Record.proof(record, aliased = true))
+    }
+
+    // A movement Epley has nothing to say about — bodyweight, band-assisted — keeps its records line
+    // if it has one and never prints an estimate it does not have.
+    @Test
+    fun testTheRecordsLineDropsWhicheverHalfIsMissing() {
+        val noEstimate = MovementRecord(exercise = chin,
+            records = listOf(RecordMark(0.0, 12, today)))
+        assertEquals(listOf(Record.Proof("records", "1 PR kept")),
+                     Record.proof(noEstimate, aliased = false))
+
+        val onlyStanding = MovementRecord(exercise = squat,
+            bestE1rm = RecordMark(110.0, 5, today, e1rm = 122.5))
+        assertEquals(listOf(Record.Proof("records", "e1RM 122.5 kept")),
+                     Record.proof(onlyStanding, aliased = false))
+    }
+
+    // The shelf answers the same four questions off the device's own reads — signed out, the sheet
+    // is still proof and not a promise.
+    @Test
+    fun testTheShelfNamesTheRoutinesAMovementIsIn() {
+        val routines = listOf(
+            Routine(id = "rt_1", name = "Push A", entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5))),
+            Routine(id = "rt_2", name = "Legs", entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "back-squat"))),
+            Routine(id = "rt_3", name = "Pull", entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "chin-up", targetSets = 3))),
+        )
+
+        val record = MovementRecord.of(squat, listOf(
+            session("ses_1", today, listOf(set("s1", 105.0, 5, today)))), routines)
+
+        assertEquals(listOf("Push A", "Legs"), record.routines)
+        assertEquals("the count is exactly the list", 2, record.routineCount)
+        assertEquals(listOf(Record.Proof("sessions", "1 · unchanged"),
+                            Record.Proof("routines", "Push A · Legs")),
+                     Record.proof(record, aliased = false))
+    }
 }

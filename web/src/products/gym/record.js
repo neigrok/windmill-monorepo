@@ -175,6 +175,44 @@ export function daysOf(record, now) {
   }));
 }
 
+// WHAT A RENAME COSTS, WHICH IS NOTHING (§N screen 32). A name is a label on a stable id, so
+// renaming is not destructive and never forks a record — and this is the block that PROVES it,
+// which means every line of it is read off the page's own read and not one of them is a constant.
+// `34 sessions · unchanged` typed into a component would be the product asserting something it did
+// not check, on the one screen whose whole job is proof.
+//
+// A ROW WITH NOTHING TO PROVE IS OMITTED, exactly as every list on this wire is: `0 sessions ·
+// unchanged` is not a promise a movement nobody has worked can make, and a lifter renaming a
+// movement they minted a minute ago does not need to be told what happens to their nothing. The
+// alias row always stands, because it is the one thing this rename does rather than preserves.
+export const RENAME_PROOF = 'Everything follows the name';
+
+// THE LABEL IS THE COLUMN AND THE VALUE IS THE FACT, which is why the count is bare here and spelled
+// out in the subhead above: `sessions · 34 sessions · unchanged` says the word twice on the one block
+// whose job is to be read at a glance. Plural throughout, like `routines` over a single name — these
+// are the names of what is being accounted for, not sentences about how many.
+export function renameProofOf(record) {
+  const rows = [];
+  if (record.sessionCount > 0) {
+    rows.push({ label: 'sessions', value: `${record.sessionCount} · unchanged` });
+  }
+  const marks = (record.records ?? []).length;
+  if (marks > 0) {
+    // The estimate is the domain's, printed the way every other e1RM on this surface is printed —
+    // and `records` and `bestE1rm` are absent together on the wire, so a mark with no estimate
+    // beside it is not a state this can be handed.
+    const best = record.bestE1rm ? ` · ${e1rmLabel(record.bestE1rm.e1rm)} kept` : '';
+    rows.push({ label: 'records', value: `${countLabel(marks, 'PR', 'PRs')}${best}` });
+  }
+  // The NAMES rather than the count: this is the row that answers "which of my days still say this",
+  // and a number cannot. They come off the same read as everything else here (gymApi.js).
+  if ((record.routines ?? []).length > 0) {
+    rows.push({ label: 'routines', value: record.routines.join(' · ') });
+  }
+  rows.push({ label: 'old name', value: 'searchable as an alias' });
+  return rows;
+}
+
 // The whole page, made once. `now` is passed rather than read so the same movement renders the same
 // page in a test, and so nothing on it is a claim only the device's clock can support.
 export function recordView(record, { now = Date.now() } = {}) {

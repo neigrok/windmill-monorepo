@@ -224,7 +224,16 @@ public:
   // that could only ever say the same words — the same pass-through lastTime is.
   std::vector<Routine> routines(const UserId& user);
   std::optional<Routine> routine(const UserId& user, const RoutineId& id);
-  RoutineWriteOutcome createRoutine(const UserId& user, const RoutineWrite& incoming);
+  // The routine's dated history — its creation and every proposal ever minted against it, in one
+  // list (ports/TrainingRepository.h). It rides on the routine's own read rather than on a route of
+  // its own, because it is one section of one screen (§M30) and a page that made a call per section
+  // draws in stages.
+  std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id);
+  // `byAgent` is the door a create came through, absent for the lifter's own hand. It is stated by
+  // each caller rather than defaulted: the app's route and the MCP tool are the only two, and a
+  // third one that appeared without saying which it was would quietly claim the lifter's.
+  RoutineWriteOutcome createRoutine(const UserId& user, const RoutineWrite& incoming,
+                                    std::optional<ProposalDoor> byAgent);
   // The PATH names the routine being replaced; the body carries what it becomes.
   //
   // THIS IS THE HUMAN'S HAND, and it is reachable from `PUT /v1/gym/routines/{id}` alone. No MCP

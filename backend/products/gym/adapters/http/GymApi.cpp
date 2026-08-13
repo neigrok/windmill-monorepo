@@ -600,7 +600,9 @@ void GymApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   }
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
-    outcome = log_->createRoutine(*caller, parseRoutineWrite(*json));
+    // No door: this route is a lifter's own hand on their own phone, which is the whole of §M's
+    // third door and what the routine's history says by saying nothing about who made it.
+    outcome = log_->createRoutine(*caller, parseRoutineWrite(*json), std::nullopt);
   } catch (const InvalidTraining&) {
     // One sentence for every way a routine can be unstorable as written: no entries, a name that is
     // empty or over eighty characters, a position out of range, an entry outside its bounds.
@@ -634,11 +636,21 @@ void GymApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
-  // Newest first, so the first is the one a card draws when two doors each have one waiting.
+  // Newest first, so the first is the one a card draws when two doors each have one waiting. It is
+  // its OWN read and not the pending row of the history below, however alike the two look: the
+  // history is a bounded window of the newest rows, and a proposal from a quiet door can be older
+  // than that window while still waiting. A dot that vanished once a day had twenty newer settled
+  // proposals would be the product hiding a decision the lifter still has to make.
   std::optional<ProposalHead> pending;
   for (const ProposalHead& head : log_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
     if (!pending) pending = head;
-  cb(jsonResponse(toJson(*routine, pending)));
+  // The History section (§M30) rides on this read and not on a route of its own, because it is one
+  // section of the screen this read already draws — and a screen that fetched its history separately
+  // would draw the day, then the day's past, in two frames. The LIST read carries none of it: a
+  // routines screen prints names.
+  Json::Value body = toJson(*routine, pending);
+  body["history"] = toJson(log_->routineHistory(*caller, RoutineId{id}));
+  cb(jsonResponse(body));
 }
 
 void GymApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

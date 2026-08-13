@@ -24,6 +24,7 @@ import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
+import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -143,6 +144,10 @@ internal class FakeTraining : TrainingSyncing {
     // The proposal ledger, and it is append-and-settle rather than delete: a decided proposal keeps
     // its row, because it is a dated record on the routine and not a message that was read.
     val ledger = mutableMapOf<String, Proposal>()
+    // How each routine came to exist, filled by `createRoutine` and seedable by a test that wants a
+    // particular day behind it.
+    val creations = mutableMapOf<String, RoutineEvent>()
+    var createdAtMs = 500L
     var settledAtMs = 9_000L
     val lastTimes = mutableMapOf<String, LastTime>()
     val served = mutableListOf<LastSet>()
@@ -160,7 +165,8 @@ internal class FakeTraining : TrainingSyncing {
     var refuseRevoke: Exception? = null
     var refuseRecord: Exception? = null
     var refuseRename: Exception? = null
-    var refuseProposals: Exception? = null
+    // The ROUTINE read, refused — which is the history read too, since the history rides on it.
+    var refuseRoutineRead: Exception? = null
     var refuseApply: Exception? = null
     var refuseDismiss: Exception? = null
     var refuseFix: (String) -> Exception? = { null }
@@ -356,10 +362,21 @@ internal class FakeTraining : TrainingSyncing {
         return written.values.sortedBy { it.position }
     }
 
+    // THE ONE READ THAT CARRIES A HISTORY, as the log composes it: the proposals this routine has
+    // carried, newest first, and the CREATED row always last. The default creation row carries no
+    // `movements`, which is the routine made before the count was stored — a test that wants the
+    // count seeds `creations` itself.
     override suspend fun routine(id: String): Routine? {
         calls.add("routine")
         reachable()
-        return written[id]
+        refuseRoutineRead?.let { throw it }
+        val standing = written[id] ?: return null
+        val proposed = ledger.values
+            .filter { it.routineId == id }
+            .sortedByDescending { it.createdAtMs }
+            .map { RoutineEvent(kind = "proposal", atMs = it.createdAtMs, proposal = it) }
+        val born = creations[id] ?: RoutineEvent(kind = "created", atMs = createdAtMs)
+        return standing.copy(history = proposed + born)
     }
 
     override suspend fun createRoutine(write: RoutineWrite): Routine {
@@ -374,6 +391,10 @@ internal class FakeTraining : TrainingSyncing {
                     targetWeightKg = entry.targetWeightKg, restSeconds = entry.restSeconds)
             })
         written[made.id] = made
+        // The count the day was BUILT with, stored at the write: counting the document later is a
+        // different number the moment the routine is edited.
+        creations[made.id] = RoutineEvent(kind = "created", atMs = createdAtMs,
+            movements = write.entries.size)
         return made
     }
 
@@ -418,14 +439,6 @@ internal class FakeTraining : TrainingSyncing {
         written[proposal.routineId]?.let { written[it.id] = it.copy(pendingProposal = proposal) }
     }
 
-    override suspend fun proposals(routineId: String): List<Proposal> {
-        calls.add("proposals")
-        reachable()
-        refuseProposals?.let { throw it }
-        return ledger.values
-            .filter { it.routineId == routineId }
-            .sortedByDescending { it.createdAtMs }
-    }
 
     override suspend fun proposal(id: String): Proposal? {
         calls.add("proposal")

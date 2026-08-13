@@ -105,7 +105,11 @@ Json::Value routineHandle() {
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
-  fields["targetSets"] = boundedInt("How many sets this line calls for (1–20).", 1, 20);
+  fields["targetSets"] =
+      boundedInt("How many sets this line calls for (1–20). OMIT to leave the line OPEN — the "
+                 "movement is in the day and what to do with it is decided at the rack. An open "
+                 "line names no reps and no weight either.",
+                 1, 20);
   fields["targetReps"] =
       boundedInt("Reps per set (1–100). OMIT to mean `max` — as many as you can.", 1, 100);
   fields["targetWeightKg"] = num("Target load in kg. Omit to mean whatever you did last time.");
@@ -123,9 +127,12 @@ Json::Value entryArray() {
   Json::Value entry(Json::objectValue);
   entry["type"] = "object";
   entry["properties"] = fields;
+  // The movement is the only thing a line cannot do without. targetSets left this list in W10, when
+  // a routine became savable while incomplete: an agent copying a program out of a lifter's
+  // notebook can now write the day down before it knows every number in it, and a schema that still
+  // demanded one would have made it invent them.
   Json::Value required(Json::arrayValue);
   required.append("exerciseId");
-  required.append("targetSets");
   entry["required"] = required;
   // The refusal every tool publishes on its own arguments, said again for the line — because the
   // parser refuses a misspelled field inside an entry now, and a schema that stayed silent about it

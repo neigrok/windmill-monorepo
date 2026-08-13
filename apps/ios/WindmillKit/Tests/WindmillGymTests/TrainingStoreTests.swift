@@ -409,14 +409,14 @@ final class TrainingStoreTests: XCTestCase {
         let store = await liveStore(server)
 
         server.refuseCreate = refusal(409, code: "exercise-id-taken", message: "that movement id is taken")
-        guard case .failure(let why) = await store.create("Zercher Squat") else {
+        guard case .failure(let why) = await store.create("Zercher Squat", loadedAs: "barbell") else {
             return XCTFail("a refused create is not a movement")
         }
         XCTAssertEqual(why, .refused("that movement id is taken"))
         XCTAssertFalse(store.catalog.contains { $0.name == "Zercher Squat" })
 
         server.refuseCreate = nil
-        guard case .success(let made) = await store.create("Zercher Squat") else {
+        guard case .success(let made) = await store.create("Zercher Squat", loadedAs: "barbell") else {
             return XCTFail("the second attempt lands")
         }
         XCTAssertEqual(made.name, "Zercher Squat")
@@ -791,7 +791,7 @@ final class TrainingStoreTests: XCTestCase {
     func testRenamingAnUnclaimedMovementRewritesTheCreateTheClaimWillReplay() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
-        guard case .success(let minted) = await store.create("Bench") else {
+        guard case .success(let minted) = await store.create("Bench", loadedAs: "barbell") else {
             return XCTFail("the device mints its own movements signed out")
         }
 
@@ -820,7 +820,7 @@ final class TrainingStoreTests: XCTestCase {
     func testAnUnclaimedMovementReadsAndRenamesOnTheDeviceEvenSignedIn() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        guard case .success(let minted) = await anonymous.create("Zercher") else {
+        guard case .success(let minted) = await anonymous.create("Zercher", loadedAs: "barbell") else {
             return XCTFail("the device mints its own movements signed out")
         }
         _ = await anonymous.start()

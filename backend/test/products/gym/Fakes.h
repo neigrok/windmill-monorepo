@@ -115,6 +115,25 @@ public:
   // own primary key, and every read of a display name coalesces it over the seed's — a fake that
   // resolved names off the catalog row alone would let the global-rename hazard ship behind green.
   std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
+  // gym_exercise_aliases: what one account USED to call one movement, seeds and its own alike. `at`
+  // stands in for created_at — the rename order, which is the order the read hands them back in —
+  // and the row set is capped by the rename exactly as the SQL caps it.
+  struct Alias {
+    std::string user;
+    std::string exercise;
+    std::string name;
+    std::uint64_t at;
+  };
+  std::vector<Alias> aliasRows;
+  // gym_routines' three creation columns, which the entity deliberately does not carry: they are
+  // facts about the WRITE and not about the document, so a replace cannot rewrite them.
+  struct Created {
+    std::uint64_t atMs;
+    std::optional<ProposalDoor> door;
+    int movements;
+  };
+  std::map<std::string, Created> createdRoutines;   // by routine id
+  std::uint64_t renames = 0;   // stands in for gym_exercise_aliases.created_at: rename order
 
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
@@ -127,9 +146,11 @@ public:
     std::vector<Exercise> out;
     for (const Exercise& row : seeds)
       out.push_back(Exercise{row.id, *nameOf(user, row.id), row.pattern, row.equipment, row.stepKg,
-                             row.custom});
+                             row.custom, aliasesOf(user, row.id)});
     for (const auto& [owner, exercise] : customs)
-      if (owner == user.str()) out.push_back(exercise);
+      if (owner == user.str())
+        out.push_back(Exercise{exercise.id, exercise.name, exercise.pattern, exercise.equipment,
+                               exercise.stepKg, exercise.custom, aliasesOf(user, exercise.id)});
     std::sort(out.begin(), out.end(), [](const Exercise& a, const Exercise& b) {
       return std::pair(toString(a.pattern), a.name) < std::pair(toString(b.pattern), b.name);
     });
@@ -525,7 +546,11 @@ public:
     return std::nullopt;   // another account's routine is the same fact as no routine at all
   }
 
-  RoutineWriteOutcome insertRoutine(const Routine& incoming) override {
+  // The creation row of the history is written by the winner of the id and by nobody else, exactly
+  // as the SQL's ON CONFLICT DO NOTHING decides it: a replay writes nothing, so the day a lifter
+  // built on Sunday is not re-dated to whenever a queue got its reply through.
+  RoutineWriteOutcome insertRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent,
+                                    std::uint64_t nowMs) override {
     for (const Routine& routine : routineRows) {
       if (!(routine.id == incoming.id)) continue;
       if (routine.user == incoming.user)
@@ -539,7 +564,35 @@ public:
       if (!visibleTo(incoming.user, entry.exercise))
         return {std::nullopt, RoutineWriteError::unknownExercise};
     routineRows.push_back(incoming);
+    createdRoutines[incoming.id.str()] =
+        Created{nowMs, byAgent, static_cast<int>(incoming.entries.size())};
     return {read(incoming), RoutineWriteError::none};
+  }
+
+  // The routine's dated ledger: its proposals newest first, bounded, then its creation row — which
+  // is always last and never counts against the bound, because it is the sentence a lifter reads to
+  // learn where the day came from. A routine that is absent or another account's has no history at
+  // all, which is the same one fact every read here gives.
+  std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) override {
+    std::vector<RoutineEvent> history;
+    if (!routine(user, id)) return history;
+    for (const ProposalHead& head : proposalHeads(user, ProposalQuery{id, false})) {
+      if (static_cast<int>(history.size()) == kRoutineHistoryProposals) break;
+      history.push_back(
+          RoutineEvent{RoutineEventKind::proposal, head.createdAtMs, std::nullopt, std::nullopt,
+                       head});
+    }
+    const auto made = createdRoutines.find(id.str());
+    // A row seeded straight into routineRows by a test never went through the create, so it carries
+    // no creation columns. Zero is not an instant the domain accepts anywhere, so it cannot be read
+    // as a date; the live store always has one, because the column has always been NOT NULL.
+    if (made == createdRoutines.end())
+      history.push_back(
+          RoutineEvent{RoutineEventKind::created, 0, std::nullopt, std::nullopt, std::nullopt});
+    else
+      history.push_back(RoutineEvent{RoutineEventKind::created, made->second.atMs,
+                                     made->second.door, made->second.movements, std::nullopt});
+    return history;
   }
 
   // The lifter's own hand, and the two facts that make the ledger safe beside it: the revision
@@ -572,6 +625,7 @@ public:
     for (auto row = routineRows.begin(); row != routineRows.end(); ++row) {
       if (!(row->id == id) || !(row->user == user)) continue;
       routineRows.erase(row);
+      createdRoutines.erase(id.str());   // the row is gone, and its creation columns with it
       // `on delete set null`: the sessions trained under it keep their frozen snapshots and lose
       // only the pointer, so the log still says which day of the program each one was.
       for (Session& session : sessions)
@@ -608,18 +662,26 @@ public:
                                          const std::string& name) override {
     for (const Exercise& row : seeds) {
       if (!(row.id == id)) continue;
+      const std::string was = *nameOf(user, id);
       const Exercise renamed{row.id, name, row.pattern, row.equipment, row.stepKg, row.custom};
       std::erase_if(displayNames, [&](const auto& held) {
         return held.first.first == user.str() && held.first.second == id.str();
       });
       if (renamed.name != row.name) displayNames.push_back({{user.str(), id.str()}, renamed.name});
-      return Exercise{row.id, *nameOf(user, id), row.pattern, row.equipment, row.stepKg, row.custom};
+      keepOldName(user, id, was, renamed.name);
+      return Exercise{row.id,        *nameOf(user, id), row.pattern,
+                      row.equipment, row.stepKg,        row.custom,
+                      aliasesOf(user, id)};
     }
     for (auto& [owner, exercise] : customs) {
       if (!(exercise.id == id) || owner != user.str()) continue;
+      const std::string was = exercise.name;
       exercise = Exercise{exercise.id,        name,           exercise.pattern,
                           exercise.equipment, exercise.stepKg, exercise.custom};
-      return exercise;
+      keepOldName(user, id, was, exercise.name);
+      return Exercise{exercise.id,        exercise.name, exercise.pattern,
+                      exercise.equipment, exercise.stepKg, exercise.custom,
+                      aliasesOf(user, id)};
     }
     return std::nullopt;   // absent and another account's are the one fact
   }
@@ -634,14 +696,21 @@ public:
       if (known.id == exercise) history.exercise = known;
     if (!history.exercise) return history;
 
+    // DISTINCT and in the lifter's own program order, which is what the SQL's ORDER BY says: a
+    // routine naming the movement twice is still one day, and the sheet prints the days by name.
+    std::vector<Routine> naming;
     for (const Routine& routine : routineRows) {
       if (!(routine.user == user)) continue;
       for (const RoutineEntry& entry : routine.entries)
         if (entry.exercise == exercise) {
-          ++history.routines;   // DISTINCT: a routine naming it twice is still one routine
+          naming.push_back(routine);
           break;
         }
     }
+    std::sort(naming.begin(), naming.end(), [](const Routine& a, const Routine& b) {
+      return std::pair(a.position, a.id.str()) < std::pair(b.position, b.id.str());
+    });
+    for (const Routine& routine : naming) history.routines.push_back(routine.name);
 
     std::vector<Session> ran;
     for (const Session& session : sessions)
@@ -1089,6 +1158,45 @@ private:
     for (const auto& [owner, exercise] : customs)
       if (exercise.id == id) return exercise.name;
     return std::nullopt;
+  }
+
+  // The rename's three alias statements, in the SQL's own order and for the SQL's own reasons: the
+  // name this account was using becomes one it USED to use, the name it is using now stops being
+  // one — which is what a rename BACK needs, or the old name would shadow the truth in the picker —
+  // and only the newest kMaxAliases are kept. Renaming to the same name adds nothing.
+  void keepOldName(const UserId& user, const ExerciseId& id, const std::string& was,
+                   const std::string& now) {
+    if (was != now) {
+      std::erase_if(aliasRows, [&](const Alias& held) {
+        return held.user == user.str() && held.exercise == id.str() && held.name == was;
+      });
+      aliasRows.push_back(Alias{user.str(), id.str(), was, ++renames});
+    }
+    std::erase_if(aliasRows, [&](const Alias& held) {
+      return held.user == user.str() && held.exercise == id.str() && held.name == now;
+    });
+    std::vector<std::string> kept = aliasesOf(user, id);
+    if (kept.size() <= kMaxAliases) return;
+    kept.resize(kMaxAliases);
+    std::erase_if(aliasRows, [&](const Alias& held) {
+      if (held.user != user.str() || held.exercise != id.str()) return false;
+      return std::find(kept.begin(), kept.end(), held.name) == kept.end();
+    });
+  }
+
+  // What this account used to call a movement, newest rename first — the order the SQL's
+  // `ORDER BY created_at DESC, name ASC` hands back.
+  std::vector<std::string> aliasesOf(const UserId& user, const ExerciseId& id) const {
+    std::vector<Alias> held;
+    for (const Alias& row : aliasRows)
+      if (row.user == user.str() && row.exercise == id.str()) held.push_back(row);
+    std::sort(held.begin(), held.end(), [](const Alias& a, const Alias& b) {
+      if (a.at != b.at) return a.at > b.at;
+      return a.name < b.name;
+    });
+    std::vector<std::string> names;
+    for (const Alias& row : held) names.push_back(row.name);
+    return names;
   }
 
   // The order both DISTINCT ON statements hand marks back in: by movement, heaviest load first.

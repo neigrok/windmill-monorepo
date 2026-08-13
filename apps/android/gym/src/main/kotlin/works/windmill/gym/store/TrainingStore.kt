@@ -23,12 +23,15 @@ import works.windmill.gym.domain.MovementRecord
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.Routine
+import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
@@ -755,6 +758,10 @@ class TrainingStore(
         lastTime = null
         drawFromQueue()
         shelved = localLog.summaries()
+        // The day a shelf routine was last trained is DERIVED off the sessions that just moved, so
+        // the routine this workout ran under stops reading `untested` on the next frame rather than
+        // on the next launch.
+        redrawShelfRoutines()
         // Signed in, the shelf does not wait for a relaunch: the claim runs now — or, if a replay
         // is already mid-flight, is marked to run again the moment that pass ends — and once the
         // log is ready the session lands. A start tapped while it runs composes on the device
@@ -780,6 +787,9 @@ class TrainingStore(
             queue.flush()
             drawFromQueue()
             shelved = localLog.summaries()
+            // A discarded session is one a routine was NOT trained by, and the shelf's derived
+            // answer moves back with it — which is the whole argument for deriving it.
+            redrawShelfRoutines()
             return true
         }
         val log = gym ?: return false
@@ -847,6 +857,81 @@ class TrainingStore(
         }
     }
 
+    // §M'S SAVE — one day of the program, written WHOLE, and the only door the builder has. A
+    // routine with an id is an edit and a rename alike: the same document goes out as a PUT, which
+    // moves the revision and supersedes every proposal pending on it, and that is the consequence
+    // renaming a routine is supposed to have rather than a thing to work around. A routine without
+    // one is a create, and the id is minted here.
+    //
+    // IT IS SAVABLE WHILE INCOMPLETE — a row with no targets is `open` and asks at the rack — but
+    // not while it is EMPTY: a routine needs a name and at least one movement, and the two refusals
+    // below are the log's own rules said before a round trip that could only repeat them.
+    suspend fun saveRoutine(draft: RoutineDraft): GymResult<Routine> {
+        val name = Program.named(draft.name)
+            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs a name"))
+        if (draft.entries.isEmpty()) {
+            return GymResult.Failed(WriteFailure.Refused("a routine needs at least one movement"))
+        }
+        val standing = draft.id
+        // A routine still on the shelf is the device's to write — signed out always, and signed in
+        // while its claim has not landed yet. The claim sends whatever it finds here, so what the
+        // lifter typed tonight is what the account receives.
+        if (standing != null && localLog.routine(standing) != null) {
+            val held = Routine(RoutineWrite(standing, name, draft.position, draft.write))
+            localLog.hold(held)
+            routines = if (gym == null) localLog.routines
+                else routines.map { if (it.id == standing) localLog.routine(standing)!! else it }
+            return GymResult.Ok(held)
+        }
+        val log = gym
+        if (log == null) {
+            // Signed out a routine this shelf does not hold is the account's, and the sentence says
+            // so rather than blaming a signal nobody used.
+            if (standing != null) {
+                return GymResult.Failed(
+                    WriteFailure.Refused("that routine is on your account — sign in to change it"))
+            }
+            val made = Routine(RoutineWrite(mintRoutine(), name, draft.position, draft.write))
+            localLog.hold(made)
+            routines = localLog.routines
+            return GymResult.Ok(made)
+        }
+        return try {
+            val write = RoutineWrite(standing ?: mintRoutine(), name, draft.position, draft.write)
+            val saved = if (standing == null) log.createRoutine(write)
+                else log.replaceRoutine(standing, write)
+            routines = if (standing == null) routines + saved
+                else routines.map { if (it.id == saved.id) saved else it }
+            GymResult.Ok(saved)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // THE ROUTINE'S OWN DATED HISTORY (§M, screen 30) — how the day came to exist, and every
+    // proposal made about it since, in one list. It rides on the ROUTINE read rather than on a
+    // route of its own: one section of one screen, one read, and no second door to disagree with
+    // the document the screen is already holding.
+    //
+    // A ROUTINE THE SHELF HOLDS HAS NO HISTORY AND THAT IS AN ANSWER, not a failure: nothing on
+    // this device records the evening a local routine was typed, and inventing one would date a
+    // program by the phone that happened to draw it. The section simply is not there.
+    suspend fun routineHistory(routineId: String): GymResult<List<RoutineEvent>> {
+        if (localLog.routine(routineId) != null) return GymResult.Ok(emptyList())
+        val log = gym ?: return GymResult.Ok(emptyList())
+        return try {
+            val read = log.routine(routineId)
+                ?: return GymResult.Failed(WriteFailure.Refused("that routine is no longer on the log"))
+            GymResult.Ok(read.history)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
     // ONE DIFF, READ WHOLE. The card carries a head — who proposed it, when, and how many changes —
     // and this is the read that fills in the typed rows a lifter actually decides on. Nothing is
     // held: a second visit asks again, because a proposal moves the moment anybody decides anything.
@@ -859,20 +944,6 @@ class TrainingStore(
             val read = log.proposal(id)
                 ?: return GymResult.Failed(WriteFailure.Refused("that proposal is no longer on the log"))
             GymResult.Ok(read)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            GymResult.Failed(WriteFailure(refusing))
-        }
-    }
-
-    // THE ROUTINE'S DATED HISTORY — every proposal it has ever carried, applied, dismissed or
-    // superseded, newest first. An agent's suggestion is part of the program's history whichever
-    // way it went, so nothing here is a toast that disappeared and nothing was deleted to make room.
-    suspend fun proposalHistory(routineId: String): GymResult<List<Proposal>> {
-        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(proposalsWantAnAccount))
-        return try {
-            GymResult.Ok(log.proposals(routineId))
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
@@ -1002,25 +1073,28 @@ class TrainingStore(
         }
     }
 
-    // A movement the catalog has never heard of, minted from the picker's `Create "{query}"`. The
-    // picker asks for a name and nothing else, so the classification is the domain's own value for
-    // "unknown" rather than a guess dressed as a fact — and nothing on this surface reads it,
-    // because the ladder is taken off the MAGNITUDE of the load and never off the equipment.
-    suspend fun create(name: String): GymResult<Exercise> {
+    // A movement the catalog has never heard of, minted from §N's two questions: what you call it,
+    // and how it is loaded. The loading is the CALLER'S and is never guessed — this used to file
+    // every created movement as a barbell, which is a claim about somebody's gym made by a client
+    // that never asked. The pattern is not asked for and is the domain's own value for "we did not
+    // ask": nothing on this surface reads it, because the ladder is taken off the MAGNITUDE of the
+    // load and never off the equipment.
+    suspend fun create(name: String, equipment: String): GymResult<Exercise> {
         val log = gym
         if (log == null) {
             // Minted on the device — a fresh install signed out has an empty catalog, and a picker
             // that could not create would be a logger that cannot log. The claim carries it onto
             // the account before any set that names it.
-            val made = Exercise(id = mintExercise(), name = name, custom = true)
+            val made = Exercise(id = mintExercise(), name = name, pattern = Exercise.unclassified,
+                equipment = equipment, custom = true)
             localLog.hold(made)
             catalog = catalog + made
             deviceCatalog.hold(owner, catalog)
             return GymResult.Ok(made)
         }
         return try {
-            val made = log.createExercise(ExerciseWrite(
-                id = mintExercise(), name = name, pattern = "isolation", equipment = "barbell"))
+            val made = log.createExercise(ExerciseWrite(id = mintExercise(), name = name,
+                pattern = Exercise.unclassified, equipment = equipment))
             catalog = catalog + made
             deviceCatalog.hold(owner, catalog)
             GymResult.Ok(made)
@@ -1293,6 +1367,15 @@ class TrainingStore(
     // while its claim has not landed — because the claim sends the name it finds. Anything else is
     // the log's: a movement the caller created renames in place, a seeded one gets a per-account
     // override, and neither is a shelf this phone could hold.
+    // WHETHER THE OLD NAME REALLY WILL KEEP FINDING THIS MOVEMENT, asked before §N's sheet promises
+    // it. The alias is a row on the ACCOUNT, so it follows exactly the rename that lands there: a
+    // movement this device minted and no claim has carried yet renames on the shelf, which has no
+    // alias table and no picker rule reading one. The same test `rename` makes one method down —
+    // asked here rather than re-derived on a screen, because a proof block that guessed its fourth
+    // line would be the one screen in this product whose job is proof asserting something unchecked.
+    fun renameKeepsAnAlias(exerciseId: String): Boolean =
+        gym != null && localLog.exercises.none { it.id == exerciseId }
+
     suspend fun rename(exerciseId: String, to: String): GymResult<Exercise> {
         val name = to.trim()
         if (name.isEmpty()) return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
@@ -1598,6 +1681,16 @@ class TrainingStore(
     private suspend fun resume() {
         val movement = exerciseId ?: LiveOrder.resume(order, sets) ?: return
         choose(movement)
+    }
+
+    // The shelf's half of the program, re-published beside whatever the account's read left
+    // standing. It exists because the shelf's rows move without any read happening: the day a local
+    // routine was last trained is derived off the local sessions, so a finish and a discard both
+    // change what a routine says about itself with nothing on the wire to notice. The account's
+    // rows are kept in place and the shelf's go last, which is the order `connect` composes.
+    private fun redrawShelfRoutines() {
+        val mine = localLog.routines
+        routines = routines.filter { held -> mine.none { it.id == held.id } } + mine
     }
 
     private fun drawFromQueue() {

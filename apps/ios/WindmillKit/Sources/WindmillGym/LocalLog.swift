@@ -434,11 +434,15 @@ public final class LocalLog {
             return TrainingDay(sessionId: local.session.id,
                                startedAtMs: local.session.startedAtMs, sets: performed)
         }
+        // The programs on this device that name it, in program order — §N's rename proof reads
+        // these, and the count is exactly the list's length so the two can never disagree.
+        let naming = routines
+            .filter { routine in routine.entries.contains { $0.exerciseId == exercise.id } }
+            .map(\.name)
         return MovementRecord(
             exercise: exercise,
-            routineCount: routines.filter { routine in
-                routine.entries.contains { $0.exerciseId == exercise.id }
-            }.count,
+            routineCount: naming.count,
+            routines: naming,
             sessionCount: worked.count,
             heaviest: heaviest(of: worked),
             recentDays: Array(days.prefix(limit)))

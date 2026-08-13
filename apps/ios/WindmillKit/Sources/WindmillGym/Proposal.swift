@@ -191,14 +191,20 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
 
     // What a routine asks a movement for. The same three numbers `RoutineEntry` carries, under the
     // names the proposal wire uses — absent reps is `max`, absent weight is whatever you did last
-    // time, absent rest is the global target.
+    // time, absent rest is the global target, and absent SETS is the open row (§M): the routine
+    // names nothing and the movement is decided at the rack.
+    //
+    // WHICH SIDE OF A DIFF IS MISSING IS `kind` AND NEVER AN ABSENT `sets`. `added` has no `before`
+    // and `removed` has no `after`; a reader that inferred the side from a null set count would
+    // read `+ Deadlift · open` as a line with nothing added to it.
     public struct Targets: Equatable, Decodable, Sendable {
-        public let sets: Int
+        public let sets: Int?
         public let reps: Int?
         public let weightKg: Double?
         public let restSeconds: Int?
 
-        public init(sets: Int, reps: Int? = nil, weightKg: Double? = nil, restSeconds: Int? = nil) {
+        public init(sets: Int? = nil, reps: Int? = nil, weightKg: Double? = nil,
+                    restSeconds: Int? = nil) {
             self.sets = sets
             self.reps = reps
             self.weightKg = weightKg
@@ -238,9 +244,15 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         guard let before, let after else { return [] }
         var moved: [Move] = []
         if before.sets != after.sets || before.reps != after.reps {
+            // A side with no set count is the OPEN row (§M) — the routine names nothing at all —
+            // and it prints that one word rather than a count of nothing. `Readout.target` carries
+            // no weight here on purpose: the load is its own row two lines down, and naming it
+            // twice would be one decision drawn as two.
             moved.append(Move(field: "sets",
-                              before: "\(before.sets) × \(Readout.repTarget(before.reps))",
-                              after: "\(after.sets) × \(Readout.repTarget(after.reps))"))
+                              before: Readout.target(sets: before.sets, reps: before.reps,
+                                                     weightKg: nil),
+                              after: Readout.target(sets: after.sets, reps: after.reps,
+                                                    weightKg: nil)))
         }
         if before.weightKg != after.weightKg {
             moved.append(Move(field: "weight",

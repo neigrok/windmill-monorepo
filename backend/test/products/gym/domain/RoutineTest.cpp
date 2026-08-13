@@ -45,7 +45,7 @@ TEST(routine_entry_accepts_the_full_legal_range) {
   CHECK_EQ(bench(1, 1, 1).targetSets, 1);
   CHECK_EQ(bench(1, 20, 100).targetSets, 20);
   CHECK_EQ(bench(1, 20, 100).targetReps, std::optional<int>(100));
-  // All three optionals mean something by their absence: `3 × max`, last time's weight, and the
+  // Every optional means something by its absence: `open`, `3 × max`, last time's weight, and the
   // client's own rest.
   CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).targetWeightKg, std::optional<double>());
   CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).restSeconds, std::optional<int>());
@@ -60,7 +60,7 @@ TEST(routine_entry_accepts_the_full_legal_range) {
 TEST(routine_entry_rejects_out_of_range_fields) {
   CHECK(rejects([] { bench(0); }));                       // positions start at 1
   CHECK(rejects([] { bench(-1); }));
-  CHECK(rejects([] { bench(1, 0, 5); }));                 // a line with no sets is not a line
+  CHECK(rejects([] { bench(1, 0, 5); }));                 // zero sets is a target of nothing
   CHECK(rejects([] { bench(1, 21, 5); }));
   CHECK(rejects([] { bench(1, 5, 0); }));
   CHECK(rejects([] { bench(1, 5, 101); }));
@@ -86,6 +86,33 @@ TEST(routine_entry_holds_a_line_that_names_no_rep_target) {
   CHECK(rejects([] { bench(1, 5, 101); }));
 }
 
+// A routine built at the kitchen table is savable while it is still incomplete (§M): the movement
+// is in the day and what to do with it is decided at the rack. That is the ABSENCE of a set target
+// and never a zero — a zero is a target of nothing, and `0 × 5` is a line no screen can draw.
+TEST(routine_entry_holds_an_open_line_that_names_no_target_at_all) {
+  RoutineEntry open{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt,
+                    std::nullopt};
+
+  CHECK_EQ(open.targetSets, std::optional<int>());
+  CHECK_EQ(open.targetReps, std::optional<int>());
+  CHECK_EQ(open.targetWeightKg, std::optional<double>());
+  // Rest is how long you WAIT, not what you are asked to do, so it rides on an open line unharmed.
+  CHECK_EQ(RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt, 180)
+               .restSeconds,
+           std::optional<int>(180));
+  // Zero is still nothing anyone asked for, on the one field that now means something by absence.
+  CHECK(rejects([] { bench(1, 0); }));
+}
+
+// Half a target is not a target. The sheet that leaves a line open clears the whole row, so a line
+// that names reps or a load while naming no sets is a document no surface here can draw or store.
+TEST(routine_entry_refuses_a_half_open_line) {
+  CHECK(rejects(
+      [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, 5, std::nullopt, std::nullopt); }));
+  CHECK(rejects(
+      [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, 60.0, std::nullopt); }));
+}
+
 // ---- Routine: the document ----------------------------------------------------------------
 
 TEST(routine_construction_guards_the_id_the_name_and_the_position) {
@@ -105,11 +132,13 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "  Push A  ", 0, {bench(1)}).name,
            std::string("Push A"));
   CHECK(rejects([] {
-    Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(81, 'x'), 0, {bench(1)}};
+    Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(kMaxNameLength + 1, 'x'), 0,
+            {bench(1)}};
   }));
-  CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(80, 'x'), 0, {bench(1)})
+  CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string(kMaxNameLength, 'x'), 0,
+                   {bench(1)})
                .name.size(),
-           static_cast<std::size_t>(80));
+           kMaxNameLength);
   // The one text rule (storableText, domain/Training.h): `text` stops at a NUL, so the name would be
   // stored as its own head, and bytes that are not UTF-8 are refused by the column mid-transaction
   // where the answer would be a 500 every client is told to retry.
@@ -197,6 +226,20 @@ TEST(snapshot_copies_a_line_that_names_no_rep_target_as_naming_none) {
 
   CHECK_EQ(snapshot, (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"chin-up"}, 3, std::nullopt,
                                                         std::nullopt, 180}}}));
+}
+
+// And it carries the OPEN line through as open. The frozen plan is what a session reads its targets
+// off, so a snapshot that filled this in would be the one place the difference between "3 × 5" and
+// "you decide" could quietly become a number nobody chose.
+TEST(snapshot_copies_an_open_line_as_naming_nothing) {
+  Routine routine = pushA({RoutineEntry{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt,
+                                        std::nullopt, std::nullopt}});
+
+  PlanSnapshot snapshot = snapshotOf(routine);
+
+  CHECK_EQ(snapshot, (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"barbell-row"}, std::nullopt,
+                                                        std::nullopt, std::nullopt,
+                                                        std::nullopt}}}));
 }
 
 // The copy holds the plan's numbers and not the routine's identity: there is nothing in it to point

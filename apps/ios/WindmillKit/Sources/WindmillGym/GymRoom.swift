@@ -48,6 +48,12 @@ public struct GymRoom: View {
     @State private var away: [Away] = []
     @State private var keptRoutine = false
     @State private var starting = false
+    // The routine write in flight, and whatever the log said about one that did not land. They live
+    // on the ROOM rather than in the editor because the editor is handed a draft and hands one back:
+    // whether the log took it is the room's half of that exchange, and a screen holding its own
+    // answer would go on drawing a refusal after the walk that fixed it.
+    @State private var savingRoutine = false
+    @State private var routineFailure: String?
     @State private var note: String?
     // The proposals Today has been told "later" about. It lives here rather than on Today because a
     // walk to the log and back must not bring the card straight back — and it lives in the ROOM
@@ -111,6 +117,17 @@ public struct GymRoom: View {
         // no argument: what it draws is the room's own `connected`, so a copy handed down the stack
         // would be a second answer about one account.
         case connect
+        // §M SCREEN 30 — one routine, by ID and nothing else, for the same reason a proposal
+        // travels that way: the page reads its own history, which the list read does not carry, and
+        // a copy handed down the stack would be a routine as it stood before the walk.
+        case routine(String)
+        // §M SCREENS 28 AND 29 — the name, then the movements and their targets. The DRAFT travels,
+        // because a draft is not on the log yet and there is nowhere else for it to live: it is
+        // seeded here and owned by the screen, so a walk to the picker and back does not lose a
+        // half-typed day. Leaving the room drops it, which is the same lifetime every unsaved thing
+        // in this product has.
+        case naming(RoutineDraft)
+        case building(RoutineDraft)
 
         // What the way back NAMES when this is the screen underneath.
         func label(in catalog: [Exercise]) -> String {
@@ -121,6 +138,8 @@ public struct GymRoom: View {
             case .ask: return Ask.title
             case .settings: return "Gym"
             case .connect: return "Connected log"
+            case .routine: return "Routine"
+            case .naming, .building: return "New routine"
             }
         }
     }
@@ -222,6 +241,35 @@ public struct GymRoom: View {
             case .connect:
                 ConnectScreen(state: connected, isSignedIn: account.isSignedIn,
                               web: account.api.baseURL, onConnect: openConnect)
+            case .routine(let routineId):
+                RoutineScreen(routineId: routineId, store: store,
+                              onStart: { Task { await open(routineId) } },
+                              onEdit: { look(at: .building(RoutineDraft(editing: $0))) },
+                              // A copy is a NEW routine and a new routine gets named, so it goes
+                              // back through screen 28 with the movements already in hand.
+                              onDuplicate: {
+                                  look(at: .naming(RoutineDraft(duplicating: $0,
+                                                                position: store.routines.count)))
+                              },
+                              onMovement: { look(at: .movement($0)) },
+                              onProposal: { look(at: .proposal($0)) })
+            case .naming(let draft):
+                NameRoutineScreen(opening: draft.name) { named in
+                    var carried = draft
+                    carried.name = named
+                    // The name step is REPLACED rather than stacked on: going back from the
+                    // movements belongs on Routines, not on the question you have just answered.
+                    away[away.count - 1] = .building(carried)
+                }
+            case .building(let draft):
+                RoutineEditorScreen(draft: draft, catalog: store.catalog,
+                                    preferences: store.preferences,
+                                    untested: untested(draft), saving: savingRoutine,
+                                    failure: routineFailure,
+                                    onSave: { written in Task { await save(written) } },
+                                    onCreateMovement: { name, equipment in
+                                        await store.create(name, loadedAs: equipment)
+                                    })
             }
         } else {
             switch tab {
@@ -229,6 +277,7 @@ public struct GymRoom: View {
                 TodayScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
                             askOnThisDeployment: askOnThisDeployment,
                             onStart: { routineId in Task { await open(routineId) } },
+                            onNewRoutine: newRoutine,
                             onMovement: { look(at: .movement($0)) },
                             onOpenSession: { look(at: .session($0)) },
                             onProposal: { look(at: .proposal($0)) },
@@ -239,7 +288,9 @@ public struct GymRoom: View {
             case .log:
                 LogScreen(store: store, onOpen: { look(at: .session($0)) })
             case .routines:
-                RoutinesScreen(store: store, onStart: { routineId in Task { await open(routineId) } },
+                RoutinesScreen(store: store,
+                               onOpen: { look(at: .routine($0)) },
+                               onNew: newRoutine,
                                onMovement: { look(at: .movement($0)) },
                                onProposal: { look(at: .proposal($0)) },
                                // Offered where the program is, and withdrawn the moment something
@@ -268,11 +319,13 @@ public struct GymRoom: View {
     // the lifter.
     private func look(at destination: Away) {
         note = nil
+        routineFailure = nil
         away.append(destination)
     }
 
     private func back() {
         note = nil
+        routineFailure = nil
         away.removeLast()
     }
 
@@ -468,6 +521,52 @@ public struct GymRoom: View {
             return
         }
         finished = nil
+    }
+
+    // §M's third door, opened from the two places a lifter with a program in a notebook stands: the
+    // Routines tab, and Today when there is nothing on it at all. Both land on the NAME, because the
+    // name is a real question asked once and asking it after the movements are in would be asking
+    // it about a thing already made.
+    private func newRoutine() {
+        routineFailure = nil
+        look(at: .naming(RoutineDraft(position: store.routines.count)))
+    }
+
+    // WHETHER THE TARGET SHEET MAY SAY `Never logged — these are your numbers.` It is a fact about
+    // the ROUTINE and not about the movement: a day being built has never been run, and so does a
+    // day being edited that has never been run. Editing one you HAVE trained says nothing there —
+    // the numbers on screen came out of that history and need no disclaimer over them.
+    private func untested(_ draft: RoutineDraft) -> Bool {
+        store.routines.first { $0.id == draft.id }?.isUntested ?? true
+    }
+
+    // SAVED, AND THE SCREEN ONLY LEAVES ONCE THE LOG SAYS SO. A create and a replace are one road
+    // here because a draft knows which it is — the routine either exists or it does not — and a
+    // screen that closed on a write that never landed would tell the lifter they had a program.
+    //
+    // It lands on the routine's own page (§M screen 30), which is where `untested`, the open rows
+    // and the history are, and never back on the empty editor it was written in.
+    private func save(_ draft: RoutineDraft) async {
+        guard !savingRoutine else { return }
+        savingRoutine = true
+        defer { savingRoutine = false }
+        routineFailure = nil
+        let written = store.routines.contains { $0.id == draft.id }
+            ? await store.replace(draft)
+            : await store.create(draft)
+        switch written {
+        case .success(let saved):
+            // AN EDIT CAME FROM THAT PAGE, so it goes BACK to it rather than pushing a second copy
+            // of it — a stack holding the same routine twice would make the way out of a page the
+            // same page. A build has no page under it and lands on a fresh one.
+            guard away.count > 1, away[away.count - 2] == .routine(saved.id) else {
+                away[away.count - 1] = .routine(saved.id)
+                return
+            }
+            away.removeLast()
+        case .failure(let why):
+            routineFailure = why.line("the routine wasn’t saved")
+        }
     }
 
     // Nothing is created until the tap, and nothing is CLAIMED until the log says it was: a screen

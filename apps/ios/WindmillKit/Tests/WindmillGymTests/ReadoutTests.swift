@@ -155,6 +155,15 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(Readout.target(sets: 3, reps: 8, weightKg: -20), "3 × 8 · \u{2212}20")
     }
 
+    // A row the routine named NOTHING for is one word (§M). It short-circuits the whole line and
+    // loses nothing by it: the server refuses to store reps or a weight on a line with no set count,
+    // so there is never a second number here to print instead — and a `0 × 5` would be a target of
+    // nothing, drawn over a decision the lifter deliberately left for the rack.
+    func testATargetTheRoutineNeverNamedIsOneWordAndNeverAZero() {
+        XCTAssertEqual(Readout.target(sets: nil, reps: nil, weightKg: nil), "open")
+        XCTAssertEqual(Readout.target(sets: nil, reps: nil, weightKg: nil), Readout.openTarget)
+    }
+
     // A date, with no weekday in front — the Monday a week of the log opens on, and the bottom of
     // that log, which carries its year because that is the one fact worth arriving at.
     func testADateDropsTheWeekdayAndKeepsTheYearOnlyAtTheBottom() {

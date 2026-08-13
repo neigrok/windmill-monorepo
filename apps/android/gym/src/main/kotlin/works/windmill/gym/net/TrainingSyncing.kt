@@ -99,7 +99,9 @@ interface TrainingSyncing {
     // something, and the card cannot disagree with the routine it sits on.
     suspend fun routines(): List<Routine>
 
-    // The read half of a read-modify-write. Absent and another account's are the same 404, one
+    // The read half of a read-modify-write, and the ONE read that carries a routine's history: how
+    // the day came to exist and every proposal made about it since, in one list, which the list
+    // read above deliberately does not carry. Absent and another account's are the same 404, one
     // fact, so the absence folds into the type exactly as a session's does.
     suspend fun routine(id: String): Routine?
 
@@ -111,17 +113,18 @@ interface TrainingSyncing {
 
     suspend fun deleteRoutine(id: String)
 
-    // THE PROPOSAL DOORS, and there are four of them because there are only four things a client
-    // does with a proposal: read one routine's dated history, open one diff, apply it, dismiss it.
-    // NOTHING HERE MINTS ONE — the agent's tools are the only door in, and a client that could
-    // write a proposal would be the product proposing to itself.
+    // THE PROPOSAL DOORS, and there are three of them because there are only three things a client
+    // does with a proposal: open one diff, apply it, dismiss it. NOTHING HERE MINTS ONE — the
+    // agent's tools are the only door in, and a client that could write a proposal would be the
+    // product proposing to itself.
     //
-    // All four are owner-scoped and all four 401 with no session: a proposal has no anonymous story
-    // at all, so the shelf holds none and the claim replays none.
-
-    // The routine's own history, newest first — every proposal it has ever carried, whatever was
-    // decided. The pending one comes back here too and is drawn as the card rather than as history.
-    suspend fun proposals(routineId: String): List<Proposal>
+    // THE FOURTH WENT IN W10 — `proposals?routineId=` was this room's way of reading one routine's
+    // dated history, and that history now rides on the routine itself beside the row that says how
+    // the day was created. One section of one screen wants one read, and two doors onto one list is
+    // two chances to disagree about a program.
+    //
+    // All three are owner-scoped and all three 401 with no session: a proposal has no anonymous
+    // story at all, so the shelf holds none and the claim replays none.
 
     // One diff, whole. Absent, another account's and never-existed are the same 404 — one fact —
     // so the absence folds into the type exactly as a session's does.

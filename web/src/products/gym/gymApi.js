@@ -1,7 +1,17 @@
 // The one place the gym frontend talks to the backend it was built against. Every call is
 // cookie-credentialed (the wm_session the shell already holds) and same-origin in production; in
 // dev it points at the local windmill_server. The wire shapes match the backend exactly:
-//   GET  /v1/gym/exercises               -> { exercises: [{id, name, pattern, equipment, stepKg, custom}] }
+//   GET  /v1/gym/exercises               -> { exercises: [{id, name, pattern, equipment, stepKg,
+//                                           custom, aliases?}] }. `aliases` is what THIS account
+//                                           used to call the movement, newest first, at most five,
+//                                           and OMITTED when there are none — never `[]`, so an
+//                                           account that has renamed nothing reads exactly as it
+//                                           always did. The picker matches the name AND the aliases
+//                                           (logger/movements.js): a rename moves a label over a
+//                                           stable id, and the old name has to keep finding the
+//                                           movement or muscle memory stops working. They are not
+//                                           drawn as a second name on a row unless the match came
+//                                           through one
 //   GET  /v1/gym/exercises/last          -> { movements: [{exerciseId, weightKg, reps, at}] } — what a
 //                                           picker row says under the name (§B7). SPARSE: one entry
 //                                           per movement THIS account has a LAST TIME for and NO
@@ -24,14 +34,22 @@
 //                                           movement out. A movement a lifter created behaves like
 //                                           every other one; an id already spent is 409
 //   PATCH /v1/gym/exercises/:id          -> {name} in — ONE field, and any other key is 400 — the
-//                                           stored movement out, under the SAME id. A movement this
-//                                           account created renames in place; a seeded one gets a
-//                                           per-account display name over it, so renaming Back Squat
-//                                           renames nobody else's. `name` is what THIS account calls
-//                                           it, everywhere a name is read
+//                                           stored movement out, under the SAME id, carrying its NEW
+//                                           `aliases`: the name it was called a moment ago is now
+//                                           one of them, and renaming back removes the alias it just
+//                                           became. A movement this account created renames in
+//                                           place; a seeded one gets a per-account display name over
+//                                           it, so renaming Back Squat renames nobody else's. `name`
+//                                           is what THIS account calls it, everywhere a name is read
 //   GET  /v1/gym/exercises/:id/record    -> one movement's page (§H), whole and in one read:
-//                                           { exercise, routineCount, sessionCount, bestE1rm?,
-//                                             heaviest?, e1rmSeries?, records?, recentDays? }.
+//                                           { exercise, routineCount, routines?, sessionCount,
+//                                             bestE1rm?, heaviest?, e1rmSeries?, records?,
+//                                             recentDays? }.
+//                                           `routines` is the NAMES of the routines that hold this
+//                                           movement, in program order, and `routineCount` is
+//                                           exactly its length — the rename sheet's proof needs the
+//                                           names and the subhead needs the count, and both come off
+//                                           THIS read rather than a second one (§N screen 32).
 //                                           The counts are always there and a zero is a real answer;
 //                                           EVERY LIST IS OMITTED WHEN EMPTY, so a movement nobody
 //                                           has worked answers 200 with two zeros and nothing else.
@@ -178,16 +196,31 @@
 //                                           a lifter is shown; nothing here branches on the code.
 //                                           UNITS ARE DISPLAY ONLY: every weight on every other
 //                                           route above is kilograms whatever this says
-//   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first
+//   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first,
+//                                           and carrying NO history: that is one section of one
+//                                           screen and rides the single read below
 //   POST /v1/gym/routines                -> the write document in; the stored Routine out —
 //                                           idempotent on the client-minted id, 409 when it is spent
-//   GET  /v1/gym/routines/:id            -> Routine — or null on 404, for the session's own reason
+//   GET  /v1/gym/routines/:id            -> Routine — or null on 404, for the session's own reason.
+//                                           THE ONLY READ THAT CARRIES `history`: rows newest first,
+//                                           each either {kind:'created', at, by?, movements?} or
+//                                           {kind:'proposal', at, proposal}. The created row is
+//                                           always present and always last — it never falls off the
+//                                           newest-20 window the proposal rows sit in. `by` ABSENT
+//                                           is the lifter's own hand and is what `created by you` is
+//                                           drawn from; PRESENT it names the door an agent came
+//                                           through, and no surface may say "by you" over one.
+//                                           `movements` is how many lines the routine was CREATED
+//                                           with and is ABSENT for every routine written before that
+//                                           column existed — the row then carries no count at all,
+//                                           and never today's (routines.js `builtLabel`)
 //   PUT  /v1/gym/routines/:id            -> the write document in; the stored Routine out. A WHOLE
 //                                           document replace, so every edit is a read-modify-write
 //   DELETE /v1/gym/routines/:id          -> 204, nothing back
 //   GET  /v1/gym/proposals[?routineId=&state=pending]
-//                                        -> { proposals: [head…] }, newest first — the routine's
-//                                           dated history (screen 6). `state` recognises the literal
+//                                        -> { proposals: [head…] }, newest first — the whole ledger,
+//                                           past the twenty the routine read carries. `state`
+//                                           recognises the literal
 //                                           "pending" and nothing else; any other value is
 //                                           unfiltered, so a client that guessed a word gets the
 //                                           whole ledger rather than an empty one
@@ -212,12 +245,22 @@
 // 'rt_<hex>', and 'ex_<hex>' for a movement a lifter mints — the catalog's own are slugs); a
 // proposal's id is minted by whoever wrote it ('prop_<hex>' from our own agents) and never by this
 // client, which decides nothing here and only reads and settles.
-// Routines serialize as {id, name, position, revision, lastTrainedAt?, pendingProposal?, entries:
-// [{position, exerciseId, targetSets, targetReps?, targetWeightKg?, restSeconds?}]}, and a write
-// sends that document with no `position` on an entry — the entry ORDER is the routine's order and
-// the server renumbers from it. `revision` is READ-ONLY on the wire and is what a proposal is frozen
+// Routines serialize as {id, name, position, revision, lastTrainedAt?, pendingProposal?, history?,
+// entries: [{position, exerciseId, targetSets?, targetReps?, targetWeightKg?, restSeconds?}]}, and a
+// write sends that document with no `position` on an entry — the entry ORDER is the routine's order
+// and the server renumbers from it.
+// AN ENTRY WITH NO `targetSets` IS OPEN: it asks at the rack, the absence is the whole state in both
+// directions, and there is no zero and no flag — a 0 would be a target of nothing. An open entry
+// carries NO `targetReps` and NO `targetWeightKg` or the write is refused 400 `could not read that
+// routine`; `restSeconds` is allowed on one, being how long you wait rather than what you are asked
+// to do. Bounds when named: sets 1–20, reps 1–100, weight ±500 kg, rest 15–900 s, and a routine is
+// between one and fifty entries.
+// NO `lastTrainedAt` IS `untested` — there is no second field for it, nothing stores one, and the
+// store's own aggregate over the log is what says a routine has been trained (log.js `isUntested`).
+// `revision` is READ-ONLY on the wire and is what a proposal is frozen
 // against: the human's own PUT moves it and supersedes whatever was pending, which is what stops a
-// mid-session save from destroying a diff's base. `pendingProposal` is a proposal HEAD — {id,
+// mid-session save from destroying a diff's base — and is also why a routine RENAME is that same
+// whole-document PUT and not a route of its own. `pendingProposal` is a proposal HEAD — {id,
 // routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
 // connection?, agent?}} — present only while one is waiting, and it is how the card on Today and
 // the dot on the routines list are drawn in the read those screens were already making.
@@ -371,10 +414,12 @@ export const gymApi = {
     return (await json(await call('/exercises/last'))).movements;
   },
 
-  // A movement the catalog does not hold, minted by the lifter who wanted it (screen 7). It is a
-  // stable identity from the moment it exists, which is the whole reason the picker creates one
-  // instead of letting a typed string into a set: a name typed twice is two movements with no
-  // history between them.
+  // A movement the catalog does not hold, minted by the lifter who wanted it in two questions
+  // (§N screen 31): what they call it, and how it is loaded. It is a stable identity from the moment
+  // it exists, which is the whole reason the picker creates one instead of letting a typed string
+  // into a set: a name typed twice is two movements with no history between them. The four
+  // equipments the creation screen offers are a subset of the six the schema holds — `cable` and
+  // `kettlebell` stay valid on every read, and a creation screen is not a taxonomy.
   async createExercise(exercise) {
     return json(await call('/exercises', { method: 'POST', body: JSON.stringify(exercise) }));
   },
@@ -543,13 +588,16 @@ export const gymApi = {
     return json(await call(`/routines/${id}`, { method: 'DELETE' }));
   },
 
-  // THE ROUTINE'S DATED HISTORY (screen 6). Every proposal ever written against one routine, newest
-  // first, settled and pending alike — the ledger supersedes rather than deletes, so nothing an
-  // agent proposed disappears and nothing it proposed happened on its own.
+  // THE WHOLE PROPOSAL LEDGER. Every proposal ever written, newest first, settled and pending alike
+  // — the ledger supersedes rather than deletes, so nothing an agent proposed disappears and nothing
+  // it proposed happened on its own.
   //
-  // The pending ones are NOT read through here on Today or on the routines list: a routine carries
-  // its own `pendingProposal`, so the card and the dot come out of the read those rooms already
-  // make. This route is for the whole history of one routine, which no other read carries.
+  // NO SCREEN READS IT ANY MORE, and that is deliberate rather than an oversight. The three places a
+  // proposal reaches a lifter each ride a read that was already being made: the card on Today and
+  // the dot on the routines list off `pendingProposal`, and the routine's own History section off
+  // the single routine read, which carries the newest twenty AND the day the routine was created —
+  // a row this route has never been able to answer. What is left here is the ledger past that
+  // window, unfiltered by routine, for a caller that wants all of it.
   async proposals({ routineId, state } = {}) {
     const query = new URLSearchParams();
     if (routineId !== undefined) query.set('routineId', routineId);

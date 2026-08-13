@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LastSet
+import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.TheSix
 import works.windmill.platform.design.WindmillFont
@@ -65,11 +67,24 @@ object PickerOptions {
     // One row as the picker draws it. The meta is composed HERE rather than in the drawing, because
     // it is the one line on this screen that is a claim about the lifter's own history: `never
     // logged` is only ever said where an ANSWER carried no row for that movement.
-    data class Row(val id: String, val name: String, val yours: Boolean, val meta: String?) {
-        constructor(movement: Exercise, lastSets: Map<String, LastSet>?, nowMs: Long) : this(
+    //
+    // `alias` IS THE WORD THE MATCH CAME FROM and is drawn on no other row: a lifter who renamed
+    // `Bench Press` to `Flat press` in March and types "bench" gets the row back, and without the
+    // old name printed on it that row reads as a bug rather than as muscle memory being honoured.
+    // An alias is a name and never a label, so it is not a permanent second line under every row.
+    data class Row(
+        val id: String,
+        val name: String,
+        val yours: Boolean,
+        val meta: String?,
+        val alias: String? = null,
+    ) {
+        constructor(movement: Exercise, lastSets: Map<String, LastSet>?, nowMs: Long,
+                    alias: String? = null) : this(
             id = movement.id,
             name = movement.name,
             yours = movement.custom,
+            alias = alias,
             // THE SILENCE UNDER A NAME IS NOT `never logged`. A map that has not landed says
             // nothing at all: telling a lifter of ten years they have never squatted, because a
             // phone was in a basement, is the product lying in the pixel this line exists for.
@@ -120,11 +135,21 @@ object PickerOptions {
             else TheSix.movements
                 .mapNotNull { pinned -> available.firstOrNull { it.id == pinned.id } }
                 .map { Row(it, lastSets, nowMs) }
+        // THE FILTER READS NAMES AND ALIASES, one pass over the list already in hand. An alias is
+        // what THIS account used to call the movement, so the word a lifter's hands learned keeps
+        // finding it — which is the whole promise §N's rename sheet makes, kept on the one screen
+        // where it would otherwise be broken.
+        val wanted = term.lowercase()
         val matches = available
             .filter { movement -> six.none { it.id == movement.id } }
-            .filter { term.isEmpty() || it.name.lowercase().contains(term.lowercase()) }
+            .mapNotNull { movement ->
+                if (term.isEmpty()) return@mapNotNull Row(movement, lastSets, nowMs)
+                if (movement.name.lowercase().contains(wanted)) return@mapNotNull Row(movement, lastSets, nowMs)
+                val alias = movement.aliases.firstOrNull { it.lowercase().contains(wanted) }
+                    ?: return@mapNotNull null
+                Row(movement, lastSets, nowMs, alias = alias)
+            }
             .take(shown)
-            .map { Row(it, lastSets, nowMs) }
 
         // A list with nothing in it is one the read never filled, whatever the store thinks: this
         // stays a pure function and answers honestly for any input, and the web's catalog really
@@ -276,6 +301,124 @@ fun MovementPicker(
     }
 }
 
+// SCREEN 31 — A MOVEMENT THAT IS NOT IN THE LIBRARY, IN EXACTLY TWO QUESTIONS. What you call it,
+// and how it is loaded. Nothing else is asked, and the second one is the one that matters: it is
+// what the log stores about the equipment, and it is the only thing here a lifter could not tell us
+// twice as easily later.
+//
+// EVERY GYM HAS A MACHINE WITH NO REAL NAME. So there is no approval, no moderation, no "is this the
+// same as Bench Press?" at creation time, no muscle-group tagging, no category tree, no icon picker,
+// and no character rule beyond a length cap — any language, any spelling, any punctuation. We do not
+// correct anyone's spelling of their own gym.
+//
+// The name arrives already typed, because the door onto this sheet is the picker's own `Create "…"`
+// and the lifter has just typed it into the search field. It is editable here for the ordinary
+// reason a typed thing is: they are about to keep it.
+@Composable
+fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, String) -> Unit) {
+    var typed by rememberSaveable(name) { mutableStateOf(Program.capped(name)) }
+    var equipment by rememberSaveable(name) { mutableStateOf(Exercise.loadings.first()) }
+    val named = Program.named(typed) != null
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(GymSkin.surface)
+            .imePadding()
+            .padding(WindmillSpace.x5),
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onCancel),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Cancel", style = WindmillFont.body(16), color = GymSkin.inkDim)
+            }
+            Spacer(Modifier.weight(1f))
+            Text("not in the library", style = GymType.numeral(12), color = GymSkin.inkFaint)
+        }
+
+        Text("Your movement", style = WindmillFont.display(22), color = GymSkin.ink)
+
+        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+            Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = typed,
+                    onValueChange = { typed = Program.capped(it) },
+                    singleLine = true,
+                    textStyle = WindmillFont.body(19).copy(color = GymSkin.ink),
+                    cursorBrush = SolidColor(GymSkin.accent),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        autoCorrectEnabled = false,
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = GymTap.minimum)
+                        .clip(RoundedCornerShape(WindmillRadius.md))
+                        .background(GymSkin.raised)
+                        .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
+                )
+                Text(
+                    Program.counter(typed),
+                    style = GymType.numeral(12),
+                    color = GymSkin.inkFaint,
+                    modifier = Modifier.padding(start = WindmillSpace.x3),
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+            Text("How is it loaded?", style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
+                 color = GymSkin.inkFaint)
+            // FOUR, AND THE SCHEMA KEEPS SIX. `cable` and `kettlebell` stay valid on every read —
+            // seeded movements use them — and are not offered here: a creation screen is not a
+            // taxonomy, and the board chose these four deliberately.
+            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+                Exercise.loadings.forEach { loading ->
+                    val picked = loading == equipment
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = GymTap.minimum)
+                            .clip(RoundedCornerShape(WindmillRadius.md))
+                            .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
+                            .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
+                                    RoundedCornerShape(WindmillRadius.md))
+                            .clickable { equipment = loading },
+                    ) {
+                        Text(
+                            loading.replaceFirstChar { it.uppercase() },
+                            style = WindmillFont.body(13, if (picked) FontWeight.Bold else FontWeight.Normal),
+                            color = if (picked) GymSkin.accent else GymSkin.inkDim,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.primary)
+                .clip(RoundedCornerShape(WindmillRadius.lg))
+                .background(if (named) GymSkin.accent else GymSkin.raised)
+                .clickable(enabled = named) { onCreate(typed.trim(), equipment) },
+        ) {
+            Text(
+                "Create and add",
+                style = WindmillFont.body(17, FontWeight.Bold),
+                color = if (named) GymSkin.onAccent else GymSkin.inkFaint,
+            )
+        }
+    }
+}
+
 // THE ACCOUNT VERB A LIFTER MID-SESSION CAN REACH (§J22), and it is an offer rather than a wall:
 // everything on this screen already works, so the card says what the account is FOR — an agent
 // reading a written program. That the rest of the room needs no account was a SENTENCE under it
@@ -340,6 +483,12 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
                         color = GymSkin.accent,
                     )
                 }
+            }
+            // Only where the query found this row by its OLD name — otherwise an alias is simply a
+            // name this account no longer uses, and printing it under every row would be the picker
+            // keeping a history nobody asked to read.
+            row.alias?.let {
+                Text("was “$it”", style = GymType.numeral(11), color = GymSkin.inkFaint)
             }
             // No line at all until the read has landed — an empty one would draw a gap that reads
             // as a fact about the movement rather than about the read.

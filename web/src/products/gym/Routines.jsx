@@ -1,6 +1,15 @@
-// ROUTINES — the list of them (canon screen 5) and one of them under the hand (screen 6). The
-// editor is a maintenance surface and not the entry point: most lifters get their first routine out
-// of a session they finished, so what this room is for is the second month, not the first day.
+// ROUTINES — the list of them (canon screen 5) and one of them under the hand (screens 6, 28–30).
+// Most lifters get their first routine out of a session they finished, so this room was written for
+// the second month rather than the first day; §M adds the door it was missing, which is the one a
+// lifter with a program on paper reaches for first — name it, add the movements, type the numbers.
+//
+// THE DESK IS WHERE THAT HAPPENS. The board draws a phone and puts the targets in a sheet over the
+// list; here the same sheet stands over the same list on a wider screen, because the facts, the
+// states and the words are the contract and the layout is not. Three of screen 30's controls are not
+// here and each is missing for its own reason: `Start` belongs to the phone (§11), `Edit` has nothing
+// to open because on this surface the routine's room IS its editor, and `Rename` is the header's own
+// name field — the whole-document Done is the write that moves it, and a second door onto that write
+// is a second place the rule can drift. Every FACT screen 30 states is drawn.
 //
 // ONE DRAFT, ONE COMMIT. Every change lands in a copy and nothing reaches the store until Done, so a
 // routine is never left half-rewritten by a lifter who walked away mid-edit — half a program is what
@@ -15,19 +24,21 @@ import React, { useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  alsoReadsLabel, entryLabel, fmtKg, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref,
-  routineMetaLabel, ROUTINES_HREF,
+  alsoReadsLabel, EMPTY_BAR_KG, entryLabel, fmtKg, isUntested, movementOf, NAME_MAX,
+  nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
+  ROUTINES_HREF, UNTESTED,
 } from './log.js';
 import { mintId } from './mint.js';
 import { ConnectInvitation } from './connect/ConnectLog.jsx';
-import { ProposalFlag, RoutineHistory } from './Proposals.jsx';
+import { ProposalDot, ProposalFlag } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
-import { EMPTY_BAR_KG } from './log.js';
+import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';
 import { platesReadout } from './settings/plates.js';
 import {
-  blankRoutine, draftFrom, duplicateRoutine, NAME_MAX, NEW_ENTRY_REPS, reorderEntries, routineWrite,
-  withEntryAdded, withEntryChanged, withEntryRemoved,
+  blankRoutine, builtLabel, draftFrom, duplicateRoutine, entryPlaceLabel, historyRows,
+  NAME_SUGGESTIONS, NEW_ENTRY_REPS, openTargetsLine, reorderEntries, routineWrite, saysNeverLogged,
+  targetDraftOf, withEntryAdded, withEntryChanged, withEntryOpened, withEntryRemoved, withTarget,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -126,6 +137,10 @@ export function RoutineEditor({ id, log }) {
   const [query, setQuery] = useState('');
   const [target, setTarget] = useState(null);
   const [saving, setSaving] = useState(false);
+  // NAME FIRST, AND ONLY ON THE WAY IN (§M screen 28). A routine you built on purpose deserves the
+  // word you already call it, so the question is asked once, before there is a list to be distracted
+  // by — and never again: the header's field is the same name and the way back to it.
+  const [naming, setNaming] = useState(fresh);
   const draft = edits ?? (view.phase === 'ready' ? draftFrom(view.data) : null);
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the routine…</p>;
@@ -149,10 +164,29 @@ export function RoutineEditor({ id, log }) {
     );
   }
 
+  if (naming) {
+    return (
+      <NameTheRoutine
+        name={draft.name}
+        onName={(name) => setEdits({ ...draft, name })}
+        onNext={() => setNaming(false)}
+      />
+    );
+  }
+
   const editEntries = (change) => setEdits({ ...draft, entries: change(draft.entries) });
   // The store refuses a routine with no entries and one with no name, and both are things this
   // screen can see. So it says which is missing instead of sending a document it knows comes back.
   const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
+  // A LINE THAT ASKS FOR NOTHING IS A FACT ABOUT THE DAY, not a fault in the document: the routine
+  // saves exactly as it stands and the row asks at the rack. Read off the draft, so opening a row
+  // changes the sentence in the same breath.
+  const openTargets = openTargetsLine(draft.entries, log.catalog);
+  // The two facts screen 30 puts under the name, and both are the STORE's rather than the draft's: a
+  // routine is untested until the log holds a session run under it, and it was built on the day it
+  // was written with the count it was written with. A routine that has not been saved yet has
+  // neither, and is asked for neither.
+  const built = builtLabel(view.data);
 
   const commit = async () => {
     if (missing || saving) return false;
@@ -192,6 +226,16 @@ export function RoutineEditor({ id, log }) {
       </header>
       {missing && <p className="gym-editor-missing">{missing}</p>}
 
+      {/* WHAT THE ROUTINE IS, before what it holds (§M screen 30). `untested` is not a warning: it
+          says the first session is allowed to disagree with this, which is the point of writing one
+          out before you have trained it. Neither half is drawn for a routine nobody has saved. */}
+      {!fresh && (isUntested(view.data) || built) && (
+        <p className="gym-editor-meta">
+          {isUntested(view.data) && <span className="gym-editor-untested">{UNTESTED}</span>}
+          {built && <span>{built}</span>}
+        </p>
+      )}
+
       <EntryList
         entries={draft.entries}
         catalog={log.catalog}
@@ -200,16 +244,20 @@ export function RoutineEditor({ id, log }) {
         onRemove={(index) => editEntries((held) => withEntryRemoved(held, index))}
       />
 
+      {openTargets && <p className="gym-editor-open">{openTargets}</p>}
+
       <button type="button" className="gym-editor-add" onClick={() => { setQuery(''); setPicking(true); }}>
         + Add exercise
       </button>
 
-      {/* THE ROUTINE'S HISTORY (screen 6) — and every row of it is a DOOR rather than a decision.
-          Apply lives on the diff and nowhere else, which matters most exactly here: this screen
-          holds a draft, and an Apply drawn beside it would let a routine move under an edit in
-          progress, whose Done would then whole-document PUT the applied change straight back out.
-          A routine being written for the first time has no history and is not asked for one. */}
-      {!fresh && <RoutineHistory routineId={draft.id} />}
+      {/* THE ROUTINE'S HISTORY (screens 6 and 30) — and every row of it is a DOOR rather than a
+          decision. Apply lives on the diff and nowhere else, which matters most exactly here: this
+          screen holds a draft, and an Apply drawn beside it would let a routine move under an edit
+          in progress, whose Done would then whole-document PUT the applied change straight back out.
+          It is drawn off the routine's own read: the day it was created and every proposal ever
+          written against it arrive together, so the section costs this screen no second request and
+          a routine nobody has saved has nothing to draw. */}
+      <RoutineHistory routine={view.data} />
 
       <div className="gym-editor-foot">
         <button
@@ -236,10 +284,29 @@ export function RoutineEditor({ id, log }) {
 
       {target != null && (
         <TargetSheet
+          // KEYED ON THE LINE IT IS OF, the same rule the editor and the diff are keyed by: this
+          // sheet holds a draft of ONE entry, and a sheet reopened on another row with the instance
+          // kept would carry the first row's numbers onto the second one's Set.
+          key={target}
           movement={nameOfMovement(log.catalog, draft.entries[target].exerciseId)}
+          place={entryPlaceLabel(target, draft.entries.length, draft.name)}
           entry={draft.entries[target]}
+          // NO HISTORY BEHIND IT, SO THE SHEET SAYS SO (§M). A routine written at the desk has never
+          // been trained, and there is nothing to prefill from — this surface reaches for no last
+          // time here, and the line is what stops a number nobody lifted from looking like one they
+          // did. The routine half of it is the store's answer, never this screen's guess; the row
+          // half is the draft's, so a line that already carries a target is not told it has none
+          // (routines.js).
+          neverLogged={saysNeverLogged(view.data, draft.entries[target])}
           preferences={log.preferences}
-          onChange={(change) => editEntries((held) => withEntryChanged(held, target, change))}
+          onSet={(entry) => {
+            editEntries((held) => withEntryChanged(held, target, entry));
+            setTarget(null);
+          }}
+          onOpen={() => {
+            editEntries((held) => withEntryOpened(held, target));
+            setTarget(null);
+          }}
           onClose={() => setTarget(null)}
         />
       )}
@@ -259,59 +326,181 @@ export function RoutineEditor({ id, log }) {
   );
 }
 
-// What one line asks for: two counts under a thumb and the weight on the keypad every other number
-// on this surface is typed on. BOTH targets have one value no stepper
-// and no keypad can reach — none at all — and neither is a zero somebody has to guess at: an absent
-// load is the wire's "whatever you did last time", an absent rep target is canon screen 6's
+// SCREEN 28 — the name, asked as a real question and asked once. The keyboard is up and the field
+// is empty: a routine you sat down to write deserves the word you already call it, and `Workout 3`
+// is what a program gets called when nobody asked.
+//
+// The three openers are SUGGESTIONS AND NEVER RULES — one tap fills the field and typing over it is
+// the expected case — so they are drawn as a way past a blank field rather than as a set to choose
+// from. Nothing is created here: `Next` carries the name into the editor, and the routine exists
+// when Done writes it.
+function NameTheRoutine({ name, onName, onNext }) {
+  const ready = name.trim() !== '';
+  return (
+    <>
+      <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+      <h1 className="gym-title">What do you call this one?</h1>
+      <p className="gym-name-sub">Whatever you already call it.</p>
+
+      <div className="gym-name-field">
+        <input
+          className="gym-name-input"
+          value={name}
+          maxLength={NAME_MAX}
+          aria-label="Routine name"
+          onChange={(event) => onName(event.target.value)}
+          autoFocus
+        />
+        <span className="gym-name-count">{nameCountLabel(name)}</span>
+      </div>
+
+      <div className="gym-name-openers">
+        {NAME_SUGGESTIONS.map((suggestion) => (
+          <button key={suggestion} type="button" className="gym-name-opener" onClick={() => onName(suggestion)}>
+            {suggestion}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className={ready ? 'gym-name-save' : 'gym-name-save is-inert'}
+        onClick={() => { if (ready) onNext(); }}
+      >
+        Next · add movements
+      </button>
+    </>
+  );
+}
+
+// THE ROUTINE'S HISTORY (screens 6 and 30) — the day it was written, and every proposal ever written
+// against it: applied, dismissed, superseded or still waiting. An agent's suggestion is part of the
+// program's history, and so is whose hand the day came from; the ledger supersedes rather than
+// deletes, so a diff that was turned down is still here in case it was turned down too fast.
+//
+// A routine with no history draws no section at all — an empty "History" heading over nothing is a
+// room telling a lifter about a feature rather than about their program — and that is every routine
+// this screen has not saved yet.
+function RoutineHistory({ routine }) {
+  const rows = historyRows(routine);
+  if (rows.length === 0) return null;
+  return (
+    <section className="gym-history">
+      <h2 className="gym-history-head">History</h2>
+      <ul className="gym-history-rows">
+        {rows.map((row) => (
+          <li key={row.key}>
+            {/* A proposal row is a door onto the diff; the row that says the day was created is not
+                a door, because there is nothing behind it to read. */}
+            {row.href ? (
+              <a className="gym-history-row" href={row.href}>
+                {row.pending && <ProposalDot />}
+                <span className="gym-history-line">{row.line}</span>
+                <span className="gym-history-go" aria-hidden="true">›</span>
+              </a>
+            ) : (
+              <p className="gym-history-row is-flat"><span className="gym-history-line">{row.line}</span></p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// SCREEN 29 — what one line asks for: two counts under a thumb, the weight on the ladder the rack
+// uses and the keypad every other number on this surface is typed on. BOTH targets have one value no
+// stepper and no keypad can reach — none at all — and neither is a zero somebody has to guess at: an
+// absent load is the wire's "whatever you did last time", an absent rep target is canon screen 6's
 // `3 × max`, and each gets the same way back, one word under the row it belongs to.
-function TargetSheet({ movement, entry, preferences, onChange, onClose }) {
+//
+// AND THE WHOLE LINE HAS ONE TOO. `Leave it open` clears every target on the row at once, because a
+// line asking for five reps of nothing is not a line — the row keeps its place in the day and asks
+// at the rack.
+//
+// IT HOLDS ITS OWN DRAFT AND COMMITS ON `Set`, which is the shape the correction sheet already has
+// (FixSheet.jsx): a sheet carrying a button that names what the row will become has to mean it, and
+// an open row has to be able to be opened at numbers without the row silently taking them.
+function TargetSheet({ movement, place, entry, neverLogged, preferences, onSet, onOpen, onClose }) {
+  const [draft, setDraft] = useState(() => targetDraftOf(entry));
   const [typing, setTyping] = useState(false);
-  const reps = entry.targetReps;
+  const reps = draft.targetReps;
+  // THE SAME LADDER AS THE RACK, and it is the one that exists (logger/ladder.js): at 140 kg the row
+  // reads −10 · −2.5 · +2.5 · +10 because the golden says so and not because this screen agrees. A
+  // second stepper written here would be the third copy Lift had and let drift.
+  const rungs = ladderLabels(draft.targetWeightKg ?? EMPTY_BAR_KG);
   // WHAT THIS TARGET LOOKS LIKE ON A BAR, from the plates this gym owns (settings/plates.js). The
   // program is written at the desk and lifted somewhere with a fixed rack, so a line asking for
   // 102.5 in a gym with no 1.25s is worth catching here rather than at the rack. It says so and
   // names the loads that ARE makeable; it does not refuse the number, because a lifter may well be
   // somewhere else next Tuesday. The ladder is untouched by any of this — it is a pure function of
   // the weight and stays pinned by its golden.
-  const onTheBar = platesReadout(entry.targetWeightKg, preferences);
-  const alsoReads = alsoReadsLabel(entry.targetWeightKg);
+  const onTheBar = platesReadout(draft.targetWeightKg, preferences);
+  const alsoReads = alsoReadsLabel(draft.targetWeightKg);
   return (
     <>
       <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
         <div className="gym-sheet" role="dialog" aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
           <div className="gym-sheet-head">
-            <span className="gym-sheet-title">{`Target · ${movement}`}</span>
+            <span className="gym-target-movement">{movement}</span>
+            <span className="gym-target-place">{place}</span>
             <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
           </div>
+          {/* The one sentence this sheet owes a lifter, and it is about their training rather than
+              about this screen: there is nothing behind an open row on a routine nobody has trained,
+              so nothing here is a prefill and the numbers are theirs.
+              IT MAY SAY `Never logged` WHERE THE PICKER'S ROW MAY NOT (logger/movements.js), because
+              the subject is different: that row is about a MOVEMENT, judged off a read that excludes
+              the open workout and warmups, and this is about a ROUTINE nobody has trained with a
+              line nobody has filled in — both halves, decided in routines.js. */}
+          {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
           <div className="gym-target-row">
             <span className="gym-target-label">Sets</span>
-            <button type="button" className="gym-target-step" onClick={() => onChange({ targetSets: entry.targetSets - 1 })} aria-label="One set fewer">−</button>
-            <span className="gym-target-value">{entry.targetSets}</span>
-            <button type="button" className="gym-target-step" onClick={() => onChange({ targetSets: entry.targetSets + 1 })} aria-label="One set more">+</button>
+            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetSets: held.targetSets - 1 }))} aria-label="One set fewer">−</button>
+            <span className="gym-target-value">{draft.targetSets}</span>
+            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetSets: held.targetSets + 1 }))} aria-label="One set more">+</button>
           </div>
           {/* From `max`, either stepper lands on the opening value rather than one either side of
               it: the first tap is choosing to have a target at all, not moving one. */}
           <div className="gym-target-row">
             <span className="gym-target-label">Reps</span>
-            <button type="button" className="gym-target-step" onClick={() => onChange({ targetReps: reps == null ? NEW_ENTRY_REPS : reps - 1 })} aria-label="One rep fewer">−</button>
+            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetReps: reps == null ? NEW_ENTRY_REPS : reps - 1 }))} aria-label="One rep fewer">−</button>
             <span className="gym-target-value">{reps ?? 'max'}</span>
-            <button type="button" className="gym-target-step" onClick={() => onChange({ targetReps: reps == null ? NEW_ENTRY_REPS : reps + 1 })} aria-label="One rep more">+</button>
+            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetReps: reps == null ? NEW_ENTRY_REPS : reps + 1 }))} aria-label="One rep more">+</button>
             {reps != null && (
-              <button type="button" className="gym-target-clear" onClick={() => onChange({ targetReps: null })}>
+              <button type="button" className="gym-target-clear" onClick={() => setDraft((held) => withTarget(held, { targetReps: null }))}>
                 take it to max
               </button>
             )}
           </div>
           <div className="gym-target-row">
-            <span className="gym-target-label">Weight</span>
+            <span className="gym-target-label">Target weight</span>
             <button type="button" className="gym-target-weight" onClick={() => setTyping(true)}>
-              {entry.targetWeightKg == null ? 'last time' : `${fmtKg(entry.targetWeightKg)} kg`}
+              {draft.targetWeightKg == null ? 'last time' : `${fmtKg(draft.targetWeightKg)} kg`}
             </button>
-            {entry.targetWeightKg != null && (
-              <button type="button" className="gym-target-clear" onClick={() => onChange({ targetWeightKg: null })}>
+            {draft.targetWeightKg != null && (
+              <button type="button" className="gym-target-clear" onClick={() => setDraft((held) => withTarget(held, { targetWeightKg: null }))}>
                 use last time
               </button>
             )}
+          </div>
+          <div className="gym-rungs">
+            {LADDER_KEYS.map((rung, index) => (
+              <button
+                key={`${rung.direction}${rung.big}`}
+                type="button"
+                className={rung.weight === 'inner' ? 'gym-rung is-loud' : 'gym-rung'}
+                // From `last time`, either rung lands on the empty bar rather than one step either
+                // side of it — the rep stepper's rule, for the rep stepper's reason.
+                onClick={() => setDraft((held) => withTarget(held, {
+                  targetWeightKg: held.targetWeightKg == null
+                    ? EMPTY_BAR_KG
+                    : bump(held.targetWeightKg, rung.direction, rung.big),
+                }))}
+              >
+                {rungs[index]}
+              </button>
+            ))}
           </div>
           {/* THE SAME TARGET, THE WAY THE ROWS UNDER THIS SHEET READ IT. The button above is a
               kilogram FIELD — the keypad it opens types kilograms and they land in the routine as
@@ -324,6 +513,14 @@ function TargetSheet({ movement, entry, preferences, onChange, onClose }) {
               {onTheBar.line}
             </p>
           )}
+
+          <button type="button" className="gym-target-set" onClick={() => onSet(draft)}>
+            {`Set · ${entryLabel(draft)}`}
+          </button>
+          <button type="button" className="gym-target-open" onClick={onOpen}>
+            Leave it open
+            <span className="gym-target-open-why">decide at the rack</span>
+          </button>
         </div>
       </div>
       {/* Beside the sheet and never inside it: the keypad brings its own tap-to-commit surface, and
@@ -331,8 +528,8 @@ function TargetSheet({ movement, entry, preferences, onChange, onClose }) {
       {typing && (
         <Keypad
           mode="weight"
-          current={entry.targetWeightKg ?? EMPTY_BAR_KG}
-          onCommit={(value) => { onChange({ targetWeightKg: value }); setTyping(false); }}
+          current={draft.targetWeightKg ?? EMPTY_BAR_KG}
+          onCommit={(value) => { setDraft((held) => withTarget(held, { targetWeightKg: value })); setTyping(false); }}
           onCancel={() => setTyping(false)}
         />
       )}
@@ -383,6 +580,11 @@ function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
               store has it. Done is the only thing here that writes, and that is the whole rule. */}
           <a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>
             {nameOfMovement(catalog, entry.exerciseId)}
+            {/* A movement this account minted (§M screen 30's `Hammer row · mine`), off the
+                catalog's own `custom` and never a guess at the id. The word is screen 30's; the
+                picker's row for the same fact is screen 7's `yours` (logger/MovementPicker.jsx) —
+                two boards, two words, and neither is this surface's to reconcile alone. */}
+            {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-mine">mine</span>}
           </a>
           <button type="button" className="gym-entry-target" onClick={() => onTarget(index)}>
             {entryLabel(entry)}

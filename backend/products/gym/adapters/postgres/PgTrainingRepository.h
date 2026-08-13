@@ -44,7 +44,9 @@ public:
   bool deleteSession(const UserId& user, const SessionId& id) override;
   std::vector<Routine> routines(const UserId& user) override;
   std::optional<Routine> routine(const UserId& user, const RoutineId& id) override;
-  RoutineWriteOutcome insertRoutine(const Routine& incoming) override;
+  std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) override;
+  RoutineWriteOutcome insertRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent,
+                                    std::uint64_t nowMs) override;
   RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) override;
   bool deleteRoutine(const UserId& user, const RoutineId& id) override;
   ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override;

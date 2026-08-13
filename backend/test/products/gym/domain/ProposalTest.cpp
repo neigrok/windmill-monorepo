@@ -259,7 +259,8 @@ TEST(proposal_refuses_what_it_could_never_be_applied_as) {
   }));
   CHECK(rejects([&] { RoutineProposal{head(), 0, "Push A", "Push A", ok}; }));
   CHECK(rejects([&] { RoutineProposal{head(), 1, "Push A", "   ", ok}; }));
-  CHECK(rejects([&] { RoutineProposal{head(), 1, "Push A", std::string(81, 'x'), ok}; }));
+  CHECK(rejects(
+      [&] { RoutineProposal{head(), 1, "Push A", std::string(kMaxNameLength + 1, 'x'), ok}; }));
   // A revision that leaves no line is not a revision; a removal that leaves one is not a removal.
   CHECK(rejects([&] {
     RoutineProposal{head(), 1, "Push A", "Push A", changesBetween(base, {})};

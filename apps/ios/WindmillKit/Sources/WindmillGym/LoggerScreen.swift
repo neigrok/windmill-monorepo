@@ -55,12 +55,20 @@ struct LoggerScreen: View {
     @State private var goingTo: String?
     @State private var pendingDeviation: Deviation?
     @State private var asked: Set<String> = []
+    // The create in flight and whatever the log said about one that did not land — held here rather
+    // than in the sheet, because the sheet is handed a name and hands back an answer.
+    @State private var minting = false
+    @State private var mintFailure: String?
 
     private enum Sheet: Identifiable {
         case weight
         case reps
         case jump
         case picker
+        // §N screen 31, carrying the name that was typed into the picker. It REPLACES the picker
+        // rather than stacking over it: a sheet over a sheet over a live session is three screens
+        // deep for a movement the lifter has already named.
+        case creating(String)
         case deviation(Deviation, movement: String)
 
         var id: String {
@@ -69,6 +77,7 @@ struct LoggerScreen: View {
             case .reps: return "reps"
             case .jump: return "jump"
             case .picker: return "picker"
+            case .creating(let name): return "creating-\(name)"
             case .deviation(let deviation, _): return "deviation-\(deviation.exerciseId)"
             }
         }
@@ -80,7 +89,7 @@ struct LoggerScreen: View {
             case .weight, .reps: return [.height(520)]
             // The jump sheet is the assembly surface now (§A screen 2), and a half-height one would
             // give the list a few rows and the two gestures nowhere to happen.
-            case .picker, .jump: return [.large]
+            case .picker, .jump, .creating: return [.large]
             case .deviation: return [.medium, .large]
             }
         }
@@ -236,7 +245,7 @@ struct LoggerScreen: View {
         OpeningPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
                       isSignedIn: isSignedIn,
                       onPick: { move(to: $0) },
-                      onCreate: { mint($0) },
+                      onCreate: { sheet = .creating($0) },
                       onBuildRoutine: onBuildRoutine)
             // The meta is a PICKER-OPEN read, here and on the sheet: the filter above runs over the
             // catalog this client already holds, so typing asks the log for nothing.
@@ -619,9 +628,13 @@ struct LoggerScreen: View {
         case .picker:
             MovementPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
                            onPick: { move(to: $0) },
-                           onCreate: { mint($0) },
+                           onCreate: { self.sheet = .creating($0) },
                            onClose: { self.sheet = nil })
                 .task { await store.loadLastSets() }
+        case .creating(let name):
+            CreateMovementSheet(opening: name, creating: minting, failure: mintFailure,
+                                onCreate: { said, equipment in mint(said, loadedAs: equipment) },
+                                onCancel: { self.sheet = nil })
         case .deviation(let deviation, let movement):
             DeviationSheet(deviation: deviation, movement: movement,
                            onSave: {
@@ -640,15 +653,25 @@ struct LoggerScreen: View {
         }
     }
 
-    // Minting a movement the catalog has never heard of, from either picker. A picker that closed on
-    // a movement that was never minted is a lifter left holding nothing, with nothing said about it.
-    private func mint(_ name: String) {
-        sheet = nil
+    // Minting a movement the catalog has never heard of, from §N screen 31 — reached from either
+    // picker. HOW IT IS LOADED comes off that screen and is no longer written in by this client.
+    //
+    // The sheet stays up until the log answers, and the refusal is said ON it rather than in the
+    // room's note behind it: a picker that closed on a movement that was never minted is a lifter
+    // left holding nothing, and a sentence under a screen they have already left is not a handoff.
+    private func mint(_ name: String, loadedAs equipment: String) {
+        minting = true
+        mintFailure = nil
         say(nil)
         Task {
-            switch await store.create(name) {
-            case .success(let made): await store.choose(made.id)
-            case .failure(let why): say(why.line("“\(name)” wasn’t created"))
+            switch await store.create(name, loadedAs: equipment) {
+            case .success(let made):
+                minting = false
+                sheet = nil
+                await store.choose(made.id)
+            case .failure(let why):
+                minting = false
+                mintFailure = why.line("“\(name)” wasn’t created")
             }
         }
     }

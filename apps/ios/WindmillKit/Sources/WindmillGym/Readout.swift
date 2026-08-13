@@ -43,15 +43,26 @@ public enum Readout {
         return String(reps)
     }
 
+    // A row the routine names NOTHING for — no sets, and therefore no reps and no weight either. It
+    // is one word and it is the word §M draws: the target is not missing, it is left open on
+    // purpose, and the movement asks at the rack. Spelled here so the routine card, the routine
+    // page, the plan line and every diff row say it the same way.
+    public static let openTarget = "open"
+
     // What a routine asks a movement for, in one line — the routine card, the session detail's plan
     // line and the finish comparison all print it, so a target reads the same wherever it is read
     // (log.js `entryLabel`). An absent weight is "whatever you did last time" and prints nothing
     // rather than a zero; so does an actual zero, because zero is not a load but the absence of one,
     // while a band-assisted −20 is a real point on this number line and prints.
     //
+    // ABSENT SETS SHORT-CIRCUIT THE WHOLE LINE to `open`, and nothing is lost by it: the server
+    // refuses to store reps or a weight on a line with no set count, so there is never a second
+    // number here to say instead.
+    //
     // The plan and the routine spell their targets with different field names and the same three
     // numbers, so both hand them over rather than each writing the grammar out again.
-    public static func target(sets: Int, reps: Int?, weightKg: Double?) -> String {
+    public static func target(sets: Int?, reps: Int?, weightKg: Double?) -> String {
+        guard let sets else { return openTarget }
         let count = "\(sets) × \(repTarget(reps))"
         guard let weightKg, weightKg != 0 else { return count }
         return "\(count) · \(weight(weightKg))"

@@ -75,6 +75,11 @@ public struct TrainingDay: Equatable, Codable, Sendable, Identifiable {
 public struct MovementRecord: Equatable, Codable, Sendable {
     public let exercise: Exercise
     public let routineCount: Int
+    // WHICH PROGRAMS NAME IT, in program order — the third line of §N's rename proof, and it comes
+    // off THIS read rather than a second call, because a sheet that assembled its proof from three
+    // requests would be three chances to show a number that was true a moment ago. `routineCount` is
+    // exactly this list's length and stays because the page's subhead counts rather than names.
+    public let routines: [String]
     public let sessionCount: Int
     public let bestE1rm: MovementMark?
     public let heaviest: MovementMark?
@@ -82,12 +87,14 @@ public struct MovementRecord: Equatable, Codable, Sendable {
     public let records: [MovementMark]          // NEWEST first, lifetime
     public let recentDays: [TrainingDay]        // NEWEST first, at most ten
 
-    public init(exercise: Exercise, routineCount: Int = 0, sessionCount: Int = 0,
+    public init(exercise: Exercise, routineCount: Int = 0, routines: [String] = [],
+                sessionCount: Int = 0,
                 bestE1rm: MovementMark? = nil, heaviest: MovementMark? = nil,
                 e1rmSeries: [MovementMark] = [], records: [MovementMark] = [],
                 recentDays: [TrainingDay] = []) {
         self.exercise = exercise
         self.routineCount = routineCount
+        self.routines = routines
         self.sessionCount = sessionCount
         self.bestE1rm = bestE1rm
         self.heaviest = heaviest
@@ -97,13 +104,15 @@ public struct MovementRecord: Equatable, Codable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case exercise, routineCount, sessionCount, bestE1rm, heaviest, e1rmSeries, records, recentDays
+        case exercise, routineCount, routines, sessionCount, bestE1rm, heaviest, e1rmSeries
+        case records, recentDays
     }
 
     public init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
         exercise = try fields.decode(Exercise.self, forKey: .exercise)
         routineCount = try fields.decodeIfPresent(Int.self, forKey: .routineCount) ?? 0
+        routines = try fields.decodeIfPresent([String].self, forKey: .routines) ?? []
         sessionCount = try fields.decodeIfPresent(Int.self, forKey: .sessionCount) ?? 0
         bestE1rm = try fields.decodeIfPresent(MovementMark.self, forKey: .bestE1rm)
         heaviest = try fields.decodeIfPresent(MovementMark.self, forKey: .heaviest)
@@ -215,6 +224,10 @@ public enum Record {
         public let noChart: NoChart?
         public let records: [Row]
         public let days: [Day]
+        // What §N's rename sheet proves, decided with everything else on this page: the sheet opens
+        // over THIS page and off THIS read, so it never asks the log a second question to answer a
+        // question the first answer already held.
+        public let proof: [Proof]
 
         // A movement in the catalog nobody has ever lifted AT ALL — the picker's `never logged`. It
         // is a fact and a common one, and the page says it plainly rather than drawing empty
@@ -253,7 +266,48 @@ public enum Record {
                 guard !day.sets.isEmpty else { return nil }
                 return Day(id: day.sessionId, when: Readout.when(day.startedAtMs, now: now),
                            sets: day.sets.map(effort).joined(separator: " · "))
-            })
+            },
+            proof: proof(record, from: source))
+    }
+
+    // ONE LINE OF §N SCREEN 32'S PROOF — a label and what is true of it.
+    public struct Proof: Equatable, Identifiable {
+        public let label: String
+        public let said: String
+
+        public var id: String { label }
+    }
+
+    // THE PROOF THAT NOTHING IS LOST, and every line of it comes off the record read the page behind
+    // the sheet has ALREADY made. Not one number here is a constant: a sheet whose whole job is to
+    // prove would be asserting something it never checked, on the one screen that cannot afford to.
+    //
+    // A FACT WITH NOTHING TO SAY IS LEFT OUT rather than printed as a zero. A movement nobody has
+    // lifted has no sessions line and no records line; one no program names has no routines line.
+    // The block that is left still proves what it claims, and `0 · unchanged` proves nothing.
+    //
+    // THE ALIAS LINE IS THE LOG'S TO PROMISE. The alias table is per account and the server writes
+    // it on the rename — so a page THIS DEVICE answered may not make that promise: a movement still
+    // on the shelf is renamed in place, the old name is simply gone, and the picker has nothing to
+    // find it by. The absence is an omission, which a device read may make; the line would be an
+    // assertion, which it may not.
+    public static func proof(_ record: MovementRecord, from source: Source = .theLog) -> [Proof] {
+        var proven: [Proof] = []
+        if record.sessionCount > 0 {
+            proven.append(Proof(label: "sessions", said: "\(record.sessionCount) · unchanged"))
+        }
+        if !record.records.isEmpty {
+            let marks = record.records.count == 1 ? "1 PR" : "\(record.records.count) PRs"
+            let kept = record.bestE1rm?.e1rm.map { " · e1RM \(Readout.weight($0)) kept" } ?? ""
+            proven.append(Proof(label: "records", said: marks + kept))
+        }
+        if !record.routines.isEmpty {
+            proven.append(Proof(label: "routines", said: record.routines.joined(separator: " · ")))
+        }
+        if source == .theLog {
+            proven.append(Proof(label: "old name", said: "searchable as an alias"))
+        }
+        return proven
     }
 
     // `barbell · in 2 routines · 34 sessions` (§H). The equipment is omitted rather than blanked

@@ -148,6 +148,23 @@ class SessionScreenTests {
         assertEquals(listOf("on plan", "on plan"), notes(openEnded[0]))
     }
 
+    // AN OPEN ROW SAYS NOTHING, because the routine said nothing: a line written down with no set
+    // target decides at the rack, freezes as an absence, and has no target for this session to have
+    // met. It is not `plan max reps` — a target invented after the fact and attributed to the lifter
+    // — and every set of it is not `on plan`. It is not `Unplanned` either: the day did name the
+    // movement, and `not in the plan` over a line somebody wrote last week is its own false sentence.
+    @Test
+    fun anOpenRowIsMeasuredAgainstNothingAndInventsNoTargetAfterTheFact() {
+        val movements = Performed.movements(
+            listOf(set("s1", "row", 60.0, 10, at = 1_000), set("s2", "row", 60.0, 8, at = 2_000)),
+            catalog,
+            plan(PlanEntry(exerciseId = "row")),
+        )
+
+        assertEquals(Performed.Against.Silent, movements[0].against)
+        assertEquals(listOf(null, null), notes(movements[0]))
+    }
+
     // The catalog has not answered yet, or never will: a slug a lifter can still recognise beats a
     // blank where the movement should be. The same fallback the whole product uses.
     @Test

@@ -29,6 +29,7 @@ import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
+import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalIntent
@@ -39,6 +40,7 @@ import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
+import works.windmill.gym.domain.RoutineEvent
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
@@ -454,7 +456,7 @@ class TrainingStoreTests {
     fun testSignedOutTheRecordAndTheReviewAreComputedFromTheShelf() = runTest {
         val store = makeStore(sync = null)
         store.connect(account(signedIn = false))
-        val movement = (store.create("Bench Press") as GymResult.Ok).value
+        val movement = (store.create("Bench Press", "barbell") as GymResult.Ok).value
 
         store.start()
         store.choose(movement.id)
@@ -495,7 +497,7 @@ class TrainingStoreTests {
     fun testARenameMovesTheNameAndNeverTheIdAndTheShelfKeepsIt() = runTest {
         val store = makeStore(sync = null)
         store.connect(account(signedIn = false))
-        val movement = (store.create("Bench Pres") as GymResult.Ok).value
+        val movement = (store.create("Bench Pres", "barbell") as GymResult.Ok).value
 
         store.start()
         store.choose(movement.id)
@@ -581,7 +583,7 @@ class TrainingStoreTests {
     fun testTheShelfsOwnMovementsSurviveARelaunchAndTheSeatTheySignInto() = runTest {
         val anon = makeStore(sync = null)
         anon.connect(account(signedIn = false))
-        val made = (anon.create("Sled Push") as GymResult.Ok).value
+        val made = (anon.create("Sled Push", "machine") as GymResult.Ok).value
 
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = false))
@@ -1088,13 +1090,13 @@ class TrainingStoreTests {
 
         server.refuseCreate = refusal(409, code = "exercise-id-taken",
             message = "that movement id is taken")
-        val why = (store.create("Zercher Squat") as? GymResult.Failed)?.why
+        val why = (store.create("Zercher Squat", "barbell") as? GymResult.Failed)?.why
         assertEquals("a refused create is not a movement",
             WriteFailure.Refused("that movement id is taken"), why)
         assertFalse(store.catalog.any { it.name == "Zercher Squat" })
 
         server.refuseCreate = null
-        val made = (store.create("Zercher Squat") as? GymResult.Ok)?.value
+        val made = (store.create("Zercher Squat", "barbell") as? GymResult.Ok)?.value
         assertEquals("the second attempt lands", "Zercher Squat", made?.name)
         assertEquals(TheSix.movements.map { it.name } + "Zercher Squat", store.catalog.map { it.name })
     }
@@ -2124,7 +2126,7 @@ class TrainingStoreTests {
         assertEquals(listOf("prop_1"), store.pendingProposals.map { it.id })
         assertEquals("Claude", store.pendingProposals.single().source.name)
         assertEquals("prop_1", store.routine("rt_1")?.pendingProposal?.id)
-        assertFalse("no second read went out for it", server.calls.contains("proposals"))
+        assertFalse("no second read went out for it", server.calls.contains("routine"))
     }
 
     // SIGNED OUT THERE IS NOTHING, and nothing is asked for either: a proposal needs an account for
@@ -2146,8 +2148,10 @@ class TrainingStoreTests {
         assertTrue(store.pendingProposals.isEmpty())
         assertTrue("nothing on the wire at all", server.calls.isEmpty())
 
-        val read = store.proposalHistory("rt_1")
-        assertEquals(GymResult.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")), read)
+        // A routine the shelf holds has no history and that is an ANSWER: this device does not
+        // record the evening a local routine was typed, so the section is simply absent rather than
+        // a refusal about an account nobody is being asked for.
+        assertEquals(GymResult.Ok(emptyList<RoutineEvent>()), store.routineHistory(store.routines.single().id))
         assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")),
             store.applyProposal("prop_1"))
         assertTrue("still nothing on the wire", server.calls.isEmpty())
@@ -2277,7 +2281,7 @@ class TrainingStoreTests {
         assertEquals("the routine did not move", 1, store.routine("rt_1")?.revision)
         assertEquals("Push A", store.routine("rt_1")?.name)
         assertEquals(listOf("prop_1"),
-            (store.proposalHistory("rt_1") as GymResult.Ok).value.map { it.id })
+            (store.routineHistory("rt_1") as GymResult.Ok).value.mapNotNull { it.proposal?.id })
     }
 
     // THE OTHER DECISION, ALREADY TAKEN — from the web, or from this phone before a reply was lost.
@@ -2471,5 +2475,199 @@ class TrainingStoreTests {
 
         server.refuseAsk = refusal(404, message = "not found")
         assertEquals(AskOutcome.Absent, store.ask(question))
+    }
+
+    // §M'S SAVE, and the rule the whole wave turns on: a day built at the kitchen table is savable
+    // while incomplete, and an open row travels as an ABSENCE the whole way — draft, wire, stored
+    // routine — because a zero would be a target of nothing and a prefill would be a guess.
+    @Test
+    fun testADayBuiltAtHomeSavesWithAnOpenRowIntact() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server, )
+        store.connect(account(signedIn = true))
+
+        val draft = RoutineDraft(name = "  Heavy Thursday  ", position = 3)
+            .adding("back-squat")
+            .adding("barbell-row")
+            .targeting("back-squat", sets = 5, reps = 3, weightKg = 110.0)
+
+        val saved = (store.saveRoutine(draft) as GymResult.Ok).value
+
+        assertEquals("the name is trimmed and never blank", "Heavy Thursday", saved.name)
+        assertEquals(listOf(5, null), saved.entries.sortedBy { it.position }.map { it.targetSets })
+        assertNull("an open row carries no reps either",
+            saved.entries.single { it.exerciseId == "barbell-row" }.targetReps)
+        assertTrue("it is on the list the moment it lands", store.routines.any { it.id == saved.id })
+        assertTrue("and it has never been trained", saved.untested)
+        assertEquals(listOf(null, 5), server.written.getValue(saved.id).entries
+            .sortedBy { it.position }.map { it.targetSets }.reversed())
+    }
+
+    // A day with no name and a day with no movements are both refused BEFORE a round trip that
+    // could only repeat the refusal — and each says which of the two it is.
+    @Test
+    fun testAnEmptyDayIsRefusedInWordsAndNothingGoesOut() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        server.calls.clear()
+
+        assertEquals(GymResult.Failed(WriteFailure.Refused("a routine needs a name")),
+            store.saveRoutine(RoutineDraft(name = "   ").adding("back-squat")))
+        assertEquals(GymResult.Failed(WriteFailure.Refused("a routine needs at least one movement")),
+            store.saveRoutine(RoutineDraft(name = "Heavy Thursday")))
+        assertTrue("nothing on the wire", server.calls.isEmpty())
+    }
+
+    // SIGNED OUT IT LANDS ON THE SHELF, exactly as "Keep this as a routine" does, and the claim
+    // carries it later — what the lifter typed tonight is what the account receives.
+    @Test
+    fun testSignedOutTheDayLandsOnTheShelfAndSurvivesARelaunch() = runTest {
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+
+        val saved = (store.saveRoutine(RoutineDraft(name = "Heavy Thursday")
+            .adding("deadlift")) as GymResult.Ok).value
+
+        assertEquals(listOf("Heavy Thursday"), store.routines.map { it.name })
+
+        val relaunched = makeStore(sync = null)
+        relaunched.connect(account(signedIn = false))
+        assertEquals(listOf(saved.id), relaunched.routines.map { it.id })
+        assertNull(relaunched.routines.single().entries.single().targetSets)
+    }
+
+    // A ROUTINE THAT ALREADY STANDS IS WRITTEN WHOLE — the edit and the rename are one write, and it
+    // MOVES THE REVISION and supersedes what an agent proposed against the old document. That is
+    // what a rename is supposed to do, not something to work around: the day the diff was written
+    // about really did change.
+    @Test
+    fun testRenamingARoutineIsTheWholeDocumentAndSupersedesAPendingProposal() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val renamed = (store.saveRoutine(
+            RoutineDraft.of(store.routine("rt_1")!!).named("Heavy Thursday")) as GymResult.Ok).value
+
+        assertEquals("Heavy Thursday", renamed.name)
+        assertEquals("the same routine, not a fork", "rt_1", renamed.id)
+        assertEquals(2, renamed.revision)
+        assertEquals("Heavy Thursday", store.routine("rt_1")?.name)
+        assertEquals("its lines came through untouched",
+            listOf("bench-press"), store.routine("rt_1")?.entries?.map { it.exerciseId })
+        assertEquals(ProposalState.Superseded, server.ledger.getValue("prop_1").state)
+    }
+
+    // The routine's own dated history — how the day came to exist, and every proposal made about it
+    // since — off ONE read. Nothing polls a second route, so nothing can disagree with the document
+    // the screen is holding.
+    @Test
+    fun testTheRoutinesHistoryCarriesItsCreationAndItsProposalsInOneRead() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal())
+        server.creations["rt_1"] = RoutineEvent(kind = "created", atMs = 3_000, movements = 4)
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val history = (store.routineHistory("rt_1") as GymResult.Ok).value
+
+        assertEquals(listOf("proposal", "created"), history.map { it.kind })
+        assertEquals("the created row is last and carries the count it was built with",
+            4, history.last().movements)
+        assertNull("nobody's hand but the lifter's", history.last().by)
+        assertEquals("prop_1", history.first().proposal?.id)
+    }
+
+    // A HISTORY THAT COULD NOT BE READ IS NOT AN EMPTY ONE. A routine with four decisions on it must
+    // never read as one nobody has ever touched, which is the false claim this room refuses to make
+    // about a log.
+    @Test
+    fun testAHistoryThatCouldNotBeReadIsNotAnEmptyOne() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        server.refuseRoutineRead = storageFailure
+        assertEquals(GymResult.Failed(WriteFailure.Refused("internal error")),
+            store.routineHistory("rt_1"))
+
+        server.refuseRoutineRead = null
+        server.online = false
+        assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.routineHistory("rt_1"))
+    }
+
+    // §N'S SECOND QUESTION, AND IT IS THE CALLER'S ANSWER. This used to file every created movement
+    // as a barbell — a claim about somebody's gym made by a client that never asked.
+    @Test
+    fun testACreatedMovementCarriesTheLoadingTheLifterPicked() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val made = (store.create("Hammer row", "machine") as GymResult.Ok).value
+
+        assertEquals("machine", made.equipment)
+        assertEquals("Hammer row", made.name)
+        assertTrue("a movement the lifter minted is tagged as theirs", made.custom)
+        assertEquals("machine", server.catalog.single { it.id == made.id }.equipment)
+
+        val onTheShelf = makeStore(sync = null)
+        onTheShelf.connect(account(signedIn = false))
+        val local = (onTheShelf.create("Sled push", "bodyweight") as GymResult.Ok).value
+        assertEquals("bodyweight", local.equipment)
+    }
+
+    // THE ALIAS IS THE ACCOUNT'S ROW, so the sheet may only promise it where the rename lands there.
+    // A movement this device minted and no claim has carried yet renames on a shelf that has no
+    // alias table at all.
+    @Test
+    fun testTheAliasIsOnlyPromisedWhereTheRenameReachesTheAccount() = runTest {
+        val anon = makeStore(sync = null)
+        anon.connect(account(signedIn = false))
+        val mine = (anon.create("Hammer row", "machine") as GymResult.Ok).value
+        assertFalse("signed out there is no alias table to keep anything in",
+            anon.renameKeepsAnAlias(mine.id))
+
+        // Signed in with the claim unable to land that movement yet: it is still the shelf's, and it
+        // still renames there.
+        val server = FakeTraining()
+        server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"))
+        server.refuseCreate = storageFailure
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertTrue("a catalog movement renames on the log", store.renameKeepsAnAlias("bench-press"))
+        assertFalse("one the claim has not carried yet does not", store.renameKeepsAnAlias(mine.id))
+    }
+
+    // `untested` IS DERIVED ON THE SHELF TOO. It used to say `never trained` over a routine this
+    // same phone had recorded a session under — the aggregate the log computes, computed nowhere.
+    @Test
+    fun testAShelfRoutineTrainedOnThisDeviceIsNoLongerUntested() = runTest {
+        val store = makeStore(sync = null, mintSession = { "ses_local" })
+        store.connect(account(signedIn = false))
+        val routine = (store.saveRoutine(RoutineDraft(name = "Heavy Thursday")
+            .adding("deadlift")) as GymResult.Ok).value
+
+        assertTrue(store.routines.single().untested)
+
+        store.start(routine.id)
+        store.choose("deadlift")
+        store.logSet(weightKg = 140.0, reps = 5)
+        store.finish()
+
+        assertFalse("a session ran under it, and the shelf can see that",
+            store.routines.single().untested)
+        assertEquals(store.recent.single().startedAtMs, store.routines.single().lastTrainedAtMs)
+
+        // And it is DERIVED rather than stored: discarding the only session that ever ran takes the
+        // word back, which a flag written at finish could never do.
+        store.discard(store.recent.single().id)
+        assertTrue(store.routines.single().untested)
     }
 }

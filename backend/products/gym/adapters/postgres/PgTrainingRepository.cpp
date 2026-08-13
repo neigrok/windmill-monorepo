@@ -43,21 +43,31 @@ constexpr std::string_view kRevisionSource =
     "id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
     "completed_at";
 
-// The catalog's columns, and the display name is the CALLER'S. The 64 seeds are global rows shared
-// by every account on this server, so the name a lifter gave one lives in gym_exercise_names and is
-// coalesced over the seed's own — while a movement they created carries its name on its own row and
-// has no line to coalesce. The join is written into the column list on purpose: `e.` and `n.` are
-// both named here, so a read that selects these columns without joining the override does not
-// compile a query at all, rather than quietly printing the seed name to the one account that
-// renamed it. kExerciseFrom takes the caller's id at $1; insertExercise, whose $1 is the movement,
-// spells the same join out with its own parameter.
+// The catalog's columns, and the display name is the CALLER'S — the name and the names it used to
+// have alike. The 64 seeds are global rows shared by every account on this server, so the name a
+// lifter gave one lives in gym_exercise_names and is coalesced over the seed's own, while a movement
+// they created carries its name on its own row and has no line to coalesce. The join is written into
+// the column list on purpose: `e.`, `n.` and `al.` are all named here, so a read that selects these
+// columns without joining the two per-account tables does not compile a query at all, rather than
+// quietly printing the seed name to the one account that renamed it. EVERY read of a movement row
+// takes kExerciseFrom with the caller's id at $1 — there is no second spelling of this join.
+//
+// The aliases cross as a JSON ARRAY rendered by Postgres, for the reason plates_kg crosses as a
+// joined string and the log's tally is framed by rows: a display name may hold any character a text
+// column can, newlines and commas included, so a separator packed into one string is a movement
+// nobody named waiting to be split out of it. json_agg escapes; the parse is one line.
 constexpr std::string_view kExerciseColumns =
     "e.id, coalesce(n.name, e.name) AS name, e.pattern, e.equipment, "
-    "e.step_kg::float8 AS step_kg, e.created_by";
+    "e.step_kg::float8 AS step_kg, e.created_by, al.aliases";
 
 constexpr std::string_view kExerciseFrom =
     "gym_exercises e LEFT JOIN gym_exercise_names n "
-    "  ON n.exercise_id = e.id AND n.user_id = $1::uuid";
+    "  ON n.exercise_id = e.id AND n.user_id = $1::uuid "
+    "LEFT JOIN LATERAL ("
+    "  SELECT coalesce(json_agg(a.name ORDER BY a.created_at DESC, a.name ASC)::text, '[]') "
+    "         AS aliases "
+    "  FROM gym_exercise_aliases a "
+    "  WHERE a.user_id = $1::uuid AND a.exercise_id = e.id) al ON true";
 
 // lastTrainedAtMs is an aggregate over the log, not a column: the newest session started under this
 // routine, correlated on the routine's OWN owner so the one read and the list read carry the same
@@ -205,12 +215,20 @@ std::string packedPlates(const std::vector<double>& platesKg) {
 
 template <typename Row>
 Exercise exerciseFrom(const Row& row) {
+  // The aliases as json_agg rendered them, newest first. A row whose array cannot be read is a row
+  // with no aliases rather than a read that fails: this list is an aid to finding a movement, and
+  // losing the whole catalog over one of them would cost the lifter the thing it decorates.
+  std::vector<std::string> aliases;
+  const Json::Value stored = parse(row["aliases"].template as<std::string>());
+  for (const Json::Value& alias : stored)
+    if (alias.isString()) aliases.push_back(alias.asString());
   return Exercise{ExerciseId{row["id"].template as<std::string>()},
                   row["name"].template as<std::string>(),
                   patternFromStored(row["pattern"].template as<std::string>()),
                   equipmentFromStored(row["equipment"].template as<std::string>()),
                   row["step_kg"].template as<double>(),
-                  !row["created_by"].is_null()};
+                  !row["created_by"].is_null(),
+                  std::move(aliases)};
 }
 
 // The position is taken from the ORDER the rows came back in, not from the column: the stored runs
@@ -219,8 +237,12 @@ Exercise exerciseFrom(const Row& row) {
 // legible instead of failing every read of that plan.
 template <typename Row>
 RoutineEntry entryFrom(const Row& row, int position) {
-  // A null target_reps is the line canon draws as `3 × max`, not a zero and not a missing value to
-  // fill in: the column dropped its NOT NULL for exactly this, so the read carries the absence.
+  // A null target_sets is the OPEN line — the movement is in the day and the rack decides — and a
+  // null target_reps is the line canon draws as `3 × max`. Neither is a zero and neither is a
+  // missing value to fill in: both columns dropped their NOT NULL for exactly this, so the read
+  // carries the absence through to the surface that draws the word.
+  std::optional<int> targetSets;
+  if (!row["target_sets"].is_null()) targetSets = row["target_sets"].template as<int>();
   std::optional<int> targetReps;
   if (!row["target_reps"].is_null()) targetReps = row["target_reps"].template as<int>();
   std::optional<double> targetWeightKg;
@@ -229,8 +251,7 @@ RoutineEntry entryFrom(const Row& row, int position) {
   std::optional<int> restSeconds;
   if (!row["rest_seconds"].is_null()) restSeconds = row["rest_seconds"].template as<int>();
   return RoutineEntry{position, ExerciseId{row["exercise_id"].template as<std::string>()},
-                      row["target_sets"].template as<int>(), targetReps, targetWeightKg,
-                      restSeconds};
+                      targetSets, targetReps, targetWeightKg, restSeconds};
 }
 
 template <typename Row>
@@ -275,22 +296,28 @@ RoutineChange changeFrom(const Row& row) {
                           : kindText == "removed"  ? ChangeKind::removed
                           : kindText == "retargeted" ? ChangeKind::retargeted
                                                      : ChangeKind::kept;
-  const auto targets = [&row](const char* sets, const char* reps, const char* weight,
+  // Which side is missing is the KIND's to say, and only the kind's: a null target_sets became a
+  // meaning of its own when a line could be left OPEN (§M), so reading a side's presence off it
+  // would have made `+ Deadlift · decide at the rack` an added line with nothing added.
+  const auto targets = [&row](bool missing, const char* sets, const char* reps, const char* weight,
                               const char* rest) -> std::optional<EntryTargets> {
-    if (row[sets].is_null()) return std::nullopt;
+    if (missing) return std::nullopt;
+    std::optional<int> targetSets;
+    if (!row[sets].is_null()) targetSets = row[sets].template as<int>();
     std::optional<int> targetReps;
     if (!row[reps].is_null()) targetReps = row[reps].template as<int>();
     std::optional<double> targetWeight;
     if (!row[weight].is_null()) targetWeight = row[weight].template as<double>();
     std::optional<int> restSeconds;
     if (!row[rest].is_null()) restSeconds = row[rest].template as<int>();
-    return EntryTargets{row[sets].template as<int>(), targetReps, targetWeight, restSeconds};
+    return EntryTargets{targetSets, targetReps, targetWeight, restSeconds};
   };
   return RoutineChange{row["position"].template as<int>(), kind,
                        ExerciseId{row["exercise_id"].template as<std::string>()},
-                       targets("before_sets", "before_reps", "before_weight_kg",
-                               "before_rest_seconds"),
-                       targets("after_sets", "after_reps", "after_weight_kg", "after_rest_seconds"),
+                       targets(kind == ChangeKind::added, "before_sets", "before_reps",
+                               "before_weight_kg", "before_rest_seconds"),
+                       targets(kind == ChangeKind::removed, "after_sets", "after_reps",
+                               "after_weight_kg", "after_rest_seconds"),
                        0};
 }
 
@@ -339,7 +366,8 @@ bool insertEntries(pqxx::work& txn, const Routine& incoming) {
     params.append(incoming.id.str());
     params.append(entry.position);
     params.append(entry.exercise.str());
-    params.append(entry.targetSets);
+    if (entry.targetSets) params.append(*entry.targetSets);
+    else params.append();
     if (entry.targetReps) params.append(*entry.targetReps);
     else params.append();
     if (entry.targetWeightKg) params.append(*entry.targetWeightKg);
@@ -417,7 +445,8 @@ bool insertProposalChanges(pqxx::work& txn, const RoutineProposal& incoming) {
         params.append();
         continue;
       }
-      params.append(side->sets);
+      if (side->sets) params.append(*side->sets);
+      else params.append();
       if (side->reps) params.append(*side->reps);
       else params.append();
       if (side->weightKg) params.append(*side->weightKg);
@@ -1195,21 +1224,39 @@ std::optional<Routine> PgTrainingRepository::routine(const UserId& user, const R
   return found;
 }
 
-RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming) {
+RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming,
+                                                        std::optional<ProposalDoor> byAgent,
+                                                        std::uint64_t nowMs) {
   // The row and its lines are ONE transaction, so a routine with no lines is not a state this store
   // can be left in. The lines are written only by the caller that WON the row: a create replayed
   // after a lost reply finds the id already spent by itself, writes nothing, and reads the STORED
   // routine back untouched — the same rule a replayed start obeys, applied to a document. And the
   // read-back is owner-scoped, so an id spent by another account resolves to nothing rather than to
   // their plan: the caller learns the id is taken and never whose it is.
+  //
+  // THE CREATION ROW OF THE HISTORY IS WRITTEN HERE and nowhere else — the instant, the door, and
+  // how many movements the day was built with. All three belong to the winner of the id: a replay
+  // writes nothing, so the ledger keeps saying what the first write said rather than re-dating a
+  // day the lifter built on Sunday to whenever a queue got its reply through.
   std::optional<Routine> stored;
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
-    pqxx::result inserted = txn.exec_params(
-        "INSERT INTO gym_routines (id, user_id, name, position) "
-        "VALUES ($1, $2::uuid, $3, $4) ON CONFLICT DO NOTHING",
-        incoming.id.str(), incoming.user.str(), incoming.name, incoming.position);
+    pqxx::params params;
+    params.append(incoming.id.str());
+    params.append(incoming.user.str());
+    params.append(incoming.name);
+    params.append(incoming.position);
+    params.append(static_cast<long long>(nowMs));
+    params.append(static_cast<int>(incoming.entries.size()));
+    if (byAgent) params.append(toString(*byAgent));
+    else params.append();
+    pqxx::result inserted = txn.exec(
+        "INSERT INTO gym_routines (id, user_id, name, position, created_at, created_entries, "
+        "                          created_door) "
+        "VALUES ($1, $2::uuid, $3, $4, to_timestamp($5::bigint / 1000.0), $6, $7) "
+        "ON CONFLICT DO NOTHING",
+        params);
     if (inserted.affected_rows() == 1 && !insertEntries(txn, incoming))
       return {std::nullopt, RoutineWriteError::unknownExercise};
     stored = loadRoutine(txn, incoming.user, incoming.id);
@@ -1217,6 +1264,48 @@ RoutineWriteOutcome PgTrainingRepository::insertRoutine(const Routine& incoming)
   }
   if (!stored) return {std::nullopt, RoutineWriteError::idTaken};
   return {stored, RoutineWriteError::none};
+}
+
+// The routine's own dated ledger, and it is ONE read over two tables because it is one section of
+// one screen (§M30). The proposals are newest first and bounded; the creation row is the routine's
+// own and is always last, so a lifter reading a day of the program reaches the sentence that says
+// where it came from however long its ledger has grown.
+//
+// The routine is resolved FIRST, under the caller's own scope: a routine that is absent or another
+// account's has no history, and answering an empty list rather than somebody else's ledger is the
+// same one fact every read in this module gives.
+std::vector<RoutineEvent> PgTrainingRepository::routineHistory(const UserId& user,
+                                                               const RoutineId& id) {
+  std::vector<RoutineEvent> history;
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    pqxx::result rows = txn.exec_params(
+        "SELECT (extract(epoch from created_at) * 1000)::bigint AS created_ms, "
+        "       created_entries, created_door "
+        "FROM gym_routines WHERE id = $1 AND user_id = $2::uuid",
+        id.str(), user.str());
+    if (rows.empty()) return history;
+
+    pqxx::result proposals = txn.exec_params(
+        "SELECT " + std::string(kProposalColumns) +
+            " FROM gym_proposals p WHERE p.routine_id = $1 AND p.user_id = $2::uuid "
+            "ORDER BY p.created_at DESC, p.id DESC LIMIT $3",
+        id.str(), user.str(), kRoutineHistoryProposals);
+    for (const auto& row : proposals)
+      history.push_back(RoutineEvent{RoutineEventKind::proposal, instantFrom(row["created_ms"]),
+                                     std::nullopt, std::nullopt, headFrom(row)});
+
+    std::optional<int> movements;
+    if (!rows[0]["created_entries"].is_null())
+      movements = rows[0]["created_entries"].as<int>();
+    std::optional<ProposalDoor> door;
+    if (!rows[0]["created_door"].is_null())
+      door = proposalDoorFromStored(rows[0]["created_door"].as<std::string>());
+    history.push_back(RoutineEvent{RoutineEventKind::created, instantFrom(rows[0]["created_ms"]),
+                                   door, movements, std::nullopt});
+  }
+  return history;
 }
 
 RoutineWriteOutcome PgTrainingRepository::replaceRoutine(const Routine& incoming,
@@ -1301,12 +1390,14 @@ ExerciseInsertOutcome PgTrainingRepository::insertExercise(const UserId& owner,
         "VALUES ($1, $2, $3, $4, $5, $6::uuid) ON CONFLICT DO NOTHING",
         incoming.id.str(), incoming.name, toString(incoming.pattern), toString(incoming.equipment),
         incoming.stepKg, owner.str());
+    // The one join every movement read takes, with the caller at $1 like all of them: a movement
+    // created a moment ago has no override and no alias, so both sides come back empty — and the
+    // read-back is still scoped to the caller's own created_by rows, which is what makes the
+    // refusal below safe.
     pqxx::result rows = txn.exec_params(
-        "SELECT " + std::string(kExerciseColumns) +
-            " FROM gym_exercises e LEFT JOIN gym_exercise_names n "
-            "  ON n.exercise_id = e.id AND n.user_id = $2::uuid "
-            "WHERE e.id = $1 AND e.created_by = $2::uuid",
-        incoming.id.str(), owner.str());
+        "SELECT " + std::string(kExerciseColumns) + " FROM " + std::string(kExerciseFrom) +
+            " WHERE e.id = $2 AND e.created_by = $1::uuid",
+        owner.str(), incoming.id.str());
     if (!rows.empty()) stored = exerciseFrom(rows[0]);
     txn.commit();
   }
@@ -1361,6 +1452,33 @@ std::optional<Exercise> PgTrainingRepository::renameExercise(const UserId& user,
                       "  SET name = excluded.name, updated_at = now()",
                       user.str(), id.str(), renamed.name);
 
+    // THE OLD NAME KEPT (§N32), in three statements that are one rule: the name this account was
+    // using is now something it USED to use, the name it is using now is not, and only the newest
+    // few are worth carrying.
+    //
+    // The second statement is the one a rename BACK needs. `Back Squat → High-bar squat → Back
+    // Squat` leaves two aliases if nothing takes the new name off the list, and the stale one would
+    // shadow the truth in the picker — a search for `Back Squat` matching the movement twice, once
+    // as what it is called and once as what it is not. A name is either the movement's or the
+    // memory of it, never both. Renaming to the SAME name changes nothing and must not turn the
+    // current name into its own alias, which is what the guard on the insert is for.
+    if (renamed.name != current.name)
+      txn.exec_params("INSERT INTO gym_exercise_aliases (user_id, exercise_id, name) "
+                      "VALUES ($1::uuid, $2, $3) ON CONFLICT (user_id, exercise_id, name) "
+                      "DO UPDATE SET created_at = now()",
+                      user.str(), id.str(), current.name);
+    txn.exec_params("DELETE FROM gym_exercise_aliases "
+                    "WHERE user_id = $1::uuid AND exercise_id = $2 AND name = $3",
+                    user.str(), id.str(), renamed.name);
+    // The cap, pruned oldest-first under the ORDER the read uses — the two must match or the list
+    // that ships is not the list that was kept.
+    txn.exec_params("DELETE FROM gym_exercise_aliases a "
+                    "WHERE a.user_id = $1::uuid AND a.exercise_id = $2 AND a.name NOT IN "
+                    "  (SELECT b.name FROM gym_exercise_aliases b "
+                    "   WHERE b.user_id = $1::uuid AND b.exercise_id = $2 "
+                    "   ORDER BY b.created_at DESC, b.name ASC LIMIT $3)",
+                    user.str(), id.str(), static_cast<long long>(kMaxAliases));
+
     // The read-back carries the SAME predicate the read above did, though nothing another account
     // owns could reach it — a query in this module that is owner-scoped only by where it happens to
     // sit is one a later hand copies somewhere it is not.
@@ -1406,13 +1524,17 @@ MovementHistory PgTrainingRepository::movementHistory(const UserId& user,
     history.exercise = exerciseFrom(known[0]);
 
     // DISTINCT, because a routine may name one movement twice — bench heavy, then a back-off — and
-    // the subhead counts days of the program, not lines in them.
+    // the subhead counts days of the program, not lines in them. The NAMES rather than the count:
+    // the count is how many there are and the rename sheet needs which ones (§N32), and one read
+    // that hands over both cannot be assembled by a client into a torn answer. In the lifter's own
+    // program order, which is the order they see everywhere else a day of the program is listed.
     pqxx::result held = txn.exec_params(
-        "SELECT count(DISTINCT r.id)::int AS routines FROM gym_routines r "
+        "SELECT DISTINCT r.name, r.position, r.id FROM gym_routines r "
         "JOIN gym_routine_entries en ON en.routine_id = r.id "
-        "WHERE r.user_id = $1::uuid AND en.exercise_id = $2",
+        "WHERE r.user_id = $1::uuid AND en.exercise_id = $2 "
+        "ORDER BY r.position ASC, r.id ASC",
         user.str(), exercise.str());
-    history.routines = held[0]["routines"].as<int>();
+    for (const auto& row : held) history.routines.push_back(row["name"].as<std::string>());
 
     pqxx::result ladders = txn.exec_params(
         "SELECT DISTINCT ON (s.started_at, s.id, st.weight_kg) "

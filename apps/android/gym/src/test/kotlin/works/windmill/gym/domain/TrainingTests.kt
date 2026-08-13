@@ -185,6 +185,31 @@ class TrainingWireTests {
         assertEquals(Target(sets = 3, reps = 12, weightKg = 140.0), review.against?.movements?.first()?.planned)
     }
 
+    // AN OPEN ROW ARRIVES AS AN EMPTY OBJECT — `"planned": {}` — because the codec omits every
+    // absent field and keeps the object. A REQUIRED `sets` here threw MissingFieldException on the
+    // whole reply, and the room read that loss as silence: one open line in a routine cost the
+    // finish screen its stats, its record and its comparison, under "the log didn't answer".
+    @Test
+    fun testAnOpenRowsFrozenTargetDecodesAsAnAbsenceAndNotAsAMissingField() {
+        val review = json.decodeFromString(Review.serializer(), """
+        { "stats": { "durationMs": 3720000, "workingSets": 16 },
+          "slight": false,
+          "against": { "sessionId": "ses_p", "routine": "Heavy Thursday", "startedAt": 1750723200000,
+            "movements": [ { "exerciseId": "barbell-row",
+                             "now": { "weightKg": 60, "reps": 10, "sets": 3 },
+                             "before": { "weightKg": 57.5, "reps": 10, "sets": 3 },
+                             "planned": {} } ] } }
+        """)
+
+        assertEquals(
+            listOf(AgainstMovement(exerciseId = "barbell-row",
+                                   now = Effort(sets = 3, reps = 10, weightKg = 60.0),
+                                   before = Effort(sets = 3, reps = 10, weightKg = 57.5),
+                                   planned = Target())),
+            review.against?.movements,
+        )
+    }
+
     // The ~190 sessions in 200 that earn nothing: three facts, and the space a record would occupy
     // left empty. Nothing takes its place, so nothing here may invent one.
     @Test

@@ -792,6 +792,22 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
   font-size: 17px;
 }
+/* THE SAME EXIT, NAMED. A sheet that only shows something closes
+   on a glyph; a sheet that ASKS something — the two questions of
+   screen 31 — says the word, because a form is left rather than
+   dismissed. One or the other on a head, never both. */
+.gym-sheet-cancel {
+  margin-left: auto;
+  height: 34px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 .gym-keypad {
   padding: 12px 12px 30px;
@@ -902,7 +918,12 @@ button.gym-set:focus-visible .gym-set-fix,
   align-items: baseline;
   gap: 10px;
 }
-.gym-fix-title {
+/* A SHEET THAT IS ABOUT SOMETHING NAMES IT, in the display face: the correction sheet over one set,
+   the target sheet over one line of a routine. `.gym-sheet-title` above is the other kind — a sheet
+   about an ACTION (`Rename this movement`, `not in the library`), where the noun is in the field
+   under it. One rule and two names, because they are one heading in two rooms. */
+.gym-fix-title,
+.gym-target-movement {
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 800;
@@ -1158,6 +1179,12 @@ button.gym-set:focus-visible .gym-set-fix,
 /* The lifter's own last set of this movement, or the fact that
    there isn't one. Mono and tabular so a column of loads lines up
    under a column of names. */
+/* WHY THIS ROW MATCHED, when the query found a name this account
+   used to call the movement rather than the one it has now. */
+.gym-picker-alias {
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
 .gym-picker-meta {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1578,6 +1605,37 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 12.5px;
   color: var(--gym-ink-faint);
 }
+/* WHAT THE ROUTINE IS, under its name (§M 30). `untested` is not a
+   warning and is not drawn in the alarm ink: it says the first
+   session is allowed to disagree with this. */
+.gym-editor-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: -8px 0 14px;
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+}
+.gym-editor-untested {
+  padding: 3px 9px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gym-ink-dim);
+}
+/* WHICH LINES WILL ASK AT THE RACK — a fact about the day, not a
+   fault in the document, so it sits under the list in the ink
+   every other quiet statement on this surface uses. */
+.gym-editor-open {
+  margin: 12px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
 
 .gym-entries {
   list-style: none;
@@ -1632,6 +1690,16 @@ button.gym-set:focus-visible .gym-set-fix,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A movement this account minted, in the picker's own word. Beside
+   the name and never under it: the row is one line high. */
+.gym-entry-mine {
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-brand);
 }
 .gym-entry-target {
   flex: none;
@@ -1705,8 +1773,25 @@ button.gym-set:focus-visible .gym-set-fix,
   border-color: var(--gym-line);
   color: var(--gym-ink-faint);
 }
-/* The target sheet — two counts under a thumb and the weight on the
-   keypad every other number in this product is typed on. */
+/* The target sheet (§M 29) — two counts under a thumb, the ladder
+   the rack uses, and the weight on the keypad every other number in
+   this product is typed on. */
+/* Where you are in the day, beside the movement being asked about:
+   the sheet stands over the list rather than beside it. */
+.gym-target-place {
+  margin-left: 9px;
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
+/* THE ONE SENTENCE THIS SHEET OWES A LIFTER, and it is about their
+   training: a routine nobody has trained has no last time to
+   prefill from, so the numbers under it are theirs. */
+.gym-target-never {
+  margin: 2px 2px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
 .gym-target-row {
   display: flex;
   align-items: center;
@@ -1784,6 +1869,44 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-target-reads {
   margin: 6px 2px 0;
   font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+}
+/* WHAT THE ROW WILL READ, on the button that makes it read that —
+   so the commit is never a guess at what was just typed. */
+.gym-target-set {
+  width: 100%;
+  height: 52px;
+  margin-top: 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+/* THE WAY OUT OF HAVING A TARGET AT ALL, and it is a second verb
+   rather than a hidden one: a routine is savable while incomplete,
+   and an open row simply asks at the rack. Quiet, because it is
+   the answer for one line in ten rather than the usual one. */
+.gym-target-open {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  margin-top: 8px;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.gym-target-open-why {
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
@@ -2538,35 +2661,95 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* Renaming is one field, and the line under it is the promise the
-   whole page exists to make visible: the id never moves. */
-.gym-rename-input {
-  width: 100%;
-  height: 48px;
-  box-sizing: border-box;
+/* ── A NAME A LIFTER TYPES (§M 28 · §N 31 · §N 32) ───────────
+   One field, one counter and one primary, wherever the question
+   is asked: what to call a routine you are writing out, what to
+   call a movement your gym has no word for, and what to call one
+   you are renaming. Three screens, one shape — a name asked three
+   ways would read as three different questions. */
+.gym-name-sub {
+  margin: 4px 0 18px;
+  font-size: 13.5px;
+  color: var(--gym-ink-faint);
+}
+.gym-name-field {
+  position: relative;
   margin-top: 4px;
-  padding: 0 13px;
+}
+.gym-name-input {
+  width: 100%;
+  height: 52px;
+  box-sizing: border-box;
+  padding: 0 62px 0 13px;
   border: 1px solid var(--gym-line-strong);
   border-radius: 13px;
   background: var(--gym-sunken);
   color: var(--gym-ink);
   font: inherit;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 600;
 }
-.gym-rename-input:focus {
+.gym-name-input:focus {
   outline: none;
   border-color: var(--color-brand);
 }
-.gym-rename-line {
-  margin: 10px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+/* The cap said out loud rather than discovered by a key that does
+   nothing. Inside the field, dim: it is a limit, not a score. */
+.gym-name-count {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--gym-ink-faint);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
-.gym-rename-save {
+/* ALREADY OVER, WHICH IS A REAL STATE AND NOT A TYPO: the field
+   stops typing at sixty, but a name arrives PREFILLED — from the
+   store, which keeps eighty, or from a search box that caps
+   nothing — so `70/60` is the true count of a field that has
+   stopped accepting keys. The number stays honest and this is what
+   says why it looks stuck. */
+.gym-name-count.is-over {
+  color: var(--alarm-ink);
+}
+.gym-name-label {
+  display: block;
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--gym-ink-dim);
+}
+/* SUGGESTIONS, NEVER RULES — a way past a blank field rather than
+   a set to choose from, so they wear no selected state at all. */
+.gym-name-openers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gym-name-opener {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 99px;
+  background: var(--gym-surface);
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.gym-name-opener:hover {
+  border-color: var(--gym-line-strong);
+  color: var(--gym-ink);
+}
+.gym-name-save {
   width: 100%;
   height: 52px;
-  margin-top: 14px;
+  margin-top: 18px;
   border: none;
   border-radius: 16px;
   background: var(--color-brand);
@@ -2576,10 +2759,100 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   cursor: pointer;
 }
-.gym-rename-save.is-inert {
+.gym-name-save.is-inert {
   background: var(--gym-raised);
   color: var(--gym-ink-faint);
   cursor: default;
+}
+/* UNDER THE COMMIT AND QUIETER THAN IT (screen 32's `Rename` /
+   `Cancel`). Leaving a name alone is one of the two answers this
+   sheet asks for, so it is a control with a word on it — and it
+   carries no border, because the loud one is the decision. */
+.gym-name-cancel {
+  width: 100%;
+  height: 44px;
+  margin-top: 6px;
+  border: none;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* HOW IT IS LOADED — the one question at creation that changes
+   anything, so it is four faces and not a select. The label is
+   the stored word, capitalised here rather than in the markup:
+   `barbell` is what goes on the wire. */
+.gym-equipment {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-top: 8px;
+}
+.gym-equipment-choice {
+  height: 46px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-raised);
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+.gym-equipment-choice.is-on {
+  border-color: var(--color-brand);
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font-weight: 700;
+}
+/* THE PROOF, AND EVERY LINE OF IT IS A READ (§N 32). Quiet ink on
+   a sunken block: it is a receipt under the field, never a second
+   thing to decide. */
+.gym-follows {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1px solid var(--gym-line);
+  border-radius: 13px;
+  background: var(--gym-sunken);
+}
+.gym-follows-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gym-ink);
+}
+.gym-follows-tick {
+  color: var(--color-brand);
+  font-size: 13px;
+}
+.gym-follows-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gym-follows-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.gym-follows-label {
+  min-width: 78px;
+  color: var(--gym-ink-faint);
+}
+.gym-follows-value {
+  flex: 1;
+  color: var(--gym-ink-dim);
+  line-height: 1.4;
 }
 
 /* A NAME IS A DOOR (§H), and it is drawn as the text it already
@@ -3202,6 +3475,12 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-history-row:hover {
   background: var(--gym-raised);
   border-color: var(--gym-line-strong);
+}
+/* The row that says the day was written is not a door: there is
+   nothing behind it to read, so it carries no hover and no chevron. */
+.gym-history-row.is-flat {
+  margin: 0;
+  cursor: default;
 }
 .gym-history-line {
   font-size: 12.5px;

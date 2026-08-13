@@ -88,10 +88,12 @@ ProposalDoor proposalDoorFromStored(std::string_view text);
 
 // What one line of the program asks for — a routine entry with its identity and its place taken
 // off, which is exactly the half of it a diff compares. The absences mean what they mean
-// everywhere else: no reps is `max`, no weight is "whatever you did last time", no rest falls back
-// to the lifter's global target.
+// everywhere else: no SETS is an open line the rack decides, no reps is `max`, no weight is
+// "whatever you did last time", no rest falls back to the lifter's global target. So `sets` being
+// absent is NOT what says a side of the diff is missing — `kind` is, and it is the only thing that
+// may be read for it (an added line has no `before`, a removed one no `after`).
 struct EntryTargets {
-  int sets;
+  std::optional<int> sets;
   std::optional<int> reps;
   std::optional<double> weightKg;
   std::optional<int> restSeconds;

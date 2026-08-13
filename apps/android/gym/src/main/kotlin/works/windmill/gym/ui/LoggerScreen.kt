@@ -103,6 +103,7 @@ private sealed class LoggerSheet {
     data object Kind : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
+    data class Create(val name: String) : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
 }
 
@@ -142,15 +143,16 @@ fun LoggerScreen(
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
     }
 
-    // A movement the catalog has never heard of, minted from the picker's own door. Shared by the
-    // sheet and by the inline first-run picker, because a create that answered differently on the
-    // two would be two rules for one gesture.
-    fun mint(name: String) {
+    // A movement the catalog has never heard of, minted from §N's two questions — the name that was
+    // typed into the picker, and how the thing is loaded. Shared by the sheet and by the inline
+    // first-run picker, because a create that answered differently on the two would be two rules for
+    // one gesture.
+    fun mint(name: String, equipment: String) {
         say(null)
         scope.launch {
             // A picker that closed on a movement that was never minted is a lifter left holding
             // nothing, with nothing said about it.
-            when (val made = store.create(name)) {
+            when (val made = store.create(name, equipment)) {
                 is GymResult.Ok -> store.choose(made.value.id)
                 is GymResult.Failed -> say(made.why.line("“$name” wasn’t created"))
             }
@@ -287,7 +289,10 @@ fun LoggerScreen(
                 // No change offer to raise: nothing is being LEFT, so this is the plain choice the
                 // sheet's `move` wraps.
                 onPick = { picked -> scope.launch { store.choose(picked) } },
-                onCreate = { name -> mint(name) },
+                // §N's two questions, over the picker that asked the first one. The sheet host at
+                // the foot of this screen draws it — the inline picker has no sheet of its own to
+                // swap, and it does not need one.
+                onCreate = { name -> sheet = LoggerSheet.Create(name) },
                 onBuildRoutine = onSignIn,
                 modifier = Modifier.weight(1f),
             )
@@ -404,15 +409,22 @@ fun LoggerScreen(
                     title = "Add exercise",
                     catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
-                    onCreate = { name ->
-                        close()
-                        mint(name)
-                    },
+                    // The same swap the builder makes: one sheet stack, and Cancel comes back to
+                    // the picker with the query still typed rather than to the workout.
+                    onCreate = { name -> sheet = LoggerSheet.Create(name) },
                     modifier = Modifier
                         .fillMaxHeight(0.92f)
                         .background(GymSkin.surface)
                         .padding(WindmillSpace.x5),
                     onClose = { close() },
+                )
+                is LoggerSheet.Create -> CreateMovementSheet(
+                    name = open.name,
+                    onCancel = { sheet = LoggerSheet.Picker },
+                    onCreate = { name, equipment ->
+                        close()
+                        mint(name, equipment)
+                    },
                 )
                 is LoggerSheet.Deviation -> DeviationSheet(
                     deviation = open.offer,
@@ -766,8 +778,12 @@ private fun KindSheet(kind: SetKind, onPick: (SetKind) -> Unit) {
 // THE LABELS ARE THE NUMBERS, and the shapes say which is which: the fine step is the program step
 // and takes the width, the plate step is a visibly smaller neighbour. That is what the tier caption
 // used to say in words, and it is why there is no caption.
+//
+// TWO SCREENS DRAW IT — the rack and the kitchen table (§M's target sheet) — and it is one function
+// for the same reason `Ladder` is one module: a builder that rounded a weight differently from the
+// logger would be two answers to what goes on the bar, and only one of them has a golden.
 @Composable
-private fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
+internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Ladder.labels(weightKg).forEachIndexed { index, label ->
             val plate = index == 0 || index == 3
@@ -815,8 +831,10 @@ private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
     }
 }
 
+// The ±1 button, beside the number it changes — the reps stepper here and the sets and reps
+// steppers in §M's target sheet, one shape so a thumb finds the same target on both.
 @Composable
-private fun Step(glyph: String, onTap: () -> Unit) {
+internal fun Step(glyph: String, onTap: () -> Unit) {
     Box(
         Modifier
             .size(GymTap.minimum)

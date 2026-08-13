@@ -184,10 +184,16 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
                             "targetWeightKg, restSeconds.");
     }
     if (!entry["exerciseId"].isString()) throw InvalidTraining("exerciseId must be a string");
-    if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
-    // All three optionals mean something by their absence — "as many as you can", "whatever you did
-    // last time" and "the client's own rest default" — so a present value type-checks strictly and
-    // an absent one is never filled in with a zero that would read as a real target.
+    // All FOUR optionals mean something by their absence — "you decide at the rack", "as many as
+    // you can", "whatever you did last time" and "the client's own rest default" — so a present
+    // value type-checks strictly and an absent one is never filled in with a zero that would read
+    // as a real target. targetSets joined them in W10: a routine is savable while incomplete, and
+    // the line with no sets on it is the OPEN one the rack decides (§M29's `Leave it open`).
+    std::optional<int> targetSets;
+    if (entry.isMember("targetSets") && !entry["targetSets"].isNull()) {
+      if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
+      targetSets = entry["targetSets"].asInt();
+    }
     std::optional<int> targetReps;
     if (entry.isMember("targetReps") && !entry["targetReps"].isNull()) {
       if (!entry["targetReps"].isInt()) throw InvalidTraining("targetReps must be a whole number");
@@ -207,9 +213,8 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
     // The position is the order the lines arrived in — no client numbers its own, and the entity
     // refuses anything but 1..n, so the wire order and the store's key cannot drift apart.
     entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1,
-                                   ExerciseId{entry["exerciseId"].asString()},
-                                   entry["targetSets"].asInt(), targetReps, targetWeightKg,
-                                   restSeconds});
+                                   ExerciseId{entry["exerciseId"].asString()}, targetSets,
+                                   targetReps, targetWeightKg, restSeconds});
   }
   return entries;
 }
@@ -448,6 +453,15 @@ Json::Value toJson(const Exercise& exercise) {
   body["equipment"] = toString(exercise.equipment);
   body["stepKg"] = exercise.stepKg;
   body["custom"] = exercise.custom;
+  // What this account used to call it, newest first — OMITTED when there are none, which is nearly
+  // every row of nearly every catalog, so the read that ships on every screen is byte-identical to
+  // what it was before renaming grew a memory. The picker matches them alongside the name: a
+  // movement renamed on Sunday is still reachable on Tuesday by the word in a lifter's hands.
+  if (!exercise.aliases.empty()) {
+    Json::Value aliases(Json::arrayValue);
+    for (const std::string& alias : exercise.aliases) aliases.append(alias);
+    body["aliases"] = aliases;
+  }
   return body;
 }
 
@@ -491,7 +505,9 @@ Json::Value toJson(const Routine& routine) {
     Json::Value line(Json::objectValue);
     line["position"] = entry.position;
     line["exerciseId"] = entry.exercise.str();
-    line["targetSets"] = entry.targetSets;
+    // Omitted on an OPEN line, which is the whole of how a client tells `3 × 5` from `you decide`:
+    // a zero here would be a target of nothing, and a client drawing one would print `0 × 5`.
+    if (entry.targetSets) line["targetSets"] = *entry.targetSets;
     if (entry.targetReps) line["targetReps"] = *entry.targetReps;
     if (entry.targetWeightKg) line["targetWeightKg"] = *entry.targetWeightKg;
     if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
@@ -554,12 +570,39 @@ Json::Value toJson(const std::vector<ProposalHead>& heads) {
   return array;
 }
 
+// A routine's dated history, newest first, its creation row last. Two kinds of row, and each
+// carries only what its own kind means: a `created` row says when, by whom, and how many movements
+// the day was built with, while a `proposal` row hands over the head it already has — the actor of
+// one is `proposal.source.door`, so nothing here says the same thing twice under two keys.
+//
+// `by` is omitted on a created row that was the LIFTER's own hand, which is the ordinary case and
+// the one §M is about. Its absence is what a client draws as *created by you*; a client must not
+// print those words when it is present, because then it was not.
+Json::Value toJson(const std::vector<RoutineEvent>& history) {
+  Json::Value array(Json::arrayValue);
+  for (const RoutineEvent& event : history) {
+    Json::Value line(Json::objectValue);
+    line["kind"] = event.kind == RoutineEventKind::created ? "created" : "proposal";
+    line["at"] = Json::Value::UInt64(event.atMs);
+    if (event.door) line["by"] = toString(*event.door);
+    // Absent on a day created before this ledger recorded it — the count is the document AS
+    // CREATED, and a routine edited since cannot prove what that was. A client draws the row
+    // without it rather than counting today's lines and calling them the ones it was built with.
+    if (event.movements) line["movements"] = *event.movements;
+    if (event.proposal) line["proposal"] = toJson(*event.proposal);
+    array.append(line);
+  }
+  return array;
+}
+
 namespace {
 Json::Value targetsJson(const EntryTargets& targets) {
   Json::Value body(Json::objectValue);
-  body["sets"] = targets.sets;
-  // The three absences a routine line already carries, carried through the diff unchanged: no reps
-  // is `max`, no weight is "whatever you did last time", no rest falls back to the global target.
+  // The FOUR absences a routine line already carries, carried through the diff unchanged: no sets
+  // is the open line the rack decides, no reps is `max`, no weight is "whatever you did last
+  // time", no rest falls back to the global target. Which SIDE of a change is missing is `kind`'s
+  // to say and never an empty object's — an added line has no `before`, a removed one no `after`.
+  if (targets.sets) body["sets"] = *targets.sets;
   if (targets.reps) body["reps"] = *targets.reps;
   if (targets.weightKg) body["weightKg"] = *targets.weightKg;
   if (targets.restSeconds) body["restSeconds"] = *targets.restSeconds;
@@ -603,7 +646,9 @@ Json::Value toJson(const PlanSnapshot& plan) {
   for (const PlanEntry& entry : plan.entries) {
     Json::Value line(Json::objectValue);
     line["exerciseId"] = entry.exercise.str();
-    line["sets"] = entry.sets;
+    // The open line, frozen as the absence it is: a session started under a half-built routine has
+    // to be able to say "you decide" about this movement rather than "0 sets".
+    if (entry.sets) line["sets"] = *entry.sets;
     if (entry.reps) line["reps"] = *entry.reps;
     if (entry.weightKg) line["weightKg"] = *entry.weightKg;
     if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
@@ -648,7 +693,7 @@ Json::Value toJson(const Review& review) {
     if (movement.before) line["before"] = topSetJson(*movement.before);
     if (movement.planned) {
       Json::Value planned(Json::objectValue);
-      planned["sets"] = movement.planned->sets;
+      if (movement.planned->sets) planned["sets"] = *movement.planned->sets;
       if (movement.planned->reps) planned["reps"] = *movement.planned->reps;
       if (movement.planned->weightKg) planned["weightKg"] = *movement.planned->weightKg;
       line["planned"] = planned;
@@ -730,7 +775,18 @@ Json::Value toJson(const Statistics& statistics) {
 Json::Value toJson(const MovementRecord& record) {
   Json::Value body(Json::objectValue);
   body["exercise"] = toJson(record.exercise);
-  body["routineCount"] = record.routines;
+  // The count and the NAMES are one fact served once: `routineCount` is the subhead's `in 2
+  // routines` and has read that key on three surfaces since W1c, and `routines` is the same list
+  // spelled out — §N32's *`routines  Push A · Legs`*, the line that makes a rename's promise
+  // checkable rather than believable. The count is `routines.length` and is emitted beside it
+  // rather than instead of it, because a client that lost the key would draw a page with a hole in
+  // it. The list is omitted when empty, like every other list on this page.
+  body["routineCount"] = static_cast<int>(record.routines.size());
+  if (!record.routines.empty()) {
+    Json::Value routines(Json::arrayValue);
+    for (const std::string& routine : record.routines) routines.append(routine);
+    body["routines"] = routines;
+  }
   body["sessionCount"] = record.sessions;
   if (record.bestE1rm) body["bestE1rm"] = bestJson(*record.bestE1rm);
   if (record.heaviest) body["heaviest"] = bestJson(*record.heaviest);
@@ -795,17 +851,20 @@ std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
   if (stored["routine"].isString()) plan.routineName = stored["routine"].asString();
   for (const Json::Value& entry : stored["entries"]) {
     if (!entry.isObject() || !entry["exerciseId"].isString()) continue;
-    if (!entry["sets"].isInt()) continue;
-    // reps is the one number of a line that may legitimately be absent — `3 × max` — so a missing
-    // one is read as that absence and not as a broken entry to skip.
+    // sets and reps may both legitimately be ABSENT — the open line and `3 × max` — so a missing
+    // one is read as that absence and not as a broken entry to skip. A value of the wrong TYPE is
+    // still a blob no writer of ours produced, and the line is dropped rather than guessed at.
+    if (entry.isMember("sets") && !entry["sets"].isInt()) continue;
+    std::optional<int> sets;
+    if (entry["sets"].isInt()) sets = entry["sets"].asInt();
     std::optional<int> reps;
     if (entry["reps"].isInt()) reps = entry["reps"].asInt();
     std::optional<double> weightKg;
     if (entry["weightKg"].isNumeric()) weightKg = entry["weightKg"].asDouble();
     std::optional<int> restSeconds;
     if (entry["restSeconds"].isInt()) restSeconds = entry["restSeconds"].asInt();
-    plan.entries.push_back(PlanEntry{ExerciseId{entry["exerciseId"].asString()},
-                                     entry["sets"].asInt(), reps, weightKg, restSeconds});
+    plan.entries.push_back(
+        PlanEntry{ExerciseId{entry["exerciseId"].asString()}, sets, reps, weightKg, restSeconds});
   }
   return plan;
 }

@@ -32,6 +32,9 @@ struct TodayScreen: View {
     // every lifter on the chance that one deployment lacks it.
     let askOnThisDeployment: Bool
     let onStart: (String?) -> Void
+    // §M's third door, drawn on the emptiest screen in the product — which is the one moment a
+    // lifter with a program in a notebook has nothing else to tap.
+    let onNewRoutine: () -> Void
     let onMovement: (String) -> Void
     let onOpenSession: (SessionSummary) -> Void
     let onProposal: (String) -> Void
@@ -85,14 +88,12 @@ struct TodayScreen: View {
         }
     }
 
-    // Screen 1. One way in, and the sentence that says what the empty session is FOR — a lifter who
-    // is told a routine gets written at the end does not go looking for an editor first.
-    //
-    // THE SECOND BUTTON THE BOARD DRAWS IS NOT HERE. Screen 1's `Type out a routine first` opens a
-    // routine editor, and this surface has none — RoutinesScreen says why, and it is the same split:
-    // the phone owns the open session, the web owns the desk work. A button onto a screen that does
-    // not exist would be the defect this room refuses everywhere else, so it is absent rather than
-    // dead, and the sentence over the button already says how a routine gets made here.
+    // Screen 1, and BOTH its buttons since §M. The sentence says what the empty session is for — a
+    // lifter who is told a routine gets written at the end does not go looking for an editor first —
+    // and the quieter second door is for the one who arrived with a program already on paper. It was
+    // absent until 2026-08-13 because this surface had no editor to open, which was true then and is
+    // not now; a button onto a screen that does not exist is the defect this room refuses, and one
+    // withheld from a screen that does exist is the same defect from the other side.
     //
     // The dashed box under it — "no tour, no sample program, no questions about goals" — came off on
     // 2026-08-12 with the twenty others: that is the ARGUMENT for this screen, and it lives beside
@@ -104,6 +105,14 @@ struct TodayScreen: View {
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
             start(label: "Start a session", routineId: nil)
+            Button(action: onNewRoutine) {
+                Text("Type out a routine first")
+                    .font(WindmillFont.body(16, .semibold))
+                    .foregroundStyle(skin.inkDim)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
+                        .strokeBorder(skin.lineStrong, lineWidth: 1))
+            }
         }
         .padding(WindmillSpace.x4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,10 +148,12 @@ struct TodayScreen: View {
                                  name: Readout.movement(entry.exerciseId, in: store.catalog),
                                  font: WindmillFont.body(15), ink: skin.inkDim, open: onMovement)
                     Spacer(minLength: WindmillSpace.x3)
+                    // An OPEN row (§M) reads `open` in the faintest ink: what it says is that the
+                    // routine named nothing, not that it named a number this card is showing.
                     Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
                                         weightKg: entry.targetWeightKg))
                         .font(GymType.numeral(13))
-                        .foregroundStyle(skin.targetInk)
+                        .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
                 }
             }
             if routine.entries.count > 3 {

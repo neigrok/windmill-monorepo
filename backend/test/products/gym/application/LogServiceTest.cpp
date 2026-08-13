@@ -41,6 +41,13 @@ struct Harness {
     return RoutineWrite{rtId(std::move(id)), std::move(name), 0, std::move(entries)};
   }
 
+  // The create as the app's own route makes it — the LIFTER's hand, which is the door §M is about
+  // and the one that leaves the routine's history naming no agent. The tests that are about an
+  // agent's create call the service directly and say which door.
+  RoutineWriteOutcome create(const RoutineWrite& incoming) {
+    return service.createRoutine(uid(), incoming, std::nullopt);
+  }
+
   // The other Start: "create exactly this session, which is not now" — backfill and lift-import.
   StartOutcome startExactly(std::uint64_t ms, std::string id) {
     return service.start(uid(), SessionStart{sid(std::move(id)), ms, false});
@@ -1023,7 +1030,7 @@ TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamp
 // deleted outright — since must not rewrite what the log says about the past.
 TEST(last_time_names_the_routine_the_session_was_trained_under_not_the_one_stored_today) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   AppendOutcome landed =
       h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
@@ -1050,8 +1057,7 @@ TEST(last_time_names_the_routine_the_session_was_trained_under_not_the_one_store
 TEST(create_routine_stores_the_document_and_reads_it_back) {
   Harness h;
 
-  RoutineWriteOutcome created = h.service.createRoutine(
-      uid(), h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
+  RoutineWriteOutcome created = h.create(h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
                                                        std::nullopt, std::nullopt}}));
 
   CHECK(created.error == RoutineWriteError::none);
@@ -1069,10 +1075,9 @@ TEST(create_routine_stores_the_document_and_reads_it_back) {
 // and was sent again reads back what landed, and never appends a second copy of every line.
 TEST(create_routine_replay_returns_the_stored_routine_untouched) {
   Harness h;
-  RoutineWriteOutcome first = h.service.createRoutine(uid(), h.pushAWrite());
+  RoutineWriteOutcome first = h.create(h.pushAWrite());
 
-  RoutineWriteOutcome replayed = h.service.createRoutine(
-      uid(), h.pushAWrite({benchEntry(1), benchEntry(2)}, "rt_00000001", "Renamed mid-flight"));
+  RoutineWriteOutcome replayed = h.create(h.pushAWrite({benchEntry(1), benchEntry(2)}, "rt_00000001", "Renamed mid-flight"));
 
   CHECK(replayed.error == RoutineWriteError::none);
   CHECK_EQ(*replayed.routine, *first.routine);
@@ -1084,7 +1089,7 @@ TEST(create_routine_with_an_id_another_account_holds_is_id_taken) {
   Harness h;
   h.repo.routineRows.push_back(Routine{rtId(), uid("u2"), "Their plan", 0, {benchEntry()}});
 
-  RoutineWriteOutcome created = h.service.createRoutine(uid(), h.pushAWrite());
+  RoutineWriteOutcome created = h.create(h.pushAWrite());
 
   CHECK(created.error == RoutineWriteError::idTaken);
   CHECK_FALSE(created.routine.has_value());   // never the stranger's plan, not even to say it exists
@@ -1099,8 +1104,7 @@ TEST(create_routine_with_an_id_another_account_holds_is_id_taken) {
 TEST(create_routine_naming_a_movement_no_catalog_holds_is_unknown_exercise) {
   Harness h;
 
-  RoutineWriteOutcome created = h.service.createRoutine(
-      uid(), h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"zercher-squat"}, 3, 8,
+  RoutineWriteOutcome created = h.create(h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"zercher-squat"}, 3, 8,
                                                        std::nullopt, std::nullopt}}));
 
   CHECK(created.error == RoutineWriteError::unknownExercise);
@@ -1119,8 +1123,8 @@ TEST(a_routine_entry_naming_another_accounts_private_movement_is_unknown_exercis
                                         Pattern::squat, Equipment::barbell, 2.5, true});
   const RoutineEntry theirs{1, ExerciseId{"ex_22222222"}, 3, 8, 60.0, 120};
 
-  RoutineWriteOutcome created = h.service.createRoutine(uid(), h.pushAWrite({theirs}));
-  h.service.createRoutine(uid(), h.pushAWrite());
+  RoutineWriteOutcome created = h.create(h.pushAWrite({theirs}));
+  h.create(h.pushAWrite());
   RoutineWriteOutcome replaced = h.service.replaceRoutine(uid(), rtId(), h.pushAWrite({theirs}));
 
   CHECK(created.error == RoutineWriteError::unknownExercise);
@@ -1133,7 +1137,7 @@ TEST(a_routine_entry_naming_another_accounts_private_movement_is_unknown_exercis
 
 TEST(replace_routine_rewrites_the_whole_document) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
 
   RoutineWriteOutcome replaced = h.service.replaceRoutine(
       uid(), rtId(),
@@ -1169,7 +1173,7 @@ TEST(replace_of_a_missing_or_anothers_routine_is_the_same_not_found) {
 
 TEST(delete_routine_takes_the_pointer_off_every_session_that_ran_it_and_leaves_the_snapshot) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
 
@@ -1191,9 +1195,9 @@ TEST(delete_routine_takes_the_pointer_off_every_session_that_ran_it_and_leaves_t
 // writes, so it cannot fall out of step with the sessions it describes.
 TEST(routines_list_is_most_recently_trained_first_with_the_untrained_last) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000002", "Pull A"));
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000003", "Legs"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Pull A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000003", "Legs"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000002");
   h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
   const std::uint64_t later = h.clock.now + 10'000;
@@ -1212,11 +1216,79 @@ TEST(routines_list_is_most_recently_trained_first_with_the_untrained_last) {
   CHECK_EQ(h.service.routines(uid("u2")), std::vector<Routine>{});
 }
 
+// A routine built at the kitchen table is savable while it is still incomplete: the open line is
+// stored as naming nothing and FREEZES as naming nothing, so the session it starts asks at the rack
+// rather than reading a target nobody typed. It is the difference between `3 × 5` and `you decide`,
+// and the snapshot is where it would have been lost.
+TEST(a_routine_saves_with_an_open_line_and_freezes_it_open) {
+  Harness h;
+  h.repo.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
+                       2.5, false});
+  RoutineWriteOutcome created =
+      h.create(h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"barbell-row"}, std::nullopt,
+                                                         std::nullopt, std::nullopt, std::nullopt}}));
+  // UNTESTED until its first session, and that is an absence rather than a flag: it needs nothing
+  // written to become true and nothing unwritten to stop being true.
+  const std::optional<std::uint64_t> beforeItRan = h.service.routines(uid())[0].lastTrainedAtMs;
+
+  StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
+
+  CHECK(created.error == RoutineWriteError::none);
+  CHECK_EQ(created.routine->entries[1].targetSets, std::optional<int>());
+  CHECK_EQ(started.session->plan,
+           std::optional<PlanSnapshot>(PlanSnapshot{
+               "Push A",
+               {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
+                PlanEntry{ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt,
+                          std::nullopt}}}));
+  CHECK_EQ(beforeItRan, std::optional<std::uint64_t>());
+  // And the first session is what ends it — the badge is off the moment the day is trained, with
+  // nothing to write and nothing that could be left standing after a discard.
+  CHECK_EQ(h.service.routines(uid())[0].lastTrainedAtMs,
+           std::optional<std::uint64_t>(h.clock.now));
+  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.service.discard(uid(), sid("ses_00000001"));
+  CHECK_EQ(h.service.routines(uid())[0].lastTrainedAtMs, std::optional<std::uint64_t>());
+}
+
+// The day's own history, and the row §M30 draws at the bottom of it: when it was built, by whom,
+// and how many movements it was built with. The lifter's own hand names no door, and that absence
+// is what the screen reads as `created by you`.
+TEST(a_routine_built_by_hand_carries_its_creation_in_its_history) {
+  Harness h;
+  h.create(h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
+                                                     std::nullopt, std::nullopt}}));
+
+  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+
+  REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
+  CHECK(history[0].kind == RoutineEventKind::created);
+  CHECK_EQ(history[0].atMs, h.clock.now);
+  CHECK_EQ(history[0].door, std::optional<ProposalDoor>());
+  CHECK_EQ(history[0].movements, std::optional<int>(2));
+  CHECK_EQ(history[0].proposal, std::optional<ProposalHead>());
+  // Another account's routine has no history at all, which is the one fact every read here gives.
+  CHECK(h.service.routineHistory(uid("u2"), rtId()).empty());
+}
+
+// A day an AGENT typed says so. `create_routine` is a real door onto this table — a routine that
+// does not exist yet takes nothing away, so it lands immediately rather than as a proposal — and a
+// history that said `created by you` about it would be putting words in a lifter's mouth.
+TEST(a_routine_an_agent_created_names_the_door_it_came_through) {
+  Harness h;
+  h.service.createRoutine(uid(), h.pushAWrite(), ProposalDoor::mcp);
+
+  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+
+  REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(history[0].door, std::optional<ProposalDoor>(ProposalDoor::mcp));
+}
+
 // ---- start from a routine: the server freezes the plan --------------------------------------
 
 TEST(start_from_a_routine_freezes_its_name_and_entries_onto_the_session) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry(1), RoutineEntry{
+  h.create(h.pushAWrite({benchEntry(1), RoutineEntry{
                                                   2, ExerciseId{"back-squat"}, 3, 8, std::nullopt,
                                                   std::nullopt}}));
 
@@ -1238,8 +1310,7 @@ TEST(a_routine_line_with_no_rep_target_survives_the_write_and_the_freeze) {
   Harness h;
   h.repo.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5,
                        false});
-  RoutineWriteOutcome created = h.service.createRoutine(
-      uid(), h.pushAWrite({RoutineEntry{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt,
+  RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt,
                                         180}}));
 
   StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
@@ -1277,8 +1348,8 @@ TEST(start_naming_a_routine_this_account_cannot_read_is_refused) {
 // comparison at the end a comparison against something that never happened.
 TEST(start_that_joins_an_open_session_keeps_the_plan_that_session_began_with) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
   StartOutcome live = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
 
   StartOutcome joined = h.startFrom(h.clock.now + 5, "ses_00000002", "rt_00000002");
@@ -1296,8 +1367,8 @@ TEST(start_that_joins_an_open_session_keeps_the_plan_that_session_began_with) {
 // it is stored, so the plan it was started under outlives a body that has since changed its mind.
 TEST(start_replay_keeps_the_plan_the_session_was_started_under) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
   StartOutcome first = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
 
@@ -1318,7 +1389,7 @@ TEST(start_replay_keeps_the_plan_the_session_was_started_under) {
 // could not get back into its own live workout.
 TEST(start_replay_and_join_survive_a_routine_deleted_since_the_workout_began) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   StartOutcome live = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   CHECK(h.service.deleteRoutine(uid(), rtId("rt_00000001")));
 
@@ -1343,7 +1414,7 @@ TEST(start_replay_and_join_survive_a_routine_deleted_since_the_workout_began) {
 // the routine is missing — the refusal it gets is the one about its own open workout.
 TEST(start_resolves_its_own_id_before_it_ever_looks_at_a_routine) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
+  h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
   h.startFrom(h.clock.now + 10, "ses_00000002", "rt_00000001");   // and this one stays open
@@ -1419,8 +1490,7 @@ TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
   Harness h;
   h.service.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
                                                 Pattern::squat, Equipment::barbell, std::nullopt});
-  RoutineWriteOutcome created = h.service.createRoutine(
-      uid(), h.pushAWrite({RoutineEntry{1, ExerciseId{"ex_11111111"}, 3, 8, 60.0, 120}}));
+  RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"ex_11111111"}, 3, 8, 60.0, 120}}));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   AppendOutcome landed = h.service.append(
       uid(), sid("ses_00000001"),
@@ -1504,8 +1574,7 @@ TEST(review_never_takes_a_session_still_running_as_history) {
 
 TEST(review_stands_against_the_last_session_of_the_same_routine) {
   Harness h;
-  h.service.createRoutine(
-      uid(), h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
+  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
   h.trained("ses_00000001", h.clock.now - 2 * kWeek, 95, 5, 4, "rt_00000001");
   h.trained("ses_00000002", h.clock.now - kWeek, 100, 5, 4);   // the same movement, no day behind it
   h.trained("ses_00000003", h.clock.now - 3'600'000, 105, 5, 4, "rt_00000001");
@@ -1938,8 +2007,7 @@ TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_it_cannot_ho
 // count off the routines that name it, and the movement under the name this account gave it.
 TEST(a_movements_record_answers_the_whole_page_from_one_read) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5,
-                                                            100.0, 180}}));
+  h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
   h.trained("ses_00000001", h.clock.now, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
   h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
@@ -1948,7 +2016,7 @@ TEST(a_movements_record_answers_the_whole_page_from_one_read) {
 
   REQUIRE(page.has_value());
   CHECK_EQ(page->exercise.name, std::string("Low-bar Squat"));
-  CHECK_EQ(page->routines, 1);
+  CHECK_EQ(page->routines, std::vector<std::string>{"Push A"});
   CHECK_EQ(page->sessions, 2);
   REQUIRE(page->bestE1rm.has_value());
   CHECK_EQ(*page->bestE1rm, (Best{105, 5, h.clock.now + kWeek, e1rm(105, 5)}));
@@ -1969,7 +2037,7 @@ TEST(a_record_of_a_movement_never_lifted_is_empty_and_of_an_unknown_one_is_absen
 
   REQUIRE(page.has_value());
   CHECK_EQ(page->sessions, 0);
-  CHECK_EQ(page->routines, 0);
+  CHECK(page->routines.empty());
   CHECK_EQ(page->bestE1rm, std::nullopt);
   CHECK(page->series.empty());
   CHECK_EQ(h.service.movementRecord(uid(), ExerciseId{"no-such"}), std::nullopt);
@@ -2171,7 +2239,7 @@ TEST(a_delete_leaves_the_numbers_alone_and_the_next_set_never_reuses_one) {
 // snapshot on the session nor the routine's own entries move a byte.
 TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
@@ -2289,11 +2357,34 @@ RoutineEntry benchAt(double weightKg, int reps = 5, int position = 1) {
 }
 }
 
+// ONE list, both kinds of row: every proposal ever minted against the day, newest first, and the
+// creation row under them. A screen handed two lists would merge them itself, three surfaces three
+// ways.
+TEST(a_routines_history_holds_its_proposals_and_its_creation_in_one_list) {
+  Harness h;
+  h.create(h.pushAWrite());
+  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.clock.now += 1'000;
+  h.service.propose(uid(), proposalFor({benchAt(90.0, 3)}, "prop_00000002"));
+
+  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+
+  REQUIRE_EQ(history.size(), static_cast<std::size_t>(3));
+  CHECK(history[0].kind == RoutineEventKind::proposal);
+  CHECK_EQ(history[0].proposal->id, ProposalId{"prop_00000002"});
+  CHECK(history[0].proposal->state == ProposalState::pending);
+  // The one it replaced is still here — superseded, dated, and part of the program's past.
+  CHECK_EQ(history[1].proposal->id, ProposalId{"prop_00000001"});
+  CHECK(history[1].proposal->state == ProposalState::superseded);
+  CHECK(history[2].kind == RoutineEventKind::created);
+  CHECK_EQ(history[2].movements, std::optional<int>(1));
+}
+
 // The mint's whole promise: a typed diff against the routine as it stands, frozen at its revision,
 // and NOTHING written to the program.
 TEST(a_proposal_is_minted_against_the_routine_and_changes_nothing) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   const std::vector<Routine> before = h.repo.routineRows;
 
   ProposalMintOutcome minted = h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
@@ -2319,7 +2410,7 @@ TEST(a_proposal_is_minted_against_the_routine_and_changes_nothing) {
 // proposal a lifter reads and cannot apply never reaches their screen.
 TEST(a_proposal_that_could_not_be_stored_as_a_plan_is_refused_before_it_is_minted) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
 
   bool refused = false;
   try {
@@ -2346,7 +2437,7 @@ TEST(a_proposal_naming_a_routine_this_account_cannot_read_is_the_one_absent_fact
 // from. The routine takes the whole document or none of it, and the proposal becomes a dated record.
 TEST(applying_a_proposal_writes_the_whole_document_and_dates_the_record) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3), RoutineEntry{2, ExerciseId{"back-squat"},
                                                                       3, 8, 100.0, 180}},
                                        "prop_00000001", "Push A — heavy"));
@@ -2375,7 +2466,7 @@ TEST(applying_a_proposal_writes_the_whole_document_and_dates_the_record) {
 // against a document that was gone. Now the lifter's own hand supersedes it, and the tap refuses.
 TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.clock.now += 60'000;
 
@@ -2402,7 +2493,7 @@ TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it
 // an apply keeps the base's own position, so dragging a routine up the list leaves the card waiting.
 TEST(a_put_that_changes_neither_the_document_nor_the_name_leaves_a_pending_proposal_standing) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.clock.now += 60'000;
 
@@ -2425,7 +2516,7 @@ TEST(a_put_that_changes_neither_the_document_nor_the_name_leaves_a_pending_propo
 // refused as a value, nothing is written, and the proposal already standing is untouched.
 TEST(a_spent_proposal_id_carrying_a_different_document_is_refused_rather_than_replayed) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
 
   ProposalMintOutcome second = h.service.propose(uid(), proposalFor({benchAt(60.0, 12)}));
@@ -2448,7 +2539,7 @@ TEST(a_spent_proposal_id_carrying_a_different_document_is_refused_rather_than_re
 // routine already says", which was false about the one thing the refusal claimed to know.
 TEST(a_proposal_that_only_reorders_the_day_is_minted_rather_than_called_no_change) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite({benchEntry(),
+  h.create(h.pushAWrite({benchEntry(),
                                                RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
                                                             100.0, 180}}));
 
@@ -2471,7 +2562,7 @@ TEST(a_proposal_that_only_reorders_the_day_is_minted_rather_than_called_no_chang
 // base that is gone — settled the same way the lifter's own write settles them.
 TEST(applying_one_proposal_supersedes_every_other_waiting_on_that_routine) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}, "prop_00000001"));
   // A second door's proposal on the same routine: pending beside the first rather than superseding
   // it, because the pending rule is per (routine, door, connection).
@@ -2496,7 +2587,7 @@ TEST(applying_one_proposal_supersedes_every_other_waiting_on_that_routine) {
 // wants it back.
 TEST(dismissing_a_proposal_changes_nothing_and_keeps_it_in_the_history) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   const std::vector<Routine> before = h.repo.routineRows;
   h.clock.now += 60'000;
@@ -2515,7 +2606,7 @@ TEST(dismissing_a_proposal_changes_nothing_and_keeps_it_in_the_history) {
 // double tap on a slow connection cannot report a failure. Asked for the OTHER decision, it refuses.
 TEST(a_settled_proposal_replays_its_own_decision_and_refuses_the_other_one) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.service.apply(uid(), ProposalId{"prop_00000001"});
 
@@ -2558,7 +2649,7 @@ TEST(a_proposal_of_another_account_is_the_same_fact_as_no_proposal_at_all) {
 // that has left has no editor to draw a History section in.
 TEST(applying_a_removal_takes_the_day_out_and_leaves_the_log_alone) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite());
+  h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
   h.service.proposeRemoval(uid(), ProposalId{"prop_00000001"}, rtId(), "Not trained in months.",

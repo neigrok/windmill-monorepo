@@ -8,7 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CREATED_MOVEMENT, lastSetLabel, lastSetsById, movementOptions, NO_LAST_TIME_META, PICKER_MATCHES,
+  CREATED_PATTERN, DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, lastSetLabel, lastSetsById, movementOptions,
+  NO_LAST_TIME_META, PICKER_MATCHES,
 } from '../../../../src/products/gym/logger/movements.js';
 
 const CATALOG = [
@@ -21,6 +22,53 @@ const CATALOG = [
   { id: 'barbell-row', name: 'Barbell Row' },
   { id: 'face-pull', name: 'Face Pull' },
 ];
+
+// A ROW IS NOT THE CATALOG ENTRY IT CAME FROM: it carries the name, whether this account minted the
+// movement, and — only when the query found it that way — the old name it matched on.
+test('a row carries what the picker draws, and the alias only when the match came through one', () => {
+  const catalog = [{ id: 'back-squat', name: 'High-bar squat', aliases: ['Back Squat', 'squats'] }];
+  assert.deepEqual(movementOptions({ catalog, query: 'high' }).matches, [
+    { id: 'back-squat', name: 'High-bar squat', custom: false, alias: null },
+  ]);
+  assert.deepEqual(movementOptions({ catalog, query: 'back sq' }).matches, [
+    { id: 'back-squat', name: 'High-bar squat', custom: false, alias: 'Back Squat' },
+  ]);
+  // An empty query matches everything by name, so no row claims to have been found by an alias.
+  assert.equal(movementOptions({ catalog, query: '' }).matches[0].alias, null);
+  // A query the NAME answers is answered by the name, whatever the aliases also contain: `squat` is
+  // in `High-bar squat`, so the row explains nothing. Only a query the name cannot answer names one.
+  assert.equal(movementOptions({ catalog, query: 'squat' }).matches[0].alias, null);
+  assert.equal(movementOptions({ catalog, query: 'squats' }).matches[0].alias, 'squats');
+  // A movement minted by this account says so, and one that was not says nothing rather than false
+  // arriving as undefined.
+  const mine = [{ id: 'ex_31ab', name: 'Hammer row', custom: true }];
+  assert.deepEqual(movementOptions({ catalog: mine, query: 'ham' }).matches, [
+    { id: 'ex_31ab', name: 'Hammer row', custom: true, alias: null },
+  ]);
+});
+
+// AN OLD NAME KEEPS FINDING THE MOVEMENT (§N). Renaming is a label moving over a stable id, so the
+// name a lifter has typed into this box for a year has to keep working — and the create door must
+// not open over a movement the catalog already holds under a name it used to have, which would mint
+// a second copy of the very movement they renamed.
+test('a query matches the old name as readily as the new one, and offers no second copy', () => {
+  const catalog = [{ id: 'back-squat', name: 'High-bar squat', aliases: ['Back Squat'] }];
+  const hit = movementOptions({ catalog, order: [], query: 'Back Squat' });
+  assert.deepEqual(hit.matches.map((each) => each.id), ['back-squat']);
+  assert.equal(hit.create, null);
+  assert.equal(hit.empty, null);
+  // And the "already in this session" silence reads the aliases too, for the same reason: the row
+  // is missing from the available list because it is in the session, not because it does not exist.
+  const held = movementOptions({
+    catalog: [...catalog, { id: 'dip', name: 'Dip' }], order: ['back-squat'], query: 'back squat',
+  });
+  assert.deepEqual(held.matches, []);
+  assert.equal(held.empty, 'That movement is already in this session.');
+  assert.equal(held.create, null);
+  // A movement with no aliases at all is exactly the search it always was.
+  assert.equal(movementOptions({ catalog: [{ id: 'dip', name: 'Dip' }], query: 'dip' }).matches.length, 1);
+  assert.equal(movementOptions({ catalog: [{ id: 'dip', name: 'Dip' }], query: 'squat' }).create, 'Create “squat”');
+});
 
 test('no query offers the catalog, capped at seven, minus what is already in the session', () => {
   assert.equal(PICKER_MATCHES, 7);
@@ -82,10 +130,20 @@ test('a catalog entirely in the session says so, and never blames the network', 
   });
 });
 
-// The picker asks for a name and nothing else — there is no taxonomy screen — so the two fields the
-// wire requires are chosen to claim as little as they can.
-test('a created movement is stored under the least-claiming pair the wire will take', () => {
-  assert.deepEqual(CREATED_MOVEMENT, { pattern: 'isolation', equipment: 'barbell' });
+// CREATING ONE ASKS EXACTLY TWO THINGS (§N screen 31), so the third field the wire requires is
+// chosen to claim as little as it can: `isolation` is the catch-all bucket and not a statement about
+// what the movement trains. Equipment is no longer one of those guesses — it is asked, because it is
+// what the ladder and the plate readout read, and every movement a lifter minted before this screen
+// was stored as a barbell whatever it was.
+//
+// FOUR OFFERED OVER A SCHEMA THAT HOLDS SIX. `cable` and `kettlebell` stay valid on every read and
+// seeded movements use them; a creation screen is not a taxonomy, and these are the four the board
+// draws. Barbell opens selected, which is the modal answer and was the silent assumption before.
+test('creating a movement asks two questions and guesses at exactly one field', () => {
+  assert.equal(CREATED_PATTERN, 'isolation');
+  assert.deepEqual(EQUIPMENT_CHOICES, ['barbell', 'dumbbell', 'machine', 'bodyweight']);
+  assert.equal(DEFAULT_EQUIPMENT, 'barbell');
+  assert.equal(EQUIPMENT_CHOICES.includes(DEFAULT_EQUIPMENT), true);
 });
 
 test('a match offers no create — the movement the lifter meant is already on the list', () => {

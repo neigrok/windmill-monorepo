@@ -51,6 +51,7 @@ import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
@@ -71,12 +72,14 @@ import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.ProposalScreen
 import works.windmill.gym.ui.RecordScreen
+import works.windmill.gym.ui.RoutineBuilder
 import works.windmill.gym.ui.RoutineScreen
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.TodayScreen
 import works.windmill.gym.ui.askThreadSaver
+import works.windmill.gym.ui.routineDraftSaver
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
@@ -212,6 +215,7 @@ fun GymRoom(account: Account) {
     var away by remember { mutableStateOf<List<Away>>(emptyList()) }
     var keptRoutine by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
+    var savingRoutine by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Saveable, and the first of the few that have to be: the log, the queue and the rack are all
     // read back off disk when the activity is recreated, but which tab was open exists nowhere but
@@ -232,6 +236,15 @@ fun GymRoom(account: Account) {
     // an activity recreation finds what they asked still standing when they open the door again.
     var conversation by rememberSaveable(stateSaver = askThreadSaver) {
         mutableStateOf(emptyList<AskExchange>())
+    }
+    // THE DAY BEING BUILT (§M), AND IT LIVES HERE FOR THE REASON THE CONVERSATION DOES: a half-typed
+    // routine exists nowhere but in memory. It is not on the log, not on the shelf and not in the
+    // queue, so an activity reclaimed mid-build would take an evening at the kitchen table with it —
+    // and unlike a pushed screen, there is nothing to re-read on the way back that could stand in for
+    // it. The draft is therefore saved AND the builder is drawn off it, which is what puts the lifter
+    // back in front of what they typed rather than back on a tab with their work quietly gone.
+    var building by rememberSaveable(stateSaver = routineDraftSaver) {
+        mutableStateOf<RoutineDraft?>(null)
     }
     // Whether a question is out. It belongs beside the thread and not on the screen for the same
     // reason the ask itself does: the request outlives the screen, so the flag that closes the door
@@ -279,9 +292,25 @@ fun GymRoom(account: Account) {
     // screen, so there is nothing under it to pop, and moving a tab nobody can see would be a
     // gesture that did something invisible. The logger survives it; the queue is on disk after
     // every tap.
+    // A DRAFT IS ONLY THE BUILDER'S TO DROP WHILE THE BUILDER IS ON SCREEN, which is why the draft
+    // sits inside the `!live` clause with the rest of them: a workout outranks the builder, so a
+    // session that opened underneath one (a claim replay, a session joined from another device) puts
+    // the logger over it — and a back gesture there would have thrown away an evening of typing
+    // nobody could see, on the one screen where this room hands the gesture back to the platform.
     val live = store.session != null
-    BackHandler(enabled = finished != null || (!live && (away.isNotEmpty() || tab != Tab.Today))) {
+    BackHandler(
+        enabled = finished != null ||
+            (!live && (building != null || away.isNotEmpty() || tab != Tab.Today)),
+    ) {
         if (finished != null) return@BackHandler
+        // The builder's own back is the step chevron — the targets go back to the name, the name
+        // goes back to Routines — so the gesture leaves the whole draft rather than one step of it.
+        // What that costs is a draft nobody saved, which is the same thing Cancel costs and the same
+        // thing the lifter asked for by making the gesture.
+        if (building != null) {
+            building = null
+            return@BackHandler
+        }
         if (away.isNotEmpty()) {
             back()
             return@BackHandler
@@ -519,6 +548,35 @@ fun GymRoom(account: Account) {
         }
     }
 
+    // §M'S SAVE, and it lives here rather than on the builder for the reason every write in this
+    // room does: the builder's composition dies the moment the draft is let go of, and a back
+    // gesture inside the round trip would cancel a routine half-way onto the log with nothing left
+    // standing to say so. The door closes while one is in flight, exactly as Start's does — two
+    // taps on one Save would be two routines.
+    //
+    // A SAVED DAY LANDS ON ITS OWN PAGE, which is where §M's third door ends: screen 30, with
+    // `untested` on it and the movements as they were just written down. An edit lands back on the
+    // same page it was opened from, which is the same statement.
+    fun write(draft: RoutineDraft) {
+        scope.launch {
+            if (savingRoutine) return@launch
+            savingRoutine = true
+            try {
+                note = null
+                when (val written = store.saveRoutine(draft)) {
+                    is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
+                    is GymResult.Ok -> {
+                        building = null
+                        away = listOf(Away.Program(written.value.id))
+                        tab = Tab.Routines
+                    }
+                }
+            } finally {
+                savingRoutine = false
+            }
+        }
+    }
+
     // Nothing is created until the tap, and nothing is CLAIMED until the log says it was: a screen
     // that hid the offer on the tap would tell the lifter their program had changed on the strength
     // of a request that may never have landed.
@@ -567,7 +625,7 @@ fun GymRoom(account: Account) {
         // there rather than at the foot, because "‹ The log" is a destination and a bare chevron in
         // a bar is not. The record page draws its own instead: §H hangs `Rename` off the right of
         // this row, and a screen that owns an action in the row owns the row.
-        if (ended == null && !live && standing is Away.Session) {
+        if (ended == null && !live && building == null && standing is Away.Session) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
@@ -611,6 +669,25 @@ fun GymRoom(account: Account) {
                     // the claim replay rather than by anything on this screen.
                     onSignIn = LocalShellActions.current.openYou,
                 )
+                // A DAY BEING BUILT OUTRANKS A TAB AND NOTHING ELSE, which is why it stands below
+                // the workout and below the finish in this list: a lifter under a bar cannot wait,
+                // and a draft can — it is saved, and it is still there afterwards. It covers the
+                // rail, because it is a thing being written rather than a place to stand.
+                building != null -> RoutineBuilder(
+                    draft = building!!,
+                    store = store,
+                    // Where the name step's chevron actually goes, which is not always the tab: a
+                    // routine opened from its own page (Edit, Duplicate) goes back to that page.
+                    backLabel = when (val under = away.lastOrNull()) {
+                        is Away.Program -> store.routine(under.routineId)?.name ?: Tab.Routines.title
+                        else -> tab.title
+                    },
+                    saving = savingRoutine,
+                    onDraft = { building = it },
+                    onSave = { write(building!!) },
+                    onClose = { building = null },
+                    say = { note = it },
+                )
                 standing is Away.Movement -> RecordScreen(
                     exerciseId = standing.exerciseId,
                     store = store,
@@ -642,8 +719,12 @@ fun GymRoom(account: Account) {
                     backLabel = beneath,
                     onBack = { back() },
                     onStart = { routineId -> open(routineId) },
+                    // Edit and Duplicate are the same door: a document handed to the builder. The
+                    // page stays underneath, so saving lands back on the routine it came from.
+                    onBuild = { building = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    say = { note = it },
                 )
                 standing is Away.Proposal -> ProposalScreen(
                     proposalId = standing.proposalId,
@@ -693,6 +774,8 @@ fun GymRoom(account: Account) {
                     isSignedIn = account.isSignedIn,
                     origin = origin,
                     onStart = { routineId -> open(routineId) },
+                    // §M'S THIRD DOOR, and the tab about the program is where it belongs.
+                    onBuild = { building = it },
                     onOpenRoutine = { look(Away.Program(it)) },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
@@ -745,7 +828,7 @@ fun GymRoom(account: Account) {
         // The rail belongs to the three tabs and to nothing else: the logger, the finish and a
         // pushed screen each own their whole surface, and the shell's seat goes with the rail
         // because it lives past the rail's own hairline.
-        if (ended == null && !live && away.isEmpty()) {
+        if (ended == null && !live && building == null && away.isEmpty()) {
             TabRail(
                 current = tab,
                 onPick = { picked ->

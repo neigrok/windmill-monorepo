@@ -793,6 +793,97 @@ public final class TrainingStore: ObservableObject {
         return saved
     }
 
+    // ONE ROUTINE, READ IN FULL (§M screen 30). It is a route of its own and not a lookup in
+    // `routines`, because HISTORY rides only here: the list read carries none, so a page drawn off
+    // the list would show a routine with no past and quietly claim it had none.
+    //
+    // The device's own shelf answers first and answers completely — a routine this device made has
+    // no history to have — and only a routine the log holds is asked for. Signed out that is the
+    // whole truth: a routine that is on neither is a routine that is gone.
+    public func routine(_ id: String) async -> Result<Routine, WriteFailure> {
+        if let local = localLog.routine(id) { return .success(local) }
+        guard let gym else { return .failure(.refused("that routine is on your account — sign in to read it")) }
+        do {
+            // Absent and another account's are the same 404, folded into the type by GymApi — so
+            // there is no sentence from the log to repeat, and this is the plain fact instead. A row
+            // the log denies is dropped from the list here, where this device learns it is gone.
+            guard let found = try await gym.routine(id) else {
+                forget(routine: id)
+                return .failure(.refused("that routine is no longer on the log"))
+            }
+            routines = Routine.byLastTrained(routines.map { $0.id == found.id ? found : $0 })
+            return .success(found)
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // A ROUTINE BUILT AT HOME (§M) — the third door, and it lands through the same create every
+    // other routine on this device goes through. Signed out it is kept on the shelf and the claim
+    // replays it, first, when an account arrives; there is nothing special about a routine nobody
+    // has trained yet.
+    public func create(_ draft: RoutineDraft) async -> Result<Routine, WriteFailure> {
+        let write = draft.write
+        guard let gym else {
+            let made = write.made
+            localLog.keep(made)
+            localLog.flush()
+            routines = Routine.byLastTrained(routines + [made])
+            return .success(made)
+        }
+        do {
+            let saved = try await gym.createRoutine(write)
+            routines = Routine.byLastTrained(routines + [saved])
+            return .success(saved)
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // AN EDIT, and a routine PUT is a whole-document replace — which is why the draft carries every
+    // line rather than the ones that moved. A routine still on this device's shelf is replaced
+    // there, whoever is signed in: the shelf entry is the pending create, so the edited document is
+    // simply the one the log first hears.
+    public func replace(_ draft: RoutineDraft) async -> Result<Routine, WriteFailure> {
+        if let held = localLog.routine(draft.id) {
+            // THE LAST-TRAINED STAMP IS NOT THE DRAFT'S TO CARRY. Signed out this device is the
+            // server, and it stamps that fact when a session finishes — a replace composed from the
+            // write alone would drop it, and the routine would go back to reading `untested` after
+            // a workout that had already tested it.
+            let written = draft.write.made
+            let changed = Routine(id: written.id, name: written.name, position: written.position,
+                                  lastTrainedAtMs: held.lastTrainedAtMs, entries: written.entries)
+            localLog.replace(changed)
+            localLog.flush()
+            routines = Routine.byLastTrained(routines.map { $0.id == changed.id ? changed : $0 })
+            return .success(changed)
+        }
+        guard let gym else { return .failure(.refused("that routine is not on this device")) }
+        do {
+            let saved = try await gym.replaceRoutine(draft.id, with: draft.write)
+            routines = Routine.byLastTrained(routines.map { $0.id == saved.id ? saved : $0 })
+            // A write by the lifter's own hand sets every pending proposal on that routine aside, in
+            // the same transaction — so this device's cards are stale the instant the PUT answers.
+            // The list is re-read rather than re-derived: the supersede is the server's rule, and a
+            // second copy of it on the phone is a rule that will eventually disagree.
+            await loadProposals(from: gym)
+            return .success(saved)
+        } catch {
+            return .failure(WriteFailure(error))
+        }
+    }
+
+    // RENAME A ROUTINE (§M screen 30's header). There is NO rename route and there should not be: a
+    // name change has to move the revision and supersede the pending proposals, and a second door
+    // onto that write would be a second place the rule could drift. So it is the whole document
+    // again, under a new name — which `replace` already is.
+    public func rename(_ routine: Routine, to name: String) async -> WriteFailure? {
+        var draft = RoutineDraft(editing: routine)
+        draft.name = name
+        guard case .failure(let why) = await replace(draft) else { return nil }
+        return why
+    }
+
     // The mid-session change offer, applied (screen 8). The server never infers this, never
     // auto-writes it and never asks — and the READ is not optional: a routine PUT is a whole-document
     // replace, so writing from a copy this device last read would delete every line added since.
@@ -1039,16 +1130,17 @@ public final class TrainingStore: ObservableObject {
         proposals = read
     }
 
-    // A movement the catalog has never heard of, minted from the picker's `Create “{query}”`. The
-    // picker asks for a name and nothing else, so the classification is the domain's own value for
-    // "unknown" rather than a guess dressed as a fact — and nothing on this surface reads it, because
-    // the ladder is taken off the MAGNITUDE of the load and never off the equipment.
+    // A movement the catalog has never heard of, minted through §N screen 31. HOW IT IS LOADED IS
+    // ASKED and never assumed: this wrote `equipment: "barbell"` in itself until 2026-08-13, which
+    // is a fact about somebody's gym invented by a phone, and it is the one thing on that screen the
+    // lifter is actually asked for. `pattern` still is not asked, and stays the domain's own value
+    // for "unknown" — a movement nobody classified is not a movement classified wrongly.
     //
     // Signed out the movement is minted onto this device — a fresh phone has no catalog at all, so
     // without this the anonymous room could not log its first set. The claim replays the create
     // BEFORE any session, because a set naming a movement the log has never heard of is refused.
-    public func create(_ name: String) async -> Result<Exercise, WriteFailure> {
-        let write = ExerciseWrite(name: name, pattern: "isolation", equipment: "barbell")
+    public func create(_ name: String, loadedAs equipment: String) async -> Result<Exercise, WriteFailure> {
+        let write = ExerciseWrite(name: name, pattern: "isolation", equipment: equipment)
         guard let gym else {
             let made = Exercise(id: write.id, name: write.name, pattern: write.pattern,
                                 equipment: write.equipment, custom: true)

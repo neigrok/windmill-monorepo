@@ -41,9 +41,14 @@ MovementRecord movementRecord(const Exercise& exercise, const MovementHistory& h
   // and the standing best that ladder ends on. A record needs a mark to have been PASSED, so the
   // first estimate a movement ever earned sets `bestE1rm` and enters no ladder.
   const std::uint64_t floorMs = nowMs > kRecordWindowMs ? nowMs - kRecordWindowMs : 0;
-  MovementRecord record{exercise,     history.routines,             static_cast<int>(history.sessions.size()),
-                        std::nullopt, heaviestOf(history.sessions), {},
-                        {},           history.recent};
+  MovementRecord record{exercise,
+                        history.routines,
+                        static_cast<int>(history.sessions.size()),
+                        std::nullopt,
+                        heaviestOf(history.sessions),
+                        {},
+                        {},
+                        history.recent};
   double standing = 0;   // a defined estimate is always above zero, so zero is "nothing yet"
   for (const MovementSession& session : history.sessions) {
     std::optional<RecordPoint> point = pointOf(session);

@@ -153,9 +153,9 @@ double defaultStepKg(Equipment equipment) {
 }
 
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
-                   double stepKg, bool custom)
+                   double stepKg, bool custom, std::vector<std::string> aliases)
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
-      equipment(equipment), stepKg(stepKg), custom(custom) {
+      equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
   // Trimmed first, so a name of nothing but blanks is refused here rather than stored as a movement
   // whose header, picker row and log row all render empty — and so renaming a seed back to its own

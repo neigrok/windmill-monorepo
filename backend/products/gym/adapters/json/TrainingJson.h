@@ -23,7 +23,7 @@ namespace wm::gym {
 //   fix in      : { "weightKg"?: n, "reps"?: n, "kind"?: "…", "rpe"?: n|null, "note"?: "…" }
 //                                                       PATCH /v1/gym/sessions/{id}/sets/{setId}
 //   routine in  : { "id": "rt_…", "name": "…", "position": n,
-//                   "entries": [ { "exerciseId": "…", "targetSets": n, "targetReps"?: n,
+//                   "entries": [ { "exerciseId": "…", "targetSets"?: n, "targetReps"?: n,
 //                                  "targetWeightKg"?: n, "restSeconds"?: n } ] }
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
@@ -37,13 +37,33 @@ namespace wm::gym {
 //                                     "topE1rm"?: n, "record": bool, "closedItself": bool }
 //   set out     : { "id", "exerciseId", "setNumber", "weightKg", "reps", "kind", "rpe"?, "note",
 //                   "completedAt" }
-//   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom" }
+//   exercise out: { "id", "name", "pattern", "equipment", "stepKg", "custom",
+//                   "aliases"?: ["…"] }        what this account used to call it, newest first
 //   last sets out: { "movements": [ { "exerciseId", "weightKg", "reps", "at" } ] }
 //                                                       GET /v1/gym/exercises/last
 //   routine out : { "id", "name", "position", "revision", "lastTrainedAt"?,
-//                   "entries": [ { "position", "exerciseId", "targetSets", "targetReps"?,
+//                   "entries": [ { "position", "exerciseId", "targetSets"?, "targetReps"?,
 //                                  "targetWeightKg"?, "restSeconds"? } ],
-//                   "pendingProposal"?: <proposal head> }
+//                   "pendingProposal"?: <proposal head>,
+//                   "history"?: [ … ] }        the single read only; the list omits it
+//   history out : [ { "kind": "created", "at": ms, "by"?: "mcp"|"ask", "movements"?: n },
+//                   { "kind": "proposal", "at": ms, "proposal": <proposal head> } ]  newest first
+//
+// A LINE WITH NO `targetSets` IS OPEN — the movement is in the day and what to do with it is
+// decided at the rack (§M). It is the absence and never a zero, on the way in and on the way out,
+// in the frozen plan and in a proposal's diff: a zero would be a target of nothing, which is a
+// different sentence and a false one. A routine holding one is savable exactly as it stands.
+//
+// A routine with no `lastTrainedAt` is UNTESTED — it has never been trained. There is no second
+// field saying so: the absence already says it, and a stored flag beside it would still read
+// `untested` the day a lifter trained the routine, or still read tested the day they discarded the
+// only session that ever ran it.
+//
+// `history` rides on `GET /v1/gym/routines/{id}` and nowhere else: the list read draws no History
+// section, and sending every routine's ledger to a screen that prints a name would be the N+1 in
+// reverse. Its `created` row is always last and always present. `by` is absent when the day was the
+// lifter's own — that absence is what a client draws as *created by you* — and `movements` is
+// absent for a routine created before the ledger recorded it.
 //   proposal in : { "id": "prop_…", "routineId": "rt_…", "name"?: "…", "summary"?: "…",
 //                   "entries": [ <the same entry shape a routine takes> ] }
 //   proposal head out: { "id", "routineId", "intent": "revise"|"remove",
@@ -80,6 +100,7 @@ namespace wm::gym {
 //                                    "bestE1rm"?: { "weightKg", "reps", "at", "e1rm"? },
 //                                    "heaviest"?: { "weightKg", "reps", "at", "e1rm"? } } ] }
 //   record out  : { "exercise": { "id", "name", … },  "routineCount": n,  "sessionCount": n,
+//                   "routines"?: ["Push A", "Legs"],   the days that name it; count == length
 //                   "bestE1rm"?: { "weightKg", "reps", "at", "e1rm" },
 //                   "heaviest"?: { "weightKg", "reps", "at", "e1rm"? },
 //                   "e1rmSeries"?: [ { "at", "weightKg", "reps", "e1rm" } ],   oldest first
@@ -206,6 +227,10 @@ Json::Value toJson(const std::vector<Routine>& routines, const std::vector<Propo
 Json::Value toJson(const ProposalHead& head);
 Json::Value toJson(const RoutineProposal& proposal);
 Json::Value toJson(const std::vector<ProposalHead>& heads);
+// The routine's own dated ledger, both kinds of row in one list (ports/TrainingRepository.h). It is
+// composed onto the single-routine read by the handler rather than folded into `toJson(routine,
+// pending)`, because the LIST read hands back routines too and must not carry it.
+Json::Value toJson(const std::vector<RoutineEvent>& history);
 Json::Value toJson(const PlanSnapshot& plan);
 // The settings document out, and it is the same shape parsePreferences reads in — a client PUTs
 // back exactly what it was handed. `restSeconds` is the one omission, and it is the omission that

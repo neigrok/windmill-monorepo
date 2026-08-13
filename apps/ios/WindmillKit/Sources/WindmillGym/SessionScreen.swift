@@ -309,9 +309,12 @@ struct SessionScreen: View {
     private func planLine(_ against: Performed.Against) -> some View {
         switch against {
         case .plan(let entry):
+            // An OPEN line (§M) reads `plan open` in the room's faintest ink: the routine named
+            // nothing for this movement and the lifter decided at the rack, which is a different
+            // fact from a plan that named a number this session did not meet.
             Text("plan \(Readout.target(sets: entry.sets, reps: entry.reps, weightKg: entry.weightKg))")
                 .font(GymType.numeral(11.5))
-                .foregroundStyle(skin.targetInk)
+                .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
         case .unplanned:
             Text("not in the plan")
                 .font(GymType.numeral(11.5))

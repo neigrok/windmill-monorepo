@@ -17,13 +17,16 @@ import {
   dayLabel,
   durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, firstSessionLabel, fmt, fmtKg,
   groupByExercise,
-  hasRecord, isFinished, isFirstSession, loadedLine, logWhenLabel, MOVEMENTS_HREF, movementIdOf,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, planFrozenLabel,
+  hasRecord, isFinished, isFirstSession, isNameOverCap, isUntested, loadedLine, logWhenLabel,
+  MOVEMENTS_HREF,
+  movementIdOf, movementOf, NAME_MAX, nameCountLabel,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
+  planFrozenLabel,
   planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
-  topSetLabel, topSetOf, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
+  topSetLabel, topSetOf, UNTESTED, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -292,6 +295,58 @@ test('entryLabel — what a routine asks a movement for, and the two targets it 
   assert.equal(entryLabel({ exerciseId: 'dip', targetSets: 3, targetWeightKg: 20 }), '3 × max · 20');
 });
 
+// THE THIRD ABSENCE, AND IT SWALLOWS THE OTHER TWO (§M). A line with no set target is OPEN — it asks
+// at the rack — and the word is read off that one missing field, so the label cannot be talked into
+// `undefined × 5` by a document that should never exist. The wire refuses reps or a weight beside no
+// sets, which is why this reads the sets first and stops.
+test('entryLabel — a line with no set target is open, whatever else is on it', () => {
+  assert.equal(entryLabel({ exerciseId: 'barbell-row' }), 'open');
+  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetSets: null }), 'open');
+  assert.equal(entryLabel({ exerciseId: 'barbell-row', restSeconds: 120 }), 'open');
+  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetReps: 5, targetWeightKg: 70 }), 'open');
+  assert.equal(OPEN_TARGET, 'open');
+  // Zero sets is not the open line: it is a target of nothing, which no path here composes and the
+  // store refuses. The label draws what it is handed rather than inventing the other reading.
+  assert.equal(entryLabel({ exerciseId: 'barbell-row', targetSets: 0, targetReps: 5 }), '0 × 5');
+});
+
+// A NAME A LIFTER TYPES, capped once for the whole product: the routine being written out, the
+// movement their gym has no word for, and the one they are renaming. The counter counts what
+// `maxLength` counts, or it would run past the field's own stop or halt before it.
+test('the name cap is one number, under the store’s own, and the counter counts the field', () => {
+  assert.equal(NAME_MAX, 60);
+  assert.equal(nameCountLabel(''), '0/60');
+  assert.equal(nameCountLabel('Heavy Thursday'), '14/60');
+  assert.equal(nameCountLabel('  '), '2/60');
+  assert.equal(nameCountLabel(undefined), '0/60');
+  assert.equal(nameCountLabel('P'.repeat(NAME_MAX)), '60/60');
+
+  // AND A FIELD CAN OPEN ALREADY OVER IT. `maxLength` stops a key, not a prefill: the store keeps
+  // eighty bytes, so a movement an agent minted with seventy characters opens the rename field at
+  // `70/60`. The count stays the true one — clamping the display would be the screen lying about the
+  // field under it — and this is what the counter wears to say the number is over.
+  assert.equal(isNameOverCap('P'.repeat(NAME_MAX)), false);
+  assert.equal(isNameOverCap('P'.repeat(NAME_MAX + 10)), true);
+  assert.equal(nameCountLabel('P'.repeat(NAME_MAX + 10)), '70/60');
+  assert.equal(isNameOverCap(''), false);
+  assert.equal(isNameOverCap(undefined), false);
+});
+
+// A movement is a stable id everywhere but on screen. The whole catalog row is what a screen needs
+// when it is asking something other than the name — whether this account minted it — and the name
+// is that same lookup with one field taken off it.
+test('movementOf — the catalog row, and the name is the one field read off it', () => {
+  const catalog = [
+    { id: 'back-squat', name: 'Back Squat', custom: false },
+    { id: 'ex_31ab', name: 'Hammer row', custom: true },
+  ];
+  assert.deepEqual(movementOf(catalog, 'ex_31ab'), catalog[1]);
+  assert.equal(movementOf(catalog, 'deadlift'), null);
+  assert.equal(movementOf(null, 'deadlift'), null);
+  assert.equal(nameOfMovement(catalog, 'ex_31ab'), 'Hammer row');
+  assert.equal(nameOfMovement(catalog, 'deadlift'), 'deadlift');
+});
+
 // "Your first session" is a claim about the LIST, and one other finished session refutes it.
 test('isFirstSession — the session being asked about never counts as its own predecessor', () => {
   const session = (id, finishedAt) => ({ id, startedAt: 1, finishedAt });
@@ -321,8 +376,18 @@ test('routineMetaLabel — what a routine holds, and when it was last used', () 
     '1 exercise · trained yesterday',
   );
   assert.equal(routineMetaLabel({ entries: entries(4), lastTrainedAt: now }, now), '4 exercises · trained today');
-  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 exercises · never trained');
-  assert.equal(routineMetaLabel({ entries: [] }, now), '0 exercises · never trained');
+  // ONE WORD FOR A ROUTINE NOBODY HAS TRAINED, and it is canon's: `untested` says the first session
+  // is allowed to disagree with it, which is the point of writing one out before you have trained
+  // it. There is no field for it — `lastTrainedAt` is the store's aggregate over the log, so its
+  // absence IS the state and nothing else spells it.
+  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 exercises · untested');
+  assert.equal(routineMetaLabel({ entries: [] }, now), '0 exercises · untested');
+  assert.equal(UNTESTED, 'untested');
+  assert.equal(isUntested({ entries: [] }), true);
+  assert.equal(isUntested({ entries: [], lastTrainedAt: now }), false);
+  // Zero is an instant like any other, so the predicate asks for absence and never for falsiness.
+  assert.equal(isUntested({ entries: [], lastTrainedAt: 0 }), false);
+  assert.equal(isUntested(null), true);
 });
 
 // ONE WORD FOR WHAT COUNTS, and every surface that counts anything reads it: the plan counter, the

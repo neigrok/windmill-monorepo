@@ -250,6 +250,34 @@ class FinishTests {
                      Finish.comparison(noLoadNamed, catalog)?.rows?.map { it.detail })
     }
 
+    // AN OPEN ROW IS NOT A PLAN. The routine declined to name a target — the row asks at the rack —
+    // so the frozen snapshot froze the absence and the arrow points from last time, exactly as it
+    // does for a movement no plan named at all. Never `3 × max`, which is a target this session was
+    // never asked for and would be attributed to the lifter after the fact.
+    @Test
+    fun anOpenRowPointsFromLastTimeAndNeverFromATargetItNeverHad() {
+        val open = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
+            movements = listOf(
+                AgainstMovement(exerciseId = "barbell-row",
+                                now = Effort(sets = 3, reps = 10, weightKg = 60.0),
+                                before = Effort(sets = 3, reps = 10, weightKg = 57.5),
+                                planned = Target()),
+            ))
+        assertEquals(listOf("3×10 @ 57.5 → 3×10 @ 60"),
+                     Finish.comparison(open, catalog)?.rows?.map { it.detail })
+
+        // And the first time that day is run there is no last time either: the row says what was
+        // done and stands on nothing.
+        val firstRun = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
+            movements = listOf(
+                AgainstMovement(exerciseId = "barbell-row",
+                                now = Effort(sets = 3, reps = 10, weightKg = 60.0),
+                                planned = Target()),
+            ))
+        assertEquals(listOf("3×10 @ 60"),
+                     Finish.comparison(firstRun, catalog)?.rows?.map { it.detail })
+    }
+
     @Test
     fun anAdHocSessionHasNothingToCompareAgainst() {
         assertNull(Finish.comparison(null, catalog))

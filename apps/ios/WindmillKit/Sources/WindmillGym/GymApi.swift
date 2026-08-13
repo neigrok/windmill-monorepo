@@ -12,7 +12,8 @@ import WindmillPlatform
 //   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
 //   GET  /v1/gym/exercises/last
 //   GET  /v1/gym/routines             ·  POST /v1/gym/routines
-//   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
+//   GET  /v1/gym/routines/:id         ·  PUT /v1/gym/routines/:id
+//   DELETE /v1/gym/routines/:id
 //   GET  /v1/gym/proposals            ·  GET /v1/gym/proposals/:id
 //   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
@@ -93,6 +94,10 @@ public struct GymApi: TrainingSyncing {
     // gains a per-account display name on the server; from here both are one call and one answer.
     // Absent and another account's are the same 404, folded into the type as every other read folds
     // it, because the caller draws nothing either way.
+    //
+    // It answers with the movement's NEW aliases, the name it was just called now among them (§N).
+    // The catalog carries them too, so the picker goes on finding it under what the lifter's fingers
+    // still type — a read of its own for that would search one list a frame behind the other.
     public func renameExercise(_ exerciseId: String, to name: String) async throws -> Exercise? {
         do {
             return try await api.send("PATCH", "/v1/gym/exercises/\(exerciseId)",
@@ -103,9 +108,14 @@ public struct GymApi: TrainingSyncing {
         }
     }
 
-    // One movement's whole record — the counts, the two standing bests, the twelve-week series, the
-    // record ladder and the recent days, in ONE read. The window is the server's: a client that asked
-    // for a slice of it would be the second place in the product deciding what twelve weeks is.
+    // One movement's whole record — the counts, the programs that name it, the two standing bests,
+    // the twelve-week series, the record ladder and the recent days, in ONE read. The window is the
+    // server's: a client that asked for a slice of it would be the second place in the product
+    // deciding what twelve weeks is.
+    //
+    // §N's rename sheet is drawn from THIS answer and makes no call of its own. Three lines of that
+    // sheet are three fields of this reply, and a sheet that fetched them separately would be three
+    // chances to prove something that was true a moment ago.
     public func record(of exerciseId: String) async throws -> MovementRecord? {
         do {
             return try await api.get("/v1/gym/exercises/\(exerciseId)/record", as: MovementRecord.self)
@@ -208,8 +218,12 @@ public struct GymApi: TrainingSyncing {
         try await api.get("/v1/gym/routines", as: Routines.self).routines
     }
 
-    // The read half of a read-modify-write. Absent and another account's are the same 404, one fact,
-    // so the absence folds into the type exactly as a session's does.
+    // The read half of a read-modify-write — and the ONLY read that carries a routine's `history`
+    // (§M screen 30). The list read has none, which is why the routine page reads its own routine
+    // again rather than looking one up in the list the room already holds.
+    //
+    // Absent and another account's are the same 404, one fact, so the absence folds into the type
+    // exactly as a session's does.
     public func routine(_ id: String) async throws -> Routine? {
         do {
             return try await api.get("/v1/gym/routines/\(id)", as: Routine.self)
