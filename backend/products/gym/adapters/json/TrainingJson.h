@@ -28,7 +28,7 @@ namespace wm::gym {
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
 //   rename in   : { "name": "…" }                       PATCH /v1/gym/exercises/{id}
-//   settings i/o: { "units": "kg"|"lb", "barWeightKg": n, "platesKg": [n, …], "restSeconds"?: n,
+//   settings i/o: { "units": "kg"|"lb", "restSeconds"?: n,
 //                   "restSound": bool, "confirmHaptic": bool, "confirmSound": bool }
 //                                                       GET · PUT /v1/gym/preferences
 //   session out : { "id", "startedAt", "finishedAt"?, "routineId"?, "plan"? }
@@ -210,8 +210,8 @@ std::string parseExerciseRename(const Json::Value& body);  // throws InvalidTrai
 // this" has to mean — a whole-document PUT that quietly kept a value the body did not name would be
 // keeping something the sender cannot see and cannot clear. Present values type-check strictly, and
 // an unknown unit is refused rather than downgraded. Every refusal it makes is an InvalidPreference
-// carrying a machine `code`, because five independent values arrive at once and "could not read
-// that" would leave a client guessing which of the five to fix.
+// carrying a machine `code`, because several independent values arrive at once and "could not read
+// that" would leave a client guessing which of them to fix.
 GymPreferences parsePreferences(const Json::Value& body, const UserId& user);  // throws InvalidPreference
 
 Json::Value toJson(const Session& session);
@@ -263,8 +263,7 @@ Json::Value toJson(const std::vector<RoutineEvent>& history);
 Json::Value toJson(const PlanSnapshot& plan);
 // The settings document out, and it is the same shape parsePreferences reads in — a client PUTs
 // back exactly what it was handed. `restSeconds` is the one omission, and it is the omission that
-// means the timer is off; `platesKg` is always present, and an EMPTY array is a real answer meaning
-// a gym with nothing to load onto the bar.
+// means the timer is off.
 Json::Value toJson(const GymPreferences& preferences);
 Json::Value toJson(const Review& review);
 // The other two one-way shapes, for the same reason the review is one: every number in them is

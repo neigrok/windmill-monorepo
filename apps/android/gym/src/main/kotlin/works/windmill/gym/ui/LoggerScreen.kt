@@ -58,7 +58,6 @@ import works.windmill.gym.domain.DeviationOffer
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
-import works.windmill.gym.domain.Plates
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Rest
 import works.windmill.gym.domain.SetKind
@@ -87,10 +86,8 @@ import works.windmill.platform.design.WindmillSpace
 // anywhere else — one module per language, all three answering packages/api-contract/gym-ladder.json,
 // and the labels re-render as the load climbs because the band under them changed.
 //
-// THREE THINGS ON THIS SCREEN OBEY §I'S SETTINGS, and none of them is stored: the plate readout
-// under the value (the lifter's own rack — the one line that does work at the rack, which is why §K
-// keeps it), the rest hairline's target (their dial, off by default), and what a logged set does in
-// the hand. Every weight here is kilograms on the way in and on the way out — the settings document
+// TWO THINGS ON THIS SCREEN OBEY §I'S SETTINGS, and neither is stored: the rest hairline's target
+// (their dial, off by default) and what a logged set does in the hand. Every weight here is kilograms on the way in and on the way out — the settings document
 // changes what is DRAWN and reaches no write.
 //
 // The screen never congratulates and never warns. An overrun rest counts up in the accent, "set 4 of
@@ -339,7 +336,6 @@ fun LoggerScreen(
                     counter = counter.count,
                     weightKg = weightKg,
                     reps = reps,
-                    preferences = preferences,
                     onType = { sheet = LoggerSheet.Weight },
                 )
             }
@@ -641,20 +637,14 @@ private fun History(
 }
 
 // ONE READING, WEIGHT DOMINANT — `105 kg × 5`. The numeral carries a dotted underline instead of a
-// sentence telling anybody to tap it, and the plate line under it is the one line on this screen
-// that does work at the rack: what to actually put on the bar, out of the lifter's own settings.
-//
-// The readout is remembered on the weight and the rack together: it is a small table search, and it
-// would otherwise be rebuilt every second under the rest clock's own tick.
+// sentence telling anybody to tap it.
 @Composable
 private fun Value(
     counter: String,
     weightKg: Double,
     reps: Int,
-    preferences: GymPreferences,
     onType: () -> Unit,
 ) {
-    val loaded = remember(weightKg, preferences) { Plates.readout(weightKg, preferences) }
     Column(
         Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -701,22 +691,6 @@ private fun Value(
             Text("× $reps", style = WindmillFont.display(28, FontWeight.ExtraBold),
                  color = GymSkin.inkDim, modifier = Modifier.alignByBaseline())
         }
-        // A load under the bar has no plate answer, and silence there is the honest one — a lifter
-        // at 15 kg is not standing at this bar.
-        //
-        // IT SHRINKS RATHER THAN TRUNCATING, for the reason the numeral above it does: the longest
-        // thing this line ever says is the sentence that matters most — `these plates don’t make
-        // 102.5 · 100 or 105` — and a clip would cut the neighbours off the end of it, leaving a
-        // lifter reading a refusal with no answer in it. The line height is spelled in sp and does
-        // NOT follow the font down, so the row keeps one height at every size and at every
-        // accessibility scale.
-        BasicText(
-            loaded?.line.orEmpty(),
-            maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
-            style = GymType.numeral(11).copy(color = GymSkin.inkFaint, lineHeight = 15.sp,
-                                             textAlign = TextAlign.Center),
-        )
     }
 }
 

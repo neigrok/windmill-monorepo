@@ -6,7 +6,7 @@
 // rule reached from the other side: the string becomes an identity before it becomes a set.
 //
 // MINTING ONE IS TWO QUESTIONS AND NOT A BUTTON (§N screen 31). What you call it, and how it is
-// loaded — the second because it decides what the ladder and the plate readout do at the rack, which
+// loaded — the second because it decides what the ladder does at the rack, which
 // this surface was quietly answering `barbell` to on every movement anybody ever created here.
 //
 // WHAT A PICK MEANS IS THE HOST'S TO DECIDE, and the three of them mean different things: two add a
@@ -122,8 +122,7 @@ export function MovementPicker({
 // approval, no moderation and no interrogation about whether this is really Bench Press; the only
 // rule on the name is its length, because we do not correct anyone's spelling of their own gym.
 //
-// How it is loaded is the question that earns its place: it is what the ladder and the plate readout
-// read at the rack. Before this sheet every movement a lifter minted was stored as a barbell.
+// How it is loaded is the question that earns its place: it is what the ladder reads at the rack. Before this sheet every movement a lifter minted was stored as a barbell.
 function NewMovement({ draft, onChange, onCancel, onCreate }) {
   const [creating, setCreating] = useState(false);
   const ready = draft.name.trim() !== '' && !creating;

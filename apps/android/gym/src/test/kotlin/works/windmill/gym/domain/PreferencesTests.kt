@@ -39,17 +39,6 @@ class PreferencesTests {
         assertEquals(180, decoded("""{"restSeconds":180}""").restSeconds)
     }
 
-    // An empty rack is a REAL value and must not be confused with an omitted one: omitted is the
-    // full default set, and `[]` is a gym that owns no plates. They encode differently and they
-    // decode differently.
-    @Test
-    fun testAnEmptyRackIsSentAndAFullDefaultRackIsNot() {
-        assertEquals("""{"platesKg":[]}""", encoded(GymPreferences(platesKg = emptyList())))
-        assertEquals("{}", encoded(GymPreferences(platesKg = GymPreferences.defaultPlatesKg)))
-        assertEquals(emptyList<Double>(), decoded("""{"platesKg":[]}""").platesKg)
-        assertEquals(GymPreferences.defaultPlatesKg, decoded("{}").platesKg)
-    }
-
     // The unit is a word on the wire and never an ordinal. A word from a future server READS as kg
     // rather than crashing a room mid-workout; refusing it is the server's job, on the write.
     @Test
@@ -59,41 +48,26 @@ class PreferencesTests {
         assertEquals(Units.Kilograms, decoded("""{"units":"stone"}""").units)
     }
 
-    // The server normalizes the rack and so does the device, because the device draws its own copy
-    // before any reply arrives. Heaviest first, one of each, and every band clamped rather than
-    // refused — a value outside the band is a deterministic 400 on the next PUT with nothing on
+    // The band is clamped rather than refused, because the device draws its own copy before any reply
+    // arrives — and a value outside the band is a deterministic 400 on the next PUT with nothing on
     // screen to explain it.
     @Test
-    fun testTheRackIsSortedDeduplicatedAndTheBandsAreClamped() {
-        val messy = GymPreferences(
-            barWeightKg = 140.0,
-            platesKg = listOf(2.5, 25.0, 20.0, 2.5, 25.0),
-            restSeconds = 4_000,
-        ).normalized()
-        assertEquals(listOf(25.0, 20.0, 2.5), messy.platesKg)
-        assertEquals(GymPreferences.maxBarKg, messy.barWeightKg, 1e-9)
-        assertEquals(GymPreferences.maxRestSeconds, messy.restSeconds)
+    fun testTheRestBandIsClampedAndOffSurvives() {
+        assertEquals(GymPreferences.maxRestSeconds,
+                     GymPreferences(restSeconds = 4_000).normalized().restSeconds)
+        assertEquals(GymPreferences.minRestSeconds,
+                     GymPreferences(restSeconds = 5).normalized().restSeconds)
         assertNull("off survives normalizing — it is not a value to clamp",
                    GymPreferences(restSeconds = null).normalized().restSeconds)
     }
 
-    // A chip is a membership and nothing else: tapping it twice returns the rack it started from,
-    // still heaviest-first.
+    // EQUIPMENT LEFT THIS DOCUMENT ON 2026-08-13, and this is where that is pinned rather than
+    // assumed: nothing about a bar or a plate travels in either direction any more, and a document
+    // from an older build carrying both still reads as the room it describes minus the equipment.
     @Test
-    fun testTogglingAPlateIsItsOwnInverse() {
-        val standard = GymPreferences()
-        val without = standard.togglingPlate(15.0)
-        assertEquals(listOf(25.0, 20.0, 10.0, 5.0, 2.5, 1.25), without.platesKg)
-        assertEquals(GymPreferences.defaultPlatesKg, without.togglingPlate(15.0).platesKg)
-    }
-
-    // The chips the screen draws are the design's seven PLUS whatever the document already holds,
-    // so a plate set from another surface still has somewhere to be turned off.
-    @Test
-    fun testTheChipRowHoldsPlatesThisScreenDidNotOffer() {
-        assertEquals(
-            listOf(25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25, 0.5),
-            GymPreferences.offeredPlates(listOf(0.5, 25.0)),
-        )
+    fun testNothingAboutEquipmentTravelsInEitherDirection() {
+        assertEquals("""{"units":"lb"}""", encoded(GymPreferences(units = Units.Pounds)))
+        val older = decoded("""{"units":"lb","barWeightKg":15,"platesKg":[25,20]}""")
+        assertEquals(GymPreferences(units = Units.Pounds), older)
     }
 }

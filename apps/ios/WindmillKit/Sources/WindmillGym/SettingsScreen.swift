@@ -1,9 +1,8 @@
 import SwiftUI
 import WindmillPlatform
 
-// GYM'S SETTINGS — five rows, and they are all about a barbell (§I). Everything here changes how the
-// room behaves AT THE RACK: units, what plates exist, how long you rest, how a logged set confirms
-// itself, and where the log goes when it leaves. Nothing here restates an account screen. Appearance,
+// GYM'S SETTINGS (§I). Everything here changes how the room behaves AT THE RACK: units, how long you
+// rest, how a logged set confirms itself, and where the log goes when it leaves. Nothing here restates an account screen. Appearance,
 // plan, sessions, devices, export-everything and delete live in You; this room has no theme switch of
 // its own and draws no notification rows for pushes it does not send.
 //
@@ -32,14 +31,11 @@ struct SettingsScreen: View {
     let say: (String?) -> Void
 
     @Environment(\.gymSkin) private var skin
-    @State private var barPadUp = false
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 9) {
                 head
                 units
-                plateMath
                 restTimer
                 confirmation
                 doors
@@ -47,23 +43,6 @@ struct SettingsScreen: View {
             .padding(.horizontal, WindmillSpace.x4)
             .padding(.top, WindmillSpace.x8)
             .padding(.bottom, WindmillSpace.x8)
-        }
-        .sheet(isPresented: $barPadUp) {
-            // The pad the logger's numeral opens, spending it on the one other number in this product
-            // a lifter types. Its own band is wider than a bar's, so what it hands back is checked
-            // here and REFUSED out loud rather than clamped into range behind their back.
-            KeypadSheet(mode: .weight, current: store.preferences.barWeightKg,
-                        onCommit: { typed in
-                            barPadUp = false
-                            guard typed >= 0, typed <= 100 else {
-                                say("a bar weighs from 0 to 100 kg — \(Readout.weight(typed)) isn’t one")
-                                return
-                            }
-                            write(store.preferences.with(barWeightKg: typed))
-                        },
-                        onCancel: { barPadUp = false })
-                .presentationBackground(skin.surface)
-                .presentationDetents([.height(520)])
         }
     }
 
@@ -114,48 +93,7 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 2 — what your gym actually owns, and the one setting another screen reads: the line under
-    // the logger's numeral is built from these. The chips are the standard set PLUS whatever else the
-    // account holds, because a plate this screen does not offer is still one this gym owns — and a
-    // plate with no chip would be a setting from another surface with no way back off it. That is
-    // also what puts more chips on this screen than the log's twelve kinds: the thirteenth is refused
-    // out loud rather than clamped away (`toggle`).
-    private var plateMath: some View {
-        card {
-            HStack(spacing: WindmillSpace.x3) {
-                Text("Plate math")
-                    .font(WindmillFont.body(15, .bold))
-                    .foregroundStyle(skin.ink)
-                Spacer(minLength: 0)
-                Button { barPadUp = true } label: {
-                    Text("bar \(Readout.weight(store.preferences.barWeightKg)) kg")
-                        .font(GymType.numeral(12.5))
-                        .foregroundStyle(skin.inkDim)
-                        .frame(minHeight: GymTap.minimum)
-                }
-                .accessibilityLabel("Bar weight")
-            }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 6, alignment: .leading)],
-                      spacing: 6) {
-                ForEach(chips, id: \.self) { plate in
-                    let owned = store.preferences.owning(plate)
-                    Button { toggle(plate) } label: {
-                        Text(Readout.weight(plate))
-                            .font(GymType.numeral(12, .bold))
-                            .foregroundStyle(owned ? skin.accent : skin.inkFaint)
-                            .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                            .background(Capsule().fill(owned ? skin.accentSoft : .clear))
-                            .overlay(Capsule().strokeBorder(owned ? skin.accent : skin.lineStrong,
-                                                            lineWidth: 1))
-                    }
-                    .accessibilityAddTraits(owned ? [.isSelected] : [])
-                }
-            }
-            caption("What your gym owns, per side.")
-        }
-    }
-
-    // ROW 3 — off by default, and that is the decision rather than an omission: a timer nobody asked
+    // ROW 2 — off by default, and that is the decision rather than an omission: a timer nobody asked
     // for, beeping in a gym, is the kind of thing this product does not do. A routine that writes its
     // own rest against a movement still wins over this for that movement.
     private var restTimer: some View {
@@ -192,7 +130,7 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 4 — the intent is the account's; what a surface can honour is the surface's, and this one
+    // ROW 3 — the intent is the account's; what a surface can honour is the surface's, and this one
     // has a haptic and uses it. The caption under it named that, and then named what the INSTALLED
     // WEB APP does instead — which is a sentence about another surface, on a screen a lifter opened
     // to change this one. It came off on 2026-08-12 with the rest of the room's explaining; the two
@@ -211,7 +149,7 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 5 — the two doors out of the log. The export is still the web's, because a CSV is a file
+    // ROW 4 — the two doors out of the log. The export is still the web's, because a CSV is a file
     // this app has nowhere to put yet.
     //
     // THE CONNECTED LOG IS NO LONGER A LINK OUT, and what changed is that this client can now answer
@@ -235,12 +173,6 @@ struct SettingsScreen: View {
                      lit: true, away: false)
             }
         }
-    }
-
-    // The standard set, plus whatever else the account holds — a plate this screen does not offer is
-    // still a plate this gym owns, and one it could not turn off would be a setting with no way back.
-    private var chips: [Double] {
-        Array(Set(GymPreferences.everyPlate + store.preferences.platesKg)).sorted(by: >)
     }
 
     // `away` is the glyph and the glyph is a promise about where the tap goes: the arrow leaves this
@@ -303,19 +235,6 @@ struct SettingsScreen: View {
     // opens that one rather than windmill.works.
     private func page(_ path: String) -> URL {
         URL(string: path, relativeTo: web) ?? web
-    }
-
-    // A chip is turned on, or off, or REFUSED OUT LOUD — the same shape the bar keypad takes three
-    // rows up, and for the same reason. The log holds twelve kinds of plate and says so; a chip that
-    // took a tap and stayed dark, or that came on by quietly dropping the 0.5 this gym owns off the
-    // end of the list, would be the screen lying about what it just did — and the readout under the
-    // logger's numeral would stop naming a plate the lifter is standing next to. Turning one OFF is
-    // never refused: it can only bring the count down.
-    private func toggle(_ plate: Double) {
-        guard store.preferences.hasRoomFor(plate) else {
-            return say("a gym holds at most \(GymPreferences.maxPlateKinds) kinds of plate — turn one off to make room for \(Readout.weight(plate))")
-        }
-        write(store.preferences.toggling(plate))
     }
 
     private func write(_ wanted: GymPreferences) {

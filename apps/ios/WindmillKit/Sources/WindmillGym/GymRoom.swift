@@ -282,7 +282,6 @@ public struct GymRoom: View {
                 }
             case .building(let draft):
                 RoutineEditorScreen(draft: draft, catalog: store.catalog,
-                                    preferences: store.preferences,
                                     untested: untested(draft), saving: savingRoutine,
                                     failure: routineFailure,
                                     onSave: { written in Task { await save(written) } },

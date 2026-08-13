@@ -57,7 +57,7 @@ export function lastSetLabel(last, now = Date.now()) {
 }
 
 // CREATING ONE ASKS EXACTLY TWO THINGS (§N screen 31): what you call it, and how it is loaded. The
-// second is the one that matters — it decides what the ladder and the plate readout do at the rack —
+// second is the one that matters — it decides what the ladder does at the rack —
 // and everything else is admin: no approval, no moderation, no muscle-group tagging, no category
 // tree, no "is this the same as Bench Press?" at creation time.
 //

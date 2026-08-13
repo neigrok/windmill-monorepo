@@ -90,11 +90,11 @@ class TrainingStore(
     // completes in.
     var catalog: List<Exercise> by mutableStateOf(emptyList())
         private set
-    // §I'S FIVE ROWS, and the reason they are published from here rather than read where they are
-    // drawn: the settings screen edits them, the logger's plate readout, rest clock and set
-    // confirmation all obey them, and a second copy of that document is how two screens start
-    // disagreeing about the same rack. The device's copy answers first and always — the defaults
-    // are a working gym, so a room that waited for a round trip would be a logger with no plates.
+    // §I'S ROWS, and the reason they are published from here rather than read where they are drawn:
+    // the settings screen edits them, the logger's rest clock and set confirmation obey them, and a
+    // second copy of that document is how two screens start disagreeing about the same room. The
+    // device's copy answers first and always — the defaults are a working gym, so a room that waited
+    // for a round trip would be a logger that could not log.
     var preferences: GymPreferences by mutableStateOf(GymPreferences())
         private set
     var routines: List<Routine> by mutableStateOf(emptyList())
@@ -1167,7 +1167,7 @@ class TrainingStore(
     }
 
     // §I'S WRITE, and the only one in this room that reaches no session and no set. Held on the
-    // device FIRST and always: the plate readout and the rest clock obey it on the next frame,
+    // device FIRST and always: the rest clock obeys it on the next frame,
     // whether or not there is an account behind it and whether or not the log is reachable.
     //
     // It answers with WHAT WENT WRONG rather than with a bool nobody reads. A send that never

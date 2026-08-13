@@ -117,8 +117,7 @@ export const GRANT_LINE = 'Windmill speaks MCP, and one URL is the whole of it.'
 // three lines from here, so the sentence describing `gym:write` cannot say one thing on a marketing
 // page and another in the room. Every clause is a tool in the catalog —
 //
-//   read    list_exercises · list_sessions · get_session · last_time · list_routines · get_stats ·
-//           get_preferences
+//   read    list_exercises · list_sessions · get_session · last_time · list_routines · get_stats
 //   write   start_session · log_set · finish_session · create_routine · propose_routine_change ·
 //           create_exercise · share_session
 //   delete  discard_session · propose_routine_removal · revoke_share

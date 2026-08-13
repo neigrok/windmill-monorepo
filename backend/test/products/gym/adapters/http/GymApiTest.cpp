@@ -2610,9 +2610,9 @@ TEST(gym_record_of_a_movement_never_lifted_omits_every_list) {
 // ---- §I · the settings section -----------------------------------------------------------------
 
 // The read that cannot 404. A lifter who has never opened this screen holds no row, and what comes
-// back is the DEFAULTS — kg, a 20 kg bar, the full plate set, no rest target at all — because every
-// client needs those five values before it can draw its first frame, and an absence there would put
-// a copy of the defaults in each of them.
+// back is the DEFAULTS — kg, no rest target at all, confirmation on — because every client needs
+// those values before it can draw its first frame, and an absence there would put a copy of the
+// defaults in each of them.
 TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
   Harness h;
   h.signIn("s-live");
@@ -2622,26 +2622,20 @@ TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
-                       R"("platesKg":[25.0,20.0,15.0,10.0,5.0,2.5,1.25],"restSound":true,)"
+           std::string(R"({"confirmHaptic":true,"confirmSound":false,"restSound":true,)"
                        R"("units":"kg"})"));
   // And nothing was written on the way out: reading settings does not give a lifter a row.
   CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
 }
 
 // The write is the whole document and it answers with the stored one, so the screen redraws from
-// what the store now holds rather than from what it hoped it sent. The plate set comes back
-// heaviest-first with each kind once, whatever order the chips arrived in.
+// what the store now holds rather than from what it hoped it sent.
 TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
   Harness h;
   h.signIn("s-live");
 
   Json::Value body(Json::objectValue);
   body["units"] = "lb";
-  body["barWeightKg"] = 15.0;
-  Json::Value plates(Json::arrayValue);
-  for (const double plate : {2.5, 20.0, 25.0, 20.0}) plates.append(plate);
-  body["platesKg"] = plates;
   body["restSeconds"] = 90;
   body["restSound"] = false;
   body["confirmHaptic"] = false;
@@ -2653,9 +2647,8 @@ TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
 
   CHECK_EQ(saved->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(saved)),
-           std::string(R"({"barWeightKg":15.0,"confirmHaptic":false,"confirmSound":true,)"
-                       R"("platesKg":[25.0,20.0,2.5],"restSeconds":90,"restSound":false,)"
-                       R"("units":"lb"})"));
+           std::string(R"({"confirmHaptic":false,"confirmSound":true,"restSeconds":90,)"
+                       R"("restSound":false,"units":"lb"})"));
   CHECK_EQ(dump(bodyOf(read)), dump(bodyOf(saved)));
   CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{1});
 }
@@ -2669,7 +2662,6 @@ TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_ti
 
   Json::Value armed(Json::objectValue);
   armed["restSeconds"] = 180;
-  armed["barWeightKg"] = 15.0;
   send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", armed, "s-live"));
   drogon::HttpResponsePtr cleared = send(h.api, &GymApi::savePreferences,
                                          putRequest("/v1/gym/preferences",
@@ -2677,32 +2669,13 @@ TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_ti
 
   CHECK_EQ(cleared->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(cleared)),
-           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
-                       R"("platesKg":[25.0,20.0,15.0,10.0,5.0,2.5,1.25],"restSound":true,)"
+           std::string(R"({"confirmHaptic":true,"confirmSound":false,"restSound":true,)"
                        R"("units":"kg"})"));
 }
 
-// An EMPTY plate set is a real answer — a gym with nothing to load onto the bar — and it is told
-// apart from an omitted one, which is the full set. A client that toggled every chip off gets what
-// it asked for and the readout can say something true about it.
-TEST(gym_settings_keep_an_empty_plate_set_apart_from_an_omitted_one) {
-  Harness h;
-  h.signIn("s-live");
-
-  Json::Value body(Json::objectValue);
-  body["platesKg"] = Json::Value(Json::arrayValue);
-  drogon::HttpResponsePtr response =
-      send(h.api, &GymApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"barWeightKg":20.0,"confirmHaptic":true,"confirmSound":false,)"
-                       R"("platesKg":[],"restSound":true,"units":"kg"})"));
-}
-
-// Every refusal this write can make carries a machine word, and they are all different words: five
-// independent values arrive at once, so a screen told only "could not read that" could not say which
-// of its rows to send the lifter back to. The sentences are pinned beside the codes because they are
+// Every refusal this write can make carries a machine word, and they are all different words:
+// several independent values arrive at once, so a screen told only "could not read that" could not
+// say which of its rows to send the lifter back to. The sentences are pinned beside the codes because they are
 // what a lifter reads.
 TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
   Harness h;
@@ -2713,20 +2686,10 @@ TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
   };
   Json::Value unknownUnit(Json::objectValue);
   unknownUnit["units"] = "st";
-  Json::Value badBar(Json::objectValue);
-  badBar["barWeightKg"] = 101.0;
-  Json::Value badPlate(Json::objectValue);
-  Json::Value plates(Json::arrayValue);
-  plates.append(0.0);
-  badPlate["platesKg"] = plates;
-  Json::Value tooMany(Json::objectValue);
-  Json::Value many(Json::arrayValue);
-  for (int kind = 1; kind <= 13; ++kind) many.append(kind * 1.0);
-  tooMany["platesKg"] = many;
   Json::Value badRest(Json::objectValue);
   badRest["restSeconds"] = 5;
   Json::Value misspelled(Json::objectValue);
-  misspelled["barWeightKG"] = 20.0;
+  misspelled["restSecond"] = 90;
 
   // Asserted field by field rather than as one dumped line, because a sentence a lifter reads may
   // hold an em dash and the writer escapes it — the contract is the code and the words, not the
@@ -2737,24 +2700,16 @@ TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
   CHECK_EQ(refuse(unknownUnit)->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(said(bodyOf(refuse(unknownUnit))),
            std::pair(std::string("unknown-unit"), std::string(R"(units are "kg" or "lb")")));
-  CHECK_EQ(said(bodyOf(refuse(badBar))),
-           std::pair(std::string("bar-weight"), std::string("a bar weighs from 0 to 100 kg")));
-  CHECK_EQ(said(bodyOf(refuse(badPlate))),
-           std::pair(std::string("plate-weight"), std::string("a plate weighs from 0.01 to 100 kg")));
-  CHECK_EQ(said(bodyOf(refuse(tooMany))),
-           std::pair(std::string("too-many-plates"),
-                     std::string("a gym holds at most 12 kinds of plate")));
   CHECK_EQ(said(bodyOf(refuse(badRest))),
            std::pair(std::string("rest-target"),
                      std::string("a rest target runs from 15 to 900 seconds — send none for no "
                                  "timer")));
   // A misspelled field is refused rather than ignored, and here that is not pedantry: an ignored
-  // `barWeightKG` would answer 200 while the bar it was aiming at silently reset to 20.
+  // `restSecond` would answer 200 while the timer it was aiming at silently switched off.
   CHECK_EQ(said(bodyOf(refuse(misspelled))),
            std::pair(std::string("preferences-unreadable"),
-                     std::string(R"(unknown settings field "barWeightKG". Settings take: units, )"
-                                 R"(barWeightKg, platesKg, restSeconds, restSound, confirmHaptic, )"
-                                 R"(confirmSound.)")));
+                     std::string(R"(unknown settings field "restSecond". Settings take: units, )"
+                                 R"(restSeconds, restSound, confirmHaptic, confirmSound.)")));
   // And nothing landed: a refused document leaves no row behind at all.
   CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
 }

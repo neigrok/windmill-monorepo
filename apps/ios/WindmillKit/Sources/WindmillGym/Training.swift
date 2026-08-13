@@ -939,8 +939,7 @@ public struct SessionFinish: Equatable, Codable, Sendable {
 }
 
 // A custom movement, created from the picker's `Create "{query}"` by way of §N screen 31 — two
-// questions, and the second one is `equipment`, because it is what decides what the plate readout
-// does. `pattern` is not asked and stays the domain's own value for "unknown": a movement nobody
+// questions, and the second one is `equipment`, because it is what decides what the ladder does. `pattern` is not asked and stays the domain's own value for "unknown": a movement nobody
 // classified is not a movement classified wrongly. `stepKg` is omitted to take the equipment's
 // default — the ladder is the server's to decide for a movement nobody has weighed.
 public struct ExerciseWrite: Equatable, Codable, Sendable {

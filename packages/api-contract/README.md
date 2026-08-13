@@ -98,68 +98,16 @@ Read as a test by:
 All three read *this* file from the repo rather than a bundled copy — a copied fixture is a copy,
 and copies are the thing this package exists to prevent.
 
-## The plate readout golden — `gym-plate-readout.json`
+## The plate readout golden — RETIRED 2026-08-13
 
-The second contract gym earned, and it earned it the hard way: on 2026-08-12 three languages wrote
-this rule independently in one wave and **already disagreed on two edges** before any of it had
-shipped a week. That is the drift this package exists to prevent, and the ladder's own history is
-the precedent — a second implementation is a second opinion, and it found two defects the first copy
-had hidden for as long as it existed.
+`gym-plate-readout.json` and its three implementations are gone, and the reason is a product decision
+rather than a defect in the rule: **gym stopped managing equipment.** The bar weight and the plate
+set left the settings document, the loading readout under every numeral went with them, and a golden
+pinning a rule nothing runs would be the most convincing kind of stale file — three languages'
+worth of tests still green over code no surface calls.
 
-**Why the rule exists at all.** §I of the decided design said the ladder's fine step comes from the
-lifter's plate set. It does not, and it must not: the ladder is pinned above as a pure function of
-the weight, and a step that depended on one lifter's inventory could not be pinned that way. What
-the plate set feeds instead is the **readout** — the line under a load saying what to hang on the
-bar, and saying plainly when this gym cannot make the number. The fine step is 1.25 kg a side, and a
-lifter who owns no 1.25s cannot load it; the honest answer is a readout that says so, not a button
-that hides the weight. A button that hides a weight is a product deciding what a lifter may lift.
+Kept as a paragraph rather than deleted outright because the *reason the rule existed* is still true
+and still load-bearing above: §I of the decided design said the ladder's fine step comes from the
+lifter's plate set. It does not, and it must not — the ladder is pinned above as a pure function of
+the weight, which is exactly why it survived this and the readout did not.
 
-**`platesKg` is ONE SIDE of the bar and the load is the TOTAL.** Anything mixing the two is wrong by
-a factor of two, which is the one mistake here that looks plausible on screen.
-
-**The search is exhaustive, not greedy.** Greedy is how a plate calculator is usually written and it
-is wrong on ordinary racks: with 25s, 20s and 15s only, greedy takes the 25 for a 30 kg side, is
-left with 5 it cannot make, and calls unloadable a side that two 15s make exactly. `80, 20, [25, 20,
-15]` is that case, and it is in the file.
-
-**The tie-break, which "exhaustive" does not imply and which the file would otherwise pin in
-silence.** A 40 kg side is `25 + 15` **and** `20 + 20` — same plate count, so "fewest plates" does
-not choose either. The rule that does: **at each step take the heaviest plate that leaves a
-remainder these plates can still make.** A surface that writes a perfectly correct exhaustive walk
-scanning its rack *ascending* answers `1.25 + …` for that same side, satisfies every other sentence
-here, and fails eight cases with no idea why — reading like a bug in the golden rather than a defect
-in itself. Sides of 40, 41.25, 42.5, 31.25 and 60 all have alternatives, and every one is pinned by
-this rule. (`heaviest first` elsewhere in this section describes the *order the output list is
-printed in*, which is a different thing from which multiset was chosen.)
-
-**The five answers**, and every one of them is a real state a lifter reaches:
-
-| answer | when |
-|---|---|
-| `loaded` | `perSide`, heaviest first, with a count per plate |
-| `bare` | the load is the bar |
-| `underBar` | the load is lighter than the bar — **say so**; it is true and it explains the missing plate list |
-| `unloadable` | these plates cannot make it: `belowKg` and `aboveKg` are the nearest totals that CAN be loaded, either nullable |
-| `none` | there is nothing true to say |
-
-**The two edges the three implementations disagreed on, ruled here on merit** — one went each way,
-which is the evidence they were ruled rather than picked:
-
-- **A bar of 0 kg** is a machine or a pair of dumbbells: the lifter has said there is no bar, so
-  there is no sentence about one. `none`. A per-side decomposition would claim a symmetry the
-  equipment may not have.
-- **A load lighter than the bar** says so rather than falling silent. Silence leaves a lifter
-  wondering where the plate list went; `underBar` answers it.
-
-Beyond `capKg` (1000) there is no readout: nobody past a tonne is reading a plate list, and the
-keypad stops at 500 long before it, so the cap is the belt behind that rule rather than a second
-opinion on it.
-
-Read as a test by:
-
-- `web/test/products/gym/settings/plates.test.js` → `web/src/products/gym/settings/plates.js`
-- `apps/ios/WindmillKit/Tests/WindmillGymTests/PlatesTests.swift` → `apps/ios/WindmillKit/Sources/WindmillGym/Plates.swift`
-- `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/PlatesTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Plates.kt`
-
-The sentence each surface prints is its own — a readout is presentation and the languages spell a
-number differently. What this file pins is the **answer**, which is the rule.

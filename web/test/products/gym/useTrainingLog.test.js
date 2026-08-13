@@ -890,7 +890,7 @@ test('a created movement lands in the catalog, and a refusal is said in the one 
   assert.equal(made.name, 'Face Pull');
   assert.equal(view.log.catalog.some((each) => each.name === 'Face Pull'), true);
   // BOTH ANSWERS TRAVEL (§N screen 31), and the one the lifter was asked for is the one that is
-  // stored: equipment is what the ladder and the plate readout read, and it was a silent `barbell`
+  // stored: equipment is what the ladder reads, and it was a silent `barbell`
   // on every movement ever minted here before the question existed. `pattern` is the field nobody is
   // asked about, so it claims the least it can.
   assert.equal(made.equipment, 'machine');
@@ -925,7 +925,7 @@ test('a movement the store refuses as written is not blamed on the signal', asyn
   assert.equal(view.log.toast.text, 'That movement wasn’t created — the log wouldn’t take it as written.');
 });
 
-// §I'S FIVE SETTINGS RIDE THE BOOT READ (W4). Two of them reach these rooms: the unit every weight
+// §I'S SETTINGS RIDE THE BOOT READ (W4). Two of them reach these rooms: the unit every weight
 // on this surface is spelled in, and the rest target the mirror names beside the last set. The
 // spelling is module-level state at the very edge (units.js), so what is pinned here is that the
 // surface sets it — and sets it BEFORE the phase moves, so no room paints a number twice.
@@ -934,16 +934,14 @@ test('the account’s settings arrive with the log, and the unit is set before t
   const now = Date.now();
   browserWith();
   const backend = deepLog(finishedRows(2, now));
-  backend.api.preferences = async () => ({ units: 'lb', restSeconds: 120, platesKg: [25, 20] });
+  backend.api.preferences = async () => ({ units: 'lb', restSeconds: 120 });
 
   const view = await open(t, backend.api);
 
   assert.equal(view.log.phase, 'ready');
   assert.equal(view.log.preferences.units, 'lb');
   assert.equal(view.log.preferences.restSeconds, 120);
-  assert.deepEqual(view.log.preferences.platesKg, [25, 20]);
   // The whole document, so a room reading one field never has to know which fields were stored.
-  assert.equal(view.log.preferences.barWeightKg, 20);
   assert.equal(view.log.preferences.confirmHaptic, true);
   assert.equal(weightUnit(), 'lb');
   assert.equal(fmt(102.5), '226');

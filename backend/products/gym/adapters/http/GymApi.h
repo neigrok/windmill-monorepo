@@ -37,11 +37,11 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // handler on purpose, because a queue told "your set is malformed" by a five-second lock wait drops
 // it forever.
 //
-// Nineteen refusals carry a machine word under `code`, because their repairs differ and prose is
+// Sixteen refusals carry a machine word under `code`, because their repairs differ and prose is
 // not a contract: session-id-taken · session-already-open · session-finished · session-open ·
 // set-id-taken · set-deleted · routine-id-taken · exercise-id-taken · unknown-exercise ·
-// set-not-found · fix-unreadable · preferences-unreadable · unknown-unit · bar-weight ·
-// plate-weight · too-many-plates · rest-target · proposal-superseded · proposal-settled.
+// set-not-found · fix-unreadable · preferences-unreadable · unknown-unit · rest-target ·
+// proposal-superseded · proposal-settled.
 // Everything else has exactly one cause and the sentence is the whole of it.
 //
 // The proposal pair is the newest and each is a different move for the client: `proposal-superseded`
@@ -114,7 +114,7 @@ public:
                      const std::string& id);                                  // POST /v1/gym/proposals/{id}/apply
   void dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                        const std::string& id);                                // POST /v1/gym/proposals/{id}/dismiss
-  // §I's five rows. The read never 404s — a lifter with no row is served the defaults — and the
+  // §I's rows. The read never 404s — a lifter with no row is served the defaults — and the
   // write is the whole document, so the two carry the same shape in both directions.
   void preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/preferences
   void savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb); // PUT  /v1/gym/preferences

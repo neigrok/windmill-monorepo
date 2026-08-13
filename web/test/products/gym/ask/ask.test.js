@@ -24,15 +24,15 @@ test('the terms name the reach AND the limit, in that order', () => {
   assert.equal(ASK_TERMS, 'reads your log · proposes only');
 });
 
-// EXHAUSTIVE OVER THE GRANT ASK HOLDS, and that is the point of listing it: Ask is offered the seven
+// EXHAUSTIVE OVER THE GRANT ASK HOLDS, and that is the point of listing it: Ask is offered the six
 // gym reads plus the two tools that mint a proposal (backend AskTools — Access::read ∪ mintsProposal)
 // and nothing else, so nothing else can ever appear in a step. The five write and delete tools gym
 // publishes over MCP are absent here because they are absent from the grant, and a phrase for one of
 // them would be this file claiming a capability the server refuses.
 test('every tool Ask can be handed has a phrase a lifter can read, and no tool it cannot', () => {
   assert.deepEqual(Object.keys(TOOL_PHRASE).sort(), [
-    'get_preferences', 'get_session', 'get_stats', 'last_time', 'list_exercises', 'list_routines',
-    'list_sessions', 'propose_routine_change', 'propose_routine_removal',
+    'get_session', 'get_stats', 'last_time', 'list_exercises', 'list_routines', 'list_sessions',
+    'propose_routine_change', 'propose_routine_removal',
   ]);
   for (const banned of ['log_set', 'start_session', 'finish_session', 'discard_session', 'create_routine']) {
     assert.equal(banned in TOOL_PHRASE, false, banned);

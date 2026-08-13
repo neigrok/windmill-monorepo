@@ -210,14 +210,6 @@ ToolResult getStats(LogService& log, const UserId& caller, const Json::Value& ar
   return ToolResult::json(toJson(stats));
 }
 
-// The settings §I draws, read and never written. A lifter who has never opened that screen is
-// answered with the defaults, exactly as every other surface is — there is no absence here for an
-// agent to interpret, because the whole value of this read is that a proposal can be checked against
-// what the gym actually holds.
-ToolResult getPreferences(LogService& log, const UserId& caller) {
-  return ToolResult::json(toJson(log.preferences(caller)));
-}
-
 // --- The writes ------------------------------------------------------------------------------
 
 ToolResult startSession(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -551,7 +543,6 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "last_time")       return lastTime(log_, caller, arguments, served);
   if (name == "list_routines")   return listRoutines(log_, caller, arguments);
   if (name == "get_stats")       return getStats(log_, caller, arguments, served);
-  if (name == "get_preferences") return getPreferences(log_, caller);
 
   if (name == "start_session")   return startSession(log_, caller, arguments);
   if (name == "log_set")         return logSet(log_, caller, arguments);
@@ -590,6 +581,16 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
                                "Use propose_routine_removal: it puts the day's lines in front of "
                                "the lifter as a diff of what would go, and nothing is deleted until "
                                "they tap Apply.");
+  // Retired with no replacement, which the sentence has to say plainly or it sends an agent hunting
+  // for the tool that took over — there isn't one. Its name was vague enough that agents reached for
+  // it at the top of a turn whether or not the turn was about equipment, and what it answered with
+  // was a plate inventory this product no longer keeps.
+  if (name == "get_preferences")
+    return ToolResult::failure("retired on 2026-08-13, and nothing replaced it. gym no longer keeps "
+                               "a plate inventory or a bar weight, and the rest target and reading "
+                               "unit it also carried are the lifter's own dials rather than context "
+                               "for a proposal. Propose loads in kilograms and let them round at the "
+                               "rack.");
 
   // The whole-server answer belongs to CompositeToolHost, which is the only thing that knows what
   // else is connected; a name that reaches this far named nothing in the gym surface.

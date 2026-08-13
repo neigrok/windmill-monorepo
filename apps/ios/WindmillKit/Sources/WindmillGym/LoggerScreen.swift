@@ -422,18 +422,6 @@ struct LoggerScreen: View {
                     .foregroundStyle(skin.inkDim)
             }
 
-            // §K's line under the numeral: what would go on the bar, built from the plates this gym
-            // says it owns — or, when they cannot make the number, the loads that can be made
-            // instead. The buttons never hide a weight; this tells the truth about one. It is the one
-            // line here that does work at the rack, which is why it is the one that stayed.
-            if let plates = Plates.readout(totalKg: weightKg, under: store.preferences) {
-                Text(plates)
-                    .font(GymType.numeral(11.5))
-                    .foregroundStyle(skin.inkFaint)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-            }
-
             // ALL THAT IS LEFT OF THE LAST-TIME CARD, and it is here because it is the one state of
             // that card that was never about our design. The numbers went with the card — they are
             // already dialled in under the thumb, which is what §K deleted them for — but a read

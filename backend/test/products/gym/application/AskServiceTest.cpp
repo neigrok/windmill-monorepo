@@ -148,7 +148,8 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   CHECK(holds(offered, "last_time"));
   CHECK(holds(offered, "list_routines"));
   CHECK(holds(offered, "get_stats"));
-  CHECK(holds(offered, "get_preferences"));
+  // …and never the lifter's own settings, which no longer have a tool on any door.
+  CHECK_FALSE(holds(offered, "get_preferences"));
   // …and the safeguard ladder's middle rung: the two tools that change nothing and hand over a diff.
   CHECK(holds(offered, "propose_routine_change"));
   CHECK(holds(offered, "propose_routine_removal"));
@@ -171,10 +172,9 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   std::vector<std::string> names;
   for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
   std::sort(names.begin(), names.end());
-  CHECK_EQ(names, (std::vector<std::string>{"get_preferences", "get_session", "get_stats",
-                                            "last_time", "list_exercises", "list_routines",
-                                            "list_sessions", "propose_routine_change",
-                                            "propose_routine_removal"}));
+  CHECK_EQ(names, (std::vector<std::string>{"get_session", "get_stats", "last_time",
+                                            "list_exercises", "list_routines", "list_sessions",
+                                            "propose_routine_change", "propose_routine_removal"}));
 }
 
 // THE ONE THAT MATTERS. GymTools does not gate — over MCP the grant was settled above it — so if Ask

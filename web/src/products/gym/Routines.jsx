@@ -35,7 +35,6 @@ import { ProposalDot, ProposalFlag } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';
-import { platesReadout } from './settings/plates.js';
 import {
   blankRoutine, builtLabel, draftFrom, duplicateRoutine, entryPlaceLabel, historyRows,
   NAME_SUGGESTIONS, NEW_ENTRY_REPS, openTargetsLine, reorderEntries, routineWrite, saysNeverLogged,
@@ -299,7 +298,6 @@ export function RoutineEditor({ id, log }) {
           // half is the draft's, so a line that already carries a target is not told it has none
           // (routines.js).
           neverLogged={saysNeverLogged(view.data, draft.entries[target])}
-          preferences={log.preferences}
           onSet={(entry) => {
             editEntries((held) => withEntryChanged(held, target, entry));
             setTarget(null);
@@ -432,7 +430,7 @@ function RoutineHistory({ routine }) {
 // IT HOLDS ITS OWN DRAFT AND COMMITS ON `Set`, which is the shape the correction sheet already has
 // (FixSheet.jsx): a sheet carrying a button that names what the row will become has to mean it, and
 // an open row has to be able to be opened at numbers without the row silently taking them.
-function TargetSheet({ movement, place, entry, neverLogged, preferences, onSet, onOpen, onClose }) {
+function TargetSheet({ movement, place, entry, neverLogged, onSet, onOpen, onClose }) {
   const [draft, setDraft] = useState(() => targetDraftOf(entry));
   const [typing, setTyping] = useState(false);
   const reps = draft.targetReps;
@@ -440,13 +438,6 @@ function TargetSheet({ movement, place, entry, neverLogged, preferences, onSet, 
   // reads −10 · −2.5 · +2.5 · +10 because the golden says so and not because this screen agrees. A
   // second stepper written here would be the third copy Lift had and let drift.
   const rungs = ladderLabels(draft.targetWeightKg ?? EMPTY_BAR_KG);
-  // WHAT THIS TARGET LOOKS LIKE ON A BAR, from the plates this gym owns (settings/plates.js). The
-  // program is written at the desk and lifted somewhere with a fixed rack, so a line asking for
-  // 102.5 in a gym with no 1.25s is worth catching here rather than at the rack. It says so and
-  // names the loads that ARE makeable; it does not refuse the number, because a lifter may well be
-  // somewhere else next Tuesday. The ladder is untouched by any of this — it is a pure function of
-  // the weight and stays pinned by its golden.
-  const onTheBar = platesReadout(draft.targetWeightKg, preferences);
   const alsoReads = alsoReadsLabel(draft.targetWeightKg);
   return (
     <>
@@ -519,11 +510,6 @@ function TargetSheet({ movement, place, entry, neverLogged, preferences, onSet, 
               that is `100 kg` over `3 × 5 · 220.5`, one target and two numerals, and this is the
               line that says so. Null in kilograms, where they are the same number. */}
           {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
-          {onTheBar && (
-            <p className={onTheBar.loadable ? 'gym-target-plates' : 'gym-target-plates is-unloadable'}>
-              {onTheBar.line}
-            </p>
-          )}
 
           <button type="button" className="gym-target-set" onClick={() => onSet(draft)}>
             {`Set · ${entryLabel(draft)}`}

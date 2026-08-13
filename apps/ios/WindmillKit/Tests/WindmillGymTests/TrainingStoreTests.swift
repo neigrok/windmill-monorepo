@@ -860,18 +860,18 @@ final class TrainingStoreTests: XCTestCase {
                        "an unclaimed session of one movement is not a caveat on another's page")
     }
 
-    // §I's settings are the room's, and the room opens signed out: a lifter who sets their plates in
-    // a gym before they have an account keeps them, on this device, across a relaunch.
+    // §I's settings are the room's, and the room opens signed out: a lifter who sets their rest in a
+    // gym before they have an account keeps it, on this device, across a relaunch.
     func testSettingsSetBeforeThereIsAnAccountSurviveARelaunch() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.preferences, .defaults)
 
-        await anonymous.save(GymPreferences.defaults.toggling(1.25).resting(120))
+        await anonymous.save(GymPreferences.defaults.resting(120).with(restSound: false))
 
         let relaunched = makeStore(sync: nil)
         await relaunched.connect(to: account(signedIn: false))
-        XCTAssertFalse(relaunched.preferences.owning(1.25))
+        XCTAssertFalse(relaunched.preferences.restSound)
         XCTAssertEqual(relaunched.preferences.restSeconds, 120)
     }
 
@@ -881,16 +881,16 @@ final class TrainingStoreTests: XCTestCase {
     func testSigningInClaimsTheDevicesSettingsOverTheAccountsOwn() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        await anonymous.save(GymPreferences.defaults.with(barWeightKg: 15).resting(180))
+        await anonymous.save(GymPreferences.defaults.with(units: .lb).resting(180))
 
         let server = FakeTraining()
         server.settings = GymPreferences.defaults.with(confirmSound: true)
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
-        XCTAssertEqual(server.settingsWrites.map(\.barWeightKg), [15])
+        XCTAssertEqual(server.settingsWrites.map(\.units), [.lb])
         XCTAssertEqual(server.settings?.restSeconds, 180)
-        XCTAssertEqual(store.preferences.barWeightKg, 15)
+        XCTAssertEqual(store.preferences.units, .lb)
         XCTAssertEqual(store.preferences.restSeconds, 180)
         XCTAssertFalse(store.preferences.confirmSound,
                        "the account's older answer does not come back over the one just made")
@@ -898,21 +898,22 @@ final class TrainingStoreTests: XCTestCase {
         let relaunched = makeStore(sync: server)
         await relaunched.connect(to: account(signedIn: true))
         XCTAssertEqual(server.settingsWrites.count, 1, "nothing is owed any more, so nothing replays")
-        XCTAssertEqual(relaunched.preferences.barWeightKg, 15)
+        XCTAssertEqual(relaunched.preferences.units, .lb)
     }
 
     // Nothing owed, so the account's document is what the room draws — and it is held on the device
-    // too, which is what puts the plate set and the rest dial on the first frame of the next launch.
+    // too, which is what puts the rest dial and the reading unit on the first frame of the next
+    // launch.
     func testTheAccountsSettingsAreReadAndKeptOnTheDevice() async {
         let server = FakeTraining()
-        server.settings = GymPreferences.defaults.resting(90).with(platesKg: [25, 20])
+        server.settings = GymPreferences.defaults.resting(90).with(units: .lb)
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
         XCTAssertEqual(store.preferences.restSeconds, 90)
-        XCTAssertEqual(store.preferences.platesKg, [25, 20])
+        XCTAssertEqual(store.preferences.units, .lb)
         XCTAssertTrue(server.settingsWrites.isEmpty, "a read is not a write")
-        XCTAssertEqual(LocalLog(url: localURL).preferences?.platesKg, [25, 20])
+        XCTAssertEqual(LocalLog(url: localURL).preferences?.units, .lb)
     }
 
     // A setting the log did not take is still the lifter's: it is on the device, it is what the room
@@ -938,9 +939,9 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
     }
 
-    // TWO CHIPS TAPPED IN A SECOND ARE TWO WHOLE DOCUMENTS, and two in flight at once could reach the
-    // log in either order — last-write-wins would then leave it holding the older one, and a plate
-    // would come back on by itself. One at a time, and the send that is in flight picks up the newest
+    // TWO ROWS TOUCHED IN A SECOND ARE TWO WHOLE DOCUMENTS, and two in flight at once could reach the
+    // log in either order — last-write-wins would then leave it holding the older one, and a dial
+    // would move back by itself. One at a time, and the send that is in flight picks up the newest
     // thing owed before it ends: the log's last word is the lifter's last tap.
     func testTwoTapsInFlightLeaveTheLogHoldingTheSecond() async {
         let server = FakeTraining()
@@ -949,14 +950,14 @@ final class TrainingStoreTests: XCTestCase {
 
         server.onSavePreferences = { [weak store] in
             server.onSavePreferences = {}
-            await store?.save(GymPreferences.defaults.toggling(1.25).toggling(2.5))
+            await store?.save(GymPreferences.defaults.resting(180))
         }
-        await store.save(GymPreferences.defaults.toggling(1.25))
+        await store.save(GymPreferences.defaults.resting(90))
 
         XCTAssertEqual(server.settingsWrites.count, 2, "the second tap is sent, and only once")
-        XCTAssertEqual(server.settings?.platesKg, [25, 20, 15, 10, 5],
+        XCTAssertEqual(server.settings?.restSeconds, 180,
                        "the log's last word is the lifter's last tap")
-        XCTAssertEqual(store.preferences.platesKg, [25, 20, 15, 10, 5])
+        XCTAssertEqual(store.preferences.restSeconds, 180)
         XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
     }
 
@@ -979,11 +980,11 @@ final class TrainingStoreTests: XCTestCase {
 
     // SETTINGS BELONG TO AN ACCOUNT, AND A PHONE IS LENT. One lifter's document may not be drawn in
     // anybody else's room — a rest timer beeping at somebody who never set one — and it may not be
-    // SENT from there either, because every write here is the whole document: the next chip tap would
-    // put the first lifter's bar and plates onto the second one's row.
+    // SENT from there either, because every write here is the whole document: the next tap would put
+    // the first lifter's whole room onto the second one's row.
     func testOneLiftersSettingsAreNeitherDrawnNorSentInAnothersRoom() async {
         let hers = FakeTraining()
-        hers.settings = GymPreferences.defaults.resting(180).with(barWeightKg: 25, platesKg: [25, 20])
+        hers.settings = GymPreferences.defaults.resting(180).with(units: .lb)
         let herRoom = makeStore(sync: hers)
         await herRoom.connect(to: account(signedIn: true))
         XCTAssertEqual(herRoom.preferences.restSeconds, 180, "her own document, on her own seat")
@@ -995,19 +996,19 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNil(LocalLog(url: localURL).preferences, "and the shelf let go of it on disk too")
 
         // And the next account in, with the log unreachable, draws its own nothing rather than hers —
-        // then sends the defaults it drew, never the 25 kg bar and the 180 s rest she set.
+        // then sends the defaults it drew, never the pounds and the 180 s rest she set.
         let his = FakeTraining()
         his.online = false
-        his.settings = GymPreferences.defaults.with(barWeightKg: 15)
+        his.settings = GymPreferences.defaults.with(units: .lb)
         let hisRoom = makeStore(sync: his)
         await hisRoom.connect(to: account(signedIn: true, id: "u2"))
         XCTAssertEqual(hisRoom.preferences, .defaults)
 
         his.online = true
-        await hisRoom.save(hisRoom.preferences.toggling(1.25))
-        XCTAssertEqual(his.settingsWrites.map(\.barWeightKg), [20])
+        await hisRoom.save(hisRoom.preferences.with(confirmSound: true))
+        XCTAssertEqual(his.settingsWrites.map(\.units), [.kg])
         XCTAssertEqual(his.settingsWrites.map(\.restSeconds), [nil])
-        XCTAssertEqual(his.settings?.platesKg, [25, 20, 15, 10, 5, 2.5])
+        XCTAssertTrue(his.settings?.confirmSound == true)
     }
 
     // The anonymous document is the ONE crossing, and it crosses once: it is what the lifter set
@@ -1016,12 +1017,12 @@ final class TrainingStoreTests: XCTestCase {
     func testTheAnonymousDocumentCrossesIntoTheAccountAndNotBackOut() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
-        await anonymous.save(GymPreferences.defaults.resting(120).with(barWeightKg: 15))
+        await anonymous.save(GymPreferences.defaults.resting(120).with(units: .lb))
 
         let server = FakeTraining()
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
-        XCTAssertEqual(server.settings?.barWeightKg, 15, "the claim carried it to the account")
+        XCTAssertEqual(server.settings?.units, .lb, "the claim carried it to the account")
         XCTAssertEqual(store.preferences.restSeconds, 120)
 
         let again = makeStore(sync: nil)
@@ -1732,7 +1733,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     }
 
     // The settings row, and the read NEVER 404s: an account with nothing stored is served the
-    // defaults, which is what lets every client draw a rest dial and a plate set on its first frame.
+    // defaults, which is what lets every client draw a rest dial and a unit on its first frame.
     // The write replaces the whole document and answers the stored one — last write wins, which is
     // the ordering the claim replay rests on.
     func preferences() async throws -> GymPreferences {

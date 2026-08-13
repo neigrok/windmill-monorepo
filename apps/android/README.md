@@ -85,7 +85,7 @@ never opened claims nothing rather than overwriting the account's own rack with 
 and what this device still owes rides through a change of seat, because it has landed nowhere and
 this is its only copy.
 
-Gym's settings — units, plate math, the rest dial and how a logged set confirms itself
+Gym's settings — units, the rest dial and how a logged set confirms itself
 (`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of Today
 rather than from You. `ProductModule` exposes a room and nothing else on this surface, so the
 section carries its own door until that seam grows a settings slot.

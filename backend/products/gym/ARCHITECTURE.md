@@ -562,10 +562,6 @@ which is how a delete racing a correction keeps the value that correction wrote.
 create table if not exists gym_preferences (
   user_id         uuid primary key references users(id) on delete cascade,
   units           text not null default 'kg' check (units in ('kg','lb')),
-  bar_weight_kg   numeric(5,2) not null default 20 check (bar_weight_kg between 0 and 100),
-  plates_kg       numeric(5,2)[] not null default '{25,20,15,10,5,2.5,1.25}'
-                    check (coalesce(array_length(plates_kg, 1), 0) <= 12
-                           and 0.01 <= all (plates_kg) and 100 >= all (plates_kg)),
   rest_seconds    int check (rest_seconds between 15 and 900),   -- null = no timer
   rest_sound      boolean not null default true,
   confirm_haptic  boolean not null default true,
@@ -574,39 +570,41 @@ create table if not exists gym_preferences (
 );
 ```
 
-§I's five rows, one row per account. **Units are a display transform and nothing else** — §9.4's
+§I's rows, one row per account. **Units are a display transform and nothing else** — §9.4's
 canonical-kg decision is untouched by this table and cannot be reached by it. There is no `lb`
 column here or anywhere in the schema; every weight in gym is kilograms, forever, and switching to
 `lb` changes what a screen prints. `GymApiTest` proves it end to end: an account that sets `lb`
 before it logs anything gets the same kilogram back from the session read, the log row's tonnage and
 the CSV cell, and switching back leaves all three byte-identical.
 
-Every value is **account-level**, and each for its own reason: a lifter reads in one unit
-everywhere, the plates are their GYM's rather than their handset's, and the rest target is their
-program's. The confirmation pair is the one worth stating out loud — it records the lifter's INTENT
-and each surface honours what it can (a native haptic where there is one, a sound where there is
-not), so a surface with no Vibration API says so where the row is drawn instead of moving a toggle
-that does nothing.
+**EQUIPMENT LEFT THIS TABLE ON 2026-08-13**, and it is a product decision rather than a defect
+found. `bar_weight_kg` and `plates_kg` were an inventory a lifter had to keep correct in order to be
+served a loading readout under every numeral — and gyms are more or less the same, while this
+product's job is to guide a program and track what was done. So the readout went from three
+surfaces, the two settings rows above it went, the `gym-plate-readout` golden was retired
+(`packages/api-contract/README.md`) and the columns are DROPPED by `schema.sql` rather than left
+standing: a column nothing reads is the same lie as a stale comment. `get_preferences` went with
+them (§6) — a vague name agents reached for at the top of any turn, answering with an inventory
+that no longer exists.
 
-Four decisions worth the ink:
+Every value is **account-level**, and each for its own reason: a lifter reads in one unit
+everywhere, and the rest target is their program's. The confirmation pair is the one worth stating
+out loud — it records the lifter's INTENT and each surface honours what it can (a native haptic
+where there is one, a sound where there is not), so a surface with no Vibration API says so where
+the row is drawn instead of moving a toggle that does nothing.
+
+Three decisions worth the ink:
 
 - **Defaults live on the columns AND in `domain/Preferences.h`, and must agree.** A lifter who never
-  opens this screen holds no row and is served the domain's copy — kg, a 20 kg bar, the full plate
-  set, the rest timer **off**. Off, because a timer nobody asked for that starts beeping in a gym is
-  the kind of thing this product does not do. `PgTrainingRepositoryTest` pins the two copies
-  together by inserting a row with nothing but an owner and reading back the domain's document.
+  opens this screen holds no row and is served the domain's copy — kg, the rest timer **off**,
+  confirmation on wherever a platform has one. Off, because a timer nobody asked for that starts
+  beeping in a gym is the kind of thing this product does not do. `PgTrainingRepositoryTest` pins the
+  two copies together by inserting a row with nothing but an owner and reading back the domain's
+  document.
 - **`rest_seconds` is NULL by default and null MEANS something** — no timer — exactly as a routine
   line's absent target weight means "whatever you did last time". Its band is the band a routine
   line already carries, read from one pair of constants (`kMinRestSeconds` / `kMaxRestSeconds`,
   `domain/Training.h`), so the global dial and the program cannot ask for waits the other refuses.
-- **`plates_kg` is an ARRAY**, the one non-relational shape in this schema taken on purpose. The
-  rule §2.4 states is about a thing with an identity a query can group by; a `2.5` has none —
-  nothing joins to a plate, no read aggregates one, and the lifter edits the SET as a single value.
-  A `gym_plates` child table would buy a second write, a second read and a transaction to serve
-  exactly one document. It crosses the pqxx boundary as `array_to_string(plates_kg, ',')` rather
-  than as an array, because pqxx's array reader is one of the names that differ between the macOS
-  and CI Linux builds. One side of the bar, heaviest first, each kind once — the entity normalizes
-  both, which is `trimmedName`'s rule for the other value a lifter states.
 - **It is NOT in `PgAccountFootprint`'s owned list**, and `main.cpp` carries the reason beside that
   list. The list decides whether the link door may DELETE an account, so a table on it must be data
   the account holds; settings are how a room is set up, never the artifact in it. Listing it would
@@ -614,19 +612,18 @@ Four decisions worth the ink:
   first paint would report every account on the server non-empty forever.
 
 The write is a **whole-document `PUT`**, the shape a routine travels in and for the shape's own
-reason: the settings screen renders all five rows from one value it already holds, so it always has
-the whole document to send back. A `PATCH` would have to make "omitted" and "cleared" different
-things on `restSeconds` — the one field whose absence already means something — which is the
-`rpeNamed` two-field wart, applied to the field the whole wave is about. Its cost is the honest one
-and it is stated rather than hidden: two devices with the screen open at once, and the later write
-wins the whole document. That is also exactly the ordering the claim replay wants (§11.7).
+reason: the settings screen renders every row from one value it already holds, so it always has the
+whole document to send back. A `PATCH` would have to make "omitted" and "cleared" different things
+on `restSeconds` — the one field whose absence already means something — which is the `rpeNamed`
+two-field wart, applied to the field the whole wave is about. Its cost is the honest one and it is
+stated rather than hidden: two devices with the screen open at once, and the later write wins the
+whole document. That is also exactly the ordering the claim replay wants (§11.7).
 
 Every refusal carries a machine `code`, which is a tighter rule than the rest of the HTTP surface
-keeps and earns it for a different reason than the correction's does: five independent values arrive
-at once, so a screen told only "could not read that" could not say which row to send the lifter back
-to. `preferences-unreadable` · `unknown-unit` · `bar-weight` · `plate-weight` · `too-many-plates` ·
-`rest-target`, and the entity is what raises each of them — refused at construction, like every
-other value in this product.
+keeps and earns it for a different reason than the correction's does: several independent values
+arrive at once, so a screen told only "could not read that" could not say which row to send the
+lifter back to. `preferences-unreadable` · `unknown-unit` · `rest-target`, and the entity is what
+raises each of them — refused at construction, like every other value in this product.
 
 ### 2.9 `gym_proposals` + `gym_proposal_changes` — what an agent may ask for (W6, 2026-08-12)
 
@@ -1707,8 +1704,8 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `GET  /v1/gym/proposals/{id}` | one proposal with its typed diff — the screen an agent's receipt deep-links to | 6 |
 | `POST /v1/gym/proposals/{id}/apply` | **THE TAP.** All of it or none, against the frozen base revision. `{proposal, routine?}` — `routine` absent when the proposal removed it. `409 proposal-superseded` when the routine moved since; `409 proposal-settled` when the other decision was already taken; a replayed tap answers `200` with the stored proposal | 6 |
 | `POST /v1/gym/proposals/{id}/dismiss` | no reason asked for, nothing changed, and it stays in the routine's history. Same two refusals, mirrored | 6 |
-| `GET  /v1/gym/preferences` | **the settings section** (§I) — the five rows, and the one read in gym that cannot 404: no row means the DEFAULTS, because every client needs a rest target and a plate set to draw a first frame (§2.8) | 2 |
-| `PUT  /v1/gym/preferences` | replace the settings document, whole. Omitted fields take their default; every refusal carries a code (`preferences-unreadable` · `unknown-unit` · `bar-weight` · `plate-weight` · `too-many-plates` · `rest-target`). **Units are a display transform and reach no write** | 2 |
+| `GET  /v1/gym/preferences` | **the settings section** (§I) — the one read in gym that cannot 404: no row means the DEFAULTS, because every client needs the rest target and the reading unit to draw a first frame (§2.8) | 2 |
+| `PUT  /v1/gym/preferences` | replace the settings document, whole. Omitted fields take their default; every refusal carries a code (`preferences-unreadable` · `unknown-unit` · `rest-target`). **Units are a display transform and reach no write** | 2 |
 | `GET  /v1/gym/stats` | the statistics ENGINE — per-movement line, standing bests, weekly counts. It has no room of its own on any client since 2026-08-12; its readers are the record page's rules and any agent asking the long question (§5) | 2 |
 | `GET  /v1/gym/export` | every set, CSV — `text/csv`, a header row, `Content-Disposition: attachment` | 2 |
 | `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
@@ -1739,7 +1736,7 @@ saying what a gym owns, and **applying a proposal**.
 | `last_time` — the prefill | `create_routine` — a NEW day; **lands immediately** | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
-| `get_preferences` — the lifter's plates, bar, rest target and reading unit (§2.8). **No write beside it, at any level** | `share_session` — `{url, token, expiresAt}` | |
+| | `share_session` — `{url, token, expiresAt}` | |
 
 **W6 broke this contract on purpose, on 2026-08-12.** `save_routine` and `delete_routine` are gone at
 every level. The three names above carry §0's record/intent split so an agent author reads it off the
@@ -2132,11 +2129,11 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
 | Absent | Why |
 |---|---|
 | Sweeps, heartbeats, mail | Nothing in phase 0–2 fires on a clock. `gym-nudge` (phase 3) must not be a **fourth** copy of the reminder skeleton — it waits for the platform sweep primitive. There are already three: roadmap's `ReminderSweep`, journal's `NudgeSweep` and journal's `EchoSweep` each hold their own trantor `EventLoopThread`, run it from the constructor (so an operator pass can be queued onto a heartbeat nobody armed), arm `runAfter`→`runEvery` in `start()`, and wrap `tick()` in the same two-arm crash guard. So the third consumer arrived and did **not** force the promotion — the trigger is already met and unclaimed, and gym is not what will trip it. Whoever promotes it can refactor any of the three onto the primitive as the proving move. |
-| ~~MCP tools~~ | **Built 2026-08-07 — this row is history, kept because the bet was recorded here.** The platform scoped-composite ToolHost shipped (`McpServer` binds a `CompositeToolHost`, each product registers a `ToolModule`, and a grant of `product:read` / `:write` / `:delete` — none implying another — selects what a connection sees and may call), and gym's own `ToolHost` landed the same day: fifteen tools in `adapters/mcp/`, registered in `main.cpp` beside roadmap's — sixteen since W4 added `get_preferences`. The surface is §6. |
+| ~~MCP tools~~ | **Built 2026-08-07 — this row is history, kept because the bet was recorded here.** The platform scoped-composite ToolHost shipped (`McpServer` binds a `CompositeToolHost`, each product registers a `ToolModule`, and a grant of `product:read` / `:write` / `:delete` — none implying another — selects what a connection sees and may call), and gym's own `ToolHost` landed the same day: fifteen tools in `adapters/mcp/`, registered in `main.cpp` beside roadmap's. W4 added `get_preferences` and 2026-08-13 retired it with no replacement — a vague name agents reached for at the top of any turn, answering with an equipment inventory the product stopped keeping (§2.8). The surface is §6. |
 | Billing, plans, gates | The log is free — that is a product decision, not a blocked one. The old blocker is gone: the brand-wide gate left roadmap's settings folder in `97e1f1b` and is now `paidPlansOpen()` in `web/src/shell/billing/checkout.js`, which gym may import like any other shell module. What a gym money surface would still have to solve is the tier *copy* (`PLAN_COPY`), which stayed behind in roadmap. |
 | ~~Units preference~~ | **Built 2026-08-12 (W4) — this row is history, kept because the bet was recorded here.** What it warned against is still refused and is now structural: there is no lb ladder, no lb column and no conversion anywhere. `gym_preferences.units` records the unit a lifter READS in and reaches no write and no read that computes anything (§2.8); canonical kg (§9.4) is untouched. |
 | Cardio, duration, bodyweight-only, supersets, streaks, muscle-group volume | Cut in the plan, recorded there with reasons; the schema deliberately reserves nothing for them — a duration axis is a different product, and reserving speculative columns is how schemas rot. |
-| Plate math, computed here | Half of this cut came back and half did not. `gym_preferences` stores what a gym OWNS (§2.8); no C++ decomposes a load into plates, and none will — the readout under the numeral is a pure function of the inventory, and this product's rule for a formula is one copy per language pinned by a golden (§11.5), not one copy in the database. The golden does not exist yet; W4's report files it. |
+| Plate math, computed here | **The cut is now total, and it went the other way round than expected.** W4 brought half of it back — the store held what a gym owned and three surfaces decomposed a load into plates, pinned by a golden (§11.5) — and on 2026-08-13 the whole feature was removed instead: no inventory, no readout, no golden, no columns (§2.8). Gyms are more or less the same, and this product guides a program rather than managing equipment. No C++ ever decomposed a load, which is the one part of the original cut that was never revisited. |
 
 ---
 

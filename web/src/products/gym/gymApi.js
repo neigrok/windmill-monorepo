@@ -204,18 +204,17 @@
 //                                           never invents one
 //   PUT  /v1/gym/preferences             -> the WHOLE document in, the STORED document out — draw
 //                                           what comes back, not what was sent, because the server
-//                                           normalises (plates come back heaviest-first, deduped).
-//                                           Every field is optional and an omitted one takes its
-//                                           DEFAULT rather than its stored value: this is a replace
-//                                           and not a merge. `restSeconds` ABSENT is the only way to
-//                                           say the rest timer is off — there is no 0 and no false —
-//                                           which is exactly why the route is not a PATCH. Six
-//                                           refusals, all 400 and all carrying a code:
-//                                           preferences-unreadable, unknown-unit, bar-weight,
-//                                           plate-weight, too-many-plates, rest-target. Nothing
-//                                           lands on a refusal. The sentence beside each names the
-//                                           band ("a plate weighs from 0.01 to 100 kg") and is what
-//                                           a lifter is shown; nothing here branches on the code.
+//                                           clamps an unknown unit. Every field is optional and an
+//                                           omitted one takes its DEFAULT rather than its stored
+//                                           value: this is a replace and not a merge. `restSeconds`
+//                                           ABSENT is the only way to say the rest timer is off —
+//                                           there is no 0 and no false — which is exactly why the
+//                                           route is not a PATCH. Three refusals, all 400 and all
+//                                           carrying a code: preferences-unreadable, unknown-unit,
+//                                           rest-target. Nothing lands on a refusal. The sentence
+//                                           beside each names the band ("a rest target runs from 15
+//                                           to 900 seconds") and is what a lifter is shown; nothing
+//                                           here branches on the code.
 //                                           UNITS ARE DISPLAY ONLY: every weight on every other
 //                                           route above is kilograms whatever this says
 //   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first,
@@ -572,8 +571,8 @@ export const gymApi = {
     return json(await call(`/sessions/${id}`, { method: 'DELETE' }));
   },
 
-  // HOW THIS ROOM BEHAVES AT THE RACK (§I) — units, the bar and the plates in this gym, the rest
-  // target, and what a logged set does to confirm itself. One read, and it always answers: a lifter
+  // HOW THIS ROOM BEHAVES AT THE RACK (§I) — units, the rest target, and what a logged set does to
+  // confirm itself. One read, and it always answers: a lifter
   // with nothing stored is served the defaults rather than a 404, so no caller has to know whether
   // this account has ever opened the screen.
   async preferences() {
@@ -582,8 +581,8 @@ export const gymApi = {
 
   // A WHOLE-document replace, like a routine's PUT and for a sharper reason: an omitted field takes
   // its DEFAULT, and an absent `restSeconds` is how "no timer" is spelled. Sending half a document
-  // therefore resets the other half. The stored document comes back — normalised, so plates arrive
-  // heaviest-first with duplicates gone — and it is what the screen redraws off.
+  // therefore resets the other half. The stored document comes back — an unknown unit clamped — and
+  // it is what the screen redraws off.
   async savePreferences(document) {
     return json(await call('/preferences', { method: 'PUT', body: JSON.stringify(document) }));
   },

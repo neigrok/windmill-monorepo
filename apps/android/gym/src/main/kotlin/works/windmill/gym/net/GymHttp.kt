@@ -169,7 +169,7 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     }
 
     // No 404 to fold: a lifter who has never opened the settings screen is answered with the
-    // defaults, so every client gets a rest dial and a plate set on the first paint.
+    // defaults, so every client gets a rest dial and a unit on the first paint.
     override suspend fun preferences(): GymPreferences =
         api.get<GymPreferences>("/v1/gym/preferences")
 

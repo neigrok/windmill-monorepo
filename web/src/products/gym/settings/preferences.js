@@ -1,4 +1,4 @@
-// GYM'S FIVE SETTINGS AS ONE DOCUMENT — the same shape in both directions on the wire (GET and PUT
+// GYM'S SETTINGS AS ONE DOCUMENT — the same shape in both directions on the wire (GET and PUT
 // /v1/gym/preferences), read here into what the section draws and written back whole. Pure rules
 // only: no fetch, no React, and the tests read them without either.
 //
@@ -8,8 +8,8 @@
 // absence already means something. The cost is stated rather than hidden: two screens open at once
 // is last-write-wins, and the last write is the one the lifter just touched.
 //
-// EVERY FIELD IS THE ACCOUNT'S, none is the device's. A lifter reads in one unit everywhere; the
-// plates belong to their gym and not to their phone; the rest is their program's. The two
+// EVERY FIELD IS THE ACCOUNT'S, none is the device's. A lifter reads in one unit everywhere, and
+// the rest is their program's. The two
 // confirmation flags are the subtle one — they record an INTENT, and each surface honours what it
 // can. Nothing is honoured on this one, and the row says so where it is drawn — not because the
 // browser cannot buzz (Chrome has `navigator.vibrate` and honours it on Android, which is where
@@ -25,20 +25,16 @@ import { KG, LB } from '../units.js';
 
 export const DEFAULT_PREFERENCES = {
   units: KG,
-  barWeightKg: 20,
-  platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   restSeconds: null,
   restSound: true,
   confirmHaptic: true,
   confirmSound: false,
 };
 
-// The one band the section can keep a hand off before the wire bounces it — never a second opinion:
-// the server is what decides, and its sentence is what the lifter is shown when the two disagree.
-// The store's other bands (a plate from 0.01 to 100 kg, at most twelve kinds, a rest target from 15
-// to 900 seconds) are unreachable from the controls this desk draws, so they are named here and not
-// spelled as constants nothing reads.
-export const BAR_MAX_KG = 100;
+// The store's one remaining band — a rest target from 15 to 900 seconds — is unreachable from the
+// controls this desk draws, so it is named here and not spelled as a constant nothing reads. The
+// server is what decides either way, and its sentence is what the lifter is shown when the two
+// disagree.
 
 // §I's own row: off · 1:30 · 2:00 · 3:00. Off is `null` rather than a zero, because it is what the
 // wire spells by omission and there is exactly one way to say it.
@@ -49,30 +45,13 @@ export function restLabel(seconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-// The chips the design draws — a full metric rack, which is also the default set. A gym that owns
-// something else still gets it stored: the server takes any twelve kinds from 0.01 to 100, and this
-// list is what the desk offers rather than what the store allows.
-export const PLATE_CHOICES = [25, 20, 15, 10, 5, 2.5, 1.25];
-
-export function withPlate(platesKg, plate) {
-  if (platesKg.includes(plate)) return platesKg.filter((each) => each !== plate);
-  return [...platesKg, plate].sort((left, right) => right - left);
-}
-
 // The stored document, read. Every field is filled in — the section never draws a half-document —
 // and every absence is read as the default it stands for, which is exactly what the server does with
 // the same absence on the way in.
-//
-// AN EMPTY PLATE LIST IS A REAL VALUE and survives: a gym that owns no plates is a different fact
-// from a field nobody sent, and only the second one means the full rack.
 export function readPreferences(document) {
   const held = document ?? {};
   return {
     units: held.units === LB ? LB : KG,
-    barWeightKg: typeof held.barWeightKg === 'number' ? held.barWeightKg : DEFAULT_PREFERENCES.barWeightKg,
-    platesKg: Array.isArray(held.platesKg)
-      ? [...held.platesKg].sort((left, right) => right - left)
-      : [...DEFAULT_PREFERENCES.platesKg],
     restSeconds: typeof held.restSeconds === 'number' ? held.restSeconds : null,
     restSound: held.restSound !== false,
     confirmHaptic: held.confirmHaptic !== false,
@@ -86,8 +65,6 @@ export function readPreferences(document) {
 export function preferencesWrite(preferences) {
   const write = {
     units: preferences.units,
-    barWeightKg: preferences.barWeightKg,
-    platesKg: preferences.platesKg,
     restSound: preferences.restSound,
     confirmHaptic: preferences.confirmHaptic,
     confirmSound: preferences.confirmSound,
@@ -97,8 +74,8 @@ export function preferencesWrite(preferences) {
 }
 
 // WHY A SETTING DID NOT LAND, in the store's own words. Every refusal on this route carries a
-// sentence written for a person — "a plate weighs from 0.01 to 100 kg" — and a machine code beside
-// it; the sentence is what a lifter is shown, because it names the band, and the code is never
+// sentence written for a person — "a rest target runs from 15 to 900 seconds" — and a machine code
+// beside it; the sentence is what a lifter is shown, because it names the band, and the code is never
 // branched on here. A refusal with no sentence is the only case this has to finish itself, and it is
 // the same half-sentence every other refusal in gym is finished with.
 export function preferenceRefusal(error) {

@@ -114,8 +114,8 @@ Json::Value entryArray() {
       boundedInt("Reps per set (1–100). OMIT to mean `max` — as many as you can.", 1, 100);
   fields["targetWeightKg"] = num("Target load in kg. Omit to mean whatever you did last time.");
   fields["restSeconds"] =
-      boundedInt("Rest between sets, 15–900. Omit to fall back to their global rest target — the "
-                 "`restSeconds` on `get_preferences`, and no timer at all when that is absent too.",
+      boundedInt("Rest between sets, 15–900. Omit to fall back to the global rest target they set "
+                 "in the app, and to no timer at all when they have set none.",
                  15, 900);
   // Declared so the round trip these tools PRESCRIBE survives their own schema: list_routines writes
   // a position on every line, and an agent doing exactly what propose_routine_change's description
@@ -273,27 +273,6 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "no volume, no score and no streak here — every number is a fact with a direction.",
         p, {}));
   }
-  {
-    // A READ and there is no write beside it, which is the design and not a gap: what a lifter's gym
-    // owns and whether their phone buzzes is theirs to say, and an agent that could set the plate
-    // inventory could make the loading readout confidently name a weight they cannot build. The
-    // sentence says so out loud, because a description that left it open would send an agent looking
-    // for a tool that is missing on purpose. GymToolsTest pins the absence.
-    tools.push_back(tool("get_preferences", Access::read,
-        "How this lifter's room is set up — the context your other calls need. `platesKg` is the "
-        "plates their gym actually owns, one side of the bar, beside `barWeightKg`: read them before "
-        "proposing a load, because a weight that cannot be built out of those plates is a weight "
-        "they cannot lift today. `restSeconds` is their global rest target and is ABSENT when they "
-        "run no timer; it is the rest a routine line INHERITS when it names no `restSeconds` of its "
-        "own — inherited at the rack and never copied into the line, so that line still comes back "
-        "empty from `list_routines`. `units` is the unit they READ in — loads are kilograms "
-        "everywhere in gym, so it changes nothing you send and nothing that is stored, only how "
-        "they will hear a number said "
-        "back. Nothing writes these: they are the lifter's own statement about their gym, and no "
-        "tool here can change one. Takes no arguments.",
-        Json::Value(Json::objectValue), {}));
-  }
-
   {
     Json::Value p(Json::objectValue);
     p["id"] = str("The id YOU mint for this workout (`ses_` + hex is the house shape).");
@@ -486,7 +465,11 @@ std::string gymInstructions() {
          "Retired on 2026-08-12: `save_routine` and `delete_routine` no longer exist at any level. "
          "`create_routine` adds a day that did not exist, `propose_routine_change` proposes a change "
          "to one that does, and `propose_routine_removal` proposes taking one out. If you were "
-         "written against the old two, that is why they are missing — they were not un-granted.";
+         "written against the old two, that is why they are missing — they were not un-granted.\n\n"
+         "Retired on 2026-08-13 with NO replacement: `get_preferences`. gym keeps no plate inventory "
+         "and no bar weight — propose loads in kilograms and let the lifter round at the rack — and "
+         "the rest target and reading unit it also carried are their own dials, not context for you "
+         "to fetch.";
 }
 
 }

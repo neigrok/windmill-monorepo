@@ -2,8 +2,8 @@ import Foundation
 
 // THE LOG AS THIS DEVICE HOLDS IT — everything gym made before anybody signed in: finished sessions
 // with their sets, routines, movements minted from the picker, and the settings the room is set up
-// with (§I — the plates a gym owns and the rest dial, which the logger reads on the first frame of
-// every launch, signed in or not). The room works out of this file
+// with (§I — the rest dial and the reading unit, which the logger reads on the first frame of every
+// launch, signed in or not). The room works out of this file
 // signed out (auth canon §2, "claiming, not gating"), and signing in CLAIMS it — the replay in
 // TrainingStore walks these shelves oldest first and empties them as the log answers, the same shape
 // journal's PageStore.claimWhatIsOwed gives its pages.
@@ -80,7 +80,7 @@ public final class LocalLog {
     public var isEmpty: Bool { sessions.isEmpty && routines.isEmpty && exercises.isEmpty }
 
     // SETTINGS ARE NOT AN ARTIFACT, which is why they are not in `isEmpty` and not in the account
-    // footprint the backend keeps: a lifter who toggled one plate and left has made nothing. Nil is
+    // footprint the backend keeps: a lifter who armed the rest timer and left has made nothing. Nil is
     // "nobody has answered on this device", which the room draws as the defaults — never as an empty
     // document, because an empty document is a real and different answer.
     //
@@ -91,7 +91,7 @@ public final class LocalLog {
     // WHOSE ANSWER IT IS IS PART OF THE SHELF, for the same reason DeviceCatalog's file carries a
     // seat: this document is one ACCOUNT's, and a phone that lent it to the next lifter would rest
     // them to a timer they never set and then — because every write here is the WHOLE document —
-    // put that first account's bar and plates onto the second one's row. So a shelf this seat did
+    // put that first account's whole room onto the second one's row. So a shelf this seat did
     // not write is let go of, on disk as well as in memory, and the room opens on the defaults until
     // the log answers.
     //

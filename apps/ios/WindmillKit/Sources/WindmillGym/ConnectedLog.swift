@@ -53,7 +53,7 @@ struct LogReach: Equatable, Sendable {
         // (backend/products/gym/adapters/mcp/GymToolCatalog.cpp):
         //
         //   read    list_exercises · list_sessions · get_session · last_time · list_routines ·
-        //           get_stats · get_preferences
+        //           get_stats
         //   write   start_session · log_set · finish_session · create_routine ·
         //           propose_routine_change · create_exercise · share_session
         //   delete  discard_session · propose_routine_removal · revoke_share

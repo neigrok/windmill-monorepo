@@ -129,15 +129,14 @@ object ConnectedLog {
 
     const val cannotDoHead = "What it cannot do"
 
-    // "It cannot say what plates your gym owns" was the first draft of the last clause and it says
-    // the opposite of the truth to anybody reading quickly: `get_preferences` is a READ tool, so a
-    // connection can indeed say what your gym owns. What no level has is a WRITE for it — there is
-    // no twin to that tool anywhere in the catalog — so the sentence is about changing them now.
+    // THE SETTINGS CLAUSE IS NOW ABSOLUTE, and it was not before 2026-08-13: `get_preferences` was a
+    // READ tool, so the honest sentence had to say a connection could SEE how the room was set up
+    // and only never change it. That tool is retired and nothing replaced it, so no level reads
+    // these and no level writes them — the shorter sentence is now the true one.
     const val cannotDo =
         "Apply that change. There is no apply tool at any grant level, so a proposal waits on the " +
-            "card until you tap it. It cannot edit a set you logged, and it cannot change how your " +
-            "gym is set up — your bar, your plates and your rest dial can be read, and no level " +
-            "writes them."
+            "card until you tap it. It cannot edit a set you logged, and it cannot read or change " +
+            "how your gym is set up — your rest dial and the unit you read in are yours alone."
 
     // THE LEVEL THE DESIGN'S CARD DENIED EXISTS. "It cannot delete anything" is false the moment a
     // lifter grants delete, and a card that said otherwise would be the one sentence somebody

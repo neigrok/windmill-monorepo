@@ -319,10 +319,10 @@ export function useTrainingLog({ api = gymApi } = {}) {
     sets,
     catalog,
     summaries,
-    // The account's five settings (§I). Handed out whole because the rooms read different halves of
-    // them and none of them should read the wire twice for it — Today names the rest target on the
-    // mirror, the routine editor checks a program's loads against the plates in this gym, and every
-    // weight on every screen is already spelled in `units` by the transform this hook set on boot.
+    // The account's settings (§I). Handed out whole because the rooms read different halves of them
+    // and none of them should read the wire twice for it — Today names the rest target on the
+    // mirror, and every weight on every screen is already spelled in `units` by the transform this
+    // hook set on boot.
     preferences,
     // One page of the log is on screen; this is everything the surface needs to walk further down it.
     older: { status: olderStatus, load: loadOlder },

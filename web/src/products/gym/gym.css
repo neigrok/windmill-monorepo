@@ -1848,24 +1848,9 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: underline;
   cursor: pointer;
 }
-/* What the target looks like on a bar, from the plates this gym owns (settings/plates.js). Quiet
-   when it can be built, alarm ink when it cannot — a target the rack cannot make is a line the
-   lifter will stand in front of and not be able to load. It is a statement and never a refusal:
-   the number stands, the sheet saves, and the sentence names the loads that would work. */
-.gym-target-plates {
-  margin: 8px 2px 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--gym-ink-faint);
-}
-.gym-target-plates.is-unloadable {
-  color: var(--alarm-ink);
-}
-/* The same target, the way the rows behind this sheet read it — drawn only for an account reading
-   in pounds, where the kilogram field and the reading are two numerals for one weight (log.js
-   `alsoReadsLabel`). Quieter than the plate line above it: it explains a number rather than saying
-   anything new about the bar. */
+/* The target, the way the rows behind this sheet read it — drawn only for an account reading in
+   pounds, where the kilogram field and the reading are two numerals for one weight (log.js
+   `alsoReadsLabel`). It explains a number rather than saying anything new about the bar. */
 .gym-target-reads {
   margin: 6px 2px 0;
   font-family: var(--font-mono);

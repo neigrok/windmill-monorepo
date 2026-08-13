@@ -21,11 +21,11 @@ import works.windmill.gym.net.TrainingSyncing
 //   session's start.
 //
 // PREFERENCES GO FIRST AND HALT NOTHING, which is the one place this order is not a dependency.
-// Nothing downstream references them — a set does not name a plate and a session does not name a
-// unit — so they lead because they are one cheap PUT and because a lifter who set their rack before
-// signing in should see it survive the moment the account arrives. And when that PUT is the thing
-// that fails, the run CARRIES ON: a plate list that did not land may never park a workout, so every
-// session behind it still replays.
+// Nothing downstream references them — a set does not name a rest target and a session does not
+// name a unit — so they lead because they are one cheap PUT and because a lifter who set their room
+// up before signing in should see it survive the moment the account arrives. And when that PUT is
+// the thing that fails, the run CARRIES ON: a rest dial that did not land may never park a workout,
+// so every session behind it still replays.
 //
 // IT ALSO RE-ARMS NOTHING, and that half is as load-bearing as the first. `retryable` is the flag
 // the store's 4-second cadence re-runs this WHOLE walk off, and a rack still owed is not a reason

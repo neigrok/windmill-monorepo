@@ -189,7 +189,7 @@ int main() {
                 // the other way round: this list decides whether the link door may delete an
                 // account, so a table on it must be data the account HOLDS. Settings are how a room
                 // is set up, never the artifact in it — a lifter who opened the gym settings screen,
-                // toggled one plate and left has nothing to lose, and the door should still be able
+                // armed the rest timer and left has nothing to lose, and the door should still be able
                 // to fold that account away. Listing it would also break the door the way
                 // gym_exercises' seeds nearly did: a client that writes the document on first paint
                 // would make every account on the server report non-empty forever.

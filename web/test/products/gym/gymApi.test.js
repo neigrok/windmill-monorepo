@@ -1312,14 +1312,12 @@ test('a settled route answers 404 for a proposal that is not there, and it carri
   });
 });
 
-// §I's five settings. THE READ NEVER 404s — a lifter with nothing stored is served the defaults —
+// §I's settings. THE READ NEVER 404s — a lifter with nothing stored is served the defaults —
 // so there is no null branch here at all, which is the whole difference between this route and every
 // other read in this file.
 test('preferences — one read that always answers, and a whole-document write that answers with the store’s copy', async () => {
   const stored = {
     units: 'kg',
-    barWeightKg: 20,
-    platesKg: [25, 20, 2.5],
     restSeconds: 120,
     restSound: true,
     confirmHaptic: true,
@@ -1335,9 +1333,8 @@ test('preferences — one read that always answers, and a whole-document write t
     body: undefined,
   });
 
-  // Sent unsorted, answered heaviest-first: the store normalises, and the screen draws what came
-  // back rather than what it hoped it sent.
-  const write = { ...stored, platesKg: [2.5, 25, 20] };
+  // The screen draws what came back rather than what it hoped it sent.
+  const write = { ...stored, units: 'lb' };
   serve(ok(stored));
   assert.deepEqual(await gymApi.savePreferences(write), stored);
   assert.deepEqual(wireOf(calls[0]), {
@@ -1349,7 +1346,7 @@ test('preferences — one read that always answers, and a whole-document write t
   });
 });
 
-// Six refusals, all 400 and all carrying a code. Nothing here branches on one — the SENTENCE is what
+// Three refusals, all 400 and all carrying a code. Nothing here branches on one — the SENTENCE is what
 // the lifter is shown, because it names the band the value fell outside — but a refusal must still
 // arrive as a terminal GymError with the code intact, because a client that read it as a network
 // failure would offer a retry that fails identically forever.
@@ -1357,9 +1354,6 @@ test('preferences — every refusal is terminal, keeps its code, and carries the
   const refusals = [
     ['preferences-unreadable', 'that isn’t a settings document'],
     ['unknown-unit', 'units are "kg" or "lb"'],
-    ['bar-weight', 'a bar weighs from 0 to 100 kg'],
-    ['plate-weight', 'a plate weighs from 0.01 to 100 kg'],
-    ['too-many-plates', 'a gym holds at most 12 kinds of plate'],
     ['rest-target', 'a rest target runs from 15 to 900 seconds — send none for no timer'],
   ];
   for (const [code, sentence] of refusals) {

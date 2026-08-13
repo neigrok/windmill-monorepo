@@ -1195,7 +1195,7 @@ test('a line can be left open from the sheet, and the screen says which lines wi
 
 // CREATING A MOVEMENT IS THE TWO QUESTIONS AND NOT A SECOND DOOR BESIDE THEM (§N screen 31). The
 // picker's `Create "…"` used to mint straight from the search box with a silent `barbell` on it —
-// so how it is loaded, the one answer that changes what the ladder and the plate readout do, was
+// so how it is loaded, the one answer that changes what the ladder does, was
 // ours to guess. Now the button opens the sheet and nothing is written until `Create and add`.
 test('the create door asks how a movement is loaded, and mints nothing before it is answered', () => {
   const picker = read('logger/MovementPicker.jsx');

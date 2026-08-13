@@ -25,7 +25,6 @@ export const TOOL_PHRASE = {
   list_exercises: 'read your movement list',
   list_routines: 'read your program',
   get_stats: 'read your movement history',
-  get_preferences: 'read how your gym is set up',
   propose_routine_change: 'wrote a proposal for one of your routines',
   propose_routine_removal: 'wrote a proposal to remove a routine',
 };

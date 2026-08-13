@@ -1,6 +1,5 @@
-// Settings · Your training log — §I's five rows, and they are all about a barbell: units, what
-// plates this gym owns, how long the rest is, how a logged set confirms itself, and the two doors
-// out (the CSV, and the tool that reads the log). Nothing here restates an account screen: profile,
+// Settings · Your training log — §I's rows: units, how long the rest is, how a logged set confirms
+// itself, and the two doors out (the CSV, and the tool that reads the log). Nothing here restates an account screen: profile,
 // appearance, plan, sessions, devices, the account's own export and its close are all on this page
 // already, above and below, and gym has no theme switch of its own.
 //
@@ -11,15 +10,14 @@
 // WHO IT DRAWS FOR CHANGED THIS WAVE, and the old reason survives inside the new one. This used to
 // draw nothing at all until one read said the account had a log, so that somebody who has only ever
 // grown skill trees was never offered a file of a training log they never kept. That reason is about
-// the EXPORT, and the export row still carries it. The four rows above it are how the room behaves
-// at the rack — a lifter setting their bar and their plates before their first session is the normal
-// case, not the exception — so they are drawn for anyone signed in. A read that does not come back
+// the EXPORT, and the export row still carries it. The rows above it are how the room behaves at the
+// rack — a lifter setting their rest before their first session is the normal case, not the
+// exception — so they are drawn for anyone signed in. A read that does not come back
 // still draws nothing: a toggle whose stored state is unknown is a control that would lie.
 //
 // EVERY CHANGE IS A WHOLE-DOCUMENT PUT, sent the moment it is made and redrawn off what comes back
 // (preferences.js). There is no Save button because there is nothing to hold: each row is one value,
-// and the store's answer — plates normalised heaviest-first, an unknown unit clamped — is the truth
-// the screen shows. A refusal reverts to the stored document and says the store's own sentence,
+// and the store's answer — an unknown unit clamped — is the truth the screen shows. A refusal reverts to the stored document and says the store's own sentence,
 // which names the band the value fell outside.
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -29,12 +27,10 @@ import { listGrants } from '../../../shell/auth/OAuthClient.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { connectedLabel, connectionsToTheLog, NOTHING_CONNECTED } from '../connect/connect.js';
 import { EXPORT_HREF, gymApi } from '../gymApi.js';
-import { CONNECT_HREF, fmtKg } from '../log.js';
+import { CONNECT_HREF } from '../log.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
-import { finestStepKg } from './plates.js';
 import {
-  BAR_MAX_KG, PLATE_CHOICES, preferenceRefusal, preferencesWrite, readPreferences, REST_CHOICES,
-  restLabel, withPlate,
+  preferenceRefusal, preferencesWrite, readPreferences, REST_CHOICES, restLabel,
 } from './preferences.js';
 
 export function GymSettingsSection({ api = gymApi } = {}) {
@@ -98,11 +94,6 @@ export function GymSettingsSection({ api = gymApi } = {}) {
             kilograms, and say so on the field.
           </>
         )}
-      </Row>
-
-      <Row title="Plate math" aside={<BarWeight preferences={preferences} onChange={change} />}>
-        <Plates preferences={preferences} onChange={change} />
-        What your gym owns. {finestStepLine(preferences.platesKg)}
       </Row>
 
       <Row title="Rest timer" aside={<span style={look.aside}>{restLabel(preferences.restSeconds)}</span>}>
@@ -258,88 +249,12 @@ function Choices({ options, value, label = String, onPick }) {
   );
 }
 
-// The bar is typed and not stepped, because it is set once for a rack and then never touched — and
-// it is committed on the way OUT of the field rather than on every keystroke, so a 20 becoming a 25
-// is one write and not a write at 2. A number the field cannot read goes back to the stored one:
-// this is a rack's bar, and there is no half-typed value worth keeping on screen.
-//
-// ZERO IS LEGAL and is not an empty field: a pair of dumbbells and a machine have no bar.
-function BarWeight({ preferences, onChange }) {
-  const [typed, setTyped] = useState(null);
-  const shown = typed ?? fmtKg(preferences.barWeightKg);
-
-  const commit = () => {
-    const raw = String(shown).trim();
-    setTyped(null);
-    // AN EMPTY FIELD IS NOT A ZERO, and this is the one guard that matters: zero is a legal bar —
-    // a machine, a pair of dumbbells — so `Number('')` would sail through the band below and store
-    // a bar nobody typed on the way to typing another one.
-    if (raw === '') return;
-    const value = Number(raw.replace(',', '.'));
-    if (!Number.isFinite(value) || value < 0 || value > BAR_MAX_KG) return;
-    if (value !== preferences.barWeightKg) onChange({ barWeightKg: value });
-  };
-
-  return (
-    <span style={look.aside}>
-      bar
-      <input
-        value={shown}
-        inputMode="decimal"
-        aria-label="Bar weight in kilograms"
-        onChange={(event) => setTyped(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => { if (event.key === 'Enter') event.target.blur(); }}
-        style={look.barField}
-      />
-      kg
-    </span>
-  );
-}
-
-function Plates({ preferences, onChange }) {
-  return (
-    <span style={look.chips}>
-      {PLATE_CHOICES.map((plate) => {
-        const owned = preferences.platesKg.includes(plate);
-        return (
-          <button
-            key={plate}
-            type="button"
-            aria-pressed={owned}
-            onClick={() => onChange({ platesKg: withPlate(preferences.platesKg, plate) })}
-            style={owned ? { ...look.chip, ...look.chipOn } : look.chip}
-          >
-            {fmtKg(plate)}
-          </button>
-        );
-      })}
-    </span>
-  );
-}
-
-// A FACT ABOUT THIS RACK, which is why it survived the row's caption. The ladder does not move and
-// this row does not set it; what the rack decides is the smallest change that can actually go on the
-// bar — twice the lightest plate, because one goes on each end. That is a number a lifter can act
-// on, as against the sentence above it, which only explained where the number came from.
-function finestStepLine(platesKg) {
-  const step = finestStepKg(platesKg);
-  if (step == null) return 'With no plates, the bar is the only load this rack makes.';
-  return `The smallest change these make is ${fmtKg(step)} kg — ${fmtKg(step / 2)} a side.`;
-}
-
 const look = {
   row: { padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   aside: {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-  },
-  barField: {
-    width: 52, padding: '3px 6px', textAlign: 'right',
-    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-    background: 'var(--surface-card)', color: 'var(--text-primary)',
-    fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
   },
   choices: { display: 'inline-flex', gap: 4, flexWrap: 'wrap' },
   choice: {
@@ -349,14 +264,6 @@ const look = {
     fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 700, cursor: 'pointer',
   },
   choiceOn: { borderColor: 'var(--color-brand)', color: 'var(--color-brand)', background: 'var(--color-brand-soft)' },
-  chips: { display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0 2px' },
-  chip: {
-    padding: '6px 12px',
-    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full)',
-    background: 'transparent', color: 'var(--text-tertiary)',
-    fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', fontWeight: 700, cursor: 'pointer',
-  },
-  chipOn: { borderColor: 'var(--color-brand)', color: 'var(--color-brand)', background: 'var(--color-brand-soft)' },
   switchRow: { margin: '10px 0 2px' },
   door: {
     display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',

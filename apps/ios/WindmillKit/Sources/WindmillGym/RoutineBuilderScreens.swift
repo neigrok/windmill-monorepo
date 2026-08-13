@@ -131,7 +131,6 @@ struct NameRoutineScreen: View {
 // form — so nothing on this screen withholds the way out until the numbers are all in.
 struct RoutineEditorScreen: View {
     let catalog: [Exercise]
-    let preferences: GymPreferences
     let untested: Bool
     let saving: Bool
     let failure: String?
@@ -166,12 +165,11 @@ struct RoutineEditorScreen: View {
         }
     }
 
-    init(draft: RoutineDraft, catalog: [Exercise], preferences: GymPreferences,
+    init(draft: RoutineDraft, catalog: [Exercise],
          untested: Bool, saving: Bool, failure: String?,
          onSave: @escaping (RoutineDraft) -> Void,
          onCreateMovement: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>) {
         self.catalog = catalog
-        self.preferences = preferences
         self.untested = untested
         self.saving = saving
         self.failure = failure
@@ -239,7 +237,6 @@ struct RoutineEditorScreen: View {
                                 movement: Readout.movement(line.entry.exerciseId, in: catalog),
                                 place: draft.place(of: lineId),
                                 untested: untested,
-                                preferences: preferences,
                                 onSet: { sets, reps, weightKg in
                                     draft.set(lineId, sets: sets, reps: reps, weightKg: weightKg)
                                     sheet = nil
@@ -366,16 +363,14 @@ struct RoutineEditorScreen: View {
 // The dial opens on WHAT THE ROW ALREADY SAYS — including the two things it may say by saying
 // nothing, `max` and `last time`, each of which keeps its own word here and its own way back.
 //
-// THE LADDER AND THE PLATE READOUT ARE THE ONES THAT ALREADY EXIST. The four buttons are
-// `Ladder.labels`, the step is `Ladder.bump`, and the line beside the numeral is `Plates.readout` —
-// the same rule as the rack, pinned across three languages by a golden. A second stepper written
-// here would step a Sunday target differently from the same weight on Thursday.
+// THE LADDER IS THE ONE THAT ALREADY EXISTS. The four buttons are `Ladder.labels` and the step is
+// `Ladder.bump` — the same rule as the rack, pinned across three languages by a golden. A second
+// stepper written here would step a Sunday target differently from the same weight on Thursday.
 private struct TargetSheet: View {
     let entry: RoutineWrite.Entry
     let movement: String
     let place: String
     let untested: Bool
-    let preferences: GymPreferences
     // Reps and weight are handed back OPTIONAL, because either may be the absence the row arrived
     // with or was just given: `3 × max` and "whatever you did last time" are targets a lifter and an
     // agent both write, and a commit that could only spell numbers would overwrite them with two.
@@ -386,13 +381,12 @@ private struct TargetSheet: View {
     @State private var target: RoutineTarget
 
     init(entry: RoutineWrite.Entry, movement: String, place: String, untested: Bool,
-         preferences: GymPreferences, onSet: @escaping (Int, Int?, Double?) -> Void,
+         onSet: @escaping (Int, Int?, Double?) -> Void,
          onOpen: @escaping () -> Void) {
         self.entry = entry
         self.movement = movement
         self.place = place
         self.untested = untested
-        self.preferences = preferences
         self.onSet = onSet
         self.onOpen = onOpen
         _target = State(initialValue: RoutineTarget(entry))
@@ -505,8 +499,7 @@ private struct TargetSheet: View {
 
     // A ROW MAY NAME NO WEIGHT, and that is a target rather than a blank: "whatever you did last
     // time", answered at the rack off this lifter's own log. It is drawn in the room's faintest ink
-    // in the numeral's own place — the absence where the number would be — and there is no plate
-    // readout under it, because there are no plates to name until somebody names a load.
+    // in the numeral's own place — the absence where the number would be.
     private var weight: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text("TARGET WEIGHT")
@@ -524,15 +517,6 @@ private struct TargetSheet: View {
                         .font(WindmillFont.body(17, .bold))
                         .foregroundStyle(skin.inkFaint)
                     Spacer(minLength: WindmillSpace.x2)
-                    // What goes on the bar, or what this gym's plates cannot make. It is the one
-                    // line that does work at the rack, and it is the same one the logger prints.
-                    if let readout = Plates.readout(totalKg: kg, under: preferences) {
-                        Text(readout)
-                            .font(GymType.numeral(11))
-                            .foregroundStyle(skin.inkFaint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
                 }
             } else {
                 // THE NUMERAL'S OWN FONT, so the absence stands exactly where the number would and

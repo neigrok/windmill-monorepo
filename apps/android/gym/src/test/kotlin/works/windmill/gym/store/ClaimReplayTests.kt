@@ -19,6 +19,7 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
@@ -77,7 +78,7 @@ class ClaimReplayTests {
         val server = FakeTraining()
         val localLog = shelf()
         val settings = settings()
-        settings.save(GymPreferences(barWeightKg = 15.0, platesKg = listOf(20.0, 10.0), restSeconds = 90))
+        settings.save(GymPreferences(units = Units.Pounds, restSeconds = 90))
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
@@ -85,8 +86,8 @@ class ClaimReplayTests {
         ClaimReplay(server, localLog, queue(), settings).run()
 
         assertEquals("savePreferences", server.calls.first())
-        assertEquals(listOf(15.0), server.settingsWritten.map { it.barWeightKg })
-        assertEquals(listOf(20.0, 10.0), server.settings?.platesKg)
+        assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
+        assertEquals(90, server.settings?.restSeconds)
         assertFalse("the log took them — nothing is owed", settings.owed)
 
         // And a second pass over a settled device sends nothing at all: the claim is not a heartbeat.

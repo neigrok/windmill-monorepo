@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.Plates
 import works.windmill.gym.domain.Prefill
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
@@ -501,9 +500,8 @@ private fun BuildStep(
 // an edit of a day that HAS run, where it would simply be false.
 //
 // THE LADDER IS THE ONE THE RACK USES — `LadderRow`, the same function, over the same `Ladder` band
-// table and the same plate readout. There is no second stepper in this product and there is no
-// second decomposition: a kitchen table that rounded differently from the rack would be two
-// answers to what is on the bar.
+// table. There is no second stepper in this product: a kitchen table that rounded differently from
+// the rack would be two answers to what a target weight is.
 @Composable
 private fun TargetSheet(
     draft: RoutineDraft,
@@ -527,7 +525,6 @@ private fun TargetSheet(
     var weightKg by remember(exerciseId, dialled) {
         mutableDoubleStateOf(dialled?.weightKg ?: entry?.targetWeightKg ?: Prefill.EMPTY_BAR_KG)
     }
-    val loaded = remember(weightKg, store.preferences) { Plates.readout(weightKg, store.preferences) }
 
     Column(
         Modifier
@@ -587,14 +584,6 @@ private fun TargetSheet(
                 )
                 Text("kg", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.inkFaint)
                 Spacer(Modifier.weight(1f))
-                BasicText(
-                    loaded?.line.orEmpty(),
-                    maxLines = 2,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
-                    style = GymType.numeral(11).copy(color = GymSkin.inkFaint, lineHeight = 15.sp,
-                                                     textAlign = TextAlign.End),
-                    modifier = Modifier.weight(2f, fill = false),
-                )
             }
         }
 

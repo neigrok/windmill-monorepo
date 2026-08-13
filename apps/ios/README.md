@@ -237,12 +237,12 @@ the connect page instead, because what the agent still needs then is the grant a
 - **Gym's settings have no seam to hang from.** The design reaches them from You: a product registers
   a settings *section* and the shell composes it, exactly as `web/src/products/gym/routes.js`
   registers `GymSettingsSection`. `ProductModule` has no such slot — `room`, `hubLine`, `entry`,
-  `holdings`, and nothing about settings — and the shell is not a product's territory, so gym's five
+  `holdings`, and nothing about settings — and the shell is not a product's territory, so gym's own
   rows are reached from a quiet row at the foot of Today instead. The screen is the one the section
   would show; when the seam lands, the row on Today goes.
 - **Choosing `lb` changes nothing this app draws.** The setting is real and account-level, and gym
-  stores kilograms under either answer — but the ladder, the keypad and the plate math here are
-  kilogram instruments, and a pound numeral over buttons that step in kilos would not add up. The row
+  stores kilograms under either answer — but the ladder and the keypad here are kilogram
+  instruments, and a pound numeral over buttons that step in kilos would not add up. The row
   says so in the row rather than moving and quietly doing nothing.
 - **The rest timer has no alarm the phone is asleep for.** The clock is computed from the set's own
   instant, so it is right whenever it is looked at; the chime is scheduled in-process, iOS suspends a

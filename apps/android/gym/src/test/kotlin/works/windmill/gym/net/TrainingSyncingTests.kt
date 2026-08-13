@@ -574,8 +574,8 @@ internal class FakeTraining : TrainingSyncing {
         return settings ?: GymPreferences()
     }
 
-    // A whole-document replace that answers with the STORED document — plates sorted heaviest-first
-    // with duplicates gone — so a client that drew its own send would disagree with the account.
+    // A whole-document replace that answers with the STORED document — the rest band clamped — so a
+    // client that drew its own send would disagree with the account.
     override suspend fun savePreferences(document: GymPreferences): GymPreferences {
         calls.add("savePreferences")
         settingsWritten.add(document)

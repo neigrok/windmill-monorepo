@@ -770,8 +770,12 @@ personal tool. Every phase-3 bet names its own kill rule when it starts.
   is all-time only, and reads attribution from *live* templates so deleting a program erases history's
   tags. If it returns, tags live on the catalog, weighted primary/secondary, windowed.
 - **Streaks — cut**, exactly as roadmap cut them. `pr-line` is the celebration that earns its place.
-- **Plate calculator, bar weight, warm-up generator, microplates — cut.** Revisit on the correction
-  rate.
+- **Plate calculator, bar weight, warm-up generator, microplates — cut.** Half of this came back in
+  W4 (2026-08-12) — a plate set and a bar weight in settings, feeding a loading readout on three
+  surfaces — and on 2026-08-13 the owner cut the whole feature again, this time for good: gyms are
+  more or less the same, and this product guides a program and tracks activity rather than managing
+  equipment. The `get_preferences` MCP tool went with it, retired with no replacement, its name
+  vague enough that agents reached for it whether or not the turn was about a gym at all.
 - **Ambient sound — cut**, with two functional exceptions that are not decoration: the set-saved
   confirmation and the rest-done alert.
 - **Social, leaderboards, human coaching — cut.** Same reason roadmap deferred the gallery.

@@ -49,14 +49,14 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // §I — GYM'S SETTINGS SECTION. Everything in it changes how the room behaves AT THE RACK: what a
-// weight is read in, what plates exist, how long the rest is, how a logged set confirms itself. It
+// weight is read in, how long the rest is, how a logged set confirms itself. It
 // restates no account screen — there is no appearance control, no notification row for pushes this
 // product does not send, no plan and no account row of any kind. Appearance is chosen once, in You,
 // and this room only answers it.
 //
 // EVERY ROW WRITES ON THE TAP. There is no Save button and no dirty state: the document is held on
-// the device before the log is consulted, so the logger's plate readout and rest clock obey the new
-// value on the next frame whether or not there is an account behind it. What the log refuses is
+// the device before the log is consulted, so the logger's rest clock obeys the new value on the
+// next frame whether or not there is an account behind it. What the log refuses is
 // SAID through the room's own note; what the log never answers is kept and carried by the claim.
 //
 // ONE OF §I'S ROWS IS STILL NOT HERE, and it is absent rather than faked: `Export` needs a route
@@ -83,8 +83,6 @@ fun SettingsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
-    var typingBar by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun write(document: GymPreferences) {
         scope.launch {
@@ -109,11 +107,6 @@ fun SettingsScreen(
         Spacer(Modifier.height(WindmillSpace.x1))
 
         UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-        PlateRow(
-            preferences = preferences,
-            onTypeBar = { typingBar = true },
-            onTogglePlate = { write(preferences.togglingPlate(it)) },
-        )
         RestRow(
             preferences = preferences,
             onPick = { write(preferences.copy(restSeconds = it)) },
@@ -126,34 +119,6 @@ fun SettingsScreen(
         )
         ConnectedLogRow(isSignedIn, origin)
         ClosingNote()
-    }
-
-    // The bar is typed rather than dialled, because it is a number a lifter reads off their own
-    // equipment — 20, 15, 7, and 0 for a machine — and the room already owns a pad for exactly
-    // that gesture. Out of band it is REFUSED with the log's own band said out loud rather than
-    // clamped: a clamp would store a bar nobody chose and then lie about it in the readout.
-    if (typingBar) {
-        ModalBottomSheet(
-            onDismissRequest = { typingBar = false },
-            sheetState = sheetState,
-            containerColor = GymSkin.surface,
-            dragHandle = null,
-        ) {
-            KeypadSheet(
-                KeypadEntry.Mode.Weight, preferences.barWeightKg,
-                onCommit = { typed ->
-                    scope.launch { sheetState.hide() }.invokeOnCompletion { typingBar = false }
-                    if (typed < GymPreferences.minBarKg || typed > GymPreferences.maxBarKg) {
-                        say("a bar weighs from 0 to 100 kg")
-                        return@KeypadSheet
-                    }
-                    write(preferences.copy(barWeightKg = typed))
-                },
-                onCancel = {
-                    scope.launch { sheetState.hide() }.invokeOnCompletion { typingBar = false }
-                },
-            )
-        }
     }
 }
 
@@ -212,67 +177,7 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
     }
 }
 
-// ROW 2 — what your gym owns. The chips are the plates the design draws plus anything the document
-// already holds, so a rack set from another surface still has somewhere to be turned off. One side
-// of the bar, always: the numbers here are what you slide on, not what the bar weighs.
-//
-// WHERE THIS RACK IS READ is no longer said here (W9). The logger's plate line does the saying, on
-// the screen where it matters, and a caption explaining which other screen consumes this row was
-// the settings screen describing the product to itself.
-@Composable
-private fun PlateRow(
-    preferences: GymPreferences,
-    onTypeBar: () -> Unit,
-    onTogglePlate: (Double) -> Unit,
-) {
-    SettingCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Plate math", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onTypeBar),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Text(
-                    "bar ${Readout.weight(preferences.barWeightKg)} kg  ›",
-                    style = GymType.numeral(13),
-                    color = GymSkin.inkDim,
-                )
-            }
-        }
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            GymPreferences.offeredPlates(preferences.platesKg).forEach { plate ->
-                val owned = plate in preferences.platesKg
-                Box(
-                    Modifier
-                        .heightIn(min = GymTap.minimum)
-                        .clip(RoundedCornerShape(WindmillRadius.full))
-                        .background(if (owned) GymSkin.accentSoft else Color.Transparent)
-                        .border(
-                            1.dp,
-                            if (owned) GymSkin.accent else GymSkin.lineStrong,
-                            RoundedCornerShape(WindmillRadius.full),
-                        )
-                        .clickable { onTogglePlate(plate) }
-                        .padding(horizontal = WindmillSpace.x4),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        Readout.weight(plate),
-                        style = GymType.numeral(13, FontWeight.Bold),
-                        color = if (owned) GymSkin.accent else GymSkin.inkFaint,
-                    )
-                }
-            }
-        }
-        Caption("What your gym owns, per side.")
-    }
-}
-
-// ROW 3 — the dial the whole product's rest clock reads, and its first position is off. Off is not
+// ROW 2 — the dial the whole product's rest clock reads, and its first position is off. Off is not
 // a missing value: the clock still counts the gap between two sets, it simply counts UP, against
 // nothing, and makes no sound at all.
 @Composable

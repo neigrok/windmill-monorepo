@@ -1436,39 +1436,25 @@ create index if not exists gym_session_shares_user on gym_session_shares (user_i
 -- line's rest target already carries, from one pair of constants, so the global dial and the program
 -- cannot ask for waits the other refuses.
 --
--- plates_kg is an ARRAY and not a child table, which is the one place this schema takes a
--- non-relational shape on purpose. The rule gym_routine_entries states is about a thing with an
--- identity a query can group by; a 2.5 has none — nothing joins to a plate, no read aggregates one,
--- and the lifter edits the SET as a single value. A gym_plates table would buy a second write, a
--- second read and a transaction, to serve exactly one document. One side of the bar, heaviest first
--- and each kind once; the entity normalizes both (Preferences.h) and the check bounds the rest.
---
--- That check leads with SHAPE and not with the band, because the read flattens the column through
--- array_to_string and a flatten is lossy in two ways a value bound cannot see. A null element is
--- DROPPED, so `0.01 <= all (...)` answers null — which a check PASSES — and the lifter silently
--- loses a plate on the next read. A second dimension is flattened too, so array_length(...,1) counts
--- ROWS and a 2x7 matrix walks past a cap that means to count plates. Both are hand-edit paths and
--- neither is reachable from packedPlates, which is exactly why the column has to say so itself: the
--- claim next to preferencesFrom is that anything the schema can hold reads as a legal document, and
--- a bound that only reads values cannot keep it.
---
 -- It is deliberately NOT in PgAccountFootprint's owned list, and platform/infra/main.cpp carries the
 -- reason beside that list: settings are how an account is set up, never the artifact it holds.
 create table if not exists gym_preferences (
   user_id         uuid primary key references users(id) on delete cascade,
   units           text not null default 'kg' check (units in ('kg','lb')),
-  bar_weight_kg   numeric(5,2) not null default 20 check (bar_weight_kg between 0 and 100),
-  plates_kg       numeric(5,2)[] not null default '{25,20,15,10,5,2.5,1.25}'
-                    check (coalesce(array_ndims(plates_kg), 1) = 1
-                           and array_position(plates_kg, null) is null
-                           and coalesce(array_length(plates_kg, 1), 0) <= 12
-                           and 0.01 <= all (plates_kg) and 100 >= all (plates_kg)),
   rest_seconds    int check (rest_seconds between 15 and 900),   -- null = no timer, and that is the default
   rest_sound      boolean not null default true,
   confirm_haptic  boolean not null default true,
   confirm_sound   boolean not null default false,
   updated_at      timestamptz not null default now()
 );
+
+-- Equipment left this product on 2026-08-13. The bar weight and the plate set were an inventory the
+-- lifter had to keep correct to get a loading readout that guided nothing a numeral did not already
+-- say, and gyms are more or less the same — so the readout went, the settings rows above it went,
+-- and these two columns go with them. Dropped rather than left standing: a column nothing reads is
+-- the same lie as a stale comment, and the next reader would build from it.
+alter table gym_preferences drop column if exists bar_weight_kg;
+alter table gym_preferences drop column if exists plates_kg;
 
 -- ASK'S THREADS (W11, 2026-08-13), AND THIS TABLE IS A REVERSAL. W7 shipped Ask stateless on
 -- purpose: the client sent the whole conversation on every ask, so there was no table, no id and

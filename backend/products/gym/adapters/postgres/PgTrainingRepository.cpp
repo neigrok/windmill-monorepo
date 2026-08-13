@@ -52,10 +52,10 @@ constexpr std::string_view kRevisionSource =
 // quietly printing the seed name to the one account that renamed it. EVERY read of a movement row
 // takes kExerciseFrom with the caller's id at $1 — there is no second spelling of this join.
 //
-// The aliases cross as a JSON ARRAY rendered by Postgres, for the reason plates_kg crosses as a
-// joined string and the log's tally is framed by rows: a display name may hold any character a text
-// column can, newlines and commas included, so a separator packed into one string is a movement
-// nobody named waiting to be split out of it. json_agg escapes; the parse is one line.
+// The aliases cross as a JSON ARRAY rendered by Postgres, for the reason the log's tally is framed
+// by rows: a display name may hold any character a text column can, newlines and commas included, so
+// a separator packed into one string is a movement nobody named waiting to be split out of it.
+// json_agg escapes; the parse is one line.
 constexpr std::string_view kExerciseColumns =
     "e.id, coalesce(n.name, e.name) AS name, e.pattern, e.equipment, "
     "e.step_kg::float8 AS step_kg, e.created_by, al.aliases";
@@ -96,14 +96,9 @@ constexpr std::string_view kProposalChangeColumns =
     "before_weight_kg::float8 AS before_weight_kg, before_rest_seconds, "
     "after_sets, after_reps, after_weight_kg::float8 AS after_weight_kg, after_rest_seconds";
 
-// The settings row. plates_kg is a numeric[] and it crosses as a JOINED STRING rather than as an
-// array, for the reason kSessionColumns keeps calendar work in SQL: pqxx's array reader is one of
-// the names that differ between the macOS build and the CI's Linux one, and a green local build is
-// not a green CI. `array_to_string` is one function, everywhere, and the parse below is six lines.
+// The settings row.
 constexpr std::string_view kPreferenceColumns =
-    "user_id, units, bar_weight_kg::float8 AS bar_weight_kg, "
-    "array_to_string(plates_kg, ',') AS plates_kg, rest_seconds, rest_sound, confirm_haptic, "
-    "confirm_sound";
+    "user_id, units, rest_seconds, rest_sound, confirm_haptic, confirm_sound";
 
 // Read as a signed bigint and clamped into the band the domain accepts. A row written before that
 // band was enforced — a unit-confused client wrapped a huge uint64 into a pre-1970 timestamp — then
@@ -178,39 +173,14 @@ struct Tally {
 // as kg rather than taking down every read of the account.
 template <typename Row>
 GymPreferences preferencesFrom(const Row& row) {
-  const std::string packed = row["plates_kg"].template as<std::string>();
-  std::vector<double> platesKg;
-  for (std::size_t at = 0; at < packed.size();) {
-    const std::size_t comma = std::min(packed.find(',', at), packed.size());
-    platesKg.push_back(std::stod(packed.substr(at, comma - at)));
-    at = comma + 1;
-  }
   std::optional<int> restSeconds;
   if (!row["rest_seconds"].is_null()) restSeconds = row["rest_seconds"].template as<int>();
   return GymPreferences{UserId{row["user_id"].template as<std::string>()},
                         unitFromStored(row["units"].template as<std::string>()),
-                        row["bar_weight_kg"].template as<double>(),
-                        std::move(platesKg),
                         restSeconds,
                         row["rest_sound"].template as<bool>(),
                         row["confirm_haptic"].template as<bool>(),
                         row["confirm_sound"].template as<bool>()};
-}
-
-// The other half of that crossing: the set as the `numeric(5,2)[]` literal the write casts. Written
-// beside the read so the two renderings cannot drift — one puts the commas in, the other takes them
-// out — and the column's own check refuses anything the entity somehow let through.
-std::string packedPlates(const std::vector<double>& platesKg) {
-  // The separator rides on a flag rather than on "is the literal empty yet", the rule TrainingCsv
-  // states for the same job: a length test is one rendering away from swallowing a comma.
-  std::string literal = "{";
-  bool first = true;
-  for (const double plate : platesKg) {
-    if (!first) literal += ",";
-    first = false;
-    literal += std::to_string(plate);
-  }
-  return literal + "}";
 }
 
 template <typename Row>
@@ -1743,19 +1713,16 @@ GymPreferences PgTrainingRepository::savePreferences(const GymPreferences& incom
   pqxx::params params;
   params.append(incoming.user.str());
   params.append(toString(incoming.units));
-  params.append(incoming.barWeightKg);
-  params.append(packedPlates(incoming.platesKg));
   if (incoming.restSeconds) params.append(*incoming.restSeconds);
   else params.append();
   params.append(incoming.restSound);
   params.append(incoming.confirmHaptic);
   params.append(incoming.confirmSound);
   pqxx::result rows = txn.exec(
-      "INSERT INTO gym_preferences (user_id, units, bar_weight_kg, plates_kg, rest_seconds, "
+      "INSERT INTO gym_preferences (user_id, units, rest_seconds, "
       "                             rest_sound, confirm_haptic, confirm_sound) "
-      "VALUES ($1::uuid, $2, $3, $4::numeric(5,2)[], $5, $6, $7, $8) "
+      "VALUES ($1::uuid, $2, $3, $4, $5, $6) "
       "ON CONFLICT (user_id) DO UPDATE SET units = excluded.units, "
-      "  bar_weight_kg = excluded.bar_weight_kg, plates_kg = excluded.plates_kg, "
       "  rest_seconds = excluded.rest_seconds, rest_sound = excluded.rest_sound, "
       "  confirm_haptic = excluded.confirm_haptic, confirm_sound = excluded.confirm_sound, "
       "  updated_at = now() "

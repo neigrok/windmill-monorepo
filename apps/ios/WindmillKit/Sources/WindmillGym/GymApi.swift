@@ -301,7 +301,7 @@ public struct GymApi: TrainingSyncing {
     }
 
     // The settings document, and it NEVER 404s: an account that has never opened the screen is served
-    // the defaults, so the room always has a rest dial and a plate set to draw. That is what lets the
+    // the defaults, so the room always has a rest dial and a unit to draw. That is what lets the
     // absence of a stored row and the presence of a default one be the same thing to every caller.
     public func preferences() async throws -> GymPreferences {
         try await api.get("/v1/gym/preferences", as: GymPreferences.self)

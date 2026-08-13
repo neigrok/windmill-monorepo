@@ -20,13 +20,12 @@ class LocalPreferencesTests {
 
     private fun file() = File(tmp.root, "prefs-${System.nanoTime()}.json")
 
-    private val racked = GymPreferences(units = Units.Pounds, barWeightKg = 15.0,
-                                        platesKg = listOf(20.0, 10.0), restSeconds = 90)
+    private val chosen = GymPreferences(units = Units.Pounds, restSeconds = 90, restSound = false)
 
     // A seat that never opened the screen is served the defaults and owes NOTHING. This is the
     // whole reason the document is nullable one level up: at its defaults it encodes as `{}`, so
     // the bytes cannot tell "the lifter chose these" from "nobody has touched this" — and the
-    // difference is whether the claim overwrites an account's real rack with them.
+    // difference is whether the claim overwrites an account's real settings with them.
     @Test
     fun testAnUntouchedSeatOwesTheAccountNothing() {
         val held = LocalPreferences(file())
@@ -48,24 +47,24 @@ class LocalPreferencesTests {
     @Test
     fun testWhatWasSetSurvivesARelaunchAndIsOwedUntilTheLogTakesIt() {
         val path = file()
-        LocalPreferences(path).save(racked)
+        LocalPreferences(path).save(chosen)
         val relaunched = LocalPreferences(path)
-        assertEquals(racked, relaunched.document)
+        assertEquals(chosen, relaunched.document)
         assertTrue(relaunched.owed)
 
-        relaunched.landed(racked)
+        relaunched.landed(chosen)
         assertFalse(relaunched.owed)
-        assertEquals(racked, LocalPreferences(path).document)
+        assertEquals(chosen, LocalPreferences(path).document)
     }
 
-    // The claim's carry: a rack set before signing in becomes the account's, still owed, so the
-    // next pass sends it. A lifter who set their plates before signing in must not lose them.
+    // The claim's carry: a room set up before signing in becomes the account's, still owed, so the
+    // next pass sends it. A lifter who set their rest before signing in must not lose it.
     @Test
-    fun testAnAnonymousRackRidesOntoTheAccountThatClaimsIt() {
+    fun testAnAnonymousRoomRidesOntoTheAccountThatClaimsIt() {
         val held = LocalPreferences(file())
-        held.save(racked)
+        held.save(chosen)
         held.adopt("u1")
-        assertEquals(racked, held.document)
+        assertEquals(chosen, held.document)
         assertTrue("still owed — the log has not taken it yet", held.owed)
     }
 
@@ -86,8 +85,8 @@ class LocalPreferencesTests {
     fun testASeatChangeDropsWhatTheLogIsAlreadyHolding() {
         val held = LocalPreferences(file())
         held.adopt("u1")
-        held.save(racked)
-        held.landed(racked)
+        held.save(chosen)
+        held.landed(chosen)
 
         held.adopt("u2")
         assertEquals(GymPreferences(), held.document)
@@ -106,14 +105,14 @@ class LocalPreferencesTests {
     fun testAChangeThatLandedNowhereRidesThroughASignOut() {
         val held = LocalPreferences(file())
         held.adopt("u1")
-        held.save(racked)
+        held.save(chosen)
 
         held.adopt(null)
-        assertEquals("nothing was thrown away at the door", racked, held.document)
+        assertEquals("nothing was thrown away at the door", chosen, held.document)
         assertTrue(held.owed)
 
         held.adopt("u1")
-        assertEquals(racked, held.document)
+        assertEquals(chosen, held.document)
         assertTrue("and the next claim is what lands it", held.owed)
     }
 
@@ -124,24 +123,23 @@ class LocalPreferencesTests {
     fun testTheAccountsCopyDoesNotOverwriteAChangeThisDeviceStillOwes() {
         val held = LocalPreferences(file())
         held.adopt("u1")
-        held.save(racked)
+        held.save(chosen)
 
-        held.readBack(GymPreferences(barWeightKg = 7.0))
-        assertEquals(racked, held.document)
+        held.readBack(GymPreferences(restSeconds = 180))
+        assertEquals(chosen, held.document)
         assertTrue(held.owed)
 
-        held.landed(racked)
-        held.readBack(GymPreferences(barWeightKg = 7.0))
-        assertEquals(7.0, held.document.barWeightKg, 1e-9)
+        held.landed(chosen)
+        held.readBack(GymPreferences(restSeconds = 180))
+        assertEquals(180, held.document.restSeconds)
     }
 
-    // What is kept is the STORED document and never the send: the log sorts a rack heaviest-first
-    // and drops duplicates, and a device drawing its own send would disagree with the account about
-    // the same gym.
+    // What is kept is the STORED document and never the send: the log clamps a rest target into its
+    // band, and a device drawing its own send would disagree with the account about the same room.
     @Test
     fun testWhatIsKeptIsWhatTheLogStoredRatherThanWhatWentOut() {
         val held = LocalPreferences(file())
-        held.save(GymPreferences(platesKg = listOf(2.5, 25.0, 25.0, 20.0)))
-        assertEquals(listOf(25.0, 20.0, 2.5), held.document.platesKg)
+        held.save(GymPreferences(restSeconds = 4_000))
+        assertEquals(GymPreferences.maxRestSeconds, held.document.restSeconds)
     }
 }

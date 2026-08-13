@@ -1718,38 +1718,38 @@ class TrainingStoreTests {
         assertEquals(listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
     }
 
-    // A rack set before signing in is the lifter's, and the sign-in claims it exactly as it claims
-    // their movements, routines and sessions. A lifter who set their plates on the bus must not
-    // lose them at the door.
+    // A room set up before signing in is the lifter's, and the sign-in claims it exactly as it
+    // claims their movements, routines and sessions. A lifter who set their rest on the bus must not
+    // lose it at the door.
     @Test
-    fun testARackSetSignedOutIsClaimedOntoTheAccount() = runTest {
+    fun testARoomSetUpSignedOutIsClaimedOntoTheAccount() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = false))
 
-        assertNull(store.savePreferences(GymPreferences(barWeightKg = 15.0, restSeconds = 90)))
-        assertEquals(15.0, store.preferences.barWeightKg, 1e-9)
+        assertNull(store.savePreferences(GymPreferences(units = Units.Pounds, restSeconds = 90)))
+        assertEquals(Units.Pounds, store.preferences.units)
         assertTrue("nobody to tell yet", server.settingsWritten.isEmpty())
 
         val relaunched = makeStore(sync = server)
         relaunched.connect(account(signedIn = true))
 
-        assertEquals(listOf(15.0), server.settingsWritten.map { it.barWeightKg })
+        assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
         assertEquals(90, server.settings?.restSeconds)
-        assertEquals(15.0, relaunched.preferences.barWeightKg, 1e-9)
+        assertEquals(Units.Pounds, relaunched.preferences.units)
     }
 
-    // And the other direction: an account that already has a rack hands it to a phone that has
-    // never opened the screen — rather than that phone's untouched defaults overwriting it.
+    // And the other direction: an account that already has settings hands them to a phone that has
+    // never opened the screen — rather than that phone's untouched defaults overwriting them.
     @Test
-    fun testAnAccountsOwnRackArrivesOnConnectAndIsNotOverwrittenByAFreshPhone() = runTest {
+    fun testAnAccountsOwnSettingsArriveOnConnectAndAreNotOverwrittenByAFreshPhone() = runTest {
         val server = FakeTraining()
-        server.settings = GymPreferences(platesKg = listOf(20.0, 10.0), restSeconds = 180)
+        server.settings = GymPreferences(units = Units.Pounds, restSeconds = 180)
 
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        assertEquals(listOf(20.0, 10.0), store.preferences.platesKg)
+        assertEquals(Units.Pounds, store.preferences.units)
         assertEquals(180, store.preferences.restSeconds)
         assertTrue("a phone with nothing to say says nothing", server.settingsWritten.isEmpty())
     }

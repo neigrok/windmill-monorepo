@@ -301,11 +301,11 @@ public:
   // core, two doors, and a rule that cannot be true on one surface and not the other.
   //
   // The read answers the DEFAULTS where nothing is stored rather than an absence, because every
-  // client needs a rest target and a plate set to draw its first frame — a 404 there would put a
-  // copy of the defaults in each of them, and the fourth copy is the one that disagrees.
+  // client needs the rest target and the reading unit to draw its first frame — a 404 there would
+  // put a copy of the defaults in each of them, and the fourth copy is the one that disagrees.
   //
   // The write is the WHOLE document, the shape a routine travels in and for the shape's own reason:
-  // the settings screen renders all five rows from one value it already holds, so it always has the
+  // the settings screen renders every row from one value it already holds, so it always has the
   // whole document in hand, and a partial write would need "omitted" and "cleared" to be different
   // things on the one field whose absence already means something — an absent rest target IS the
   // timer off. It answers with the stored row, so a client draws what the store now holds.

@@ -174,8 +174,8 @@ interface TrainingSyncing {
     // stored, which is what makes "off" expressible at all (`restSeconds` absent IS off, and there
     // is no 0 and no false to say it with).
     //
-    // The document it answers with is the STORED one and may not be the one that went out: plates
-    // come back sorted heaviest-first with duplicates gone. Draw the reply, never the send.
+    // The document it answers with is the STORED one and may not be the one that went out: an
+    // unknown unit comes back clamped. Draw the reply, never the send.
     suspend fun savePreferences(document: GymPreferences): GymPreferences
 
     // ASK — ONE QUESTION INTO ONE THREAD, and the only door in this interface that spends money. The

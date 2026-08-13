@@ -152,7 +152,6 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
            (std::vector<std::string>{
                "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "get_preferences gym:read",
                "start_session gym:write", "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
                "create_exercise gym:write", "share_session gym:write",
@@ -279,9 +278,8 @@ TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
 TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   Harness h;
 
-  const std::vector<std::string> reads{"list_exercises", "list_sessions",  "get_session",
-                                       "last_time",      "list_routines", "get_stats",
-                                       "get_preferences"};
+  const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
+                                       "last_time",      "list_routines", "get_stats"};
   const std::vector<std::string> writes{"start_session",  "log_set",
                                         "finish_session", "create_routine",
                                         "propose_routine_change", "create_exercise",
@@ -323,7 +321,7 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
   CHECK_EQ(namesIn(surface.listTools(ToolCaller{uid(), parseToolScope("gym:read")})),
            (std::vector<std::string>{"list_exercises", "list_sessions", "get_session", "last_time",
-                                     "list_routines", "get_stats", "get_preferences"}));
+                                     "list_routines", "get_stats"}));
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
 }
@@ -1172,91 +1170,70 @@ TEST(gym_a_removal_proposal_counts_the_sets_each_line_keeps) {
   CHECK_EQ(body(minted)["proposal"]["changes"][0]["loggedSets"].asInt(), 2);
 }
 
-// ---- §I · what an agent may know about a lifter's gym, and what it may not ---------------------
+// ---- §I · a lifter's settings are not an agent's business at all -----------------------------
 
-// The read exists so a proposal can be checked against the room it will be lifted in: an agent that
-// knows the plates can avoid naming a weight this gym cannot build, and one that knows the global
-// rest target knows the default a routine line takes when it names none. A lifter with no row is
-// answered with the defaults, exactly as every other surface is — there is no absence here for a
-// model to interpret.
-TEST(gym_get_preferences_hands_an_agent_the_room_the_lifter_trains_in) {
-  Harness h;
-
-  const ToolResult fresh = h.call("get_preferences", Json::Value(Json::objectValue));
-  h.service.savePreferences(GymPreferences{uid(), Unit::lb, 15.0, {25, 2.5}, 90, false, true, true});
-  const ToolResult stored = h.call("get_preferences", Json::Value(Json::objectValue));
-
-  CHECK_FALSE(fresh.isError);
-  CHECK_EQ(body(fresh)["units"].asString(), std::string("kg"));
-  CHECK_EQ(body(fresh)["barWeightKg"].asDouble(), 20.0);
-  CHECK_EQ(body(fresh)["platesKg"].size(), Json::ArrayIndex{7});
-  CHECK(body(fresh)["restSeconds"].isNull());   // no timer, and no zero standing in for one
-  CHECK_EQ(body(stored)["units"].asString(), std::string("lb"));
-  CHECK_EQ(body(stored)["barWeightKg"].asDouble(), 15.0);
-  CHECK_EQ(body(stored)["platesKg"].size(), Json::ArrayIndex{2});
-  CHECK_EQ(body(stored)["restSeconds"].asInt(), 90);
-}
-
-// One lifter's settings and no one else's, the scope every gym tool keeps.
-TEST(gym_get_preferences_reads_the_caller_and_no_other_account) {
-  Harness h;
-  h.service.savePreferences(GymPreferences{uid(), Unit::lb, 15.0, {25}, 90, false, false, true});
-
-  const ToolResult theirs = h.call("get_preferences", Json::Value(Json::objectValue), "u2");
-
-  CHECK_EQ(body(theirs)["units"].asString(), std::string("kg"));
-  CHECK_EQ(body(theirs)["barWeightKg"].asDouble(), 20.0);
-}
-
-// NO AGENT MAY SAY WHAT A LIFTER'S GYM OWNS. The absence is the design, not a gap somebody forgot to
-// fill: an agent that could write the plate inventory could make the loading readout confidently
-// name a weight the lifter cannot build, and one that could arm the rest timer could start a phone
-// beeping in a room it is not standing in. Both are statements about the lifter's own world, which
-// is the same class of verb as editing a set they lifted — reserved for the hand. Every level is
-// searched, because the rule is about the verb and not about which grant reaches it.
-TEST(gym_publishes_no_tool_that_writes_a_lifters_settings) {
+// NO AGENT MAY READ OR WRITE A LIFTER'S SETTINGS, and the read side of that is new: `get_preferences`
+// was retired on 2026-08-13 with nothing in its place. It existed so a proposal could be checked
+// against the plates a gym owned — and gym stopped keeping a plate inventory, because gyms are more
+// or less the same and this product guides a program rather than managing equipment. What was left
+// behind it was a rest dial and a reading unit, which are the lifter's own and not context to fetch.
+// Every level is searched, because the rule is about the verb and not about which grant reaches it.
+TEST(gym_publishes_no_tool_that_reads_or_writes_a_lifters_settings) {
   Harness h;
 
   const std::vector<std::string> everything =
       namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
 
   for (const std::string& name : everything) {
+    CHECK(name != "get_preferences");
     CHECK(name != "set_preferences");
     CHECK(name != "save_preferences");
     CHECK(name != "update_preferences");
     CHECK(name != "set_units");
     CHECK(name != "set_plates");
   }
-  for (const char* name : {"set_preferences", "save_preferences", "update_preferences", "set_units"})
+  for (const char* name : {"get_preferences", "set_preferences", "save_preferences",
+                           "update_preferences", "set_units"})
     CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
-  // And the read itself wrote nothing: a lifter an agent asked about does not grow a row.
-  h.call("get_preferences", Json::Value(Json::objectValue));
   CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
 }
 
-// The description is the contract an agent plans against, so the two claims it makes that the code
-// has to keep are pinned: that nothing writes these, and that loads stay kilograms whatever `units`
-// says. A description promising an effect the code does not have is the exact defect W1a removed.
-TEST(gym_get_preferences_description_promises_only_what_the_code_does) {
-  std::string described;
-  for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.name() == "get_preferences") described = tool.descriptor["description"].asString();
+// The retirement ANSWERS rather than shrugging, and it is the one retirement in this catalog with no
+// replacement to name — so the sentence has to say that out loud or it sends an agent hunting for
+// the tool that took over. An agent written against the old catalog calls this on its first turn
+// after the deploy, and this is a connected lifter's whole first experience of the change.
+TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
+  Harness h;
 
-  CHECK(described.find("Nothing writes these") != std::string::npos);
-  CHECK(described.find("loads are kilograms everywhere in gym") != std::string::npos);
-  CHECK(described.find("Takes no arguments.") != std::string::npos);
-  CHECK(described.find("never copied into the line") != std::string::npos);
+  const ToolResult refused = h.call("get_preferences", Json::Value(Json::objectValue));
+
+  CHECK(refused.isError);
+  CHECK(message(refused).find("retired on 2026-08-13") != std::string::npos);
+  CHECK(message(refused).find("nothing replaced it") != std::string::npos);
+  // Never the false reason. The level WAS granted; the tool is gone.
+  CHECK(message(refused).find("granted") == std::string::npos);
 }
 
-// The third claim, pinned by BEHAVIOUR rather than by the sentence: the global target is inherited
-// at the rack and this server fills in nothing. An agent told otherwise would read a line with no
-// `restSeconds` back off `list_routines`, find the field still empty, and conclude the rest it
-// prescribed was dropped — so the description says the field stays empty and this proves it does,
-// with the dial armed the whole time. The routine tools' own schema points at the same value now, and
-// one omission with two names in one catalog is how that misreading gets made.
+// The same sentence reaches a client that never calls it, because a name no product declares never
+// arrives at this dispatcher — the composite answers with its own unnamed "no such tool". So the
+// retirement is also in the paragraph every client reads at connect, and pinned here beside the
+// dispatcher's copy so the two cannot drift apart.
+TEST(gym_connect_paragraph_carries_the_retirement_the_dispatcher_cannot_reach) {
+  const std::string paragraph = gymInstructions();
+
+  CHECK(paragraph.find("Retired on 2026-08-13 with NO replacement: `get_preferences`") !=
+        std::string::npos);
+  CHECK(paragraph.find("keeps no plate inventory") != std::string::npos);
+}
+
+// The rest dial is inherited at the rack and this server fills in nothing. An agent told otherwise
+// would read a line with no `restSeconds` back off `list_routines`, find the field still empty, and
+// conclude the rest it prescribed was dropped — so the routine schema says the field stays empty and
+// this proves it does, with the lifter's dial armed the whole time. The dial is checked through the
+// service now rather than through a tool, which is the point: no tool reaches it any more.
 TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none) {
   Harness h;
-  h.service.savePreferences(GymPreferences{uid(), Unit::kg, 20.0, {25, 20}, 120, true, true, false});
+  h.service.savePreferences(GymPreferences{uid(), Unit::kg, 120, true, true, false});
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
@@ -1274,9 +1251,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
 
   CHECK_FALSE(listed.isError);
   CHECK(body(listed)["routines"][0]["entries"][0]["restSeconds"].isNull());
-  // And the dial an agent reads separately is still the 120 it was: the two values never touch.
-  CHECK_EQ(body(h.call("get_preferences", Json::Value(Json::objectValue)))["restSeconds"].asInt(),
-           120);
+  CHECK_EQ(h.service.preferences(uid()).restSeconds, std::optional<int>(120));
 }
 
 // `gym:read` CANNOT MINT A PROPOSAL. Reading a lifter's log does not buy the right to put a card in
@@ -1383,12 +1358,11 @@ TEST(gym_a_log_page_claims_the_workouts_it_named_and_not_their_sets) {
   CHECK_EQ(read["weeks"].asInt(), 2);  // a Tuesday and the Tuesday after: two Monday-to-Monday weeks
 }
 
-// The catalog and the settings are not the log, so they make no claim at all — "read 0 sets" is noise
+// The catalog and the program are not the log, so they make no claim at all — "read 0 sets" is noise
 // rather than a fact, and an agent that saw it might repeat it.
 TEST(gym_a_read_that_served_no_log_rows_says_nothing_about_what_it_read) {
   Harness h;
   CHECK_FALSE(body(h.call("list_exercises", Json::Value(Json::objectValue))).isMember("read"));
-  CHECK_FALSE(body(h.call("get_preferences", Json::Value(Json::objectValue))).isMember("read"));
   CHECK_FALSE(body(h.call("list_routines", Json::Value(Json::objectValue))).isMember("read"));
 }
 
