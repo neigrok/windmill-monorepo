@@ -25,10 +25,13 @@ import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { ConnectInvitation } from './connect/ConnectLog.jsx';
 import { failureReason, gymApi } from './gymApi.js';
-import { arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF } from './log.js';
 import {
-  applyLabel, atomicLine, diffRows, documentLine, intentLine, isPending, reviewLabel,
-  settledLine, sourceLabel, stateChip, summaryLine,
+  arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF,
+  threadHref,
+} from './log.js';
+import {
+  applyLabel, atomicLine, conversationOf, CONVERSATION_VERB, diffRows, documentLine, intentLine,
+  isPending, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -192,6 +195,14 @@ export function ProposalDiff({ id, log }) {
           <p className="gym-proposal-from">
             {`from ${sourceLabel(proposal.source)}  ·  ${arrivedLabel(proposal.createdAt)}`}
           </p>
+          {/* AND THE CONVERSATION IT WAS ASKED FOR IN (§O), where the wire carried one. Absent means
+              there is nothing to open — the MCP door, or a thread the lifter deleted — and neither
+              is an apology to print: the line above still names the door the change came through. */}
+          {conversationOf(proposal.source) && (
+            <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>
+              {CONVERSATION_VERB} ›
+            </a>
+          )}
         </div>
         <span className={`gym-proposal-chip is-${proposal.state}`}>{stateChip(proposal)}</span>
       </header>

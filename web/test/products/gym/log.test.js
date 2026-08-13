@@ -26,6 +26,7 @@ import {
   recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
+  threadHref, threadIdOf, THREADS_HREF,
   topSetLabel, topSetOf, UNTESTED, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
@@ -152,7 +153,7 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the twelve rooms a hash names', () => {
+test('screenOf — one grammar decides which of the fourteen rooms a hash names', () => {
   assert.equal(screenOf('#/gym'), 'today');
   assert.equal(screenOf('#/gym/'), 'today');
   assert.equal(screenOf('#/gym/log'), 'log');
@@ -170,6 +171,20 @@ test('screenOf — one grammar decides which of the twelve rooms a hash names', 
   assert.equal(screenOf(ASK_HREF), 'ask');
   assert.equal(screenOf('#/gym/ask'), 'ask');
   assert.equal(screenOf('#/gym/ask?from=proposal'), 'ask');
+  // ASK'S PAST (§O) hangs UNDER Ask, and the longer URL wins — every threads hash is also an Ask
+  // hash, so a list read as the room would be the door quietly swallowing the past behind it.
+  assert.equal(screenOf(THREADS_HREF), 'threads');
+  assert.equal(screenOf('#/gym/ask/threads'), 'threads');
+  assert.equal(screenOf('#/gym/ask/threads/'), 'threads');
+  assert.equal(screenOf('#/gym/ask/threads?from=routine'), 'threads');
+  assert.equal(screenOf(threadHref('thr_0a1b2c3d4e5f6071')), 'thread');
+  assert.equal(threadIdOf(threadHref('thr_0a1b2c3d4e5f6071')), 'thr_0a1b2c3d4e5f6071');
+  assert.equal(threadHref('thr_1'), '#/gym/ask/threads/thr_1');
+  // The wire's whole charset, for `proposalIdOf`'s reason: a link may have been written by a
+  // surface whose mint is not this one's.
+  assert.equal(threadIdOf('#/gym/ask/threads/A-b_9'), 'A-b_9');
+  assert.equal(threadIdOf(THREADS_HREF), null);
+  assert.equal(threadIdOf('#/gym/ask'), null);
   // THE CONNECTED LOG (§D12/13) is a position in GYM and not a link out to the account's workbench,
   // for the reason the settings row gives: the workbench is written about skill trees, and somebody
   // who tapped "Connected log" in their training settings asked about their training. Like Ask it

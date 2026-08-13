@@ -13,9 +13,10 @@ import works.windmill.gym.domain.ReadTally
 // Nothing else bounds a conversation: the composer holds each QUESTION to the wire's ceiling, but an
 // answer is server-sized and the number of exchanges is whatever a lifter asks in one activity.
 //
-// A thread past the ceiling loses its OLDEST exchanges, for the reason the wire drops the oldest
-// turns — a conversation is about where it has got to — and the trim happens on the way out, so
-// nothing a lifter is looking at disappears while they are looking at it.
+// A thread past the ceiling loses its OLDEST exchanges — a conversation is about where it has got
+// to, and since §O the oldest of it is the half the log already holds — and the trim happens on the
+// way out, so nothing a lifter is looking at disappears while they are looking at it. It is the only
+// trim left in Ask: nothing is dropped on the wire any more.
 class AskThreadSaverTests {
     private fun answered(question: String, said: String) =
         AskExchange(question = question, answer = AskAnswer(answer = said, read = ReadTally(sets = 12)))

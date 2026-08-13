@@ -17,9 +17,12 @@ namespace wm::gym {
 // It is called from AskService's own worker, never from a request loop, because parking one of the
 // four handler threads for a minute is how a training log stops answering for everybody.
 
-// One turn of the conversation. THE SERVER KEEPS NONE OF THIS: the client sends the turns so far on
-// every ask, so there is no conversation table, no id to leak, and nothing to garbage-collect. A v1
-// that stored the thread would be a second store of a lifter's words with its own delete story.
+// One turn of the conversation, as the LOOP sees it. Since W11 the server keeps the thread
+// (`domain/Thread.h`) and assembles this vector from what it stored, rather than taking a history
+// off the wire — W7 did the latter and said so, and the owner reversed it because a conversation
+// about your bench plateau is worth more in six weeks than it was that evening. This shape stays the
+// vendor loop's, carrying no instants and no ids: what a thread IS lives in the domain, and what the
+// model is shown is a projection of it.
 struct AskTurn {
   bool fromLifter = true;  // false = an answer Ask gave earlier, echoed back for context
   std::string text;

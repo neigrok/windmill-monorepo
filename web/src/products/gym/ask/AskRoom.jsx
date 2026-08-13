@@ -23,19 +23,26 @@
 // AND IT CAN BE ABSENT. A deployment with no model wired never mounts the route, so the first ask
 // can come back a bare 404 — in which case the composer goes and the question the lifter typed stays
 // on screen as their own turn, unanswered. Nothing they wrote disappears quietly.
+//
+// IT HAS A PAST NOW (§O). W7 built this room stateless on purpose and said so; the owner reversed
+// it, because a conversation about your bench plateau is worth more in six weeks than it was that
+// evening. So the room mints a thread id, sends ONE question against it, and the header is a door
+// onto every conversation before this one.
 
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from '../gymApi.js';
-import { ASK_HREF, CONNECT_HREF, proposalHref } from '../log.js';
+import { ASK_HREF, CONNECT_HREF, proposalHref, THREADS_HREF } from '../log.js';
+import { mintId } from '../mint.js';
 import { changeLabel, diffRows, reviewLabel } from '../proposals.js';
 import { DiffRow } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import {
   answerTurn, ASK_PLACEHOLDER, ASK_TERMS, ASK_TITLE, askFailure, FIX_IS_YOURS, FREE_DOOR_LINE,
   FREE_DOOR_VERB, MID_SESSION_NOTE, NO_ANSWER_NOTE, PROPOSAL_NOTE, questionTooLong, readLine,
-  stepsLine, threadFor, threadFull, TOO_LONG_NOTE,
+  stepsLine, THREAD_FULL_NOTE, THREAD_PREFIX, threadFull, TOO_LONG_NOTE,
 } from './ask.js';
+import { THREADS_TITLE } from './threads.js';
 
 // THE DOOR, and the one condition it is ever drawn under. §L: never offered mid-session — an answer
 // about a workout that is still moving is out of date before it is read, and the server refuses one
@@ -54,9 +61,16 @@ export function AskDoor({ training }) {
 }
 
 export function AskRoom({ log }) {
-  // { from: 'lifter' | 'ask', text, steps?, read?, proposals? } — the whole conversation, held here
-  // and nowhere else. The server keeps none of it, so what is on screen IS the thread.
+  // { from: 'lifter' | 'ask', text, steps?, read?, proposals? } — the conversation as this screen
+  // draws it, which is NOT the same object as the thread the server stores (§O). The store holds the
+  // questions and the answers; the steps and the receipt under each answer are evidence for the
+  // reader and belong to the exchange that produced them, so they live here and are not read back.
   const [turns, setTurns] = useState([]);
+  // THE THREAD THIS ROOM IS WRITING INTO, minted before the first question rather than handed back
+  // by the server: a fresh id IS how a new conversation is opened, so there is nothing to ask for.
+  // Entering the room starts one — the room is left the way any other screen is left, and an old
+  // conversation is read in Threads rather than resumed here.
+  const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));
   const [draft, setDraft] = useState('');
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState('');
@@ -65,6 +79,11 @@ export function AskRoom({ log }) {
   // holds the SENTENCE rather than a flag because the two reasons are different facts and printing
   // the wrong one is exactly the misinformation this room exists to avoid.
   const [closed, setClosed] = useState('');
+  // THE SERVER SAID THIS CONVERSATION IS FULL. The room predicts the cap from the answers on screen
+  // and retires the composer a question early — but another surface can have added turns to the same
+  // thread, so the refusal is honoured as well as anticipated: a composer left open under a 409 the
+  // next send would earn again is a box that takes typing and cannot deliver it.
+  const [refusedFull, setRefusedFull] = useState(false);
 
   const ask = async () => {
     const question = draft.trim();
@@ -75,15 +94,16 @@ export function AskRoom({ log }) {
       setNote(TOO_LONG_NOTE);
       return;
     }
-    const thread = threadFor(turns, question);
     // The lifter's turn lands on screen BEFORE the request — so a reply that never comes leaves the
-    // question they asked, not a cleared box and no explanation.
+    // question they asked, not a cleared box and no explanation. It is on screen and not yet in the
+    // thread: the server stores a question only once an answer has landed beside it, so a failed ask
+    // leaves the conversation exactly as it was and this same question sent again lands once.
     setTurns((held) => [...held, { from: 'lifter', text: question }]);
     setDraft('');
     setNote('');
     setAsking(true);
     try {
-      const reply = await gymApi.ask(thread);
+      const reply = await gymApi.ask(threadId, question);
       // A 200 IS NOT YET AN ANSWER. Every answer states what it read (§L), so a body with no
       // receipt in it is not something this room may draw — `answerTurn` is the one door onto a
       // turn, and a reply it refuses is said as the model not having answered, which is what it is.
@@ -93,7 +113,14 @@ export function AskRoom({ log }) {
       else setNote(NO_ANSWER_NOTE);
     } catch (error) {
       const failure = askFailure(error);
-      if (failure.gone) setClosed(failure.note);
+      // An id another account already holds — which can only happen before anything of this
+      // conversation was stored, so a fresh one costs nothing and the question stays on screen to
+      // send again.
+      if (failure.fresh) setThreadId(mintId(THREAD_PREFIX));
+      // A full conversation says itself ONCE, in the block that replaces the composer — a note above
+      // that block would print the same sentence twice.
+      if (failure.full) setRefusedFull(true);
+      else if (failure.gone) setClosed(failure.note);
       else setNote(failure.note);
     }
     setAsking(false);
@@ -107,10 +134,16 @@ export function AskRoom({ log }) {
       {/* The header is the whole disclosure and it is on screen before a word is typed: what Ask
           reaches, and — in the same breath — that proposing is the most it can do. There is no plan
           chip beside it, because Ask is not behind a plan: it is open, with a cap that says so in
-          words when it is reached. */}
+          words when it is reached.
+
+          AND THE PAST HANGS OFF IT (§O). One door, no count on it and no dot: a number here would be
+          an inbox saying something is waiting, and nothing in this room is ever waiting for anybody. */}
       <header className="gym-ask-head">
-        <h1 className="gym-title">{ASK_TITLE}</h1>
-        <p className="gym-ask-terms">{ASK_TERMS}</p>
+        <div className="gym-ask-titles">
+          <h1 className="gym-title">{ASK_TITLE}</h1>
+          <p className="gym-ask-terms">{ASK_TERMS}</p>
+        </div>
+        <a className="gym-ask-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>
       </header>
 
       <AskBody
@@ -122,7 +155,13 @@ export function AskRoom({ log }) {
         draft={draft}
         setDraft={setDraft}
         onAsk={ask}
-        onStartAgain={() => { setTurns([]); setNote(''); }}
+        refusedFull={refusedFull}
+        /* Starting again is a NEW conversation and not a cleared screen: the one on it is stored
+           under its own id, so the room mints another rather than writing a fifth question into a
+           thread the server would refuse. */
+        onStartAgain={() => {
+          setTurns([]); setNote(''); setRefusedFull(false); setThreadId(mintId(THREAD_PREFIX));
+        }}
       />
     </section>
   );
@@ -132,7 +171,7 @@ export function AskRoom({ log }) {
 // about what the answers look like. A composer nobody could get an answer from is the failure the
 // old panel's paywall rule named: nobody types a question about their squats and then finds out it
 // was never going to be answered.
-function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onStartAgain }) {
+function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onStartAgain, refusedFull }) {
   // The shared read has not told us whether a workout is running yet, and "not training" is exactly
   // the wrong guess to make while it is in flight.
   if (log.phase === 'loading') return <p className="gym-quiet">Opening the log…</p>;
@@ -150,7 +189,9 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
     );
   }
 
-  const full = threadFull(turns);
+  // Predicted from the answers on screen, or said outright by the server — one flag either way, so
+  // there is one face for "this conversation is finished" and not two.
+  const full = refusedFull || threadFull(turns);
 
   return (
     <>
@@ -178,12 +219,13 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
 
       {closed && <p className="gym-ask-closed">{closed}</p>}
 
-      {/* A THREAD IS EIGHT TURNS AND THE ROOM SAYS SO RATHER THAN LETTING SEND FAIL. Nothing is kept
-          between conversations anyway — the server holds none of this — so starting again costs the
-          lifter exactly the context that is on the screen in front of them. */}
+      {/* A THREAD IS EIGHT TURNS AND THE ROOM SAYS SO RATHER THAN LETTING SEND FAIL. What starting
+          again costs used to be the whole context, because the server kept none of it; since §O it
+          costs the model's memory of this exchange and nothing else — the conversation itself is
+          kept, titled by the question that opened it, and the sentence says where. */}
       {!closed && full && (
         <div className="gym-ask-full">
-          <p className="gym-ask-note">That’s as long as one conversation goes here.</p>
+          <p className="gym-ask-note">{THREAD_FULL_NOTE}</p>
           <button type="button" className="gym-ask-again" onClick={onStartAgain}>Start a new one</button>
         </div>
       )}

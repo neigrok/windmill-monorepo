@@ -19,7 +19,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AskTurn
+import works.windmill.gym.domain.ThreadOutcome
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
@@ -2412,7 +2414,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = false))
 
         assertEquals(AskOutcome.Refused("Ask reads your account's log — sign in first"),
-            store.ask(listOf(AskTurn("lifter", "what's stalled?"))))
+            store.ask("thr_1", "what's stalled?"))
         assertFalse(server.calls.contains("ask"))
     }
 
@@ -2432,7 +2434,7 @@ class TrainingStoreTests {
         server.answers.add(AskAnswer(answer = "Done — as a proposal on Push A.",
             read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("prop_1")))
 
-        val outcome = store.ask(listOf(AskTurn("lifter", "write the triples block")))
+        val outcome = store.ask("thr_1", "write the triples block")
 
         assertEquals(AskOutcome.Answered(AskAnswer(answer = "Done — as a proposal on Push A.",
             read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("prop_1"))),
@@ -2451,7 +2453,7 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        val outcome = store.ask(listOf(AskTurn("lifter", "what's stalled?")))
+        val outcome = store.ask("thr_1", "what's stalled?")
 
         assertEquals(ReadTally(sets = 214, sessions = 34, weeks = 12),
             (outcome as AskOutcome.Answered).answer.read)
@@ -2465,16 +2467,129 @@ class TrainingStoreTests {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
-        val question = listOf(AskTurn("lifter", "what's stalled?"))
-
         server.refuseAsk = refusal(429, code = "ask-daily-limit", message = "that's Ask for now")
-        assertEquals(AskOutcome.Refused("that's Ask for now"), store.ask(question))
+        assertEquals(AskOutcome.Refused("that's Ask for now"), store.ask("thr_1", "what's stalled?"))
 
         server.refuseAsk = storageFailure
-        assertEquals(AskOutcome.Failed("internal error"), store.ask(question))
+        assertEquals(AskOutcome.Failed("internal error"), store.ask("thr_1", "what's stalled?"))
 
         server.refuseAsk = refusal(404, message = "not found")
-        assertEquals(AskOutcome.Absent, store.ask(question))
+        assertEquals(AskOutcome.Absent, store.ask("thr_1", "what's stalled?"))
+
+        // §O'S FIFTH ANSWER: eight turns is a full conversation, so the question is fine and the
+        // THREAD is over — the room lets go of the id and the next ask opens a new one.
+        server.refuseAsk = refusal(409, code = "ask-thread-full", message = "that conversation is full")
+        assertEquals(AskOutcome.Fresh("that conversation is full"), store.ask("thr_1", "what's stalled?"))
+    }
+
+    // §O — THE PAST IS READ AND NEVER HELD. A conversation's outcome is DERIVED by the server from
+    // the proposals it minted, so it moves the moment anybody applies or dismisses one: a list this
+    // store cached between visits would draw `waiting` under a diff the lifter decided this morning.
+    @Test
+    fun testTheThreadsListIsReadEveryTimeAndCarriesNoTurns() = runTest {
+        val server = FakeTraining()
+        server.conversations["thr_1"] = AskThread(
+            id = "thr_1", title = "Bench has been stuck at 82.5. What do you see?",
+            askedAtMs = 2_000, outcome = ThreadOutcome("applied", changes = 4, routine = "Push A"),
+            turns = listOf(AskTurn("lifter", "Bench has been stuck at 82.5. What do you see?", 2_000)))
+        server.conversations["thr_2"] = AskThread(
+            id = "thr_2", title = "Is my squat volume too low?", askedAtMs = 5_000,
+            outcome = ThreadOutcome("read-only"))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val listed = store.threads()
+
+        assertEquals(listOf("thr_2", "thr_1"), (listed as GymResult.Ok).value.map { it.id })
+        assertEquals("no turns on the list read", listOf(0, 0), listed.value.map { it.turns.size })
+        assertEquals("4 changes → Push A", listed.value[1].outcome.detail)
+
+        // Read again, and the log is asked again: nothing about a past is held between visits.
+        store.threads()
+        assertEquals(2, server.calls.count { it == "threads" })
+    }
+
+    // ONE CONVERSATION, WHOLE — the turns as they were sent. And absent is a SENTENCE rather than a
+    // null the caller has to invent a reason for: another account's thread, a deleted one and one
+    // that never existed are one answer, because three a stranger could tell apart would say whether
+    // a conversation exists on somebody else's log.
+    @Test
+    fun testAConversationIsReadWholeAndAMissingOneAnswersInWords() = runTest {
+        val server = FakeTraining()
+        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "what's stalled?",
+            turns = listOf(AskTurn("lifter", "what's stalled?", 1_000),
+                AskTurn("ask", "bench, three weeks.", 1_200)))
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val opened = store.thread("thr_1")
+
+        assertEquals(listOf("what's stalled?", "bench, three weeks."),
+            (opened as GymResult.Ok).value.turns.map { it.text })
+        assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
+            store.thread("thr_missing"))
+    }
+
+    // §O'S RULE, PROVED RATHER THAN ASSUMED: DELETING A THREAD DELETES THE CONVERSATION AND NOT THE
+    // CONSEQUENCE. The proposal it minted was applied, and after the delete the routine's history
+    // still carries that dated row — because an applied change is a fact about the program rather
+    // than a message. What goes with the conversation is the DOOR onto it, and nothing else.
+    @Test
+    fun testDeletingAThreadLeavesTheChangeItAppliedInTheRoutinesHistory() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        server.propose(aProposal().copy(source = ProposalSource(door = "ask", thread = "thr_1")))
+        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "write the triples block")
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        store.applyProposal("prop_1")
+
+        assertEquals(GymResult.Ok(Unit), store.deleteThread("thr_1"))
+
+        val history = (store.routineHistory("rt_1") as GymResult.Ok).value
+        val row = history.mapNotNull { it.proposal }.single { it.id == "prop_1" }
+        assertEquals(ProposalState.Applied, row.state)
+        assertEquals("the row still says the change came from Ask", "ask", row.source.door)
+        // AND THE DOOR ONTO THE CONVERSATION IS WHAT WENT — `on delete set null` in the schema, so
+        // the row draws no `Ask ›` at all rather than one that opens a refusal. This is the half a
+        // fake that merely forgot the conversation would have got wrong.
+        assertEquals("the door onto the conversation is gone with it", null, row.source.conversation)
+        assertEquals("and the conversation it opened is gone",
+            GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
+            store.thread("thr_1"))
+        assertEquals("the program did not move on the delete", 2, store.routine("rt_1")?.revision)
+    }
+
+    // A DELETE OF SOMETHING ALREADY GONE IS A DELETE THAT HAPPENED: the screen asked for a
+    // conversation not to be there, and it is not there. Every other refusal is said out loud and
+    // the row stays — a screen that crossed it out on the strength of its own tap would tell a
+    // lifter their past was deleted on a request that never landed.
+    @Test
+    fun testDeletingAConversationThatIsAlreadyGoneSucceedsAndAnythingElseIsSaid() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        assertEquals(GymResult.Ok(Unit), store.deleteThread("thr_gone"))
+
+        server.refuseThreads = storageFailure
+        assertEquals(GymResult.Failed(WriteFailure(storageFailure)), store.deleteThread("thr_1"))
+    }
+
+    // THE PAST IS THE ACCOUNT'S. Signed out there is nothing to read, nothing to delete and nobody
+    // to do it for — and no round trip is spent finding that out, because the door is not drawn
+    // signed out either.
+    @Test
+    fun testTheThreadDoorsNeverReachTheLogSignedOut() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        val signIn = WriteFailure.Refused("Ask reads your account's log — sign in first")
+
+        assertEquals(GymResult.Failed(signIn), store.threads())
+        assertEquals(GymResult.Failed(signIn), store.thread("thr_1"))
+        assertEquals(GymResult.Failed(signIn), store.deleteThread("thr_1"))
+        assertTrue(server.calls.none { it in listOf("threads", "thread", "deleteThread") })
     }
 
     // §M'S SAVE, and the rule the whole wave turns on: a day built at the kitchen table is savable

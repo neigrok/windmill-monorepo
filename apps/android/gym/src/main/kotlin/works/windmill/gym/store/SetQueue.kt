@@ -410,6 +410,7 @@ sealed class ProposalVerdict {
 sealed class AskVerdict {
     data class Said(val said: String) : AskVerdict()   // the answer is the sentence, and it will not change on a retry
     data class Again(val said: String) : AskVerdict()  // 5xx, no reply at all — the one worth offering a retry on
+    data class Fresh(val said: String) : AskVerdict()  // 409 — this conversation cannot take the question; the next one opens a new thread
     data object Absent : AskVerdict()                  // 404 — this deployment has no Ask
 
     companion object {
@@ -418,6 +419,16 @@ sealed class AskVerdict {
             if (facts.offline || facts.malformed || status == null) return Again(noAnswer)
             if (status == 404) return Absent
             if (status >= 500) return Again(facts.sentence ?: noAnswer)
+            // THE TWO REFUSALS THAT ARE ABOUT THE THREAD RATHER THAN THE QUESTION, and the only
+            // two in this product a retry can fix by CHANGING something rather than by waiting:
+            // eight turns is a full conversation and an id another account holds is not this
+            // lifter's to write into. Both are answered by opening a NEW thread — the question is
+            // perfectly good, and a room that kept sending it into the same closed conversation
+            // would refuse the same lifter forever. Nothing is re-sent on its own: this spends
+            // money, so the retry is still a tap.
+            if (facts.code == "ask-thread-full" || facts.code == "ask-thread-taken") {
+                return Fresh(facts.sentence ?: "that conversation is full — ask again to start a new one")
+            }
             // Everything else is the log answering in its own words — the cap, the ceiling, the
             // workout still open, a thread it could not read, a session that has expired. The
             // sentence is the whole of what the lifter needs, and a fallback exists only so a

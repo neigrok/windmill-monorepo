@@ -86,8 +86,10 @@ happens on the device. The backend's job is narrow and load-bearing:
 - **One agent path with two doors.** Gym ships a **catalog**, and whatever talks to it reaches this
   log only through those tools, under a grant: the lifter's own Claude over MCP, or **Ask** (§12) for
   someone who has no agent. It is not a SECOND system — same tools, same service, same ownership
-  rules, and a run-scope narrower than any MCP connection's. Still cut: streaming (no SSE parser),
-  a conversation table, and any chat that speaks first.
+  rules, and a run-scope narrower than any MCP connection's. Still cut: streaming (no SSE parser)
+  and any chat that speaks first. **The conversation table is no longer cut** — W11 (§12.6) reversed
+  W7's stateless Ask by the owner's ruling, because a conversation about your bench plateau is worth
+  more in six weeks than it was that evening.
 - **It reads. It proposes. It never writes to your program.** Every gym mutation an agent can make
   declares itself `record` or `intent` (`domain/Proposal.h`), and the split is by what class of
   object it touches. **A mutation that records something that already happened executes immediately,
@@ -644,7 +646,9 @@ create table if not exists gym_proposals (
   connection    text not null default '',
   agent         text not null default '',
   created_at    timestamptz not null,
-  settled_at    timestamptz
+  settled_at    timestamptz,
+  -- W11: which conversation minted it, and `set null` is §12.6's whole delete rule.
+  thread_id     text references gym_ask_threads(id) on delete set null
 );
 create unique index if not exists gym_proposals_one_pending
   on gym_proposals (routine_id, door, connection) where state = 'pending';
@@ -660,6 +664,10 @@ create table if not exists gym_proposal_changes (
   primary key (proposal_id, position)
 );
 ```
+
+`thread_id` is W11's addition and it is null in two cases that mean the same thing to every reader:
+a proposal from the MCP door, which had no conversation, and one whose thread the lifter has since
+deleted. There is nothing there to open, either way (§12.6).
 
 **The rows are the DOCUMENT as well as the DIFF, and that is the one structural decision here.** Rows
 `1..k` are the run the routine takes on, in order — `kept`, `added` and `retargeted` alike — and rows
@@ -756,6 +764,37 @@ Both tables are in `PgAccountFootprint`'s owned list in `main.cpp`: what somebod
 lifter's program and what that lifter decided about it is their data.
 
 ---
+
+### 2.10 `gym_ask_threads` + `gym_ask_turns` — Ask's past (W11, 2026-08-13)
+
+```sql
+create table if not exists gym_ask_threads (
+  id         text primary key,                  -- client-minted 'thr_<hex>', the idempotency key
+  user_id    uuid not null references users(id) on delete cascade,
+  title      text not null,                     -- THE FIRST MESSAGE, VERBATIM, written once
+  created_at timestamptz not null,
+  asked_at   timestamptz not null               -- the newest turn: what the list sorts and dates by
+);
+
+create table if not exists gym_ask_turns (
+  thread_id   text not null references gym_ask_threads(id) on delete cascade,
+  position    int  not null check (position >= 1),
+  user_id     uuid not null references users(id) on delete cascade,
+  from_lifter boolean not null,
+  text        text not null,                    -- as sent, byte for byte
+  said_at     timestamptz not null,
+  primary key (thread_id, position)
+);
+```
+
+Both tables are on `PgAccountFootprint`'s owned list (`platform/infra/main.cpp`): a conversation is
+the lifter's own words, and an account holding one is not empty. There is **no outcome column** —
+that is derived from `gym_proposals` on every read, and §12.6 says why. The turns are written a PAIR
+AT A TIME and only once an answer has landed, so a question nobody answered is never a *turn* — but
+the **thread row lands first**, before the model runs, because a proposal minted mid-conversation
+points at it. So a thread holding no turns is a real state: it exists for the whole of every
+in-flight ask, `discardEmptyThread` takes it back when the run dies, and it survives a process that
+died in between. Every read and the export carry such a thread as itself, with nothing under it.
 
 ## 3. Capability 1 — the durable set write
 
@@ -1675,7 +1714,11 @@ query, ordered by pattern then name. Identity rules, stated once:
 | `POST /v1/gym/sessions/{id}/share` | mint a coach share — `{token, expiresAt}`, idempotent on the session | 2 |
 | `DELETE /v1/gym/sessions/{id}/share` | revoke it — `204`; nothing to revoke is `404 no such session` | 2 |
 | `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** One session and its sets; revoked, expired and unknown are one `404` | 2 |
-| `POST /v1/gym/ask` | **the one conditional route.** Ask (§12) — `{turns:[{from:"lifter"\|"ask",text}]}` in, `{answer, steps, read:{sets,sessions,weeks}, proposals:[id]}` out. It hangs off the PRODUCT and not a session, because Ask reads the log. `409 ask-session-open` mid-workout, `429 ask-daily-limit` / `ask-out-of-budget`, `502` when the model does not answer. Absent entirely on a deployment with no `ANTHROPIC_API_KEY` | 3 |
+| `GET  /v1/gym/export/threads` | every turn of every conversation, CSV — one row per turn, the thread's title and outcome beside each. The same deliberately dull file: no parameters, nothing omitted (§12.6) | 11 |
+| `GET  /v1/gym/threads` | **Ask's threads** (§12.6) — `{threads:[{id,title,createdAt,askedAt,outcome,proposals}]}`, newest asked first, bounded at `kThreadList` (200) with no total and no "there are more" flag — a count the server sends is a number to compare against, which is halfway to the badge §O forbids, so a client may print `N conversations` only while it holds fewer rows than the ceiling. No turns: a list prints titles. **Mounted unconditionally**, unlike the ask below — a conversation is the lifter's data, not a feature of the model | 11 |
+| `GET  /v1/gym/threads/{id}` | one conversation whole, `turns` and all. Absent and another account's are one `404` | 11 |
+| `DELETE /v1/gym/threads/{id}` | **delete deletes the conversation, not the consequence.** `204`; the turns cascade, and every proposal it minted keeps its row, its state and its place in the routine's history — losing only `source.thread` | 11 |
+| `POST /v1/gym/ask` | **the one conditional route.** Ask (§12) — `{thread:"thr_…", question:"…"}` in, `{answer, steps, read:{sets,sessions,weeks}, proposals:[id], thread}` out. **Since W11 the client sends ONE question into one thread, never a history** (§12.6). It hangs off the PRODUCT and not a session, because Ask reads the log. `400` for a malformed thread id, or a question that is blank, oversized, or not text the store can hold (a NUL or non-UTF-8 — `storableText`, §3.1), `409 ask-thread-taken` for an id another account holds (including the concurrent-mint race, where the store comes back with neither a thread nor a named error), `409 ask-thread-full`, `409 ask-session-open` mid-workout, `429 ask-daily-limit` / `ask-out-of-budget`, `502` when the model does not answer. Absent entirely on a deployment with no `ANTHROPIC_API_KEY` | 3 |
 
 ### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
 
@@ -2524,7 +2567,7 @@ hang it off `ToolDeclaration`, where both doors would read one copy.
 | Reach | the whole log | Ask is reached from Today and from a proposal card, not from one workout |
 | Never mid-session | `409 ask-session-open`, checked on the server | §L says Ask is not offered while a workout runs, and three clients each remembering that is three chances to forget |
 | Iterations | 8, and hitting it is a **failure** | the log is wider than one workout; an unfinished answer is still worse than "Ask didn't answer" |
-| Turns | 8, 1000 bytes each | the server is stateless, so the request body *is* the prompt somebody pays for |
+| Turns | 8 per THREAD, 1000 bytes each (`kMaxThreadTurns`, `kMaxAskTurnBytes`) | since W11 the server assembles the prompt from the thread it stored, so the cap bounds the side that pays for it. It bites on the PAIR an ask would add, so a conversation is never capped halfway through answering; the refusal is `409 ask-thread-full` and the client opens a new thread |
 | Entitlement | **none — it ships open** | Windmill One cannot be bought, so a locked Ask would advertise a 503 (§0). The gate is one predicate away, on the allowance line |
 | Daily limit | ~10 a day, 3 back to back, per **account** (`AskRation`) | the first Windmill feature with a marginal cost per use, so the ration is stated on screen instead of hidden as a weaker model. A bucket in memory, so a deploy refills it — soft on purpose, because the row below is what has to be hard. **Taken last and given back when the run COST NOTHING**: every refusal above it costs nothing, and neither does a fuse trip, a wedged vendor or a log we could not open, because the cap's copy is a promise and three outages must not spend a burst that answered nobody. The test is `AskAnswer::modelTurns` — metered vendor round trips — and not `ok`: hitting the 8-iteration cap costs eight billed turns and stopping at `max_tokens` costs one, and refunding those (as W7 first shipped) waived the ration on precisely the most expensive runs the product has. That return is why the bucket is gym's own and not platform's `RateLimiter`, which has no way to hand a token back |
 | Dollar ceiling | the platform's own: `AiFuse` hourly + `aiAllowanceFor` over 30 days | ours, never shown as money to anybody, and the same rows the owner page reads |
@@ -2567,8 +2610,9 @@ remembered to mention it.
 
 - **No streaming.** The only SSE machinery in the repo is roadmap's hand-rolled HTTP/1.1 + chunked
   decoder, and one reply per ask does not earn a second consumer of two hundred lines of parser.
-- **No conversation table.** The client sends the turns so far. There is no thread id to leak, no row
-  to garbage-collect, and nothing extra to name on the account-close screen.
+- ~~**No conversation table.**~~ **W7 shipped this and W11 reversed it** (§12.6). It was a real
+  decision — the client sent the turns so far, there was no thread id and nothing to garbage-collect
+  — and the reason it changed is a product reason rather than a technical one.
 - **No blocking the request loop.** `AskAgent::answer` blocks for as long as the vendor takes;
   `AskService` owns a two-thread pool and the handler hands its callback over. Four handler threads
   parked on a model is a training log that stops answering everybody. The run is guarded on that
@@ -2595,3 +2639,83 @@ The empty state points at the free door — *if you already use Claude or ChatGP
 instead: it is free, and it is better, because it knows the rest of your life.* An in-app chat that
 tells you how to stop paying us costs one paragraph and is the strongest available proof that the MCP
 thesis is real.
+
+### 12.6 Ask has a past (§O, W11) — and this reverses W7 in writing
+
+`domain/Thread.{h,cpp}` · `gym_ask_threads` + `gym_ask_turns` · `gym_proposals.thread_id`
+
+W7 built Ask **stateless on purpose** and said so above. The owner reversed it, for a product reason
+rather than a technical one: *a conversation about your bench plateau is worth more in six weeks than
+it was that evening.* So the server keeps the thread, the client sends one question, and the ask
+route's body changed shape.
+
+**The list is not a chat inbox.** Each row is the question **in the lifter's own words** plus what
+came of it, because that is what somebody comes back looking for. Which fixes two things at the top:
+
+- **The title is the first message, VERBATIM** — stored as sent, byte for byte, punctuation and emoji
+  included, written once at creation and never again. Nothing in this product summarises what a
+  lifter typed, anywhere, ever. No auto-title, no model-written title, no folders, no pinning.
+- **No unread count, no badge, no notification, and nothing waiting.** A threads screen is the most
+  natural place in this product to grow a badge, and it must not. Ask *does not speak first*, and it
+  does not resurface old threads on its own either.
+
+**The outcome is DERIVED, never stored** (`outcomeOf`, `domain/Thread.h`). The proposals a thread
+minted *are* the outcome — an outcome column would be a second copy of a fact the ledger already
+holds, and it would go stale the first time a lifter applied a proposal from the routine screen
+instead of from the thread. The ladder: something that landed beats something waiting, waiting beats
+something turned down, and a proposal the routine outran is the last thing left to say.
+
+**EVERY ROW'S DETAIL IS SOMETHING THE SERVER OBSERVED, and this is where the board is wrong.** §O
+draws a dismissed thread reading `built it myself instead`. Nothing observes *why* a lifter dismissed
+a proposal and this product does not ask, so that line would be us narrating a motive onto somebody's
+evening — one line under the rule that the title is your words and never a summary a model wrote. So:
+**a dismissed row carries what was dismissed — the count — and nothing about why.** Filed to the
+design canon's `consistency.md` as a drift item; the correction is ours to propose, not to make
+silently.
+
+The same rule adds two words the board does not draw, and for the same reason. A thread whose
+proposal is still **`proposed`** has not been read only — the server watched it mint something — and
+a **`superseded`** one is the routine having moved underneath it, which is a fact and is not the
+lifter turning anything down. Five words on the wire; the board's three are the ones drawn loudest.
+
+**Delete deletes the conversation, not the consequence.** `gym_proposals.thread_id` is
+`on delete set null`, so an applied change stays in the routine's history — it still says it came
+from Ask, it just no longer opens a conversation that exists. That is not leniency about deletion: an
+applied change is a fact about somebody's program rather than a message.
+`pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_history` proves it against the
+real store rather than assuming it.
+
+**A question nobody answered is not a turn.** The thread row lands *before* the model runs (a
+proposal minted mid-conversation references it), the turns land only once an answer has, and a run
+that never answered takes its own empty thread back with it. It is the same rule the day's ration
+already keeps, and it means a retry appends the question once rather than twice.
+
+So **a thread holding no turns is a real state**, not an impossible one: one exists for the whole of
+every in-flight ask, and it survives a process that died between the insert and the answer. Every
+read carries such a thread as itself, with nothing under it, and so does the export.
+
+**The question meets `storableText` like every other free text in gym** (§3.1) — a NUL or bytes that
+are not UTF-8 are a terminal `400`, at the door, before a thread is opened. This one matters more
+than the others rather than less: the question becomes the TITLE we promised is the lifter's words
+byte for byte, so a NUL storing the head of a question as if it were the whole of it breaks the one
+rule the row exists for, and non-UTF-8 bytes are refused by Postgres mid-transaction and used to
+leave as the house 500 that every client queue is told to retry.
+
+**Threads are in the CSV export with everything else**, at `GET /v1/gym/export/threads`: one row per
+turn, the outcome stamped on by the service rather than rendered in SQL, and the turn itself byte for
+byte. A second file rather than more columns on the first, because a CSV row is one shape and a set
+and a sentence are not one shape.
+
+Nothing omitted is meant literally, and it cost two joins to be true. The outcomes are stamped from
+`allThreads` and not from the list read, which stops at `kThreadList` — a ceiling that is honest on a
+screen and a lie in an archive. And the turns join is a LEFT one, so a thread holding no turns is in
+the file with its turn columns empty rather than silently missing from a file the list can be held
+up against.
+
+**The three read/delete doors are mounted unconditionally** while `POST /v1/gym/ask` is not: a
+deployment with no vendor key keeps every conversation a lifter already had, readable, exportable and
+deletable. A thread is somebody's own words, not a feature of the model that answered them.
+
+What this wave did **not** build: no summarisation of any kind, no search over threads, no
+notification or unread state, and no change whatsoever to what Ask can DO — the safeguard ladder is
+exactly as §12.1 leaves it.

@@ -20,6 +20,8 @@ object Readout {
     private val weekdays = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    private val fullMonths = listOf("January", "February", "March", "April", "May", "June",
+                                    "July", "August", "September", "October", "November", "December")
     private val names = listOf("zero", "one", "two", "three", "four", "five",
                                "six", "seven", "eight", "nine", "ten")
 
@@ -169,6 +171,17 @@ object Readout {
         val date = "${at.dayOfMonth} ${months[at.monthValue - 1]}"
         if (at.year == here.year) return date
         return "$date ${at.year}"
+    }
+
+    // THE MONTH A CONVERSATION HAPPENED IN, spelled in full — the only grouping §O's threads list
+    // has. In full because it is a heading a lifter reads rather than a value in a column, and with
+    // the YEAR outside the one being lived in for the reason the log's foot prints one: `July` three
+    // years back is the fact somebody came for with the interesting half missing.
+    fun month(ms: Long, now: Long): String {
+        val at = at(ms)
+        val name = fullMonths[at.monthValue - 1]
+        if (at.year == at(now).year) return name
+        return "$name ${at.year}"
     }
 
     // The same day said the way a person says the one they are standing in. The record page's

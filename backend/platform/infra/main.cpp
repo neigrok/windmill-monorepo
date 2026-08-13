@@ -169,6 +169,13 @@ int main() {
                 {"gym_proposals", "user_id"},
                 {"gym_proposal_changes", "user_id"},
                 {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
+                // gym — a conversation with Ask is the lifter's OWN WORDS, which is as much their
+                // data as a logged set is: the question they typed, kept because it is worth more in
+                // six weeks than it was that evening. Its turns cascade from it AND from the
+                // account, so they never decide the answer on their own today; they are listed for
+                // the reason the proposal rows are.
+                {"gym_ask_threads", "user_id"},
+                {"gym_ask_turns", "user_id"},
                 // gym — a movement someone created is their data, and an account holding one and
                 // nothing else is not empty. The column is created_by rather than user_id BECAUSE
                 // the 64 catalog seeds carry it NULL: a probe matching the seeds would report every

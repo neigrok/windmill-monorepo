@@ -26,8 +26,9 @@ import { failureReason, gymApi } from './gymApi.js';
 import {
   alsoReadsLabel, EMPTY_BAR_KG, entryLabel, fmtKg, isUntested, movementOf, NAME_MAX,
   nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
-  ROUTINES_HREF, UNTESTED,
+  ROUTINES_HREF, threadHref, UNTESTED,
 } from './log.js';
+import { CONVERSATION_VERB } from './proposals.js';
 import { mintId } from './mint.js';
 import { ConnectInvitation } from './connect/ConnectLog.jsx';
 import { ProposalDot, ProposalFlag } from './Proposals.jsx';
@@ -393,11 +394,21 @@ function RoutineHistory({ routine }) {
             {/* A proposal row is a door onto the diff; the row that says the day was created is not
                 a door, because there is nothing behind it to read. */}
             {row.href ? (
-              <a className="gym-history-row" href={row.href}>
-                {row.pending && <ProposalDot />}
-                <span className="gym-history-line">{row.line}</span>
-                <span className="gym-history-go" aria-hidden="true">›</span>
-              </a>
+              <>
+                <a className="gym-history-row" href={row.href}>
+                  {row.pending && <ProposalDot />}
+                  <span className="gym-history-line">{row.line}</span>
+                  <span className="gym-history-go" aria-hidden="true">›</span>
+                </a>
+                {/* AND THE CONVERSATION IT CAME OUT OF (§O), where there is one — a SIBLING door and
+                    not a link inside the row's, because one anchor may not sit inside another. It is
+                    absent for a diff written over MCP and for one whose thread was deleted, which is
+                    the delete rule from this side: the change is still here and still says it came
+                    from Ask, and there is simply nothing left to open. */}
+                {row.thread && (
+                  <a className="gym-history-thread" href={threadHref(row.thread)}>{CONVERSATION_VERB} ›</a>
+                )}
+              </>
             ) : (
               <p className="gym-history-row is-flat"><span className="gym-history-line">{row.line}</span></p>
             )}

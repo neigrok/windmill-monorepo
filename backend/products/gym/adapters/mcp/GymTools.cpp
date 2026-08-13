@@ -384,10 +384,9 @@ ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& ap
 }
 
 ToolResult proposeRoutineChange(LogService& log, const UserId& caller, const Json::Value& args,
-                                ProposalDoor door, const std::string& appBaseUrl) {
+                                const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
-  return mintOutcome(log.propose(caller, parseProposalWrite(args, ProposalSource{door, "", ""})),
-                     appBaseUrl);
+  return mintOutcome(log.propose(caller, parseProposalWrite(args, source)), appBaseUrl);
 }
 
 ToolResult createExercise(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -441,7 +440,7 @@ ToolResult discardSession(LogService& log, const UserId& caller, const Json::Val
 // The other intent, at the level that buys the right to PROPOSE a destructive change — and buys
 // nothing else, because `gym:delete` does not imply apply any more than `gym:write` does.
 ToolResult proposeRoutineRemoval(LogService& log, const UserId& caller, const Json::Value& args,
-                                 ProposalDoor door, const std::string& appBaseUrl) {
+                                 const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
   std::string id;
   if (std::optional<std::string> bad =
@@ -459,9 +458,8 @@ ToolResult proposeRoutineRemoval(LogService& log, const UserId& caller, const Js
     summary = args["summary"].asString();
   }
 
-  return mintOutcome(log.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary,
-                                        ProposalSource{door, "", ""}),
-                     appBaseUrl);
+  return mintOutcome(
+      log.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary, source), appBaseUrl);
 }
 
 ToolResult revokeShare(LogService& log, const UserId& caller, const Json::Value& args) {
@@ -496,14 +494,16 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
   // The MCP door: a connected agent, and every call standing alone, so the reply's envelope is the
   // whole accounting there is.
   ReadReceipt oneReply;
-  return callTool(name, arguments, caller, ProposalDoor::mcp, oneReply);
+  return callTool(name, arguments, caller, ProposalSource{ProposalDoor::mcp, "", "", std::nullopt},
+                  oneReply);
 }
 
 ToolResult GymTools::callTool(const std::string& name, const Json::Value& arguments,
-                              const ToolCaller& caller, ProposalDoor door, ReadReceipt& run) {
+                              const ToolCaller& caller, const ProposalSource& source,
+                              ReadReceipt& run) {
   ReadReceipt served;
   try {
-    ToolResult outcome = dispatch(name, arguments, caller.user, door, served);
+    ToolResult outcome = dispatch(name, arguments, caller.user, source, served);
     // A REFUSAL SERVED NOTHING, SO IT COUNTS NOTHING. The tool answers with one sentence and no rows,
     // and the run's line under the answer is the lifter's way of checking a claim without trusting
     // it — a refused read that still moved the number would be the receipt claiming a row it never
@@ -537,7 +537,8 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
 }
 
 ToolResult GymTools::dispatch(const std::string& name, const Json::Value& arguments,
-                              const UserId& caller, ProposalDoor door, ReadReceipt& served) {
+                              const UserId& caller, const ProposalSource& source,
+                              ReadReceipt& served) {
   // The outermost shape: everything below reads `arguments` by key, and jsoncpp throws rather than
   // answers when a key is asked of something that is not an object.
   if (!arguments.isObject())
@@ -555,15 +556,15 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "start_session")   return startSession(log_, caller, arguments);
   if (name == "log_set")         return logSet(log_, caller, arguments);
   if (name == "finish_session")  return finishSession(log_, caller, arguments);
-  if (name == "create_routine")  return createRoutine(log_, caller, arguments, door);
+  if (name == "create_routine")  return createRoutine(log_, caller, arguments, source.door);
   if (name == "propose_routine_change")
-    return proposeRoutineChange(log_, caller, arguments, door, appBaseUrl_);
+    return proposeRoutineChange(log_, caller, arguments, source, appBaseUrl_);
   if (name == "create_exercise") return createExercise(log_, caller, arguments);
   if (name == "share_session")   return shareSession(log_, caller, arguments, appBaseUrl_);
 
   if (name == "discard_session") return discardSession(log_, caller, arguments);
   if (name == "propose_routine_removal")
-    return proposeRoutineRemoval(log_, caller, arguments, door, appBaseUrl_);
+    return proposeRoutineRemoval(log_, caller, arguments, source, appBaseUrl_);
   if (name == "revoke_share")    return revokeShare(log_, caller, arguments);
 
   // THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its very

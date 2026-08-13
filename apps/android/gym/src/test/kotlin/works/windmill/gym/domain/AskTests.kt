@@ -9,120 +9,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.platform.net.WindmillJson
 
-// THE RULES A CHAT OVER A LOG HAS TO GET RIGHT, with no screen around them: the shape of the thread
-// the server will accept, the ceiling on one turn, and the receipt that makes an answer checkable.
+// THE RULES A CHAT OVER A LOG HAS TO GET RIGHT, with no screen around them: what may be sent at all,
+// the receipt that makes an answer checkable, and what a question the room went down under says.
 //
-// The server keeps NO conversation, so the whole thread goes out every time — which makes composing
-// it the client's job and these the tests that stand behind it. A thread that is not alternating,
-// not lifter-first, not lifter-last, or one byte over the ceiling is refused outright, and a lifter
-// would meet that as a question that vanished.
+// THE COMPOSING RULES THAT USED TO BE HERE ARE GONE WITH THE CODE THEY TESTED. W7 built Ask stateless
+// — the client re-sent the whole alternating thread on every question — and §O reverses it: the log
+// keeps the turns and assembles the prompt from them, so one question goes out against a thread id
+// this phone minted. What a stored conversation is and how it is drawn are ThreadTests'.
 
 class AskTests {
     private fun answered(question: String, said: String) =
         AskExchange(question = question, answer = AskAnswer(answer = said, read = ReadTally()))
 
-    // Alternating, lifter-first, lifter-last, and inside the ceiling. Seven and not eight: the wire
-    // takes eight turns, but a conversation that begins and ends with the lifter can only be an odd
-    // number of them, so the real ceiling is three answered exchanges and the question in hand.
-    @Test
-    fun theThreadAlternatesAndBeginsAndEndsWithTheLifter() {
-        val settled = listOf(
-            answered("what's stalled?", "bench, three weeks."),
-            answered("why?", "the last set is where it goes."),
-            answered("and squat?", "still moving."),
-        )
-
-        val turns = Ask.thread(settled, "write the triples block")
-
-        assertEquals(
-            listOf(
-                AskTurn("lifter", "what's stalled?"),
-                AskTurn("ask", "bench, three weeks."),
-                AskTurn("lifter", "why?"),
-                AskTurn("ask", "the last set is where it goes."),
-                AskTurn("lifter", "and squat?"),
-                AskTurn("ask", "still moving."),
-                AskTurn("lifter", "write the triples block"),
-            ),
-            turns,
-        )
-        assertEquals(Ask.maxTurns, turns.size)
-    }
-
-    // The oldest go, because a conversation is about where it has got to — and Ask re-reads the log
-    // on every turn, so context dropped here is context it can fetch again.
-    @Test
-    fun theOldestExchangesAreTheOnesDropped() {
-        val settled = (1..5).map { answered("q$it", "a$it") }
-
-        val turns = Ask.thread(settled, "and now?")
-
-        assertEquals(
-            listOf("q3", "a3", "q4", "a4", "q5", "a5", "and now?"),
-            turns.map { it.text },
-        )
-    }
-
-    // AN EXCHANGE THAT NEVER GOT AN ANSWER IS NOT CARRIED. It has a question and no reply, and
-    // putting it in would break the alternation the whole shape rests on — the server refuses the
-    // thread, and the lifter loses a question that was on screen.
-    @Test
-    fun aQuestionThatWasNeverAnsweredIsNotCarriedAsContext() {
-        val settled = listOf(
-            answered("what's stalled?", "bench, three weeks."),
-            AskExchange(question = "why?", trouble = "Ask didn't answer. Try again in a moment", again = true),
-        )
-
-        val turns = Ask.thread(settled, "why?")
-
-        assertEquals(listOf("what's stalled?", "bench, three weeks.", "why?"), turns.map { it.text })
-        assertEquals(listOf("lifter", "ask", "lifter"), turns.map { it.from })
-    }
-
-    // THE CEILING IS PER TURN AND THE SERVER REFUSES THE WHOLE THREAD OVER ONE TURN THAT BREAKS IT,
-    // so BOTH sides of a carried exchange are held to it — an oversized answer, and an oversized
-    // question from an older build or a seed nobody typed, would each kill the question being asked
-    // now over bytes from three questions ago.
-    //
-    // THE LIVE QUESTION IS THE ONE THING NEVER CLIPPED: what a lifter just typed goes as typed, and
-    // the log's own refusal is a better answer than a question sent in words they did not write.
-    @Test
-    fun bothSidesOfACarriedExchangeAreClippedAndTheLiveQuestionIsNot() {
-        val longAnswer = "x".repeat(Ask.maxTurnBytes * 2)
-        val longQuestion = "q".repeat(Ask.maxTurnBytes * 2)
-        val asking = "y".repeat(Ask.maxTurnBytes)
-
-        val turns = Ask.thread(listOf(answered(longQuestion, longAnswer)), asking)
-
-        assertEquals(Ask.maxTurnBytes, turns[0].text.toByteArray(Charsets.UTF_8).size)
-        assertTrue(turns[0].text.endsWith("…"))
-        assertEquals(Ask.maxTurnBytes, turns[1].text.toByteArray(Charsets.UTF_8).size)
-        assertTrue(turns[1].text.endsWith("…"))
-        assertEquals(asking, turns[2].text)
-    }
-
-    // The ceiling is BYTES and the text is UTF-8, so the cut lands on a character boundary: a cut
-    // through the middle of a two-byte letter is a sequence no reader can decode.
-    @Test
-    fun clippingCutsWholeCharactersAndNeverBytes() {
-        val clipped = Ask.clipped("é".repeat(600))
-
-        assertTrue(clipped.toByteArray(Charsets.UTF_8).size <= Ask.maxTurnBytes)
-        assertEquals("…", clipped.takeLast(1))
-        assertTrue(clipped.dropLast(1).all { it == 'é' })
-        assertEquals("nothing that fits is touched", "short", Ask.clipped("short"))
-    }
-
-    // A CLIP NEVER HANDS BACK MORE THAN IT WAS ASKED FOR, which is the whole promise of the word. A
-    // budget too small to hold the mark keeps nothing rather than returning the mark alone — three
-    // bytes where two were the ceiling is the one failure a byte ceiling may not have.
-    @Test
-    fun aClipNeverReturnsMoreThanTheBudget() {
-        assertEquals("", Ask.clipped("abcdef", 2))
-        assertEquals("", Ask.clipped("abcdef", 3))
-        assertEquals("a…", Ask.clipped("abcdef", 4))
-        assertTrue((0..8).all { Ask.clipped("abcdef", it).toByteArray(Charsets.UTF_8).size <= it })
-    }
 
     // THE DAILY LIMIT IS SAID BEFORE IT IS MET. Ask is the first thing in this product with a cost
     // per use, so the cap is a fact a lifter reads in the opening chrome — in the server's own
@@ -149,18 +47,6 @@ class AskTests {
             false, Ask.sendable("é".repeat(Ask.maxTurnBytes / 2 + 1)))
     }
 
-    // THE LANDMINE THIS FILE EXISTS TO KEEP CLOSED. The app's one Json omits any value equal to its
-    // declared default, so a `from` with a default would travel as an absent key and every turn
-    // would be refused as malformed — a whole feature dead on a field nobody typed.
-    @Test
-    fun everyTurnCarriesItsSpeakerOnTheWire() {
-        val encoded = WindmillJson.encodeToString(
-            AskThread.serializer(),
-            AskThread(listOf(AskTurn("lifter", "what's stalled?"))),
-        )
-
-        assertEquals("""{"turns":[{"from":"lifter","text":"what's stalled?"}]}""", encoded)
-    }
 
     // THE RECEIPT, AND IT IS THE SERVER'S NUMBER SPELLED — never a number this room worked out. The
     // design's own order, and a bucket at zero is left out rather than drawn: "0 weeks" reads as a
@@ -259,9 +145,10 @@ class AskTests {
         }
     }
 
-    // THE CONVERSATION THROUGH AN ACTIVITY RECREATION. A thread is the one thing in this room that
-    // exists nowhere but in memory — the log is on disk and on the account, and the server keeps no
-    // conversation at all — so the room saves it as JSON, and this is that round trip.
+    // THE CONVERSATION THROUGH AN ACTIVITY RECREATION. The LOG keeps the turns now (§O), but it does
+    // not keep what a receipt, a tool step or a failed question were as they happened — none of them
+    // is on the threads read — so the evening in progress is still held in memory and saved as JSON,
+    // and this is that round trip.
     //
     // The `encodeDefaults` landmine bites from BOTH sides here: a receipt equal to its default would
     // be omitted on the way out and unreadable on the way back, so `read` carries no default and is

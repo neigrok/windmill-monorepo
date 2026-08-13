@@ -104,6 +104,21 @@ public enum Readout {
         "\(date(ms)) \(components(ms).year ?? 1970)"
     }
 
+    // THE HEADING OVER A RUN OF ROWS THAT SHARE A MONTH (§O screen 33) — the one place gym spells a
+    // month as a word rather than as part of a date, because it names a section and not a day.
+    //
+    // The YEAR arrives the moment the month is no longer in this one, for the same reason the record
+    // ladder's dates carry theirs: `August` is a heading on nobody's calendar once there are two
+    // Augusts in a log, and threads are the first thing in this product built to be read years later.
+    public static func month(_ ms: Int64, now: Int64) -> String {
+        let full = ["January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"]
+        let parts = components(ms)
+        let named = full[max(0, min(11, (parts.month ?? 1) - 1))]
+        guard parts.year == components(now).year else { return "\(named) \(parts.year ?? 1970)" }
+        return named
+    }
+
     // "Yesterday" is a claim about the CALENDAR and not about elapsed hours: a session finished at
     // 07:00 is still today at 21:00, and one finished at 23:00 is already yesterday by 01:00. So both
     // instants fall to their own local midnight before the difference is taken — which also makes the
@@ -177,6 +192,14 @@ public enum Readout {
     // this device works out which weeks a set fell in.
     public static func weekCount(_ count: Int) -> String {
         count == 1 ? "1 week" : "\(count) weeks"
+    }
+
+    // WHAT A DIFF ASKS FOR, counted. It is spelled here beside the sets and the sessions because
+    // four screens print it — the review button, the card in Ask's stream, a routine's history row
+    // and a thread's outcome line — and a `1 changes` on any one of them would be the room
+    // miscounting the only thing that row exists to say.
+    public static func changeCount(_ count: Int) -> String {
+        count == 1 ? "1 change" : "\(count) changes"
     }
 
     // The count the log's row and the session detail's head both print (§G16, §G17), and it is not

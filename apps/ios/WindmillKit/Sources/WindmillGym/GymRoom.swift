@@ -60,12 +60,15 @@ public struct GymRoom: View {
     // rather than on disk because "later" means exactly this visit: the card is on Today again the
     // next time the room is opened, which is what makes it a not-now and not a decision.
     @State private var setAside: Set<String> = []
-    // ASK'S THREAD, held by the ROOM for the same reason `setAside` is: opening a proposal from an
-    // answer tears the chat screen down — one screen is mounted at a time — and a conversation that
-    // vanished on the walk to the diff and back would be the one thing a chat may not do. It dies
-    // with the room, which is the right lifetime: leaving gym ends the conversation, and nothing
-    // about it is ever written to this device or to the log.
-    @State private var askThread: [AskExchange] = []
+    // ASK'S CONVERSATION, held by the ROOM for the same reason `setAside` is: opening a proposal
+    // from an answer tears the chat screen down — one screen is mounted at a time — and a
+    // conversation that vanished on the walk to the diff and back would be the one thing a chat may
+    // not do. It carries the thread id the questions of this visit belong to.
+    //
+    // IT DIES WITH THE ROOM AND THE CONVERSATION DOES NOT. Since §O the server keeps the thread, so
+    // leaving gym ends the visit rather than the conversation: what this room forgets is on the
+    // Threads list, in the lifter's own words, with what came of it.
+    @State private var conversation = AskConversation()
     // Whether this Windmill mounts Ask at all. It is a deployment fact, not a plan: a server with no
     // Anthropic key answers the route's own 404, and the entry goes for the rest of the visit rather
     // than staying as a door onto a sentence.
@@ -106,9 +109,15 @@ public struct GymRoom: View {
         // handed a copy the card was drawn from would be deciding against a document that may have
         // been settled from the web while this room was open.
         case proposal(String)
-        // ASK (§L). It carries no argument at all — the thread is the ROOM's, so this case is only
-        // ever "the chat is on screen", and a copy handed down the stack would be a second one.
+        // ASK (§L). It carries no argument at all — the conversation is the ROOM's, so this case is
+        // only ever "the chat is on screen", and a copy handed down the stack would be a second one.
         case ask
+        // §O SCREEN 33 — every conversation this account has had, and one of them read back. The
+        // list carries no argument; a thread travels as its ID and nothing else, for the reason a
+        // proposal does: the page reads its own turns, and a copy handed down the stack would be a
+        // conversation as it stood before the walk.
+        case threads
+        case thread(String)
         // §I's five rows. It is HERE, on the room's own stack, because the native ProductModule seam
         // has no settings slot for the shell to compose — see the head of SettingsScreen. The
         // connect screen stacks OVER it, which is why its label is drawn after all.
@@ -136,6 +145,8 @@ public struct GymRoom: View {
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
             case .proposal: return "Proposal"
             case .ask: return Ask.title
+            case .threads: return AskThreads.title
+            case .thread: return "Conversation"
             case .settings: return "Gym"
             case .connect: return "Connected log"
             case .routine: return "Routine"
@@ -234,7 +245,14 @@ public struct GymRoom: View {
                                onClosed: { said in back(); note = said },
                                say: { note = $0 })
             case .ask:
-                AskScreen(store: store, exchanges: $askThread, doors: askDoors)
+                AskScreen(store: store, conversation: $conversation, doors: askDoors)
+            case .threads:
+                ThreadsScreen(doors: threadDoors)
+            case .thread(let threadId):
+                // A conversation that has just been deleted has nothing left to draw, so the way
+                // back is taken FOR the lifter — the list under it re-reads on appearing and the row
+                // is gone from it, which is the whole of what "deleted" has to look like.
+                ThreadScreen(threadId: threadId, doors: threadDoors, onDeleted: back)
             case .settings:
                 SettingsScreen(store: store, web: account.api.baseURL, connected: connected,
                                onConnectedLog: { look(at: .connect) }, say: { note = $0 })
@@ -252,7 +270,8 @@ public struct GymRoom: View {
                                                                 position: store.routines.count)))
                               },
                               onMovement: { look(at: .movement($0)) },
-                              onProposal: { look(at: .proposal($0)) })
+                              onProposal: { look(at: .proposal($0)) },
+                              onThread: { look(at: .thread($0)) })
             case .naming(let draft):
                 NameRoutineScreen(opening: draft.name) { named in
                     var carried = draft
@@ -401,16 +420,57 @@ public struct GymRoom: View {
     private var askDoors: AskDoors {
         let gym = GymApi(api: account.api)
         return AskDoors(
-            send: { turns in
-                do { return .success(try await gym.ask(turns)) }
+            send: { thread, question in
+                do { return .success(try await gym.ask(question, in: thread)) }
                 catch { return .failure(AskRefusal(error)) }
             },
+            openThreads: { look(at: .threads) },
             // Ask's own paragraph about how to stop needing Ask lands on the invitation rather than
             // in Safari: the pitch, the precondition and the recipe in that order, and the walk to
             // the web is the last step rather than the first.
             connect: { look(at: .connect) },
             openProposal: { look(at: .proposal($0)) },
             absent: { askOnThisDeployment = false })
+    }
+
+    // WHAT THE PAST IS LENT (§O). These are handed over unconditionally — nothing here checks
+    // `askOnThisDeployment`, because reading and deleting a conversation is not asking one, and the
+    // three routes answer on a Windmill whose vendor key was removed.
+    //
+    // The DOORS onto them are another matter, and this comment does not claim more than the surface
+    // reaches: §O draws two, Ask's header and a routine's history row, and Ask's header is not drawn
+    // without a key or mid-session (`Ask.doorIsOpen`). So on a keyless deployment the past is
+    // reachable only from a routine that carries an applied Ask proposal. A third door is a board
+    // question rather than a thing to invent here; it is filed rather than drawn.
+    //
+    // `Ask something new` opens a FRESH thread rather than continuing whatever this visit was in the
+    // middle of — a new conversation is what the button says, and a question that quietly joined an
+    // hour-old thread would title itself with somebody else's opening line.
+    private var threadDoors: ThreadDoors {
+        let gym = GymApi(api: account.api)
+        return ThreadDoors(
+            list: {
+                do { return .success(try await gym.threads()) }
+                catch { return .failure(AskRefusal(error)) }
+            },
+            read: { id in
+                do { return .success(try await gym.thread(id)) }
+                catch { return .failure(AskRefusal(error)) }
+            },
+            delete: { id in
+                do {
+                    try await gym.deleteThread(id)
+                    return nil
+                } catch {
+                    return AskRefusal(error).line
+                }
+            },
+            openThread: { look(at: .thread($0)) },
+            openProposal: { look(at: .proposal($0)) },
+            askSomethingNew: {
+                conversation = AskConversation()
+                look(at: .ask)
+            })
     }
 
     // ARRIVING STARTS IT (§J22). Gym's answer to the shell's one question is not a tour and not a

@@ -26,7 +26,7 @@ import {
   groupByExercise, isUntested, NAME_MAX, nameOfMovement, proposalHref, shortDayLabel, weekdayName,
   workingSetsOf,
 } from './log.js';
-import { historyLabel, isPending, sourceLabel } from './proposals.js';
+import { conversationOf, historyLabel, isPending, sourceLabel } from './proposals.js';
 
 // WHAT TO CALL IT, ASKED FIRST AND ASKED ONCE (§M screen 28) — because a routine built on purpose
 // deserves the word you already call it and not `Workout 3`. These three are SUGGESTIONS AND NEVER
@@ -335,10 +335,15 @@ export function historyRows(routine) {
         line: [shortDayLabel(row.at), what, movements].filter((part) => part != null).join(' · '),
       };
     }
+    // AND WHERE IT WAS ASKED FOR, when there is somewhere (§O). `source.thread` is the conversation
+    // the diff was written in; ABSENT means there is nothing to open — the MCP door, or a thread the
+    // lifter deleted, which is exactly the case §O's delete rule creates: the change stays in this
+    // history and the conversation about it does not. The row still says the change came from Ask.
     return {
       key: row.proposal.id,
       pending: isPending(row.proposal),
       href: proposalHref(row.proposal.id),
+      thread: conversationOf(row.proposal.source),
       line: historyLabel(row.proposal),
     };
   });

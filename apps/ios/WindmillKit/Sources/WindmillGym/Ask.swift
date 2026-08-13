@@ -19,25 +19,15 @@ import WindmillPlatform
 //
 // THE ROUTE IS CONDITIONAL. A deployment with no Anthropic key does not mount `POST /v1/gym/ask` at
 // all, and the framework's own 404 comes back with no body. That is the one refusal that takes the
-// door away rather than saying a sentence about it — see `AskRefusal.closesTheDoor`.
-
-// One turn of the thread as the wire spells it. The two voices are `lifter` and `ask` and never
-// `user`/`assistant` — the transport's vocabulary is not this product's — and the server keeps
-// nothing, so the whole thread goes out with every question.
-public struct AskTurn: Equatable, Encodable, Sendable {
-    public enum Voice: String, Encodable, Sendable {
-        case lifter
-        case ask
-    }
-
-    public let from: Voice
-    public let text: String
-
-    public init(from: Voice, text: String) {
-        self.from = from
-        self.text = text
-    }
-}
+// door away rather than saying a sentence about it — see `AskRefusal.closesTheDoor`. The three
+// THREAD routes are mounted unconditionally beside it, so a Windmill with no vendor key still reads,
+// exports and deletes every conversation ever had on it.
+//
+// THE SERVER KEEPS THE CONVERSATION (§O, 2026-08-13) — it did not when Ask shipped. W7 built this
+// stateless on purpose and the client resent the whole thread with every question; §O reverses that,
+// and what goes out now is ONE question and the id of the thread it belongs to. The server assembles
+// the prompt from what it stored, so the conversation a lifter reads back is the one the model saw.
+// The thread itself, and everything this surface may say about a past one, is AskThreads.swift.
 
 // WHAT THE SERVER SERVED THIS EXCHANGE, counted by identity where the ids are and deduped there, so
 // two tool calls over one week count that week once. Never summed across answers and never computed
@@ -129,20 +119,31 @@ public struct AskAnswer: Equatable, Decodable, Sendable {
 // A QUESTION THAT DID NOT GET AN ANSWER, and the three facts the screen needs about it: what to say,
 // whether trying again is worth offering, and whether Ask is on this deployment at all.
 //
-// The eight refusals collapse to this rather than to eight cases because the screen treats them
-// identically — it prints the server's sentence and offers nothing else. That is not laziness, it is
-// the money decision (contract §4): the daily limit and the AI ceiling are stated plainly and NOTHING
-// is sold against either, so the case that would carry an upgrade button does not exist to be filled
-// in later.
+// The server's ladder is nine rungs since §O added the two thread refusals — `threadMalformed` and
+// `threadTaken` (backend/products/gym/application/AskService.h) — and this collapses them to
+// one struct with one flag rather than to nine cases. Seven are treated identically — the screen
+// prints the server's sentence and offers nothing else — and only the two the flag below names are
+// branched on, because those two are about the thread and not the question. That the other seven
+// share a shape is not laziness, it is the money decision (contract §4): the daily limit and the AI
+// ceiling are stated plainly and NOTHING is sold against either, so the case that would carry an
+// upgrade button does not exist to be filled in later.
 public struct AskRefusal: Equatable, Error, Sendable {
     public let line: String
     public let mayRetry: Bool
     public let closesTheDoor: Bool
+    // THE TWO REFUSALS THAT ARE ABOUT THE THREAD RATHER THAN THE QUESTION, and the only two codes
+    // this client reads. A conversation that has taken its eight turns, and an id another account
+    // already holds, are both answered by opening a NEW thread — which is what the server's own
+    // sentence asks for — so the retry carries the same question into a fresh id. Everything else in
+    // the ladder still reads the same to a lifter and is branched on nowhere.
+    public let opensAFreshThread: Bool
 
-    public init(line: String, mayRetry: Bool = false, closesTheDoor: Bool = false) {
+    public init(line: String, mayRetry: Bool = false, closesTheDoor: Bool = false,
+                opensAFreshThread: Bool = false) {
         self.line = line
         self.mayRetry = mayRetry
         self.closesTheDoor = closesTheDoor
+        self.opensAFreshThread = opensAFreshThread
     }
 
     // The log's own words wherever it sent any — the sign-in line, the mid-session line, the daily
@@ -166,8 +167,17 @@ public struct AskRefusal: Equatable, Error, Sendable {
             // Ask here to try again at. The door goes rather than the sentence staying.
             self = AskRefusal(line: "Ask isn’t available on this Windmill.", closesTheDoor: true)
         case .refused(502, let refusal):
+            // NOTHING WAS STORED. Turns land only once an answer has, and a run that never answered
+            // takes its own empty thread back — so the same thread and the same question sent again
+            // land exactly once, and the retry below is safe rather than a second copy of a
+            // question in somebody's conversation.
             self = AskRefusal(line: refusal.message ?? "Ask didn’t answer. Try again in a moment",
                               mayRetry: true)
+        case .refused(409, let refusal) where refusal.code == "ask-thread-full"
+            || refusal.code == "ask-thread-taken":
+            self = AskRefusal(
+                line: refusal.message ?? "That conversation is full — this starts a new one",
+                mayRetry: true, opensAFreshThread: true)
         case .refused(_, let refusal):
             self = AskRefusal(line: refusal.message ?? "That didn’t go through")
         }
@@ -208,17 +218,46 @@ public struct AskDiffRow: Equatable, Sendable {
     }
 }
 
-public enum Ask {
-    // The server's own bounds, restated so the composer can respect them instead of discovering them
-    // as a 400. A turn over 1000 bytes and a thread over 8 turns are both terminal refusals.
-    public static let maxTurnBytes = 1000
-    public static let maxTurns = 8
+// ONE CONVERSATION AS THIS DEVICE HOLDS IT: the thread the server knows it by, and the exchanges
+// drawn on screen. The id is CLIENT-MINTED — a fresh one opens a thread, and the server refuses one
+// another account already holds rather than joining it.
+//
+// THE EXCHANGES ARE STILL THE ROOM'S AND STILL DIE WITH IT, and that is no longer a loss: what the
+// visit forgets, the log keeps, and the whole conversation is on the threads list the next time
+// anybody looks for it.
+public struct AskConversation: Equatable, Sendable {
+    public private(set) var threadId: String
+    public var exchanges: [AskExchange]
 
-    // HOW MUCH OF THE THREAD GOES BACK OUT, and the arithmetic is the server's rule read backwards:
-    // turns must alternate, and the first and last must both be `lifter` — so a valid thread always
-    // holds an ODD number of turns, and the most that fits under a ceiling of 8 is 7. Seven is three
-    // answered exchanges plus the new question.
-    public static let history = 3
+    public init(threadId: String = Ask.mintThreadId(), exchanges: [AskExchange] = []) {
+        self.threadId = threadId
+        self.exchanges = exchanges
+    }
+
+    // A NEW CONVERSATION — the foot of the threads list, and the two refusals that are about the
+    // thread rather than the question. The exchanges on screen STAY when the id is replaced by a
+    // refusal: they were said, and clearing the screen because the server declined a ninth turn
+    // would delete the eight a lifter is still reading.
+    public mutating func openAFreshThread() {
+        threadId = Ask.mintThreadId()
+    }
+}
+
+public enum Ask {
+    // The one bound the COMPOSER can respect, restated so a question meets it while it can still be
+    // edited rather than as a 400. The thread's own ceiling — eight turns — is not here: nothing on
+    // screen is decided by it, and a copy of a number this client never reads would be a second
+    // statement of the server's rule waiting to drift from it. It arrives as a 409 and opens a new
+    // conversation (`kMaxThreadTurns`, backend/products/gym/domain/Thread.h).
+    public static let maxTurnBytes = 1000
+
+    // A THREAD ID THIS DEVICE MINTS, in the server's own alphabet ([A-Za-z0-9_-], 8–64). It is
+    // client-minted for the reason every other id in gym is: the question that opens a conversation
+    // and the conversation itself land in one call, and a reply lost on the way back is then a
+    // retry rather than a second thread.
+    public static func mintThreadId() -> String {
+        "thr_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    }
 
     public static let title = "Ask"
     public static let subtitle = "reads your log · proposes only"
@@ -287,23 +326,6 @@ public enum Ask {
         signedIn && !sessionIsOpen && onThisDeployment
     }
 
-    // WHAT GOES OUT: the last few exchanges that actually got an answer, then the new question.
-    // Only ANSWERED ones are carried — a refused question never produced an `ask` turn, and sending
-    // it again would break the alternation the server checks.
-    public static func turns(after exchanges: [AskExchange], asking question: String) -> [AskTurn] {
-        let answered = exchanges.compactMap { exchange -> (asked: String, said: String)? in
-            guard case .answered(let answer) = exchange.outcome else { return nil }
-            return (exchange.question, answer.answer)
-        }
-        var thread: [AskTurn] = []
-        for exchange in answered.suffix(history) {
-            thread.append(AskTurn(from: .lifter, text: clipped(exchange.asked)))
-            thread.append(AskTurn(from: .ask, text: clipped(exchange.said)))
-        }
-        thread.append(AskTurn(from: .lifter, text: clipped(question)))
-        return thread
-    }
-
     // WHETHER A QUESTION MAY GO OUT AS TYPED, asked in the composer BEFORE anything is sent. A
     // question is never shortened to fit: one clipped on the way out is answered half-asked, and the
     // thread then shows the lifter a question they did not finish typing — two lies for the price of
@@ -320,25 +342,6 @@ public enum Ask {
         let asked = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !asked.isEmpty, fits(asked) else { return nil }
         return asked
-    }
-
-    // Trimmed, and cut to the server's byte ceiling on a CHARACTER boundary so nothing ever goes out
-    // half an emoji. It is the ANSWERS this exists for: a few paragraphs of prose passes 1000 bytes
-    // easily, and carrying one back unclipped would refuse the lifter's next question with a 400
-    // about a turn they never typed. On the QUESTIONS it is a no-op held for safety — `question(from:)`
-    // is what admits one, and it refuses the long ones outright instead of trimming them down.
-    public static func clipped(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.utf8.count > maxTurnBytes else { return trimmed }
-        var kept = ""
-        var used = 0
-        for character in trimmed {
-            let width = String(character).utf8.count
-            guard used + width <= maxTurnBytes else { break }
-            kept.append(character)
-            used += width
-        }
-        return kept
     }
 
     // THE COMPACT DIFF, and every word of it is the diff screen's own (`ProposalChange`), never a

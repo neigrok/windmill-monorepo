@@ -50,6 +50,8 @@ void reset() {
   w.exec("DELETE FROM gym_sessions WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_proposal_changes WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_proposals WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_ask_turns WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
+  w.exec("DELETE FROM gym_ask_threads WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_routines WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercise_names WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
   w.exec("DELETE FROM gym_exercise_aliases WHERE user_id IN ('" + kUser + "', '" + kOther + "')");
@@ -2424,7 +2426,8 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
 namespace {
 RoutineProposal proposalAt(const std::string& id, const std::string& routine, int baseRevision,
                            std::vector<RoutineEntry> becomes, ProposalDoor door = ProposalDoor::mcp,
-                           const std::string& owner = kUser) {
+                           const std::string& owner = kUser,
+                           std::optional<ThreadId> thread = std::nullopt) {
   const std::vector<RoutineEntry> base{entryAt(1, "bench-press")};
   std::vector<RoutineChange> changes = changesBetween(base, becomes);
   const int counted = becomes.empty() ? static_cast<int>(changes.size())
@@ -2432,7 +2435,8 @@ RoutineProposal proposalAt(const std::string& id, const std::string& routine, in
   return RoutineProposal{ProposalHead{ProposalId{id}, RoutineId{routine}, wm::UserId{owner},
                                       becomes.empty() ? ProposalIntent::remove
                                                       : ProposalIntent::revise,
-                                      ProposalState::pending, ProposalSource{door, "", ""},
+                                      ProposalState::pending,
+                                      ProposalSource{door, "", "", thread},
                                       "Heavier triples.", counted, kNow, std::nullopt},
                          baseRevision, "Push A", "Push A", std::move(changes)};
 }
@@ -2834,4 +2838,265 @@ TEST(pg_gym_deleting_a_routine_takes_its_proposals_with_it) {
   CHECK(repo.proposalHeads(wm::UserId{kUser}, ProposalQuery{std::nullopt, false}).empty());
   CHECK_EQ(repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}),
            std::optional<RoutineProposal>());
+}
+
+// ---- Ask's threads (§O), against the real store ------------------------------------------------
+
+namespace {
+// The two writes an ask makes, in the order it makes them: the thread lands before the model runs,
+// the turns only once an answer has.
+AskThread openedAt(PgTrainingRepository& repo, const std::string& id, const std::string& title,
+                   std::uint64_t atMs = kNow) {
+  const ThreadOpenOutcome opened = repo.openThread(wm::UserId{kUser}, ThreadId{id}, title, atMs);
+  return opened.thread.value();
+}
+
+void said(PgTrainingRepository& repo, const std::string& id, const std::string& question,
+          const std::string& answer, std::uint64_t atMs = kNow) {
+  repo.appendTurns(wm::UserId{kUser}, ThreadId{id},
+                   {ThreadTurn{true, question, atMs}, ThreadTurn{false, answer, atMs}});
+}
+}
+
+// The title is the first message VERBATIM, the turns are stored as sent, and a second ask into the
+// same conversation does not rename it.
+TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  const std::string typed = "Bench \xE2\x80\x9Cstuck\xE2\x80\x9D at 82.5 \xE2\x80\x94 3 weeks, why?";
+
+  openedAt(repo, "thr_pg000001", typed);
+  said(repo, "thr_pg000001", typed, "Your top set has not moved.");
+  // A second ask into the same conversation: the title is passed and ignored, because a thread is
+  // named by how it opened.
+  openedAt(repo, "thr_pg000001", "something else entirely", kNow + 1'000);
+  said(repo, "thr_pg000001", "and the squat?", "That one is moving.", kNow + 1'000);
+
+  const std::optional<AskThread> held = repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"});
+  REQUIRE(held.has_value());
+  CHECK_EQ(held->title, typed);
+  CHECK_EQ(held->createdAtMs, kNow);
+  CHECK_EQ(held->askedAtMs, kNow + 1'000);
+  REQUIRE_EQ(held->turns.size(), 4u);
+  CHECK_EQ(held->turns[0], (ThreadTurn{true, typed, kNow}));
+  CHECK_EQ(held->turns[1], (ThreadTurn{false, "Your top set has not moved.", kNow}));
+  CHECK_EQ(held->turns[2], (ThreadTurn{true, "and the squat?", kNow + 1'000}));
+  CHECK_EQ(held->turns[3], (ThreadTurn{false, "That one is moving.", kNow + 1'000}));
+}
+
+// The id is a primary key across every account: one somebody else holds is refused, never appended
+// to — and the refusal is the ONE place the two absences are told apart, because a write cannot
+// quietly land in a stranger's conversation.
+TEST(pg_gym_a_thread_id_another_account_holds_is_refused_and_their_words_stay_theirs) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  openedAt(repo, "thr_pg000001", "mine");
+  said(repo, "thr_pg000001", "mine", "answered");
+
+  const ThreadOpenOutcome theirs =
+      repo.openThread(wm::UserId{kOther}, ThreadId{"thr_pg000001"}, "yours", kNow);
+  CHECK(theirs.error == ThreadOpenError::idTaken);
+  CHECK_FALSE(theirs.thread.has_value());
+  // …and the read gives them the same nothing an absent id would.
+  CHECK_EQ(repo.thread(wm::UserId{kOther}, ThreadId{"thr_pg000001"}), std::optional<AskThread>());
+  CHECK(repo.threads(wm::UserId{kOther}).empty());
+  CHECK_EQ(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"})->turns.size(), 2u);
+}
+
+// A thread whose run never answered is taken back whole — but only while it holds no turns, so a
+// failed follow-up cannot delete a conversation that already happened.
+TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  openedAt(repo, "thr_pg000001", "never answered");
+  openedAt(repo, "thr_pg000002", "answered once");
+  said(repo, "thr_pg000002", "answered once", "here you go");
+
+  repo.discardEmptyThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"});
+  repo.discardEmptyThread(wm::UserId{kUser}, ThreadId{"thr_pg000002"});
+
+  CHECK_EQ(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}), std::optional<AskThread>());
+  REQUIRE(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000002"}).has_value());
+}
+
+// THE LIST: newest asked first, each row carrying the proposals its outcome is derived from — and
+// the routine's name AS IT NOW STANDS, because the row points at a day a lifter can open.
+TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  openedAt(repo, "thr_pg000001", "older");
+  said(repo, "thr_pg000001", "older", "answered");
+  openedAt(repo, "thr_pg000002", "newer", kNow + 1'000);
+  said(repo, "thr_pg000002", "newer", "answered", kNow + 1'000);
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::ask, kUser, ThreadId{"thr_pg000002"}));
+
+  const std::vector<AskThread> listed = repo.threads(wm::UserId{kUser});
+  REQUIRE_EQ(listed.size(), 2u);
+  CHECK_EQ(listed[0].id, ThreadId{"thr_pg000002"});
+  CHECK_EQ(listed[1].id, ThreadId{"thr_pg000001"});
+  // The list carries no turns — the titles and the outcomes are what a list prints.
+  CHECK(listed[0].turns.empty());
+  REQUIRE_EQ(listed[0].minted.size(), 1u);
+  CHECK_EQ(listed[0].minted[0].id, ProposalId{"prop_pg00001"});
+  CHECK_EQ(listed[0].minted[0].routineName, std::string("Push A"));
+  CHECK(outcomeOf(listed[0]).kind == ThreadOutcomeKind::proposed);
+  CHECK(listed[1].minted.empty());
+  CHECK(outcomeOf(listed[1]).kind == ThreadOutcomeKind::readOnly);
+}
+
+// ── DELETE DELETES THE CONVERSATION, NOT THE CONSEQUENCE (§O) ────────────────────────────────
+//
+// The proof the wave turns on: apply a proposal minted in a conversation, delete the conversation,
+// and read the routine's history. The change is still there, still says it came from Ask, and simply
+// no longer opens a conversation that exists — because an applied change is a fact about somebody's
+// program rather than a message.
+TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_history) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  openedAt(repo, "thr_pg000001", "Bench has been stuck at 82.5 for three weeks. What do you see?");
+  said(repo, "thr_pg000001", "Bench has been stuck at 82.5 for three weeks. What do you see?",
+       "Try heavier triples.");
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::ask, kUser, ThreadId{"thr_pg000001"}));
+  const Routine becomes = routineAt("rt_pg000001", "Push A", {benchAt(87.5, 3)});
+  REQUIRE(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow).error ==
+          ProposalSettleError::none);
+
+  CHECK(repo.deleteThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}));
+
+  // The conversation is gone, turns and all.
+  CHECK_EQ(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}), std::optional<AskThread>());
+  CHECK(repo.threads(wm::UserId{kUser}).empty());
+  // The consequence is not. The routine's history still carries the change…
+  const std::vector<RoutineEvent> history =
+      repo.routineHistory(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+  REQUIRE_EQ(history.size(), 2u);
+  CHECK(history[0].kind == RoutineEventKind::proposal);
+  REQUIRE(history[0].proposal.has_value());
+  CHECK(history[0].proposal->state == ProposalState::applied);
+  CHECK_EQ(history[0].proposal->changes, 1);
+  // …still says it came from Ask…
+  CHECK(history[0].proposal->source.door == ProposalDoor::ask);
+  // …and simply no longer opens a conversation that exists.
+  CHECK_FALSE(history[0].proposal->source.thread.has_value());
+  // And the program itself is exactly what the apply made it.
+  const std::optional<Routine> standing = repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+  REQUIRE(standing.has_value());
+  CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchAt(87.5, 3)});
+  // Deleting it twice is not a second deletion, and another account's is nobody's.
+  CHECK_FALSE(repo.deleteThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}));
+}
+
+// The export: one row per turn, the thread's facts beside each, everything text and every rendering
+// Postgres's — asserted against the in-memory twin so neither can drift on its own. The outcome
+// columns come back EMPTY on both sides, because that ladder is the domain's and LogService stamps
+// it on.
+TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  openedAt(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?");
+  said(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?", "Your top set has not moved.");
+  openedAt(repo, "thr_pg000002", "and the squat?", kNow + 1'000);
+  said(repo, "thr_pg000002", "and the squat?", "That one is moving.", kNow + 1'000);
+
+  fake::FakeTrainingRepository twin;
+  twin.threadRows.push_back(
+      AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser}, "why is my bench, uh, \"stuck\"?",
+                kNow, kNow,
+                {ThreadTurn{true, "why is my bench, uh, \"stuck\"?", kNow},
+                 ThreadTurn{false, "Your top set has not moved.", kNow}},
+                {}});
+  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "and the squat?",
+                                      kNow + 1'000, kNow + 1'000,
+                                      {ThreadTurn{true, "and the squat?", kNow + 1'000},
+                                       ThreadTurn{false, "That one is moving.", kNow + 1'000}},
+                                      {}});
+
+  const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
+  CHECK_EQ(exported, twin.exportedThreadTurns(wm::UserId{kUser}));
+  REQUIRE_EQ(exported.size(), 4u);
+  CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
+  CHECK_EQ(exported[0].turnNumber, std::string("1"));
+  CHECK_EQ(exported[0].from, std::string("lifter"));
+  // The turn as sent, quotes and all — nothing on the way through edits what a lifter typed.
+  CHECK_EQ(exported[0].text, std::string("why is my bench, uh, \"stuck\"?"));
+  CHECK_EQ(exported[1].from, std::string("ask"));
+  CHECK_EQ(exported[2].threadId, std::string("thr_pg000002"));
+  // The outcome is not the store's to render.
+  CHECK_EQ(exported[0].outcome, std::string(""));
+  CHECK_EQ(exported[0].changes, std::string(""));
+}
+
+// A THREAD WITH NO TURNS IS IN THE FILE, WITH THE TURN COLUMNS EMPTY. `openThread` commits before
+// the model runs, so such a row exists for the whole of every in-flight ask and stays if the process
+// died before the answer came back. An INNER JOIN made the export quietly smaller than the list a
+// lifter is looking at, under a route that promises nothing omitted — so the join is a LEFT one, and
+// the in-memory twin says the same.
+TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  openedAt(repo, "thr_pg000001", "a question whose run never came back");
+  openedAt(repo, "thr_pg000002", "answered once", kNow + 1'000);
+  said(repo, "thr_pg000002", "answered once", "here you go", kNow + 1'000);
+
+  fake::FakeTrainingRepository twin;
+  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser},
+                                      "a question whose run never came back", kNow, kNow, {}, {}});
+  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "answered once",
+                                      kNow + 1'000, kNow + 1'000,
+                                      {ThreadTurn{true, "answered once", kNow + 1'000},
+                                       ThreadTurn{false, "here you go", kNow + 1'000}},
+                                      {}});
+
+  const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
+  CHECK_EQ(exported, twin.exportedThreadTurns(wm::UserId{kUser}));
+  REQUIRE_EQ(exported.size(), 3u);
+  CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
+  CHECK_EQ(exported[0].title, std::string("a question whose run never came back"));
+  CHECK_EQ(exported[0].turnNumber, std::string(""));
+  CHECK_EQ(exported[0].from, std::string(""));
+  CHECK_EQ(exported[0].text, std::string(""));
+  CHECK_EQ(exported[0].saidAt, std::string(""));
+  CHECK_EQ(exported[1].threadId, std::string("thr_pg000002"));
+  CHECK_EQ(exported[1].turnNumber, std::string("1"));
+  // And it is in the list too, which is the whole complaint: the two doors show one account.
+  CHECK_EQ(repo.threads(wm::UserId{kUser}).size(), 2u);
+}
+
+// `allThreads` IS THE ARCHIVE'S READ AND HAS NO CEILING — the list stops at kThreadList because that
+// is a screen, and the export's outcomes are stamped from this one because an archive that dropped a
+// conversation's outcome would be the route's own promise made false. Oldest first, like the turns
+// beside it, and carrying what each one minted just as the list does.
+TEST(pg_gym_every_thread_is_read_for_the_archive_past_the_lists_own_ceiling) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTrainingRepository repo{wm::pgTestPool()};
+  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  for (int number = 0; number <= kThreadList; ++number) {
+    const std::string id = "thr_pg" + std::string(6 - std::to_string(number).size(), '0') +
+                           std::to_string(number);
+    openedAt(repo, id, "question " + id, kNow + static_cast<std::uint64_t>(number));
+  }
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+                                 ProposalDoor::ask, kUser, ThreadId{"thr_pg000000"}));
+
+  const std::vector<AskThread> every = repo.allThreads(wm::UserId{kUser});
+
+  CHECK_EQ(repo.threads(wm::UserId{kUser}).size(), static_cast<std::size_t>(kThreadList));
+  CHECK_EQ(every.size(), static_cast<std::size_t>(kThreadList) + 1);
+  // Oldest first — and the oldest is exactly the one the newest-first list read drops.
+  CHECK_EQ(every[0].id, ThreadId{"thr_pg000000"});
+  REQUIRE_EQ(every[0].minted.size(), 1u);
+  CHECK_EQ(every[0].minted[0].routineName, std::string("Push A"));
+  CHECK(outcomeOf(every[0]).kind == ThreadOutcomeKind::proposed);
 }

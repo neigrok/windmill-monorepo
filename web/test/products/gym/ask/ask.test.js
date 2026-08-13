@@ -1,7 +1,12 @@
 // ASK'S WORDS AND ITS RULES. Most of what is pinned here is a PROMISE: the receipt under an answer
 // is the whole difference between an instrument and a chatbot, and a room that quietly stopped
 // printing it would look identical. The rest is the wire's grammar, which the room has to obey
-// before it sends — a thread that is not a conversation is a 400 that takes the whole exchange down.
+// before it sends — a question over the byte cap, or a ninth turn into an eight-turn conversation,
+// is a refusal the room can see coming and say in words instead.
+//
+// §O REVERSED THE ONE DECISION W7 MADE LOUDEST: the server stores the conversation now, so an ask
+// carries a thread id and one question rather than every turn on screen. The tests that pinned the
+// resent thread are gone rather than left standing beside their replacements.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,8 +14,9 @@ import assert from 'node:assert/strict';
 import {
   answerTurn, ASK_ABSENT_NOTE, ASK_TERMS, askFailure, FIX_IS_YOURS, FREE_DOOR_LINE, MAX_TURNS,
   MID_SESSION_NOTE, NO_ANSWER_NOTE, NO_STEPS, PROPOSAL_NOTE, questionTooLong, QUESTION_BYTES,
-  readLine, stepsLine, threadFor, threadFull, TOOL_PHRASE,
+  readLine, stepsLine, THREAD_FULL_NOTE, THREAD_PREFIX, threadFull, TOOL_PHRASE,
 } from '../../../../src/products/gym/ask/ask.js';
+import { mintId } from '../../../../src/products/gym/mint.js';
 
 // THE HEADER IS THE DISCLOSURE and it is four words: what it reaches, and — in the same breath —
 // that proposing is the most it can do. It sits under the title before anything is typed.
@@ -156,51 +162,26 @@ test('a reply the receipt is missing from is refused, and so is one with no pros
 
 // ── The thread the wire will take ───────────────────────────────────────────────────────────────
 
-// The server holds none of the conversation, so what travels IS what is on screen plus the new
-// question — never a copy kept beside it that could disagree with what the lifter is reading. And
-// the steps and the receipt stay on screen: they are evidence for the reader, not context for the
-// model, which already knows what it called.
-test('threadFor sends every turn so far, oldest first, with the new question last', () => {
-  const turns = [
-    { from: 'lifter', text: 'how has my bench moved?' },
-    { from: 'ask', text: 'It has been flat for three weeks.', steps: [{ tool: 'get_stats', failed: false }], read: { sets: 9, sessions: 3, weeks: 3 } },
-  ];
-  assert.deepEqual(threadFor(turns, 'and my squat?'), [
-    { from: 'lifter', text: 'how has my bench moved?' },
-    { from: 'ask', text: 'It has been flat for three weeks.' },
-    { from: 'lifter', text: 'and my squat?' },
-  ]);
-  assert.deepEqual(threadFor([], 'first question'), [{ from: 'lifter', text: 'first question' }]);
+// W7 SENT THE WHOLE CONVERSATION EVERY TIME and §O reversed it: the server stores the thread, so an
+// ask carries an id and one question. `threadFor` — which assembled the body out of what was on
+// screen — went with the statelessness that made it necessary, and this is the test that used to
+// pin it. What is left of that rule is the id: a fresh one opens a conversation, and it is minted
+// here rather than asked for, because there is no route that opens one.
+test('a conversation is named by a client-minted id, and the prefix says what it names', () => {
+  assert.equal(THREAD_PREFIX, 'thr_');
+  const id = mintId(THREAD_PREFIX);
+  // The wire's own charset, and comfortably inside its 8–64 (backend AskApi).
+  assert.match(id, /^thr_[0-9a-f]{16}$/);
+  assert.match(id, /^[A-Za-z0-9_-]{8,64}$/);
+  assert.notEqual(mintId(THREAD_PREFIX), id);
 });
 
-// A LIFTER'S TURN NOTHING ANSWERED IS DROPPED FROM THE THREAD AND KEPT ON THE SCREEN. The ask
-// carrying it failed, so the model never saw it — and the wire wants strict alternation, where two
-// lifter turns in a row is a 400 that takes the whole conversation down rather than the one turn.
-// Without this, every failed ask poisoned the thread for good.
-test('a question that failed leaves the thread a conversation, not two turns in a row', () => {
-  const turns = [
-    { from: 'lifter', text: 'how has my bench moved?' },
-    { from: 'ask', text: 'Flat for three weeks.' },
-    { from: 'lifter', text: 'this one never landed' },
-  ];
-  const thread = threadFor(turns, 'trying again');
-  assert.deepEqual(thread, [
-    { from: 'lifter', text: 'how has my bench moved?' },
-    { from: 'ask', text: 'Flat for three weeks.' },
-    { from: 'lifter', text: 'trying again' },
-  ]);
-  // The wire's own three rules, restated over the result: first and last from the lifter, and
-  // strictly alternating in between.
-  assert.equal(thread[0].from, 'lifter');
-  assert.equal(thread[thread.length - 1].from, 'lifter');
-  for (let index = 1; index < thread.length; index += 1) {
-    assert.notEqual(thread[index].from, thread[index - 1].from);
-  }
-});
-
-// EIGHT TURNS IS THE WIRE'S CAP, so four answers is a whole conversation and a fifth question would
-// be a ninth turn. The room says that out loud and offers a fresh thread rather than letting the
-// send button earn a 400 — and nothing is lost by starting again, because the server kept none of it.
+// EIGHT STORED TURNS IS THE CAP, so four answers is a whole conversation and a fifth question would
+// be a ninth turn — 409 `ask-thread-full`. The room predicts it one question early and offers a new
+// conversation rather than letting the send button earn a refusal.
+//
+// IT COUNTS THE STORED TURNS AND NOT THE SCREEN, which is the half that moved with §O: nothing is
+// stored until an answer lands, so a question whose ask failed is on screen and not in the thread.
 test('threadFull turns the composer off exactly one question before the wire would refuse it', () => {
   assert.equal(MAX_TURNS, 8);
   const exchange = [{ from: 'lifter', text: 'q' }, { from: 'ask', text: 'a' }];
@@ -208,11 +189,28 @@ test('threadFull turns the composer off exactly one question before the wire wou
 
   assert.equal(threadFull([]), false);
   assert.equal(threadFull(after(3)), false);
-  assert.equal(threadFor(after(3), 'q').length, MAX_TURNS - 1);
   assert.equal(threadFull(after(4)), true);
-  assert.equal(threadFor(after(4), 'q').length, MAX_TURNS + 1);
-  // A failed question on screen does not count toward the cap: it is not on the thread either.
+  // A failed question on screen does not count toward the cap: the server stored nothing for it.
   assert.equal(threadFull([...after(3), { from: 'lifter', text: 'never landed' }]), false);
+});
+
+// AND A FULL THREAD IS NOT A LOST ONE ANY MORE. W7's sentence — starting again costs you nothing,
+// because the server kept none of it — stopped being true the day §O landed, and what stands in its
+// place says where the conversation went.
+test('a full conversation says it is kept, not that nothing was lost', () => {
+  assert.equal(THREAD_FULL_NOTE, 'That’s as long as one conversation goes here. It’s kept in Threads.');
+  assert.equal(askFailure({ status: 409, code: 'ask-thread-full' }).note, THREAD_FULL_NOTE);
+  assert.equal(askFailure({ status: 409, code: 'ask-thread-full' }).full, true);
+});
+
+// AN ID ANOTHER ACCOUNT HOLDS can only ever arrive on the FIRST question of a conversation — once one
+// has landed, the thread is this account's — so the repair is a fresh id under a question that is
+// still on screen, and nothing that was answered can be lost this way.
+test('a conversation id somebody else holds asks for a new one, and retires nothing', () => {
+  const failure = askFailure({ status: 409, code: 'ask-thread-taken' });
+  assert.equal(failure.note, 'That conversation id was already taken. Ask again — it opens a new one.');
+  assert.equal(failure.fresh, true);
+  assert.equal(failure.gone, undefined);
 });
 
 // THE CAP IS IN BYTES AND A TEXTAREA COUNTS CHARACTERS, which are not the same number the moment a

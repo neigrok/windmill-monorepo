@@ -18,4 +18,13 @@ namespace wm::gym {
 // exports would not be one.
 std::string toCsv(const std::vector<ExportedSet>& sets);
 
+// The second file, and it is the same file's rule applied to a conversation: one row per TURN, the
+// thread's own facts riding beside each, and the turn itself byte for byte. Threads are in the export
+// with everything else (§O) — that is the trust argument for a multi-year artifact, and it is
+// deliberately dull.
+//
+// It is a SECOND file rather than more columns on the first, because a CSV row is one shape and a set
+// and a sentence are not one shape. Both routes are parameterless and neither omits anything.
+std::string toCsv(const std::vector<ExportedThreadTurn>& turns);
+
 }

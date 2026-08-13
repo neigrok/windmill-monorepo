@@ -21,29 +21,27 @@ import kotlinx.serialization.Serializable
 //
 // THE WIRE — `POST /v1/gym/ask`, owner-scoped, the same route the web and the iOS room speak:
 //
-//     { "turns": [ { "from": "lifter" | "ask", "text": "…" } ] }
-//   → { "answer", "steps": [{tool, failed}], "read": {sets, sessions, weeks}, "proposals": [id] }
+//     { "thread": "thr_…", "question": "…" }
+//   → { "answer", "steps": [{tool, failed}], "read": {sets, sessions, weeks}, "proposals": [id],
+//       "thread": "thr_…" }
 //
-// THE SERVER KEEPS NOTHING. Every ask carries the whole conversation, which is why the thread is
-// composed here and why the trimming below is the client's to get right rather than a nicety.
+// THE SERVER KEEPS THE CONVERSATION — §O, and the reversal of W7's own decision. One question goes
+// out against a thread id this phone minted, and the log assembles the prompt from the turns it
+// stored, so the conversation a lifter reads back in six weeks is the one the model actually saw.
+// What was composed here — an alternating, lifter-first, lifter-last turns array — is the log's job
+// now, and `Ask.thread()` went with it. Thread.kt is where the past lives.
 //
-// NO FIELD ON THE WAY OUT CARRIES A DEFAULT, and that is this file's one landmine. The app's single
-// Json omits any value equal to its declared default (WindmillJson, `encodeDefaults` off), so a
-// `from` defaulted to "lifter" would travel as an ABSENT key and every turn would be refused as
-// malformed — the same trap GymPreferences names from the other side, where the omission is the
-// contract.
+// NO FIELD ON THE WAY OUT CARRIES A DEFAULT, and that is the landmine this file and Thread.kt share.
+// The app's single Json omits any value equal to its declared default (WindmillJson,
+// `encodeDefaults` off), so a thread id defaulted to the empty string would travel as an ABSENT key
+// and the question would be refused as malformed — the same trap GymPreferences names from the other
+// side, where the omission is the contract.
 //
 // COMING BACK, a default is a decision about what an ABSENCE means, and this file makes it twice.
 // `steps` and `proposals` default to empty because empty is what an absent one means and neither is
 // a claim. `answer` and `read` do NOT default, because a receipt invented out of a missing field
 // would be the one number on the screen that nobody counted — §L's rule is that every answer states
 // what it read, so prose with no receipt is not an answer this room may draw.
-
-@Serializable
-data class AskTurn(val from: String, val text: String)
-
-@Serializable
-data class AskThread(val turns: List<AskTurn>)
 
 // One tool the model asked for, in call order. The opening read Ask makes on the lifter's behalf is
 // not one of these — it was not the model's idea, so it is not reported as the model's move.
@@ -121,16 +119,12 @@ object Ask {
     // question BEFORE it is sent. A 400 for a long question would cost the lifter the typing.
     const val maxTurnBytes = 1000
 
-    // SEVEN, where the wire's ceiling is eight. The thread must alternate and must both begin and
-    // end with the lifter, so only an odd count is a conversation at all: three answered exchanges
-    // carried as context, and the question being asked now.
-    const val maxTurns = 7
-
     // gym's own vocabulary on the wire, and deliberately not the vendor's `user`/`assistant`: this
     // shape is gym's contract with its own clients, and nothing about it should have to change when
-    // the model behind it does.
+    // the model behind it does. The log's own word for the other side (`ask`) is not spelled here,
+    // because nothing on this phone tests for it: a stored turn is the LIFTER'S or it is drawn as
+    // the log's, and a speaker this build has never heard of must not be put in somebody's mouth.
     const val fromLifter = "lifter"
-    const val fromAsk = "ask"
 
     // What Ask is, said before it has said anything — the empty state is chrome and not a message,
     // because it does not speak first. It names the ceiling of the whole feature in the same breath
@@ -153,6 +147,13 @@ object Ask {
     const val dailyCap =
         "It answers about ten questions a day, three back to back — the cap that keeps Ask open to " +
             "everyone. There is nothing to buy here."
+
+    // WHAT HAPPENS TO WHAT YOU ASK, said where Ask is explained rather than discovered on a screen
+    // somewhere else. §O made this true — the log keeps the conversation now — and a feature that
+    // started keeping a lifter's questions without saying so would be the quietest dark pattern in
+    // the product. It is one sentence and it names the door out in the same breath: kept, and yours
+    // to delete.
+    const val kept = "Every conversation is kept so you can read it back, and yours to delete."
 
     // §L's own paragraph, and the reason it is not a retreat to ship it: an in-app chat that sends
     // you somewhere better costs one paragraph and is the strongest proof the connected log is real.
@@ -200,14 +201,18 @@ object Ask {
     //
     // A proposal is the log's object rather than the conversation's, so anything the answer minted
     // is on the routine either way, waiting as a card on Today — said out loud here because the
-    // sentence that would have named it is exactly what went missing.
+    // sentence that would have named it is exactly what went missing. And since §O the answer
+    // itself may be on the log too: a reply that landed after the room went down was stored with
+    // the thread, so the last clause points at where to read it rather than leaving a lifter to
+    // assume an evening was lost.
     //
     // It is the one refusal this room mints itself rather than repeating the log's words, because
     // the log never heard that anybody stopped listening. The retry is offered under it by the
     // screen, so the sentence does not ask for one in words.
     const val interrupted =
         "Ask didn't finish that one. The log heard the question, so it may have counted against " +
-            "today's — and anything it proposed is on the routine either way."
+            "today's — and anything it proposed is on the routine either way. If it did answer, " +
+            "the conversation is in Threads."
 
     // WHAT IS SAID WHEN THE DEPLOYMENT HAS NO ASK AT ALL. The route is only registered where a model
     // is configured, so the answer is a bare 404 — the feature not existing rather than a request
@@ -224,39 +229,6 @@ object Ask {
     // the answer, and nothing on the wire carries one, so a client inventing "Deload week?" would be
     // the room writing the lifter's next question about numbers it never saw.
     val openers = listOf("What's stalled?", "Which lifts are moving?", "Is my week too light?")
-
-    // THE THREAD, COMPOSED FOR THE WIRE. Alternating, lifter-first, lifter-last, and never longer
-    // than the ceiling — the server refuses anything else outright, and it is right to.
-    //
-    // Only ANSWERED exchanges are carried. One that failed has a question and no reply, and putting
-    // it in would break the alternation the whole shape rests on; the lifter's Retry sends it as the
-    // question again, which is what they asked for.
-    //
-    // The oldest exchanges are the ones dropped, because a conversation is about where it has got
-    // to. Ask re-reads the log on every turn, so context lost here is context it can fetch again —
-    // which is the whole reason a chat over a log can afford a short memory.
-    fun thread(settled: List<AskExchange>, question: String): List<AskTurn> {
-        val answered = settled.mapNotNull { exchange ->
-            val said = exchange.answer?.answer ?: return@mapNotNull null
-            if (said.isBlank()) null else exchange.question to said
-        }
-        val turns = mutableListOf<AskTurn>()
-        // BOTH SIDES OF A CARRIED TURN ARE HELD TO THE CEILING. It is per turn and the server
-        // refuses the WHOLE thread over one turn that breaks it, so an oversized answer — or an
-        // oversized question from an older build or a seed nobody typed — would kill the question
-        // being asked now over bytes from three questions ago. The composer keeps every question
-        // inside the ceiling before it is sent, so this is a floor under context rather than a
-        // rewrite a lifter meets.
-        answered.takeLast((maxTurns - 1) / 2).forEach { (asked, replied) ->
-            turns += AskTurn(fromLifter, clipped(asked))
-            turns += AskTurn(fromAsk, clipped(replied))
-        }
-        // THE LIVE QUESTION IS NEVER CLIPPED, and that is the one place this rule stops: what a
-        // lifter just typed goes as typed. A question sent in words they did not write would be
-        // this room deciding what somebody said, and the log's own refusal is a better answer.
-        turns += AskTurn(fromLifter, question)
-        return turns
-    }
 
     // WHAT A RESTORED THREAD NEEDS DONE TO IT before it is drawn again. A question left pending was
     // in flight when the ACTIVITY went down — nothing shorter can strand one, because the request
@@ -305,34 +277,6 @@ object Ask {
     fun sendable(typed: String): Boolean {
         val asked = typed.trim()
         return asked.isNotEmpty() && asked.toByteArray(Charsets.UTF_8).size <= maxTurnBytes
-    }
-
-    // Cut to a byte budget on a CHARACTER boundary, because the ceiling is bytes and the text is
-    // UTF-8: an emoji or an accented letter is several bytes, and a cut through the middle of one
-    // is a byte sequence no reader can decode. Code points rather than chars for the same reason a
-    // surrogate pair is one character to a person.
-    fun clipped(text: String, maxBytes: Int = maxTurnBytes): String {
-        if (text.toByteArray(Charsets.UTF_8).size <= maxBytes) return text
-        val ellipsis = "…"
-        val budget = maxBytes - ellipsis.toByteArray(Charsets.UTF_8).size
-        // A BUDGET TOO SMALL TO HOLD THE MARK KEEPS NOTHING. The ceiling is this function's whole
-        // promise, and a mark appended past it would hand back MORE bytes than were asked for — the
-        // one thing a clip may never do.
-        if (budget <= 0) return ""
-        val kept = StringBuilder()
-        var taken = 0
-        var at = 0
-        while (at < text.length) {
-            val point = text.codePointAt(at)
-            val width = Character.charCount(point)
-            val piece = text.substring(at, at + width)
-            val size = piece.toByteArray(Charsets.UTF_8).size
-            if (taken + size > budget) break
-            kept.append(piece)
-            taken += size
-            at += width
-        }
-        return kept.append(ellipsis).toString()
     }
 
     // THE RECEIPT, SPELLED — `read 214 sets · 12 weeks · 34 sessions`, in the design's own order. It

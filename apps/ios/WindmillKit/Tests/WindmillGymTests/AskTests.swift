@@ -10,9 +10,12 @@ import XCTest
 //   · the door is not there mid-session, on any screen, for any account,
 //   · a refusal repeats the log's own sentence and NOTHING is sold against it — no price, no
 //     upgrade, no checkout, in any state Ask can be in,
-//   · the thread that goes back out is a thread the server will accept: alternating, lifter at both
-//     ends, inside both of its bounds,
+//   · the question that goes out is the lifter's words whole or not at all, inside the server's
+//     byte ceiling, carrying the id of the thread it belongs to,
 //   · and nothing a lifter reads says coach.
+//
+// The conversation the questions land in — the list, the titles and the outcomes — is
+// AskThreadsTests.swift.
 
 private func refusal(_ status: Int, code: String = "", message: String = "") -> WindmillApiError {
     var fields: [String] = []
@@ -68,16 +71,6 @@ final class AskWireTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(AskAnswer.self, from: Data(wire.utf8)))
     }
 
-    // What goes OUT: `from` is exactly `lifter` or `ask`, never `user`/`assistant` and never `coach`.
-    func testATurnGoesOutInTheWiresOwnVocabulary() throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        let sent = try encoder.encode([AskTurn(from: .lifter, text: "hi"),
-                                       AskTurn(from: .ask, text: "hello")])
-
-        XCTAssertEqual(String(decoding: sent, as: UTF8.self),
-                       #"[{"from":"lifter","text":"hi"},{"from":"ask","text":"hello"}]"#)
-    }
 }
 
 final class AskReceiptTests: XCTestCase {
@@ -111,49 +104,45 @@ final class AskReceiptTests: XCTestCase {
     }
 }
 
-final class AskThreadTests: XCTestCase {
-    // A first question is one turn, and it is the lifter's — the server refuses a thread that opens
-    // any other way, and Ask does not speak first anywhere in this product.
-    func testTheFirstQuestionGoesOutAlone() {
-        let thread = Ask.turns(after: [], asking: "Bench has been stuck at 82.5.")
+final class AskConversationTests: XCTestCase {
+    // THE ID THIS DEVICE MINTS, in the alphabet the server accepts: `thr_` and hex, well inside
+    // 8–64 characters and holding nothing outside [A-Za-z0-9_-]. A malformed one is a 400 about a
+    // conversation the lifter never had.
+    func testAMintedThreadIdIsOneTheServerWillTake() {
+        let allowed = CharacterSet(charactersIn:
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 
-        XCTAssertEqual(thread, [AskTurn(from: .lifter, text: "Bench has been stuck at 82.5.")])
+        for _ in 0..<50 {
+            let minted = Ask.mintThreadId()
+            XCTAssertTrue(minted.hasPrefix("thr_"), minted)
+            XCTAssertGreaterThanOrEqual(minted.count, 8, minted)
+            XCTAssertLessThanOrEqual(minted.count, 64, minted)
+            XCTAssertNil(minted.rangeOfCharacter(from: allowed.inverted), minted)
+        }
     }
 
-    // The whole conversation goes back out every time, because the server keeps none of it.
-    func testAnAnsweredExchangeGoesBackOutAsBothOfItsTurns() {
-        let thread = Ask.turns(after: [answered("first?", "first answer.")], asking: "second?")
+    // Two conversations are two threads. A minted id that repeated would put one lifter's questions
+    // into another's conversation, or — since the server refuses an id somebody else holds — refuse
+    // every second question asked on this phone.
+    func testEveryConversationOpensItsOwnThread() {
+        let ids = Set((0..<200).map { _ in AskConversation().threadId })
 
-        XCTAssertEqual(thread, [AskTurn(from: .lifter, text: "first?"),
-                                AskTurn(from: .ask, text: "first answer."),
-                                AskTurn(from: .lifter, text: "second?")])
+        XCTAssertEqual(ids.count, 200)
     }
 
-    // A QUESTION THAT WAS REFUSED PRODUCED NO ANSWER, so it carries no `ask` turn — and resending it
-    // as a bare lifter turn would put two of them side by side, a 400 about a conversation the
-    // lifter never had. The same is true of one still in flight.
-    func testARefusedOrUnansweredQuestionIsNotPartOfTheThread() {
-        let history = [answered("first?", "first answer."),
-                       AskExchange(question: "refused?", outcome: .refused(AskRefusal(line: "no"))),
-                       AskExchange(question: "in flight?", outcome: .waiting)]
-        let thread = Ask.turns(after: history, asking: "next?")
+    // THE EXCHANGES ON SCREEN SURVIVE A FRESH THREAD. The two refusals that replace the id —
+    // a conversation that has taken its eight turns, and an id already held — are about the thread
+    // and not about what was said, and clearing the screen would delete the answers a lifter is
+    // still reading.
+    func testOpeningAFreshThreadKeepsWhatIsAlreadyOnScreen() {
+        var conversation = AskConversation(exchanges: [answered("first?", "first answer.")])
+        let opened = conversation.threadId
 
-        XCTAssertEqual(thread, [AskTurn(from: .lifter, text: "first?"),
-                                AskTurn(from: .ask, text: "first answer."),
-                                AskTurn(from: .lifter, text: "next?")])
-    }
+        conversation.openAFreshThread()
 
-    // THE THREAD STAYS INSIDE BOTH OF THE SERVER'S BOUNDS. Turns alternate and the lifter is at both
-    // ends, so a valid thread always holds an ODD number — the most that fits under a ceiling of
-    // eight is seven, which is three answered exchanges plus the question being asked.
-    func testALongConversationIsCutToTheOldestTheServerWillTake() {
-        let history = (1...6).map { answered("q\($0)", "a\($0)") }
-        let thread = Ask.turns(after: history, asking: "q7")
-
-        XCTAssertEqual(thread.count, 7)
-        XCTAssertLessThanOrEqual(thread.count, Ask.maxTurns)
-        XCTAssertEqual(thread.map(\.from), [.lifter, .ask, .lifter, .ask, .lifter, .ask, .lifter])
-        XCTAssertEqual(thread.map(\.text), ["q4", "a4", "q5", "a5", "q6", "a6", "q7"])
+        XCTAssertNotEqual(conversation.threadId, opened)
+        XCTAssertEqual(conversation.exchanges.count, 1)
+        XCTAssertEqual(conversation.exchanges[0].question, "first?")
     }
 
     // A QUESTION IS NEVER SHORTENED TO FIT. `Ask.question(from:)` is the whole of what the composer
@@ -186,32 +175,16 @@ final class AskThreadTests: XCTestCase {
         XCTAssertNil(Ask.question(from: ""))
     }
 
-    // A LONG ANSWER IS CLIPPED ON THE WAY BACK OUT, and this is the case that bites: a few paragraphs
-    // of prose passes 1000 bytes easily, and carrying one back whole would refuse the lifter's next
-    // question with a 400 about a turn they never typed.
-    func testAnAnswerTooLongForTheWireIsClippedRatherThanRefusingTheNextQuestion() {
+    // A LONG ANSWER IS NO LONGER THIS SURFACE'S PROBLEM, and the change is the whole of §O: the
+    // client used to carry every answer back out as a turn and had to clip one past 1000 bytes to
+    // avoid a 400 about words the lifter never typed. The server keeps the turns now, so nothing
+    // this build sends is anything but the question that was asked.
+    func testAnAnswerOfAnyLengthNeverGoesBackOutAndCannotRefuseTheNextQuestion() {
         let long = String(repeating: "a", count: 1_400)
-        let thread = Ask.turns(after: [answered("q", long)], asking: "next?")
+        let conversation = AskConversation(exchanges: [answered("q", long)])
 
-        XCTAssertEqual(thread.count, 3)
-        XCTAssertEqual(thread[1].text.utf8.count, Ask.maxTurnBytes)
-        for turn in thread {
-            XCTAssertLessThanOrEqual(turn.text.utf8.count, Ask.maxTurnBytes)
-        }
-    }
-
-    // Cut on a CHARACTER boundary and never on a byte one: half an emoji is not a word, and the
-    // ceiling is counted in UTF-8 bytes rather than in characters because that is what the server
-    // counts.
-    func testClippingCutsWholeCharactersAndCountsBytes() {
-        let emoji = String(repeating: "🏋️", count: 400)     // well past 1000 bytes
-        let clipped = Ask.clipped(emoji)
-
-        XCTAssertLessThanOrEqual(clipped.utf8.count, Ask.maxTurnBytes)
-        XCTAssertTrue(emoji.hasPrefix(clipped))
-        XCTAssertFalse(clipped.contains("\u{FFFD}"))
-        XCTAssertEqual(Ask.clipped("  spaced out \n"), "spaced out")
-        XCTAssertEqual(Ask.clipped("   \n  "), "")
+        XCTAssertEqual(Ask.question(from: "next?"), "next?")
+        XCTAssertEqual(conversation.exchanges.count, 1)
     }
 }
 
@@ -278,6 +251,30 @@ final class AskRefusalTests: XCTestCase {
         XCTAssertEqual(unreadable.line, "Ask didn’t answer. Try again in a moment")
         XCTAssertTrue(unreadable.mayRetry)
         XCTAssertFalse(unreadable.closesTheDoor)
+    }
+
+    // THE TWO REFUSALS THAT ARE ABOUT THE THREAD AND NOT THE QUESTION (§O), and the only two codes
+    // this client reads. A conversation that has taken its eight turns and an id another account
+    // already holds are both answered by opening a NEW thread, so the retry carries the same
+    // question into a fresh id rather than back into one the server has just declined.
+    func testAFullOrTakenThreadOpensANewConversationRatherThanFailing() {
+        let full = AskRefusal(refusal(409, code: "ask-thread-full",
+                                      message: "that conversation is full — this starts a new one"))
+        XCTAssertEqual(full.line, "that conversation is full — this starts a new one")
+        XCTAssertTrue(full.opensAFreshThread)
+        XCTAssertTrue(full.mayRetry)
+        XCTAssertFalse(full.closesTheDoor)
+
+        let taken = AskRefusal(refusal(409, code: "ask-thread-taken", message: "mint a new one"))
+        XCTAssertTrue(taken.opensAFreshThread)
+        XCTAssertTrue(taken.mayRetry)
+
+        // And the third 409 is NOT one of them: a workout is open, the conversation is fine, and a
+        // fresh thread would answer a question nobody asked.
+        let midSession = AskRefusal(refusal(409, code: "ask-session-open",
+                                            message: "finish your workout first"))
+        XCTAssertFalse(midSession.opensAFreshThread)
+        XCTAssertFalse(midSession.mayRetry)
     }
 
     // THE ONE REFUSAL THAT TAKES THE DOOR AWAY. A deployment with no Anthropic key does not mount the

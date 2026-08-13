@@ -120,6 +120,16 @@ public:
   void savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb); // PUT  /v1/gym/preferences
   void stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb);           // GET  /v1/gym/stats
   void exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb);      // GET  /v1/gym/export
+  void exportThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/export/threads
+  // ASK'S THREADS (§O), AND THEY LIVE ON THE LOG'S API AND NOT ON ASK'S. A deployment with no vendor
+  // key registers no `POST /v1/gym/ask` at all — and the conversations a lifter already had are
+  // still theirs to read, to export and to delete. A thread is somebody's own words, not a feature
+  // of the model that answered them.
+  void listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/threads
+  void getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                 const std::string& id);                                      // GET  /v1/gym/threads/{id}
+  void deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                    const std::string& id);                                   // DELETE /v1/gym/threads/{id}
   void shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                     const std::string& id);                                   // POST /v1/gym/sessions/{id}/share
   void revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

@@ -2,6 +2,7 @@ package works.windmill.gym.net
 
 import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseRename
@@ -45,6 +46,8 @@ import works.windmill.platform.net.WindmillApiException
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
 //   POST /v1/gym/ask
+//   GET  /v1/gym/threads              ·  GET /v1/gym/threads/:id
+//   DELETE /v1/gym/threads/:id
 // The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
 //
 // `GET /v1/gym/stats` is gone from this list and NOT from the server: the statistics room was
@@ -177,12 +180,27 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun savePreferences(document: GymPreferences): GymPreferences =
         api.send<GymPreferences>("PUT", "/v1/gym/preferences", document)
 
-    // The whole thread, every time — the server stores none of it. Nothing is folded here: a 404 is
-    // the route being absent on this deployment rather than a missing object, and it means something
-    // to the room (the door goes) rather than nothing to a caller, so it travels as the refusal it
-    // is and AskVerdict reads it.
-    override suspend fun ask(thread: AskThread): AskAnswer =
-        api.send<AskAnswer>("POST", "/v1/gym/ask", thread)
+    // ONE QUESTION INTO ONE THREAD. Nothing is folded here: a 404 is the ROUTE being absent on this
+    // deployment rather than a missing object, and it means something to the room (the door goes)
+    // rather than nothing to a caller, so it travels as the refusal it is and AskVerdict reads it.
+    override suspend fun ask(question: AskQuestion): AskAnswer =
+        api.send<AskAnswer>("POST", "/v1/gym/ask", question)
+
+    // The three thread doors, and a 404 here is an ordinary absence rather than an absent feature:
+    // they are mounted whether or not this deployment has a model configured, so the only thing a
+    // 404 can mean is that this account holds no such conversation.
+    override suspend fun threads(): List<AskThread> =
+        api.get<Conversations>("/v1/gym/threads").threads
+
+    override suspend fun thread(id: String): AskThread? = try {
+        api.get<AskThread>("/v1/gym/threads/$id")
+    } catch (refused: WindmillApiException.Refused) {
+        if (refused.status == 404) null else throw refused
+    }
+
+    override suspend fun deleteThread(id: String) {
+        api.send<Unit>("DELETE", "/v1/gym/threads/$id")
+    }
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
     // punctuation marks in that set — and doing it anyway costs nothing and cannot be forgotten
@@ -224,3 +242,9 @@ private data class Log(val sessions: List<SessionSummary>)
 
 @Serializable
 private data class Routines(val routines: List<Routine>)
+
+// ONE KEY AND NOTHING ELSE, which is the reply's own contract: §O's list is not an inbox, so there
+// is no count, no unread total and nothing beside the conversations for a client to draw a badge
+// from — and a server that grew one would not reach a screen through this.
+@Serializable
+private data class Conversations(val threads: List<AskThread> = emptyList())

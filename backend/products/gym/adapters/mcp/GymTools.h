@@ -35,22 +35,23 @@ public:
   // THE SAME TOOLS, THROUGH THE OTHER DOOR — Ask, in this process, driving the loop itself. The two
   // things a call knows that a tool does not are the two arguments here:
   //
-  //   `door` is provenance, and W6 built it as a column precisely so this stays one system: a
+  //   `source` is provenance, and W6 built it as a column precisely so this stays one system: a
   //   proposal Ask mints is the same object an agent's is, dated and diffed and applied identically,
-  //   with one field saying where it came from.
+  //   with one field saying where it came from — and, since W11, one more saying which conversation
+  //   it was minted in, so a change in somebody's Tuesday leads back to the evening it came out of.
   //   `run` is the receipt. Every read answers with what it served, and over MCP that is the whole
   //   story because each call stands alone. Ask asks four questions to answer one, and a run that
   //   SUMMED the four replies would count the same workout twice — so the run's total is merged by
   //   id here, where the ids are, rather than re-derived upstairs from JSON somebody parses back.
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
-                      const ToolCaller& caller, ProposalDoor door, ReadReceipt& run);
+                      const ToolCaller& caller, const ProposalSource& source, ReadReceipt& run);
 
 private:
   // The tool itself, over the account alone, filling in what it served. callTool wraps it so every
   // failure — refused, or thrown out of a parse or a repository — reaches the agent naming the tool
   // it came from, exactly once.
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller,
-                      ProposalDoor door, ReadReceipt& served);
+                      const ProposalSource& source, ReadReceipt& served);
 
   LogService& log_;
   std::string appBaseUrl_;

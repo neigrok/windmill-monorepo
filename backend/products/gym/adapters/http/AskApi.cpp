@@ -15,14 +15,31 @@ namespace {
 // client must branch on — the machine word beside it. The rest have exactly one cause and the
 // sentence is the whole of it.
 drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
-  if (refusal == AskRefusal::turnsMalformed)
+  if (refusal == AskRefusal::threadMalformed)
     return error(drogon::k400BadRequest, "that isn't a conversation Ask can answer");
+  if (refusal == AskRefusal::threadTaken)
+    // The id names a conversation this account cannot see. It is REFUSED rather than appended to,
+    // for the reason every client-minted id in this product is: the primary key spans every account,
+    // so an id somebody else holds must never be quietly written into. The client mints a fresh one.
+    return error(drogon::k409Conflict, "that conversation id is already in use — start a new one",
+                 "ask-thread-taken");
   if (refusal == AskRefusal::questionEmpty)
     return error(drogon::k400BadRequest, "ask something about your training");
   if (refusal == AskRefusal::questionTooLong)
     return error(drogon::k400BadRequest, "that question is longer than Ask takes");
+  if (refusal == AskRefusal::questionUnstorable)
+    // The one text rule every note, movement name and routine name in gym already meets
+    // (`storableText`, domain/Training.h), said at Ask's door too — because this question becomes a
+    // title we promised is the lifter's words byte for byte. TERMINAL, like every other 400 here: a
+    // NUL or bytes that are not UTF-8 cannot be stored however many times the body is re-sent, and
+    // the alternative was a house 500 that every client queue retries forever.
+    return error(drogon::k400BadRequest, "that question has characters Ask can't store");
   if (refusal == AskRefusal::tooManyTurns)
-    return error(drogon::k400BadRequest, "Ask holds a shorter conversation than that");
+    // This conversation is full. It is the CLIENT's cue to open a new thread, not to trim the old
+    // one — the thread is the server's now, and nothing a client sends can shorten it.
+    return error(drogon::k409Conflict,
+                 "this conversation is as long as Ask holds. Start a new one",
+                 "ask-thread-full");
   if (refusal == AskRefusal::sessionOpen)
     // The design's line, enforced rather than remembered: a lifter between sets is training, and the
     // log is the thing in front of them. The client should not have offered the door at all, so this
@@ -48,16 +65,6 @@ drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
   return error(drogon::k503ServiceUnavailable, "Ask isn't available right now");
 }
 
-// One turn off the wire. `from` is gym's own vocabulary rather than the vendor's — a lifter and Ask,
-// not a user and an assistant — because this shape is gym's contract with its own clients and nothing
-// about it should have to change if the model behind it does.
-std::optional<AskTurn> parseTurn(const Json::Value& value) {
-  if (!value.isObject() || !value["text"].isString()) return std::nullopt;
-  const std::string from = value["from"].asString();
-  if (from != "lifter" && from != "ask") return std::nullopt;
-  return AskTurn{from == "lifter", value["text"].asString()};
-}
-
 }  // namespace
 
 AskApi::AskApi(std::shared_ptr<AskService> ask, std::shared_ptr<AuthService> auth)
@@ -72,25 +79,21 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json || !(*json)["turns"].isArray()) {
+  // ONE QUESTION INTO ONE THREAD. W7 took the whole conversation in this body, because W7 stored
+  // none of it; the server holds the thread now, so a client history would be a second, editable
+  // copy of what was said — and the thread a lifter reads back six weeks later has to be the one the
+  // model actually saw.
+  if (!json || !(*json)["thread"].isString() || !(*json)["question"].isString()) {
     cb(error(drogon::k400BadRequest, "expected json"));
     return;
-  }
-
-  std::vector<AskTurn> turns;
-  for (const Json::Value& value : (*json)["turns"]) {
-    std::optional<AskTurn> turn = parseTurn(value);
-    if (!turn) {
-      cb(error(drogon::k400BadRequest, "that isn't a conversation Ask can answer"));
-      return;
-    }
-    turns.push_back(std::move(*turn));
   }
 
   // The reply lands on a worker thread, not this one — the handler is done the moment it hands the
   // callback over. Drogon is happy to be answered from anywhere; what it will not survive is four
   // handler threads all blocked on a vendor.
-  ask_->ask(caller->id, caller->email.value, std::move(turns), [cb = std::move(cb)](AskReply reply) {
+  const ThreadId thread{(*json)["thread"].asString()};
+  ask_->ask(caller->id, caller->email.value, thread, (*json)["question"].asString(),
+            [cb = std::move(cb), thread](AskReply reply) {
     if (reply.refusal != AskRefusal::none) {
       cb(refusalOf(reply.refusal));
       return;
@@ -98,7 +101,8 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     if (!reply.answer.ok) {
       // Every diagnostic — the cap, the early stop, the dead upstream — is one fact to the lifter:
       // nothing came back. The detail went to the error tracker, where it belongs; a chat is not a
-      // place to print a stop reason.
+      // place to print a stop reason. Nothing was stored either: a question nobody answered is not a
+      // turn, so the retry sends the same question into the same thread and it lands once.
       cb(error(drogon::k502BadGateway, "Ask didn't answer. Try again in a moment"));
       return;
     }
@@ -122,6 +126,10 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     // The diff itself is `GET /v1/gym/proposals/{id}` — the same object, the same screen and the same
     // atomic apply an agent's proposal arrives on.
     body["proposals"] = proposals;
+    // The conversation this landed in, echoed back. The client minted the id, so this confirms the
+    // thread the turns were appended to rather than announcing one — and it is the id the threads
+    // list and `GET /v1/gym/threads/{id}` are read by.
+    body["thread"] = thread.str();
     cb(jsonResponse(body));
   });
 }

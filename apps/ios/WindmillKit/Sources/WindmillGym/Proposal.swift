@@ -58,11 +58,20 @@ public struct ProposalSource: Equatable, Decodable, Sendable {
     public let door: String
     public let connection: String?
     public let agent: String?
+    // THE CONVERSATION THIS CAME OUT OF (§O), and its ABSENCE is a fact rather than a gap: either
+    // the change came through the MCP door, where there was no conversation, or the lifter deleted
+    // the one it came from. Deleting a thread deletes the conversation and not the consequence — the
+    // history row still says the change came from Ask, it just no longer opens something that is
+    // gone. So the door onto it is offered only where this key is present, and never inferred from
+    // `door == "ask"`.
+    public let thread: String?
 
-    public init(door: String, connection: String? = nil, agent: String? = nil) {
+    public init(door: String, connection: String? = nil, agent: String? = nil,
+                thread: String? = nil) {
         self.door = door
         self.connection = connection
         self.agent = agent
+        self.thread = thread
     }
 
     // The wire OMITS `connection` and `agent` today — the MCP transport carries no identity for the
@@ -150,9 +159,7 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
 
     // `4 changes` — the count as a NOUN, for the two places that print it without a verb in front:
     // the review button's own label above, and the chip on the card Ask draws in its message stream.
-    public var changes: String {
-        changeCount == 1 ? "1 change" : "\(changeCount) changes"
-    }
+    public var changes: String { Readout.changeCount(changeCount) }
 
     enum CodingKeys: String, CodingKey {
         case id, routineId, intent, state, summary, changeCount, source

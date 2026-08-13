@@ -498,6 +498,8 @@ test('historyRows — the day it was written and every proposal since, each spel
     key: 'prop_1',
     pending: true,
     href: '#/gym/proposals/prop_1',
+    // The MCP door has no conversation behind it at all, so the row offers none.
+    thread: null,
     line: '10 Aug · 3 changes from your connected agent · waiting for you',
   });
   assert.deepEqual(rows[1], {
@@ -506,6 +508,26 @@ test('historyRows — the day it was written and every proposal since, each spel
     href: null,
     line: '9 Aug · created by you · 4 movements',
   });
+
+  // AND WHERE IT WAS ASKED FOR, when there is somewhere (§O). A diff Ask wrote carries the thread on
+  // its `source`, and the row hands it on so the trail runs both ways — the history says a change
+  // came from Ask, the conversation says which changes.
+  const asked = historyRows({
+    history: [{
+      kind: 'proposal',
+      at: proposal.createdAt,
+      proposal: { ...proposal, source: { door: 'ask', thread: 'thr_0a1b2c3d4e5f6071' } },
+    }],
+  });
+  assert.equal(asked[0].thread, 'thr_0a1b2c3d4e5f6071');
+  // DELETING A CONVERSATION DELETES THE MESSAGES AND NOT THE CONSEQUENCE. Afterwards the row still
+  // says the change came from Ask and simply stops opening something that is gone — which is the
+  // same shape as the MCP door, and deliberately so: there is nothing to apologise for in either.
+  const deleted = historyRows({
+    history: [{ kind: 'proposal', at: proposal.createdAt, proposal: { ...proposal, source: { door: 'ask' } } }],
+  });
+  assert.equal(deleted[0].thread, null);
+  assert.equal(deleted[0].line, '10 Aug · 3 changes from Ask · waiting for you');
 
   // An agent's day names the door it came through, and never the lifter.
   const byAgent = historyRows({

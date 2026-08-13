@@ -71,6 +71,16 @@ public:
                                      std::uint64_t nowMs) override;
   ProposalSettleOutcome dismissProposal(const UserId& user, const ProposalId& id,
                                         std::uint64_t nowMs) override;
+  std::vector<AskThread> threads(const UserId& user) override;
+  std::vector<AskThread> allThreads(const UserId& user) override;
+  std::optional<AskThread> thread(const UserId& user, const ThreadId& id) override;
+  ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title,
+                               std::uint64_t nowMs) override;
+  void appendTurns(const UserId& user, const ThreadId& id,
+                   const std::vector<ThreadTurn>& turns) override;
+  void discardEmptyThread(const UserId& user, const ThreadId& id) override;
+  bool deleteThread(const UserId& user, const ThreadId& id) override;
+  std::vector<ExportedThreadTurn> exportedThreadTurns(const UserId& user) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

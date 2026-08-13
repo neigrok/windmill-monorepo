@@ -48,6 +48,7 @@ import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.Threads
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -108,6 +109,7 @@ fun AskScreen(
     origin: String,
     backLabel: String,
     onBack: () -> Unit,
+    onThreads: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
@@ -139,7 +141,7 @@ fun AskScreen(
             .fillMaxSize()
             .imePadding(),
     ) {
-        Head(backLabel, onBack)
+        Head(backLabel, onBack, onThreads)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
             modifier = Modifier
@@ -189,8 +191,13 @@ fun AskScreen(
 // screen is. NO CHIP BESIDE IT: §L draws a `One` badge there, and this feature is gated on nothing,
 // so a badge for a plan that cannot be bought would be an advert standing where the design wanted a
 // fact. The subtitle is the fact: it reads your log, and it proposes only.
+//
+// THE ONE THING TO THE RIGHT IS §O'S DOOR onto the conversations before this one, and it is a WORD
+// rather than a count: a number there would be an inbox growing out of a header, and there is
+// nothing here waiting for anybody. It says how many conversations there are on the screen it opens,
+// once the log has actually said.
 @Composable
-private fun Head(backLabel: String, onBack: () -> Unit) {
+private fun Head(backLabel: String, onBack: () -> Unit, onThreads: () -> Unit) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier.padding(bottom = WindmillSpace.x3),
@@ -206,12 +213,32 @@ private fun Head(backLabel: String, onBack: () -> Unit) {
             Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
             Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
-        Column(
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
         ) {
-            Text(Ask.title, style = WindmillFont.display(26), color = GymSkin.ink, maxLines = 1)
-            Text(Ask.subtitle, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(Ask.title, style = WindmillFont.display(26), color = GymSkin.ink, maxLines = 1)
+                Text(Ask.subtitle, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
+            }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .heightIn(min = GymTap.minimum)
+                    .clip(RoundedCornerShape(WindmillRadius.full))
+                    .clickable(onClick = onThreads)
+                    .padding(horizontal = WindmillSpace.x3),
+            ) {
+                Text(
+                    Threads.door,
+                    style = WindmillFont.body(14, FontWeight.SemiBold),
+                    color = GymSkin.accent,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -265,6 +292,13 @@ private fun Opening(origin: String) {
         }
         Text(
             Ask.dailyCap,
+            style = GymType.numeral(12).copy(lineHeight = 18.sp),
+            color = GymSkin.inkFaint,
+        )
+        // What becomes of what you ask, in the same quiet ink as the cap: the log keeps it, and the
+        // list at the head of this screen is where you delete it.
+        Text(
+            Ask.kept,
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )
@@ -548,13 +582,18 @@ private fun Composer(
 // exchanges is whatever a lifter asks in the life of one activity.
 private const val savedThreadBytes = 32_000
 
-// THE THREAD THROUGH AN ACTIVITY RECREATION, as JSON. A conversation is the one thing in this room a
-// lifter cannot get back — the server keeps none of it — so it survives a recreation the way the
-// open tab does, hoisted into the room and saved.
+// THE THREAD THROUGH AN ACTIVITY RECREATION, as JSON. The LOG keeps the turns now (§O), but it does
+// not keep this: the receipt under each answer, the tools a question was steered by, and a question
+// that failed with no reply at all are facts about one exchange as it happened, and none of them is
+// on the threads read. So the live conversation still survives a recreation the way the open tab
+// does — hoisted into the room and saved — and what the log holds is the past rather than the
+// evening in progress.
 //
-// WHAT IS SAVED IS THE TAIL THAT FITS. A conversation past the ceiling above loses its OLDEST
-// exchanges and never its newest, for the reason the wire drops the oldest turns: a conversation is
-// about where it has got to. The trim happens on the way out and never to what is on screen, so
+// WHAT IS SAVED IS THE TAIL THAT FITS, and this is now the ONLY trim left anywhere in Ask: §O put
+// the whole conversation on the log, so nothing is dropped on the wire and nothing is dropped from
+// what a lifter can read back. A conversation past the ceiling above loses its OLDEST exchanges and
+// never its newest, because a conversation is about where it has got to and the oldest of it is the
+// half already stored. The trim happens on the way out and never to what is on screen, so
 // nothing a lifter is looking at disappears while they look at it — a recreation is where the
 // scrollback shortens, and the alternative is the recreation killing the app.
 //

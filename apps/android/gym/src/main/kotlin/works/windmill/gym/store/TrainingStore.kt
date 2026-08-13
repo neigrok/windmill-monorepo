@@ -10,8 +10,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.AskTurn
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -257,6 +257,10 @@ class TrainingStore(
         // a session that expired mid-conversation rather than a sentence anybody meets by walking
         // into it.
         const val askWantsAnAccount = "Ask reads your account's log — sign in first"
+
+        // Absent, another account's, and deleted are ONE sentence on purpose: three answers a
+        // stranger could tell apart would say whether a conversation exists on somebody else's log.
+        const val noSuchThread = "that conversation is no longer on the log"
     }
 
     // This movement's sets in this session, performed order, warmups included — the whole record of
@@ -1040,11 +1044,12 @@ class TrainingStore(
         routines = written + localLog.routines
     }
 
-    // ASK — one turn of the conversation, and the only verb in this store that spends money. The
-    // whole thread goes out because the server keeps none of it, and what comes back is drawn as it
-    // arrived: the prose, the server's own count of the rows it served, and the ids of any proposals
-    // minted along the way. NOTHING HERE COMPOSES A NUMBER — a receipt this room could arrive at on
-    // its own is a receipt the model could have invented.
+    // ASK — ONE QUESTION INTO ONE THREAD, and the only verb in this store that spends money. The
+    // thread id comes from the room, which minted it: a fresh one opens the conversation and a spent
+    // one continues it, and the log assembles the prompt from the turns it stored. What comes back is
+    // drawn as it arrived: the prose, the server's own count of the rows it served, and the ids of
+    // any proposals minted along the way. NOTHING HERE COMPOSES A NUMBER — a receipt this room could
+    // arrive at on its own is a receipt the model could have invented.
     //
     // A PROPOSAL MINTED IN A CONVERSATION IS A CARD ON TODAY TOO, so the program is re-read the
     // moment one appears. Without that, the room would hold the routines it read at connect and the
@@ -1056,10 +1061,10 @@ class TrainingStore(
     // and the day's question already counted; the re-read below is what does not happen, and the
     // next `connect` is what makes up for it, because a proposal is the log's object rather than the
     // conversation's and it is waiting there either way.
-    suspend fun ask(turns: List<AskTurn>): AskOutcome {
+    suspend fun ask(threadId: String, question: String): AskOutcome {
         val log = gym ?: return AskOutcome.Refused(askWantsAnAccount)
         return try {
-            val answered = log.ask(AskThread(turns))
+            val answered = log.ask(AskQuestion(thread = threadId, question = question))
             if (answered.proposals.isNotEmpty()) reread()
             AskOutcome.Answered(answered)
         } catch (interrupted: CancellationException) {
@@ -1068,8 +1073,64 @@ class TrainingStore(
             when (val verdict = AskVerdict.refusing(RefusalFacts(refusing))) {
                 is AskVerdict.Said -> AskOutcome.Refused(verdict.said)
                 is AskVerdict.Again -> AskOutcome.Failed(verdict.said)
+                is AskVerdict.Fresh -> AskOutcome.Fresh(verdict.said)
                 AskVerdict.Absent -> AskOutcome.Absent
             }
+        }
+    }
+
+    // §O'S PAST, in the three reads the screen needs and nothing held between them. A conversation
+    // moves the moment anybody applies or dismisses what it proposed — the outcome is DERIVED by the
+    // server from those proposals rather than stored — so a cached list would draw a thread as
+    // `waiting` days after the lifter decided on it.
+    //
+    // SIGNED OUT THERE IS NOTHING TO READ. A thread belongs to the account that had the conversation,
+    // exactly as Ask itself does, and the door is not drawn signed out either — this is the floor
+    // under a session that expired while the list was on screen.
+    suspend fun threads(): GymResult<List<AskThread>> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(askWantsAnAccount))
+        return try {
+            GymResult.Ok(log.threads())
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // One conversation, whole — the turns as they were sent, byte for byte. A log that refused with a
+    // sentence is not a log holding no such thread, which is why the absence answers in words rather
+    // than as a null the caller has to invent a reason for.
+    suspend fun thread(id: String): GymResult<AskThread> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(askWantsAnAccount))
+        return try {
+            val read = log.thread(id)
+                ?: return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+            GymResult.Ok(read)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // DELETE, AND WHAT IT DOES NOT TOUCH: the routines are NOT re-read here, and that is the point
+    // rather than an omission — deleting a conversation takes the conversation and leaves every
+    // change it applied standing in the routine's own history. Nothing about the program moved, so
+    // nothing about the program is re-read.
+    //
+    // A delete of something already gone is a delete that happened, so a 404 answers as success: the
+    // screen asked for a conversation not to be there, and it is not there.
+    suspend fun deleteThread(id: String): GymResult<Unit> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(askWantsAnAccount))
+        return try {
+            log.deleteThread(id)
+            GymResult.Ok(Unit)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            if (RefusalFacts(refusing).status == 404) GymResult.Ok(Unit)
+            else GymResult.Failed(WriteFailure(refusing))
         }
     }
 
@@ -1808,10 +1869,16 @@ sealed interface ProposalOutcome {
 //
 // `Absent` is the fourth because it is not about this question at all: the deployment has no Ask, so
 // the room takes the door down rather than leaving one that answers 404 forever.
+//
+// `Fresh` is the fifth and it arrived with §O: the conversation is full, or its id belongs to
+// somebody else, so the QUESTION is fine and the THREAD is not. The room lets go of the thread and
+// the same question asked again opens a new one — said out loud in the log's own words, because a
+// conversation ending is a thing that happened to the lifter rather than a detail of the wire.
 sealed interface AskOutcome {
     data class Answered(val answer: AskAnswer) : AskOutcome
     data class Refused(val said: String) : AskOutcome
     data class Failed(val said: String) : AskOutcome
+    data class Fresh(val said: String) : AskOutcome
     data object Absent : AskOutcome
 }
 

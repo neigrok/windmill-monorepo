@@ -10,8 +10,14 @@ import WindmillPlatform
 // the gate arms it arms on the server, and the chip comes back with it.
 //
 // THE THREAD LIVES IN THE ROOM. Opening a proposal tears this view down — the room mounts one screen
-// at a time — so the exchanges are bound from `GymRoom` and survive the walk to the diff and back.
-// They still die with the room, which is the right lifetime: leaving gym ends the conversation.
+// at a time — so the conversation is bound from `GymRoom` and survives the walk to the diff and
+// back. It still dies with the room, and since §O that costs nothing: the server keeps the
+// conversation, so what this visit forgets is on the Threads list the next time anybody looks.
+//
+// THE HEADER CARRIES THE WAY INTO THE PAST (§O). One question goes out at a time now, with the id of
+// the thread it belongs to, and the server assembles the prompt from what it stored — so this screen
+// no longer composes a history to send, and the comment that used to say it did is gone with the
+// code.
 //
 // NOTHING HERE SPEAKS FIRST. The empty state is a description of the surface, in the room's voice,
 // and the only thing on this screen that Ask itself wrote is the answer under a question somebody
@@ -40,7 +46,10 @@ import WindmillPlatform
 // takes, and for the same reason: a screen holding the store could reach the log in ways its own copy
 // does not describe.
 struct AskDoors {
-    let send: ([AskTurn]) async -> Result<AskAnswer, AskRefusal>
+    let send: (_ thread: String, _ question: String) async -> Result<AskAnswer, AskRefusal>
+    // §O — every conversation this account has had, which is a screen and not a badge: nothing
+    // counts them, nothing marks this door, and nothing behind it asks to be looked at.
+    let openThreads: () -> Void
     // The free door (contract §5): the lifter's own assistant, reading this log over MCP. It lands
     // on the room's invitation (ConnectedLog) rather than out in a browser — the pitch, the
     // precondition and then the recipe, in that order.
@@ -52,7 +61,7 @@ struct AskDoors {
 
 struct AskScreen: View {
     @ObservedObject var store: TrainingStore
-    @Binding var exchanges: [AskExchange]
+    @Binding var conversation: AskConversation
     let doors: AskDoors
 
     @Environment(\.gymSkin) private var skin
@@ -68,8 +77,8 @@ struct AskScreen: View {
             head
             ScrollView {
                 VStack(alignment: .leading, spacing: WindmillSpace.x5) {
-                    if exchanges.isEmpty { opening }
-                    ForEach(exchanges) { exchange in
+                    if conversation.exchanges.isEmpty { opening }
+                    ForEach(conversation.exchanges) { exchange in
                         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
                             asked(exchange.question)
                             outcome(of: exchange)
@@ -98,6 +107,14 @@ struct AskScreen: View {
                     .foregroundStyle(skin.inkFaint)
             }
             Spacer(minLength: 0)
+            // THE DOOR ONTO THE PAST, and it is a word rather than a count: a number here would be
+            // the first badge in this product, on the one screen §O says must never grow one.
+            Button(action: doors.openThreads) {
+                Text(AskThreads.door)
+                    .font(WindmillFont.body(13.5, .bold))
+                    .foregroundStyle(skin.accent)
+                    .frame(minHeight: GymTap.minimum)
+            }
         }
         .padding(.horizontal, WindmillSpace.x4)
         .padding(.top, WindmillSpace.x6)
@@ -365,52 +382,57 @@ struct AskScreen: View {
         !sending && Ask.question(from: question) != nil
     }
 
-    // ONE QUESTION AT A TIME, whether it is a new one or a retry of the one above it. The thread that
-    // goes out is composed from the exchanges BEFORE this one, so a retry carries exactly the context
-    // the first attempt did — and a refused question contributes nothing to it either way.
+    // ONE QUESTION AT A TIME, and since §O ONE QUESTION IS ALL THAT GOES OUT: the thread id travels
+    // with it and the server assembles the prompt from the turns it stored, so this composes no
+    // history and a retry cannot send a different context from the attempt it repeats.
+    //
+    // A RETRY IS SAFE TO SEND INTO THE SAME THREAD. Turns land only once an answer has, so a
+    // question that was refused is not in the conversation and asking it again appends it once.
     //
     // WHAT THE LIFTER TYPED, WHOLE OR NOT AT ALL. Clipping here would send a question that stops
-    // mid-word and then record it in the thread as the one they asked.
+    // mid-word and then record it in the thread as the one they asked — and the thread is now kept.
     private func ask(_ asked: String, replacing id: String?) async {
         guard !sending, let text = Ask.question(from: asked) else { return }
         sending = true
         defer { sending = false }
 
-        let standing = id.flatMap { known in exchanges.firstIndex { $0.id == known } }
-        let before = Array(exchanges.prefix(standing ?? exchanges.count))
-        let turns = Ask.turns(after: before, asking: text)
+        let standing = id.flatMap { known in conversation.exchanges.firstIndex { $0.id == known } }
         let asking: String
         if let standing {
-            exchanges[standing].outcome = .waiting
-            asking = exchanges[standing].id
+            conversation.exchanges[standing].outcome = .waiting
+            asking = conversation.exchanges[standing].id
         } else {
             let fresh = AskExchange(question: text)
-            exchanges.append(fresh)
+            conversation.exchanges.append(fresh)
             question = ""
             asking = fresh.id
         }
 
-        switch await doors.send(turns) {
+        switch await doors.send(conversation.threadId, text) {
         case .success(let answer):
             settle(asking, .answered(answer))
             await readMinted()
         case .failure(let why):
             settle(asking, .refused(why))
+            // The conversation is full, or its id was already somebody's. Both are answered by
+            // opening a new thread, so the id is replaced here and the Try again above carries the
+            // same question into it — which is exactly what the server's sentence asks for.
+            if why.opensAFreshThread { conversation.openAFreshThread() }
             // The deployment has no Ask at all. The sentence stays on the screen the lifter is
             // standing on; the entry onto it does not come back.
             if why.closesTheDoor { doors.absent() }
         }
     }
 
-    // Found by ID and never by index: the thread is the room's, and the room may have been left and
-    // re-entered under the await above.
+    // Found by ID and never by index: the conversation is the room's, and the room may have been
+    // left and re-entered under the await above.
     private func settle(_ id: String, _ outcome: AskExchange.Outcome) {
-        guard let landed = exchanges.firstIndex(where: { $0.id == id }) else { return }
-        exchanges[landed].outcome = outcome
+        guard let landed = conversation.exchanges.firstIndex(where: { $0.id == id }) else { return }
+        conversation.exchanges[landed].outcome = outcome
     }
 
     private func readMinted() async {
-        for exchange in exchanges {
+        for exchange in conversation.exchanges {
             guard case .answered(let answer) = exchange.outcome else { continue }
             for id in answer.proposals {
                 guard case .success(let found) = await store.proposal(id) else { continue }

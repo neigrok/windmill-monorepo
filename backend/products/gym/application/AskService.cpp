@@ -89,7 +89,8 @@ void AskRation::giveBack(const std::string& account) {
   ration->second.questions = std::min(kAskBackToBack, ration->second.questions + 1.0);
 }
 
-AskTools::AskTools(GymTools& inner) : inner_(inner) {}
+AskTools::AskTools(GymTools& inner, ThreadId thread)
+    : inner_(inner), thread_(std::move(thread)) {}
 
 std::vector<ToolDeclaration> AskTools::declareTools() const {
   std::vector<ToolDeclaration> offered;
@@ -130,7 +131,8 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
           unknownArgument(declared->descriptor["inputSchema"], arguments))
     return ToolResult::failure(name + ": " + *unknown);
 
-  const ToolResult outcome = inner_.callTool(name, arguments, caller, ProposalDoor::ask, read_);
+  const ToolResult outcome = inner_.callTool(
+      name, arguments, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
   // A proposal is an object the lifter has to be shown, so the id is taken off the tool's own reply
   // rather than out of the answer's prose — the model names it or not, and either way the app has it.
   if (!outcome.isError && outcome.payload["proposal"]["id"].isString())
@@ -146,30 +148,36 @@ AskService::AskService(LogService& log, AskAgent& agent, GymTools& gymTools,
 
 bool AskService::configured() const { return agent_.configured(); }
 
-void AskService::ask(const UserId& caller, const std::string& email, std::vector<AskTurn> turns,
-                     std::function<void(AskReply)> done) {
+void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
+                     std::string question, std::function<void(AskReply)> done) {
   // The refusal ladder, and every rung of it before any spend.
-  if (turns.empty() || !turns.front().fromLifter || !turns.back().fromLifter) {
-    done(AskReply{AskRefusal::turnsMalformed});
+  if (!wellFormedId(thread.str())) {
+    done(AskReply{AskRefusal::threadMalformed});
     return;
   }
-  for (std::size_t index = 1; index < turns.size(); ++index) {
-    if (turns[index].fromLifter == turns[index - 1].fromLifter) {
-      done(AskReply{AskRefusal::turnsMalformed});
-      return;
-    }
-  }
-  if (turns.size() > kMaxAskTurns) {
-    done(AskReply{AskRefusal::tooManyTurns});
-    return;
-  }
-  if (turns.back().text.find_first_not_of(" \t\r\n") == std::string::npos) {
+  if (question.find_first_not_of(" \t\r\n") == std::string::npos) {
     done(AskReply{AskRefusal::questionEmpty});
     return;
   }
-  if (std::any_of(turns.begin(), turns.end(),
-                  [](const AskTurn& turn) { return turn.text.size() > kMaxAskTurnBytes; })) {
+  if (question.size() > kMaxAskTurnBytes) {
     done(AskReply{AskRefusal::questionTooLong});
+    return;
+  }
+  // THE ONE TEXT RULE, WHICH THIS DOOR WAS THE ONLY FREE TEXT IN GYM TO SKIP. A note, a movement's
+  // name and a routine's name all meet `storableText` at construction; a question had a length and a
+  // blankness check and nothing else — and the question becomes a TITLE, which §O promises is the
+  // lifter's words byte for byte. Both halves of that rule land here:
+  //   · a NUL stops a `text` column, so the head of somebody's question stored as if it were the
+  //     whole of it and the title was silently not what they typed.
+  //   · bytes that are not well-formed UTF-8 (a lone surrogate half among them) are refused by
+  //     Postgres MID-TRANSACTION, and `openThread` runs on the handler thread outside this method's
+  //     only try — so it left as the house 500, the one status every client queue is told to RETRY,
+  //     on a body that can never land.
+  // Both are wire-reachable: jsoncpp decodes a \u0000 escape and a lone surrogate escape into
+  // exactly these bytes and hands drogon the result, so neither needs a hostile client to produce.
+  // The answer is the terminal 400 the rest of this module already gives.
+  if (!storableText(question)) {
+    done(AskReply{AskRefusal::questionUnstorable});
     return;
   }
   if (!agent_.configured()) {
@@ -193,16 +201,47 @@ void AskService::ask(const UserId& caller, const std::string& email, std::vector
     done(AskReply{AskRefusal::outOfBudget});
     return;
   }
+  // THE THREAD, OPENED BEFORE THE MODEL RUNS AND NOT AFTER IT — because a proposal minted halfway
+  // through this conversation points at the row, so the row has to be there to point at. A run that
+  // then never answers is undone below: `discardEmptyThread` takes back a thread that never got a
+  // turn, which is the same rule the day's ration keeps when it gives a dead run its question back.
+  //
+  // The title is this question, VERBATIM, and only on a thread that did not exist. A thread is named
+  // by how it opened; nothing here, and nothing behind here, ever writes a title a model composed.
+  const ThreadOpenOutcome opened = log_.openThread(caller, thread, question);
+  if (opened.error == ThreadOpenError::idTaken || !opened.thread) {
+    // NO THREAD AND NO NAMED ERROR IS THE RACE, AND IT IS THE SAME ANSWER. Two accounts can mint one
+    // id at once: the loser's global probe found the id free, its insert lost to `ON CONFLICT DO
+    // NOTHING`, and its owner-scoped read back came home empty. That used to fall through as a FRESH
+    // EMPTY conversation — the vendor call was made and billed, `appendTurns` found no row it could
+    // lock and dropped both turns, and the lifter got a 200 whose answer was never stored beside a
+    // thread that never appeared in the list. It is an id somebody else holds, however it was found
+    // out, so it is refused here where a refusal still costs nothing.
+    done(AskReply{AskRefusal::threadTaken});
+    return;
+  }
+  std::vector<AskTurn> turns;
+  for (const ThreadTurn& said : opened.thread->turns)
+    turns.push_back(AskTurn{said.fromLifter, said.text});
+  // The pair this ask would add — the question and the answer to come — has to fit under the cap
+  // with everything already said, or the conversation would be capped halfway through answering.
+  if (turns.size() + 2 > kMaxThreadTurns) {
+    log_.discardEmptyThread(caller, thread);
+    done(AskReply{AskRefusal::tooManyTurns});
+    return;
+  }
+  turns.push_back(AskTurn{true, question});
   // THE DAY'S QUESTION, TAKEN LAST — after every refusal above it, because a refusal answered
   // nothing and must therefore cost nothing. A lifter turned away mid-workout, or held at our own
   // ceiling, walks out with the day's questions intact.
   if (!perAccount_.take(caller.str())) {
+    log_.discardEmptyThread(caller, thread);
     done(AskReply{AskRefusal::dailyLimit});
     return;
   }
 
   workers_.getNextLoop()->queueInLoop(
-      [this, caller, turns = std::move(turns), done = std::move(done)]() mutable {
+      [this, caller, thread, turns = std::move(turns), done = std::move(done)]() mutable {
         // THE GRANT, SAID OUT LOUD AT THE CALL SITE. Ask acts as the signed-in account, and the three
         // levels are named one by one rather than taken as `everything()` — so a fourth level, or a
         // second product, never rides along on a token nobody widened.
@@ -216,7 +255,7 @@ void AskService::ask(const UserId& caller, const std::string& email, std::vector
         const ToolCaller actor{caller, ToolScope({{"gym", Access::read},
                                                   {"gym", Access::write},
                                                   {"gym", Access::del}})};
-        AskTools hands(gymTools_);
+        AskTools hands(gymTools_, thread);
         AskReply reply;
         try {
           reply.answer = agent_.answer(turns, actor, hands);
@@ -248,6 +287,20 @@ void AskService::ask(const UserId& caller, const std::string& email, std::vector
         if (reply.answer.modelTurns == 0) perAccount_.giveBack(caller.str());
         reply.read = hands.read().tally();
         reply.proposals = hands.proposals();
+        // THE CONVERSATION IS WRITTEN ONLY ONCE IT HAS AN ANSWER, and both halves land together: a
+        // question nobody answered is not a turn, exactly as it is not one of the day's questions.
+        // So a failed ask leaves the thread as it found it — a first ask that failed takes its own
+        // empty row back with it, and the retry appends the question once rather than twice.
+        //
+        // A proposal the dead run managed to mint keeps its row and loses its thread link, which is
+        // the rule the lifter's own delete obeys: the conversation goes, the consequence stays.
+        if (!reply.answer.ok) {
+          log_.discardEmptyThread(caller, thread);
+          done(std::move(reply));
+          return;
+        }
+        log_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
+                                          ThreadTurn{false, reply.answer.answer}});
         done(std::move(reply));
       });
 }

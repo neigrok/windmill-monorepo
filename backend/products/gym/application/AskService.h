@@ -44,7 +44,11 @@ namespace wm::gym {
 // the server holds, and both are printed to the lifter. Neither is ever taken from the model's prose.
 class AskTools : public ToolHost {
 public:
-  explicit AskTools(GymTools& inner);
+  // The thread is carried, not looked up: every proposal this run mints is stamped with the
+  // conversation it came out of, so the routine's history leads back to the evening that caused it
+  // and the thread's row can say what came of it. W7 had nothing to stamp — it kept no conversation
+  // — which is exactly what §O reversed.
+  AskTools(GymTools& inner, ThreadId thread);
 
   std::vector<ToolDeclaration> declareTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
@@ -55,6 +59,7 @@ public:
 
 private:
   GymTools& inner_;
+  ThreadId thread_;
   ReadReceipt read_;
   std::vector<std::string> proposals_;
 };
@@ -65,9 +70,11 @@ private:
 // anywhere.
 enum class AskRefusal {
   none,
-  turnsMalformed,   // not a conversation: empty, not alternating, or not ending on the lifter
+  threadMalformed,  // the id is not one this product can hold (domain/Training.h's id shape)
+  threadTaken,      // the id names a conversation this account cannot see — refused, never appended
   questionEmpty,
   questionTooLong,
+  questionUnstorable,  // a NUL or bytes that are not UTF-8 (storableText, domain/Training.h)
   tooManyTurns,
   notConfigured,    // no vendor key — in production the route is absent, so this is the fail-closed floor
   sessionOpen,      // a workout is running: Ask is never offered mid-session, and the server says so
@@ -84,10 +91,10 @@ struct AskReply {
   std::vector<std::string> proposals;   // ids minted during the exchange, in mint order
 };
 
-// What a thread may weigh. A conversation about training that needs more than eight turns or a
-// thousand bytes a turn is a different product, and the caps are also what keeps a stateless server's
-// request body from becoming an unbounded prompt somebody else pays for.
-constexpr std::size_t kMaxAskTurns = 8;
+// What one turn may weigh. The count is `kMaxThreadTurns` (domain/Thread.h) and it is the thread's
+// rule now rather than the request body's: the server assembles the prompt from what it stored, so
+// the cap bounds the side that pays for it. A conversation about training that needs more than eight
+// turns or a thousand bytes a turn is a different product.
 constexpr std::size_t kMaxAskTurnBytes = 1000;
 
 // THE DAILY LIMIT, AND IT IS A DESIGN ARTIFACT RATHER THAN AN OPS DETAIL. Ask is the first Windmill
@@ -161,8 +168,14 @@ public:
   // a button that answers 503 is worse than a door that was never drawn.
   bool configured() const;
 
-  void ask(const UserId& caller, const std::string& email, std::vector<AskTurn> turns,
-           std::function<void(AskReply)> done);
+  // ONE QUESTION INTO ONE THREAD, and the client no longer sends the conversation. W7 did, because
+  // W7 kept none of it; now the server holds the thread, so the client sending a history of its own
+  // would be a second, editable copy of what was said — the stored conversation and the prompt could
+  // then disagree, and a lifter reading the thread back would be reading something the model never
+  // saw. The id is the client's to mint (every gym write is), and a fresh one opens a thread titled
+  // by this question, verbatim.
+  void ask(const UserId& caller, const std::string& email, const ThreadId& thread,
+           std::string question, std::function<void(AskReply)> done);
 
 private:
   LogService& log_;

@@ -174,7 +174,13 @@ bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming) 
   if (!(stored.head.id == incoming.head.id)) return false;
   if (!(stored.head.routine == incoming.head.routine)) return false;
   if (stored.head.intent != incoming.head.intent) return false;
-  if (!(stored.head.source == incoming.head.source)) return false;
+  // The door, the connection and the model — but NOT the thread, which is the one part of a source
+  // the STORE decides after the fact: deleting a conversation clears it (§O), and a replay arriving
+  // after that delete is still the same proposal. Matching it would refuse the lost reply of a mint
+  // the lifter has merely tidied up behind.
+  if (stored.head.source.door != incoming.head.source.door) return false;
+  if (stored.head.source.connection != incoming.head.source.connection) return false;
+  if (stored.head.source.agent != incoming.head.source.agent) return false;
   if (stored.head.summary != incoming.head.summary) return false;
   if (stored.baseRevision != incoming.baseRevision) return false;
   if (stored.baseName != incoming.baseName) return false;

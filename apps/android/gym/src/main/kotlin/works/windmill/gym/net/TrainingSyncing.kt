@@ -1,6 +1,7 @@
 package works.windmill.gym.net
 
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
@@ -177,13 +178,35 @@ interface TrainingSyncing {
     // come back sorted heaviest-first with duplicates gone. Draw the reply, never the send.
     suspend fun savePreferences(document: GymPreferences): GymPreferences
 
-    // ASK — one turn of the conversation, and the only door in this interface that spends money. The
-    // whole thread goes out every time because the server keeps none of it, and what comes back
+    // ASK — ONE QUESTION INTO ONE THREAD, and the only door in this interface that spends money. The
+    // thread id is the client's (`Ids.thread`): a fresh one opens a conversation and a spent one
+    // continues it, and the LOG assembles the prompt from the turns it stored. What comes back
     // carries the SERVER'S OWN count of the rows its tools served: the receipt under an answer is
     // read off this reply and never composed here.
     //
     // Its refusals are the ones no other door has: a cap that is stated plainly and sold nothing
-    // against, a workout still open, and — on a deployment with no model configured — a 404 with no
-    // body at all, which is the route being ABSENT rather than an error. AskVerdict tells them apart.
-    suspend fun ask(thread: AskThread): AskAnswer
+    // against, a workout still open, a thread that is full or that belongs to another account, and —
+    // on a deployment with no model configured — a 404 with no body at all, which is the route being
+    // ABSENT rather than an error. AskVerdict tells them apart.
+    suspend fun ask(question: AskQuestion): AskAnswer
+
+    // §O'S THREE DOORS ONTO THE PAST, and the log mounts all three UNCONDITIONALLY where `ask` is
+    // conditional: a deployment that lost its vendor key keeps every conversation readable and
+    // deletable, because what is stored is the lifter's and does not belong to the model that helped
+    // write it.
+    //
+    // The list carries no turns — a table of contents does not need every word of every evening —
+    // and the detail read adds them. Newest question first, and the ordering is the server's.
+    suspend fun threads(): List<AskThread>
+
+    // Null is the log holding no such conversation, folded here the way every other read folds a
+    // 404: absent, another account's and deleted are byte-identical answers, which is the whole
+    // point of them.
+    suspend fun thread(id: String): AskThread?
+
+    // DELETING THE CONVERSATION IS NOT DELETING THE CONSEQUENCE: an applied change stays in the
+    // routine's history, because that is a fact about the program rather than a message. The
+    // proposal's `source.thread` simply goes, and the history row still says the change came from
+    // Ask — it just no longer opens a conversation that is gone.
+    suspend fun deleteThread(id: String)
 }

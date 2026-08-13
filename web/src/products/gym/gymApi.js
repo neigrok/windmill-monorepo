@@ -153,9 +153,11 @@
 //                                           UNAUTHENTICATED READ, and the token is the whole
 //                                           credential; revoked, expired and never-minted are one
 //                                           byte, so a null here says nothing about which
-//   POST /v1/gym/ask                     -> { turns: [{from: 'lifter'|'ask', text}] } in;
-//                                           { answer, steps: [{tool, failed}], read: {sets,
-//                                           sessions, weeks}, proposals: [id…] } out (§L). `steps`
+//   POST /v1/gym/ask                     -> { thread, question } in — ONE question into ONE thread,
+//                                           the id CLIENT-MINTED ('thr_<hex>', and a fresh one opens
+//                                           a conversation) — and { answer, steps: [{tool, failed}],
+//                                           read: {sets, sessions, weeks}, proposals: [id…],
+//                                           thread } out (§L, §O). `steps`
 //                                           is the tools the MODEL asked for, in call order — Ask's
 //                                           own opening read of your newest workouts is not one of
 //                                           them. `read` is ALWAYS present and is SERVER-COUNTED
@@ -172,10 +174,30 @@
 //                                           brake and 429 `ask-out-of-budget` the rolling 30-day AI
 //                                           ceiling — neither is a purchase, and nothing on this
 //                                           wire offers one. 409 `ask-session-open` while a workout
-//                                           is running, 400 for a thread that is not a conversation
-//                                           (≥1, ≤8 turns, strictly alternating, first and last
-//                                           from the lifter, ≤1000 BYTES each), and stateless — the
-//                                           client holds the conversation, the server holds none
+//                                           is running, 409 `ask-thread-taken` for an id another
+//                                           account holds, 409 `ask-thread-full` at eight stored
+//                                           turns, 400 for a malformed thread id, a blank question
+//                                           or one over 1000 BYTES. A 502 STORED NOTHING: the same
+//                                           thread and the same question sent again land exactly
+//                                           once
+//   GET  /v1/gym/threads                 -> { threads: [Thread…] }, newest `askedAt` first, at most
+//                                           200, and NO other key — there is no unread count on this
+//                                           wire and nothing here may invent one (§O)
+//   GET  /v1/gym/threads/:id             -> one Thread, carrying `turns` — the only read that does
+//                                           — or null on 404, absent and another account's alike
+//   DELETE /v1/gym/threads/:id           -> 204, nothing back. It deletes the CONVERSATION and not
+//                                           its consequence: a proposal it minted keeps its
+//                                           `source.door: 'ask'` in the routine's history and simply
+//                                           loses `source.thread`, because an applied change is a
+//                                           fact about a program rather than a message (§O)
+// A Thread is {id, title, createdAt, askedAt, outcome, proposals: [head-ish…], turns?}. `title` is
+// the lifter's FIRST MESSAGE, VERBATIM — written once when the thread opened and never rewritten, so
+// no surface may summarise, truncate to an ellipsis or otherwise improve it. `outcome` is DERIVED by
+// the server from the proposals riding with the thread — {kind: 'read-only'|'proposed'|'applied'|
+// 'dismissed'|'superseded', changes, routineId?, routine?} — where `changes` is always present and a
+// 0 is real, and the routine pair is OMITTED TOGETHER when the changes spanned more than one. Every
+// row of `proposals` is {id, state, changeCount, routineId, routine, createdAt}; a `turn` is
+// {from: 'lifter'|'ask', text, at}, stored as it was sent
 //   GET  /v1/gym/preferences             -> the settings document (§I). NEVER 404s: an account with
 //                                           no row stored is served the defaults, so every caller
 //                                           gets a whole document on the first read and the store
@@ -262,8 +284,12 @@
 // mid-session save from destroying a diff's base — and is also why a routine RENAME is that same
 // whole-document PUT and not a route of its own. `pendingProposal` is a proposal HEAD — {id,
 // routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
-// connection?, agent?}} — present only while one is waiting, and it is how the card on Today and
-// the dot on the routines list are drawn in the read those screens were already making.
+// connection?, agent?, thread?}} — present only while one is waiting, and it is how the card on
+// Today and the dot on the routines list are drawn in the read those screens were already making.
+// `source.thread` is the conversation this diff was written in and it is OFFERED ONLY WHEN PRESENT:
+// absent means there is nothing to open — the MCP door, or a thread the lifter deleted — and the row
+// still says `door: 'ask'` either way, because the change came from Ask whether or not the
+// conversation about it still exists (§O).
 // A Review is {stats: {durationMs, workingSets, topE1rm?}, slight, record?, against?}. Every
 // optional above is OMITTED when it has no value, never null.
 
@@ -672,10 +698,17 @@ export const gymApi = {
     return json(response);
   },
 
-  // ASK (§L): the whole thread so far in, and out one answer, the tools the model called, the count
-  // of rows the server served it, and any proposal it minted. The server keeps nothing between asks
-  // — it is the client that holds the conversation — so this call carries every turn every time, and
-  // the caps on that (eight turns, a thousand bytes each) are the server's.
+  // ASK (§L, §O): ONE question into ONE thread, and out one answer, the tools the model called, the
+  // count of rows the server served it, and any proposal it minted.
+  //
+  // W7 SENT THE WHOLE CONVERSATION EVERY TIME, because the server kept none of it. §O reversed that
+  // — a conversation about your bench plateau is worth more in six weeks than it was that evening —
+  // so the thread is STORED, this call carries the id and the new question alone, and the server
+  // assembles the prompt from what it holds. Which is the honest shape as well as the smaller one:
+  // the conversation a lifter reads back in Threads is the one the model actually saw, rather than
+  // whatever a client chose to resend. The caps (eight stored turns, a thousand bytes a question)
+  // are the server's, and ask.js predicts the first of them so the composer retires before a send
+  // can fail.
   //
   // IT IS ABOUT THE LOG AND NOT ABOUT ONE WORKOUT, which is why no session id travels with it: the
   // questions worth asking are "how has my bench moved", and the tools behind this are the same
@@ -683,9 +716,34 @@ export const gymApi = {
   //
   // It is the ONE call in this file that may not exist. A deployment with no model wired never
   // mounts the route, so a bare 404 is "no Ask on this deployment"; ask.js's askFailure is the one
-  // place that is read, and the room retires on it rather than offering a retry.
-  async ask(turns) {
-    return json(await call('/ask', { method: 'POST', body: JSON.stringify({ turns }) }));
+  // place that is read, and the room retires on it rather than offering a retry. The three thread
+  // doors below are mounted whatever the model situation is, so a conversation stays readable,
+  // exportable and deletable on a deployment that can no longer answer a question.
+  async ask(thread, question) {
+    return json(await call('/ask', { method: 'POST', body: JSON.stringify({ thread, question }) }));
+  },
+
+  // EVERY CONVERSATION, newest first — the list §O's screen 33 is made of. It is a plain read of all
+  // of them: there is no page, no filter and no query, because a threads screen with a search box is
+  // the inbox this one is deliberately not.
+  async threads() {
+    return (await json(await call('/threads'))).threads;
+  },
+
+  // One conversation, whole — the only read that carries `turns`. Null on 404, absent and another
+  // account's alike, exactly as every other read in this file spells that one fact.
+  async thread(id) {
+    const response = await call(`/threads/${encodeURIComponent(id)}`);
+    if (response.status === 404) return null;
+    return json(response);
+  },
+
+  // THE MESSAGES GO AND THE CONSEQUENCE STAYS. A change applied from this conversation is still in
+  // the routine's history afterwards — its row still says it came from Ask — because that is a fact
+  // about a program and not a message. 204 for a thread already gone as readily as for one deleted
+  // just now, so a retry after a lost reply is safe.
+  async deleteThread(id) {
+    return json(await call(`/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
 };
 
@@ -694,3 +752,9 @@ export const gymApi = {
 // too big to sit in a tab's heap still lands. Same-origin in production, so the session cookie
 // rides the navigation the way it rides every other request here.
 export const EXPORT_HREF = `${base}/export`;
+
+// AND EVERY CONVERSATION, AS A SECOND FILE (§O). One row per turn, parameterless, nothing omitted —
+// deliberately dull, because that is the whole trust argument for a log somebody keeps for years:
+// what Ask was told and what it said are yours on the same terms your sets are. A second file rather
+// than more columns on the first, since a set and a sentence are not one shape.
+export const EXPORT_THREADS_HREF = `${base}/export/threads`;

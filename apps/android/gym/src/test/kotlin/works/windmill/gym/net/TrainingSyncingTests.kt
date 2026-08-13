@@ -7,6 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
 import works.windmill.gym.domain.AskAnswer
+import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.ChangeKind
@@ -176,7 +177,13 @@ internal class FakeTraining : TrainingSyncing {
     // Answers queued in the order they will be given, so a test can put a proposal in the second
     // reply and nothing in the first.
     val answers = mutableListOf<AskAnswer>()
-    val asked = mutableListOf<AskThread>()
+    val asked = mutableListOf<AskQuestion>()
+    // The conversations this account holds, by id — the ledger §O's three doors read, delete from
+    // and refuse out of. A thread is stored WHOLE and served two ways: the list drops the turns,
+    // the detail carries them, and a test that could not tell those apart would not notice a client
+    // drawing a chat log to render a table of contents.
+    val conversations = mutableMapOf<String, AskThread>()
+    var refuseThreads: Exception? = null
     var swallowReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
@@ -579,17 +586,56 @@ internal class FakeTraining : TrainingSyncing {
         return stored
     }
 
-    // ASK. The thread that went out is kept whole, because the rule the client has to get right is
-    // about the SHAPE of it — alternating, lifter-first, lifter-last, and inside the ceiling — and a
-    // fake that only answered would prove nothing about that.
-    override suspend fun ask(thread: AskThread): AskAnswer {
+    // ASK. The question that went out is kept whole, because what the client has to get right is
+    // which THREAD it landed in — a fresh id opens a conversation and a spent one continues it, and
+    // a fake that only answered would prove nothing about that.
+    override suspend fun ask(question: AskQuestion): AskAnswer {
         calls.add("ask")
-        asked.add(thread)
+        asked.add(question)
         reachable()
         refuseAsk?.let { throw it }
         if (answers.isEmpty()) {
             return AskAnswer(answer = "nothing has moved in three weeks.", read = ReadTally(sets = 12))
         }
         return answers.removeAt(0)
+    }
+
+    // The list, newest question first and WITHOUT the turns — the reply's own shape, so a screen
+    // that drew a conversation from the list would draw nothing here either.
+    override suspend fun threads(): List<AskThread> {
+        calls.add("threads")
+        reachable()
+        refuseThreads?.let { throw it }
+        return conversations.values
+            .sortedByDescending { it.askedAtMs }
+            .map { it.copy(turns = emptyList()) }
+    }
+
+    override suspend fun thread(id: String): AskThread? {
+        calls.add("thread")
+        reachable()
+        refuseThreads?.let { throw it }
+        return conversations[id]
+    }
+
+    // The conversation goes and the CONSEQUENCE stays — every proposal it minted is still on the
+    // ledger, still applied, still saying it came from Ask. What goes with it is the `thread` on
+    // each of those proposals, which is `on delete set null` in the schema and is the whole of the
+    // door: a history row that kept a dangling id would draw `Ask ›` onto a conversation the log
+    // would then refuse. A fake that only forgot the thread would have modelled that bug as fine.
+    override suspend fun deleteThread(id: String) {
+        calls.add("deleteThread")
+        reachable()
+        refuseThreads?.let { throw it }
+        conversations.remove(id)
+        ledger.values.filter { it.source.thread == id }.forEach { proposal ->
+            val orphaned = proposal.copy(source = proposal.source.copy(thread = null))
+            ledger[proposal.id] = orphaned
+            written[proposal.routineId]?.let { routine ->
+                if (routine.pendingProposal?.id == proposal.id) {
+                    written[routine.id] = routine.copy(pendingProposal = orphaned)
+                }
+            }
+        }
     }
 }

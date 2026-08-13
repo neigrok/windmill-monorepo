@@ -89,12 +89,22 @@ object ProposalStateSerializer : KSerializer<ProposalState> {
 // `door` stays a String where `state` and `kind` are closed enums, and the difference is what each
 // decides: a door this build has never heard of only picks which fallback to print, while an
 // unknown state would put a wrong control in front of a tap.
+// THE CONVERSATION THIS CAME OUT OF (§O) — present on a proposal Ask minted and still keeping, and
+// ABSENT means there is nothing here to open: the MCP door has no conversation to show, and a thread
+// the lifter deleted has none left. The row still says `door: ask` either way, because where a
+// change came from is a fact about the program and outlives the message that carried it. So the link
+// is offered ONLY where the key is: a door drawn on the absence would be a screen promising a
+// conversation and then answering "no such conversation".
 @Serializable
 data class ProposalSource(
     val door: String = "mcp",
     val connection: String? = null,
     val agent: String? = null,
+    val thread: String? = null,
 ) {
+    // Where the conversation is, when there is one to open at all.
+    val conversation: String? get() = thread?.takeIf { it.isNotBlank() && door == askDoor }
+
     val name: String
         get() = agent?.takeIf { it.isNotBlank() }
             ?: connection?.takeIf { it.isNotBlank() }

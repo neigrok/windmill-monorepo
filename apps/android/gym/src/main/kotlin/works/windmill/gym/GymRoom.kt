@@ -49,10 +49,12 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.CoachDoors
+import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
+import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.DeviceCatalog
@@ -77,6 +79,8 @@ import works.windmill.gym.ui.RoutineScreen
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
+import works.windmill.gym.ui.ThreadScreen
+import works.windmill.gym.ui.ThreadsScreen
 import works.windmill.gym.ui.TodayScreen
 import works.windmill.gym.ui.askThreadSaver
 import works.windmill.gym.ui.routineDraftSaver
@@ -157,6 +161,12 @@ private sealed interface Away {
     data class Program(val routineId: String) : Away
     data class Proposal(val proposalId: String, val routineId: String) : Away
     data class Ask(val seed: String = "") : Away
+    // §O'S PAST: the list of conversations, and one conversation read back. The list carries nothing
+    // at all — it reads its own rows, because an outcome is derived from proposals that move the
+    // moment anybody decides anything — and a thread travels as its ID for the same reason a routine
+    // does: what it says about itself changes under it.
+    data object Threads : Away
+    data class Thread(val threadId: String) : Away
     data object Settings : Away
 }
 
@@ -229,11 +239,12 @@ fun GymRoom(account: Account) {
     // the routine still carries the card, and the room forgetting this on a relaunch is the
     // direction it is allowed to fail in.
     var putOff by rememberSaveable { mutableStateOf("") }
-    // THE CONVERSATION, AND IT LIVES HERE RATHER THAN ON THE SCREEN THAT DRAWS IT, for one reason:
-    // the server keeps none of it. A thread is the only thing in this room that exists nowhere but
-    // in memory — the log survives a recreation because it is on disk and on the account, and a
-    // chat has neither — so it is hoisted to the room and saved, and a lifter who is thrown out by
-    // an activity recreation finds what they asked still standing when they open the door again.
+    // THE CONVERSATION IN PROGRESS, AND IT LIVES HERE RATHER THAN ON THE SCREEN THAT DRAWS IT: the
+    // ask outlives the screen, and the answer has to land somewhere whether or not anybody is
+    // looking at it. The LOG keeps the turns now (§O), which is why the threads list can exist at
+    // all — but it does not keep the receipt under an answer, the tools it was steered by, or a
+    // question that failed with no reply, so the evening in progress is still saved here and a
+    // lifter thrown out by an activity recreation finds it standing when they open the door again.
     var conversation by rememberSaveable(stateSaver = askThreadSaver) {
         mutableStateOf(emptyList<AskExchange>())
     }
@@ -246,6 +257,12 @@ fun GymRoom(account: Account) {
     var building by rememberSaveable(stateSaver = routineDraftSaver) {
         mutableStateOf<RoutineDraft?>(null)
     }
+    // WHICH CONVERSATION THE NEXT QUESTION LANDS IN — minted by this phone, empty until somebody
+    // asks, and saved beside the thread it belongs to. §O reverses W7 here: the log keeps the turns
+    // now, so this id is the whole of what makes tonight's second question a reply to the first
+    // rather than a new evening. It is let go of when the seat changes, when the log says the
+    // conversation is full or is somebody else's, and when the lifter asks for a new one.
+    var conversationId by rememberSaveable { mutableStateOf("") }
     // Whether a question is out. It belongs beside the thread and not on the screen for the same
     // reason the ask itself does: the request outlives the screen, so the flag that closes the door
     // on a second one has to outlive it too.
@@ -339,6 +356,10 @@ fun GymRoom(account: Account) {
         val standing = account.user?.id
         if (Ask.handedOver(seat, standing, seatRead)) {
             conversation = emptyList()
+            // The id goes with the words. A thread id kept across a seat would send the next
+            // lifter's question into a conversation the log holds for somebody else, and the log
+            // would rightly refuse it — but the room would have tried.
+            conversationId = ""
             seat = standing ?: ""
         }
         if (standing != null) seatRead = true
@@ -523,13 +544,26 @@ fun GymRoom(account: Account) {
     fun ask(from: List<AskExchange>, question: String) {
         if (asking || !Ask.sendable(question)) return
         val asked = question.trim()
+        // THE THREAD THIS QUESTION LANDS IN, minted here on the first question of a conversation and
+        // reused for every one after it. It is minted BEFORE the send and kept whatever comes back,
+        // so a retry continues the same conversation instead of scattering one evening across two.
+        //
+        // IT IS NOT THE IDEMPOTENCY EVERY OTHER WRITE IN THIS ROOM HAS, and the difference is worth
+        // saying: a set carries a client-minted id for the ROW, so a replay is the same row; here
+        // the id names the CONVERSATION and the question carries no id of its own. The log discards
+        // a thread whose question it never answered, so the retry after a 502 costs nothing twice —
+        // but a reply lost in transit AFTER the log answered leaves a stored turn this room never
+        // saw, and asking again spends a second call and stores a second turn. That is exactly why
+        // nothing is ever re-sent on its own: this door spends money, so the retry is a tap.
+        val into = conversationId.ifEmpty { Ids.thread().also { conversationId = it } }
         asking = true
         conversation = from + AskExchange(question = asked)
         scope.launch {
             try {
-                // The WHOLE conversation goes out — the server keeps none of it — trimmed to what
-                // the wire takes by the domain, which is the only thing that knows the rule.
-                when (val outcome = store.ask(Ask.thread(from, asked))) {
+                // ONE QUESTION GOES OUT. The log holds the turns and assembles the prompt from them
+                // (§O reverses W7's stateless Ask), so the conversation a lifter reads back on the
+                // threads screen is the one the model actually saw.
+                when (val outcome = store.ask(into, asked)) {
                     is AskOutcome.Answered ->
                         conversation = from + AskExchange(question = asked, answer = outcome.answer)
                     is AskOutcome.Refused ->
@@ -537,6 +571,16 @@ fun GymRoom(account: Account) {
                     is AskOutcome.Failed ->
                         conversation = from + AskExchange(
                             question = asked, trouble = outcome.said, again = true)
+                    // THE CONVERSATION IS OVER AND THE QUESTION IS FINE: eight turns is a full
+                    // thread, and an id another account holds is not this lifter's to write into.
+                    // The room lets go of the id, says the log's own sentence, and offers the tap —
+                    // which opens a NEW conversation with the same question in it. Nothing is
+                    // re-sent on its own, because this is the one door that spends money.
+                    is AskOutcome.Fresh -> {
+                        conversationId = ""
+                        conversation = from + AskExchange(
+                            question = asked, trouble = outcome.said, again = true)
+                    }
                     AskOutcome.Absent -> {
                         conversation = from + AskExchange(question = asked, trouble = Ask.notHere)
                         askAbsent = true
@@ -546,6 +590,16 @@ fun GymRoom(account: Account) {
                 asking = false
             }
         }
+    }
+
+    // A NEW CONVERSATION, opened from the foot of the threads list. The live thread on screen is let
+    // go of along with its id — what was asked is on the log and readable in the list behind this
+    // door, so nothing is lost by clearing it, and a fresh question under an old title would be
+    // filed under an evening nobody had tonight.
+    fun askSomethingNew() {
+        conversation = emptyList()
+        conversationId = ""
+        away = listOf(Away.Ask())
     }
 
     // §M'S SAVE, and it lives here rather than on the builder for the reason every write in this
@@ -617,6 +671,12 @@ fun GymRoom(account: Account) {
             is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
             is Away.Proposal -> "Proposal"
             is Away.Ask -> "Ask"
+            Away.Threads -> Threads.title
+            // The way out of a proposal minted in a conversation lands back ON that conversation,
+            // so the chevron says what it returns to. It says the NOUN and not the thread's title:
+            // a title is the lifter's first message verbatim, at whatever length they typed it, and
+            // a paragraph in a back row is a back row that has stopped being a way back.
+            is Away.Thread -> Threads.conversation
             Away.Settings -> "Gym"
             null -> tab.title
         }
@@ -724,6 +784,10 @@ fun GymRoom(account: Account) {
                     onBuild = { building = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    // §O'S OTHER DOOR: a history row that came out of a conversation opens it. It
+                    // is drawn only where the log carries a thread id — the trail survives the
+                    // conversation's deletion, so the row stands either way and only the door goes.
+                    onOpenThread = { look(Away.Thread(it)) },
                     say = { note = it },
                 )
                 standing is Away.Proposal -> ProposalScreen(
@@ -758,12 +822,36 @@ fun GymRoom(account: Account) {
                         conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
                     },
                     seed = standing.seed,
+                    // §O'S DOOR, and it is in Ask's own header because that is where somebody
+                    // standing in a conversation goes looking for the ones before it. It is not a
+                    // badge and it counts nothing — the list says how many there are once it has
+                    // read them.
+                    onThreads = { look(Away.Threads) },
                     // The same origin the share link is spelled off, and for the same reason: the
                     // free door Ask points at is a page on the server this build talks to.
                     origin = origin,
                     backLabel = beneath,
                     onBack = { back() },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                )
+                standing is Away.Threads -> ThreadsScreen(
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    onOpen = { look(Away.Thread(it)) },
+                    onAskNew = { askSomethingNew() },
+                )
+                standing is Away.Thread -> ThreadScreen(
+                    threadId = standing.threadId,
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    // The list is what the lifter lands back on, and it reads itself again — the
+                    // conversation that was deleted is gone from it because the log says so, and
+                    // never because this room crossed a row out on the strength of its own tap.
+                    onDeleted = { back() },
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    say = { note = it },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
                 tab == Tab.Routines -> RoutinesScreen(

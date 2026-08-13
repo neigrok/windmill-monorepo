@@ -560,7 +560,82 @@ Json::Value toJson(const ProposalHead& head) {
   // connected agent") rather than an empty string where a model's name should be.
   if (!head.source.connection.empty()) source["connection"] = head.source.connection;
   if (!head.source.agent.empty()) source["agent"] = head.source.agent;
+  // THE CONVERSATION THIS CAME OUT OF, and its absence is the whole of §O's delete rule. It is
+  // absent from every MCP proposal, which had no conversation, and absent again once the lifter has
+  // deleted the thread an Ask proposal came from — the change stays in the routine's history and
+  // still says `ask`, it just no longer opens something that exists. A client draws the row either
+  // way and offers the link only where this key is.
+  if (head.source.thread) source["thread"] = head.source.thread->str();
   body["source"] = source;
+  return body;
+}
+
+// ── Ask's threads (§O) ─────────────────────────────────────────────────────────────────────────
+//
+// A row is the question in the LIFTER'S OWN WORDS plus what came of it, and both halves of that
+// sentence are enforced below rather than trusted: `title` is the stored first message, and every
+// field of `outcome` is something the server observed — a state the ledger holds, a count it stored,
+// a routine it can name. Nothing here is a motive, because nothing observes one.
+Json::Value toJson(const ThreadOutcome& outcome) {
+  Json::Value body(Json::objectValue);
+  body["kind"] = toString(outcome.kind);
+  // Always present, and zero is a real answer: `read only` is a thread that proposed nothing.
+  body["changes"] = outcome.changes;
+  // Named only where ONE routine took the changes. Across two, the count still stands and the noun
+  // does not, so a client draws `6 changes` and never `6 changes → Push A` about a thread that also
+  // moved Legs.
+  if (outcome.routine) {
+    body["routineId"] = outcome.routine->str();
+    body["routine"] = outcome.routineName;
+  }
+  return body;
+}
+
+Json::Value toJson(const AskThread& thread) {
+  Json::Value body(Json::objectValue);
+  body["id"] = thread.id.str();
+  // THE FIRST MESSAGE, VERBATIM — never a summary a model wrote, which is the point of the whole
+  // screen. It travels byte for byte, punctuation and emoji included.
+  body["title"] = thread.title;
+  body["createdAt"] = Json::Value::UInt64(thread.createdAtMs);
+  body["askedAt"] = Json::Value::UInt64(thread.askedAtMs);
+  body["outcome"] = toJson(outcomeOf(thread));
+  Json::Value proposals(Json::arrayValue);
+  for (const ThreadProposal& minted : thread.minted) {
+    Json::Value line(Json::objectValue);
+    line["id"] = minted.id.str();
+    line["state"] = toString(minted.state);
+    line["changeCount"] = minted.changes;
+    line["routineId"] = minted.routine.str();
+    line["routine"] = minted.routineName;
+    line["createdAt"] = Json::Value::UInt64(minted.createdAtMs);
+    proposals.append(line);
+  }
+  body["proposals"] = proposals;
+  // The turns ride on the CONVERSATION's own read and are absent from the list, which carries titles
+  // and outcomes and nothing else. On the list, absence means "not on this read". On the
+  // conversation's own read it means nothing was said yet — which is a real state, not an impossible
+  // one: the row is committed before the model runs, so a turn-less thread exists for the whole of
+  // every in-flight ask and stays if the process died before the answer landed.
+  if (!thread.turns.empty()) {
+    Json::Value turns(Json::arrayValue);
+    for (const ThreadTurn& said : thread.turns) {
+      Json::Value turn(Json::objectValue);
+      turn["from"] = said.fromLifter ? "lifter" : "ask";
+      turn["text"] = said.text;
+      turn["at"] = Json::Value::UInt64(said.atMs);
+      turns.append(turn);
+    }
+    body["turns"] = turns;
+  }
+  return body;
+}
+
+Json::Value toJson(const std::vector<AskThread>& threads) {
+  Json::Value array(Json::arrayValue);
+  for (const AskThread& thread : threads) array.append(toJson(thread));
+  Json::Value body(Json::objectValue);
+  body["threads"] = array;
   return body;
 }
 

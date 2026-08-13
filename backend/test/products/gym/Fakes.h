@@ -109,6 +109,8 @@ public:
   // gym_proposals + gym_proposal_changes, as one value because the rows are one document: the diff
   // and the run it describes are the same rows read two ways (domain/Proposal.h).
   std::vector<RoutineProposal> proposalRows;
+  std::vector<AskThread> threadRows;   // Ask's conversations; `minted` is derived on every read
+  bool loseThreadRace = false;         // stage the concurrent-mint race `openThread` explains
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
   // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
@@ -1050,7 +1052,152 @@ public:
     return {withLoggedSets(*held, user), std::nullopt, ProposalSettleError::none};
   }
 
+  // ── Ask's threads ────────────────────────────────────────────────────────────────────────────
+  //
+  // The turns are stored on the row and `minted` is DERIVED on every read from the proposal ledger,
+  // exactly as the SQL derives it from a join — so a fake that stored an outcome could never drift
+  // from one, because there is no outcome stored on either side.
+  std::vector<AskThread> threads(const UserId& user) override {
+    std::vector<AskThread> out;
+    for (const AskThread& held : threadRows)
+      if (held.user == user) out.push_back(withMinted(held, false));
+    std::sort(out.begin(), out.end(), [](const AskThread& a, const AskThread& b) {
+      return std::pair(a.askedAtMs, a.id.str()) > std::pair(b.askedAtMs, b.id.str());
+    });
+    if (static_cast<int>(out.size()) > kThreadList) out.resize(kThreadList);
+    return out;
+  }
+
+  // The archive's read: every row, no ceiling, oldest first — the shape the export stamps outcomes
+  // from, and the reason it is separate from the list is that a screen's ceiling is not an archive's.
+  std::vector<AskThread> allThreads(const UserId& user) override {
+    std::vector<AskThread> out;
+    for (const AskThread& held : threadRows)
+      if (held.user == user) out.push_back(withMinted(held, false));
+    std::sort(out.begin(), out.end(), [](const AskThread& a, const AskThread& b) {
+      return std::pair(a.createdAtMs, a.id.str()) < std::pair(b.createdAtMs, b.id.str());
+    });
+    return out;
+  }
+
+  std::optional<AskThread> thread(const UserId& user, const ThreadId& id) override {
+    for (const AskThread& held : threadRows)
+      if (held.id == id && held.user == user) return withMinted(held, true);
+    return std::nullopt;   // absent and another account's are one answer
+  }
+
+  ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title,
+                               std::uint64_t nowMs) override {
+    // The store's race, made reachable: two accounts mint one id at once, the loser's global probe
+    // finds it free, its insert loses to ON CONFLICT DO NOTHING, and its owner-scoped read back comes
+    // home empty — no thread and no named error. Only a flag can stage that deterministically.
+    if (loseThreadRace) return {std::nullopt, ThreadOpenError::none};
+    for (const AskThread& held : threadRows) {
+      if (!(held.id == id)) continue;
+      if (!(held.user == user)) return {std::nullopt, ThreadOpenError::idTaken};
+      return {withMinted(held, true), ThreadOpenError::none};
+    }
+    // The title is written ONCE, here, from the lifter's first message.
+    threadRows.push_back(AskThread{id, user, title, nowMs, nowMs, {}, {}});
+    return {withMinted(threadRows.back(), true), ThreadOpenError::none};
+  }
+
+  void appendTurns(const UserId& user, const ThreadId& id,
+                   const std::vector<ThreadTurn>& turns) override {
+    for (AskThread& held : threadRows) {
+      if (!(held.id == id) || !(held.user == user)) continue;
+      for (const ThreadTurn& turn : turns) held.turns.push_back(turn);
+      if (!turns.empty()) held.askedAtMs = turns.back().atMs;
+      return;
+    }
+  }
+
+  void discardEmptyThread(const UserId& user, const ThreadId& id) override {
+    std::erase_if(threadRows, [&](const AskThread& held) {
+      return held.id == id && held.user == user && held.turns.empty();
+    });
+  }
+
+  bool deleteThread(const UserId& user, const ThreadId& id) override {
+    const std::size_t before = threadRows.size();
+    std::erase_if(threadRows,
+                  [&](const AskThread& held) { return held.id == id && held.user == user; });
+    if (threadRows.size() == before) return false;
+    // `on delete set null`: THE CONVERSATION GOES AND THE CONSEQUENCE STAYS. Every proposal it
+    // minted keeps its row, its state and its place in the routine's history, and loses only the
+    // link back to a conversation that no longer exists.
+    for (RoutineProposal& held : proposalRows)
+      if (held.head.source.thread == id) held.head.source.thread.reset();
+    return true;
+  }
+
+  std::vector<ExportedThreadTurn> exportedThreadTurns(const UserId& user) override {
+    std::vector<AskThread> held;
+    for (const AskThread& row : threadRows)
+      if (row.user == user) held.push_back(row);
+    std::sort(held.begin(), held.end(), [](const AskThread& a, const AskThread& b) {
+      return std::pair(a.createdAtMs, a.id.str()) < std::pair(b.createdAtMs, b.id.str());
+    });
+    std::vector<ExportedThreadTurn> out;
+    for (const AskThread& row : held) {
+      // A thread that holds no turns is still a row, with the turn columns empty — the store's LEFT
+      // JOIN, said in the fake so both sides of the port answer alike. Such a thread is real for the
+      // whole of every in-flight ask, and it is listed on screen.
+      if (row.turns.empty()) {
+        out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
+                                         isoUtc(row.createdAtMs), "", "", "", ""});
+        continue;
+      }
+      int position = 0;
+      for (const ThreadTurn& turn : row.turns) {
+        ++position;
+        // The outcome columns come back EMPTY: that ladder is the domain's, and LogService stamps
+        // it on — the same split the SQL keeps.
+        out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
+                                         isoUtc(row.createdAtMs), std::to_string(position),
+                                         turn.fromLifter ? "lifter" : "ask", turn.text,
+                                         isoUtc(turn.atMs)});
+      }
+    }
+    return out;
+  }
+
 private:
+  // The join the list read makes: what this conversation minted, in mint order, each carrying the
+  // routine's name AS IT NOW STANDS — a day renamed since has to be findable under the name it has.
+  AskThread withMinted(const AskThread& held, bool withTurns) const {
+    AskThread out = held;
+    if (!withTurns) out.turns.clear();
+    out.minted.clear();
+    std::vector<const RoutineProposal*> minted;
+    for (const RoutineProposal& proposal : proposalRows) {
+      if (proposal.head.source.thread != held.id) continue;
+      if (!(proposal.head.user == held.user)) continue;
+      minted.push_back(&proposal);
+    }
+    std::sort(minted.begin(), minted.end(),
+              [](const RoutineProposal* a, const RoutineProposal* b) {
+                return std::pair(a->head.createdAtMs, a->head.id.str()) <
+                       std::pair(b->head.createdAtMs, b->head.id.str());
+              });
+    for (const RoutineProposal* proposal : minted) {
+      // The SQL joins gym_routines, so a proposal whose routine is gone is off this list on both
+      // sides — the routine's deletion took the proposal with it anyway.
+      std::string name;
+      bool found = false;
+      for (const Routine& routine : routineRows)
+        if (routine.id == proposal->head.routine) {
+          name = routine.name;
+          found = true;
+        }
+      if (!found) continue;
+      out.minted.push_back(ThreadProposal{proposal->head.id, proposal->head.state,
+                                          proposal->head.changes, proposal->head.routine, name,
+                                          proposal->head.createdAtMs});
+    }
+    return out;
+  }
+
   // The stored row itself, so a settle can move it. Owner-scoped like every read here.
   RoutineProposal* pendingOrSettled(const UserId& user, const ProposalId& id) {
     for (RoutineProposal& held : proposalRows)

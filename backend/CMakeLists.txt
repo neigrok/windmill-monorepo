@@ -88,6 +88,7 @@ add_library(windmill_gym
   products/gym/domain/Preferences.cpp
   products/gym/domain/Routine.cpp
   products/gym/domain/Proposal.cpp
+  products/gym/domain/Thread.cpp
   products/gym/domain/Review.cpp
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
@@ -166,6 +167,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
   test/products/gym/domain/ProposalTest.cpp
+  test/products/gym/domain/ThreadTest.cpp
   test/products/gym/domain/ReviewTest.cpp
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp

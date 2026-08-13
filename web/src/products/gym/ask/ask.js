@@ -123,15 +123,25 @@ export const PROPOSAL_NOTE =
 export const FIX_IS_YOURS =
   'Correcting a set is yours, not Ask’s. Open the workout in your log and tap the set.';
 
-// The wire takes at most eight turns, strictly alternating, first and last from the lifter — so four
-// answers is a whole conversation and a fifth question would be a ninth turn. The room says that out
-// loud and offers a fresh thread rather than letting the send button 400.
+// A THREAD HOLDS AT MOST EIGHT TURNS AND THE SERVER IS THE ONE HOLDING THEM (§O, backend
+// domain/Thread kMaxThreadTurns). So four answers is a whole conversation and a fifth question would
+// be a ninth turn, refused 409 `ask-thread-full`. The room predicts it one question early and offers
+// a fresh conversation rather than letting the send button earn a refusal.
+//
+// IT COUNTS THE STORED TURNS AND NOT THE SCREEN. A question whose ask failed is on screen and is not
+// in the thread — nothing is stored until an answer lands — so the count is taken off the answers,
+// each of which stands for exactly one stored pair.
 export const MAX_TURNS = 8;
 
 export function threadFull(turns) {
   const answered = turns.filter((turn) => turn.from === 'ask').length;
   return answered * 2 + 1 > MAX_TURNS;
 }
+
+// AND A FULL THREAD IS NOT A LOST ONE ANY MORE. W7 could say "starting again costs you nothing,
+// because the server kept none of it"; §O reversed that, so what this says instead is where the
+// conversation went — it is in Threads, titled by the question that opened it.
+export const THREAD_FULL_NOTE = 'That’s as long as one conversation goes here. It’s kept in Threads.';
 
 // THE CAP IS IN BYTES AND THE FIELD COUNTS CHARACTERS, which are not the same number the moment a
 // question carries an emoji or an accent. Counting it here is what keeps a long question on screen
@@ -161,10 +171,16 @@ export const MID_SESSION_NOTE = 'Finish your workout first — Ask reads a log t
 //   404 (no code)           the route was never mounted — this deployment has no model wired
 //   503                     the same fact said by a deployment that mounted it anyway
 //   409 ask-session-open    a workout is running; Ask reads a log that has stopped moving
+//   409 ask-thread-full     eight turns are stored; this one is kept and the next opens a new one
+//   409 ask-thread-taken    another account holds that id; mint a fresh one and the question stands
 //   429 ask-daily-limit     the pace cap, and it is a design artifact rather than an ops detail
 //   429 ask-out-of-budget   our own AI ceiling for this account's rolling 30 days
 //   400                     the thread or the question was unreadable — terminal, never retried
 //   everything else         the model did not answer, and asking again is the whole repair
+//
+// A 502 STORED NOTHING (§O): the thread the question was for keeps exactly the turns it already had,
+// so the same thread and the same question sent again land once. Which is why the retry sentence is
+// still the true one after the reversal — there is no half-written conversation to repair.
 //
 // The last one is a sentence rather than a branch, because it is said twice: for a request that came
 // back wrong, and for a 200 whose body carried no receipt (`answerTurn`). Both are the same fact
@@ -179,6 +195,13 @@ export function askFailure(error) {
   if (error?.status === 401) return { note: 'Sign in to open your training log.', gone: true };
   if (error?.status === 404 || error?.status === 503) return { note: ASK_ABSENT_NOTE, gone: true };
   if (error?.status === 409 && error?.code === 'ask-session-open') return { note: MID_SESSION_NOTE };
+  if (error?.status === 409 && error?.code === 'ask-thread-full') return { note: THREAD_FULL_NOTE, full: true };
+  // AN ID ANOTHER ACCOUNT HOLDS, which can only ever happen on the FIRST question of a thread — once
+  // one has landed the thread is this account's. So the repair is a fresh id and the question the
+  // lifter typed is still on screen to send again; nothing that was answered can be lost this way.
+  if (error?.status === 409 && error?.code === 'ask-thread-taken') {
+    return { note: 'That conversation id was already taken. Ask again — it opens a new one.', fresh: true };
+  }
   if (error?.status === 429 && error?.code === 'ask-daily-limit') {
     return { note: 'That’s Ask for now — it answers about ten questions a day, three back to back. The next one frees up in a couple of hours.' };
   }
@@ -190,20 +213,13 @@ export function askFailure(error) {
   return { note: NO_ANSWER_NOTE };
 }
 
-// The thread the server is sent: every turn so far, oldest first, in the shape the wire takes. It is
-// derived from what is on screen rather than kept beside it, because a second copy of a conversation
-// is a second thing that can disagree with what the lifter is reading.
+// WHAT THE WIRE TAKES NOW IS AN ID AND A QUESTION (§O), and `threadFor` — which assembled every turn
+// on screen into the body of every ask — is retired with the statelessness that made it necessary.
+// The server stores the conversation and assembles the prompt from what it stored, which is the
+// honest shape as well as the smaller one: what a lifter reads back in Threads is what the model was
+// given, rather than whatever a client chose to resend.
 //
-// A LIFTER'S TURN THAT NOTHING ANSWERED IS DROPPED FROM THE THREAD AND KEPT ON THE SCREEN. The ask
-// carrying it failed, so the model never saw it — and the wire wants strict alternation, where two
-// lifter turns in a row is a 400 that takes the whole conversation down. Keeping it visible is the
-// other half of the same rule: nothing a lifter wrote disappears quietly.
-export function threadFor(turns, question) {
-  const thread = [];
-  turns.forEach((turn, index) => {
-    if (turn.from === 'lifter' && turns[index + 1]?.from !== 'ask') return;
-    thread.push({ from: turn.from, text: turn.text });
-  });
-  thread.push({ from: 'lifter', text: question });
-  return thread;
-}
+// The id is minted by this client (mint.js, `thr_`), because a fresh one is how a NEW conversation is
+// opened — there is no route that opens one, and no state to ask the server for before the first
+// question. The room mints one when it is entered and again when a lifter starts over.
+export const THREAD_PREFIX = 'thr_';

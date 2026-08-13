@@ -1470,6 +1470,69 @@ create table if not exists gym_preferences (
   updated_at      timestamptz not null default now()
 );
 
+-- ASK'S THREADS (W11, 2026-08-13), AND THIS TABLE IS A REVERSAL. W7 shipped Ask stateless on
+-- purpose: the client sent the whole conversation on every ask, so there was no table, no id and
+-- nothing to garbage-collect. The owner reversed it for a product reason rather than a technical
+-- one — a conversation about your bench plateau is worth more in six weeks than it was that
+-- evening — so the server keeps the thread now, and the client sends one question.
+--
+-- title IS THE FIRST MESSAGE, VERBATIM, and that is the whole design of the list: a row is the
+-- question in the lifter's own words plus what came of it, because that is what somebody comes
+-- back looking for. It is written ONCE, at creation, and never by a model: nothing in this product
+-- summarises a lifter's words, and a title the model wrote about somebody would be exactly the
+-- narration §O exists to refuse.
+--
+-- asked_at is the newest turn's instant — what the list sorts and dates by — while created_at
+-- dates the question that named the thread. Both are the SERVER's clock and not a device's, unlike
+-- the log's instants: a conversation happens against our own vendor call, so there is no offline
+-- write here for a device clock to be the honest one about.
+--
+-- Owner-scoped like every other gym row, on PgAccountFootprint's owned list in main.cpp — a thread
+-- is a lifter's own words and an account holding one is not empty.
+create table if not exists gym_ask_threads (
+  id         text primary key,                  -- client-minted 'thr_<hex>', the idempotency key
+  user_id    uuid not null references users(id) on delete cascade,
+  title      text not null,
+  created_at timestamptz not null,
+  asked_at   timestamptz not null
+);
+create index if not exists gym_ask_threads_user on gym_ask_threads (user_id, asked_at desc);
+
+-- The turns, stored AS SENT — byte for byte, punctuation and emoji included. No summarisation
+-- anywhere, ever: what is stored is what was typed and what was answered, and the export hands
+-- both back whole.
+--
+-- A PAIR AT A TIME, AND ONLY AFTER AN ANSWER LANDS. A question nobody answered is not a turn — the
+-- same rule the day's ration already keeps, where a run that reached nobody is given back — so a
+-- failed ask leaves this table exactly as it found it and the retry appends the question once.
+--
+-- user_id rides here beside the thread's own for the reason gym_proposal_changes carries one: the
+-- footprint list is about what an account OWNS, and a table left off it is how the link door comes
+-- to delete real data the day a row can outlive its parent.
+create table if not exists gym_ask_turns (
+  thread_id   text not null references gym_ask_threads(id) on delete cascade,
+  position    int  not null check (position >= 1),
+  user_id     uuid not null references users(id) on delete cascade,
+  from_lifter boolean not null,
+  text        text not null,
+  said_at     timestamptz not null,
+  primary key (thread_id, position)
+);
+
+-- WHICH CONVERSATION MINTED THIS PROPOSAL — and `on delete set null` is the whole of §O's rule that
+-- deleting a thread deletes the conversation and not the consequence. An applied change stays in
+-- the routine's history after its thread is gone, because that is a fact about the program rather
+-- than a message: the history row still says the change came from Ask (`door`, which no delete
+-- touches), it just no longer opens a conversation that exists.
+--
+-- It is null for every proposal from the MCP door, where there is no conversation on our side of
+-- the wire at all, and null for an Ask proposal whose thread the lifter deleted. Those two are the
+-- same absence and mean the same thing to a client: there is nothing here to open.
+alter table gym_proposals add column if not exists thread_id text
+  references gym_ask_threads(id) on delete set null;
+-- The thread screen's own read: what this conversation proposed, and what became of each.
+create index if not exists gym_proposals_thread on gym_proposals (thread_id);
+
 -- The catalog seed: 64 movements across the seven patterns (the flat legs-vs-three-arm-buckets
 -- lopsidedness of Lift's taxonomy is refused; pattern is the only classification). Steps by
 -- equipment: barbell 2.5 (smallest plate pair), dumbbell 2.0 (rack gap), machine 5.0 (pin),

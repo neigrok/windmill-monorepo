@@ -58,6 +58,21 @@ export function sourceLabel(source) {
   return UNNAMED_AGENT;
 }
 
+// AND WHERE IT WAS ASKED FOR (§O). A diff Ask wrote was written inside a conversation, and the id of
+// that conversation rides on the same `source` the door does — so the trail runs both ways: the
+// routine's history says a change came from Ask, and the thread says which changes.
+//
+// IT IS OFFERED ONLY WHERE THE KEY IS PRESENT, and an absent one is not a fault to explain. Two ways
+// it happens and both are ordinary: the diff came through the MCP door, where there is no
+// conversation at all; or the lifter deleted the thread, which deletes the conversation and never
+// its consequence — the change stays in the program's history and simply stops opening a message
+// that is gone. The row still says `door: 'ask'` in both.
+export const CONVERSATION_VERB = 'Open the conversation';
+
+export function conversationOf(source) {
+  return source?.thread ?? null;
+}
+
 export function changeLabel(count) {
   return count === 1 ? '1 change' : `${count} changes`;
 }

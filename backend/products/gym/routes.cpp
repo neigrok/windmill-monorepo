@@ -221,6 +221,40 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         api->exportSets(req, std::move(cb));
       },
       {drogon::Get});
+  // The second file, and it hangs off the same path because it is the same promise: everything this
+  // account holds, in a format nothing but a spreadsheet is needed to read. Two files rather than
+  // one because a CSV row is one shape and a set and a sentence are not.
+  app.registerHandler(
+      "/v1/gym/export/threads",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->exportThreads(req, std::move(cb));
+      },
+      {drogon::Get});
+  // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only
+  // where a vendor key does. A conversation a lifter had is their data and not a feature of the model
+  // that answered it, so a deployment that loses its key keeps every one of these three doors and
+  // simply cannot be asked anything new.
+  app.registerHandler(
+      "/v1/gym/threads",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        api->listThreads(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/threads/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->getThread(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  // Delete deletes the CONVERSATION and not the consequence: the proposals it minted keep their rows
+  // and their place in the routine's history, and lose only the link back to a conversation that is
+  // gone.
+  app.registerHandler(
+      "/v1/gym/threads/{id}",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->deleteThread(req, std::move(cb), id);
+      },
+      {drogon::Delete});
   // The coach share's two owner-scoped doors. They hang off the session's path because that is what
   // a share is about — one workout — and neither of them touches the session's own row.
   app.registerHandler(

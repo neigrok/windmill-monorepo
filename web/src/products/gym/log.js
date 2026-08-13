@@ -16,7 +16,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // #/gym/movement/… one movement's record, #/gym/routines/rt_… one routine's editor,
 // #/gym/session/ses_… one session, #/gym/finish/ses_… the end of the one just closed,
 // #/gym/backfill the past-workout form, #/gym/proposals/prop_… one proposal read as a diff,
-// #/gym/ask the chat onto the log (§L), #/gym/connect the connected log (§D12/13),
+// #/gym/ask the chat onto the log (§L), #/gym/ask/threads its past and #/gym/ask/threads/thr_… one
+// conversation read back (§O), #/gym/connect the connected log (§D12/13),
 // #/gym/shared/… one workout as a coach reads it.
 // Reading and writing that one grammar live together, so a link and the parse that answers it can
 // never drift.
@@ -63,6 +64,24 @@ export const BACKFILL_HREF = '#/gym/backfill';
 // rooms, and a chat is not a place you live. It carries no id because it is about the LOG and not
 // about one workout, which is the whole difference between it and the panel it replaces.
 export const ASK_HREF = '#/gym/ask';
+
+// ASK'S PAST (§O) — the threads, and one thread read back. They hang UNDER Ask rather than beside
+// it because that is what they are the past of: a lifter lands on `#/gym/ask/threads` from Ask's own
+// header and from a routine's history row, and the way back from a conversation is the list.
+//
+// The id is `thr_` and sixteen hex from this client's own mint, but the parse takes the whole
+// charset the wire allows (`^[A-Za-z0-9_-]{8,64}$`) for `proposalIdOf`'s reason: a link may have
+// been written by a surface whose mint is not this one's.
+export const THREADS_HREF = '#/gym/ask/threads';
+
+export function threadIdOf(hash) {
+  const match = /^#\/gym\/ask\/threads\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
+export function threadHref(id) {
+  return `#/gym/ask/threads/${id}`;
+}
 
 // THE CONNECTED LOG (§D12/13) — gym's own words around a grant the ACCOUNT owns, so it is a position
 // in gym rather than a link straight out to the shell's workbench: the workbench is written for
@@ -128,6 +147,11 @@ export function screenOf(hash) {
   if (routineIdOf(hash)) return 'routine';
   if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
+  // Ask's own past is read before Ask, longest first, exactly as a routine's editor is read before
+  // the list it sits under: every threads URL is also an Ask URL, and only the longer of the two is
+  // the room a lifter asked for.
+  if (threadIdOf(hash)) return 'thread';
+  if (/^#\/gym\/ask\/threads(\/|$|\?)/.test(hash || '')) return 'threads';
   if (/^#\/gym\/ask(\/|$|\?)/.test(hash || '')) return 'ask';
   if (/^#\/gym\/connect(\/|$|\?)/.test(hash || '')) return 'connect';
   // #/gym/stats WAS the statistics tab, and §H retires it: there is no dashboard in this product,

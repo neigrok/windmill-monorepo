@@ -11,7 +11,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import { EXPORT_HREF, failureReason, gymApi, GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
+import {
+  EXPORT_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError, UNCHANGED,
+} from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -1555,35 +1557,39 @@ test('failureReason — a refusal and a silence do not get the same sentence', a
   assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });
 
-// ASK (§L) — the one route in this file that may not exist, and the only one that carries a whole
-// conversation. There is no session id in the path: Ask is about the LOG, which is what made it a
-// room instead of a composer under one finished workout.
+// ASK (§L, §O) — the one route in this file that may not exist. There is no session id in the path:
+// Ask is about the LOG, which is what made it a room instead of a composer under one finished
+// workout.
+//
+// W7 SENT THE WHOLE CONVERSATION AND §O REVERSED IT. The thread is stored now, so the body is an id
+// and ONE question: the server assembles the prompt from what it holds, which is what makes the
+// conversation a lifter reads back the conversation the model actually saw.
 //
 // The reply's `read` is the SERVER's count of the rows it served this exchange, deduped by id — the
 // number an answer is checked against — and it arrives whole. Nothing in this client sums it, and
 // the test asserts the object comes back untouched rather than reshaped on the way through.
-test('ask — the whole thread up, and the answer with its receipt, its steps and its proposals back', async () => {
+test('ask — one question into one thread, and the answer with its receipt, steps and proposals back', async () => {
   serve(ok({
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
     steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
     read: { sets: 214, sessions: 34, weeks: 12 },
     proposals: ['prop_0a1b2c3d'],
+    thread: 'thr_0a1b2c3d4e5f6071',
   }));
-  const reply = await gymApi.ask([
-    { from: 'lifter', text: 'bench has been stuck at 82.5 for three weeks. What do you see?' },
-  ]);
+  const reply = await gymApi.ask('thr_0a1b2c3d4e5f6071', 'bench has been stuck at 82.5 for three weeks. What do you see?');
   assert.deepEqual(reply, {
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
     steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
     read: { sets: 214, sessions: 34, weeks: 12 },
     proposals: ['prop_0a1b2c3d'],
+    thread: 'thr_0a1b2c3d4e5f6071',
   });
   assert.deepEqual(wireOf(calls[0]), {
     path: '/v1/gym/ask',
     method: 'POST',
     credentials: 'include',
     contentType: 'application/json',
-    body: '{"turns":[{"from":"lifter","text":"bench has been stuck at 82.5 for three weeks. What do you see?"}]}',
+    body: '{"thread":"thr_0a1b2c3d4e5f6071","question":"bench has been stuck at 82.5 for three weeks. What do you see?"}',
   });
 });
 
@@ -1594,20 +1600,111 @@ test('ask — the whole thread up, and the answer with its receipt, its steps an
 test('ask — every refusal arrives with the machine word the room reads it by', async () => {
   const refusals = [
     [409, 'finish your workout first', 'ask-session-open'],
+    [409, 'that conversation is full', 'ask-thread-full'],
+    [409, 'that conversation id is taken', 'ask-thread-taken'],
     [429, 'that’s Ask for now', 'ask-daily-limit'],
     [429, 'this account has reached its AI ceiling', 'ask-out-of-budget'],
   ];
   for (const [status, sentence, code] of refusals) {
     serve(refusal(status, sentence, code));
-    const error = await gymApi.ask([{ from: 'lifter', text: 'q' }]).catch((held) => held);
+    const error = await gymApi.ask('thr_1', 'q').catch((held) => held);
     assert.equal(error.status, status, code);
     assert.equal(error.code, code);
     assert.equal(error.detail, sentence);
   }
   // The absence: no body at all, because the framework answered before gym did.
   serve({ ok: false, status: 404, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
-  const absent = await gymApi.ask([{ from: 'lifter', text: 'q' }]).catch((held) => held);
+  const absent = await gymApi.ask('thr_1', 'q').catch((held) => held);
   assert.equal(absent.status, 404);
   assert.equal(absent.code, '');
   assert.equal(absent.detail, '');
+});
+
+// ── Ask's past (§O) ─────────────────────────────────────────────────────────────────────────────
+
+// THE LIST, and the one key it has. `threads` is the whole reply — there is no unread count on this
+// wire, no badge and nothing waiting, so a client that wanted one would have to invent it. The
+// title is the lifter's first message, byte for byte, and it arrives that way: this client neither
+// trims it nor decides anything about it.
+test('threads — every conversation, newest first, and one key in the reply', async () => {
+  const august = new Date(2026, 7, 11, 21, 14).getTime();
+  serve(ok({
+    threads: [
+      {
+        id: 'thr_0a1b2c3d4e5f6071',
+        title: '“Bench has been stuck at 82.5 for three weeks. What do you see?”',
+        createdAt: august - 600000,
+        askedAt: august,
+        outcome: { kind: 'applied', changes: 4, routineId: 'rt_9f2c', routine: 'Push A' },
+        proposals: [{
+          id: 'prop_1', state: 'applied', changeCount: 4, routineId: 'rt_9f2c', routine: 'Push A',
+          createdAt: august,
+        }],
+      },
+    ],
+  }));
+  const threads = await gymApi.threads();
+  assert.equal(threads.length, 1);
+  assert.equal(threads[0].title, '“Bench has been stuck at 82.5 for three weeks. What do you see?”');
+  assert.deepEqual(threads[0].outcome, { kind: 'applied', changes: 4, routineId: 'rt_9f2c', routine: 'Push A' });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/threads',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+});
+
+// ONE CONVERSATION, and it is the only read that carries `turns`. Null on 404 — absent and another
+// account's are one fact on this wire, exactly as they are for a session, a routine and a proposal.
+test('thread — the turns arrive on the detail alone, and 404 is one answer for two facts', async () => {
+  serve(ok({
+    id: 'thr_1',
+    title: 'Deload week — what should I cut?',
+    createdAt: 1, askedAt: 2,
+    outcome: { kind: 'read-only', changes: 0 },
+    proposals: [],
+    turns: [
+      { from: 'lifter', text: 'Deload week — what should I cut?', at: 1 },
+      { from: 'ask', text: 'Drop the top set and keep the back-offs.', at: 2 },
+    ],
+  }));
+  const thread = await gymApi.thread('thr_1');
+  assert.equal(thread.turns.length, 2);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/threads/thr_1',
+    method: 'GET',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+
+  serve(refusal(404, 'no such conversation'));
+  assert.equal(await gymApi.thread('thr_gone'), null);
+  serve(refusal(404, 'no such conversation'));
+  assert.equal(await gymApi.thread('thr_somebody_elses'), null);
+});
+
+// DELETE DELETES THE CONVERSATION AND NOT THE CONSEQUENCE (§O). 204 with no bytes, and a thread
+// already gone answers exactly the same, which is what makes a retry after a lost reply safe.
+test('deleteThread — 204 and nothing back, for a conversation deleted twice as readily as once', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.deleteThread('thr_1'), null);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/threads/thr_1',
+    method: 'DELETE',
+    credentials: 'include',
+    contentType: 'application/json',
+    body: undefined,
+  });
+  serve(nothing());
+  assert.equal(await gymApi.deleteThread('thr_1'), null);
+});
+
+// A SECOND FILE RATHER THAN MORE COLUMNS, because a set and a sentence are not one shape — and a
+// link rather than a call, for the sets export's reason: nothing is held in a tab's heap.
+test('EXPORT_THREADS_HREF — the conversations as their own file, on the same origin', () => {
+  assert.equal(EXPORT_THREADS_HREF, `${API_BASE}/v1/gym/export/threads`);
+  assert.notEqual(EXPORT_THREADS_HREF, EXPORT_HREF);
 });

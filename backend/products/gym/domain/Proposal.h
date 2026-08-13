@@ -66,15 +66,30 @@ enum class ProposalState { pending, applied, dismissed, superseded };
 // impossible to tell apart in code and trivial to tell apart on screen.
 enum class ProposalDoor { mcp, ask };
 
-// Which door, which connection, which model. `connection` and `agent` are EMPTY today and that is
-// a fact about the transport rather than a shrug: `ToolCaller` (platform/domain/ToolScope.h)
-// carries the account and the grant and nothing that names one connection apart from another, so
-// gym cannot honestly fill either yet. They are columns now so that the day the transport carries
-// a connection identity, one line fills them and nothing else moves.
+// The conversation a proposal was minted in. The thread itself is `domain/Thread.h`, which INCLUDES
+// this file — the source is what a thread's proposals are found by — so the id is declared on this
+// side of that one direction rather than in a third header nothing else would want.
+struct AskThreadTag;
+using ThreadId = Id<AskThreadTag>;
+
+// Which door, which connection, which model, and — since W11 — which conversation. `connection` and
+// `agent` are EMPTY today and that is a fact about the transport rather than a shrug: `ToolCaller`
+// (platform/domain/ToolScope.h) carries the account and the grant and nothing that names one
+// connection apart from another, so gym cannot honestly fill either yet. They are columns now so
+// that the day the transport carries a connection identity, one line fills them and nothing else
+// moves.
+//
+// `thread` is ABSENT from the MCP door, where there is no conversation on our side of the wire at
+// all — and absent again once the lifter DELETES the thread an Ask proposal came from, which is §O's
+// rule made structural: deleting a thread deletes the conversation, not the consequence. The change
+// stays in the routine's history and still says it came from Ask; it just no longer opens a
+// conversation that exists. So a client reads the two absences the same way, because they mean the
+// same thing to it: there is nothing here to open.
 struct ProposalSource {
   ProposalDoor door;
   std::string connection;
   std::string agent;
+  std::optional<ThreadId> thread;
 
   bool operator==(const ProposalSource&) const = default;
 };

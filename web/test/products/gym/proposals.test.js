@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   applyLabel, atomicLine, changeLabel, diffRows, documentLine, historyLabel, intentLine, isPending,
+  conversationOf, CONVERSATION_VERB,
   logKeptLabel, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, UNNAMED_AGENT,
 } from '../../../src/products/gym/proposals.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
@@ -327,6 +328,21 @@ test('sourceLabel — who wrote it, and never a blank where a name should be', (
   assert.equal(sourceLabel({ door: 'ask' }), 'Ask');
   assert.equal(sourceLabel(undefined), UNNAMED_AGENT);
   assert.equal(UNNAMED_AGENT, 'your connected agent');
+});
+
+// AND WHERE IT WAS ASKED FOR (§O), which is a door and not a sentence — offered only where the wire
+// carried a thread. Two ways it is absent and both are ordinary: the MCP door, where there was never
+// a conversation, and a conversation the lifter deleted, which takes the messages and leaves the
+// change. Neither is a fault to explain, so the door simply is not drawn.
+test('conversationOf — the thread behind a diff, and nothing at all when there is none', () => {
+  assert.equal(conversationOf({ door: 'ask', thread: 'thr_0a1b2c3d4e5f6071' }), 'thr_0a1b2c3d4e5f6071');
+  assert.equal(conversationOf({ door: 'ask' }), null);
+  assert.equal(conversationOf({ door: 'mcp', agent: 'Claude Code' }), null);
+  assert.equal(conversationOf(undefined), null);
+  // The row still names the door either way: the change came from Ask whether or not the
+  // conversation about it still exists.
+  assert.equal(sourceLabel({ door: 'ask' }), 'Ask');
+  assert.equal(CONVERSATION_VERB, 'Open the conversation');
 });
 
 // The card's own two lines. An empty summary is a real reply — the wire always sends the field and

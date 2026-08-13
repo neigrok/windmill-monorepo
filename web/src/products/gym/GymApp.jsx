@@ -1,8 +1,8 @@
 // Gym — the training log's web surface, in the instrument skin. This file is the frame and none of
 // the rooms: it resolves the account, holds the ONE read of the log every room shares, and hands
 // each hash to the screen that answers it (Today · The log · Routines, plus one session, one
-// routine, one movement's record, one proposal, one review, the past-workout door, Ask and the
-// connected log).
+// routine, one movement's record, one proposal, one review, the past-workout door, Ask, its threads
+// and one of them read back, and the connected log).
 //
 // The web is the mirror and the desk, never the capture surface: workouts start on the phone, Today
 // mirrors the one that is running read-only (§11.2), and the write doors here are the backfill, the
@@ -22,6 +22,7 @@ import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { AskRoom } from './ask/AskRoom.jsx';
+import { ThreadDetail, ThreadsList } from './ask/Threads.jsx';
 import { Backfill } from './Backfill.jsx';
 import { ConnectLog } from './connect/ConnectLog.jsx';
 import { FinishScreen } from './Finish.jsx';
@@ -32,7 +33,7 @@ import { RoutineEditor, RoutinesList } from './Routines.jsx';
 import { Today } from './Today.jsx';
 import {
   finishIdOf, movementIdOf, proposalIdOf, ROUTINES_HREF, routineIdOf, screenOf, sessionIdOf,
-  sharedTokenOf,
+  sharedTokenOf, threadIdOf,
 } from './log.js';
 import { SharedSession } from './share/SharedSession.jsx';
 import { useTrainingLog } from './useTrainingLog.js';
@@ -161,6 +162,14 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
             work out for itself: whether a workout is running — the room is never offered
             mid-session — and the movement names a proposal's rows are drawn under. */}
         {screen === 'ask' && <AskRoom log={log} />}
+        {/* ASK'S PAST (§O). Neither screen is handed the shared read: a conversation is answered
+            whole by its own route — the turns, the outcome and the proposals it minted, each
+            carrying the routine's own name — so there is nothing here for the catalog or the
+            mirrored session to fill in, and asking for them would be a read this room does not use. */}
+        {screen === 'threads' && <ThreadsList />}
+        {/* KEYED ON THE CONVERSATION, like the diff and the session detail above: the detail holds
+            an armed delete, and an armed delete may not cross from one conversation to another. */}
+        {screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} />}
         {/* THE CONNECTED LOG (§D12/13) — the pitch and the grant, in gym's words. It reads the
             account's grants and writes none of them: connecting happens in the client, and the
             revoke lives once, in the account's own Connected tools. */}

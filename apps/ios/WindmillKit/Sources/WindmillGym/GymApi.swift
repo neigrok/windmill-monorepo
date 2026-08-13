@@ -19,6 +19,8 @@ import WindmillPlatform
 //   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
 //   GET  /v1/gym/preferences          ·  PUT /v1/gym/preferences
 //   POST /v1/gym/ask
+//   GET  /v1/gym/threads              ·  GET /v1/gym/threads/:id
+//   DELETE /v1/gym/threads/:id
 //
 // `GET /v1/gym/stats` is NOT here and its absence is deliberate: the statistics ENGINE stays on the
 // server, where an agent asking "how has my squat moved" reads it through `get_stats`, but the room
@@ -313,25 +315,70 @@ public struct GymApi: TrainingSyncing {
         try await api.send("PUT", "/v1/gym/preferences", body: preferences, as: GymPreferences.self)
     }
 
-    // THE WHOLE THREAD, EVERY TIME. The server keeps no conversation — there is no table and no id
-    // for one — so what this sends is the entire exchange it wants answered, and what comes back is
-    // an answer with the accounting for the rows that produced it.
+    // ONE QUESTION INTO ONE THREAD. The server keeps the conversation now (§O) and assembles the
+    // prompt from what it stored, so this sends the question and the id of the thread it belongs to
+    // and never a turns array — a fresh id opens a conversation, a known one continues it. What
+    // comes back is an answer with the accounting for the rows that produced it.
     //
-    // It is deliberately NOT part of `TrainingSyncing`. That protocol is what the live session needs
-    // of the network — the reads and writes a set's survival depends on, which is why the store owns
-    // them, queues them and replays them. A question has none of that: nothing is minted, nothing is
-    // owed, and a question nobody answered is simply a question nobody answered. Folding it into the
-    // store would have put a chat inside the file that owns whether a lift is lost. It is a plain
-    // method rather than a second protocol because nothing injects it: the room hands the screen a
+    // Ask and the three thread doors are deliberately NOT part of `TrainingSyncing`. That protocol
+    // is what the live session needs of the network — the reads and writes a set's survival depends
+    // on, which is why the store owns them, queues them and replays them. A question has none of
+    // that: the thread id it mints is a name for a conversation and not a set somebody lifted, and a
+    // question nobody answered is simply a question nobody answered — the server takes an empty
+    // thread back, so there is nothing owed and nothing to replay. Folding it into the store would
+    // have put a chat inside the file that owns whether a lift is lost. It is a plain method rather
+    // than a second protocol because nothing injects it: the room hands the screen a
     // closure over this call (`AskDoors.send`), so an abstraction with one conformer and no consumer
     // would be a seam that only looks like one.
     //
     // Nothing here is folded into an optional: an Ask that did not answer is never a screen that
     // draws nothing, it is a sentence the lifter is owed, and `AskRefusal` writes that sentence from
-    // the status and whatever the server sent with it — the codes ride along on the wire and this
-    // client branches on none of them, because every one of them reads the same to a lifter.
-    public func ask(_ turns: [AskTurn]) async throws -> AskAnswer {
-        try await api.send("POST", "/v1/gym/ask", body: AskRequest(turns: turns), as: AskAnswer.self)
+    // the status and whatever the server sent with it. The codes ride along on the wire and this
+    // client branches on exactly two of them — `ask-thread-full` and `ask-thread-taken`, which are
+    // about the THREAD rather than the question and are answered by opening a new one. Every other
+    // rung reads the same to a lifter: the server's sentence, and nothing else offered.
+    public func ask(_ question: String, in threadId: String) async throws -> AskAnswer {
+        try await api.send("POST", "/v1/gym/ask",
+                           body: AskRequest(thread: threadId, question: question), as: AskAnswer.self)
+    }
+
+    // THE ACCOUNT'S CONVERSATIONS, newest-asked first, titles and outcomes and no prose — §O screen
+    // 33 in one read. The reply carries exactly one key and this asks for no filter, because there
+    // is no folder, no unread state and nothing to sort by that a lifter chose. The server serves at
+    // most `kThreadList` of them and sends no total with the page, which is why the head says `200+`
+    // at the cap rather than counting the account (`AskThreads.meta`).
+    //
+    // Mounted whatever the deployment holds: a Windmill with no vendor key mounts no `POST` above
+    // and still answers this. That is the ROUTE's promise, not yet the room's — §O draws two doors
+    // onto this list and both are gated behind something else (Ask's header, which is not drawn
+    // without a key or mid-session; and a routine's history row, which needs an applied proposal
+    // that carried a thread). See `GymRoom.threadDoors` for what the surface actually reaches.
+    public func threads() async throws -> [AskThread] {
+        try await api.get("/v1/gym/threads", as: ThreadList.self).threads
+    }
+
+    // One conversation, its turns with it. Absent, another account's and never-existed are the same
+    // 404, one fact, so the absence folds into the type exactly as a routine's and a session's do.
+    public func thread(_ id: String) async throws -> AskThread? {
+        do {
+            return try await api.get("/v1/gym/threads/\(id)", as: AskThread.self)
+        } catch let error as WindmillApiError {
+            if case .refused(404, _) = error { return nil }
+            throw error
+        }
+    }
+
+    // Deleting takes the conversation and NOT the consequence: a proposal it minted outlives it, and
+    // the routine's history goes on saying the change came from Ask. A thread already gone answers
+    // the same 404 an absent one does, and that is not a failure — the lifter asked for it to be
+    // gone and it is — so this folds the 404 into the same silence a 204 is.
+    public func deleteThread(_ id: String) async throws {
+        do {
+            try await api.send("DELETE", "/v1/gym/threads/\(id)")
+        } catch let error as WindmillApiError {
+            if case .refused(404, _) = error { return }
+            throw error
+        }
     }
 
     // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
@@ -341,7 +388,8 @@ public struct GymApi: TrainingSyncing {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
     }
 
-    private struct AskRequest: Encodable { let turns: [AskTurn] }
+    private struct AskRequest: Encodable { let thread: String; let question: String }
+    private struct ThreadList: Decodable { let threads: [AskThread] }
     private struct Catalog: Decodable { let exercises: [Exercise] }
     private struct LastSets: Decodable { let movements: [LastSet] }
     private struct Log: Decodable { let sessions: [SessionSummary] }

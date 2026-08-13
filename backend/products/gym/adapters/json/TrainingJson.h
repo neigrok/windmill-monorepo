@@ -69,7 +69,8 @@ namespace wm::gym {
 //   proposal head out: { "id", "routineId", "intent": "revise"|"remove",
 //                        "state": "pending"|"applied"|"dismissed"|"superseded",
 //                        "summary", "changeCount": n, "createdAt": ms, "settledAt"?: ms,
-//                        "source": { "door": "mcp"|"ask", "connection"?: "…", "agent"?: "…" } }
+//                        "source": { "door": "mcp"|"ask", "connection"?: "…", "agent"?: "…",
+//                                    "thread"?: "thr_…" } }
 //   proposal out: the head, plus { "baseRevision": n, "baseName": "…", "name": "…",
 //                   "changes": [ { "position", "kind": "kept"|"added"|"removed"|"retargeted",
 //                                  "exerciseId",
@@ -132,6 +133,28 @@ namespace wm::gym {
 // On a replace the PATH names the routine; the body's `id` is the same routine on any read-modify-
 // write and the path is what the store is asked for.
 
+//   threads out : { "threads": [ <thread> ] }                GET /v1/gym/threads
+//   thread out  : { "id": "thr_…", "title": "…", "createdAt": ms, "askedAt": ms,
+//                   "outcome": { "kind": "read-only"|"proposed"|"applied"|"dismissed"|"superseded",
+//                                "changes": n, "routineId"?: "rt_…", "routine"?: "Push A" },
+//                   "proposals": [ { "id", "state", "changeCount", "routineId", "routine",
+//                                    "createdAt" } ],
+//                   "turns"?: [ { "from": "lifter"|"ask", "text": "…", "at": ms } ] }
+//                                                       GET · DELETE /v1/gym/threads/{id}
+//
+// `title` IS THE LIFTER'S FIRST MESSAGE, VERBATIM — stored as sent, byte for byte, punctuation and
+// emoji included, and never a summary a model wrote. Every field of `outcome` is something the
+// SERVER OBSERVED: the state the ledger holds, the change count it stored at the mint, the routine
+// it can name. No field of it says why a lifter did anything, because nothing observes that and this
+// product does not ask — a `dismissed` row carries what was dismissed and nothing else.
+//
+// `routineId`/`routine` are omitted where the thread's changes landed on more than one routine: the
+// count is still true and the noun is not. `turns` rides on the conversation's own read alone, so
+// its absence on the LIST means "not on this read". On the conversation's own read it means what it
+// says: a thread with no turns is real — the row is committed before the model runs, so one exists
+// for the whole of every in-flight ask and permanently if the process died before the answer came
+// back — and it renders as a title with nothing under it rather than as anything invented.
+//
 // `plan` is the one shape written at BOTH edges — jsonb on the session row and an object on the
 // wire — so its codec pair lives here, once, and PgTrainingRepository serializes through it. The
 // name stays a plain STRING at the top level because the prefill's SQL type-checks exactly that
@@ -227,6 +250,12 @@ Json::Value toJson(const std::vector<Routine>& routines, const std::vector<Propo
 Json::Value toJson(const ProposalHead& head);
 Json::Value toJson(const RoutineProposal& proposal);
 Json::Value toJson(const std::vector<ProposalHead>& heads);
+// Ask's threads (§O). The list read carries no turns; the conversation's own read carries them all.
+// The OUTCOME is computed here rather than stored — `outcomeOf` over the proposals riding with the
+// thread — so there is one copy of that ladder and nothing to keep in step.
+Json::Value toJson(const ThreadOutcome& outcome);
+Json::Value toJson(const AskThread& thread);
+Json::Value toJson(const std::vector<AskThread>& threads);
 // The routine's own dated ledger, both kinds of row in one list (ports/TrainingRepository.h). It is
 // composed onto the single-routine read by the handler rather than folded into `toJson(routine,
 // pending)`, because the LIST read hands back routines too and must not carry it.

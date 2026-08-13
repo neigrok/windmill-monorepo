@@ -48,4 +48,13 @@ std::string toCsv(const std::vector<ExportedSet>& sets) {
   return csv;
 }
 
+std::string toCsv(const std::vector<ExportedThreadTurn>& turns) {
+  std::string csv = line({"thread_id", "title", "outcome", "changes", "routine", "created_at",
+                          "turn_number", "from", "text", "said_at"});
+  for (const ExportedThreadTurn& row : turns)
+    csv += line({row.threadId, row.title, row.outcome, row.changes, row.routine, row.createdAt,
+                 row.turnNumber, row.from, row.text, row.saidAt});
+  return csv;
+}
+
 }

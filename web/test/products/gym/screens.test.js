@@ -283,6 +283,93 @@ test('an empty Ask says the free door is better, and walks to it', () => {
   assert.equal(room.includes('<a className="gym-ask-free-door" href={CONNECT_HREF}>{FREE_DOOR_VERB}</a>'), true);
 });
 
+// ── Ask has a past (§O) ────────────────────────────────────────────────────────────────────────
+
+// THE LIST IS A ROOM UNDER ASK AND NOT A TAB EITHER. Both screens hang off the frame's one hash
+// switch, exactly as the room they are the past of does, and the detail is KEYED on the
+// conversation: it holds an armed delete, and an armed delete may not cross from one conversation to
+// another when the hash moves. That is a fact about which instance React keeps and nothing a pure
+// module can be asked.
+test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes("{screen === 'threads' && <ThreadsList />}"), true);
+  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} />}"), true);
+  // Still three tabs: the past of a chat is even less a place you live than the chat is.
+  const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
+  assert.equal(rooms?.[1], "'today', 'log', 'routines'");
+});
+
+// THE TITLE IS THE LIFTER'S FIRST MESSAGE, VERBATIM (§O), which on this surface means the row draws
+// the wire's own string and nothing else: no slice, no ellipsis, no case change, no titling helper.
+// A pure module cannot be asked whether a component improved somebody's sentence on its way to the
+// screen, so the JSX is where this is pinned.
+test('a thread row draws the question as it was asked, and nothing edits it', () => {
+  const threads = read('ask/Threads.jsx');
+  assert.equal(threads.includes('<span className="gym-thread-title">{thread.title}</span>'), true);
+  assert.equal(threads.includes('<h1 className="gym-thread-name">{thread.title}</h1>'), true);
+  // The scan is over the SPEECH, so a comment stays free to name the thing it is refusing to do.
+  const said = speech('ask/Threads.jsx');
+  for (const edit of ['.slice(', '.substring(', '.toUpperCase(', '.trim()', 'summar', '…\'']) {
+    assert.equal(said.includes(edit), false, edit);
+  }
+});
+
+// NOT AN INBOX (§O), and this screen is the most natural place in the whole product to grow one. The
+// scan is over both files that make it — the list and the door onto it — because a count on the
+// door is the same failure as a badge on a row.
+test('nothing about the threads screens is an unread count, a badge or a notification', () => {
+  for (const file of ['ask/Threads.jsx', 'ask/AskRoom.jsx', 'ask/threads.js']) {
+    const said = speech(file).toLowerCase();
+    for (const inbox of ['unread', 'badge', 'notif', 'is-new']) {
+      assert.equal(said.includes(inbox), false, `${file} — ${inbox}`);
+    }
+  }
+  // And no mark on a row: the dot in this product means "something is waiting" (Proposals.jsx), and
+  // nothing on this list ever is.
+  assert.equal(speech('ask/Threads.jsx').includes('Dot'), false);
+  // The door onto the past carries the word and nothing else — no count is passed to it at all.
+  assert.equal(read('ask/AskRoom.jsx').includes('<a className="gym-ask-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
+});
+
+// THE ROOM SENDS ONE QUESTION INTO ONE THREAD, and the id is minted here rather than asked for: a
+// fresh one IS how a conversation is opened. Starting again mints another, because the conversation
+// on screen is stored under its own id and a fifth question into it is a refusal.
+test('Ask writes into a thread it minted, and starting again opens a new one', () => {
+  const room = read('ask/AskRoom.jsx');
+  assert.equal(room.includes('const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));'), true);
+  assert.equal(room.includes('const reply = await gymApi.ask(threadId, question);'), true);
+  assert.equal(room.includes("setRefusedFull(false); setThreadId(mintId(THREAD_PREFIX));"), true);
+  // And the thing §O retired is gone rather than left beside its replacement: nothing on this
+  // surface assembles a body out of the turns on screen any more.
+  for (const file of gymFiles()) {
+    // The SPEECH again: ask.js's comment records the retirement, which is the note the next reader
+    // needs, and an assembler surviving in code is what this is looking for.
+    assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('threadFor'), false, file);
+  }
+});
+
+// DELETE DELETES THE CONVERSATION, NOT THE CONSEQUENCE (§O) — and the sentence that says so is on
+// screen BEFORE the tap rather than in a toast after. Two taps, because it cannot be undone.
+test('the delete says what it does before it is armed, and takes two taps', () => {
+  const threads = read('ask/Threads.jsx');
+  assert.equal(threads.includes('<p className="gym-thread-delete-note">{DELETE_NOTE}</p>'), true);
+  assert.equal(threads.includes('if (!confirming) {'), true);
+  assert.equal(threads.includes('await gymApi.deleteThread(id);'), true);
+});
+
+// THE TRAIL RUNS BOTH WAYS (§O), and only where the wire carried a thread: the routine's history row
+// and the diff each offer the conversation a change was asked for in, and neither invents one. The
+// history's door is a SIBLING of the row rather than a link inside it — one anchor may not sit
+// inside another, and a nested one is a link a browser renders however it likes.
+test('a change that came from a conversation offers it, and one with none offers nothing', () => {
+  const routines = read('Routines.jsx');
+  assert.equal(routines.includes('{row.thread && ('), true);
+  assert.equal(routines.includes('<a className="gym-history-thread" href={threadHref(row.thread)}>{CONVERSATION_VERB} ›</a>'), true);
+  const proposals = read('Proposals.jsx');
+  assert.equal(proposals.includes('{conversationOf(proposal.source) && ('), true);
+  assert.equal(proposals.includes('href={threadHref(conversationOf(proposal.source))}'), true);
+});
+
 // `ADDED TODAY` IS SAID ONCE, ON THE FIRST WORKING SET — and which set that is, is decided in the
 // JSX and nowhere a pure module can be asked. A movement warmed up before it was worked spends the
 // note on the warmup slot if the rule is "the first set": `setNoteOf` answers a non-working set

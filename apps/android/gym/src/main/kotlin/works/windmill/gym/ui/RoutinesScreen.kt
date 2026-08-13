@@ -283,6 +283,7 @@ fun RoutineScreen(
     onBuild: (RoutineDraft) -> Unit,
     onOpenMovement: (String) -> Unit,
     onReview: (Proposal) -> Unit,
+    onOpenThread: (String) -> Unit,
     say: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -402,7 +403,7 @@ fun RoutineScreen(
             Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.inkDim)
         }
 
-        History(history, unread, nowMs, onReview)
+        History(history, unread, nowMs, onReview, onOpenThread)
 
         Box(
             contentAlignment = Alignment.Center,
@@ -496,6 +497,13 @@ private fun SecondaryAction(label: String, modifier: Modifier, onTap: () -> Unit
 // because it is the one thing that happened first. A proposal row is a door back onto the diff it
 // settled; a creation row is not a door, because there is nothing behind it to open.
 //
+// A ROW THAT CAME OUT OF A CONVERSATION CARRIES A SECOND DOOR (§O), and it is the trail running the
+// other way: the history says a change came from Ask, and `Ask ›` opens the evening it was asked
+// for. It is drawn ONLY where the proposal's source actually carries a thread — the MCP door has no
+// conversation, and a lifter who deleted theirs has none left — because a door onto an absence would
+// promise a conversation and then answer that there is no such conversation. The row still says the
+// change came from Ask either way: deleting the conversation does not delete the consequence.
+//
 // A ROW THIS BUILD CANNOT NAME IS NOT DRAWN. The event's own `line` answers null for a kind it has
 // never heard of, and an empty row over a dated program is worse than a shorter list.
 //
@@ -503,7 +511,13 @@ private fun SecondaryAction(label: String, modifier: Modifier, onTap: () -> Unit
 // — a routine with four decisions on it would otherwise read as one nobody has ever touched, which
 // is exactly the false claim this room refuses to make about a log.
 @Composable
-private fun History(events: List<RoutineEvent>, unread: Boolean, nowMs: Long, onReview: (Proposal) -> Unit) {
+private fun History(
+    events: List<RoutineEvent>,
+    unread: Boolean,
+    nowMs: Long,
+    onReview: (Proposal) -> Unit,
+    onOpenThread: (String) -> Unit,
+) {
     val drawn = events.filterNot { it.isPending }.mapNotNull { event ->
         event.line(nowMs)?.let { event to it }
     }
@@ -522,23 +536,48 @@ private fun History(events: List<RoutineEvent>, unread: Boolean, nowMs: Long, on
         }
         drawn.forEach { (event, line) ->
             val diff = event.proposal
+            val conversation = diff?.source?.conversation
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum)
                     .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
-                    .then(if (diff == null) Modifier else Modifier.clickable { onReview(diff) })
-                    .padding(horizontal = WindmillSpace.x3),
+                    .padding(start = WindmillSpace.x3),
             ) {
                 Text(
                     line,
                     style = GymType.numeral(12).copy(lineHeight = 18.sp),
                     color = GymSkin.inkDim,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(if (diff == null) Modifier else Modifier.clickable { onReview(diff) }),
                 )
-                if (diff != null) {
-                    Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+                // Two doors on one row, and each is only ever the door it looks like: the line opens
+                // the diff it describes, and this opens the conversation that wrote it.
+                conversation?.let { threadId ->
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .heightIn(min = GymTap.minimum)
+                            .clickable { onOpenThread(threadId) }
+                            .padding(horizontal = WindmillSpace.x2),
+                    ) {
+                        Text(
+                            "Ask ›",
+                            style = GymType.numeral(11, FontWeight.Bold),
+                            color = GymSkin.accent,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (diff != null && conversation == null) {
+                    Text(
+                        "›",
+                        style = WindmillFont.body(15, FontWeight.SemiBold),
+                        color = GymSkin.inkFaint,
+                        modifier = Modifier.padding(end = WindmillSpace.x3),
+                    )
                 }
             }
         }

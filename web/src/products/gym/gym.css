@@ -3004,8 +3004,30 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-ask {
   padding-bottom: 24px;
 }
+.gym-ask-titles {
+  min-width: 0;
+}
 .gym-ask-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin: 8px 0 18px;
+}
+/* THE PAST, as one quiet door and never a count (§O). A number
+   here would be an inbox saying something is waiting, and
+   nothing in this room ever waits for anybody. */
+.gym-ask-threads-door {
+  flex: none;
+  padding-top: 4px;
+  color: var(--gym-ink-dim);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.gym-ask-threads-door:hover {
+  color: var(--color-brand);
 }
 /* What it reaches and — in the same breath — that proposing is
    the most it can do. On screen before a word is typed, never
@@ -3292,6 +3314,241 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: none;
 }
 .gym-ask-aside:hover {
+  color: var(--text-link-hover);
+}
+
+/* ── Threads (§O, screen 33) ──────────────────────────────────
+   The question in the lifter's own words on top, what came of
+   it underneath. Nothing on this list is loud: there is no
+   unread ink, no dot, no badge and no count anywhere — the only
+   row that carries the brand is one whose changes were APPLIED,
+   which is a fact about a program rather than an alert. */
+.gym-threads {
+  padding-bottom: 24px;
+}
+.gym-threads-head {
+  margin: 8px 0 18px;
+}
+.gym-threads-count {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+}
+.gym-threads-month {
+  margin-bottom: 18px;
+}
+.gym-threads-month-head {
+  margin: 0 0 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
+}
+.gym-threads-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gym-thread-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 16px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  text-decoration: none;
+}
+.gym-thread-row:hover {
+  border-color: var(--gym-line-strong);
+}
+.gym-thread-row.is-applied {
+  border-color: var(--color-brand);
+}
+/* The lifter's own sentence, drawn whole. It wraps rather than
+   truncating: an ellipsis is this surface editing somebody's
+   question, which is the summary §O bans arriving as a
+   courtesy. pre-wrap for the same reason — the line breaks were
+   typed, and collapsing them here would draw the same bytes two
+   ways, since the turn bubble below keeps them. */
+.gym-thread-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gym-thread-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gym-thread-chip {
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: var(--gym-raised);
+  color: var(--gym-ink-dim);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.gym-thread-chip.is-applied {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+.gym-thread-outcome {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-dim);
+}
+.gym-thread-when {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--gym-ink-faint);
+}
+/* The one control at the foot, and it opens a NEW conversation
+   rather than continuing an old one — which is the whole shape
+   of this section: the past is read here and asked in Ask. */
+.gym-threads-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin-top: 6px;
+  border-radius: 16px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font-size: 15.5px;
+  font-weight: 800;
+  text-decoration: none;
+}
+/* The file, offered where the conversations are. Quiet, like the
+   export row in settings: it is a promise being kept, not a
+   feature being sold. */
+.gym-threads-export {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gym-line);
+  color: var(--gym-ink-dim);
+  text-decoration: none;
+}
+.gym-threads-export:hover .gym-threads-export-verb {
+  color: var(--color-brand);
+}
+.gym-threads-export-verb {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.gym-threads-export-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gym-ink-faint);
+}
+
+/* ONE CONVERSATION, READ BACK. The turns are the room's own —
+   the same bubbles Ask draws, so a thread on this screen and the
+   exchange that made it are one object — with the instant each
+   was said under it, which is the one thing a six-week-old
+   conversation needs and a live one does not. */
+.gym-thread {
+  padding-bottom: 24px;
+}
+.gym-thread-head {
+  margin: 8px 0 16px;
+}
+.gym-thread-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gym-thread-outcome-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.gym-thread-routine-door {
+  color: var(--color-brand);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.gym-thread-said {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--gym-ink-faint);
+}
+.gym-thread-proposals {
+  margin-top: 20px;
+}
+/* THE DELETE, and it says what it does before it is tapped
+   rather than in a toast after. Armed, it does not turn red —
+   there is no red in this product — it brightens and says the
+   whole sentence out loud instead. */
+.gym-thread-delete {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gym-line);
+}
+.gym-thread-delete-note {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--gym-ink-faint);
+}
+.gym-thread-delete-verb {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-thread-delete-verb.is-armed {
+  border-color: var(--gym-ink);
+  color: var(--gym-ink);
+}
+/* The conversation a change was asked for in, offered from the
+   diff and from the routine's history — and only where the wire
+   carried one, because a deleted thread leaves the change and
+   takes the messages. */
+.gym-proposal-thread,
+.gym-history-thread {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  color: var(--text-link);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.gym-history-thread {
+  margin-left: 13px;
+}
+.gym-proposal-thread:hover,
+.gym-history-thread:hover {
   color: var(--text-link-hover);
 }
 

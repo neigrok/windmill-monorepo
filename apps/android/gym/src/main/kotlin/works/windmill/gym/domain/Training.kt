@@ -748,6 +748,13 @@ object Ids {
     fun session(): String = mint("ses_")
     fun set(): String = mint("set_")
     fun routine(): String = mint("rt_")
+
+    // A CONVERSATION IS MINTED HERE TOO, and it is the id the whole of §O hangs off: a fresh one
+    // opens a thread on the log, and the same one carries the next question into it. It is the only
+    // id in this list that is not about a row, and the only one that is not a replay key — every
+    // other id here says "this row again", while this one says "the same conversation". It is minted
+    // on the phone rather than by the server so that a question can be asked before a thread exists.
+    fun thread(): String = mint("thr_")
     fun exercise(): String = mint("ex_")
 
     private fun mint(prefix: String): String {

@@ -27,6 +27,7 @@ struct RoutineScreen: View {
     let onDuplicate: (Routine) -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
+    let onThread: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var routine: Routine?
@@ -153,6 +154,12 @@ struct RoutineScreen: View {
     // door back onto the diff it settled; the creation row opens nothing, because there is nothing
     // further to read about it.
     //
+    // AND THE TRAIL RUNS BOTH WAYS (§O). A change that came out of a conversation carries a second
+    // door onto it, offered ONLY where the wire sent a thread id: absent means there is nothing to
+    // open — the MCP door had no conversation, or the lifter deleted the one this came from — and
+    // the row still says the change came from Ask either way. That is the whole of "delete deletes
+    // the conversation, not the consequence", drawn.
+    //
     // A row this build cannot classify is DROPPED rather than guessed at — see `RoutineEvent.Kind`.
     @ViewBuilder
     private func history(_ routine: Routine) -> some View {
@@ -171,11 +178,33 @@ struct RoutineScreen: View {
                     Button { onProposal(head.id) } label: {
                         eventRow(head.historyLine(now: nowMs), chevron: true)
                     }
+                    if let thread = head.source.thread {
+                        Button { onThread(thread) } label: {
+                            conversationDoor
+                        }
+                    }
                 } else {
                     eventRow(RoutineReadout.created(event), chevron: false)
                 }
             }
         }
+    }
+
+    // The second door, drawn under the row it belongs to rather than inside it: two taps in one
+    // control is how a lifter reaching for the diff lands in a chat instead.
+    private var conversationDoor: some View {
+        HStack(spacing: WindmillSpace.x1) {
+            Text(AskThreads.fromTheConversation)
+                .font(GymType.numeral(12))
+                .foregroundStyle(skin.accent)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(skin.accent)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, WindmillSpace.x3)
+        .frame(minHeight: GymTap.minimum)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func eventRow(_ said: String, chevron: Bool) -> some View {
