@@ -9,7 +9,7 @@ bought: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns a hardc
 surface offers a checkout, and `BillingApi` 503s one anyway while no Paddle price id is configured.
 Roadmap is the original product and journal shipped second; gym is BUILT on the backend, the web and
 iOS through phase 2 — the log, the logger, routines, statistics, the coach share, CSV out and
-seventeen MCP tools — and was OPENED on 2026-08-08 (`status: 'open'` in
+sixteen MCP tools — and was OPENED on 2026-08-08 (`status: 'open'` in
 `web/src/products/gym/routes.js`). Open means reachable, not vetted: the phase-1 dogfood gate has
 still never run (`docs/PRODUCT_LOG.md`, `backend/products/gym/ARCHITECTURE.md`). Android now carries the gym
 room — Kotlin/Compose, modules `:platform` + `:gym` + `:app`, magic-link sign-in, CI and tagged
