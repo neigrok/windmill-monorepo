@@ -13,7 +13,10 @@ import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdenti
 export const gymLandingHead = {
   path: '/gym',
   module: 'src/products/gym/marketing/GymLanding.jsx',
-  title: 'Windmill Gym — it remembers what you lifted',
+  // The SERP title names the thing and then says it in our voice; ogTitle and twitterTitle below
+  // stay pure voice, because a share card is read by someone who already clicked, and a search
+  // result by someone typing "training log". Same page, two readers, two first lines.
+  title: 'Windmill Gym — a training log that remembers what you lifted',
   description: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, a link that hands one workout to your coach, and a CSV of every set you have logged.',
   ogTitle: 'Windmill Gym — it remembers what you lifted',
   ogDescription: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field.',

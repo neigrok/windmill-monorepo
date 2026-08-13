@@ -7,7 +7,10 @@ import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdenti
 export const journalLandingHead = {
   path: '/journal',
   module: 'src/products/journal/marketing/JournalLanding.jsx',
-  title: 'Windmill Journal — a place to notice what happened',
+  // The SERP title names the thing and then says it in our voice; ogTitle and twitterTitle below
+  // stay pure voice, because a share card is read by someone who already clicked, and a search
+  // result by someone typing "daily journal". Same page, two readers, two first lines.
+  title: 'Windmill Journal — a daily journal for noticing what happened',
   description: 'A place to notice what happened. One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
   ogTitle: 'Windmill Journal — a place to notice what happened',
   ogDescription: 'One continuous canvas — oldest at the top, tonight at the bottom, the cursor already waiting. Write to understand yourself, not to score yourself.',
