@@ -100,10 +100,29 @@ the API host's `/robots.txt` → 200 `Disallow: /` with `X-Robots-Tag: noindex`.
 **Deploy note:** the Caddyfile ships with `deploy.yml`, which a green `backend.yml` triggers — so
 the origin half lands on the next backend deploy, and the `dist/` half on the next web deploy.
 
+**Titles, same pass.** Connect's title said "Connect your AI tools" while its own description led with
+"Windmill speaks MCP" — the page now says `Windmill MCP server — connect Claude, Cursor or Codex`,
+which is the one term this audit called near-zero competition. Journal and Gym had a voice and no
+noun (`a place to notice what happened`, `it remembers what you lifted`): both now name the thing
+before saying it in our voice — `a daily journal for noticing what happened`, `a training log that
+remembers what you lifted` — while `ogTitle`/`twitterTitle` beside them stay pure voice, because a
+share card is read by someone who already clicked. Roadmap needed nothing; it already said "as a
+skill tree". Owner-approved 2026-08-13.
+
+**Not in this repo: the AI half of robots.txt.** Cloudflare's managed robots.txt is switched on for
+the zone and prepends its own block to ours — `Content-Signal: search=yes,ai-train=no,use=reference`
+and `Disallow: /` for ClaudeBot, GPTBot, Google-Extended, CCBot, Bytespider, Amazonbot,
+Applebot-Extended and meta-externalagent. So a brand whose distinctive claim is being agent-native is
+invisible to the agents. The decision (2026-08-13) is to **allow the answer crawlers and keep
+`ai-train=no`** — a Cloudflare dashboard change (AI Crawl Control), not a commit; `public/robots.txt`
+carries the note so the next reader does not debug a phantom. Until it is flipped, the block stands.
+
 **Still open after this pass:** every product landing still unfurls the roadmap's share card
-(one `og-image.png` for the family — art, not copy); no `sameAs` on the Organization (no social
-accounts to name); `/t/:id` pages are discoverable only through the gallery wall, which today
-holds one card — a generated sitemap of public trees is worth building when that wall fills.
+(one `og-image.png` for the family — art, not copy); no `sameAs` on the Organization (decided
+2026-08-13: no accounts exist, so none is invented); `/t/:id` pages are discoverable only through the
+gallery wall, which today holds one card — a generated sitemap of public trees is worth building when
+that wall fills; and the per-quest landing pages of follow-up 5 remain the biggest untapped demand,
+deliberately deferred on 2026-08-13 rather than dropped.
 
 ## Architectural ceiling: hash routing
 
