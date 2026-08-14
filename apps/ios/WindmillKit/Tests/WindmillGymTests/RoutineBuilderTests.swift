@@ -110,10 +110,11 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(edit.entries.map(\.exerciseId), ["deadlift"])
         XCTAssertEqual(edit.entries.map(\.targetSets), [3])
 
-        let copy = RoutineDraft(duplicating: routine, position: 5)
+        let copy = RoutineDraft(duplicating: edit, position: 5)
         XCTAssertNotEqual(copy.id, "rt_1")
         XCTAssertEqual(copy.position, 5)
-        XCTAssertEqual(copy.name, "Heavy Thursday", "the name goes back through screen 28 to be typed over")
+        XCTAssertEqual(copy.name, "Heavy Thursday",
+                       "seeded from the day on screen — a starting point to type over in the inline field")
         XCTAssertEqual(copy.entries.map(\.targetWeightKg), [140])
     }
 
@@ -526,9 +527,9 @@ final class RoutineWritingTests: XCTestCase {
         XCTAssertFalse(changed.isUntested)
     }
 
-    // A ROUTINE RENAME IS THE WHOLE DOCUMENT AGAIN — there is no rename route, because a name change
-    // has to move the revision and supersede what is pending, and a second door onto that write
-    // would be a second place the rule could drift.
+    // A ROUTINE RENAME IS EDITING THE INLINE NAME (R2/R3) AND THE WHOLE DOCUMENT AGAIN — there is
+    // no rename route, because a name change has to move the revision and supersede what is
+    // pending, and a second door onto that write would be a second place the rule could drift.
     func testRenamingARoutineRewritesTheDocumentAndKeepsEveryLine() async {
         let store = store(on: LocalLog(url: localURL))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
@@ -537,8 +538,9 @@ final class RoutineWritingTests: XCTestCase {
         draft.set(squat.id, sets: 5, reps: 3, weightKg: 110)
         guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
 
-        let renamed = await store.rename(made, to: "Thursday")
-        XCTAssertNil(renamed)
+        var renamed = RoutineDraft(editing: made)
+        renamed.name = "Thursday"
+        guard case .success = await store.replace(renamed) else { return XCTFail("no replace") }
         XCTAssertEqual(store.routines.first?.name, "Thursday")
         XCTAssertEqual(store.routines.first?.id, made.id, "a rename never forks the record")
         XCTAssertEqual(store.routines.first?.entries.map(\.targetSets), [5, nil])
@@ -561,6 +563,27 @@ final class RoutineWritingTests: XCTestCase {
             return XCTFail("a routine on neither is a routine that is gone")
         }
         XCTAssertEqual(why, .refused("that routine is on your account — sign in to read it"))
+    }
+
+    // DELETE, FROM THE EDITOR'S FOOT (R3). A routine still on this device's shelf is the device's
+    // alone to let go of — the claim simply never replays it — and nothing else on the shelf moves.
+    func testDeletingAShelfRoutineLetsGoOfItAndNothingElse() async {
+        let shelf = LocalLog(url: localURL)
+        let store = store(on: shelf)
+        var one = RoutineDraft(name: "Heavy Thursday", position: 0)
+        one.add("back-squat")
+        var other = RoutineDraft(name: "Push A", position: 1)
+        other.add("bench-press")
+        guard case .success(let doomed) = await store.create(one),
+              case .success(let kept) = await store.create(other) else {
+            return XCTFail("two routines land on the shelf")
+        }
+
+        let gone = await store.deleteRoutine(doomed.id)
+        XCTAssertNil(gone)
+        XCTAssertEqual(store.routines.map(\.id), [kept.id])
+        XCTAssertNil(shelf.routine(doomed.id), "the shelf let go, so no claim will ever replay it")
+        XCTAssertNotNil(shelf.routine(kept.id))
     }
 }
 

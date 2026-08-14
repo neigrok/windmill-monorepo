@@ -164,8 +164,8 @@ public struct AskRefusal: Equatable, Error, Sendable {
             self = AskRefusal(line: "Ask didn’t answer. Try again in a moment", mayRetry: true)
         case .refused(404, _):
             // The route is ABSENT, not failing: this deployment has no Anthropic key, so there is no
-            // Ask here to try again at. The door goes rather than the sentence staying.
-            self = AskRefusal(line: "Ask isn’t available on this Windmill.", closesTheDoor: true)
+            // Ask here to try again at. The tab falls back to its quiet stance, in the same words.
+            self = AskRefusal(line: Ask.absentLine, closesTheDoor: true)
         case .refused(502, let refusal):
             // NOTHING WAS STORED. Turns land only once an answer has, and a run that never answered
             // takes its own empty thread back — so the same thread and the same question sent again
@@ -262,6 +262,15 @@ public enum Ask {
     public static let title = "Ask"
     public static let subtitle = "reads your log · proposes only"
 
+    // THE TAB'S TWO STANCES (R7, decisions §3). A tab cannot be absent the way a door could be, so
+    // the two states that used to take the door away are DESIGNED screens now: signed out, the tab
+    // says what Ask is and that it needs the account the log lives on — never a 401 — and on a
+    // deployment with no Anthropic key it says plainly that there is no Ask here. Both are quiet
+    // statements of fact; neither counts anything or sells anything.
+    public static let needsSignIn = "Ask reads your log, so it needs you signed in."
+    public static let signIn = "Sign in"
+    public static let absentLine = "Ask isn’t available on this Windmill."
+
     // What Ask is, said before it has said anything — it does not speak first, so this is a
     // description of the surface and never an opening line from it. It names the ceiling of what Ask
     // can do in the same breath as the floor, because the safeguard ladder's third rung (never
@@ -314,14 +323,12 @@ public enum Ask {
     // 400 "that question is longer than Ask takes") reached before a lifter spends a question on it.
     public static let tooLong = "That question is longer than Ask takes. Shorten it to send."
 
-    // THE DOOR, AND THE THREE THINGS THAT TAKE IT AWAY. Ask is never a fourth tab and never offered
-    // mid-session — a chat is not a place you live, and a workout is the one screen in this product
-    // that is time-critical. The mid-session rule is enforced by the server too (409
-    // `ask-session-open`); this is the client half, stated once, so Today and the proposal card
-    // cannot disagree about it.
-    //
-    // Signed out there is no account for Ask to read, so the door is not drawn at all rather than
-    // drawn onto a 401 — the same reason a proposal card is never on a signed-out Today.
+    // ASK IS THE THIRD TAB SINCE THE 13 AUG PROMOTION (R7) — the tab itself always stands, and the
+    // two states that used to take a door away are its designed stances above. What this gate rules
+    // now is the DOORS beside the tab (the proposal card's Ask chip): a door is absent rather than
+    // dead where the tab would only answer with a stance. "Never mid-session" survives structurally
+    // — a live session owns the whole screen, rail included — and the server enforces it too (409
+    // `ask-session-open`); this states the client half once, so no two surfaces disagree about it.
     public static func doorIsOpen(signedIn: Bool, sessionIsOpen: Bool, onThisDeployment: Bool) -> Bool {
         signedIn && !sessionIsOpen && onThisDeployment
     }

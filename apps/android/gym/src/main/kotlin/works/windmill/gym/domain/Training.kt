@@ -320,7 +320,7 @@ data class RoutineEntry(
 // is superseded in the same breath, and the card says so rather than applying over the top.
 //
 // `pendingProposal` is present only while one is waiting, and it is the CARD — this product has no
-// notifications and needs none, because the proposal lives on Today and on the routine it touches
+// notifications and needs none, because the proposal lives on home and on the routine it touches
 // until the lifter applies or dismisses it. A routine the shelf holds never has one: proposals are
 // signed-in only, and the claim has nothing of the kind to replay.
 @Serializable
@@ -619,10 +619,12 @@ data class SetFix(val weightKg: Double, val reps: Int, val kind: SetKind) {
         Ladder.round(weightKg) != Ladder.round(set.weightKg) || reps != set.reps || kind != set.kind
 }
 
-// An ordinary start omits joinOpenSession — the phone joins by default, so a lost race, a relaunch
-// or a borrowed second device all land in the live workout instead of refusing it. The CLAIM sends
-// `false`, and must: a replayed past session that silently joined a live workout would file
-// yesterday's sets into today's — the exact bug gym's ARCHITECTURE.md §11 records shipping once.
+// EVERY REAL START ON THIS PHONE STATES `joinOpenSession: false` — the user-tapped ones (decisions
+// §5: a start is never a silent join under a different plan) and the claim's replays alike (a
+// replayed past session that silently joined a live workout would file yesterday's sets into
+// today's — the bug gym's ARCHITECTURE.md §11 records shipping once). The field stays
+// NULLABLE-WITH-EXPLICIT-FALSE rather than defaulting to false: WindmillJson omits a value equal to
+// its declared default, and an omitted flag is the wire's word for "join whatever is open".
 @Serializable
 data class SessionStart(
     val id: String,

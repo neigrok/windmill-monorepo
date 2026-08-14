@@ -38,8 +38,8 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// THE LOG — every finished session, newest first, folded into weeks. It answers the question Today
-// cannot: what has the last three months actually looked like.
+// THE LOG — every finished session, newest first, folded into weeks. It answers the question the
+// routine list cannot: what has the last three months actually looked like.
 //
 // IT IS NOT A CALENDAR. A month grid answers "which days did I train", which this lifter already
 // answers with a program — and there is no adherence percentage anywhere on it, because that is a
@@ -130,8 +130,8 @@ fun LogScreen(store: TrainingStore, onOpenSession: (SessionSummary) -> Unit) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     // A row the shelf holds is saved on this device and nowhere else — signed out that is the whole
-    // log, and it is true rather than a warning: the lifter owns it, and the claim card on Today is
-    // where signing in is offered.
+    // log, and it is true rather than a warning: the lifter owns it, and the claim card on the
+    // Routines home is where signing in is offered.
     val onThisDevice = store.shelved.map { it.id }.toSet()
     val weeks = LogFold.weeks(store.recent, onThisDevice, complete = store.older == Older.End, nowMs = nowMs)
     val load: () -> Unit = { scope.launch { store.loadOlder() } }

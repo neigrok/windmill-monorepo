@@ -25,10 +25,10 @@ const spoken = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \
 const speech = (file) => spoken(read(file));
 
 // A DRAFT MAY NOT OUTLIVE THE DOCUMENT IT IS OF. The editor holds one routine under the lifter's
-// hand and nothing reaches the store until Done, so the instance is scoped to the routine id: the
+// hand and nothing reaches the store until Save, so the instance is scoped to the routine id: the
 // key is what makes React drop it when the hash moves to another routine. Without it, the editor's
 // own Duplicate button — which moves the hash to the copy — left the ORIGINAL's unsaved draft on
-// screen under the copy's URL, and Done then whole-document PUT it back onto the original. A
+// screen under the copy's URL, and Save then whole-document PUT it back onto the original. A
 // routine renamed and reprogrammed into another one, with no undo.
 test('the routine editor is keyed on the routine it edits, so a hash move remounts it', () => {
   const app = read('GymApp.jsx');
@@ -700,16 +700,16 @@ test('a picker row says it has no last time, only once the read behind it has an
   assert.equal(speech('logger/movements.js').includes("NO_LAST_TIME_META = 'no last time'"), true);
 });
 
-// SCREEN 1, MINUS THE HALF THIS SURFACE MAY NOT DRAW. Its primary is `Start a session`, and a
-// session cannot start at the desk (§11) — so what the web draws of that screen is its SECOND verb,
-// and the verb has to land somewhere true: paste-to-routine does not exist in gym, and the routine
-// editor does. A button onto a screen that is not built would be the room promising a parser it has
-// not got.
+// SCREEN 1, AND SINCE 13 AUG THE HALF THIS SURFACE CAN DRAW IS THE PRIMARY. The board's screen 1
+// leads with `Build a routine` (routine-first — home is the plan, nothing starts by itself), and
+// building a routine is a desk activity that exists today, so the primary lands here whole. The
+// half the desk may not draw is `Just start logging`: a session cannot start at the desk (§11), so
+// the free-form path is named as the phone's and never offered as a button.
 test('the empty log offers the routine editor, and this surface still starts nothing', () => {
   const today = read('Today.jsx');
   assert.equal(today.includes('{log.summaries.length === 0 && <FirstRun />}'), true);
   assert.equal(
-    today.includes('<a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>'),
+    today.includes('<a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>'),
     true,
   );
   // AND THE ARGUMENT FOR IT IS NOT (W9). A dashed box under the verb used to make the design's case
@@ -723,12 +723,29 @@ test('the empty log offers the routine editor, and this surface still starts not
   assert.equal(said.includes('sample program'), false);
   assert.equal(said.includes('catch it, not to write it'), false);
   assert.equal(read('Today.jsx').includes('gym-first-why'), false);
-  // What DOES stay is the by-product rule, because it tells a lifter what their session becomes.
-  assert.equal(said.includes('what you do becomes your routine, and you name'), true);
+  // What DOES stay is the kept path — second since 13 Aug: the phone's free-form session still
+  // names itself at the end, and the desk says so without offering it.
+  assert.equal(said.includes('name what you did at the end'), true);
   // The one verb the web has never had since §11, said nowhere on it — in a comment, freely; on a
   // screen, never.
   for (const file of ['Today.jsx', 'Routines.jsx', 'Log.jsx', 'Finish.jsx', 'GymApp.jsx']) {
     assert.equal(speech(file).includes('Start a session'), false, file);
+  }
+});
+
+// SCREEN 1's CTA, ON THE DESK. An empty routines list carries the door to writing one out — the
+// board's `Build a routine`, verbatim, in the empty state itself and not only in the header — and
+// it is the same door the header's New opens: the editor, never a session. Screen 1's second path,
+// `Just start logging`, is the phone's (§11), so no web screen utters it.
+test('the empty routines list offers to build one, and still starts nothing', () => {
+  const source = read('Routines.jsx');
+  assert.equal(
+    source.includes('<a className="gym-routines-build" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>'),
+    true,
+  );
+  assert.equal(source.includes("view.phase === 'ready' && view.data.length === 0"), true);
+  for (const file of ['Today.jsx', 'Routines.jsx', 'Log.jsx', 'Finish.jsx', 'GymApp.jsx']) {
+    assert.equal(speech(file).includes('Just start logging'), false, file);
   }
 });
 
@@ -813,7 +830,7 @@ test('no gym screen argues for its own design — the swept prose stays swept', 
 // looking at. Nothing this wave built may grow a second door onto it: not the card, which is a
 // notification; not the routines list; and above all not the routine editor, which holds a DRAFT —
 // a routine applied under an open draft would be a change the lifter never saw, whole-document PUT
-// straight back out by the Done they press next.
+// straight back out by the Save they press next.
 //
 // Which file calls what is a fact about the source and about nothing a pure module can answer, which
 // is why it is pinned here rather than in proposals.test.js.
@@ -1135,7 +1152,7 @@ test('a routine written from scratch is named before it is filled in, and only t
   // typing over it is the expected case, so nothing here records which one was tapped.
   assert.equal(source.includes('onClick={() => onName(suggestion)}'), true);
   assert.equal(/suggestion === |selectedSuggestion|chosenName/.test(source), false);
-  // NOTHING IS CREATED BY NAMING IT. The step carries the name into the editor and Done is still the
+  // NOTHING IS CREATED BY NAMING IT. The step carries the name into the editor and Save is still the
   // only thing on this screen that writes — a create fired here would leave a routine with no
   // movements in the program of anybody who changed their mind.
   const step = source.slice(source.indexOf('function NameTheRoutine'), source.indexOf('function RoutineHistory'));
@@ -1216,13 +1233,14 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });
 
-// TWO BOARDS, TWO WORDS, FOR THE ONE `custom` FLAG. The picker is screen 7 and says `yours`; a
-// routine's row is §M screen 30 and says `· mine`. Neither is this surface's to reconcile on its own
-// — the phones draw the same pair in the same wave — so the web says what each board says and the
-// disagreement is filed rather than papered over here.
-test('a movement this account minted is tagged in each screen’s own word', () => {
+// ONE WORD FOR THE ONE `custom` FLAG. The boards drew two — the picker's `yours` (screen 7) and a
+// routine row's `· mine` (§M screen 30) — and the 2026-08-13 adjudication picked the picker's:
+// `yours`, on every surface, for every screen that marks a movement this account minted.
+test('a movement this account minted is tagged `yours`, in the picker and in a routine', () => {
   assert.equal(read('logger/MovementPicker.jsx').includes('<span className="gym-picker-tag">yours</span>'), true);
-  assert.equal(read('Routines.jsx').includes('<span className="gym-entry-mine">mine</span>'), true);
+  assert.equal(read('Routines.jsx').includes('<span className="gym-entry-yours">yours</span>'), true);
+  // The retired word, asserted gone rather than merely replaced: nothing may grow it back.
+  assert.equal(read('Routines.jsx').includes('>mine</span>'), false);
 });
 
 // THE RENAME SHEET PROVES WHAT IT CLAIMS (§N screen 32). The counts on it come from real reads — the

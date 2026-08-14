@@ -323,11 +323,21 @@ class TrainingStoreTests {
             listOf("bench-press", "back-squat"), store.sets.map { it.exerciseId })
     }
 
-    // Pressing Start cannot re-plan a workout that is already running: the session that comes back
-    // is the live one, with ITS snapshot, and its sets come with it rather than being drawn over.
+    // A START IS NEVER A SILENT JOIN (decisions §5). The log's default is to JOIN whatever session
+    // is open — ignoring the routineId that was tapped — so "Start workout" on routine B could land
+    // the lifter in yesterday's workout under the wrong plan. Every user-tapped start therefore
+    // states joinOpenSession: false, and the 409 that comes back while a workout is open on the
+    // account is answered by REFRESHING: the store re-reads the log, adopts the open workout with
+    // its own snapshot and sets, stands it where the lifter was through the ordinary resume — at
+    // the movement the last set went into, never in the picker over a session of sets — and
+    // repeats the refusal in the log's own words.
     @Test
-    fun testStartingWhileASessionIsOpenJoinsItWithItsOwnSets() = runTest {
+    fun testStartingWhileASessionIsOpenRefusesAndSurfacesTheOpenWorkout() = runTest {
         val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        // Another device opened a workout after this phone's boot read — the exact shape that used
+        // to be joined silently under the wrong plan.
         server.open(Session(id = "ses_live", startedAtMs = 500,
             plan = PlanSnapshot(routine = "Push A",
                 entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5,
@@ -335,17 +345,23 @@ class TrainingStoreTests {
         server.sets["ses_live"] = mutableListOf(TrainingSet(id = "set_old",
             exerciseId = "bench-press", setNumber = 1, weightKg = 82.5, reps = 5,
             completedAtMs = 600))
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
 
-        val joined = (store.start(routineId = "rt_other") as? GymResult.Ok)?.value
+        val refused = store.start(routineId = "rt_other")
 
-        assertEquals("a start joins the open session rather than opening a second",
-            "ses_live", joined?.id)
-        assertEquals("and it keeps that session's own snapshot — Start cannot re-plan a running workout",
-            "Push A", store.session?.plan?.routine)
-        assertEquals("the sets already logged into it come with it",
+        assertTrue("a start while a workout is open is a refusal, never a silent join: $refused",
+            refused is GymResult.Failed)
+        assertEquals("the refusal is the log's own sentence",
+            "a session is already open",
+            ((refused as GymResult.Failed).why as WriteFailure.Refused).said)
+        assertEquals("every user-tapped start states the flag as an explicit false",
+            listOf(false), server.started.map { it.joinOpenSession })
+        assertEquals("the refresh adopted the open workout, with its own snapshot",
+            "ses_live", store.session?.id)
+        assertEquals("Push A", store.session?.plan?.routine)
+        assertEquals("and the sets already logged into it",
             listOf("set_old"), store.sets.map { it.id })
+        assertEquals("and stands where the last set went, not in the picker over a session of sets",
+            "bench-press", store.exerciseId)
     }
 
     // The number in front of the lifter before they touch anything: the plan's target while the
@@ -1820,24 +1836,25 @@ class TrainingStoreTests {
         assertTrue("the cadence is not a heartbeat", server.calls.isEmpty())
     }
 
-    // THE ONE THING FIRST RUN HAS TO GET RIGHT, AND IT IS NOT A SCREEN. A lifter arrives with no
-    // account, no network and nothing on the phone, logs four sets, and the process dies — the app
-    // swiped away, the activity destroyed, the phone out of battery. Every one of those sets has to
-    // still be there, and so does the session they belong to and the order they were walked in.
+    // THE ONE THING A FIRST SESSION HAS TO GET RIGHT, AND IT IS NOT A SCREEN. A lifter arrives with
+    // no account, no network and nothing on the phone, taps "Just start logging" (R6 retired the
+    // auto-start: every session begins with a tap now), logs four sets, and the process dies — the
+    // app swiped away, the activity destroyed, the phone out of battery. Every one of those sets
+    // has to still be there, and so does the session they belong to and the order they were walked
+    // in.
     //
-    // The risk the design names is a first-run flow that starts a session through a path the local
-    // shelf does not know about. This drives the real one: `firstRun` is what the room reads, and
-    // the start it triggers is the queue's own.
+    // The risk the design names is a first-session flow that starts through a path the local shelf
+    // does not know about. This drives the real one: the tap's start is the queue's own.
     @Test
     fun testAFreshArrivalLogsFourSetsAndARelaunchLosesNoneOfThem() = runTest {
         val arriving = makeStore(sync = null)
         arriving.connect(account(signedIn = false))
 
-        assertTrue("nothing has ever happened in this room, so arriving starts it", arriving.firstRun)
+        assertTrue("nothing has ever happened in this room", arriving.firstSession)
         arriving.start()
-        assertNotNull("nobody pressed start", arriving.session)
-        assertFalse("and a session already running is not a second first run", arriving.firstRun)
-        assertTrue("the picker stands over it, with the six", arriving.firstSession)
+        assertNotNull("the tap opened it", arriving.session)
+        assertTrue("the picker stands over it, with the six — the session in hand is not counted",
+            arriving.firstSession)
         assertNull("nothing is chosen yet — that is what the picker is for", arriving.exerciseId)
 
         arriving.choose("back-squat")
@@ -1861,39 +1878,33 @@ class TrainingStoreTests {
         assertEquals(listOf("back-squat", "bench-press"), reopened.order)
         assertEquals("it stands where the last set went, not in the picker over a session of sets",
             "bench-press", reopened.exerciseId)
-        assertFalse("and it does not open a second session over the one it just found",
-            reopened.firstRun)
     }
 
-    // WHAT A FIRST RUN IS: a room whose reads CAME BACK, and came back empty. Nothing on this device
-    // remembers a lifter, counts an arrival or counts a decline — but "this lifter has no log" is a
-    // claim, and an empty list is only a claim once something answered with it. An empty page is not
-    // an empty history; a page that said "there is no more" is.
-    //
-    // The one shape this predicate cannot see is a lifter who SIGNED OUT: their log is on an account
-    // and this phone deliberately keeps nothing of it, so the page they are left with really is
-    // empty. The room refuses that one instead — §J22's arrival opens its session once per install
-    // (`GymRoom`), so a sign-out cannot open a workout over a log that is merely out of reach.
+    // WHAT A FIRST SESSION IS: a room whose reads CAME BACK, and came back empty. Nothing on this
+    // device remembers a lifter, counts an arrival or counts a decline — but "this lifter has no
+    // log" is a claim, and an empty list is only a claim once something answered with it. An empty
+    // page is not an empty history; a page that said "there is no more" is. It is what pins the six
+    // over the picker and the first-session wording — the §J22 auto-start that used to read the
+    // same fact on arrival is retired (R6).
     @Test
-    fun testAFirstRunIsALogThatAnsweredAndAnsweredEmpty() = runTest {
+    fun testAFirstSessionIsALogThatAnsweredAndAnsweredEmpty() = runTest {
         val fresh = makeStore(sync = null)
         fresh.connect(account(signedIn = false))
-        assertTrue("signed out the shelf IS the log, and it is already in hand", fresh.firstRun)
+        assertTrue("signed out the shelf IS the log, and it is already in hand", fresh.firstSession)
 
-        // A brand new account is a first run too, and for the same reason: every read landed.
+        // A brand new account is a first session too, and for the same reason: every read landed.
         val opened = makeStore(sync = FakeTraining())
         opened.connect(account(signedIn = true))
-        assertTrue("nothing on the log, and the log said so", opened.firstRun)
+        assertTrue("nothing on the log, and the log said so", opened.firstSession)
 
         // A READ THAT MISSED IS NOT AN EMPTY HISTORY. This is the returning lifter on a phone with
-        // no signal, and a session opened over the log they cannot see would be a workout nobody
-        // started — claimed onto them the moment the signal came back.
+        // no signal, and a room that treated them as brand new would pin the six over a catalog of
+        // sixty-four it merely could not see.
         val offline = FakeTraining()
         offline.online = false
         val unreachable = makeStore(sync = offline)
         unreachable.connect(account(signedIn = true))
-        assertFalse("the log page never answered", unreachable.firstRun)
-        assertFalse(unreachable.firstSession)
+        assertFalse("the log page never answered", unreachable.firstSession)
 
         // The same fact through the other read: the sessions page can answer while the routines page
         // does not, and a routine list that never arrived is not a lifter who has written none.
@@ -1901,7 +1912,6 @@ class TrainingStoreTests {
         halfRead.refuseRoutinesRead = IOException("offline")
         val partly = makeStore(sync = halfRead)
         partly.connect(account(signedIn = true))
-        assertFalse(partly.firstRun)
         assertFalse(partly.firstSession)
 
         val returning = makeStore(sync = null)
@@ -1911,11 +1921,11 @@ class TrainingStoreTests {
         returning.logSet(weightKg = 100.0, reps = 5)
         clockMs += 60_000
         returning.finish()
-        assertFalse("the shelf holds a session now", returning.firstRun)
+        assertFalse("the shelf holds a session now", returning.firstSession)
 
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = false))
-        assertFalse("and it still does on the next launch", relaunched.firstRun)
+        assertFalse("and it still does on the next launch", relaunched.firstSession)
     }
 
     // §A2'S TWO GESTURES, and the promise under both: nothing a lifter logged leaves on either. A
@@ -2714,6 +2724,89 @@ class TrainingStoreTests {
         server.refuseRoutineRead = null
         server.online = false
         assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.routineHistory("rt_1"))
+    }
+
+    // §M'S DELETE, THE SHELF'S SIDE: a routine the device still holds leaves through the shelf's
+    // own door — no wire — and the sessions run under it keep every set and their frozen plan,
+    // dropping only the dead id, so the claim replays them ad-hoc rather than naming a routine the
+    // log must refuse.
+    @Test
+    fun testADroppedShelfRoutineLeavesAndItsSessionsKeepTheirSets() = runTest {
+        val store = makeStore(sync = null)
+        store.connect(account(signedIn = false))
+        val kept = (store.saveRoutine(RoutineDraft(name = "Push Day")
+            .adding("bench-press")
+            .targeting("bench-press", sets = 5, reps = 5, weightKg = 100.0)) as GymResult.Ok).value
+        store.start(routineId = kept.id)
+        store.choose("bench-press")
+        store.logSet(weightKg = 100.0, reps = 5)
+        clockMs += 60_000
+        store.finish()
+
+        assertNull("the drop is a success, and nothing needed the wire", store.dropRoutine(kept.id))
+
+        assertEquals(emptyList<Routine>(), store.routines)
+        assertEquals("the shelf let go of the document", emptyList<Routine>(), LocalLog(localFile).routines)
+        val past = LocalLog(localFile).finished.single()
+        assertEquals("the session run under it keeps every set", listOf(100.0), past.sets.map { it.weightKg })
+        assertNull("only the dead id goes — the claim replays this session ad-hoc", past.session.routineId)
+        assertEquals("the frozen plan is a copy, not a reference, and it stays",
+            "Push Day", past.session.plan?.routine)
+
+        assertEquals("a routine the shelf never held is the account's, and the sentence says so",
+            WriteFailure.Refused("that routine is on your account — sign in to change it"),
+            store.dropRoutine("rt_account"))
+    }
+
+    // §M'S DELETE, THE ACCOUNT'S SIDE: the routine leaves only once the log says it is gone. A log
+    // that answered with a reason repeats the reason, an unreachable one says nobody answered, and
+    // in both cases the program stands exactly as it stood — a delete drawn as done on the strength
+    // of a request that never landed would be the room lying about somebody's program.
+    @Test
+    fun testADroppedAccountRoutineLeavesOnlyWhenTheLogSaysSo() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        server.refuseRoutineDelete = storageFailure
+        assertEquals("the log's own sentence, and the routine stands",
+            WriteFailure.Refused("internal error"), store.dropRoutine("rt_1"))
+        assertEquals(listOf("rt_1"), store.routines.map { it.id })
+        assertEquals(setOf("rt_1"), server.written.keys)
+
+        server.refuseRoutineDelete = null
+        server.online = false
+        assertEquals(WriteFailure.NoAnswer, store.dropRoutine("rt_1"))
+        assertEquals("an unreachable log moves nothing either", listOf("rt_1"), store.routines.map { it.id })
+
+        server.online = true
+        assertNull(store.dropRoutine("rt_1"))
+        assertEquals(listOf("deleteRoutine", "deleteRoutine", "deleteRoutine"),
+            server.calls.filter { it == "deleteRoutine" })
+        assertEquals(emptyList<Routine>(), store.routines)
+        assertEquals(emptySet<String>(), server.written.keys)
+    }
+
+    // A DELETE OF SOMETHING ALREADY GONE IS A DELETE THAT HAPPENED: the caller asked for the
+    // routine not to be there, and it is not there. The 404 answers as success and the list lets
+    // go — repeating "no such routine" over a delete would refuse the lifter the thing they asked
+    // for on the grounds that they already have it.
+    @Test
+    fun testADeleteOfARoutineAlreadyGoneAnswersAsSuccess() = runTest {
+        val server = FakeTraining()
+        server.written["rt_1"] = aRoutine()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        assertEquals(listOf("rt_1"), store.routines.map { it.id })
+
+        // Deleted from the web after this phone's read — the wire answers 404, not silence.
+        server.written.remove("rt_1")
+        server.refuseRoutineDelete = refusal(404, message = "no such routine")
+
+        assertNull("asked for it not to be there, and it is not there", store.dropRoutine("rt_1"))
+        assertEquals("the list lets go without a second read", emptyList<Routine>(), store.routines)
+        assertTrue("nothing to say out loud about a wish already granted", store.refusals.isEmpty())
     }
 
     // §N'S SECOND QUESTION, AND IT IS THE CALLER'S ANSWER. This used to file every created movement

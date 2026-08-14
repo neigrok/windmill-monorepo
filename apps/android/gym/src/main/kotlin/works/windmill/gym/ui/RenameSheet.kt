@@ -36,9 +36,9 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// RENAMING (§N) — one sheet, and it is one sheet on purpose: a movement renames from its record page
-// (screen 32) and a routine renames from its own header (screen 30), and building the field twice is
-// how the two would start disagreeing about a name.
+// RENAMING A MOVEMENT (§N, screen 32) — the record page's sheet. It used to serve the routine's
+// header too; the 13 Aug wave retired that door (R2: renaming a routine is editing the inline name
+// in the one editor), so a movement's record is the one screen left that opens this.
 //
 // A NAME IS A LABEL ON A STABLE ID. Renaming is not destructive and never forks a record: every set,
 // every routine line and every frozen plan snapshot still points at the same movement afterwards,
@@ -46,14 +46,8 @@ import works.windmill.platform.design.WindmillSpace
 // every one of those numbers is a READ — a constant on the one screen whose whole job is proof would
 // be the product asserting something it did not check.
 //
-// A ROUTINE'S RENAME CARRIES NO BLOCK, and that is not an omission. The counts a movement can show
-// are counts of training; a routine renamed has nothing of the kind to show, and inventing
-// `12 sessions · unchanged` for it would be exactly the constant this sheet exists to refuse.
-//
-// `from` IS WHAT THE THING IS CALLED NOW, and the button is dead until the field disagrees with it.
-// A rename that changes nothing is not a cheap write on a routine: it is a whole-document PUT, so it
-// moves the revision and supersedes the proposal that was waiting on that day — a lifter who opened
-// this sheet, thought better of it and tapped the accent word would have paid an agent's diff for it.
+// `from` IS WHAT THE THING IS CALLED NOW, and the button is dead until the field disagrees with it:
+// a rename that changes nothing is not a rename, and the sheet has nothing to send for it.
 @Composable
 fun RenameSheet(
     title: String,

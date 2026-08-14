@@ -41,7 +41,7 @@ happens on the device. The backend's job is narrow and load-bearing:
 3. **The reads the device can't fake** — the training log (sessions + sets back), last-time
    prefill, the finish, a movement's record, the statistics engine, the export, and the coach
    share. (§5)
-4. **The wedge — shipped.** Gym's seventeen MCP tools on `windmill.works/mcp`, behind the platform's
+4. **The wedge — shipped.** Gym's sixteen MCP tools on `windmill.works/mcp`, behind the platform's
    grant gate: `gym:read` answers questions, `gym:write` **records what happened and proposes changes
    to the program**, `gym:delete` destroys a workout or a coach link and **proposes** destructive
    changes to the program, and **none of the three implies another**. Every tool goes through
@@ -145,7 +145,7 @@ backend/products/gym/
     postgres/PgTrainingRepository.h/.cpp
     http/GymApi.h/.cpp            every /v1/gym/* route but one
     http/AskApi.h/.cpp            POST /v1/gym/ask — the one conditional route
-    mcp/GymToolCatalog.h/.cpp     the seventeen declarations + the handshake paragraph
+    mcp/GymToolCatalog.h/.cpp     the sixteen declarations + the handshake paragraph
     mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
     llm/AnthropicAsk.h/.cpp       Ask's prompt, its opening read, and its one vendor call
                                   (the LOOP is platform's: adapters/llm/AgentLoop.h)
@@ -1719,7 +1719,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 ### The MCP tool catalog (`adapters/mcp/GymToolCatalog`, dispatched by `adapters/mcp/GymTools`)
 
-Seventeen tools against roadmap's twenty-seven, and the smallness is the design: `tools/list` is the
+Sixteen tools against roadmap's twenty-seven, and the smallness is the design: `tools/list` is the
 biggest fixed cost of a connection, so a tool a parameter on another tool could serve does not get a
 slot — which is why the pending proposal rides on `list_routines` instead of a `list_proposals` and a
 `get_proposal` of its own. The **level is declared beside the description**, in the same
@@ -1796,7 +1796,7 @@ Six rules hold this together, and each is load-bearing:
 
 **`GET /v1/gym/export` deliberately has no tool.** A CSV is a file for a person to open, and an
 agent holding `list_sessions` + `get_session` + `get_stats` already has every one of those numbers in
-a shape it can read — a seventeenth tool that answered with a wall of comma-separated text would spend
+a shape it can read — an export tool that answered with a wall of comma-separated text would spend
 a `tools/list` slot and a context window to say what three tools already say.
 
 **`PATCH` and `DELETE` on a set have no tool either, and that one is a product rule rather than an
@@ -2229,7 +2229,7 @@ the local stack → push → watch CI → probe prod).
   shape the decided design (§G18) never drew, and a renumber rewrites rows the lifter did not ask to
   change. Still open: `set-kinds` UI · `rest-timer` (the target column routines now write).
   `gym-mcp` — **shipped**, both halves: the platform's grant gate, then
-  gym's seventeen tools on it (§6). What is left of that bet is client-side — the connect surface, and
+  gym's sixteen tools on it (§6). What is left of that bet is client-side — the connect surface, and
   whatever the shell puts in front of a lifter who has no agent of their own.
 - **Phase 3.** `progress-charts` — **the backend half is shipped** as `GET /v1/gym/stats` (§5).
   That is a decision taken **ahead of** the measured gate rather than through it: the gate
@@ -2534,7 +2534,7 @@ anything.
 The scope `AskService::ask` states at its call site —
 `ToolCaller{caller, ToolScope({{"gym", read}, {"gym", write}, {"gym", del}})}` — is **not a second
 layer, and this file used to claim it was.** All three levels are gym's own, gym's host does not gate,
-and there is no other product on it: against `GymTools` alone that scope offers all seventeen tools and
+and there is no other product on it: against `GymTools` alone that scope offers all sixteen tools and
 executes `discard_session`. What it is, is honest wiring — who Ask acts as, named one level at a time
 rather than taken as `everything()`, so a fourth level or a second product never rides along on a
 token nobody widened. `AskTools` reads it on the way past, in `callTool` as well as in the catalog

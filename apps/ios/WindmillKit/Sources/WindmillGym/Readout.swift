@@ -187,6 +187,12 @@ public enum Readout {
         count == 1 ? "1 session" : "\(count) sessions"
     }
 
+    // The home's sub-line counts the program (§B screen 4: `4 routines · nothing running`), spelled
+    // beside the other counts so one row never invents its own plural.
+    public static func routineCount(_ count: Int) -> String {
+        count == 1 ? "1 routine" : "\(count) routines"
+    }
+
     // The third noun the read line counts (§L). A week here is the SERVER's Monday-UTC bucket, the
     // same one `date_trunc('week')` cuts, and this spells it rather than deciding it — nothing on
     // this device works out which weeks a set fell in.
@@ -228,8 +234,8 @@ public enum Readout {
         return String(format: "%.1f t", kg / 1000)
     }
 
-    // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere this surface names one — the log's row, the
-    // session read back, Today's last-session line. It is the design's own (§G16) and it replaced
+    // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere this surface names one — the log's row and
+    // the session read back. It is the design's own (§G16) and it replaced
     // "Ad-hoc", which the web retired for the same reason: a session with no routine is the ordinary
     // case in most logs and must not read as a fault or as jargon.
     public static let noRoutine = "Session · no routine"

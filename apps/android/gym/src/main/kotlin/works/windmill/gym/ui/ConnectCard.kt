@@ -41,9 +41,9 @@ import works.windmill.platform.design.WindmillSpace
 // lifter could not follow. A quiet card read twice is the cheaper failure.
 //
 // WHERE IT IS NOT: mid-session, which on this phone is structure rather than a check — a live
-// session takes the whole screen (GymRoom), so no tab is drawn under one. Not on Today either: that
-// screen answers "what am I doing right now", and the one card allowed to interrupt it is a proposal
-// already waiting for a decision.
+// session takes the whole screen (GymRoom), so no tab is drawn under one. And never over the empty
+// home: the pitch is about training already logged, and it sits under the list of days it would
+// write against.
 @Composable
 fun ConnectInvitation(origin: String) {
     // Told to fail QUIETLY, exactly as Ask's own free door is: a phone with no browser at all is the

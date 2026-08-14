@@ -8,12 +8,12 @@
 // states and the words are the contract and the layout is not. Three of screen 30's controls are not
 // here and each is missing for its own reason: `Start` belongs to the phone (§11), `Edit` has nothing
 // to open because on this surface the routine's room IS its editor, and `Rename` is the header's own
-// name field — the whole-document Done is the write that moves it, and a second door onto that write
+// name field — the whole-document Save is the write that moves it, and a second door onto that write
 // is a second place the rule can drift. Every FACT screen 30 states is drawn.
 //
-// ONE DRAFT, ONE COMMIT. Every change lands in a copy and nothing reaches the store until Done, so a
+// ONE DRAFT, ONE COMMIT. Every change lands in a copy and nothing reaches the store until Save, so a
 // routine is never left half-rewritten by a lifter who walked away mid-edit — half a program is what
-// somebody trains against tomorrow. The two ways out say which they are: Done writes, and the back
+// somebody trains against tomorrow. The two ways out say which they are: Save writes, and the back
 // arrow leaves the routine as it was. Sessions start on the phone (§11), so nothing here runs one —
 // the routine saved here is the plan the phone's Start freezes onto the session.
 //
@@ -77,6 +77,11 @@ export function RoutinesList({ log }) {
         <>
           <p className="gym-quiet">No routines yet.</p>
           <p className="gym-quiet">Finish a session and gym offers to keep it as one — or write one out now.</p>
+          {/* NO EMPTY SCREEN WITHOUT A CALL TO ACTION (§A screen 1). The prose above says where
+              routines come from; this is the door to writing one out now — the same door the
+              header's New opens, drawn where the deciding is done. Screen 1's second path, Just
+              start logging, is the phone's: sessions do not start on this surface (§11). */}
+          <a className="gym-routines-build" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>
         </>
       )}
       {view.phase === 'ready' && view.data.length > 0 && (
@@ -218,10 +223,10 @@ export function RoutineEditor({ id, log }) {
         />
         <button
           type="button"
-          className={missing || saving ? 'gym-editor-done is-inert' : 'gym-editor-done'}
+          className={missing || saving ? 'gym-editor-save is-inert' : 'gym-editor-save'}
           onClick={async () => { if (await commit()) window.location.hash = ROUTINES_HREF; }}
         >
-          Done
+          Save
         </button>
       </header>
       {missing && <p className="gym-editor-missing">{missing}</p>}
@@ -247,13 +252,13 @@ export function RoutineEditor({ id, log }) {
       {openTargets && <p className="gym-editor-open">{openTargets}</p>}
 
       <button type="button" className="gym-editor-add" onClick={() => { setQuery(''); setPicking(true); }}>
-        + Add exercise
+        + Add movement
       </button>
 
       {/* THE ROUTINE'S HISTORY (screens 6 and 30) — and every row of it is a DOOR rather than a
           decision. Apply lives on the diff and nowhere else, which matters most exactly here: this
           screen holds a draft, and an Apply drawn beside it would let a routine move under an edit
-          in progress, whose Done would then whole-document PUT the applied change straight back out.
+          in progress, whose Save would then whole-document PUT the applied change straight back out.
           It is drawn off the routine's own read: the day it was created and every proposal ever
           written against it arrive together, so the section costs this screen no second request and
           a routine nobody has saved has nothing to draw. */}
@@ -262,7 +267,7 @@ export function RoutineEditor({ id, log }) {
       <div className="gym-editor-foot">
         <button
           type="button"
-          // Inert on exactly what Done is inert on: a copy of a draft the store would refuse is a
+          // Inert on exactly what Save is inert on: a copy of a draft the store would refuse is a
           // refusal the screen can already see coming, and the missing line above says which half.
           className={missing ? 'gym-editor-duplicate is-inert' : 'gym-editor-duplicate'}
           onClick={async () => {
@@ -318,7 +323,7 @@ export function RoutineEditor({ id, log }) {
           onPick={(exerciseId) => { setPicking(false); editEntries((held) => withEntryAdded(held, exerciseId)); }}
           onCreate={log.createMovement}
           onClose={() => setPicking(false)}
-          title="Add exercise"
+          title="Add movement"
         />
       )}
     </>
@@ -332,7 +337,7 @@ export function RoutineEditor({ id, log }) {
 // The three openers are SUGGESTIONS AND NEVER RULES — one tap fills the field and typing over it is
 // the expected case — so they are drawn as a way past a blank field rather than as a set to choose
 // from. Nothing is created here: `Next` carries the name into the editor, and the routine exists
-// when Done writes it.
+// when Save writes it.
 function NameTheRoutine({ name, onName, onNext }) {
   const ready = name.trim() !== '';
   return (
@@ -572,16 +577,16 @@ function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
             ⠿
           </span>
           {/* THE NAME IS A DOOR (§H) — and, like the back arrow beside it, a door OUT of the
-              editor: this screen holds a draft and nothing reaches the store until Done, so a
+              editor: this screen holds a draft and nothing reaches the store until Save, so a
               lifter who leaves to check where a movement stands comes back to the routine as the
-              store has it. Done is the only thing here that writes, and that is the whole rule. */}
+              store has it. Save is the only thing here that writes, and that is the whole rule. */}
           <a className="gym-entry-name gym-movement-door" href={recordHref(entry.exerciseId)}>
             {nameOfMovement(catalog, entry.exerciseId)}
-            {/* A movement this account minted (§M screen 30's `Hammer row · mine`), off the
-                catalog's own `custom` and never a guess at the id. The word is screen 30's; the
-                picker's row for the same fact is screen 7's `yours` (logger/MovementPicker.jsx) —
-                two boards, two words, and neither is this surface's to reconcile alone. */}
-            {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-mine">mine</span>}
+            {/* A movement this account minted, off the catalog's own `custom` and never a guess
+                at the id. ONE word for that flag everywhere since the 2026-08-13 adjudication:
+                `yours` — the picker's word (screen 7, logger/MovementPicker.jsx). Screen 30 drew
+                `· mine` for the same fact and that word lost; the boards converge on this one. */}
+            {movementOf(catalog, entry.exerciseId)?.custom && <span className="gym-entry-yours">yours</span>}
           </a>
           <button type="button" className="gym-entry-target" onClick={() => onTarget(index)}>
             {entryLabel(entry)}

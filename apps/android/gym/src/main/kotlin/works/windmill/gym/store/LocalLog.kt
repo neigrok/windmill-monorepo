@@ -15,7 +15,7 @@ import works.windmill.gym.domain.TrainingSet
 // deliberately not here; that is SetQueue's file, and one fact living in one file is what keeps a
 // crash from leaving two stores disagreeing about the same workout.
 //
-// Signed out this shelf IS the log: Today's history, the last-time prefill, a movement's record and
+// Signed out this shelf IS the log: the log tab, the last-time prefill, a movement's record and
 // the session revisit all read it. On sign-in the claim replay (ClaimReplay) walks it onto the
 // account, and a row leaves the shelf only when the server has confirmed holding it — so the shelf
 // is always exactly what the account does not yet have, and merging reads is one concatenation.
@@ -84,7 +84,7 @@ class LocalLog(private val file: File) {
 
     fun details(): List<SessionDetail> = finished.map { SessionDetail(it.session, it.sets) }
 
-    // The log's own shape, newest first — what Today draws under "Looking back".
+    // The log's own shape, newest first — the rows the log tab folds into weeks.
     fun summaries(): List<SessionSummary> = finished
         .sortedByDescending { it.session.startedAtMs }
         .map { SessionSummary(it.session, it.sets) }

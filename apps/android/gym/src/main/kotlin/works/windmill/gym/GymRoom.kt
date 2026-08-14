@@ -1,7 +1,6 @@
 package works.windmill.gym
 
 import android.app.Activity
-import android.content.Context
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -30,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,7 +64,9 @@ import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
+import works.windmill.gym.ui.AskSignedOutStance
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
@@ -81,7 +83,6 @@ import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.ui.ThreadScreen
 import works.windmill.gym.ui.ThreadsScreen
-import works.windmill.gym.ui.TodayScreen
 import works.windmill.gym.ui.askThreadSaver
 import works.windmill.gym.ui.routineDraftSaver
 import works.windmill.platform.Account
@@ -103,21 +104,29 @@ class GymModule : ProductModule {
     }
 }
 
-// THE THREE TABS, which are the room's whole navigation — §F, decided 2026-08-12. Today, the log,
-// the routines, in one pill rail past which sits the shell's own seat.
+// THE THREE TABS, which are the room's whole navigation — §B, the 13 Aug routine-first shape.
+// Routines · The log · Ask, in one pill rail past which sits the shell's own seat. Routines is home
+// because it is the only tab a lifter acts FROM; the other two are things they read. There is no
+// Today tab — it implied something was already happening today, which is exactly the confusion that
+// cost the previous shape a rewrite — and no Insights tab: that refusal is canon and stands.
 //
-// WHAT THE OLD SHAPE GOT RIGHT AND WHAT IT DID NOT. This room refused a tab bar outright, reasoning
-// that any bar "invites a third and a fourth tab, which is the fourth Insights tab gym's canon
-// refused". The refusal of a fourth INSIGHTS tab is canon and stands — there is no dashboard in
-// this product and there will not be one. "Therefore no tab bar" was this room's own inference, and
-// §F contradicts it: gym is three tabs plus the seat. What the old reasoning was actually right
-// about survives in one line below — the rail is not drawn over the logger, because a workout owns
-// the screen it is being logged on.
-private enum class Tab(val title: String) {
-    Today("Today"),
-    Log("The log"),
+// ASK IS THE THIRD TAB (R7, reversing §L's own "not a fourth tab" — the 13 Aug board promoted it
+// and the ledger records the reversal). A tab cannot be absent the way a door can, so signed out it
+// draws a designed stance and on a deployment with no Ask it says so quietly — never a 401. "Never
+// mid-session" survives structurally: a live session takes the whole screen, rail included.
+internal enum class Tab(val title: String) {
     Routines("Routines"),
+    Log("The log"),
+    Ask("Ask"),
 }
+
+// The tab through an activity recreation, saved AS ITS NAME rather than as the enum: a Bundle
+// restored across a build that renamed or removed an entry ("Today" died in the 13 Aug wave) must
+// land the lifter on home, not crash the room unparceling a constant that no longer exists.
+internal fun restoredTab(saved: Any?): Tab =
+    Tab.entries.firstOrNull { it.name == saved } ?: Tab.Routines
+
+internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::restoredTab)
 
 // What a tab can push on top of itself: one past session with its sets, and one movement's whole
 // record. Neither is read-only any more — the session pushes §G18 over itself and the record page
@@ -139,10 +148,10 @@ private enum class Tab(val title: String) {
 // draws gym's settings as a SECTION the shell's You sheet lists and walks you into, and that is
 // where it belongs — but this surface's `ProductModule` seam exposes exactly one thing, a room, and
 // `YouSheet` is the platform's file and not gym's to edit. So the section is a self-contained
-// screen with its own way back, reached from a row at the foot of Today, and the day the seam grows
-// a settings slot the row goes and the screen moves across unchanged. The row says "‹ Today"
-// rather than the design's "‹ You" for the reason everything else in this room says what it means:
-// it really did come from Today.
+// screen with its own way back, reached from a row at the foot of the Routines home, and the day
+// the seam grows a settings slot the row goes and the screen moves across unchanged. The row says
+// "‹ Routines" rather than the design's "‹ You" for the reason everything else in this room says
+// what it means: it really did come from home.
 // A ROUTINE AND A PROPOSAL ARE THE TWO THIS WAVE ADDED, and both travel as IDs for the reason a
 // movement does: what they say changes under them. A routine's revision moves when a proposal is
 // applied and its card goes when one is decided, so a screen holding a copy would be drawing the
@@ -150,11 +159,11 @@ private enum class Tab(val title: String) {
 // the base it was written against is what decides whether it can still be applied, and the diff
 // read alone cannot say what this room is holding.
 //
-// ASK IS PUSHED AND IS NOT A TAB (§L). The rail is the app's three tabs and a chat is not a place
-// anybody lives — so it arrives the way a record and a proposal do, over the screen that sent for
-// it, and leaves the same way. What it carries is a DRAFT and not a conversation: the thread itself
-// is hoisted into the room below, because it has to outlive this stack. A proposal's door seeds the
-// composer with a question about that diff; Today's seeds nothing.
+// ASK IS A TAB NOW (R7) AND THIS DESTINATION IS ONLY ITS SEEDED DOOR: a proposal's `Ask` arrives
+// over the diff it is about, with the composer seeded with a question about it, and leaves back
+// onto the proposal — the tab root cannot do that. What it carries is a DRAFT and not a
+// conversation: the thread itself is hoisted into the room below, because it has to outlive this
+// stack and the tab draws the same one.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
@@ -184,22 +193,18 @@ private sealed interface Away {
 // A ROOM'S STATE DIES WHEN YOU LEAVE IT — the store and everything it scheduled go with the
 // subtree. That is why the queue is on disk after every tap and why leaving flushes: gym would pay
 // for a lost flush with a set that is refused forever once the session closes.
-
-// The key §J22's arrival is remembered under, spelled once — the twin of the iOS AppStorage key.
-private const val firstSessionOpened = "firstSessionOpened"
+//
+// THE §J22 FIRST-ARRIVAL AUTO-START IS RETIRED (R6, 2026-08-13). Arriving used to open a session
+// by itself, once per install, remembered under `firstSessionOpened` in the "works.windmill.gym"
+// SharedPreferences — first-open testing named "why is a session already running" as a blocker,
+// and the owner's ruling is "nothing runs unless the user started it". The stored key is left
+// where installs already wrote it and is read by nothing; the empty home's `Build a routine` and
+// `Just start logging` are the doors that replaced the arrival.
 
 @Composable
 fun GymRoom(account: Account) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // THE ONE THING THIS ROOM REMEMBERS ABOUT ITSELF, and it is about the room rather than about
-    // the lifter: whether §J22's arrival has already opened its session on this install. It lives
-    // beside the platform's own preferences file rather than in the store's three JSON files,
-    // because none of those is a record of what the ROOM did — they are the log, the queue and the
-    // rack, and a flag filed in one of them would be a fourth kind of fact in a file with one job.
-    val arrivals = remember {
-        context.getSharedPreferences("works.windmill.gym", Context.MODE_PRIVATE)
-    }
     val store = remember {
         TrainingStore(
             SetQueue(File(context.filesDir, SetQueue.fileName)),
@@ -229,11 +234,13 @@ fun GymRoom(account: Account) {
     var note by remember { mutableStateOf<String?>(null) }
     // Saveable, and the first of the few that have to be: the log, the queue and the rack are all
     // read back off disk when the activity is recreated, but which tab was open exists nowhere but
-    // here — and a recreation that dropped a lifter back on Today would be the room forgetting where
-    // they were standing. (The put-off card below is the second, and the conversation with the seat
-    // it belongs to is the third.)
-    var tab by rememberSaveable { mutableStateOf(Tab.Today) }
-    // The one proposal Today has been asked not to draw for now. Saveable for the reason the tab is
+    // here — and a recreation that dropped a lifter back on home would be the room forgetting where
+    // they were standing. Saved through `tabSaver`, as a name and not an enum, so a stale value
+    // from a build whose tabs were different lands on Routines instead of crashing the restore.
+    // (The put-off card below is the second, and the conversation with the seat it belongs to is
+    // the third.)
+    var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
+    // The one proposal home has been asked not to draw for now. Saveable for the reason the tab is
     // — an activity recreation must not put back a card the lifter just put down — and empty rather
     // than null so it saves as the String it is. It is NOT a decision and never reaches the log:
     // the routine still carries the card, and the room forgetting this on a relaunch is the
@@ -287,7 +294,7 @@ fun GymRoom(account: Account) {
 
     // Every door in and out of a retrospective screen goes through these two for one reason: the
     // note above the rail is what the room has to say about the door that did not open ON THE
-    // SCREEN YOU ARE ON, and a refusal from Today carried under a record page is a sentence about
+    // SCREEN YOU ARE ON, and a refusal from home carried under a record page is a sentence about
     // something that is no longer in front of the lifter. Every move between destinations clears it
     // — these, the rail's own tap, and the back gesture.
     fun look(at: Away) {
@@ -301,7 +308,7 @@ fun GymRoom(account: Account) {
     }
 
     // What the system back gesture means here, decided rather than inherited: a pushed screen pops
-    // to the tab it came from, and a tab that is not Today falls back to Today — the Android
+    // to the tab it came from, and a tab that is not home falls back to Routines — the Android
     // convention, and the one the rail already agrees with. On the finish screen back is CLAIMED
     // AND INERT: its once-only offers (the review, keep-as-routine) leave through Done or Discard,
     // and a reflex gesture that silently dropped them would cost a routine nobody chose to decline.
@@ -317,13 +324,12 @@ fun GymRoom(account: Account) {
     val live = store.session != null
     BackHandler(
         enabled = finished != null ||
-            (!live && (building != null || away.isNotEmpty() || tab != Tab.Today)),
+            (!live && (building != null || away.isNotEmpty() || tab != Tab.Routines)),
     ) {
         if (finished != null) return@BackHandler
-        // The builder's own back is the step chevron — the targets go back to the name, the name
-        // goes back to Routines — so the gesture leaves the whole draft rather than one step of it.
-        // What that costs is a draft nobody saved, which is the same thing Cancel costs and the same
-        // thing the lifter asked for by making the gesture.
+        // The builder is one screen and Cancel is its header's word for this same gesture: back
+        // leaves the whole draft. What that costs is a draft nobody saved, which is the same thing
+        // Cancel costs and the same thing the lifter asked for by making the gesture.
         if (building != null) {
             building = null
             return@BackHandler
@@ -333,10 +339,9 @@ fun GymRoom(account: Account) {
             return@BackHandler
         }
         // The note goes with the tab it was said on, exactly as it does through `look` and the
-        // rail: a start the Routines tab refused is a sentence about a row that is no longer on
-        // screen, and Today is not the place to read it.
+        // rail: a sentence about a row that is no longer on screen is not home's to read.
         note = null
-        tab = Tab.Today
+        tab = Tab.Routines
     }
 
     // Re-runs whenever who is signed in changes. `connect` drains what the device is still holding
@@ -367,39 +372,13 @@ fun GymRoom(account: Account) {
         // and the request is not, so a recreation mid-answer restores a question with nothing under
         // it and nothing coming — left alone it would sit there un-retryable for the life of the
         // install, which is the one way this room could lose something a lifter typed. Nothing
-        // shorter than the activity can strand one: the ask below is the room's, so leaving Ask for
-        // Today lets the answer land in a thread nobody is looking at.
+        // shorter than the activity can strand one: the ask below is the room's, so leaving Ask
+        // mid-answer lets it land in a thread nobody is looking at.
         conversation = Ask.settled(conversation)
         store.connect(account)
         // Deviates from iOS, where the ROOM resumes after connect: here connect() owns the resume, so a boot cannot race it.
-
-        // ARRIVING STARTED IT — §J22, and it is the whole of gym's onboarding. Not a tour, not a
-        // splash, not a question about goals: the real surface with its first move already made, so
-        // that the first thing a lifter sees is the picker over a session that is already running.
-        // The room asks nothing first, and the door it does hold out (`Build my routine`) is an
-        // offer inside that surface rather than a gate in front of it.
-        //
-        // ONCE PER INSTALL, on a room that is KNOWN to hold nothing — `store.firstRun` asks whether
-        // the reads that could say otherwise actually landed, and this asks whether the arrival has
-        // already happened here. Both are needed and neither is the other: without the flag, a
-        // lifter who SIGNS OUT is a room with an empty page and no way to see why, and the arrival
-        // would open a workout nobody started over a log that is merely out of reach — then claim
-        // that empty workout onto them when they signed back in. It is also what makes "once" true
-        // after a first session is DISCARDED: without it, arriving at an emptied room would keep
-        // opening the session the lifter just deleted, forever.
-        //
-        // It is not a decline counter and not a "have they seen this": it counts nothing, holds no
-        // id and no date, and records one thing the ROOM did — the same shape as the iOS
-        // `windmill.gym.firstSessionOpened`, which this is the twin of.
-        if (!arrivals.getBoolean(firstSessionOpened, false) && store.firstRun) {
-            store.start(null)
-            // NOBODY ASKED FOR THIS ONE, so nobody is owed a sentence about it not opening: the
-            // note above the rail speaks for a door the lifter reached for, and Today's own Start
-            // button is where a lifter who DID ask is told, in the log's own words. The flag
-            // follows the session and not the attempt, so a start that never opened is tried again
-            // on the next arrival.
-            if (store.session != null) arrivals.edit().putBoolean(firstSessionOpened, true).apply()
-        }
+        // NOTHING STARTS BY ITSELF. The §J22 arrival used to open a session right here, once per
+        // install; R6 retired it — a session begins only when the lifter taps a start.
     }
 
     // A WITHHELD DELETE BELONGS TO THE SCREEN THE GESTURE WAS MADE ON. Leaving that screen ends its
@@ -458,11 +437,15 @@ fun GymRoom(account: Account) {
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // Start. A double tap is a second session, so the door closes while the first one is in flight
-    // — the log would JOIN the two, but the phone would have asked twice for one workout. A refusal
-    // is repeated in the LOG'S OWN WORDS: "no such routine" and "the log didn't answer" are
-    // different facts, and reporting the first as the second points the lifter at their signal
+    // Start. A double tap is a second session, so the door closes while the first one is in flight.
+    // A refusal is repeated in the LOG'S OWN WORDS: "no such routine" and "the log didn't answer"
+    // are different facts, and reporting the first as the second points the lifter at their signal
     // instead of at the routine that is gone.
+    //
+    // A USER-TAPPED START NEVER SILENTLY JOINS (decisions §5): the store sends joinOpenSession
+    // false, and a 409 while a workout is already open on the account comes back here as a refusal
+    // — by then the store has re-read the log and adopted the open workout, so the logger is
+    // already standing over this note and the lifter resumes or discards it deliberately.
     fun open(routineId: String?) {
         scope.launch {
             if (starting) return@launch
@@ -475,11 +458,11 @@ fun GymRoom(account: Account) {
                     return@launch
                 }
                 // Whatever screen was open is over: the workout is what this phone is for, and Done
-                // on the finish screen must land on Today rather than back on a record or a list.
+                // on the finish screen must land on home rather than back on a record or a list.
                 away = emptyList()
-                tab = Tab.Today
-                // A start JOINS whatever session is already open, so what came back may be a workout
-                // with sets in it — stand where that workout is, not at the head of the routine.
+                tab = Tab.Routines
+                // Stand where the workout is — the head of a fresh plan, the picker over a fresh
+                // free-form session, or the last-logged movement of one this device reopened.
                 val movement = LiveOrder.resume(store.order, store.sets) ?: return@launch
                 store.choose(movement)
             } finally {
@@ -532,12 +515,12 @@ fun GymRoom(account: Account) {
     // ONE QUESTION, ASKED FROM THE ROOM AND NOT FROM THE SCREEN THAT DRAWS IT. Ask is the one door
     // in this product that COSTS something per use — the day's questions are counted at the edge the
     // moment the request lands, before a token is spent — so an answer must not be thrown away by a
-    // lifter walking back to Today mid-wait. The thread lives here, the coroutine lives here, and
+    // lifter walking back to home mid-wait. The thread lives here, the coroutine lives here, and
     // the answer lands in it whether or not anybody is standing on the screen.
     //
     // It also carries the two things that outlive the conversation: a proposal the answer minted is
-    // read back into the program by the store (the card on Today IS this product's notification
-    // design), and a deployment with no Ask at all takes its own door down.
+    // read back into the program by the store (the card on home IS this product's notification
+    // design), and a deployment with no Ask at all folds its tab to the quiet stance.
     //
     // The door closes on the way IN rather than inside the coroutine: two taps on one question would
     // be two round trips, two spends and two answers against one bubble.
@@ -595,11 +578,13 @@ fun GymRoom(account: Account) {
     // A NEW CONVERSATION, opened from the foot of the threads list. The live thread on screen is let
     // go of along with its id — what was asked is on the log and readable in the list behind this
     // door, so nothing is lost by clearing it, and a fresh question under an old title would be
-    // filed under an evening nobody had tonight.
+    // filed under an evening nobody had tonight. It lands on the Ask TAB, which is where a fresh
+    // conversation lives now that Ask has a place on the rail.
     fun askSomethingNew() {
         conversation = emptyList()
         conversationId = ""
-        away = listOf(Away.Ask())
+        away = emptyList()
+        tab = Tab.Ask
     }
 
     // §M'S SAVE, and it lives here rather than on the builder for the reason every write in this
@@ -628,6 +613,24 @@ fun GymRoom(account: Account) {
             } finally {
                 savingRoutine = false
             }
+        }
+    }
+
+    // §M'S DELETE, from the editor's edit mode (R3 moved it here off the routine's page). The
+    // builder and the page beneath it both leave only once the log says the routine is gone —
+    // a delete drawn as done on the strength of a request that never landed would be the room
+    // lying about somebody's program. The sessions that named the day keep everything they logged.
+    fun destroy(routineId: String) {
+        scope.launch {
+            note = null
+            val failed = store.dropRoutine(routineId)
+            if (failed != null) {
+                note = failed.line("that routine is still in your program")
+                return@launch
+            }
+            building = null
+            away = emptyList()
+            tab = Tab.Routines
         }
     }
 
@@ -736,15 +739,10 @@ fun GymRoom(account: Account) {
                 building != null -> RoutineBuilder(
                     draft = building!!,
                     store = store,
-                    // Where the name step's chevron actually goes, which is not always the tab: a
-                    // routine opened from its own page (Edit, Duplicate) goes back to that page.
-                    backLabel = when (val under = away.lastOrNull()) {
-                        is Away.Program -> store.routine(under.routineId)?.name ?: Tab.Routines.title
-                        else -> tab.title
-                    },
                     saving = savingRoutine,
                     onDraft = { building = it },
                     onSave = { write(building!!) },
+                    onDelete = { destroy(it) },
                     onClose = { building = null },
                     say = { note = it },
                 )
@@ -779,8 +777,9 @@ fun GymRoom(account: Account) {
                     backLabel = beneath,
                     onBack = { back() },
                     onStart = { routineId -> open(routineId) },
-                    // Edit and Duplicate are the same door: a document handed to the builder. The
-                    // page stays underneath, so saving lands back on the routine it came from.
+                    // Edit is a document handed to the builder; Duplicate and Delete live inside
+                    // it now (R3). The page stays underneath, so saving lands back on the routine
+                    // it came from.
                     onBuild = { building = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
@@ -788,7 +787,6 @@ fun GymRoom(account: Account) {
                     // is drawn only where the log carries a thread id — the trail survives the
                     // conversation's deletion, so the row stands either way and only the door goes.
                     onOpenThread = { look(Away.Thread(it)) },
-                    say = { note = it },
                 )
                 standing is Away.Proposal -> ProposalScreen(
                     proposalId = standing.proposalId,
@@ -854,44 +852,54 @@ fun GymRoom(account: Account) {
                     say = { note = it },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
-                tab == Tab.Routines -> RoutinesScreen(
+                // THE ASK TAB (R7): the same conversation surface the seeded door pushes, with the
+                // rail in place of a back bar. A tab cannot be absent the way a door could be, so
+                // the two facts that used to take the door down each draw a designed stance
+                // instead: signed out, what Ask is and the sign-in step — never a 401 — and on a
+                // deployment with no Ask, a quiet sentence that it is not part of this Windmill.
+                tab == Tab.Ask && !account.isSignedIn ->
+                    AskSignedOutStance(onSignIn = LocalShellActions.current.openYou)
+                tab == Tab.Ask && askAbsent -> AskAbsentStance()
+                tab == Tab.Ask -> AskScreen(
+                    store = store,
+                    thread = conversation,
+                    asking = asking,
+                    onAsk = { asked -> ask(conversation, asked) },
+                    onRetry = {
+                        conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
+                    },
+                    seed = "",
+                    onThreads = { look(Away.Threads) },
+                    origin = origin,
+                    // The rail under this screen is the way to somewhere else, so there is no back
+                    // bar: a tab root has nothing behind it to go back to.
+                    backLabel = null,
+                    onBack = null,
+                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                )
+                // HOME — the routine list (§A/§B: "home is your plans, not a running clock"), and
+                // the top and foot bands that rehomed Today's cargo when that tab retired: the
+                // refusals banner, the one waiting proposal card and the signed-out claim offer
+                // above the list; the settings door at the foot. `Later` on the card is not a
+                // decision and nothing is sent — the routine still carries it, and the slot is
+                // saveable so a rotation does not bring back a card the lifter just put down.
+                else -> RoutinesScreen(
                     store = store,
                     // §D'S INVITATION LIVES ON THIS TAB, and both of these decide whether it is
                     // drawn rather than how: a grant is granted against an account, and the page it
                     // is approved on is served by whichever backend this build talks to.
                     isSignedIn = account.isSignedIn,
                     origin = origin,
-                    onStart = { routineId -> open(routineId) },
+                    putOff = putOff.ifEmpty { null },
+                    // The free-form door — "Just start logging" (R4) — and the only start home
+                    // offers: a routine's own start lives on its detail page now.
+                    onJustStart = { open(null) },
                     // §M'S THIRD DOOR, and the tab about the program is where it belongs.
                     onBuild = { building = it },
                     onOpenRoutine = { look(Away.Program(it)) },
-                    onOpenMovement = { look(Away.Movement(it)) },
                     onReview = { look(Away.Proposal(it.id, it.routineId)) },
-                )
-                else -> TodayScreen(
-                    store = store,
-                    isSignedIn = account.isSignedIn,
-                    putOff = putOff.ifEmpty { null },
-                    onStart = { routineId -> open(routineId) },
-                    onOpenSession = { look(Away.Session(it)) },
-                    onOpenMovement = { look(Away.Movement(it)) },
-                    onOpenSettings = { look(Away.Settings) },
-                    // ASK'S OWN DOOR, in Today's bottom band and nowhere else on this screen. It is
-                    // withheld from a signed-out room for the reason the proposal card is: Ask reads
-                    // the ACCOUNT's log, and a door onto a 401 is a door onto nothing. It goes too
-                    // on a deployment that has no Ask at all.
-                    onOpenAsk = if (account.isSignedIn && !askAbsent) {
-                        { look(Away.Ask()) }
-                    } else {
-                        null
-                    },
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
-                    // LATER IS NOT A DECISION AND NOTHING IS SENT. It puts this card away on Today
-                    // for as long as the room stands — the routine it belongs to still carries it,
-                    // dot and all, so nothing is hidden and nothing was decided by a thumb reaching
-                    // for the quiet button. Saveable, so a rotation does not bring back a card the
-                    // lifter just put down; one slot, because Today draws one card.
                     onLater = { putOff = it.id },
+                    onOpenSettings = { look(Away.Settings) },
                     onSignIn = LocalShellActions.current.openYou,
                 )
             }

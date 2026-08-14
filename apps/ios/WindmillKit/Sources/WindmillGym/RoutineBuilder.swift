@@ -8,10 +8,10 @@ import Foundation
 // It is a DRAFT and not a wizard: no step counter, no template gallery, no "choose your split", no
 // weekly calendar. A routine is a list with a name; a week is a thing lifters keep in their head.
 //
-// THE ORDER IS NAME, THEN MOVEMENTS, THEN TARGETS, and the first of those is a real question asked
-// once — a routine you built on purpose deserves the word you call it, not "Workout 3". The targets
-// come last, in a sheet over the list, so the shape of the day stays visible while numbers are typed
-// into it.
+// ONE SCREEN SINCE THE 13 AUG UPDATE (R3): the name is IN the editor rather than a step before it —
+// add movements first and name it last, or the reverse — with the suggestion chips beside the field
+// while it is empty. The targets are set in a sheet over the list, so the shape of the day stays
+// visible while numbers are typed into it.
 //
 // A DRAFT IS SAVABLE WHILE INCOMPLETE. A row with no target is `open` and asks at the rack, which is
 // what lets a program be copied in over two sittings — and it is why nothing here has a "finish
@@ -87,12 +87,12 @@ public struct RoutineDraft: Equatable {
                   entries: RoutineWrite(routine).entries, position: routine.position)
     }
 
-    // DUPLICATE — the movements and their targets, under a NEW id, and the name goes back through
-    // screen 28. A copy is a new routine and a new routine gets named: seeding the field with the
-    // one it was copied from is a starting point to type over, which is what every suggestion on
-    // that screen is.
-    public init(duplicating routine: Routine, position: Int) {
-        self.init(name: routine.name, entries: RoutineWrite(routine).entries, position: position)
+    // DUPLICATE (§B screen 6's editor row) — the day exactly as it stands on screen, unsaved edits
+    // included, under a NEW id. A copy is a new routine, so a fresh editor opens in create mode
+    // with the name seeded from the original — a starting point to type over, which is what every
+    // suggestion on the inline field is.
+    public init(duplicating draft: RoutineDraft, position: Int) {
+        self.init(name: draft.name, entries: draft.entries, position: position)
     }
 
     public var entries: [RoutineWrite.Entry] { lines.map(\.entry) }
@@ -104,7 +104,7 @@ public struct RoutineDraft: Equatable {
     // What a name field's counter reads — `14/60`, over the CHARACTERS a person sees rather than the
     // bytes the column counts. A name in any script counts the way it looks on screen, which is the
     // only count a lifter watching the number can check. Static because three fields draw one:
-    // screen 28's, screen 31's and the rename sheet's.
+    // the editor's inline name, screen 31's and the rename sheet's.
     //
     // THE DENOMINATOR IS THE CAP THAT BINDS, and in a script of two-byte letters that is not sixty:
     // the column fills at forty of them, and a counter still climbing toward sixty would be
@@ -129,7 +129,7 @@ public struct RoutineDraft: Equatable {
     }
 
     // A name is the ONE thing a routine cannot be saved without: the log refuses a blank, and the
-    // whole of screen 28 is asking for it. Everything else about a draft may be left open.
+    // editor's inline field is where it is asked. Everything else about a draft may be left open.
     public var isNamed: Bool { !trimmedName.isEmpty }
 
     public var isSavable: Bool { isNamed && !lines.isEmpty }

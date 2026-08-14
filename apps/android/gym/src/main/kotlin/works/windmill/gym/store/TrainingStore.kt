@@ -286,7 +286,7 @@ class TrainingStore(
 
     // THE CARD IS THE NOTIFICATION (§B), and this is the whole of what draws it: a routine carries
     // its own pending proposal, so nothing polls, nothing pushes, there is no badge to clear and
-    // this product still sends no notification of any kind. Newest first, because Today draws one.
+    // this product still sends no notification of any kind. Newest first, because home draws one.
     //
     // SIGNED OUT IT IS EMPTY BY CONSTRUCTION and not by a check: the shelf's routines have no
     // proposal field filled and there is no account for an agent to have been granted anything on.
@@ -317,35 +317,22 @@ class TrainingStore(
         }
 
     // NOTHING HAS EVER HAPPENED IN THIS ROOM: no session on the shelf or the log, no routine. It is
-    // the whole of what §J22's arrival is allowed to read, and it counts nothing about the lifter —
-    // no "have they seen this", and, the design names this one twice, nothing anywhere that counts
-    // how many times anybody declined anything.
+    // what pins the six over the picker and the first-session wording, and it counts nothing about
+    // the lifter — no "have they seen this", and, the design names this one twice, nothing anywhere
+    // that counts how many times anybody declined anything. (The §J22 auto-start that used to read
+    // this on arrival is retired — R6, 2026-08-13: nothing runs unless the lifter started it.)
     //
     // IT ASKS WHETHER THE READS THAT COULD SAY OTHERWISE ACTUALLY LANDED, and never whether their
-    // lists came back empty — which is the whole difference between a first run and a returning
+    // lists came back empty — which is the whole difference between a first session and a returning
     // lifter the room could not see. `older == End` is the log page answering "there is no more",
     // so a read that failed (`Failed`), one that has not happened yet (`More`) and one still behind
     // a claim all say no here; `routinesFailed` is the same fact for the other read. Signed out
     // both are already in hand — the shelf IS the log, and connect puts the foot at the bottom.
     //
-    // A signed-out lifter with an account is the case this cannot see and must not pretend to: sign
-    // out and the page they are left with is empty, because their log lives somewhere this phone
-    // deliberately keeps nothing of. The ROOM refuses that one — §J22's arrival opens a session
-    // once per install and never again (`GymRoom`), so a sign-out cannot open a workout over a log
-    // that is merely out of reach, and then claim it back onto the account.
-    //
     // The session the lifter is IN is not counted, which is what the picker over it needs: while
     // that first workout runs, the room is still drawing the six and the account verb.
     val firstSession: Boolean
         get() = recent.isEmpty() && routines.isEmpty() && !routinesFailed && older == Older.End
-
-    // And with nothing running either, arriving starts one. The room reads this once, after connect
-    // — gym's onboarding is not a tour, it is the real surface with its first move already made,
-    // and nobody pressed start because arriving started it. A session already open makes the start
-    // it triggers a no-op (`startOnDevice`), which is what keeps an activity recreation from
-    // opening a second one.
-    val firstRun: Boolean
-        get() = firstSession && session == null
 
     // Called on launch and on every change of who is signed in. Draws from the device first and
     // always — a room that waited for a round trip would be a workout that waits.
@@ -508,22 +495,37 @@ class TrainingStore(
         repeat(2) {
             val id = mintSession()
             try {
-                val opened = log.startSession(SessionStart(id = id, startedAt = now(), routineId = routineId))
-                // A start JOINS whatever session is already open, so the id that comes back is the
-                // truth and may not be the one that went out. Pressing Start cannot re-plan a
-                // workout that is already running: the snapshot that comes back is that session's
-                // own.
+                // A USER-TAPPED START IS NEVER A SILENT JOIN (decisions §5). The log's default is
+                // to JOIN whatever session is already open — and to ignore the routineId tapped —
+                // so "Start workout" on routine B could land the lifter in yesterday's workout
+                // under the wrong plan. The flag rides as an EXPLICIT false, never a default:
+                // WindmillJson omits defaulted values, and an omitted flag IS the join.
+                val opened = log.startSession(SessionStart(id = id, startedAt = now(),
+                    routineId = routineId, joinOpenSession = false))
                 adopt(opened, joined = opened.id != id)
                 val live = session ?: return GymResult.Failed(WriteFailure.NoAnswer)
                 return GymResult.Ok(live)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: WindmillApiException) {
+                val refused = refusing as? WindmillApiException.Refused
+                // A WORKOUT IS ALREADY OPEN ON THE ACCOUNT, and refusing to join it is the point —
+                // so the room refreshes here, which adopts that open workout through the ordinary
+                // read path (`loadLog`) and stands it where the lifter was through the ordinary
+                // resume (decisions §5: the open workout surfaces through the existing resume
+                // path, at the movement the last set went into and never in the picker over a
+                // session of sets). The refusal goes back in the log's own words; the logger is
+                // standing over the note by the time anybody reads it, and the lifter resumes or
+                // discards the workout deliberately.
+                if (refused?.status == 409 && refused.refusal.code == "session-already-open") {
+                    loadLog()
+                    resume()
+                    return GymResult.Failed(WriteFailure(refusing))
+                }
                 // Only a spent session id is worth a second attempt. Every other refusal is a fact
                 // about the routine or the account and it is REPEATED rather than swallowed: a 404
                 // for a routine deleted from the web must not read as a phone with no signal.
-                val spent = refusing is WindmillApiException.Refused && refusing.status == 409 &&
-                    refusing.refusal.code == "session-id-taken"
+                val spent = refused?.status == 409 && refused.refusal.code == "session-id-taken"
                 if (!spent) return GymResult.Failed(WriteFailure(refusing))
                 collision = WriteFailure(refusing)
             } catch (failed: Exception) {
@@ -535,9 +537,11 @@ class TrainingStore(
 
     // The on-device start — signed out always, and signed in whenever the log cannot honestly
     // take a start. One workout is open on this device at a time, exactly as one is open per
-    // account — starting over a live one joins it, which is what the log would answer too.
-    // Signed in the plan freezes off the shelf routine if it is here; a mid-claim start naming a
-    // server routine keeps the id and lands its plan when the claim's start does.
+    // account — a start over a live one answers with the live one, which no start door can reach
+    // anyway: a live session takes the whole screen, so this guard is for a double-tap and a
+    // recreation, never a second workout. Signed in the plan freezes off the shelf routine if it
+    // is here; a mid-claim start naming a server routine keeps the id and lands its plan when the
+    // claim's start does.
     private suspend fun startOnDevice(routineId: String?): GymResult<Session> {
         queue.session?.let { return GymResult.Ok(it) }
         val routine = routineId?.let { localLog.routine(it) }
@@ -911,6 +915,38 @@ class TrainingStore(
             throw interrupted
         } catch (refusing: Exception) {
             GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // §M'S DELETE (R3) — one day removed from the program, whole. The sessions that named it keep
+    // every set and their frozen plan: a snapshot is a copy, not a reference, so nothing already
+    // lifted moves. A routine still on the shelf leaves through the shelf's own door
+    // (`orphanRoutine`, the claim's let-go), which also drops the dead id off the local sessions
+    // that would otherwise replay a start the log must refuse.
+    //
+    // A delete of something already gone is a delete that happened, so a 404 answers as success:
+    // the caller asked for the routine not to be there, and it is not there.
+    suspend fun dropRoutine(id: String): WriteFailure? {
+        if (localLog.routine(id) != null) {
+            localLog.orphanRoutine(id)
+            routines = routines.filterNot { it.id == id }
+            return null
+        }
+        val log = gym
+            ?: return WriteFailure.Refused("that routine is on your account — sign in to change it")
+        return try {
+            log.deleteRoutine(id)
+            routines = routines.filterNot { it.id == id }
+            null
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            if (RefusalFacts(refusing).status == 404) {
+                routines = routines.filterNot { it.id == id }
+                null
+            } else {
+                WriteFailure(refusing)
+            }
         }
     }
 
@@ -1635,7 +1671,7 @@ class TrainingStore(
     // The cadence's half of the claim. `claiming` holds while it runs, so a start tapped during a
     // scheduled re-claim still composes on the device; the walk follows the claim exactly as
     // connect's does — the queue goes out before any read — and a claim that stopped being owed
-    // re-reads the log, so what landed reaches Today without a remount.
+    // re-reads the log, so what landed reaches the room without a remount.
     //
     // A SETTINGS DOCUMENT OWED ON ITS OWN TAKES THE SHORT ROAD, and that is the point of the split:
     // nothing downstream references it, so it is re-sent by itself rather than by walking the shelf

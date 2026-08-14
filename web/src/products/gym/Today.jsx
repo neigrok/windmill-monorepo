@@ -82,17 +82,16 @@ export function Today({ log }) {
   );
 }
 
-// AN EMPTY LOG, AT THE DESK — canon screen 1, minus the half of it this surface may not draw. That
-// screen's primary is `Start a session`, and a session cannot start here (§11): the phone owns the
-// open workout, which is the whole reason the line above names it. So what is left of screen 1 is
-// its SECOND verb, and it lands where it is true — the routine editor, one room over, which is a
-// desk activity and exists today. Nothing here parses a typed-out program; the button says what the
-// room it opens actually does.
+// AN EMPTY LOG, AT THE DESK — canon screen 1, and since 13 Aug the half this surface CAN draw is
+// the primary. That screen leads with `Build a routine` (routine-first: home is the plan, nothing
+// starts by itself), and building a routine is a desk activity that exists today — so the verb
+// lands here whole. The half the desk may not draw is `Just start logging`: a session cannot start
+// here (§11), the phone owns the open workout, so the free-form path is named as the phone's and
+// never offered as a button.
 //
-// The sentence over it is the by-product rule, which is what a lifter needs told before they go
-// looking for a program builder: the session assembles the routine, and writing one first is the
-// option rather than the path. It says what will HAPPEN, and it is the whole of what this room says
-// for itself.
+// The sentence over it states both doors in the new order: the routine written first is the path,
+// and the session that names itself afterwards is the one that survives as the second. It says what
+// will HAPPEN, and it is the whole of what this room says for itself.
 //
 // THE ARGUMENT UNDER IT IS GONE (W9). A dashed box read "no tour, no sample program, no questions
 // about your goals" — the design's own case for the setup wizard it refuses to build, drawn in front
@@ -103,10 +102,10 @@ function FirstRun() {
   return (
     <section className="gym-first">
       <p className="gym-first-line">
-        Start one empty and pick movements as you go — what you do becomes your routine, and you name
-        it at the end.
+        Build your routine here — your phone starts the workout from it. Or just start logging on
+        the phone, and name what you did at the end.
       </p>
-      <a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Type out a routine first</a>
+      <a className="gym-first-write" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>
     </section>
   );
 }

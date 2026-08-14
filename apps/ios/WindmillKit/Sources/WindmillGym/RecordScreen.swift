@@ -3,7 +3,7 @@ import WindmillPlatform
 
 // THE RECORD — one exercise, one page, twelve weeks of it (§H), and a READ-ONLY screen a tab opens
 // over itself rather than a place to stand: the room's at-rest places are its three tabs, and this
-// is reached by tapping a movement's NAME — on Today's routine card, in the routines list, in a
+// is reached by tapping a movement's NAME — on a home routine card, in a routine's detail, in a
 // session read back. It carries the plain bar and no rail, for the same reason the logger does.
 //
 // It stands where the statistics screen used to. What a lifter wanted from that board is this page:
@@ -357,7 +357,7 @@ struct RecordScreen: View {
 }
 
 // THE DOOR ONTO THIS PAGE, drawn once and the same in the three places §H names — a session read
-// back, a routine, and Today's card of the next one. A name means the same thing wherever it is
+// back, a routine, and home's card of the next one. A name means the same thing wherever it is
 // printed, and a door drawn three ways is three doors.
 //
 // TWO OTHER SURFACES NAME A MOVEMENT AND ARE NOT DOORS, both on purpose. Inside a LIVE session the

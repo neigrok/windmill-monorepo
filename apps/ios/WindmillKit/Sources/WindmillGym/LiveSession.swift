@@ -104,6 +104,19 @@ public enum LiveLines {
                        plan: "plan \(sets) × \(Readout.repTarget(planEntry.reps))\(load)")
     }
 
+    // `movement 3 of 6` (§K) — where the walk stands, counted off the MERGED session order: the
+    // plan's lines plus everything appended on the bench, which is the same list the chevrons step
+    // through and the jump sheet draws. Counting the plan alone would number an appended movement
+    // "7 of 6", and a session with no plan at all still has an order to stand in — the one the
+    // lifter assembled. It degrades to silence rather than to a line that says nothing: nil when
+    // nothing is in hand — the picker's screen, not this line's — and over a walk of one, where
+    // `movement 1 of 1` would be the screen narrating itself.
+    public static func movementPosition(order: [String], current: String?) -> String? {
+        guard let current, let standing = order.firstIndex(of: current) else { return nil }
+        guard order.count > 1 else { return nil }
+        return "movement \(standing + 1) of \(order.count)"
+    }
+
     // This movement's sets in the order performed, which is why the row carries no wall-clock any
     // more: at the rack a row is read for its numbers. The instant stays on the set itself
     // (`completedAtMs`, what everything here sorts by) and no screen in this app draws it now — the

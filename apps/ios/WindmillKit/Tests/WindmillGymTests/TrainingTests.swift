@@ -96,14 +96,17 @@ final class TrainingWireTests: XCTestCase {
 
         let start = try fields(of: SessionStart(id: "ses_1", startedAtMs: 1))
         XCTAssertNil(start["routineId"], "an ad-hoc session names no routine, and says so by silence")
-        XCTAssertNil(start["joinOpenSession"], "the phone always joins, so it never sends the flag")
+        XCTAssertNil(start["joinOpenSession"],
+                     "omitted is the wire's join default — every start this room sends spells false instead")
+        let stated = try fields(of: SessionStart(id: "ses_1", startedAtMs: 1, joinOpenSession: false))
+        XCTAssertEqual(stated["joinOpenSession"] as? Bool, false,
+                       "and a stated false reaches the wire rather than being dropped as a default")
     }
 
     // The log's rows are FLAT: the session's own fields with its four facts beside them, not a
-    // session nested under a key that is not there. `topSet` and `closedItself` are decoded and not
-    // drawn anywhere on this phone — the only session row iOS has is Today's "Last session", whose
-    // copy is fixed by the contract and names neither — so this is what keeps the model matching the
-    // wire the web's log row reads.
+    // session nested under a key that is not there. `topSet` is decoded and not drawn on this
+    // surface (the log's row prints `topE1rm`, and only the SESSION DETAIL says `closedItself`) —
+    // so this is what keeps the model matching the wire the web's log row reads.
     func testALogRowIsTheSessionWithItsFactsBesideIt() throws {
         let row = try decode(SessionSummary.self, """
         { "id": "ses_1", "startedAt": 1754300000000, "finishedAt": 1754303720000,

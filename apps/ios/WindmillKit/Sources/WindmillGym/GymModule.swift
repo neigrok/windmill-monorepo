@@ -33,7 +33,7 @@ public struct GymModule: ProductModule {
     //
     // A live session is on the device whether or not anybody is signed in, so it outranks the
     // account note: a lifter mid-workout is told about the workout. At rest and signed out with a
-    // log on this device, the meta says where that log is — the hub's half of Today's quiet claim
+    // log on this device, the meta says where that log is — the hub's half of home's quiet claim
     // offer, and never a wall.
     public func hubLine(_ account: Account) -> HubLine {
         let device = GymDevice.summary()

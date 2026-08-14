@@ -73,6 +73,29 @@ final class LiveLinesTests: XCTestCase {
         XCTAssertEqual(counter.plan, "no target")
     }
 
+    // "movement 3 of 6" (§K) counts off the MERGED order — the plan plus whatever was appended on
+    // the bench — so an appended movement counts like a written one. Counting the plan alone would
+    // print "movement 7 of 6".
+    func testTheMovementPositionCountsTheMergedOrderNotThePlan() {
+        let order = ["bench-press", "overhead-press", "cable-fly"]
+        XCTAssertEqual(LiveLines.movementPosition(order: order, current: "bench-press"),
+                       "movement 1 of 3")
+        XCTAssertEqual(LiveLines.movementPosition(order: order, current: "cable-fly"),
+                       "movement 3 of 3")
+    }
+
+    // Nothing in hand is the picker's screen, a movement no longer in the order has no place to
+    // claim, and a walk of one is not a position worth a line — "movement 1 of 1" would be the
+    // screen narrating itself. All three answer nothing rather than a line that says nothing.
+    func testTheMovementPositionDegradesToSilence() {
+        XCTAssertNil(LiveLines.movementPosition(order: ["bench-press"], current: nil))
+        XCTAssertNil(LiveLines.movementPosition(order: ["bench-press"], current: "cable-fly"))
+        XCTAssertNil(LiveLines.movementPosition(order: [], current: "bench-press"))
+        XCTAssertNil(LiveLines.movementPosition(order: ["romanian-deadlift"],
+                                                current: "romanian-deadlift"),
+                     "a walk of one is not a position worth a line")
+    }
+
     // A routine line that names sets and reps and leaves the load to last time prints no load —
     // never a zero, which would be a target nobody wrote.
     func testAPlanWithNoTargetWeightPrintsNoLoad() {

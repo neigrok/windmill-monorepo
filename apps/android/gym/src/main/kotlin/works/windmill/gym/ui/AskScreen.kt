@@ -95,7 +95,7 @@ import works.windmill.platform.net.WindmillJson
 //
 // THE QUESTION IS NOT THIS SCREEN'S TO OWN. It is asked by the ROOM, where the thread lives, for one
 // reason: the day's questions are counted at the edge the moment the request lands, so a lifter who
-// walks to Today mid-answer has already paid for an answer this screen's own coroutine would have
+// walks to home mid-answer has already paid for an answer this screen's own coroutine would have
 // thrown away — and a proposal it minted would sit unread until the next connect. Asked from the
 // room, the answer lands in the thread whether or not anybody is looking at it.
 @Composable
@@ -107,8 +107,11 @@ fun AskScreen(
     onRetry: () -> Unit,
     seed: String,
     origin: String,
-    backLabel: String,
-    onBack: () -> Unit,
+    // Null when this surface is the ASK TAB'S ROOT (R7): the rail under it is the way to somewhere
+    // else, so there is no back bar to draw. Both set when it was pushed from a proposal, where the
+    // way back names the diff it returns to.
+    backLabel: String?,
+    onBack: (() -> Unit)?,
     onThreads: () -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
@@ -187,31 +190,37 @@ fun AskScreen(
     }
 }
 
-// The way back — naming where it goes, as every pushed screen in this room does — and then what this
-// screen is. NO CHIP BESIDE IT: §L draws a `One` badge there, and this feature is gated on nothing,
-// so a badge for a plan that cannot be bought would be an advert standing where the design wanted a
-// fact. The subtitle is the fact: it reads your log, and it proposes only.
+// The way back where there is one — the tab root has none, and draws the rail's own hairline of
+// air instead — and then what this screen is. NO CHIP BESIDE IT: §L draws a `One` badge there, and
+// this feature is gated on nothing, so a badge for a plan that cannot be bought would be an advert
+// standing where the design wanted a fact. The subtitle is the fact: it reads your log, and it
+// proposes only.
 //
 // THE ONE THING TO THE RIGHT IS §O'S DOOR onto the conversations before this one, and it is a WORD
 // rather than a count: a number there would be an inbox growing out of a header, and there is
 // nothing here waiting for anybody. It says how many conversations there are on the screen it opens,
 // once the log has actually said.
 @Composable
-private fun Head(backLabel: String, onBack: () -> Unit, onThreads: () -> Unit) {
+private fun Head(backLabel: String?, onBack: (() -> Unit)?, onThreads: (() -> Unit)?) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier.padding(bottom = WindmillSpace.x3),
+        modifier = Modifier
+            .padding(bottom = WindmillSpace.x3)
+            // The tab root has no back row, so the title takes its breathing room instead.
+            .padding(top = if (backLabel == null) WindmillSpace.x3 else 0.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier
-                .heightIn(min = GymTap.minimum)
-                .padding(horizontal = WindmillSpace.x4)
-                .clickable(onClick = onBack),
-        ) {
-            Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+        if (backLabel != null && onBack != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                modifier = Modifier
+                    .heightIn(min = GymTap.minimum)
+                    .padding(horizontal = WindmillSpace.x4)
+                    .clickable(onClick = onBack),
+            ) {
+                Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
+                Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+            }
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -224,22 +233,88 @@ private fun Head(backLabel: String, onBack: () -> Unit, onThreads: () -> Unit) {
                 Text(Ask.title, style = WindmillFont.display(26), color = GymSkin.ink, maxLines = 1)
                 Text(Ask.subtitle, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
             }
+            onThreads?.let { open ->
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .heightIn(min = GymTap.minimum)
+                        .clip(RoundedCornerShape(WindmillRadius.full))
+                        .clickable(onClick = open)
+                        .padding(horizontal = WindmillSpace.x3),
+                ) {
+                    Text(
+                        Threads.door,
+                        style = WindmillFont.body(14, FontWeight.SemiBold),
+                        color = GymSkin.accent,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// THE TAB'S SIGNED-OUT STANCE (decisions §3 / R7). A tab cannot be absent the way a door could be,
+// and a 401 is not a screen — so what stands here is what Ask is, in the product's own locked
+// words, and the one step between the lifter and an answer. The tab-root form is undrawn on the
+// boards (filed as a design ask), so this is the minimal faithful stance: no pitch, no lock, no
+// count of how many times it was read and walked past.
+@Composable
+fun AskSignedOutStance(onSignIn: () -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        Head(backLabel = null, onBack = null, onThreads = null)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+        ) {
+            Text(
+                Ask.whatItIs,
+                style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+                color = GymSkin.inkDim,
+            )
+            Text(
+                "Ask reads your account’s log, so it needs you signed in before it has anything to read.",
+                style = WindmillFont.body(14).copy(lineHeight = 21.sp),
+                color = GymSkin.inkFaint,
+            )
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clip(RoundedCornerShape(WindmillRadius.full))
-                    .clickable(onClick = onThreads)
-                    .padding(horizontal = WindmillSpace.x3),
+                    .fillMaxWidth()
+                    .heightIn(min = GymTap.primary - 8.dp)
+                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .clickable(onClick = onSignIn),
             ) {
-                Text(
-                    Threads.door,
-                    style = WindmillFont.body(14, FontWeight.SemiBold),
-                    color = GymSkin.accent,
-                    maxLines = 1,
-                )
+                Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
             }
+            Text(
+                Ask.dailyCap,
+                style = GymType.numeral(12).copy(lineHeight = 18.sp),
+                color = GymSkin.inkFaint,
+            )
         }
+    }
+}
+
+// THE TAB'S ABSENT STANCE: this deployment answered Ask's route with the bare 404 that means the
+// feature is not configured — not that something failed — so the tab says so quietly, once, and
+// offers nothing to retry. The lifter's log is untouched by any of it and the sentence says so.
+@Composable
+fun AskAbsentStance() {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        Head(backLabel = null, onBack = null, onThreads = null)
+        Text(
+            Ask.notHere,
+            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+            color = GymSkin.inkDim,
+            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+        )
     }
 }
 
@@ -370,7 +445,7 @@ private fun Answer(
         }
         // A proposal minted mid-conversation, drawn from the LOG's own copy of it rather than from
         // anything the model said about it. One that has not been read back yet draws nothing here —
-        // and is not lost: the card is waiting on Today and on the routine it touches, because the
+        // and is not lost: the card is waiting on home and on the routine it touches, because the
         // store re-reads the program the moment an answer mints one.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
             Minted(proposal, catalog, nowMs) { onReview(proposal) }
@@ -386,7 +461,7 @@ private fun Answer(
 // what it would do in the routine's own grammar, and the one door onto the diff where the tap
 // happens. Three rows at most, because this is a summons to the decision and not the decision.
 //
-// It is the SAME OBJECT the routines list and Today carry, drawn one size smaller here, and every
+// It is the SAME OBJECT home and the routine's own page carry, drawn one size smaller here, and every
 // word of it is the domain's: the counts, the labels and `ProposalChange.compactLine`, which is the
 // diff screen's own grammar at card size. A screen that spelled its own diff — or rounded its own
 // load — would be the second place in this product describing one change.

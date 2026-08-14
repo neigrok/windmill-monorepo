@@ -100,7 +100,7 @@ class ProgramTests {
         val trained = built.copy(lastTrainedAtMs = at(2026, 8, 9))
         val ran = Program.head(trained, history, now)
         assertFalse(ran.untested)
-        assertEquals("1 exercise · trained yesterday", ran.line)
+        assertEquals("1 movement · trained yesterday", ran.line)
     }
 
     // A routine made before the count was stored draws the row without one — never today's entry
@@ -127,7 +127,8 @@ class ProgramTests {
 
         val head = Program.head(shelved, emptyList(), now)
         assertTrue(head.untested)
-        assertEquals("1 exercise · never trained", head.line)
+        assertEquals("a routine holds movements, never exercises — the 13 Aug vocabulary lock",
+            "1 movement · never trained", head.line)
     }
 
     // `created by you` IS THE ABSENCE OF `by`. `create_routine` lands immediately over MCP, so a row
@@ -232,8 +233,9 @@ class ProgramTests {
     }
 
     // An edit carries the whole document — including the id, which is what makes the save a PUT —
-    // and a duplicate deliberately carries no name: a copy is a new day, and §M asks for every day's
-    // name once and first.
+    // and a duplicate deliberately carries no name: a copy is a new day, and §M asks for every
+    // day's name. The copy is taken off the DRAFT as it stands, so nothing typed tonight is thrown
+    // away by making one.
     @Test
     fun testEditCarriesTheDocumentAndDuplicateCarriesEverythingButTheName() {
         val routine = Routine(id = "rt_1", name = "Heavy Thursday", position = 2,
@@ -250,7 +252,7 @@ class ProgramTests {
         assertEquals(routine.entries, edit.entries)
         assertTrue("a day that has run does not say it has never been logged", edit.trained)
 
-        val copy = RoutineDraft.copying(routine, position = 7)
+        val copy = edit.duplicated(position = 7)
         assertNull("a copy is a routine that does not exist yet", copy.id)
         assertEquals("", copy.name)
         assertEquals(7, copy.position)

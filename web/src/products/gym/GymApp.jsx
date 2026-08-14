@@ -147,7 +147,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
             may not outlive the routine it is of: the key is what makes React drop the instance
             when the hash moves to another one. The editor's own Duplicate button moves it — and
             without the key the copy's URL would be drawn over the original's unsaved edits, and
-            Done would whole-document PUT them back onto the original. */}
+            Save would whole-document PUT them back onto the original. */}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
         {/* KEYED FOR THE SAME REASON AGAIN: the diff holds the settlement the store answered with,
             and a hash move to another proposal with the instance kept would draw one proposal's

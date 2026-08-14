@@ -67,7 +67,7 @@ import works.windmill.platform.design.WindmillSpace
 // disappears — and this screen is where that record is read.
 //
 // THE CARD BELOW IS THE SAME OBJECT ONE SIZE SMALLER, and it lives here beside the diff because
-// they are one feature: Today draws it, the routines list draws its chip, and all three read the
+// they are one feature: home draws it, the routine rows draw its chip, and all three read the
 // head the routine already carries. There is no push, no badge and no unread count anywhere in
 // this product — the card waits where the lifter will see it, which is why it does not need one.
 @Composable
@@ -485,10 +485,10 @@ private fun Foot(
 }
 
 // THE CARD — the same object one size smaller, and the reason this product has no notifications:
-// it waits on Today and on the routine it touches until the lifter applies or dismisses it. Nothing
-// counts how long it waits and nothing gets louder.
+// it waits on the Routines home and on the routine it touches until the lifter applies or
+// dismisses it. Nothing counts how long it waits and nothing gets louder.
 //
-// `Later` is not a decision and never sends one: it puts the card away on Today for now, and the
+// `Later` is not a decision and never sends one: it puts the card away on home for now, and the
 // routine it belongs to still carries it — so a proposal cannot be lost by a thumb reaching for the
 // quiet button.
 @Composable
@@ -526,8 +526,8 @@ fun ProposalCard(
         }
         // The agent's own sentence, or — when it wrote none — a count and the routine's name rather
         // than a sentence this room invented for it. The mono line under a summary names the routine
-        // and the count itself: on Today there are several routines, and an agent's prose is under
-        // no obligation to say which one it is about.
+        // and the count itself: home holds several routines, and an agent's prose is under no
+        // obligation to say which one it is about.
         Text(
             proposal.summaryLine(routineName),
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),

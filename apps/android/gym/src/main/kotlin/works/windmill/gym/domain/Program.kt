@@ -50,8 +50,9 @@ object Program {
         return typed.substring(0, typed.offsetByCodePoints(0, maxNameLength))
     }
 
-    // A name is the one thing a routine cannot be saved without: §M asks for it FIRST and asks once,
-    // because a routine built on purpose deserves the word you call it and not "Workout 3".
+    // A name is the one thing a routine cannot be saved without. It is asked INLINE in the one
+    // editor (§M/R3) — typed first or last, but a routine built on purpose deserves the word you
+    // call it and not "Workout 3", so nothing saves without one.
     fun named(name: String): String? = name.trim().takeIf { it.isNotEmpty() }
 
     // A RENAME IS A CHANGE OR IT IS NOTHING (§N: "neither ever costs you history"). Renaming a
@@ -156,6 +157,16 @@ data class RoutineDraft(
 
     fun entry(exerciseId: String): RoutineEntry? = entries.firstOrNull { it.exerciseId == exerciseId }
 
+    // `Duplicate` (R3, the editor's own row) — the day as it stands on screen, movements and
+    // targets, and deliberately NOT the name: a copy is a new day and §M asks for every day's name.
+    // Off the DRAFT rather than the stored routine, so nothing typed tonight is thrown away by
+    // making a copy of it.
+    fun duplicated(position: Int): RoutineDraft = RoutineDraft(
+        position = position,
+        entries = entries.sortedBy { it.position }
+            .mapIndexed { index, entry -> entry.copy(position = index + 1) },
+    )
+
     // Which movement this is, of how many — the sheet's own place line, one-based because it is read
     // by a person. A movement no longer in the day answers null and the sheet closes over it.
     fun placeOf(exerciseId: String): Int? =
@@ -182,22 +193,14 @@ data class RoutineDraft(
         const val startingSets = 3
         const val startingReps = 5
 
-        // Editing a routine that already stands (screen 30's `Edit` and its `Rename`): the same
-        // document, carried whole, because the write it becomes is a whole-document PUT.
+        // Editing a routine that already stands (screen 5's `Edit`, which is the rename now too):
+        // the same document, carried whole, because the write it becomes is a whole-document PUT.
         fun of(routine: Routine): RoutineDraft = RoutineDraft(
             id = routine.id,
             name = routine.name,
             position = routine.position,
             entries = routine.entries.sortedBy { it.position },
             trained = !routine.untested,
-        )
-
-        // `Duplicate` — the movements and their targets, and deliberately NOT the name: a copy is a
-        // new day and §M asks for its name the way it asks for every other one, once and first.
-        fun copying(routine: Routine, position: Int): RoutineDraft = RoutineDraft(
-            position = position,
-            entries = routine.entries.sortedBy { it.position }
-                .mapIndexed { index, entry -> entry.copy(position = index + 1) },
         )
     }
 }

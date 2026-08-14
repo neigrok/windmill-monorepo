@@ -424,8 +424,8 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
 // reading a written program. That the rest of the room needs no account was a SENTENCE under it
 // until W9; it is now simply true of the screen behind it, where every movement is already tappable.
 // The door itself is the shell's (screen 23), and it comes back here, mid-session, with the session
-// still running. The room has three doors onto it (Today's card, the rail's seat and this one); a
-// live session covers the other two, which is exactly when this card is on screen.
+// still running. The room has three doors onto it (home's claim card, the rail's seat and this
+// one); a live session covers the other two, which is exactly when this card is on screen.
 //
 // Nothing counts how many times this is walked past. There is no counter here, on the device or on
 // the wire, and a prompt that got louder with each decline is the dark pattern this room refuses.

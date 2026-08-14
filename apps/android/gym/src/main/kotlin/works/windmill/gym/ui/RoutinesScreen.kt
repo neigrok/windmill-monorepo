@@ -12,27 +12,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Readout
@@ -46,48 +42,38 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// ROUTINES — the written-down days of the program, and the third of the room's three tabs (§F). It
-// is a list and three ways in: a routine, what it asks for, a tap that starts the one you are looking
-// at, a chevron onto the routine itself, and `New` — §M's third door.
+// ROUTINES — HOME (§A/§B, the 13 Aug routine-first shape): the plans a lifter keeps, sitting still,
+// and the only tab they act FROM. A row opens the routine's own page — the plan, and the one button
+// that starts it — because a start is a deliberate act made on the day it starts, never a mis-tap
+// on a list. The free-form door is "Just start logging" (R4), the second path now rather than the
+// front door.
 //
-// `New` ARRIVED IN W10 AND THIS TAB USED TO REFUSE IT. The refusal was real while it stood: every
-// door that WRITES a routine was the desk's (gym ARCHITECTURE.md §11), and the two a phone owned
-// arrived at the moments they make sense — "Keep this as a routine" at the finish, and the change
-// offer mid-session. What §M established is that a lifter copying a program out of a notebook has
-// neither of those moments, and that building a day at the kitchen table is not desk work borrowed
-// from the web but the door that lifter reaches for first. The editor it opens is a name and a list
-// (RoutineBuilder), which is the whole of what a routine is.
+// HOME IS ALSO WHERE AN AGENT'S PROPOSAL WAITS, and where the rest of the retired Today tab's cargo
+// rehomed: the boot-claim refusals banner and the signed-out claim offer stand above the list in
+// the top band, and the settings door keeps its row at the foot. A change to a routine mints a card
+// rather than a write, and the card lives here and on the routine it touches until the lifter
+// applies or dismisses it — no push, no badge, no unread count and nothing that gets louder.
 //
-// WHAT THE CHEVRON OPENS is screen 30: the routine as it stands, whether it has ever been trained,
-// the History of how it came to exist and every proposal made about it since — each a dated record
-// rather than a toast that disappeared — and the three things you can do with a day.
-//
-// The order is the log's own — trained most recently first, the same order the server sends
-// (`ORDER BY last_trained_ms DESC NULLS LAST`) — so the footer line is a statement about this list
-// and never a wish. It is restated here because the device's own unclaimed routines arrive after
-// the server's and would otherwise sit at the bottom whatever their last session was.
+// "NOTHING RUNNING" IS STRUCTURAL: a live session takes the whole screen, so this list is only ever
+// drawn while no clock is going, and the sub-line under the title says so as a fact.
 //
 // AND IT IS WHERE THE CONNECTED LOG IS OFFERED (§D screen 12). This is the tab about the PROGRAM,
 // which is the thing a connected agent writes proposals against, so the offer stands at the foot of
-// the days it would change — one screen away from the diff it would produce. It is an invitation and
-// not a gate: it wears no lock, names no tier and no price, and leads to no checkout.
-//
-// TWO CONDITIONS, AND BOTH ARE ABOUT THE OFFER BEING TAKEABLE rather than about selling it harder.
-// Signed out it is absent, because a grant is granted against an ACCOUNT and this room's log is on
-// the device until a sign-in claims it — the same rule that withholds Ask's door and the proposal
-// card. And it sits under the LIST, which the empty state returns before ever reaching: the pitch is
-// about training already logged, and a lifter with nothing written down is being shown an exchange
-// that would come back empty.
+// the days it would change. Signed out it is absent — a grant is granted against an ACCOUNT — and
+// it sits under the list, which a lifter with nothing written down never reaches.
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
     origin: String,
-    onStart: (String) -> Unit,
+    putOff: String?,
+    onJustStart: () -> Unit,
     onBuild: (RoutineDraft) -> Unit,
     onOpenRoutine: (String) -> Unit,
-    onOpenMovement: (String) -> Unit,
     onReview: (Proposal) -> Unit,
+    onLater: (Proposal) -> Unit,
+    onOpenSettings: () -> Unit,
+    onSignIn: () -> Unit,
 ) {
     val nowMs = System.currentTimeMillis()
     Column(
@@ -98,113 +84,259 @@ fun RoutinesScreen(
             .padding(horizontal = WindmillSpace.x5)
             .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x8),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
             Text("Routines", style = WindmillFont.display(32), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            // The new day's position is the foot of the list, which is where a program's newest day
-            // goes; the list itself is sorted by training and re-sorts itself the moment it runs.
+            if (store.routines.isNotEmpty()) {
+                Text(
+                    "${Readout.routineCount(store.routines.size)} · nothing running",
+                    style = GymType.numeral(13),
+                    color = GymSkin.inkFaint,
+                )
+            }
+        }
+
+        // A loss said during a boot claim has no logger standing to show it, so the banner stands
+        // here instead — the logger's own component, the logger's own words — until dismissed.
+        Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+
+        // THE CARD IS THE NOTIFICATION, and home is where it waits. The newest waiting one, and one
+        // at a time — a stack of cards over the program somebody came here to read would be a room
+        // asking for attention rather than answering a question. The others keep their dot on their
+        // routine's row until this one is decided. Signed out this is empty by construction.
+        store.pendingProposals.firstOrNull { it.id != putOff }?.let { waiting ->
+            val about = store.routine(waiting.routineId)
+            ProposalCard(
+                proposal = waiting,
+                routineName = about?.name ?: waiting.routineName,
+                nowMs = nowMs,
+                onReview = { onReview(waiting) },
+                onLater = { onLater(waiting) },
+            )
+        }
+
+        // The claim offer, and never a wall: the room already works, so this card only names what
+        // signing in adds. It gates nothing and apologises for nothing.
+        if (!isSignedIn) ClaimCard(onSignIn)
+
+        if (store.routines.isEmpty()) {
+            EmptyRoutines(
+                onBuild = { onBuild(RoutineDraft(position = 0)) },
+                onJustStart = onJustStart,
+            )
+        } else {
+            store.routines
+                .sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
+                .forEach { routine ->
+                    RoutineRow(routine, nowMs, onOpenRoutine, onReview)
+                }
+
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clickable { onBuild(RoutineDraft(position = store.routines.size)) }
-                    .padding(horizontal = WindmillSpace.x2),
+                    .fillMaxWidth()
+                    .heightIn(min = GymTap.primary - 8.dp)
+                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                    .clickable { onBuild(RoutineDraft(position = store.routines.size)) },
             ) {
-                Text("New", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.accent)
+                Text(
+                    "New routine",
+                    style = WindmillFont.body(16, FontWeight.Bold),
+                    color = GymSkin.onAccent,
+                )
             }
-        }
-
-        // BOTH DOORS, NAMED. The first is still the one this product is built around — a lifter who
-        // trains and names it at the end never types a program in — and the second is for the lifter
-        // holding a notebook, who has nothing to name yet.
-        if (store.routines.isEmpty()) {
-            Text(
-                "Nothing written down yet. Log a session and name it at the end, or write a day out now with New.",
-                style = WindmillFont.body(16).copy(lineHeight = 24.sp),
-                color = GymSkin.inkDim,
-                modifier = Modifier.padding(top = WindmillSpace.x2),
-            )
-            return@Column
-        }
-
-        store.routines
-            .sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
-            .forEach { routine ->
-                RoutineTile(routine, store, nowMs, onStart, onOpenRoutine, onOpenMovement, onReview)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = GymTap.minimum + 6.dp)
+                    .clickable(onClick = onJustStart),
+            ) {
+                Text(
+                    "Just start logging",
+                    style = WindmillFont.body(15, FontWeight.SemiBold),
+                    color = GymSkin.inkDim,
+                )
             }
 
-        if (isSignedIn) ConnectInvitation(origin)
+            if (isSignedIn) ConnectInvitation(origin)
+        }
+
+        SettingsDoor(onOpenSettings)
     }
 }
 
-// The tile starts the routine, its chevron opens it, and each of its lines opens that movement's
-// record (§H) — three meanings on one card, and the inner one wins where it is drawn, which is the
-// whole line the movement's name sits on. The cost of confusing them is asymmetric and that is why
-// they can share: a tap meant for Start that lands on a name opens a read-only page one chevron
-// from here, where the reverse would be a workout somebody did not ask for.
+// SCREEN 1 — empty, and it says what to do. Two verbs, both explicit: Build a routine, and Just
+// start logging for the day you turn up without a plan. Free-form logging still assembles itself as
+// you go and still offers to become a routine at the end — it is the second path now, not the front
+// door. No wizard, no tour, no sample program, and no silent auto-creation: a routine exists
+// because you named it.
+@Composable
+private fun EmptyRoutines(onBuild: () -> Unit, onJustStart: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = WindmillSpace.x6),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(62.dp)
+                .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg),
+        ) {
+            Text("+", style = WindmillFont.display(26), color = GymSkin.inkFaint)
+        }
+        Text("No routines yet", style = WindmillFont.display(20), color = GymSkin.ink)
+        Text(
+            "A routine is one training day written down — the movements, in order, with your targets.",
+            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+            color = GymSkin.inkDim,
+            textAlign = TextAlign.Center,
+        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.primary)
+                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                .clickable(onClick = onBuild),
+        ) {
+            Text(
+                "Build a routine",
+                style = WindmillFont.body(17, FontWeight.Bold),
+                color = GymSkin.onAccent,
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.primary - 10.dp)
+                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
+                .clickable(onClick = onJustStart),
+        ) {
+            Text(
+                "Just start logging",
+                style = WindmillFont.body(16, FontWeight.SemiBold),
+                color = GymSkin.accent,
+            )
+        }
+    }
+}
+
+// One plan on the shelf (screen 4): the name, `untested` while nobody has run it, what it holds and
+// when it last ran. THE WHOLE ROW OPENS THE ROUTINE — a start lives on the page this leads to,
+// where the plan is in front of the lifter, because the cost of the old shape was asymmetric: a tap
+// meant for the chevron used to start a workout nobody asked for.
 //
 // A ROUTINE AN AGENT HAS PROPOSED SOMETHING ABOUT WEARS A DOT AND A COUNT, and the chip is its own
 // target onto the diff — the card is the notification, and this is its second home. The border goes
 // to the accent with it, because a routine waiting on a decision is the one row in this list with
-// something to say. Signed out no routine carries one, so nothing here is drawn and nothing is
-// explained: a lifter with no account is not being sold a surface.
+// something to say.
 @Composable
-private fun RoutineTile(
+private fun RoutineRow(
     routine: Routine,
-    store: TrainingStore,
     nowMs: Long,
-    onStart: (String) -> Unit,
     onOpenRoutine: (String) -> Unit,
-    onOpenMovement: (String) -> Unit,
     onReview: (Proposal) -> Unit,
 ) {
     val waiting = routine.pendingProposal
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
+            .heightIn(min = GymTap.minimum + 12.dp)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(
                 1.dp,
                 if (waiting == null) GymSkin.line else GymSkin.accent,
                 RoundedCornerShape(WindmillRadius.lg),
             )
-            .clickable { onStart(routine.id) }
+            .clickable { onOpenRoutine(routine.id) }
+            .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+            ) {
+                Text(
+                    routine.name,
+                    style = WindmillFont.body(17, FontWeight.Bold),
+                    color = GymSkin.ink,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (routine.untested) UntestedChip()
+                waiting?.let { ProposalChip { onReview(it) } }
+            }
+            Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
+        }
+        Text(
+            "›",
+            style = WindmillFont.body(17, FontWeight.SemiBold),
+            color = GymSkin.inkFaint,
+            modifier = Modifier.padding(start = WindmillSpace.x3),
+        )
+    }
+}
+
+// `untested` marks a hand-built routine before its first session, on the home card and on the
+// routine's own page (R2) — derived, never stored: the day the first session starts the word goes.
+@Composable
+private fun UntestedChip() {
+    Box(
+        Modifier
+            .background(GymSkin.accentSoft, RoundedCornerShape(WindmillRadius.full))
+            .padding(horizontal = WindmillSpace.x2, vertical = 2.dp),
+    ) {
+        Text("untested", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
+    }
+}
+
+// The claim offer, rehomed from the retired Today tab with its stance unchanged: the room already
+// works signed out, so this card only names what signing in adds — the account, and the web mirror.
+@Composable
+private fun ClaimCard(onSignIn: () -> Unit) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.lg))
+            .clickable(onClick = onSignIn)
             .padding(WindmillSpace.x4),
     ) {
-        // The name and its chip on one line, what the day holds on the next — canon screen 5's own
-        // stacking, and the reason it is stacked: a chip, a date and a chevron on one row is four
-        // things competing for a 320dp phone, and the name is the one that would be truncated.
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                ) {
-                    Text(
-                        routine.name,
-                        style = WindmillFont.body(17, FontWeight.Bold),
-                        color = GymSkin.ink,
-                        maxLines = 1,
-                    )
-                    waiting?.let { ProposalChip { onReview(it) } }
-                }
-                Text(Readout.routineLine(routine, nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
-            }
-            Text(
-                "›",
-                style = WindmillFont.body(17, FontWeight.SemiBold),
-                color = GymSkin.inkFaint,
-                modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clickable { onOpenRoutine(routine.id) }
-                    .padding(horizontal = WindmillSpace.x3),
-            )
-        }
-        routine.entries.sortedBy { it.position }.forEach { entry ->
-            EntryRow(entry, store, onOpenMovement)
-        }
+        Text(
+            "Your log is saved on this device.",
+            style = WindmillFont.body(15, FontWeight.SemiBold),
+            color = GymSkin.ink,
+        )
+        Text(
+            "Sign in to claim it to your account — and open it on the web.",
+            style = GymType.numeral(12).copy(lineHeight = 17.sp),
+            color = GymSkin.inkFaint,
+        )
+    }
+}
+
+// THE DOOR §I DOES NOT DRAW, and it is here on loan. Gym's settings are a SECTION the shell's You
+// sheet is meant to list and walk you into; this surface's product seam hands the shell a room and
+// nothing else, and You is the platform's file. So the section keeps a door of its own at the foot
+// of the one home — the quietest row on the quietest screen. It goes the day the seam grows a
+// settings slot.
+@Composable
+private fun SettingsDoor(onOpenSettings: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = GymTap.minimum)
+            .clickable(onClick = onOpenSettings),
+    ) {
+        Text("Gym settings", style = GymType.numeral(13), color = GymSkin.inkFaint)
+        Spacer(Modifier.weight(1f))
+        Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
     }
 }
 
@@ -212,9 +344,8 @@ private fun RoutineTile(
 // the target rather than the glyphs alone, so a thumb has the whole row to find.
 //
 // A ROW WITH NO TARGET READS `open` AND IS DRAWN QUIETLY — it is not an unfilled field and it is not
-// an error: the day says decide at the rack. `· mine` marks a movement this lifter created, which is
-// the same tag the picker uses and means the same thing: a movement that behaves exactly like a
-// seeded one and is labelled only so they can recognise their own.
+// an error: the day says decide at the rack. `· yours` marks a movement this lifter created (R5 —
+// one word everywhere, the picker's), meaning only that they can recognise their own.
 @Composable
 private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: (String) -> Unit) {
     val movement = store.catalog.firstOrNull { it.id == entry.exerciseId }
@@ -232,7 +363,7 @@ private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: 
         )
         if (movement?.custom == true) {
             Text(
-                " · mine",
+                " · yours",
                 style = GymType.numeral(11),
                 color = GymSkin.inkFaint,
             )
@@ -247,31 +378,26 @@ private fun EntryRow(entry: RoutineEntry, store: TrainingStore, onOpenMovement: 
 }
 
 
-// SCREEN 30 — ONE ROUTINE, AND HONEST ABOUT WHETHER IT HAS EVER BEEN TRAINED. The name, `untested`
-// beside when it was built, the lines with their targets or `open`, the one fact an open line
-// creates, the History of how the day came to exist, and the three things you can do with it.
+// SCREEN 5 / R2 — ONE ROUTINE: the plan, read-only, and the one button that starts it. The name,
+// `untested` beside when it was built, the lines with their targets or `open`, the one fact an open
+// line creates, **Start workout** — literal, never name-substituted (R1) — and the History of how
+// the day came to exist below it.
 //
-// `untested` IS DERIVED AND NOT STORED. A routine with no last-trained instant has never been run,
-// which is exactly what the log's own aggregate says — so there is no flag to keep true, and the
-// day the first session starts the word simply goes. It marks the routine so THE FIRST SESSION IS
-// ALLOWED TO DISAGREE WITH IT: what was typed at a kitchen table is a plan, and the log is what
-// happened.
+// THE HEADER IS BACK + EDIT. The standalone Rename sheet retired with the two-step editor: renaming
+// is editing the inline name, on the same whole-document PUT, with the same consequence for a
+// pending proposal. Duplicate and Delete moved into the editor's edit mode (R3).
 //
-// THE FACT UNDER THE LIST IS A FACT. `Barbell Row has no target — it will ask at the rack` tells the
-// lifter what will happen to their training on Thursday. Why this product allows a row with no
-// target is an argument for the board, and it is not on this glass.
+// `untested` IS DERIVED AND NOT STORED. A routine with no last-trained instant has never been run —
+// so there is no flag to keep true, and the day the first session starts the word simply goes. It
+// marks the routine so THE FIRST SESSION IS ALLOWED TO DISAGREE WITH IT: what was typed at a
+// kitchen table is a plan, and the log is what happened.
 //
-// HISTORY IS ONE READ AND IT NOW HOLDS BOTH KINDS: the day being created — by the lifter's own hand,
-// or by an agent, which is the absence of `by` and never a guess — and every proposal made about it
-// since, applied, dismissed or superseded. A lifter who dismissed one in a hurry can still read what
-// it said, and nothing here is a toast that disappeared.
+// HISTORY IS ONE READ AND IT HOLDS BOTH KINDS: the day being created — by the lifter's own hand, or
+// by an agent — and every proposal made about it since, applied, dismissed or superseded. Nothing
+// here is a toast that disappeared.
 //
 // SIGNED OUT THERE IS NOTHING TO DRAW AND NOTHING IS ASKED FOR. A routine the shelf holds has no
-// history at all — this device does not record the evening a local routine was typed, and inventing
-// a date would be worse than the absence — and proposals need an account for an agent to have been
-// granted anything against. So a signed-out lifter sees the routine, its lines and its word, and no
-// empty section, no explanation and no offer.
-@OptIn(ExperimentalMaterial3Api::class)
+// history at all, and proposals need an account for an agent to have been granted anything against.
 @Composable
 fun RoutineScreen(
     routineId: String,
@@ -284,26 +410,14 @@ fun RoutineScreen(
     onOpenMovement: (String) -> Unit,
     onReview: (Proposal) -> Unit,
     onOpenThread: (String) -> Unit,
-    say: (String?) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val routine = store.routine(routineId)
     var history by remember(routineId) { mutableStateOf<List<RoutineEvent>>(emptyList()) }
     var unread by remember(routineId) { mutableStateOf(false) }
-    // Saveable for the reason every half-typed name in this room is: it exists nowhere else, and a
-    // recreation that dropped it would be the room throwing away something the lifter typed.
-    var renaming by rememberSaveable(routineId) { mutableStateOf(false) }
-    var draft by rememberSaveable(routineId) { mutableStateOf("") }
-    var refused by remember(routineId) { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { renaming = false }
-    }
 
     // Re-read whenever the routine itself moves or its card is settled — an apply bumps the
-    // revision, a dismissal empties the slot, a rename moves it too, and either way the row that
+    // revision, a dismissal empties the slot, an edit moves it too, and either way the row that
     // just moved belongs in the list below. There is nothing held between visits: a history is short
     // and a stale one would be the screen disagreeing with the diff the lifter just came back from.
     LaunchedEffect(routineId, isSignedIn, routine?.revision, routine?.pendingProposal?.id) {
@@ -324,7 +438,7 @@ fun RoutineScreen(
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = WindmillSpace.x8),
     ) {
-        // The way back and `Rename` share one row, exactly as the record page's do: a screen that
+        // The way back and `Edit` share one row, exactly as the record page's do: a screen that
         // owns an action in that row owns the row.
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -341,14 +455,10 @@ fun RoutineScreen(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .heightIn(min = GymTap.minimum)
-                        .clickable {
-                            refused = null
-                            draft = routine.name
-                            renaming = true
-                        }
+                        .clickable { onBuild(RoutineDraft.of(routine)) }
                         .padding(horizontal = WindmillSpace.x2),
                 ) {
-                    Text("Rename", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.accent)
+                    Text("Edit", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.accent)
                 }
             }
         }
@@ -403,8 +513,8 @@ fun RoutineScreen(
             Text(it, style = WindmillFont.body(14).copy(lineHeight = 21.sp), color = GymSkin.inkDim)
         }
 
-        History(history, unread, nowMs, onReview, onOpenThread)
-
+        // R1: the routine's name is the screen title, so the verb is locked — literally
+        // "Start workout", never "Start Push A".
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -414,81 +524,13 @@ fun RoutineScreen(
                 .clickable { onStart(routine.id) },
         ) {
             Text(
-                "Start ${routine.name}",
+                "Start workout",
                 style = WindmillFont.body(16, FontWeight.Bold),
                 color = GymSkin.onAccent,
             )
         }
 
-        // Both open the same builder over the same document, which is why neither needs a screen of
-        // its own: an edit carries the routine's id and lands as a whole-document PUT, and a
-        // duplicate carries its movements and no name, because a copy is a new day and §M asks for
-        // every day's name once and first.
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            SecondaryAction("Edit", Modifier.weight(1f)) { onBuild(RoutineDraft.of(routine)) }
-            SecondaryAction("Duplicate", Modifier.weight(1f)) {
-                onBuild(RoutineDraft.copying(routine, position = store.routines.size))
-            }
-        }
-    }
-
-    // §N's sheet, over the routine rather than over a movement — so it carries the field and no
-    // proof block: the counts that block is made of are counts of TRAINING, and a routine renamed
-    // has none of the kind to show. Inventing one would be the constant the block exists to refuse.
-    //
-    // THERE IS NO RENAME ROUTE, and there should not be: the write is the whole document, which is
-    // what moves the revision and supersedes any pending proposal on this routine. A name change
-    // really is a change to the day an agent wrote its diff against — which is exactly why the sheet
-    // refuses a rename to the name already on the routine (`Program.renamed`): that write costs a
-    // waiting proposal and buys nothing, and the price is only fair for a change somebody made.
-    if (renaming && routine != null) {
-        ModalBottomSheet(
-            onDismissRequest = { close() },
-            sheetState = sheetState,
-            containerColor = GymSkin.surface,
-            dragHandle = null,
-        ) {
-            RenameSheet(
-                title = "Rename this routine",
-                from = routine.name,
-                value = draft,
-                proof = emptyList(),
-                refused = refused,
-                onValue = { draft = it },
-                onCancel = {
-                    refused = null
-                    close()
-                },
-                onRename = {
-                    scope.launch {
-                        val renamed = RoutineDraft.of(routine).named(draft)
-                        when (val written = store.saveRoutine(renamed)) {
-                            is GymResult.Failed ->
-                                refused = written.why.line("that routine kept its name")
-                            is GymResult.Ok -> {
-                                say(null)
-                                close()
-                            }
-                        }
-                    }
-                },
-            )
-        }
-    }
-}
-
-// The two quiet doors under Start — a word in a bordered band, never an accent fill: this screen has
-// one primary action and it is the workout.
-@Composable
-private fun SecondaryAction(label: String, modifier: Modifier, onTap: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .heightIn(min = GymTap.minimum)
-            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(onClick = onTap),
-    ) {
-        Text(label, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+        History(history, unread, nowMs, onReview, onOpenThread)
     }
 }
 

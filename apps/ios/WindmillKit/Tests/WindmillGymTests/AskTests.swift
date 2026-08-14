@@ -189,20 +189,29 @@ final class AskConversationTests: XCTestCase {
 }
 
 final class AskDoorTests: XCTestCase {
-    // NEVER OFFERED MID-SESSION, and the rule is stated once so Today and the proposal card cannot
-    // come to different answers about it. The server enforces the same thing (409 `ask-session-open`)
-    // — three clients each getting it right is not a rule.
+    // NEVER OFFERED MID-SESSION. Ask is the third TAB since the 13 Aug promotion (R7) and the tab
+    // itself always stands; what this gate rules is the DOORS beside it — the proposal card's Ask
+    // chip — absent rather than dead where the tab would only answer with a stance. The server
+    // enforces the mid-session half too (409 `ask-session-open`).
     func testTheDoorIsNotThereWhileAWorkoutIsOpen() {
         XCTAssertFalse(Ask.doorIsOpen(signedIn: true, sessionIsOpen: true, onThisDeployment: true))
         XCTAssertTrue(Ask.doorIsOpen(signedIn: true, sessionIsOpen: false, onThisDeployment: true))
     }
 
-    // Signed out there is no account for Ask to read, so the door is absent rather than drawn onto a
-    // 401 — the same reason a proposal card is never on a signed-out Today.
+    // Signed out there is no account for Ask to read, and a keyless deployment has no Ask at all —
+    // a door is absent for both, while the tab shows its designed stance instead of a 401.
     func testTheDoorIsNotThereWithoutAnAccountOrWithoutAnAskOnThisDeployment() {
         XCTAssertFalse(Ask.doorIsOpen(signedIn: false, sessionIsOpen: false, onThisDeployment: true))
         XCTAssertFalse(Ask.doorIsOpen(signedIn: true, sessionIsOpen: false, onThisDeployment: false))
         XCTAssertFalse(Ask.doorIsOpen(signedIn: false, sessionIsOpen: true, onThisDeployment: false))
+    }
+
+    // THE TAB'S TWO STANCES (decisions §3): quiet statements of fact, pinned because the tab may
+    // never answer signed-out with a 401 or a keyless deployment with a dead pane.
+    func testTheTabStancesAreQuietStatementsOfFact() {
+        XCTAssertEqual(Ask.needsSignIn, "Ask reads your log, so it needs you signed in.")
+        XCTAssertEqual(Ask.signIn, "Sign in")
+        XCTAssertEqual(Ask.absentLine, "Ask isn’t available on this Windmill.")
     }
 }
 

@@ -93,10 +93,6 @@ public final class TrainingStore: ObservableObject {
     private let sync: (Account) -> (any TrainingSyncing)?
     private var gym: (any TrainingSyncing)?
     private var lastTimes: [String: LastTime] = [:]
-    // Whether the account's routines were ASKED for and never answered. `routines` is empty both for
-    // a lifter who has written none and for a read that missed, and `holdsNothing` is the one caller
-    // that may not confuse the two.
-    private var routinesFailed = false
     private var retryTask: Task<Void, Never>?
     // True while THE claim runner is replaying the shelf — the window in which an ordinary start
     // must compose on the device instead, because the server would default-JOIN a replayed session.
@@ -221,21 +217,6 @@ public final class TrainingStore: ObservableObject {
         case failed
     }
 
-    // WHETHER THIS DEVICE AND THE ACCOUNT BEHIND IT ARE KNOWN TO HOLD NOTHING — no workout running,
-    // no session in the log, no routine written down. KNOWN is the load-bearing word, and it is why
-    // this asks the FOOT rather than counting the rows: an empty list is also what a read that
-    // failed leaves behind, and `.bottom` is the one state that has actually reached the end of the
-    // log. The routines are asked the same question by `routinesFailed`.
-    //
-    // The arrival start (§J22) is the only caller, and it is the only place the difference costs
-    // anything: a returning lifter whose log read missed would be handed a session they never asked
-    // for, over a history the room simply could not see. Signed out the device IS the whole log —
-    // the foot is at the bottom the moment the room draws and the shelf answers for the routines —
-    // so a fresh install still opens on its first session, which is the whole of §J22.
-    public var holdsNothing: Bool {
-        session == nil && recent.isEmpty && logFoot == .bottom && routines.isEmpty && !routinesFailed
-    }
-
     // This movement's sets in this session, performed order, warmups included — the whole record of
     // it, which is what the today list draws. What CARRIES FORWARD is narrower: `Prefill` follows the
     // working sets only, because a ramp-up is not what the next set is aimed at.
@@ -329,9 +310,6 @@ public final class TrainingStore: ObservableObject {
         // The device's shelves are on screen before any wire answers — the room mounts on local
         // state, and a signed-in read that lands later only ever adds to it.
         routines = Routine.byLastTrained(localLog.routines)
-        // The shelf cannot fail, so until the account is asked the routines on screen are answered
-        // for. Signed out that is the whole truth and this stays false all the way through.
-        routinesFailed = false
         // The cards go with the seat that left. A proposal is one account's, and one drawn under
         // another would be a card about a program this lifter cannot see — signed out the list
         // stays empty, because there is nothing to ask and nobody to ask it of.
@@ -471,6 +449,13 @@ public final class TrainingStore: ObservableObject {
     // own row. Signed out this DEVICE is the shelf the routine lives on, so freezing the snapshot
     // here is the same staleness rule against the only copy that exists — and the claim replays the
     // session under this same id when an account arrives.
+    //
+    // A START IS NEVER A SILENT JOIN (the 13 Aug start contract). Every user-tapped start says
+    // `joinOpenSession: false`, because the join default ignores the tapped routine — "Start
+    // workout" on routine B would land the lifter in yesterday's workout under the wrong plan. When
+    // the account already has a session open the log answers 409 `session-already-open`; the log is
+    // re-read so that workout is adopted and the room can stand where its sets are, and the refusal
+    // is repeated in the log's own words rather than swallowed.
     public func start(routineId: String? = nil) async -> Result<Session, WriteFailure> {
         // Composed on the device whenever the log could not honestly take it: nobody signed in,
         // a claim still mid-replay (a server start would default-JOIN whatever session the replay
@@ -488,14 +473,19 @@ public final class TrainingStore: ObservableObject {
             let id = mintSession()
             do {
                 let opened = try await gym.startSession(
-                    SessionStart(id: id, startedAtMs: now(), routineId: routineId))
-                // A start JOINS whatever session is already open, so the id that comes back is the
-                // truth and may not be the one that went out. Pressing Start cannot re-plan a workout
-                // that is already running: the snapshot that comes back is that session's own.
+                    SessionStart(id: id, startedAtMs: now(), routineId: routineId,
+                                 joinOpenSession: false))
                 await adopt(opened, joined: opened.id != id)
                 guard let live = session else { return .failure(.noAnswer) }
                 return .success(live)
             } catch let failure as WindmillApiError {
+                // The account already has a workout open — on this phone before a relaunch, or on
+                // another device. The log is re-read so that workout is on this screen to resume or
+                // finish deliberately, and the refusal rides back in the log's own words.
+                if case .refused(409, let refusal) = failure, refusal.code == "session-already-open" {
+                    await loadLog()
+                    return .failure(WriteFailure(failure))
+                }
                 // Only a spent session id is worth a second attempt. Every other refusal is a fact
                 // about the routine or the account and it is REPEATED rather than swallowed: a 404
                 // for a routine deleted from the web must not read as a phone with no signal.
@@ -873,15 +863,28 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
-    // RENAME A ROUTINE (§M screen 30's header). There is NO rename route and there should not be: a
-    // name change has to move the revision and supersede the pending proposals, and a second door
-    // onto that write would be a second place the rule could drift. So it is the whole document
-    // again, under a new name — which `replace` already is.
-    public func rename(_ routine: Routine, to name: String) async -> WriteFailure? {
-        var draft = RoutineDraft(editing: routine)
-        draft.name = name
-        guard case .failure(let why) = await replace(draft) else { return nil }
-        return why
+    // DELETE A ROUTINE (§B screen 6's alarm row — the editor's foot, in edit mode). The log's
+    // delete cascades the proposal ledger with it, so this device forgets both together; the
+    // sessions trained from it keep their frozen plans, because a snapshot is not a reference.
+    // A routine still on this device's shelf is the device's alone to let go of — the claim simply
+    // never replays it. A 404 is the outcome asked for: the routine is already gone.
+    public func deleteRoutine(_ id: String) async -> WriteFailure? {
+        if localLog.routine(id) != nil {
+            localLog.claimed(routine: id)
+            localLog.flush()
+            forget(routine: id)
+            return nil
+        }
+        guard let gym else { return .refused("that routine is not on this device") }
+        do {
+            try await gym.deleteRoutine(id)
+        } catch let error as WindmillApiError {
+            guard case .refused(404, _) = error else { return WriteFailure(error) }
+        } catch {
+            return .noAnswer
+        }
+        forget(routine: id)
+        return nil
     }
 
     // The mid-session change offer, applied (screen 8). The server never infers this, never
@@ -962,7 +965,7 @@ public final class TrainingStore: ObservableObject {
             // Absent, another account's and never-existed are the same 404, folded into the type by
             // GymApi — so there is no sentence from the log to repeat, and this is the plain fact.
             //
-            // A READ THAT FINDS NOTHING IS ALSO AN ANSWER ABOUT THE LIST. The card on Today and the
+            // A READ THAT FINDS NOTHING IS ALSO AN ANSWER ABOUT THE LIST. The card on home and the
             // marker on the routine are drawn from rows this device is holding, and a row the log
             // denies must not go on offering a decision that has nowhere to land — so it is dropped
             // here, where this device learns it is gone.
@@ -1062,7 +1065,7 @@ public final class TrainingStore: ObservableObject {
                           with gym: any TrainingSyncing) async -> Settling {
         guard case .refused(let status, let refusal) = error else { return .failed(.noAnswer) }
         // Gone is gone, and the card goes with it: a row the log denies would otherwise wait on
-        // Today and on its routine until the next seat change, offering a decision with nowhere to
+        // home and on its routine until the next seat change, offering a decision with nowhere to
         // land — and the screen behind this answer only ever redraws the sentence.
         if status == 404 {
             forget(proposal: proposalId)
@@ -1108,17 +1111,12 @@ public final class TrainingStore: ObservableObject {
         proposals = proposals.filter { $0.id != proposalId }
     }
 
-    // The account's routines under the device's own, in one order. A READ THAT MISSED IS RECORDED
-    // rather than left as an empty list: the shelf's own routines stay on screen either way — they
-    // are real — but "this lifter has written none" is a claim only an answer can support, and
-    // `holdsNothing` is the caller that acts on it.
+    // The account's routines under the device's own, in one order. A read that missed leaves the
+    // shelf's own routines on screen — they are real — and asks nothing further: an empty answer
+    // and a missing one draw the same list, and no screen claims "this lifter has written none".
     private func loadRoutines(from gym: any TrainingSyncing) async {
-        guard let written = try? await gym.routines() else {
-            routinesFailed = true
-            return
-        }
+        guard let written = try? await gym.routines() else { return }
         routines = Routine.byLastTrained(written + localLog.routines)
-        routinesFailed = false
     }
 
     // The cards, read once per seat — this is what refills the list `connect` let go of above, so a
@@ -1589,7 +1587,7 @@ public final class TrainingStore: ObservableObject {
             // The shelf goes out before the queue, exactly as it does on connect: parked sets can
             // only land behind their session's own start, and the claim is what sends it. Never
             // while one is already replaying — a failing claim re-arms itself on the way out. A
-            // claim that stopped being owed re-reads the log, so what landed reaches Today with no
+            // claim that stopped being owed re-reads the log, so what landed reaches the room with no
             // remount (Android's reclaimed(), to the step) — and loadLog's own gate keeps that
             // read from adopting anything should a later claim already be mid-replay.
             if claimOwedRetryably, !claiming {

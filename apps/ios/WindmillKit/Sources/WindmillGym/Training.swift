@@ -902,11 +902,13 @@ public struct SetFix: Equatable, Codable, Sendable {
     }
 }
 
-// Start. `joinOpenSession` is omitted by a LIVE start always: the default JOINS whatever session is
-// already open, so a lost race and a borrowed second device both land in the live workout in one
-// round trip. `false` means "create exactly this session, which is not now" — backfill on the web,
-// and the claim replay here, where the join default once silently filed a past session's sets into
-// a workout that was running (gym ARCHITECTURE.md §11's shipped bug).
+// Start. Every start this room sends says `joinOpenSession: false` — the user-tapped ones since
+// the 13 Aug start contract (the join default ignores the tapped routine, so "Start workout" on
+// routine B would land the lifter in yesterday's session under the wrong plan), and the claim
+// replay since it shipped, where the join default once silently filed a past session's sets into a
+// workout that was running (gym ARCHITECTURE.md §11's shipped bug). The field stays optional
+// because omission is the wire's join default and this model must be able to spell it — but no
+// live path omits it any more.
 public struct SessionStart: Equatable, Codable, Sendable {
     public let id: String
     public let startedAtMs: Int64

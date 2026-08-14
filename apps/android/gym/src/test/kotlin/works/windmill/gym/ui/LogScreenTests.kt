@@ -171,7 +171,7 @@ class LogScreenTests {
     }
 
     // The ring is REAL on this surface: a signed-out lifter's whole log is saved on this device, and
-    // saying so is the same sentence Today's claim card says. It is a fact, never a warning.
+    // saying so is the same sentence home's claim card says. It is a fact, never a warning.
     @Test
     fun aRowTheShelfHoldsIsMarkedAsSavedOnThisDeviceOnly() {
         val log = listOf(

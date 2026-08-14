@@ -38,6 +38,11 @@ repo by walking up from the project directory, never a bundled copy, so the whol
 checked out. The same drift gate web and iOS run: a rule changed in one language fails in the
 others.
 
+The unit suite includes a Robolectric half (`gym/src/test/.../ui/RoutinesScreenTests.kt`): real
+screens composed on the JVM and really tapped, for the wiring a pure test cannot hold still. The
+first run downloads Robolectric's android-all jar from Maven Central, so the very first `build`
+wants a network.
+
 ## Sign-in
 
 An emailed **6-digit code**: the door asks for an address, the mint rides `door: "app"` so the
@@ -48,22 +53,27 @@ usable; there are still no app links. The session secret rides `Authorization: B
 behind `SessionStore`; a restore that cannot reach the server keeps the secret — only a definitive
 401 spends it.
 
-Nothing needs an account first, and the first launch shows that rather than saying it: with nothing
-on the log at all, arriving **starts a session** and the room opens on the picker over it
-(`TrainingStore.firstRun`, canon §J22) — no tour, no splash, no question about goals, and nothing
-anywhere that counts how many times an offer was walked past. The account verb a lifter mid-session
-can reach is *Build my routine*, which opens the shell's own door and comes back to the running
-session; it is drawn only while there is no account, because the step after one is the MCP grant and
-that door is the web's on this surface.
+Nothing needs an account first, and **nothing starts by itself**: home is the routine list
+(Routines · The log · Ask), a fresh install's empty state points at *Build a routine* with *Just
+start logging* as the second path, and a session begins only when the lifter taps a start. The old
+§J22 first-arrival auto-start — arriving opened a session by itself, once per install, remembered
+under `firstSessionOpened` in the `works.windmill.gym` SharedPreferences — was retired 2026-08-13
+(ruling R6: first-open testing named "why is a session already running" as a blocker); the stored
+key is left where old installs wrote it and nothing reads it. There is still no tour, no splash, no
+question about goals, and nothing anywhere that counts how many times an offer was walked past. The
+account verb a lifter mid-first-session can reach is *Build my routine*, which opens the shell's
+own door and comes back to the running session; it is drawn only while there is no account, because
+the step after one is the MCP grant and that door is the web's on this surface.
 
-"Nothing on the log" is a question about reads that ANSWERED, never about lists that came back empty:
-the log page has to have said *there is no more* and the routines page has to have arrived, so a
-returning lifter whose phone has no signal is never handed a session over a history the room could
-not see. The arrival opens its session **once per install** (`works.windmill.gym`
-SharedPreferences, the twin of the iOS `windmill.gym.firstSessionOpened`) — that is what keeps a
-**sign-out** from reading as a first run, since a signed-out account's log lives somewhere this phone
-deliberately keeps nothing of, and it is what makes "once" true after a first session is discarded.
-It counts nothing, holds no id and records one thing the room did.
+The first-session picker (the six barbell movements pinned, `TrainingStore.firstSession`) still
+keys on "nothing on the log", which is a question about reads that ANSWERED, never about lists that
+came back empty: the log page has to have said *there is no more* and the routines page has to have
+arrived, so a returning lifter whose phone has no signal is never treated as brand new.
+
+A user-tapped start sends `joinOpenSession: false` explicitly (decisions §5 — a start is never a
+silent join under a different plan); on the log's 409 `session-already-open` the room re-reads the
+log, adopts the open workout through the ordinary read path, and repeats the refusal in the log's
+own words, so the lifter resumes or discards deliberately.
 
 Every gym route wants an account, so an anonymous install would otherwise have no catalog to pick
 from; **the six** — back-squat · bench-press · deadlift · overhead-press · barbell-row · chin-up —
@@ -86,9 +96,9 @@ and what this device still owes rides through a change of seat, because it has l
 this is its only copy.
 
 Gym's settings — units, the rest dial and how a logged set confirms itself
-(`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of Today
-rather than from You. `ProductModule` exposes a room and nothing else on this surface, so the
-section carries its own door until that seam grows a settings slot.
+(`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of the
+Routines home rather than from You. `ProductModule` exposes a room and nothing else on this
+surface, so the section carries its own door until that seam grows a settings slot.
 
 ## CI and releases
 

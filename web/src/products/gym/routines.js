@@ -153,7 +153,7 @@ export function duplicateRoutine(routine, {
 }
 
 // THE EDITOR IS A DRAFT (screen 6). Every change lands in this copy and nothing reaches the store
-// until Done, so a routine is never left half-rewritten by a lifter who walked away mid-edit — and
+// until Save, so a routine is never left half-rewritten by a lifter who walked away mid-edit — and
 // half a program is what somebody trains against tomorrow. The draft is a whole routine, so the
 // same `routineWrite` sends it whichever way it was born.
 //

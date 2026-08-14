@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -302,6 +303,11 @@ fun LoggerScreen(
             MovementTitle(
                 name = Readout.movement(movement, store.catalog),
                 plan = counter.plan,
+                // §K's other half of "where am I": the movement's place in the walk, counted off
+                // the merged order so an appended movement counts the moment it joins.
+                place = LiveLines.place(store.order, movement),
+                walk = store.order.size,
+                standing = at,
                 previous = if (at < 0) null else store.order.getOrNull(at - 1),
                 next = if (at < 0) null else store.order.getOrNull(at + 1),
                 onMove = { move(it) },
@@ -402,7 +408,7 @@ fun LoggerScreen(
                     taken = store.order,
                     lastSets = store.lastSets,
                     nowMs = nowMs,
-                    title = "Add exercise",
+                    title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
                     // The same swap the builder makes: one sheet stack, and Cancel comes back to
@@ -514,11 +520,18 @@ private fun Header(routine: String, rest: Rest.Line?, onFinish: () -> Unit, onCl
 
 // NAVIGATION BELONGS IN THE TITLE, which is where §K moved it: the chevrons walk the session and the
 // name itself opens the list they walk. What the plan asks for sits under the name, in the target's
-// own ink — a movement the plan never named says `no target` there rather than borrowing a number.
+// own ink — a movement the plan never named says `no target` there rather than borrowing a number —
+// and under THAT, where the walk holds more than one movement, the position: one dot per movement in
+// the merged order, filled in the accent through the one being stood on, then `movement 3 of 6`, the
+// mono uppercase twin of the set counter over the numeral. The dots and the line are one fact drawn
+// twice, so they share one gate — a walk of one says neither.
 @Composable
 private fun MovementTitle(
     name: String,
     plan: String,
+    place: String?,
+    walk: Int,
+    standing: Int,
     previous: String?,
     next: String?,
     onMove: (String) -> Unit,
@@ -538,6 +551,30 @@ private fun MovementTitle(
                 style = GymType.movementHead.copy(color = GymSkin.ink, textAlign = TextAlign.Center),
             )
             Text(plan, style = GymType.numeral(12), color = GymSkin.targetInk)
+            place?.let {
+                // Counted off the merged order, so a movement appended on the bench mid-rest gets
+                // its dot the moment it joins. Silent to TalkBack on purpose: the dots say nothing
+                // the line under them does not already say.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.clearAndSetSemantics { },
+                ) {
+                    repeat(walk) { step ->
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (step <= standing) GymSkin.accent
+                                            else GymSkin.lineStrong),
+                        )
+                    }
+                }
+                Text(
+                    it.uppercase(),
+                    style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
+                    color = GymSkin.inkFaint,
+                )
+            }
         }
         Arrow("›", next, onMove)
     }

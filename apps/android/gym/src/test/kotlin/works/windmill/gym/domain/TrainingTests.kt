@@ -109,20 +109,20 @@ class TrainingWireTests {
 
         val start = fields(SessionStart(id = "ses_1", startedAt = 1))
         assertNull("an ad-hoc session names no routine, and says so by silence", start["routineId"])
-        assertNull("an ordinary start omits the flag — the phone joins by default", start["joinOpenSession"])
+        assertNull("a start that declines to state the flag omits it — and an omitted flag IS the " +
+            "join, which is why every real start on this phone states false", start["joinOpenSession"])
 
-        // The claim is the one caller that sends it, and it must ride as an explicit false: a
-        // replayed past session that silently joined a live workout would file yesterday's sets
-        // into today's.
-        val claimed = fields(SessionStart(id = "ses_1", startedAt = 1, joinOpenSession = false))
-        assertEquals(false, claimed["joinOpenSession"]?.jsonPrimitive?.boolean)
+        // Every real start — user-tapped (decisions §5) and the claim's replays alike — rides with
+        // an EXPLICIT false: a start that silently joined a live workout would land the lifter in
+        // yesterday's session under the wrong plan, or file a replayed past session into today's.
+        val stated = fields(SessionStart(id = "ses_1", startedAt = 1, joinOpenSession = false))
+        assertEquals(false, stated["joinOpenSession"]?.jsonPrimitive?.boolean)
     }
 
     // The log's rows are FLAT: the session's own fields with its four facts beside them, not a
-    // session nested under a key that is not there. `topSet` and `closedItself` are decoded and not
-    // drawn anywhere on this phone — the only session row the room has is Today's "Last session",
-    // whose copy is fixed by the contract and names neither — so this is what keeps the model
-    // matching the wire the web's log row reads.
+    // session nested under a key that is not there. `topSet` is decoded and drawn nowhere on this
+    // phone, and `closedItself` reaches exactly one sentence (the session detail's four-hour-rule
+    // line) — so this is what keeps the model matching the wire the web's log row reads.
     @Test
     fun testALogRowIsTheSessionWithItsFactsBesideIt() {
         val row = json.decodeFromString(SessionSummary.serializer(), """

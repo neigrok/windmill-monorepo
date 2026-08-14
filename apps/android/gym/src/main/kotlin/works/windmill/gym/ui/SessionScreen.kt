@@ -425,7 +425,7 @@ private fun SetsBlock(
     }
     if (setsFailure != null) {
         // The log's own sentence when it sent one — including the one the store writes for a
-        // session that has been discarded from another surface since Today listed it, which is a
+        // session that has been discarded from another surface since the log listed it, which is a
         // fact about the log and not about this phone's signal.
         Text(
             setsFailure.line("the sets are on your account"),

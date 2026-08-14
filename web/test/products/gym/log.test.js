@@ -384,19 +384,19 @@ test('routineMetaLabel — what a routine holds, and when it was last used', () 
   const entries = (count) => Array.from({ length: count }, (each, index) => ({ position: index + 1 }));
   assert.equal(
     routineMetaLabel({ entries: entries(6), lastTrainedAt: now - 5 * 86_400_000 }, now),
-    '6 exercises · trained 5 days ago',
+    '6 movements · trained 5 days ago',
   );
   assert.equal(
     routineMetaLabel({ entries: entries(1), lastTrainedAt: now - 86_400_000 }, now),
-    '1 exercise · trained yesterday',
+    '1 movement · trained yesterday',
   );
-  assert.equal(routineMetaLabel({ entries: entries(4), lastTrainedAt: now }, now), '4 exercises · trained today');
+  assert.equal(routineMetaLabel({ entries: entries(4), lastTrainedAt: now }, now), '4 movements · trained today');
   // ONE WORD FOR A ROUTINE NOBODY HAS TRAINED, and it is canon's: `untested` says the first session
   // is allowed to disagree with it, which is the point of writing one out before you have trained
   // it. There is no field for it — `lastTrainedAt` is the store's aggregate over the log, so its
   // absence IS the state and nothing else spells it.
-  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 exercises · untested');
-  assert.equal(routineMetaLabel({ entries: [] }, now), '0 exercises · untested');
+  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 movements · untested');
+  assert.equal(routineMetaLabel({ entries: [] }, now), '0 movements · untested');
   assert.equal(UNTESTED, 'untested');
   assert.equal(isUntested({ entries: [] }), true);
   assert.equal(isUntested({ entries: [], lastTrainedAt: now }), false);

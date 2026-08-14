@@ -1,9 +1,9 @@
 import SwiftUI
 import WindmillPlatform
 
-// RENAME (§N screen 32) — ONE sheet, drawn over a movement's record and over a routine's own page.
-// §N ties them by name: "a routine renames from its own header (30) with the same sheet", and two
-// sheets would be two places for one rule to drift.
+// RENAME (§N screen 32) — the sheet a MOVEMENT renames from, over its record. A routine used to
+// share it from its own header; since the 13 Aug update (R2/R3) a routine renames by editing the
+// inline name in the one editor, so the movement's record is this sheet's only door now.
 //
 // A NAME IS A LABEL ON A STABLE ID, so renaming is not destructive and never forks a record. That is
 // the claim, and this screen is the one place in the product whose whole job is to PROVE it — which
@@ -11,18 +11,11 @@ import WindmillPlatform
 // A constant there would be the product asserting something it did not check, on the one screen that
 // cannot afford to.
 //
-// A ROUTINE RENAME HAS NO PROOF BLOCK, and its absence is deliberate rather than missing. The board
-// draws counts for a movement only; "12 sessions · unchanged" invented for a routine would be
-// exactly the constant this sheet exists to refuse. The routine's write is the whole document under
-// a new name, which moves its revision and sets every pending proposal on it aside — correct, and
-// nothing this sheet needs to say.
-//
 // The sheet stays up until the log answers. A rename that did not happen may not close as though it
 // had, and the refusal is repeated in the log's own words where it sent any.
 struct RenameSheet: View {
     let title: String
     let prompt: String
-    // Empty for a routine — see the head of this file.
     let proof: [Record.Proof]
     let save: (String) async -> TrainingStore.WriteFailure?
     let onClose: () -> Void

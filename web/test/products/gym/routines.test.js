@@ -201,7 +201,7 @@ test('reorderEntries — a drag that lands past the end still lands, and an empt
   assert.deepEqual(reorderEntries([], 0, 1), []);
 });
 
-// The editor changes a COPY. Nothing reaches the store until Done, so a lifter who walks away
+// The editor changes a COPY. Nothing reaches the store until Save, so a lifter who walks away
 // mid-edit still has the program they trained against yesterday.
 test('draftFrom — the draft is a whole routine, and editing it leaves the original alone', () => {
   const routine = {

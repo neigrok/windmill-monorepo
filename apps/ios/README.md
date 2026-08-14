@@ -81,15 +81,16 @@ rows as `backend/db/schema.sql`) because signed out there is no catalog read to 
 fresh install opened the picker onto "the catalog didn't load", which made the anonymous room a
 promise it could not keep on the one launch that matters.
 
-**Arriving starts the first session.** Gym's answer to the shell's one question is not a tour: it is
-the real surface with its first move already made (`GymRoom.openTheFirstOne`) — a session running, the
-picker already up, the six barbell movements at the head of it, each reading `never logged`. It fires
-once, on a device *known* to hold nothing at all (`TrainingStore.holdsNothing` — no live session, and
-the log and routine reads landed and came back empty, because an empty list is also what a read that
-failed leaves behind), and goes through the same start the Start button uses so the local shelf and
-the claim replay know the session like any other. Signed out that is always true on a fresh install —
-the device is the whole log. Signed in with no signal it is not, so nothing starts and Today draws its
-own Start button instead; a start that fails here says nothing, because nobody asked for it.
+**Nothing starts by itself — including on the first arrival.** The first-run auto-start
+(`GymRoom.openTheFirstOne`, §J22's exception) is retired as of the 2026-08-13 routine-first update:
+first-open testing named "why is a session already running" as a blocker, and the rule is absolute
+now — a session begins only when the lifter opens a routine and taps *Start workout*, or taps *Just
+start logging*. Home is the **Routines** list (the tabs are Routines · The log · Ask), and on a
+fresh install its empty state carries the onboarding weight instead: "No routines yet", **Build a
+routine** as the primary, *Just start logging* as the second path. Every start still goes through
+the same `TrainingStore.start`, so the local shelf and the claim replay know the session like any
+other; the once-per-install flag's stored key (`windmill.gym.firstSessionOpened`) lingers harmlessly
+on devices that set it, read by nothing.
 
 The queue is the room's load-bearing part: sets are kept on the device under their own client-minted
 ids and replayed until the log takes them, and the three refusals are told apart by their machine
@@ -238,8 +239,8 @@ the connect page instead, because what the agent still needs then is the grant a
   a settings *section* and the shell composes it, exactly as `web/src/products/gym/routes.js`
   registers `GymSettingsSection`. `ProductModule` has no such slot — `room`, `hubLine`, `entry`,
   `holdings`, and nothing about settings — and the shell is not a product's territory, so gym's own
-  rows are reached from a quiet row at the foot of Today instead. The screen is the one the section
-  would show; when the seam lands, the row on Today goes.
+  rows are reached from a quiet row at the foot of home (Routines) instead. The screen is the one
+  the section would show; when the seam lands, the row on home goes.
 - **Choosing `lb` changes nothing this app draws.** The setting is real and account-level, and gym
   stores kilograms under either answer — but the ladder and the keypad here are kilogram
   instruments, and a pound numeral over buttons that step in kilos would not add up. The row

@@ -253,23 +253,33 @@ final class TrainingStoreTests: XCTestCase {
 
     // Pressing Start cannot re-plan a workout that is already running: the session that comes back is
     // the live one, with ITS snapshot, and its sets come with it rather than being drawn over.
-    func testStartingWhileASessionIsOpenJoinsItWithItsOwnSets() async {
+    // A START IS NEVER A SILENT JOIN (the 13 Aug start contract). Every user-tapped start says
+    // `joinOpenSession: false`: the join default ignored the tapped routine, so "Start workout" on
+    // routine B landed the lifter in yesterday's workout under the wrong plan. The refusal re-reads
+    // the log, so the open workout is adopted for the room to stand in — resumed or finished
+    // deliberately, never joined by surprise.
+    func testAStartWhileASessionIsOpenIsRefusedAndTheOpenWorkoutIsAdopted() async {
         let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        // Opened on the account AFTER this device connected — another phone, or a workout this
+        // device forgot: the exact case a silent join used to swallow.
         server.open(Session(id: "ses_live", startedAtMs: 500,
                             plan: PlanSnapshot(routine: "Push A",
                                                entries: [PlanEntry(exerciseId: "bench-press", sets: 5,
                                                                    reps: 5, weightKg: 82.5)])))
         server.sets["ses_live"] = [TrainingSet(id: "set_old", exerciseId: "bench-press", setNumber: 1,
                                                weightKg: 82.5, reps: 5, completedAtMs: 600)]
-        let store = makeStore(sync: server)
-        await store.connect(to: account(signedIn: true))
 
-        let joined = try? await store.start(routineId: "rt_other").get()
-
-        XCTAssertEqual(joined?.id, "ses_live", "a start joins the open session rather than opening a second")
+        guard case .failure(let why) = await store.start(routineId: "rt_other") else {
+            return XCTFail("a start into an account with an open workout is a refusal, never a join")
+        }
+        XCTAssertEqual(why, .refused("a session is already open"), "in the log's own words")
+        XCTAssertEqual(server.started.last?.joinOpenSession, false, "the tapped start said so explicitly")
+        XCTAssertEqual(store.session?.id, "ses_live", "the open workout was adopted for the room to stand in")
         XCTAssertEqual(store.session?.plan?.routine, "Push A",
-                       "and it keeps that session's own snapshot — Start cannot re-plan a running workout")
-        XCTAssertEqual(store.sets.map(\.id), ["set_old"], "the sets already logged into it come with it")
+                       "under that session's own snapshot — never the routine the tap asked for")
+        XCTAssertEqual(store.sets.map(\.id), ["set_old"], "with the sets already logged into it")
     }
 
     // The number in front of the lifter before they touch anything: the plan's target while the
@@ -754,6 +764,41 @@ final class TrainingStoreTests: XCTestCase {
             return XCTFail("an unreachable log answers with nothing")
         }
         XCTAssertEqual(quiet, .noAnswer)
+    }
+
+    // DELETE, SIGNED IN (R3 — the editor's foot). The log takes the routine and this device forgets
+    // it; asking again meets the 404 that IS the outcome asked for, so it settles rather than fails.
+    func testDeletingARoutineForgetsItAndA404IsTheOutcomeAskedFor() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        var draft = RoutineDraft(name: "Push A", position: 0)
+        draft.add("bench-press")
+        guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
+
+        let gone = await store.deleteRoutine(made.id)
+        XCTAssertNil(gone)
+        XCTAssertTrue(store.routines.isEmpty)
+        XCTAssertTrue(server.calls.contains("deleteRoutine"))
+
+        let again = await store.deleteRoutine(made.id)
+        XCTAssertNil(again, "already gone is gone, not a failure")
+    }
+
+    // A delete the log never answered is SAID, and the routine stays on screen — a program drawn
+    // as deleted on the strength of silence would be the screen lying about the log.
+    func testADeleteTheLogDidNotAnswerLeavesTheRoutineStanding() async {
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        var draft = RoutineDraft(name: "Push A", position: 0)
+        draft.add("bench-press")
+        guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
+
+        server.online = false
+        let why = await store.deleteRoutine(made.id)
+        XCTAssertEqual(why, .noAnswer)
+        XCTAssertEqual(store.routines.map(\.id), [made.id])
     }
 
     // THE ID NEVER MOVES. That is the whole promise the record page exists to make visible: rename

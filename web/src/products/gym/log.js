@@ -60,9 +60,11 @@ export function finishHref(id) {
 
 export const BACKFILL_HREF = '#/gym/backfill';
 
-// ASK (§L) — the chat, as a ROOM and deliberately not a fourth tab: the bar is the app's three
-// rooms, and a chat is not a place you live. It carries no id because it is about the LOG and not
-// about one workout, which is the whole difference between it and the panel it replaces.
+// ASK (§L) — the chat, as a ROOM and deliberately not a fourth tab ON THIS SURFACE: web's bar is
+// its three rooms, and a chat is not a place you live. The 2026-08-13 mobile boards promote Ask to
+// a tab on the phones; whether web follows is an OPEN question filed to the design ledger, not one
+// this file may settle. It carries no id because it is about the LOG and not about one workout,
+// which is the whole difference between it and the panel it replaces.
 export const ASK_HREF = '#/gym/ask';
 
 // ASK'S PAST (§O) — the threads, and one thread read back. They hang UNDER Ask rather than beside
@@ -477,7 +479,7 @@ export function isUntested(routine) {
 // order. A routine nobody has trained yet says exactly that rather than borrowing today.
 export function routineMetaLabel(routine, now = Date.now()) {
   const count = routine.entries?.length ?? 0;
-  const movements = count === 1 ? '1 exercise' : `${count} exercises`;
+  const movements = count === 1 ? '1 movement' : `${count} movements`;
   if (isUntested(routine)) return `${movements} · ${UNTESTED}`;
   return `${movements} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
 }

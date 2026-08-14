@@ -234,10 +234,12 @@ struct LoggerScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Nothing in hand yet, which on the very first arrival is the whole of gym's onboarding: §J22,
-    // the picker already up over a session nobody pressed start on. It is the same screen every
-    // later time a session holds nothing, and it needs no branch for that — "what are you starting
-    // with" is true of a first launch and of a list just swiped empty.
+    // Nothing in hand yet: the opening picker, over a session the lifter just started — "Just start
+    // logging", or a routine whose plan named nothing. It is the same screen every later time a
+    // session holds nothing, and it needs no branch for that — "what are you starting with" is true
+    // of a first free-form session and of a list just swiped empty. (§J22's first-arrival auto-start
+    // retired 2026-08-13, R6: nothing runs unless the user started it, so this screen is only ever
+    // reached through a start the lifter tapped.)
     //
     // There is no "Choose a movement" button in front of it any more. A button whose only job is to
     // open the list it is standing on is a tap this room can simply not charge for.
@@ -276,6 +278,31 @@ struct LoggerScreen: View {
                         .font(GymType.numeral(12.5))
                         .foregroundStyle(skin.targetInk)
                         .lineLimit(1)
+                    // WHERE THE WALK STANDS (§K) — under the title, where navigation lives, in the
+                    // same voice as "set 3 of 5" over the numeral. The dots and the line are one
+                    // fact drawn twice, both counted off the merged order — so a movement appended
+                    // mid-rest counts like one the plan named — and the dots say nothing a screen
+                    // reader needs: the line under them already says it. A walk of one draws
+                    // neither, on the line's own rule: `movement 1 of 1` says nothing, and a
+                    // single dot says it again.
+                    if let position = LiveLines.movementPosition(order: store.order,
+                                                                 current: store.exerciseId),
+                       let standing = store.exerciseId.flatMap({ store.order.firstIndex(of: $0) }) {
+                        HStack(spacing: 5) {
+                            ForEach(store.order.indices, id: \.self) { place in
+                                Circle()
+                                    .fill(place <= standing ? skin.accent : skin.lineStrong)
+                                    .frame(width: 7, height: 7)
+                            }
+                        }
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                        Text(position)
+                            .font(GymType.numeral(10.5))
+                            .textCase(.uppercase)
+                            .kerning(0.7)
+                            .foregroundStyle(skin.inkFaint)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -722,7 +749,7 @@ private struct DottedRule: Shape {
 // A write somebody lost. It is SAID — a set with its movement and its numbers, a claim-level
 // document under its name — because a queue that dropped it quietly would count the loss as
 // intended. ONE component because it is one voice: the logger says a loss over the workout it
-// happened in, and Today says the same loss when a boot claim met it with no logger mounted.
+// happened in, and home (Routines) says the same loss when a boot claim met it with no logger mounted.
 // Dismiss clears the shown refusals on this surface.
 struct RefusalRows: View {
     let refusals: [RefusedWrite]

@@ -1495,6 +1495,22 @@ button.gym-set:focus-visible .gym-set-fix,
 
 /* ── Routines, and one of them under the hand ──────────────── */
 
+/* Screen 1's CTA, on the desk: the empty state points at the one
+   next move, in the same iris every commit on this surface wears. */
+.gym-routines-build {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  margin-top: 14px;
+  border-radius: 16px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .gym-routines {
   list-style: none;
   margin: 0;
@@ -1580,7 +1596,7 @@ button.gym-set:focus-visible .gym-set-fix,
   outline: none;
   border-color: var(--color-brand);
 }
-.gym-editor-done {
+.gym-editor-save {
   flex: none;
   height: 44px;
   padding: 0 18px;
@@ -1594,9 +1610,9 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: pointer;
 }
 /* Inert rather than absent, and the line beneath says which of the
-   two things is missing: a Done that vanishes leaves a lifter
+   two things is missing: a Save that vanishes leaves a lifter
    pressing at nothing to find out why. */
-.gym-editor-done.is-inert {
+.gym-editor-save.is-inert {
   background: var(--gym-raised);
   color: var(--gym-ink-faint);
 }
@@ -1693,7 +1709,7 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 /* A movement this account minted, in the picker's own word. Beside
    the name and never under it: the row is one line high. */
-.gym-entry-mine {
+.gym-entry-yours {
   margin-left: 7px;
   font-size: 10px;
   font-weight: 800;

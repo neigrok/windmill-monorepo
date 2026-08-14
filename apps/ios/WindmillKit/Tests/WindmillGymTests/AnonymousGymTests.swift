@@ -76,16 +76,13 @@ final class AnonymousGymTests: XCTestCase {
 
     // ── the room, signed out ───────────────────────────────────────────────────────────────────
 
-    // THE FIRST ARRIVAL, END TO END (wave 5 §5, and it is the one thing in that wave that is not a
-    // screen): a phone that has never held anything opens gym, a session starts because arriving
-    // started it, four sets go in, the app dies with nothing drained and nothing finished — and
-    // NOTHING IS LOST. No account, no network, no reply from anybody.
+    // THE FIRST ARRIVAL, END TO END: a phone that has never held anything opens gym onto the empty
+    // Routines home, the lifter taps "Just start logging" (nothing starts by itself — the arrival
+    // auto-start retired 2026-08-13, R6), four sets go in, the app dies with nothing drained and
+    // nothing finished — and NOTHING IS LOST. No account, no network, no reply from anybody.
     //
-    // The precondition asserted first is the room's own test for a first arrival
-    // (`GymRoom.openTheFirstOne` → `holdsNothing`): nothing running, no history, no program, and
-    // every read that could say otherwise landed — which signed out is trivially true, because the
-    // device IS the log. And the picker has to be able to name a movement here or the whole promise
-    // is a screen you cannot get past — which is what the sixty-four seeds in the app bundle are for.
+    // The picker has to be able to name a movement here or the tapped start lands on a screen you
+    // cannot get past — which is what the sixty-four seeds in the app bundle are for.
     func testAFreshArrivalLogsFourSetsAndLosesNothingWhenTheAppDies() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
@@ -94,10 +91,9 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertTrue(store.recent.isEmpty)
         XCTAssertTrue(store.routines.isEmpty)
         XCTAssertEqual(store.logFoot, .bottom)
-        XCTAssertTrue(store.holdsNothing, "so arriving starts the first session")
 
         guard case .success(let opened) = await store.start() else {
-            return XCTFail("arriving starts the session, and it needs nobody's permission")
+            return XCTFail("the tapped start opens a session, and it needs nobody's permission")
         }
         XCTAssertNil(store.exerciseId, "the picker is what a session with nothing chosen draws")
 
@@ -143,37 +139,9 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(reopened.todaySets.count, 4)
     }
 
-    // WHAT THE ARRIVAL START ACTUALLY ASKS, and why it is not "are these lists empty". A read that
-    // failed leaves them empty too — and a returning account handed a session it never asked for, on
-    // top of a history the room merely could not see, is the one way §J22 can hurt somebody who is
-    // not new. `holdsNothing` asks the FOOT of the log and whether the routines answered at all.
-    func testTheArrivalStartWillNotReadAFailedLogAsAnEmptyOne() async {
-        let server = FakeTraining()
-        server.online = false
-        let quiet = makeStore(sync: server, retryAfter: .seconds(600))
-        await quiet.connect(to: account(signedIn: true))
-
-        XCTAssertEqual(quiet.logFoot, .failed)
-        XCTAssertTrue(quiet.recent.isEmpty)
-        XCTAssertTrue(quiet.routines.isEmpty)
-        XCTAssertFalse(quiet.holdsNothing, "empty because nothing answered is not empty")
-
-        // The same account and the same genuinely empty log, once the reads land.
-        server.online = true
-        let answered = makeStore(sync: server, retryAfter: .seconds(600))
-        await answered.connect(to: account(signedIn: true))
-        XCTAssertEqual(answered.logFoot, .bottom)
-        XCTAssertTrue(answered.holdsNothing)
-
-        // And a routines read that missed on its own is the same refusal: the log answering "no
-        // sessions" says nothing about whether this lifter has a program written down.
-        server.refuseRoutines = refusal(500, message: "internal error")
-        let halfRead = makeStore(sync: server, retryAfter: .seconds(600))
-        await halfRead.connect(to: account(signedIn: true))
-        XCTAssertEqual(halfRead.logFoot, .bottom)
-        XCTAssertTrue(halfRead.routines.isEmpty)
-        XCTAssertFalse(halfRead.holdsNothing)
-    }
+    // (`holdsNothing` — the arrival start's guard against reading a failed log as an empty one —
+    // retired with the auto-start it existed for, 2026-08-13 R6. A start is the lifter's own tap
+    // now, so there is no read whose failure could start a session over an unseen history.)
 
     // THE PICKER'S META CROSSES THE SIGN-IN, because the screen that asked for it does. §J22's card
     // is a door OUT of the room and the room stays mounted behind it — that is what lands the lifter
@@ -209,7 +177,7 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     // The whole signed-out life of a session, on this device and nowhere else: start, log, finish,
-    // and the log page Today draws from local history.
+    // and the log page the room draws from local history.
     func testSignedOutASessionRunsWholeOnThisDevice() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
@@ -232,7 +200,7 @@ final class AnonymousGymTests: XCTestCase {
         }
         XCTAssertFalse(closed.isOpen)
         XCTAssertNil(store.session)
-        XCTAssertEqual(store.recent.map(\.setCount), [2], "Today's log page reads the local shelf")
+        XCTAssertEqual(store.recent.map(\.setCount), [2], "the log tab reads the local shelf")
         XCTAssertEqual(store.recent.map(\.id), [closed.id])
 
         let reopened = shelf()
@@ -770,9 +738,9 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     // Wave 2 §B: a loss said during a BOOT claim has no logger to carry it — no session is open, so
-    // Today is the standing screen and it draws the same refusal banner the logger uses. The loss
-    // is said by NAME with the server's own sentence, and dismissing clears it.
-    func testABootClaimLossIsSaidByNameOnTodayAndDismissClears() async {
+    // home (Routines) is the standing screen and it draws the same refusal banner the logger uses.
+    // The loss is said by NAME with the server's own sentence, and dismissing clears it.
+    func testABootClaimLossIsSaidByNameOnHomeAndDismissClears() async {
         seedRoutine()
         let server = FakeTraining()
         server.refuseCreateRoutine = refusal(400, code: "bad-request",
@@ -780,7 +748,7 @@ final class AnonymousGymTests: XCTestCase {
         let claimed = makeStore(sync: server)
         await claimed.connect(to: account(signedIn: true))
 
-        XCTAssertNil(claimed.session, "no live session — Today is the screen that carries the banner")
+        XCTAssertNil(claimed.session, "no live session — home is the screen that carries the banner")
         XCTAssertEqual(claimed.refusals,
                        [.claim(RefusedClaim(id: "rt_local", name: "Push A",
                                             reason: "the log wouldn’t take that routine"))])
@@ -930,7 +898,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5])
         XCTAssertEqual(server.finishes[past.id], past.finishedAtMs)
         XCTAssertTrue(shelf().isEmpty)
-        XCTAssertEqual(store.recent.map(\.id), [past.id], "the claimed session still reached Today")
+        XCTAssertEqual(store.recent.map(\.id), [past.id], "the claimed session still reached the log")
         XCTAssertEqual(store.refusals, [])
     }
 

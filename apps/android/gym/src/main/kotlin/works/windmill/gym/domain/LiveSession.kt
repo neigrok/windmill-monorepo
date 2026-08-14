@@ -120,6 +120,18 @@ object LiveLines {
                        plan = "plan $sets × ${Readout.repTarget(planEntry.reps)}$load")
     }
 
+    // WHERE THE MOVEMENT STANDS IN THE WALK — "movement 3 of 6", under the title beside the plan
+    // line (§K's position answer, the half this surface was missing). Counted off the ORDER — the
+    // merged walk of plan lines and everything appended — and by position rather than by any plan
+    // index, so a movement added on the bench mid-rest counts the moment it joins. It degrades to
+    // silence rather than to a false count: a movement the walk does not hold has no place, and a
+    // walk of one is not a position worth a line.
+    fun place(order: List<String>, movement: String?): String? {
+        val at = movement?.let { order.indexOf(it) } ?: -1
+        if (at < 0 || order.size < 2) return null
+        return "movement ${at + 1} of ${order.size}"
+    }
+
     // FOUR STATES, NOT TWO, and the difference between them is the whole reason this card exists.
     // A read still in flight says so and waits; a read that came back empty-handed says THAT instead
     // of going on claiming to be reading; and ONLY an answer may say "first time". A card drawing

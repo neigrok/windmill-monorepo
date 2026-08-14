@@ -39,7 +39,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,22 +71,25 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.net.WindmillJson
 
-// BUILDING A DAY BEFORE YOU GO (§M, screens 28 and 29) — the third door onto a routine, and the one
-// a lifter with a program in a notebook reaches for first. The other two already stand: a routine
-// falls out of the session you just did (the finish screen names it), or an agent proposes one.
+// THE ONE EDITOR (§M / R3, screens 28 and 6) — a name, a list, and a button that adds to it, all on
+// ONE screen: the name inline at the top rather than a step before, so movements can come first and
+// the name last, or the reverse, and the whole day is visible the entire time. The same screen
+// creates and edits, differing only in what is already in the list — and in the two quiet rows edit
+// mode carries at the foot: Duplicate, and Delete routine.
 //
-// NAME FIRST, AND THE NAME IS A REAL QUESTION ASKED ONCE. A routine built on purpose deserves the
-// word you call it, not "Workout 3" — so the first screen is a field with the keyboard already up,
-// and the suggestions under it fill the field rather than deciding anything.
+// SAVE LIVES IN THE HEADER AND ONLY THERE (R3 — §M's own sentence wins over the drawn footer). It
+// enables when the draft is savable: named and holding at least one movement to create, and for an
+// edit only once something actually changed — a Save that rewrote a document with itself would move
+// the revision and supersede a pending proposal for nothing.
 //
-// THEN MOVEMENTS, THEN TARGETS IN A SHEET OVER THE LIST, so the shape of the day stays visible while
-// numbers are typed into it. The sheet is where the two rules of this wave live: there is no history
-// behind a routine built at home, so it SAYS SO instead of prefilling a guess, and `Leave it open`
-// is a first-class answer rather than a failure to fill something in.
+// THEN TARGETS IN A SHEET OVER THE LIST, so the shape of the day stays visible while numbers are
+// typed into it. The sheet is where two rules live: there is no history behind a routine built at
+// home, so it SAYS SO instead of prefilling a guess, and `Leave it open` is a first-class answer
+// rather than a failure to fill something in.
 //
-// NO WIZARD, NO STEP COUNTER, NO TEMPLATE GALLERY, NO WEEK. Two screens, and the second one is
-// savable from the moment it holds a movement: a routine is a list with a name, and a week is a
-// thing lifters keep in their head and we would only get wrong.
+// NO WIZARD, NO STEP COUNTER, NO TEMPLATE GALLERY, NO WEEK. One screen, savable from the moment it
+// holds a name and a movement: a routine is a list with a name, and a week is a thing lifters keep
+// in their head and we would only get wrong.
 
 // A HALF-TYPED ROUTINE EXISTS NOWHERE BUT IN MEMORY — not on the log, not on the shelf, not in the
 // queue — so it is saved the way the room saves a conversation, and for the same reason: an activity
@@ -120,22 +122,19 @@ private sealed interface BuilderSheet {
 fun RoutineBuilder(
     draft: RoutineDraft,
     store: TrainingStore,
-    backLabel: String,
     saving: Boolean,
     onDraft: (RoutineDraft) -> Unit,
     // THE SAVE IS THE ROOM'S AND NOT THIS SCREEN'S, for the reason every write in this product is
     // owned by something that outlives the surface it was made on: this composition dies the moment
     // the draft is let go of, and a back gesture inside the round trip would cancel a routine
-    // half-way onto the log with nothing left standing to say so.
+    // half-way onto the log with nothing left standing to say so. The delete is the room's for the
+    // same reason.
     onSave: () -> Unit,
+    onDelete: (String) -> Unit,
     onClose: () -> Unit,
     say: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // Which of the two screens is up. A draft that already has a name arrives on the second — an
-    // edit, and a process death that restored one mid-build — and everything else starts at the
-    // question. It is saveable so a rotation does not walk a lifter back to a name they just typed.
-    var naming by rememberSaveable(draft.id) { mutableStateOf(Program.named(draft.name) == null) }
     var sheet by remember { mutableStateOf<BuilderSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -145,26 +144,30 @@ fun RoutineBuilder(
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
     }
 
+    // R3'S ENABLE RULE. `savable` is the domain's (named, ≥1 movement); `changed` is this screen's
+    // half, read against the routine as it stands — an edit that changed nothing has nothing to
+    // save, and writing it anyway would supersede a pending proposal for free.
+    val standing = draft.id?.let { store.routine(it) }
+    val changed = standing == null || draft != RoutineDraft.of(standing)
+    val editing = draft.id != null
+
     Column(Modifier.fillMaxSize()) {
-        if (naming) {
-            NameStep(
-                draft = draft,
-                backLabel = backLabel,
-                onDraft = onDraft,
-                onNext = { naming = false },
-                onBack = onClose,
-            )
-            return@Column
-        }
         BuildStep(
             draft = draft,
             store = store,
-            saving = saving,
-            onBack = { naming = true },
+            editing = editing,
+            savable = draft.savable && changed && !saving,
+            onDraft = onDraft,
             onOpenTarget = { sheet = BuilderSheet.Target(it) },
             onRemove = { onDraft(draft.removing(it)) },
             onAdd = { sheet = BuilderSheet.Picker },
             onSave = onSave,
+            onCancel = onClose,
+            // A copy is the day as it stands ON SCREEN — nothing typed tonight is thrown away by
+            // duplicating — and deliberately unnamed: a copy is a new day, and §M asks for every
+            // day's name.
+            onDuplicate = { onDraft(draft.duplicated(position = store.routines.size)) },
+            onDelete = { draft.id?.let(onDelete) },
         )
     }
 
@@ -213,7 +216,7 @@ fun RoutineBuilder(
                     // prefill this wave refuses arriving through the side door.
                     lastSets = null,
                     nowMs = 0,
-                    title = "Add a movement",
+                    title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = {
                         onDraft(draft.adding(it))
@@ -248,130 +251,8 @@ fun RoutineBuilder(
     }
 }
 
-// SCREEN 28 — the name, asked first and asked once. The keyboard is up on arrival because there is
-// exactly one thing to do here, and a screen that made a lifter tap the field first would be asking
-// them to find the question.
-//
-// THE SUGGESTIONS ARE SUGGESTIONS. Tapping one fills the field and typing over it is the expected
-// case; nothing here is a category, nothing is remembered, and a routine named none of the three is
-// the ordinary outcome.
-@Composable
-private fun NameStep(
-    draft: RoutineDraft,
-    backLabel: String,
-    onDraft: (RoutineDraft) -> Unit,
-    onNext: () -> Unit,
-    onBack: () -> Unit,
-) {
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val named = Program.named(draft.name) != null
-
-    LaunchedEffect(Unit) {
-        focus.requestFocus()
-        keyboard?.show()
-    }
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x5),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onBack),
-        ) {
-            Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Text("What do you call this one?", style = WindmillFont.display(30), color = GymSkin.ink)
-            Text(
-                "Whatever you already call it.",
-                style = WindmillFont.body(16),
-                color = GymSkin.inkDim,
-            )
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
-                value = draft.name,
-                onValueChange = { onDraft(draft.named(it)) },
-                singleLine = true,
-                textStyle = WindmillFont.display(26).copy(color = GymSkin.ink),
-                cursorBrush = SolidColor(GymSkin.accent),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    autoCorrectEnabled = false,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { if (named) onNext() }),
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = GymTap.minimum + 8.dp)
-                    .focusRequester(focus),
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (draft.name.isEmpty()) {
-                            Text("Heavy Thursday", style = WindmillFont.display(26), color = GymSkin.inkFaint)
-                        }
-                        inner()
-                    }
-                },
-            )
-            Text(
-                Program.counter(draft.name),
-                style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
-            )
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(GymSkin.lineStrong))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Program.suggestions.forEach { suggestion ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .heightIn(min = GymTap.minimum - 8.dp)
-                        .clip(RoundedCornerShape(WindmillRadius.full))
-                        .background(GymSkin.raised)
-                        .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
-                        .clickable { onDraft(draft.named(suggestion)) }
-                        .padding(horizontal = WindmillSpace.x4),
-                ) {
-                    Text(suggestion, style = WindmillFont.body(14), color = GymSkin.inkDim)
-                }
-            }
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.primary)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (named) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = named, onClick = onNext),
-        ) {
-            Text(
-                "Next · add movements",
-                style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (named) GymSkin.onAccent else GymSkin.inkFaint,
-            )
-        }
-    }
-}
-
-// SCREEN 29's LIST — the shape of the day, with the targets typed so far beside each movement and
-// `open` beside each one that has none. It stays on screen under the target sheet, which is the
-// whole reason the targets are asked for in a sheet at all.
+// THE ONE SCREEN — header, name, movements, the dashed add, and edit mode's two quiet rows. The
+// header is the modal editor's (screens 28/6): Cancel, the mode's own title, Save.
 //
 // A MOVEMENT LEAVES BY THE SAME GESTURE IT LEAVES A SESSION BY — a sideways flick, the assembly
 // list's own (§A2), at the same thumb's width of travel. Nothing here has been logged, so every row
@@ -381,29 +262,133 @@ private fun NameStep(
 private fun BuildStep(
     draft: RoutineDraft,
     store: TrainingStore,
-    saving: Boolean,
-    onBack: () -> Unit,
+    editing: Boolean,
+    savable: Boolean,
+    onDraft: (RoutineDraft) -> Unit,
     onOpenTarget: (String) -> Unit,
     onRemove: (String) -> Unit,
     onAdd: () -> Unit,
     onSave: () -> Unit,
+    onCancel: () -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val dropAt = with(LocalDensity.current) { 108.dp.toPx() }
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // A fresh create has exactly one thing to do first, so the keyboard is already up over the
+    // name. An edit arrives named and asks for nothing.
+    LaunchedEffect(Unit) {
+        if (draft.id == null && draft.name.isEmpty()) {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = WindmillSpace.x8),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onBack),
-        ) {
-            Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text(draft.name, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(
+                contentAlignment = Alignment.CenterStart,
+                modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onCancel),
+            ) {
+                Text("Cancel", style = WindmillFont.body(15), color = GymSkin.inkDim)
+            }
+            Text(
+                if (editing) "Edit routine" else "New routine",
+                style = WindmillFont.body(16, FontWeight.Bold),
+                color = GymSkin.ink,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+            Box(
+                contentAlignment = Alignment.CenterEnd,
+                modifier = Modifier
+                    .heightIn(min = GymTap.minimum)
+                    .clickable(enabled = savable, onClick = onSave),
+            ) {
+                Text(
+                    "Save",
+                    style = WindmillFont.body(15, FontWeight.Bold),
+                    color = if (savable) GymSkin.accent else GymSkin.inkFaint,
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+            Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = draft.name,
+                    onValueChange = { onDraft(draft.named(it)) },
+                    singleLine = true,
+                    textStyle = WindmillFont.display(24).copy(color = GymSkin.ink),
+                    cursorBrush = SolidColor(GymSkin.accent),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = GymTap.minimum + 4.dp)
+                        .focusRequester(focus),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (draft.name.isEmpty()) {
+                                Text("Heavy Thursday", style = WindmillFont.display(24), color = GymSkin.inkFaint)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Text(
+                    Program.counter(draft.name),
+                    style = GymType.numeral(12),
+                    color = GymSkin.inkFaint,
+                )
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(GymSkin.lineStrong))
+        }
+
+        // SUGGESTIONS, WHILE THE NAME IS EMPTY (R3, screen 28's chips). Tapping one fills the field
+        // and typing over it is the expected case; nothing here is a category and nothing is
+        // remembered.
+        if (draft.name.isEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+                Program.suggestions.forEach { suggestion ->
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .heightIn(min = GymTap.minimum - 8.dp)
+                            .clip(RoundedCornerShape(WindmillRadius.full))
+                            .background(GymSkin.raised)
+                            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
+                            .clickable { onDraft(draft.named(suggestion)) }
+                            .padding(horizontal = WindmillSpace.x4),
+                    ) {
+                        Text(suggestion, style = WindmillFont.body(14), color = GymSkin.inkDim)
+                    }
+                }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("Movements", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
+            Spacer(Modifier.weight(1f))
+            if (draft.entries.isNotEmpty()) {
+                Text(draft.entries.size.toString(), style = GymType.numeral(11), color = GymSkin.inkFaint)
+            }
         }
 
         if (draft.entries.isEmpty()) {
@@ -464,28 +449,44 @@ private fun BuildStep(
                     .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
                     .clickable(onClick = onAdd),
             ) {
-                Text("+ Add a movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                Text("+ Add movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
             }
         }
 
-        Spacer(Modifier.height(WindmillSpace.x2))
-
-        // SAVABLE WHILE INCOMPLETE, and never while empty: a day with no movements in it is not a
-        // day. Rows with no targets go out open, which is the point.
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.primary)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (draft.savable && !saving) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = draft.savable && !saving, onClick = onSave),
-        ) {
+        // EDIT MODE'S TWO QUIET ROWS (R3, screen 6's foot): a copy of the day, and the end of it.
+        // Delete wears the alarm ink because it destroys a document — the sessions that named this
+        // day keep every set they logged, and the sentence under the pair says the half that is not
+        // obvious.
+        if (editing) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                modifier = Modifier.fillMaxWidth().padding(top = WindmillSpace.x2),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = GymTap.minimum)
+                        .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
+                        .clickable(onClick = onDuplicate),
+                ) {
+                    Text("Duplicate", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = GymTap.minimum)
+                        .border(1.dp, GymSkin.alarmInk, RoundedCornerShape(WindmillRadius.lg))
+                        .clickable(onClick = onDelete),
+                ) {
+                    Text("Delete routine", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.alarmInk)
+                }
+            }
             Text(
-                "Save ${draft.name}",
-                style = WindmillFont.body(17, FontWeight.Bold),
-                color = if (draft.savable && !saving) GymSkin.onAccent else GymSkin.inkFaint,
-                maxLines = 1,
+                "Deleting removes the routine from your program. Every session you logged with it stays in the log.",
+                style = GymType.numeral(11).copy(lineHeight = 16.sp),
+                color = GymSkin.inkFaint,
             )
         }
     }

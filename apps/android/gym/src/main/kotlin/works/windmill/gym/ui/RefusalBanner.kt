@@ -22,8 +22,8 @@ import works.windmill.platform.design.WindmillSpace
 // The last copy of a write that will never land — a set with its movement and numbers, or a
 // claim's refused document under its name. It is SAID because a queue that dropped it quietly
 // would count the loss as intended — and this is the one place in gym allowed to use alarm ink.
-// One component for both screens that say it: the logger mid-session, and Today when a boot
-// claim lost something with no logger standing. One voice, one copy, dismissed as one.
+// One component for both screens that say it: the logger mid-session, and the Routines home when a
+// boot claim lost something with no logger standing. One voice, one copy, dismissed as one.
 
 // The words, apart from the drawing so a test can hold them still. A claim-level loss is said by
 // NAME — the cross-platform sentence all three surfaces share — and a lost set carries its

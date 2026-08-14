@@ -71,10 +71,10 @@ export function MovementPicker({
             <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
               <span className="gym-picker-named">
                 {each.name}
-                {/* SCREEN 7's WORD, which is not screen 30's. This row says `yours` and a routine's
-                    row says `· mine` for the same `custom` flag, because that is what the two boards
-                    draw and what the phones draw beside them; one of the two wants to become canon,
-                    and until it does the surfaces agree with each other rather than with themselves. */}
+                {/* ONE WORD FOR THE `custom` FLAG, and it is this row's: the boards drew two —
+                    `yours` here (screen 7) and `· mine` on a routine's row (screen 30) — and the
+                    2026-08-13 adjudication picked `yours` everywhere. A routine's entry row
+                    (Routines.jsx) says the same word for the same flag. */}
                 {each.custom && <span className="gym-picker-tag">yours</span>}
                 {/* WHY THIS ROW IS HERE, and only when that is not obvious: the movement matched on
                     a name this account used to call it, so the row says which one rather than

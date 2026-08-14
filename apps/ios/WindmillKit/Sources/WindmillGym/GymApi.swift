@@ -250,7 +250,7 @@ public struct GymApi: TrainingSyncing {
     }
 
     // EVERY PROPOSAL ON THE ACCOUNT, newest first, in ONE read — pending and settled together,
-    // because the room needs both: the pending ones are the cards that wait on Today and on the
+    // because the room needs both: the pending ones are the cards that wait on home and on the
     // routine, and the settled ones are the routine's History. The route can filter by routine and
     // by state and this client asks for neither: one read answers every card and every history row,
     // where a filter per routine would be the N+1 the picker's own meta already refused.

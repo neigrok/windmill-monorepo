@@ -10,8 +10,8 @@ import WindmillPlatform
 // settings SECTION and the shell composes it, exactly as web/src/products/gym/routes.js registers
 // `GymSettingsSection`. The native `ProductModule` seam has no such slot — `room`, `hubLine`, `entry`,
 // `holdings`, and nothing about settings — and the shell is not this product's territory, so the door
-// sits at the foot of Today until the seam exists. When it lands, this screen is what the section
-// shows and the row on Today goes with it.
+// sits at the foot of home (Routines) until the seam exists. When it lands, this screen is what
+// the section shows and the row on home goes with it.
 //
 // EVERY TAP WRITES THE WHOLE DOCUMENT, because the route replaces it whole: `store.save` sends all
 // seven answers, and a screen that sent one field would reset the six it did not touch to their

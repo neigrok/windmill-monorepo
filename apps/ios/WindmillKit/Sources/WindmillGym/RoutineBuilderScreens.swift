@@ -1,140 +1,38 @@
 import SwiftUI
 import WindmillPlatform
 
-// §M's two building screens — name it (28), then movements and their targets (29). What each one
-// DECIDES lives in RoutineBuilder.swift; these draw it.
+// §M's building surface — ONE editor since the 13 Aug update (R2/R3): the same screen creates a
+// routine and edits one, differing only in what is already in the list. What it DECIDES lives in
+// RoutineBuilder.swift; this draws it.
+//
+// THE NAME IS INLINE AT THE TOP, never a step before — add movements first and name it last, or
+// the reverse — with the suggestion chips beside the field while it is empty. The two-step wizard
+// (a name screen, then a build screen) retired with the Today tab; renaming a routine is editing
+// this same field, so the standalone rename sheet went with it.
+//
+// SAVE IS IN THE HEADER AND ONLY THERE — §M's own sentence ("Save in the header") wins over the
+// drawn footer. It enables when the draft is savable: named and holding a movement on a build, and
+// additionally CHANGED on an edit — a Save that re-sent an unchanged document would move the
+// revision and set pending proposals aside for nothing. Rows with no targets are `open` and ask at
+// the rack — a program copied in over two sittings is a routine, not a half-finished form.
 //
 // THE SHEET SITS OVER THE LIST AND NOT INSTEAD OF IT (screen 29). That is the whole reason targets
 // are set here rather than on a page of their own: the shape of the day stays visible while numbers
 // are typed into it, so a lifter copying a program in can see what they have already put down.
-
-// SCREEN 28 — the name, asked once, with the keyboard already up. Nothing else is on this screen:
-// the question is short, the answer is short, and the movements come next.
-struct NameRoutineScreen: View {
-    let opening: String
-    let onNext: (String) -> Void
-
-    @Environment(\.gymSkin) private var skin
-    @State private var name: String
-    // The keyboard is UP ON ARRIVAL. A screen whose only job is one word may not ask for a tap
-    // before it can be answered — and `@FocusState` set in `.task` is the only way to raise it,
-    // because a field cannot be focused before it is on screen.
-    @FocusState private var typing: Bool
-
-    init(opening: String = "", onNext: @escaping (String) -> Void) {
-        self.opening = opening
-        self.onNext = onNext
-        _name = State(initialValue: opening)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 0)
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                Text("What do you call this one?")
-                    .font(WindmillFont.display(28))
-                    .foregroundStyle(skin.ink)
-                Text("Whatever you already call it.")
-                    .font(WindmillFont.body(15))
-                    .foregroundStyle(skin.inkDim)
-            }
-            Spacer(minLength: 0)
-
-            field
-            suggestions
-            next
-        }
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.top, WindmillSpace.x8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .task { typing = true }
-    }
-
-    private var field: some View {
-        HStack(spacing: WindmillSpace.x3) {
-            TextField("", text: $name,
-                      prompt: Text("Heavy Thursday").foregroundStyle(skin.inkFaint))
-                .font(WindmillFont.body(19, .bold))
-                .foregroundStyle(skin.ink)
-                .textFieldStyle(.plain)
-                .focused($typing)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
-                .submitLabel(.done)
-                .onSubmit { commit() }
-                // Capped where the name is TYPED and not only counted, so the tap can never send a
-                // name the log refuses — sixty characters, and the eighty bytes the column holds,
-                // which in a two-byte script runs out first. Any language, any spelling, any
-                // punctuation: a length is the only bound in this product, because we do not correct
-                // anyone's spelling of their own gym.
-                .onChange(of: name) { _, typed in
-                    let kept = RoutineDraft.capped(typed)
-                    guard kept != typed else { return }
-                    name = kept
-                }
-            Text(RoutineDraft.counter(name))
-                .font(GymType.numeral(11))
-                .foregroundStyle(skin.inkFaint)
-        }
-        .padding(.horizontal, WindmillSpace.x4)
-        .frame(height: GymTap.primary - 6)
-        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.canvas))
-        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-            .strokeBorder(skin.accent, lineWidth: 1.5))
-    }
-
-    // SUGGESTIONS, NEVER RULES. A tap fills the field and leaves the keyboard up, because typing
-    // over one is the expected case rather than a correction — nothing here validates a name
-    // against this list, and nothing counts how often it is ignored.
-    private var suggestions: some View {
-        HStack(spacing: WindmillSpace.x2) {
-            ForEach(RoutineDraft.suggestions, id: \.self) { offered in
-                Button { name = offered } label: {
-                    Text(offered)
-                        .font(WindmillFont.body(12.5, .bold))
-                        .foregroundStyle(skin.inkDim)
-                        .padding(.horizontal, WindmillSpace.x3)
-                        .frame(minHeight: 34)
-                        .background(Capsule().strokeBorder(skin.lineStrong, lineWidth: 1))
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.top, WindmillSpace.x2)
-    }
-
-    private var next: some View {
-        Button(action: commit) {
-            Text("Next · add movements")
-                .font(WindmillFont.body(16.5, .bold))
-                .foregroundStyle(skin.onAccent)
-                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-        }
-        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .padding(.top, WindmillSpace.x3)
-        .padding(.bottom, WindmillSpace.x4)
-    }
-
-    private func commit() {
-        let said = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !said.isEmpty else { return }
-        onNext(said)
-    }
-}
-
-// SCREEN 29 — the day as a list, and the target sheet over it. The list is the routine: order is
-// the routine's order, a row opens its targets, and a swipe drops it.
-//
-// SAVE IS OFFERED THE MOMENT THERE IS A MOVEMENT, and never later. Rows with no targets are `open`
-// and ask at the rack — a program copied in over two sittings is a routine, not a half-finished
-// form — so nothing on this screen withholds the way out until the numbers are all in.
 struct RoutineEditorScreen: View {
     let catalog: [Exercise]
+    // Whether this is a routine the room already holds — the title's word, Save's changed-rule, and
+    // the two foot rows only edit mode carries. Create-vs-replace on the wire stays the draft id's
+    // own question, decided by the room at the save.
+    let editing: Bool
     let untested: Bool
     let saving: Bool
     let failure: String?
     let onSave: (RoutineDraft) -> Void
+    // Edit mode's foot rows (R3). Duplicate hands back the day AS EDITED — a copy of what is on
+    // screen, not of what was last saved — and the room opens a fresh create-mode editor on it.
+    let onDuplicate: ((RoutineDraft) -> Void)?
+    let onDelete: (() -> Void)?
     let onCreateMovement: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
 
     @Environment(\.gymSkin) private var skin
@@ -142,9 +40,13 @@ struct RoutineEditorScreen: View {
     // between is this screen's, so a movement added and a target typed do not need a round trip
     // through the room to appear.
     @State private var draft: RoutineDraft
+    // The draft as it arrived, kept for edit mode's changed-rule — one comparison over the WRITE,
+    // because the write is what a Save would send and line ids are this screen's own scaffolding.
+    private let opening: RoutineDraft
     @State private var sheet: Sheet?
     @State private var minting = false
     @State private var mintFailure: String?
+    @FocusState private var namingIt: Bool
 
     // The two sheets this screen opens, and the row a target is being typed for. One value rather
     // than a Bool beside an index, because "which row" and "is a sheet up" are the same fact and two
@@ -165,32 +67,42 @@ struct RoutineEditorScreen: View {
         }
     }
 
-    init(draft: RoutineDraft, catalog: [Exercise],
+    init(draft: RoutineDraft, catalog: [Exercise], editing: Bool,
          untested: Bool, saving: Bool, failure: String?,
          onSave: @escaping (RoutineDraft) -> Void,
+         onDuplicate: ((RoutineDraft) -> Void)? = nil,
+         onDelete: (() -> Void)? = nil,
          onCreateMovement: @escaping (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>) {
         self.catalog = catalog
+        self.editing = editing
         self.untested = untested
         self.saving = saving
         self.failure = failure
         self.onSave = onSave
+        self.onDuplicate = onDuplicate
+        self.onDelete = onDelete
         self.onCreateMovement = onCreateMovement
+        self.opening = draft
         _draft = State(initialValue: draft)
+    }
+
+    // Savable on a build; savable AND changed on an edit (R3).
+    private var savable: Bool {
+        guard editing else { return draft.isSavable }
+        return draft.isSavable && draft.write != opening.write
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            Text(draft.trimmedName)
-                .font(WindmillFont.display(22))
-                .foregroundStyle(skin.ink)
-                .padding(.horizontal, WindmillSpace.x5)
-                .padding(.top, WindmillSpace.x8)
+            head
+            nameField
+            if draft.trimmedName.isEmpty { suggestions }
 
             if draft.lines.isEmpty {
                 nothingYet
                 // The list is what fills this screen, so with no rows the space has to come from
-                // somewhere — the two buttons belong at the foot, in the thumb zone, and not
-                // stacked under a sentence at the top of an empty page.
+                // somewhere — the buttons belong at the foot, in the thumb zone, and not stacked
+                // under a sentence at the top of an empty page.
                 Spacer(minLength: 0)
             } else {
                 rows
@@ -206,9 +118,16 @@ struct RoutineEditorScreen: View {
                     .padding(.horizontal, WindmillSpace.x5)
             }
 
-            save
+            if editing { editRows }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // A fresh build opens with the keyboard already up on the name (screen 28 draws the field
+        // focused) — the one question only this lifter can answer. An edit, and a duplicate that
+        // arrives named, open on the list instead: the name is already there to be typed over.
+        .task {
+            guard !editing, draft.trimmedName.isEmpty else { return }
+            namingIt = true
+        }
         .sheet(item: $sheet) { open in
             switch open {
             case .picking:
@@ -315,16 +234,95 @@ struct RoutineEditorScreen: View {
         .padding(.horizontal, WindmillSpace.x5)
     }
 
-    private var save: some View {
-        Button { onSave(draft) } label: {
-            Text(saving ? "Saving…" : "Save routine")
-                .font(WindmillFont.body(17, .bold))
-                .foregroundStyle(draft.isSavable ? skin.onAccent : skin.inkFaint)
-                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                    .fill(draft.isSavable ? skin.accent : skin.raised))
+    // SAVE IS THE HEADER'S AND ONLY THE HEADER'S (R3). It says what it is doing while the write is
+    // out, and it is dim rather than absent while the draft is not savable — a control that
+    // vanished would leave the way out of this screen moving around.
+    private var head: some View {
+        HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
+            Text(editing ? "Edit routine" : "New routine")
+                .font(WindmillFont.display(24))
+                .foregroundStyle(skin.ink)
+            Spacer(minLength: 0)
+            Button { onSave(draft) } label: {
+                Text(saving ? "Saving…" : "Save")
+                    .font(WindmillFont.body(15, .bold))
+                    .foregroundStyle(savable ? skin.accent : skin.inkFaint)
+                    .padding(.horizontal, WindmillSpace.x2)
+                    .frame(minHeight: GymTap.minimum)
+            }
+            .disabled(saving || !savable)
         }
-        .disabled(saving || !draft.isSavable)
+        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.top, WindmillSpace.x8)
+    }
+
+    // The name, IN the editor (§M): capped where it is typed — sixty characters, and the eighty
+    // bytes the column holds, which in a two-byte script runs out first. Any language, any
+    // spelling, any punctuation: a length is the only bound in this product, because we do not
+    // correct anyone's spelling of their own gym.
+    private var nameField: some View {
+        HStack(spacing: WindmillSpace.x3) {
+            TextField("", text: $draft.name,
+                      prompt: Text("Heavy Thursday").foregroundStyle(skin.inkFaint))
+                .font(WindmillFont.body(17, .bold))
+                .foregroundStyle(skin.ink)
+                .textFieldStyle(.plain)
+                .focused($namingIt)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+                .onChange(of: draft.name) { _, typed in
+                    let kept = RoutineDraft.capped(typed)
+                    guard kept != typed else { return }
+                    draft.name = kept
+                }
+            Text(RoutineDraft.counter(draft.name))
+                .font(GymType.numeral(11))
+                .foregroundStyle(skin.inkFaint)
+        }
+        .padding(.horizontal, WindmillSpace.x4)
+        .frame(height: GymTap.primary - 10)
+        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.canvas))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+            .strokeBorder(namingIt ? skin.accent : skin.lineStrong, lineWidth: namingIt ? 1.5 : 1))
+        .padding(.horizontal, WindmillSpace.x5)
+    }
+
+    // SUGGESTIONS, NEVER RULES — screen 28's chips, drawn only while the field is empty. A tap
+    // fills the field and typing over it is the expected case; nothing here validates a name
+    // against this list, and nothing counts how often it is ignored.
+    private var suggestions: some View {
+        HStack(spacing: WindmillSpace.x2) {
+            ForEach(RoutineDraft.suggestions, id: \.self) { offered in
+                Button { draft.name = offered } label: {
+                    Text(offered)
+                        .font(WindmillFont.body(12.5, .bold))
+                        .foregroundStyle(skin.inkDim)
+                        .padding(.horizontal, WindmillSpace.x3)
+                        .frame(minHeight: 34)
+                        .background(Capsule().strokeBorder(skin.lineStrong, lineWidth: 1))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, WindmillSpace.x5)
+    }
+
+    // Edit mode's two remaining verbs (R3), moved here from the routine's own page: quiet text
+    // rows at the foot, the destructive one in the room's alarm ink and nothing else in it.
+    private var editRows: some View {
+        HStack(spacing: WindmillSpace.x6) {
+            Button("Duplicate") { onDuplicate?(draft) }
+                .font(WindmillFont.body(14, .semibold))
+                .foregroundStyle(skin.inkDim)
+                .frame(minHeight: GymTap.minimum)
+            Button("Delete routine") { onDelete?() }
+                .font(WindmillFont.body(14, .semibold))
+                .foregroundStyle(skin.alarmInk)
+                .frame(minHeight: GymTap.minimum)
+            Spacer(minLength: 0)
+        }
+        .disabled(saving)
         .padding(.horizontal, WindmillSpace.x5)
         .padding(.bottom, WindmillSpace.x2)
     }

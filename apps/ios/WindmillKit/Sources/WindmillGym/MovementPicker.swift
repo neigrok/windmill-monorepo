@@ -7,9 +7,9 @@ import WindmillPlatform
 // instead of four spellings of one.
 //
 // It is drawn in two places and they are one screen: over a running session as `MovementPicker`
-// (§B7, the sheet the assembly list opens), and as the room's opening surface, `OpeningPicker`
-// (§J22) — the picker already up over a session that started when the lifter arrived. Both spend
-// `MovementList`, so the rows, the filter and the door out cannot drift apart.
+// (§B7, the sheet the assembly list opens), and as the room's opening surface, `OpeningPicker` —
+// the picker a session with nothing in hand draws. Both spend `MovementList`, so the rows, the
+// filter and the door out cannot drift apart.
 //
 // The empty state is three different silences and they must not share a sentence. A lifter who typed
 // a letter the catalog does not hold was once told their signal was out — the app reporting a failure
@@ -23,7 +23,7 @@ import WindmillPlatform
 public enum PickerOptions {
     public static let shown = 7
 
-    // THE SIX (§J22). A CLIENT constant and never a server concept: the log has sixty-four movements
+    // THE SIX. A CLIENT constant and never a server concept: the log has sixty-four movements
     // and no opinion about which matter, while this product is for a lifter on a written barbell
     // program, and these are the six that program is made of. They lead an unfiltered list and step
     // aside the moment anything is typed — a shortcut past the search field, not a category.
@@ -241,7 +241,7 @@ struct MovementPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             HStack {
-                Text("Add exercise")
+                Text("Add movement")
                     .font(WindmillFont.display(20))
                     .foregroundStyle(skin.ink)
                 Spacer()
@@ -265,13 +265,14 @@ struct MovementPicker: View {
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 }
 
-// §J22 — GYM'S FIRST SURFACE, and the whole of what this room owes the shell's one question. It is
-// not a tour: it is the real screen with its first move already made, which is why nobody pressed
-// start. The session above is running, the picker is already up, and the six lead the list.
+// §J22'S SURFACE, kept — its auto-start retired (R6, 2026-08-13). The screen is what a session
+// with nothing chosen draws: the clock above is running because the lifter tapped "Just start
+// logging" (or a routine whose plan named nothing), the picker is already up, and the six lead the
+// list. "the session is already running" is a fact about the tap they just made, no longer about a
+// session the room opened for them — nothing runs unless the user started it.
 //
-// It is also every later moment a session holds nothing — the last movement swiped away, a routine
-// whose plan named nothing — because the sentence is true then too: this is what you are starting
-// with.
+// It is also every later moment a session holds nothing — the last movement swiped away — because
+// the sentence is true then too: this is what you are starting with.
 //
 // THE ONE ACCOUNT VERB IN THE ROOM is the card at the foot. Everything else here — every movement,
 // every set, the whole log — works signed out forever. The line that USED to say so under the card

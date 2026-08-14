@@ -9,11 +9,12 @@ import kotlinx.serialization.Serializable
 //
 // WHAT IT IS NOT IS A COACH. It answers questions about numbers the lifter already owns, it never
 // speaks first, and it has no personality, no encouragement, no daily check-in, no streak and no
-// unread badge — this product still sends no notification of any kind. It is not a tab either: a
-// chat is not a place anybody lives, and the rail belongs to the three tabs. It is NEVER OFFERED
-// MID-SESSION, which on this phone is structural rather than remembered — Today is not drawn while
-// a workout is open — and the server refuses one anyway (409 `ask-session-open`), because three
-// clients each getting it right is not a rule.
+// unread badge — this product still sends no notification of any kind. Since the 13 Aug promotion
+// (R7) it IS the rail's third tab — Routines · The log · Ask — reversing the earlier "not a tab"
+// ruling, which the design ledger records. It is NEVER OFFERED MID-SESSION, which on this phone is
+// structural rather than remembered — a live session takes the whole screen, rail included — and
+// the server refuses one anyway (409 `ask-session-open`), because three clients each getting it
+// right is not a rule.
 //
 // THE ONE PLACE THE WORD COACH SURVIVES IN GYM is the SHARE: one finished workout, handed to one
 // person, by the lifter's own hand. That is a different object with a different door, and nothing
@@ -106,7 +107,7 @@ data class AskExchange(
     // question is born in and, on this phone, the one state that can be RESTORED: a thread saved
     // through an activity recreation was saved mid-flight, and the coroutine that would have
     // settled it went down with the ROOM (the ask is the room's, not the screen's, so leaving Ask
-    // for Today no longer strands one).
+    // for another tab no longer strands one).
     val pending: Boolean get() = answer == null && trouble == null
 }
 
@@ -200,7 +201,7 @@ object Ask {
     // "Nothing happened" would be the cheaper sentence and this room's own invention.
     //
     // A proposal is the log's object rather than the conversation's, so anything the answer minted
-    // is on the routine either way, waiting as a card on Today — said out loud here because the
+    // is on the routine either way, waiting as a card on home — said out loud here because the
     // sentence that would have named it is exactly what went missing. And since §O the answer
     // itself may be on the log too: a reply that landed after the room went down was stored with
     // the thread, so the last clause points at where to read it rather than leaving a lifter to

@@ -1,24 +1,27 @@
 import SwiftUI
 import WindmillPlatform
 
-// THE ROOM — gym's whole surface: the three tabs a lifter stands in at rest (Today, The log,
-// Routines), the session they are in the middle of, the screen a session ends on, and the two
-// screens a tab opens over itself. It draws no capsule, no theme control and nothing about
+// THE ROOM — gym's whole surface: the three tabs a lifter stands in at rest (Routines · The log ·
+// Ask), the session they are in the middle of, the screen a session ends on, and the screens a tab
+// opens over itself. It draws no capsule, no theme control and nothing about
 // billing: the shell owns all three, and a room that drew one of them would be a second copy of a
 // decision the shell already made.
 //
-// THE FRAME, §F, 2026-08-12. Three tabs in one pill rail 14pt off each edge — Today · The log ·
-// Routines — then a hairline, then the shell's You seat, which reads as the shell's because of the
-// hairline and not because of a different colour. Rail 50, tab 40, nothing tappable under 44. The
-// primary action is never in the bar and never in a corner: it is full-width, above the rail, where
-// a chalked thumb reaches it without regripping. No top-right anything — no account button, no
-// hamburger, no theme toggle: appearance is chosen once, in You, and this room only answers it.
+// THE FRAME, §F, since the 13 Aug routine-first update. Three tabs in one pill rail 14pt off each
+// edge — Routines · The log · Ask — then a hairline, then the shell's You seat, which reads as the
+// shell's because of the hairline and not because of a different colour. Rail 50, tab 40, nothing
+// tappable under 44. ROUTINES IS HOME — the only tab a lifter acts from — and the room anchors to
+// it: open() lands there after every start, and finish-Done falls back onto it. The Today tab
+// retired ("it implied something was already happening today"); its cargo rehomed onto Routines.
+// The primary action is never in the bar and never in a corner: it is full-width, above the rail,
+// where a chalked thumb reaches it without regripping. No top-right anything — no account button,
+// no hamburger, no theme toggle: appearance is chosen once, in You, and this room only answers it.
 //
-// WHAT SURVIVED THE COMMENT THIS REPLACED: gym's canon refuses a FOURTH tab — there is no dashboard
-// in this product, and Insights was refused by name. That stands. "Therefore no tab bar at all" was
-// this room's own inference from it and §F contradicts it; the block arguing for the shape is gone
-// with the shape. The rail is drawn on the three tabs and nowhere else: the logger, the finish and
-// the two away screens carry the bar alone, because a workout owns the screen it is on.
+// WHAT SURVIVED THE COMMENT THIS REPLACED: gym's canon refuses a fourth tab — there is no dashboard
+// in this product, and Insights was refused by name. Three tabs stand because Today died as Ask was
+// promoted (R7; the 2026-08-11 "not a tab" entry is reversed on the ledger, not silently). The rail
+// is drawn on the three tab roots and nowhere else: the logger, the finish and the away screens
+// carry the bar alone, because a workout owns the screen it is on.
 //
 // The way back out of an away screen is the leading end of the room's own bar, opposite the
 // seat, and not the top-left corner §G17 draws it in: that corner is the shell's 38pt capsule lane,
@@ -41,10 +44,11 @@ public struct GymRoom: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellActions) private var shell
     @Environment(\.openURL) private var openURL
-    // Whether this device has ever been handed its first session — see `openTheFirstOne`.
-    @AppStorage("windmill.gym.firstSessionOpened") private var firstSessionOpened = false
+    // "windmill.gym.firstSessionOpened" used to live here for the §J22 first-arrival auto-start,
+    // retired 2026-08-13 (R6: nothing runs unless the user started it). The stored key lingers
+    // harmlessly on installs that set it; nothing reads it any more.
     @State private var finished: FinishedSession?
-    @State private var tab: Tab = .today
+    @State private var tab: Tab = .routines
     @State private var away: [Away] = []
     @State private var keptRoutine = false
     @State private var starting = false
@@ -55,10 +59,11 @@ public struct GymRoom: View {
     @State private var savingRoutine = false
     @State private var routineFailure: String?
     @State private var note: String?
-    // The proposals Today has been told "later" about. It lives here rather than on Today because a
-    // walk to the log and back must not bring the card straight back — and it lives in the ROOM
-    // rather than on disk because "later" means exactly this visit: the card is on Today again the
-    // next time the room is opened, which is what makes it a not-now and not a decision.
+    // The proposals home has been told "later" about. It lives here rather than on the Routines
+    // screen because a walk to the log and back must not bring the card straight back — and it
+    // lives in the ROOM rather than on disk because "later" means exactly this visit: the card is
+    // on home again the next time the room is opened, which is what makes it a not-now and not a
+    // decision.
     @State private var setAside: Set<String> = []
     // ASK'S CONVERSATION, held by the ROOM for the same reason `setAside` is: opening a proposal
     // from an answer tears the chat screen down — one screen is mounted at a time — and a
@@ -83,11 +88,11 @@ public struct GymRoom: View {
         self.account = account
     }
 
-    // The three tabs, in the order the rail draws them.
+    // The three tabs, in the order the rail draws them. Routines first because it is home.
     private enum Tab: String, CaseIterable, Identifiable {
-        case today = "Today"
-        case log = "The log"
         case routines = "Routines"
+        case log = "The log"
+        case ask = "Ask"
 
         var id: String { rawValue }
     }
@@ -108,10 +113,10 @@ public struct GymRoom: View {
         // One agent's proposal, by ID and nothing else: the diff is a read of its own, and a screen
         // handed a copy the card was drawn from would be deciding against a document that may have
         // been settled from the web while this room was open.
+        //
+        // ASK IS NOT A CASE ANY MORE: it is the third TAB since the 13 Aug promotion (R7), and its
+        // conversation is still the room's own state below.
         case proposal(String)
-        // ASK (§L). It carries no argument at all — the conversation is the ROOM's, so this case is
-        // only ever "the chat is on screen", and a copy handed down the stack would be a second one.
-        case ask
         // §O SCREEN 33 — every conversation this account has had, and one of them read back. The
         // list carries no argument; a thread travels as its ID and nothing else, for the reason a
         // proposal does: the page reads its own turns, and a copy handed down the stack would be a
@@ -130,12 +135,11 @@ public struct GymRoom: View {
         // travels that way: the page reads its own history, which the list read does not carry, and
         // a copy handed down the stack would be a routine as it stood before the walk.
         case routine(String)
-        // §M SCREENS 28 AND 29 — the name, then the movements and their targets. The DRAFT travels,
+        // THE ONE EDITOR (R3) — create and edit in one screen, the name inline. The DRAFT travels,
         // because a draft is not on the log yet and there is nowhere else for it to live: it is
         // seeded here and owned by the screen, so a walk to the picker and back does not lose a
         // half-typed day. Leaving the room drops it, which is the same lifetime every unsaved thing
         // in this product has.
-        case naming(RoutineDraft)
         case building(RoutineDraft)
 
         // What the way back NAMES when this is the screen underneath.
@@ -144,13 +148,12 @@ public struct GymRoom: View {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
             case .proposal: return "Proposal"
-            case .ask: return Ask.title
             case .threads: return AskThreads.title
             case .thread: return "Conversation"
             case .settings: return "Gym"
             case .connect: return "Connected log"
             case .routine: return "Routine"
-            case .naming, .building: return "New routine"
+            case .building(let draft): return draft.isNamed ? draft.trimmedName : "New routine"
             }
         }
     }
@@ -188,7 +191,6 @@ public struct GymRoom: View {
         // that never stopped stands where the lifter was, not in the picker over a session of sets.
         .task(id: account.user?.id) {
             await store.connect(to: account)
-            await openTheFirstOne()
             guard store.exerciseId == nil,
                   let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
             await store.choose(movement)
@@ -224,7 +226,15 @@ public struct GymRoom: View {
                          coach: doors(to: finished.session.id),
                          onKeepRoutine: { name in Task { await keep(finished.sets, as: name) } },
                          onDiscard: { Task { await discard(finished.session) } },
-                         onDone: { self.finished = nil })
+                         // Done lands on home (Routines) — stated here rather than inherited from
+                         // open(), because a session adopted from another device never went through
+                         // open() and its Done must not fall back onto whatever screen the adoption
+                         // interrupted.
+                         onDone: {
+                             self.finished = nil
+                             away.removeAll()
+                             tab = .routines
+                         })
         } else if store.session != nil {
             LoggerScreen(store: store, isSignedIn: account.isSignedIn,
                          // The picker's card, on the SAME rule Routines' invitation keeps — offered
@@ -244,8 +254,6 @@ public struct GymRoom: View {
                 ProposalScreen(proposalId: proposalId, store: store,
                                onClosed: { said in back(); note = said },
                                say: { note = $0 })
-            case .ask:
-                AskScreen(store: store, conversation: $conversation, doors: askDoors)
             case .threads:
                 ThreadsScreen(doors: threadDoors)
             case .thread(let threadId):
@@ -263,58 +271,66 @@ public struct GymRoom: View {
                 RoutineScreen(routineId: routineId, store: store,
                               onStart: { Task { await open(routineId) } },
                               onEdit: { look(at: .building(RoutineDraft(editing: $0))) },
-                              // A copy is a NEW routine and a new routine gets named, so it goes
-                              // back through screen 28 with the movements already in hand.
-                              onDuplicate: {
-                                  look(at: .naming(RoutineDraft(duplicating: $0,
-                                                                position: store.routines.count)))
-                              },
                               onMovement: { look(at: .movement($0)) },
                               onProposal: { look(at: .proposal($0)) },
                               onThread: { look(at: .thread($0)) })
-            case .naming(let draft):
-                NameRoutineScreen(opening: draft.name) { named in
-                    var carried = draft
-                    carried.name = named
-                    // The name step is REPLACED rather than stacked on: going back from the
-                    // movements belongs on Routines, not on the question you have just answered.
-                    away[away.count - 1] = .building(carried)
-                }
             case .building(let draft):
                 RoutineEditorScreen(draft: draft, catalog: store.catalog,
+                                    editing: store.routines.contains { $0.id == draft.id },
                                     untested: untested(draft), saving: savingRoutine,
                                     failure: routineFailure,
                                     onSave: { written in Task { await save(written) } },
+                                    // A copy is a NEW routine under a fresh id — the same editor
+                                    // again in create mode, with the day as it stands on screen.
+                                    // Replacing the stack's top would keep this screen's identity
+                                    // and with it the old draft's state; the `.id` below is what
+                                    // makes the fresh draft actually take the screen.
+                                    onDuplicate: { copied in
+                                        away[away.count - 1] = .building(
+                                            RoutineDraft(duplicating: copied,
+                                                         position: store.routines.count))
+                                    },
+                                    onDelete: { Task { await delete(draft.id) } },
                                     onCreateMovement: { name, equipment in
                                         await store.create(name, loadedAs: equipment)
                                     })
+                    .id(draft.id)
             }
         } else {
             switch tab {
-            case .today:
-                TodayScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
-                            askOnThisDeployment: askOnThisDeployment,
-                            onStart: { routineId in Task { await open(routineId) } },
-                            onNewRoutine: newRoutine,
-                            onMovement: { look(at: .movement($0)) },
-                            onOpenSession: { look(at: .session($0)) },
-                            onProposal: { look(at: .proposal($0)) },
-                            onLater: { setAside.insert($0) },
-                            onAsk: { look(at: .ask) },
-                            onSettings: { look(at: .settings) },
-                            onSignIn: { shell.openYou() })
-            case .log:
-                LogScreen(store: store, onOpen: { look(at: .session($0)) })
             case .routines:
-                RoutinesScreen(store: store,
+                RoutinesScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
                                onOpen: { look(at: .routine($0)) },
                                onNew: newRoutine,
+                               onStartLogging: { Task { await open(nil) } },
                                onMovement: { look(at: .movement($0)) },
                                onProposal: { look(at: .proposal($0)) },
+                               onLater: { setAside.insert($0) },
+                               // The proposal card's shortcut onto the Ask tab — absent rather
+                               // than dead where the tab would only answer with a stance.
+                               onAsk: Ask.doorIsOpen(signedIn: account.isSignedIn,
+                                                     sessionIsOpen: store.session != nil,
+                                                     onThisDeployment: askOnThisDeployment)
+                                   ? { note = nil; tab = .ask } : nil,
+                               onSettings: { look(at: .settings) },
+                               onSignIn: { shell.openYou() },
                                // Offered where the program is, and withdrawn the moment something
                                // actually reaches this log: an invitation to do the thing you have
                                // already done is advertising.
                                onConnect: connected.invites ? { look(at: .connect) } : nil)
+            case .log:
+                LogScreen(store: store, onOpen: { look(at: .session($0)) })
+            case .ask:
+                // THE TAB ROOT (R7): the conversation with the rail under it — or the designed
+                // stance when there is no account to read for, or no Ask on this deployment.
+                // Never a 401 and never a dead pane.
+                if !account.isSignedIn {
+                    AskSignedOutStance(onSignIn: { shell.openYou() })
+                } else if !askOnThisDeployment {
+                    AskAbsentStance()
+                } else {
+                    AskScreen(store: store, conversation: $conversation, doors: askDoors)
+                }
             }
         }
     }
@@ -333,7 +349,7 @@ public struct GymRoom: View {
 
     // Every door in and out of an away screen goes through here for one reason: the note is what
     // the room has to say about the door that did not open ON THE SCREEN YOU ARE ON, and a refusal
-    // from Today carried under a chart is a sentence about something that is no longer in front of
+    // from home carried under a chart is a sentence about something that is no longer in front of
     // the lifter.
     private func look(at destination: Away) {
         note = nil
@@ -377,7 +393,7 @@ public struct GymRoom: View {
     //
     // The way back NAMES where it goes, which on a stack is the screen underneath and only at the
     // bottom of it the tab: a record opened from a session says `Push A` (§H), and one opened from
-    // Today says `Today`.
+    // home says `Routines`.
     private var bar: some View {
         HStack(spacing: WindmillSpace.x3) {
             if showing != nil {
@@ -437,10 +453,11 @@ public struct GymRoom: View {
     // three routes answer on a Windmill whose vendor key was removed.
     //
     // The DOORS onto them are another matter, and this comment does not claim more than the surface
-    // reaches: §O draws two, Ask's header and a routine's history row, and Ask's header is not drawn
-    // without a key or mid-session (`Ask.doorIsOpen`). So on a keyless deployment the past is
-    // reachable only from a routine that carries an applied Ask proposal. A third door is a board
-    // question rather than a thing to invent here; it is filed rather than drawn.
+    // reaches: §O draws two, Ask's header and a routine's history row. The header rides the
+    // CONVERSATION root only — the tab's signed-out and absent stances carry no threads door — so
+    // on a keyless deployment the past is reachable only from a routine that carries an applied Ask
+    // proposal. A third door is a board question rather than a thing to invent here; it is filed
+    // rather than drawn.
     //
     // `Ask something new` opens a FRESH thread rather than continuing whatever this visit was in the
     // middle of — a new conversation is what the button says, and a question that quietly joined an
@@ -468,36 +485,10 @@ public struct GymRoom: View {
             openProposal: { look(at: .proposal($0)) },
             askSomethingNew: {
                 conversation = AskConversation()
-                look(at: .ask)
+                note = nil
+                away.removeAll()
+                tab = .ask
             })
-    }
-
-    // ARRIVING STARTS IT (§J22). Gym's answer to the shell's one question is not a tour and not a
-    // pitch: it is the real surface with its first move already made — a session running, the picker
-    // already up, nobody having pressed start. It goes through the same `open` every Start button
-    // uses, because a session opened by a path of its own would be one the device's shelf and the
-    // claim replay had never heard of.
-    //
-    // ONCE, on a device that is KNOWN to hold nothing — `store.holdsNothing`, which asks whether the
-    // reads that could say otherwise actually landed rather than whether their lists came back
-    // empty. A returning lifter whose log read missed must not be handed a session over a history
-    // the room could not see. The flag is what makes "once" true after a first session is discarded —
-    // without it, arriving at an empty room would start a session the lifter just deleted, forever.
-    // It counts nothing and it is not a decline: it records that the first arrival happened, in the
-    // same shape as the shell's Journey.
-    private func openTheFirstOne() async {
-        guard !firstSessionOpened, store.holdsNothing else { return }
-        await open(nil)
-        guard store.session != nil else {
-            // NOBODY ASKED FOR THIS ONE, so nobody is owed a sentence about it not opening. The
-            // room's note speaks for a door the lifter reached for; an error on the first frame of
-            // a first launch, about an action they never took, tells them their gym is broken
-            // before they have touched it. What is left is Today, with its own Start button — which
-            // is where a lifter who DID ask is told, in the log's own words.
-            note = nil
-            return
-        }
-        firstSessionOpened = true
     }
 
     // THE FREE DOOR — where connecting actually happens, which is a page on a computer: you paste
@@ -532,15 +523,25 @@ public struct GymRoom: View {
         note = nil
         if case .failure(let why) = await store.start(routineId: routineId) {
             note = why.line("a session starts there")
+            // A start is never a silent join (the 13 Aug start contract): when the account already
+            // had a workout open, the store re-read the log and adopted it — so the logger is about
+            // to be the screen, the note above says plainly that a workout is already open, and the
+            // lifter resumes or finishes it deliberately. Standing where its sets are is the same
+            // resume the connect task runs.
+            guard store.session != nil else { return }
+            away.removeAll()
+            tab = .routines
+            guard let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
+            await store.choose(movement)
             return
         }
         // Whatever was open is over: the workout is what this phone is for, and Done on the finish
-        // screen must land on Today — never back on a movement's record, and never on the routines
-        // list a start happened to be tapped from.
+        // screen must land on home (Routines) — never back on a movement's record, and never on the
+        // detail page a start happened to be tapped from.
         away.removeAll()
-        tab = .today
-        // A start JOINS whatever session is already open, so what came back may be a workout with
-        // sets in it — stand where that workout is, not at the head of the routine that was asked for.
+        tab = .routines
+        // Stand where the session stands: at the head of the plan on a fresh start, or wherever the
+        // last set went if this same session survived a relaunch on this device.
         guard let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
         await store.choose(movement)
     }
@@ -582,13 +583,27 @@ public struct GymRoom: View {
         finished = nil
     }
 
-    // §M's third door, opened from the two places a lifter with a program in a notebook stands: the
-    // Routines tab, and Today when there is nothing on it at all. Both land on the NAME, because the
-    // name is a real question asked once and asking it after the movements are in would be asking
-    // it about a thing already made.
+    // §M's third door — "Build a routine" on the empty home, "New routine" under the list. One
+    // editor since R3: it opens with the name inline and empty, chips beside it, and the movements
+    // under it, in whatever order the lifter fills them.
     private func newRoutine() {
         routineFailure = nil
-        look(at: .naming(RoutineDraft(position: store.routines.count)))
+        look(at: .building(RoutineDraft(position: store.routines.count)))
+    }
+
+    // DELETE, FROM THE EDITOR'S FOOT (R3). The screen only leaves once the log says the routine is
+    // gone — a delete that did not happen may not draw as if it had — and it leaves all the way to
+    // home, because the pages under it were that routine's own.
+    private func delete(_ routineId: String) async {
+        guard !savingRoutine else { return }
+        savingRoutine = true
+        defer { savingRoutine = false }
+        routineFailure = nil
+        if let why = await store.deleteRoutine(routineId) {
+            routineFailure = why.line("the routine wasn’t deleted")
+            return
+        }
+        away.removeAll()
     }
 
     // WHETHER THE TARGET SHEET MAY SAY `Never logged — these are your numbers.` It is a fact about

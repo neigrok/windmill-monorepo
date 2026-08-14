@@ -172,6 +172,7 @@ internal class FakeTraining : TrainingSyncing {
     var refuseDismiss: Exception? = null
     var refuseFix: (String) -> Exception? = { null }
     var refuseDelete: Exception? = null
+    var refuseRoutineDelete: Exception? = null
     var refusePreferences: Exception? = null
     var refuseAsk: Exception? = null
     // Answers queued in the order they will be given, so a test can put a proposal in the second
@@ -433,6 +434,7 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun deleteRoutine(id: String) {
         calls.add("deleteRoutine")
         reachable()
+        refuseRoutineDelete?.let { throw it }
         written.remove(id)
     }
 

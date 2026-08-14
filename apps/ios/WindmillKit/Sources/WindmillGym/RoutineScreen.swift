@@ -1,9 +1,11 @@
 import SwiftUI
 import WindmillPlatform
 
-// §M SCREEN 30 — one routine, opened out, and honest that it has never been run. It is the page the
-// routines list opens and the page a build lands on, and it carries the four things you can do to a
-// day of a program: start it, rename it, edit it, duplicate it.
+// ROUTINE DETAIL — one screen since the 13 Aug update (R2): screen 30's content under screen 5's
+// chrome. The plan's rows, one primary that starts it — "Start workout", literal, never
+// name-substituted (R1) — and History below. Edit is the header's one action; Duplicate and Delete
+// moved into the editor (R3), and the standalone Rename sheet retired with them — renaming is
+// editing the inline name.
 //
 // `untested` IS AN ABSENCE AND NOT A FLAG (`Routine.isUntested`). A routine built at home has no
 // history behind it, and the word stays until its first session — which is what allows that first
@@ -24,7 +26,6 @@ struct RoutineScreen: View {
     @ObservedObject var store: TrainingStore
     let onStart: () -> Void
     let onEdit: (Routine) -> Void
-    let onDuplicate: (Routine) -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
     let onThread: (String) -> Void
@@ -32,7 +33,6 @@ struct RoutineScreen: View {
     @Environment(\.gymSkin) private var skin
     @State private var routine: Routine?
     @State private var failure: TrainingStore.WriteFailure?
-    @State private var renaming = false
 
     var body: some View {
         ScrollView {
@@ -41,8 +41,8 @@ struct RoutineScreen: View {
                     head(routine)
                     rows(routine)
                     if let open = RoutineReadout.openRows(routine, in: store.catalog) { fact(open) }
+                    start
                     history(routine)
-                    actions(routine)
                 } else if let failure {
                     silence(failure.line("this routine isn’t drawn"))
                 } else {
@@ -56,22 +56,12 @@ struct RoutineScreen: View {
             .padding(.bottom, WindmillSpace.x8)
         }
         .task { await read() }
-        .sheet(isPresented: $renaming) {
-            // THE SAME SHEET §N DRAWS, with no proof block — see the head of RenameSheet.swift for
-            // why a routine has none.
-            RenameSheet(current: routine?.name ?? "",
-                        title: "Rename this routine",
-                        prompt: "Routine name",
-                        save: { await rename(to: $0) },
-                        onClose: { renaming = false })
-                .presentationBackground(skin.surface)
-                .presentationDetents([.medium])
-        }
     }
 
-    // The name, `Rename` beside it, then the word and the meta under both. Rename rides with the
-    // thing it acts on rather than in a corner of the room's chrome — the top-left is the shell's
-    // capsule lane and the top-right belongs to nobody, which is the same place §H puts it.
+    // The name, `Edit` beside it (R2's header), then the word and the meta under both. Edit rides
+    // with the thing it acts on rather than in a corner of the room's chrome — the top-left is the
+    // shell's capsule lane and the top-right belongs to nobody, which is the same place §H puts it.
+    // Renaming is inside the editor now: the name is a field there, not a sheet here.
     private func head(_ routine: Routine) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
@@ -79,8 +69,8 @@ struct RoutineScreen: View {
                     .font(WindmillFont.display(30))
                     .foregroundStyle(skin.ink)
                 Spacer(minLength: 0)
-                Button { renaming = true } label: {
-                    Text("Rename")
+                Button { onEdit(routine) } label: {
+                    Text("Edit")
                         .font(WindmillFont.body(13.5, .bold))
                         .foregroundStyle(skin.accent)
                         .frame(minHeight: GymTap.minimum)
@@ -107,7 +97,8 @@ struct RoutineScreen: View {
 
     // Every movement is a door onto its own record (§H), and the target beside it is what the day
     // asks for — or `open`, in the ink that says the routine named nothing rather than that it named
-    // a number. A movement this lifter minted carries `· mine`, so they can recognise their own.
+    // a number. A movement this lifter minted carries `· yours` (R5 — the picker's word, everywhere),
+    // so they can recognise their own.
     //
     // Keyed on POSITION and never on the movement: a routine may name one twice — bench heavy then
     // bench back-off — and two rows sharing an id in a ForEach is undefined behaviour.
@@ -135,7 +126,7 @@ struct RoutineScreen: View {
     private func name(of exerciseId: String) -> String {
         let named = Readout.movement(exerciseId, in: store.catalog)
         guard store.catalog.first(where: { $0.id == exerciseId })?.custom == true else { return named }
-        return "\(named) · mine"
+        return "\(named) · yours"
     }
 
     private func fact(_ said: String) -> some View {
@@ -228,32 +219,18 @@ struct RoutineScreen: View {
             .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    private func actions(_ routine: Routine) -> some View {
-        VStack(spacing: WindmillSpace.x2) {
-            Button(action: onStart) {
-                Text("Start \(routine.name)")
-                    .font(WindmillFont.body(16.5, .bold))
-                    .foregroundStyle(skin.onAccent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-            }
-            HStack(spacing: WindmillSpace.x2) {
-                secondary("Edit") { onEdit(routine) }
-                secondary("Duplicate") { onDuplicate(routine) }
-            }
+    // THE ONE BUTTON THAT STARTS IT, and it reads "Start workout" — literal, never name-substituted
+    // (R1): the routine's name is the screen's title, so the verb is locked and the button never
+    // shrinks a long name into it.
+    private var start: some View {
+        Button(action: onStart) {
+            Text("Start workout")
+                .font(WindmillFont.body(16.5, .bold))
+                .foregroundStyle(skin.onAccent)
+                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
         .padding(.top, WindmillSpace.x2)
-    }
-
-    private func secondary(_ label: String, tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
-            Text(label)
-                .font(WindmillFont.body(14, .bold))
-                .foregroundStyle(skin.inkDim)
-                .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                    .strokeBorder(skin.lineStrong, lineWidth: 1))
-        }
     }
 
     private func silence(_ line: String) -> some View {
@@ -278,19 +255,6 @@ struct RoutineScreen: View {
         case .success(let found): routine = found
         case .failure(let why): failure = why
         }
-    }
-
-    // A rename that landed is re-read rather than patched into what is on screen: the log decides
-    // what a routine is called, and a page that wrote the new name in itself would be stating a fact
-    // it only asked for. The read also brings back the revision the write moved.
-    private func rename(to name: String) async -> TrainingStore.WriteFailure? {
-        guard let routine else { return .refused("that routine isn’t loaded yet") }
-        guard let failed = await store.rename(routine, to: name) else {
-            renaming = false
-            await read()
-            return nil
-        }
-        return failed
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

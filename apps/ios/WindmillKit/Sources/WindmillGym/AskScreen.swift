@@ -1,8 +1,14 @@
 import SwiftUI
 import WindmillPlatform
 
-// ASK, DRAWN (§L screens 26–27). It is an AWAY screen: the room's plain bar carries the way back and
-// no rail is under it, because a chat is not a place you live and never a fourth tab.
+// ASK, DRAWN (§L screens 26–27) — THE THIRD TAB'S ROOT since the 13 Aug promotion (R7). The tab
+// root is this same conversation surface with the room's rail under it in place of a back bar; the
+// threads door stays in its header. The 2026-08-11 wave shipped Ask as a door and said "not a tab"
+// — the 13 Aug board promoted it, and the ledger records the reversal. What did NOT move: it never
+// speaks first, and "never mid-session" survives structurally — a live session owns the whole
+// screen, rail included. The two states that used to take the door away are designed stances now
+// (`AskSignedOutStance`, `AskAbsentStance` below), because a tab cannot be absent the way a door
+// could be.
 //
 // THE HEADER CARRIES NO `One` CHIP, and the design draws one. Ask ships OPEN to everyone with a hard
 // cost cap and a plainly-worded daily limit (contract §4) — Windmill One cannot be bought today, so a
@@ -439,5 +445,83 @@ struct AskScreen: View {
                 minted[id] = found
             }
         }
+    }
+}
+
+// THE TAB SIGNED OUT (decisions §3): what Ask is, and the sign-in step — never a 401 and never a
+// dead pane. The button opens You, where the shell's door is one row away; the conversation surface
+// takes this stance's place the moment there is an account to read for. No threads door in the
+// header — a signed-out account has no past to list.
+struct AskSignedOutStance: View {
+    let onSignIn: () -> Void
+
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            AskStanceHead()
+            Text(Ask.scope)
+                .font(WindmillFont.body(15))
+                .foregroundStyle(skin.inkDim)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(Ask.needsSignIn)
+                .font(GymType.numeral(12.5))
+                .foregroundStyle(skin.inkFaint)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onSignIn) {
+                Text(Ask.signIn)
+                    .font(WindmillFont.body(16, .semibold))
+                    .foregroundStyle(skin.accent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                        .strokeBorder(skin.lineStrong, lineWidth: 1))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, WindmillSpace.x4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// THE TAB ON A DEPLOYMENT WITH NO ASK (decisions §3): a quiet statement that there is no Ask on
+// this Windmill — the same sentence the route's own 404 says — with nothing to retry and nothing
+// sold. The thread routes still answer on such a deployment, but the board draws no door onto them
+// here; the one that exists stays on a routine's history row.
+struct AskAbsentStance: View {
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+            AskStanceHead()
+            Text(Ask.absentLine)
+                .font(WindmillFont.body(15))
+                .foregroundStyle(skin.inkDim)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, WindmillSpace.x4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// The tab root's header without the threads door, shared by both stances — the same two lines the
+// conversation's head carries, so the tab keeps one identity whichever state it is in.
+private struct AskStanceHead: View {
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(Ask.title)
+                .font(WindmillFont.display(19))
+                .foregroundStyle(skin.ink)
+            Text(Ask.subtitle)
+                .font(GymType.numeral(11))
+                .foregroundStyle(skin.inkFaint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, WindmillSpace.x6)
     }
 }

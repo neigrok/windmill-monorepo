@@ -5,7 +5,7 @@ import WindmillPlatform
 // lifter's program, and the only place it can. Everything above the two buttons is a statement of
 // what would change; nothing has changed until one of them is pressed.
 //
-// It is an AWAY screen, reached from the card on Today and from the routine the proposal touches,
+// It is an AWAY screen, reached from the card on home and from the routine the proposal touches,
 // so it carries the room's plain bar and no rail — a decision is not a place to stand.
 //
 // THE COUNT UNDER THE THUMB IS THE SERVER'S, never the rows this build managed to draw
@@ -263,9 +263,9 @@ struct ProposalScreen: View {
 }
 
 // THE CARD IS THE NOTIFICATION (§B). This product has no push, no badge and no unread count, and
-// that is exactly why the card waits where the lifter will be looking anyway — on Today, and on the
-// routine it touches — until it is applied or dismissed. It never speaks first and it never
-// interrupts a session.
+// that is exactly why the card waits where the lifter will be looking anyway — on home (Routines),
+// and on the routine it touches — until it is applied or dismissed. It never speaks first and it
+// never interrupts a session.
 //
 // It carries the agent's OWN summary and no editorial: the words a lifter is about to judge are the
 // words the agent wrote. When there are none, `line(about:)` states the count and the routine rather
@@ -275,12 +275,13 @@ struct ProposalCard: View {
     let routineName: String
     let onReview: () -> Void
     // "Not now." It sets the card aside on THIS screen for as long as the room is open — the
-    // proposal is untouched, it still waits on its own routine, and it is back on Today the next
+    // proposal is untouched, it still waits on its own routine, and it is back on home the next
     // time the room is. Dismissing is a decision with a record; this is not one, so it takes none.
     let onLater: () -> Void
-    // ASK'S SECOND ENTRANCE (§L): the two places a chat is reached from are Today's bottom band and
-    // this card. It is nil wherever Ask is not open — mid-session, signed out, or on a deployment
-    // that carries no Ask — so the row is absent rather than dead.
+    // ASK'S SHORTCUT (§L): the chat is a tab of its own since the 13 Aug promotion, and this card
+    // keeps its chip onto it. It is nil wherever an Ask door is not offered — a deployment that
+    // carries no Ask — so the chip is absent rather than dead; the tab itself stands regardless
+    // and says its own stance.
     //
     // IT SEEDS NOTHING. A question written for the lifter would be the same fault `line(about:)`
     // refuses two properties down: the words somebody is about to judge an agent by are their own.

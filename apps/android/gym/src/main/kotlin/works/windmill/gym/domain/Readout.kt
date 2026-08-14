@@ -42,7 +42,7 @@ object Readout {
     // spelled, so the routine card, the logger's plan line and the finish comparison agree.
     fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
 
-    // What a routine asks a movement for, in one line — the routine card on Today, the routines tab
+    // What a routine asks a movement for, in one line — the routine's own page, the builder's list
     // and the finish comparison all print it, so a target reads the same wherever it is read
     // (log.js `entryLabel`). An absent weight is "whatever you did last time" and prints nothing
     // rather than a zero; so does an actual zero, because zero is not a load but the absence of one,
@@ -108,7 +108,7 @@ object Readout {
     }
 
     // ONE WORD FOR A SESSION NOBODY PLANNED, everywhere this room names one — the log's row, the
-    // session read back, Today's last-session line and the live logger's own head. It is the
+    // session read back and the live logger's own head. It is the
     // design's own (§G16) and it replaced "Ad-hoc", which the web retired for the same reason
     // (log.js NO_ROUTINE): a session with no routine is the ordinary case in most logs and must not
     // read as a fault or as jargon. It is spelled here beside the other phrases this product spells
@@ -252,16 +252,20 @@ object Readout {
 
     fun setCount(count: Int): String = if (count == 1) "1 set" else "$count sets"
 
-    // What a routine holds and when it was last used — the line Today's list prints and the line the
-    // Routines tab prints, which is one sentence and therefore lives in one place. It is also the
-    // fact both lists are SORTED by, so a row never has to explain its own order. A routine nobody
-    // has trained says exactly that rather than borrowing today.
+    // What a routine holds and when it was last used — the line the home list prints and the line
+    // the routine's own page falls back to, which is one sentence and therefore lives in one place.
+    // It is also the fact the list is SORTED by, so a row never has to explain its own order. A
+    // routine nobody has trained says exactly that rather than borrowing today. The noun is
+    // MOVEMENT — a routine holds movements, never "exercises" (the 13 Aug vocabulary lock) — and it
+    // is Program's own spelling, so the head line and this one cannot drift.
     fun routineLine(routine: Routine, now: Long): String {
-        val count = routine.entries.size
-        val movements = if (count == 1) "1 exercise" else "$count exercises"
+        val movements = Program.movements(routine.entries.size)
         val trained = routine.lastTrainedAtMs ?: return "$movements · never trained"
         return "$movements · trained ${ago(trained, now)}"
     }
+
+    // How many days a program holds — the home's own sub-line and nothing else's.
+    fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
 
     // The product counts SESSIONS — never workouts and never entries — so the word is spelled here
     // beside the set's, and the record page's subhead borrows it rather than inventing a second

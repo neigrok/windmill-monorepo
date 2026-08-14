@@ -105,6 +105,26 @@ class LiveLinesTests {
                      LiveLines.counter(workingSetsToday = 0, planEntry = loaded).plan)
     }
 
+    // §K'S OTHER POSITION LINE — "movement 3 of 6", counted off the merged walk and by position, so
+    // a movement appended on the bench counts the moment it joins. It degrades to silence rather
+    // than to a false count: no place for a movement outside the walk, and no line at all over a
+    // walk of one, where "movement 1 of 1" would be the screen narrating itself.
+    @Test
+    fun testTheMovementPlaceIsCountedOffTheWalkAndDegradesToSilence() {
+        val order = listOf("bench-press", "overhead-press", "cable-fly")
+
+        assertEquals("movement 1 of 3", LiveLines.place(order, "bench-press"))
+        assertEquals("movement 3 of 3", LiveLines.place(order, "cable-fly"))
+        assertEquals("an appended movement counts the moment it joins the walk",
+                     "movement 3 of 3", LiveLines.place(order, order.last()))
+        assertNull("a movement the walk does not hold has no place",
+                   LiveLines.place(order, "chin-up"))
+        assertNull(LiveLines.place(order, null))
+        assertNull("a walk of one is not a position worth a line",
+                   LiveLines.place(listOf("bench-press"), "bench-press"))
+        assertNull(LiveLines.place(emptyList(), "bench-press"))
+    }
+
     // Four states, not two. A read still in flight and a read that failed are different facts, and
     // ONLY an answer may say "first time" — a card claiming no history over a movement squatted for
     // a year, because the phone was in a basement, is the product lying in the pixel it exists for.
