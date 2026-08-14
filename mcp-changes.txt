@@ -298,3 +298,19 @@ Two ergonomic notes for whoever writes the next client:
   products actually connected, and the token response echoes the granted `scope`. A client
   that asked for more than it got learns it at issue rather than from a tool that silently
   never appears.
+
+--- 2026-08-14 · a session's tools/list outlives a deploy, and a scout read it as prod ---
+
+Observed while scouting for the routine-first wave: a client session connected before (or
+across) yesterday's deploy kept serving the OLD gym catalog — save_routine/delete_routine —
+while the server had already moved to create_routine + the proposal pair. A read-only scout
+compared that cached list against the repo and concluded "prod is running an older build";
+it wasn't — Deploy to VPS had gone green the evening before. The cache was the client's,
+but the cost landed on us: an agent's inventory of the live surface is only as fresh as its
+connection, and nothing in the protocol says so.
+
+Ergonomic note for the next incident: the server can't force a client to re-list, but it
+CAN date its catalog — a `serverInfo.version` (or a build stamp in `instructions`) that a
+scout can compare against the repo turns "prod looks stale" into "my connection predates
+the deploy, reconnect" in one read. Cheap, honest, and it ends the false alarm at the
+first probe.
