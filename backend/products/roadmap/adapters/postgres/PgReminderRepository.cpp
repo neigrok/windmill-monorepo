@@ -363,7 +363,7 @@ bool PgReminderRepository::stopMailing(const Email& address) {
   // reminder settings, and a bounce on their sign-in mail still proves the mailbox is gone; without
   // the insert, the day they turn reminders on we would mail a dead address for a week before
   // learning it again. `enabled` is left exactly as its owner set it — suppression is our fact
-  // about the mailbox, never an edit to their choice, so lifting it restores what they asked for.
+  // about the mailbox, never an edit to their choice, so liftSuppression restores what they asked for.
   // users.email is citext, so the address matches however the provider cased it back to us.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -374,6 +374,17 @@ bool PgReminderRepository::stopMailing(const Email& address) {
       address.value);
   txn.commit();
   return !changed.empty();
+}
+
+void PgReminderRepository::liftSuppression(const UserId& user) {
+  // The owner's own hand, keyed by their id: RemindersApi calls this when they turn reminders on
+  // over a suppressed row. `enabled` is untouched here too — the enable that prompted it is written
+  // by upsertSettings — and a row that never existed has nothing to lift, so an UPDATE is exact.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params("UPDATE reminder_subscription SET suppressed = false WHERE user_id = $1::uuid",
+                  user.str());
+  txn.commit();
 }
 
 void PgReminderRepository::setPauseDigest(const UserId& user, const std::string& digest) {

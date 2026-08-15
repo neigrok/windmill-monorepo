@@ -60,10 +60,14 @@ struct NudgeRepository : MailSuppression {
   virtual void upsertSettings(const UserId& user, const NudgeSettings& settings) = 0;
 
   // MailSuppression: end the nightly nudge for whoever owns that address. What the platform webhook
-  // calls after a hard bounce or a spam complaint, and journal's only writer of
-  // journal_nudge.suppressed. It never touches `enabled` — what its owner asked for survives, so
-  // lifting the flag one day restores their choice rather than a default.
+  // calls after a hard bounce or a spam complaint. It never touches `enabled` — what its owner
+  // asked for survives, so lifting the flag restores their choice rather than a default.
   bool stopMailing(const Email& address) override = 0;
+  // The inverse, and the only other writer of journal_nudge.suppressed. Keyed by USER, not address,
+  // because it is the account owner acting on their own row: NudgeApi calls it when a PATCH that
+  // says enabled:true lands on a suppressed row — the deliberate "this address works now". Neither
+  // verb touches `enabled`; being wrong costs exactly one more bounce, which suppresses again.
+  virtual void liftSuppression(const UserId& user) = 0;
 
   virtual void setPauseDigest(const UserId& user, const std::string& digest) = 0;
   virtual std::optional<UserId> userByPauseDigest(const std::string& digest) = 0;

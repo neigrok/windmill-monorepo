@@ -1203,7 +1203,8 @@
   transition: border-color var(--duration-fast, 150ms) var(--ease-standard), color var(--duration-fast, 150ms) var(--ease-standard);
 }
 .journal-nudge-chip.is-on { border-color: var(--lamp-400); color: var(--lamp-400); }
-.journal-nudge-snooze {
+.journal-nudge-snooze,
+.journal-nudge-resume {
   margin-top: 18px;
   padding: 0;
   border: 0;
@@ -1214,7 +1215,9 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.journal-nudge-snooze:hover { color: var(--journal-ink, #F2ECDE); }
+.journal-nudge-snooze:hover,
+.journal-nudge-resume:hover { color: var(--journal-ink, #F2ECDE); }
+.journal-nudge-resume { color: var(--lamp-400); }
 .journal-nudge-foot {
   margin: 22px 0 0;
   padding-top: 16px;

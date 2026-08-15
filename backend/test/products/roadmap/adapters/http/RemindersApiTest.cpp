@@ -433,11 +433,59 @@ TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) 
 
   const Json::Value body = bodyOf(get(h, signedIn(drogon::Get, "/v1/reminders", "")));
   CHECK(body["suppressed"].asBool());
-  // And only the suppression: what its owner asked for is untouched, so lifting the flag one day
-  // restores their choice rather than a default.
+  // And only the suppression: what its owner asked for is untouched, so lifting the flag restores
+  // their choice rather than a default.
   CHECK(body["enabled"].asBool());
   CHECK_EQ(body["timezone"].asString(), std::string("Europe/Berlin"));
   // An address no account owns writes nothing and says so, which is what keeps the webhook from
   // being an account-existence oracle.
   CHECK_FALSE(h.reminders->stopMailing(Email{"stranger@example.com"}));
+}
+
+TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
+  // The one deliberate act that clears the provider's verdict: the owner, signed in, saying
+  // "on" — which is them saying the address works now. Being wrong costs one more bounce.
+  Harness h(ReminderArming(true, "u1"));
+  UserId me = h.signIn("s-live");
+  h.reminders->settings[me.str()].enabled = true;
+  h.reminders->settings[me.str()].timezone = "Europe/Berlin";
+  h.reminders->owners["sam@example.com"] = me.str();
+  CHECK(h.reminders->stopMailing(Email{"sam@example.com"}));
+
+  CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders",
+                             R"({"enabled":true,"timezone":"Europe/Berlin"})"))
+               ->getStatusCode(),
+           drogon::k204NoContent);
+
+  const ReminderSettings& row = h.reminders->settings[me.str()];
+  CHECK_FALSE(row.suppressed);
+  CHECK(row.enabled);
+  CHECK_EQ(row.timezone, std::string("Europe/Berlin"));
+  const Json::Value body = bodyOf(get(h, signedIn(drogon::Get, "/v1/reminders", "")));
+  CHECK_FALSE(body["suppressed"].asBool());
+  CHECK(body["enabled"].asBool());
+}
+
+TEST(reminders_a_patch_that_does_not_turn_them_on_leaves_a_suppression_alone) {
+  // Switching off is not a claim about the mailbox, and neither is moving the timezone over a row
+  // that already reads "on": the flag is the provider's fact until the owner says otherwise.
+  Harness h(ReminderArming(true, "u1"));
+  UserId me = h.signIn("s-live");
+  h.reminders->settings[me.str()].enabled = true;
+  h.reminders->settings[me.str()].timezone = "Europe/Berlin";
+  h.reminders->owners["sam@example.com"] = me.str();
+  CHECK(h.reminders->stopMailing(Email{"sam@example.com"}));
+
+  CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders", R"({"timezone":"Europe/Lisbon"})"))
+               ->getStatusCode(),
+           drogon::k204NoContent);
+  CHECK(h.reminders->settings[me.str()].suppressed);
+  CHECK(h.reminders->settings[me.str()].enabled);
+  CHECK_EQ(h.reminders->settings[me.str()].timezone, std::string("Europe/Lisbon"));
+
+  CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders", R"({"enabled":false})"))
+               ->getStatusCode(),
+           drogon::k204NoContent);
+  CHECK(h.reminders->settings[me.str()].suppressed);
+  CHECK_FALSE(h.reminders->settings[me.str()].enabled);
 }

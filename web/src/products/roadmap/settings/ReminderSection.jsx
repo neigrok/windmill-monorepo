@@ -48,11 +48,41 @@ export function ReminderSection() {
   // could do.
   if (loading || !settings || !settings.armed) return null;
 
+  const toggle = async (next) => {
+    if (phase === 'saving') return;
+    const patch = reminderPatch(next, browserTimezone());
+    if (!patch) {
+      setPhase('error');
+      setError("This browser won't say which timezone you're in, so we can't pick a decent hour to send. Reminders stay off.");
+      return;
+    }
+    setPhase('saving');
+    setError(null);
+    const saved = await saveReminders(patch);
+    if (!saved) {
+      setPhase('error');
+      setError("Couldn't save just now — try again.");
+      return;
+    }
+    // Over a suppressed row the enable is also the lift, and only the server knows whether the flag
+    // cleared — so read it back rather than guess, and the ordinary face returns on its own.
+    if (settings.suppressed) {
+      const fresh = await fetchReminders();
+      setSettings(fresh ?? { ...settings, enabled: next, timezone: patch.timezone ?? settings.timezone });
+      setPhase('saved');
+      return;
+    }
+    setSettings({ ...settings, enabled: next, timezone: patch.timezone ?? settings.timezone });
+    setPhase('saved');
+  };
+
   // We will not send, and the person did not ask us to stop. That is the one thing this section
   // must say out loud — a switch still reading "on" over a stream that no longer runs is the
   // dishonest version of this state. The switch is gone rather than disabled because flipping it
-  // would change a stored preference and nothing a reader could observe. Nothing here clears the
-  // flag, and the copy says so rather than implying a retry we do not run.
+  // would change a stored preference and nothing a reader could observe. What clears the flag is
+  // the owner turning reminders back on — the button below runs the ordinary enable, which the
+  // server reads over a suppressed row as "this address works now" — and we never retry on our
+  // own; being wrong costs one more bounce, which suppresses again.
   //
   // The copy says "can't send", never "stopped sending", because suppression can reach an account
   // that never turned reminders on: the webhook writes the row if it is missing, and the bounce
@@ -75,33 +105,19 @@ export function ReminderSection() {
             get back in.
           </p>
           <p style={styles.metaText}>
-            There's no way to clear this from here yet, and we won't retry on our own. If the
-            address works again, send us a note below and we'll lift it.
+            We won't retry on our own. If the address works again, turn reminders back on and
+            we'll write to it — and stop again if that mail comes back too.
           </p>
+          <button type="button" style={styles.dashedRow} onClick={() => toggle(true)}
+                  disabled={phase === 'saving'}>
+            Turn reminders back on
+          </button>
+          {phase === 'saving' && <p style={styles.metaText}>Saving…</p>}
+          {phase === 'error' && <p style={{ ...styles.metaText, color: 'var(--color-danger)' }}>{error}</p>}
         </div>
       </Section>
     );
   }
-
-  const toggle = async (next) => {
-    if (phase === 'saving') return;
-    const patch = reminderPatch(next, browserTimezone());
-    if (!patch) {
-      setPhase('error');
-      setError("This browser won't say which timezone you're in, so we can't pick a decent hour to send. Reminders stay off.");
-      return;
-    }
-    setPhase('saving');
-    setError(null);
-    const saved = await saveReminders(patch);
-    if (!saved) {
-      setPhase('error');
-      setError("Couldn't save just now — try again.");
-      return;
-    }
-    setSettings({ ...settings, enabled: next, timezone: patch.timezone ?? settings.timezone });
-    setPhase('saved');
-  };
 
   return (
     <Section title="Reminders">

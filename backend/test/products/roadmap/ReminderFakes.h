@@ -97,6 +97,12 @@ struct FakeReminders : ReminderRepository {
     settings[owner->second].suppressed = true;
     return true;
   }
+  // The inverse by user id, and like the real UPDATE it creates nothing: a row that never existed
+  // has nothing to lift. `enabled` stays exactly as it was.
+  void liftSuppression(const UserId& user) override {
+    auto it = settings.find(user.str());
+    if (it != settings.end()) it->second.suppressed = false;
+  }
 
   void setPauseDigest(const UserId& user, const std::string& digest) override {
     pauseDigests[user.str()] = digest;

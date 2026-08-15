@@ -143,6 +143,17 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k403Forbidden, "nudges aren't switched on for this account yet"));
     return;
   }
+  // A PATCH that itself says enabled:true, landing on a row the provider suppressed, is the owner
+  // saying "this address works now" — the one deliberate act that lifts that verdict, made with
+  // their own hand on a session-authenticated route. Only that PATCH does it: one that says
+  // enabled:false, or moves the channel over a row already on, leaves the flag as the provider left
+  // it. Being wrong costs exactly one more bounce, which suppresses again. The reply is the fresh
+  // settings, so it must carry the lift too — upsertSettings never writes that column.
+  const bool turningOn = json->isMember("enabled") && settings.enabled;
+  if (turningOn && settings.suppressed) {
+    nudges_->liftSuppression(*caller);
+    settings.suppressed = false;
+  }
   nudges_->upsertSettings(*caller, settings);
   cb(jsonResponse(toJson(settings, true)));
 }

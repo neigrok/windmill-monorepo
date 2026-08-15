@@ -305,15 +305,76 @@ TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
   CHECK_EQ(dump(*response->getJsonObject()),
            std::string(R"({"adaptive":true,"armed":false,"channel":"email","enabled":true,)"
                        R"("nextDueAt":1700003600000,"suppressed":true})"));
-  // And nothing a settings PATCH can say lifts it: the flag is the provider's fact, not a
-  // preference, so what its owner asked for survives beside it rather than instead of it.
+  // Switching off does not lift it: the flag is the provider's fact, not a preference, so what
+  // its owner asked for survives beside it rather than instead of it — and only the owner turning
+  // the nudge back ON says the mailbox works again.
   Json::Value patch(Json::objectValue);
   patch["enabled"] = false;
-  CHECK_EQ(patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"))
-               ->getStatusCode(),
-           drogon::k200OK);
+  drogon::HttpResponsePtr off =
+      patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"));
+  CHECK_EQ(off->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*off->getJsonObject()),
+           std::string(R"({"adaptive":true,"armed":true,"channel":"email","enabled":false,)"
+                       R"("nextDueAt":1700003600000,"suppressed":true})"));
   CHECK(h.nudges->settingsFor(me)->suppressed);
+  CHECK_FALSE(h.nudges->settingsFor(me)->enabled);
   // An address no account owns writes nothing and says so, which is what keeps the webhook from
   // being an account-existence oracle.
   CHECK_FALSE(h.nudges->stopMailing(Email{"stranger@example.com"}));
+}
+
+TEST(nudge_the_owner_turning_it_on_lifts_a_suppression) {
+  // The one deliberate act that clears the provider's verdict: the owner, signed in, PATCHing
+  // enabled:true — which is them saying the address works now. Being wrong costs one more bounce.
+  // The PATCH answers the fresh settings, so the lift must show in the reply, not only in the row.
+  Harness h(NudgeArming(true, "u1"));
+  UserId me = h.signIn("s-live");
+  NudgeSettings on;
+  on.enabled = true;
+  on.nextDueAtMs = h.clock->now + 3'600'000;
+  on.slotDay = ld("2026-07-28");
+  h.nudges->upsertSettings(me, on);
+  h.nudges->emails[me.str()] = Email{"sam@example.com"};
+  CHECK(h.nudges->stopMailing(Email{"sam@example.com"}));
+
+  Json::Value patch(Json::objectValue);
+  patch["enabled"] = true;
+  drogon::HttpResponsePtr response =
+      patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"adaptive":true,"armed":true,"channel":"email","enabled":true,)"
+                       R"("nextDueAt":1700003600000,"suppressed":false})"));
+  std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
+  REQUIRE(stored.has_value());
+  CHECK_FALSE(stored->suppressed);
+  CHECK(stored->enabled);
+  CHECK(stored->nextDueAtMs == std::optional<std::uint64_t>(1'700'003'600'000ULL));
+}
+
+TEST(nudge_a_patch_that_does_not_say_enabled_leaves_a_suppression_alone) {
+  // A row already reading "on" is not the owner speaking: moving the channel over it changes a
+  // preference and says nothing about the mailbox, so the provider's fact stands.
+  Harness h(NudgeArming(true, "u1"));
+  UserId me = h.signIn("s-live");
+  NudgeSettings on;
+  on.enabled = true;
+  on.nextDueAtMs = h.clock->now + 3'600'000;
+  on.slotDay = ld("2026-07-28");
+  h.nudges->upsertSettings(me, on);
+  h.nudges->emails[me.str()] = Email{"sam@example.com"};
+  CHECK(h.nudges->stopMailing(Email{"sam@example.com"}));
+
+  Json::Value patch(Json::objectValue);
+  patch["channel"] = "inapp";
+  drogon::HttpResponsePtr response =
+      patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"adaptive":true,"armed":true,"channel":"inapp","enabled":true,)"
+                       R"("nextDueAt":1700003600000,"suppressed":true})"));
+  CHECK(h.nudges->settingsFor(me)->suppressed);
+  CHECK(h.nudges->settingsFor(me)->enabled);
 }

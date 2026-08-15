@@ -129,6 +129,14 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k403Forbidden, "reminders aren't switched on for this account yet"));
     return;
   }
+  // A PATCH that itself says enabled:true, landing on a row the provider suppressed, is the owner
+  // saying "this address works now" — the one deliberate act that lifts that verdict, made with
+  // their own hand on a session-authenticated route. Only that PATCH does it: one that leaves
+  // reminders off, or only moves the timezone over a row already on, leaves the flag as the
+  // provider left it. Being wrong costs exactly one more bounce, which suppresses again. The web
+  // refetches after the 204 and the ordinary face returns.
+  const bool turningOn = json->isMember("enabled") && settings.enabled;
+  if (turningOn && settings.suppressed) reminders_->liftSuppression(*caller);
   if (!reminders_->upsertSettings(*caller, settings.enabled, settings.timezone)) {
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;

@@ -569,7 +569,8 @@ create table if not exists reminder_subscription (
   -- platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX, never an edit to `enabled`:
   -- what its owner asked for survives untouched, so clearing the flag restores their choice rather
   -- than a default. It gates reminders only — nothing in the sign-in path reads it, so magic links
-  -- still reach the address and someone who fixes it can come back. Nothing lifts the flag today.
+  -- still reach the address and someone who fixes it can come back. The owner turning reminders on
+  -- again is what lifts it (RemindersApi → liftSuppression); being wrong costs one more bounce.
   suppressed   boolean not null default false,
   pause_digest text not null default '',
   created_at   timestamptz not null default now()
@@ -783,8 +784,9 @@ create table if not exists journal_nudge (
   -- and that rule lives in platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX,
   -- never an edit to `enabled`: what its owner asked for survives untouched, so clearing the flag
   -- restores their choice rather than a default. It gates nudges only — nothing in the sign-in path
-  -- reads it, so magic links still reach the address and someone who fixes it can come back.
-  -- Nothing lifts the flag today.
+  -- reads it, so magic links still reach the address and someone who fixes it can come back. The
+  -- owner turning nudges on again is what lifts it (NudgeApi → liftSuppression); being wrong costs
+  -- one more bounce.
   suppressed   boolean not null default false,
   pause_digest text not null default '',
   updated_at   timestamptz not null default now(),

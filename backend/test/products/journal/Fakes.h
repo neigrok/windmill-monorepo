@@ -170,8 +170,8 @@ public:
     return it->second;
   }
   void upsertSettings(const UserId& user, const NudgeSettings& row) override {
-    // The real one writes every column BUT `suppressed`, so a settings PATCH can never lift a
-    // provider's verdict — mirrored here, or a test could pass against a fake that can.
+    // The real one writes every column BUT `suppressed`: only liftSuppression clears the provider's
+    // verdict — mirrored here, or a test could pass against a fake whose upsert quietly does it.
     const bool suppressed = settings[user.str()].suppressed;
     settings[user.str()] = row;
     settings[user.str()].suppressed = suppressed;
@@ -187,6 +187,12 @@ public:
         return true;
       }
     return false;
+  }
+  // The inverse by user id, and like the real UPDATE it creates nothing: a row that never existed
+  // has nothing to lift. `enabled` stays exactly as it was.
+  void liftSuppression(const UserId& user) override {
+    auto it = settings.find(user.str());
+    if (it != settings.end()) it->second.suppressed = false;
   }
 
   void setPauseDigest(const UserId& user, const std::string& digest) override {

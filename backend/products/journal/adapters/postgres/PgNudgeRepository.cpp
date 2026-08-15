@@ -239,6 +239,19 @@ bool PgNudgeRepository::stopMailing(const Email& address) {
   return !changed.empty();
 }
 
+void PgNudgeRepository::liftSuppression(const UserId& user) {
+  // The owner's own hand, keyed by their id: NudgeApi calls this when a PATCH saying enabled:true
+  // lands on a suppressed row. `enabled` is untouched here too — the enable that prompted it is
+  // written by upsertSettings — and a row that never existed has nothing to lift, so an UPDATE is
+  // exact.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params(
+      "UPDATE journal_nudge SET suppressed = false, updated_at = now() WHERE user_id = $1::uuid",
+      user.str());
+  txn.commit();
+}
+
 void PgNudgeRepository::setPauseDigest(const UserId& user, const std::string& digest) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

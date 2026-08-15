@@ -84,10 +84,16 @@ struct ReminderRepository : MailSuppression {
   virtual bool upsertSettings(const UserId& user, bool enabled, const std::string& ianaTz) = 0;
 
   // MailSuppression: end the weekly reminder for whoever owns that address. What the platform
-  // webhook calls after a hard bounce or a spam complaint, and roadmap's only writer of
-  // reminder_subscription.suppressed. Nothing in the sign-in path reads that column, so the magic
-  // link keeps reaching an address this silenced — it is the one door back into the account.
+  // webhook calls after a hard bounce or a spam complaint. Nothing in the sign-in path reads that
+  // column, so the magic link keeps reaching an address this silenced — it is the one door back
+  // into the account.
   bool stopMailing(const Email& address) override = 0;
+  // The inverse, and the only other writer of reminder_subscription.suppressed. Keyed by USER, not
+  // address, because it is the account owner acting on their own row: RemindersApi calls it when
+  // the owner turns reminders on over a suppressed row — the deliberate "this address works now".
+  // Neither verb touches `enabled`, so lifting restores the owner's original choice, and being
+  // wrong costs exactly one more bounce, which suppresses again.
+  virtual void liftSuppression(const UserId& user) = 0;
 
   // The pause link's credential, stored exactly like every other secret in this codebase: the
   // digest at rest, the secret only ever in the mail that carries it.
