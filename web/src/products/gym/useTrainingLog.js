@@ -27,7 +27,7 @@ const POLL_MS = 5000;
 // (`UNDO_MS`, fix.js) — the offer and the window it is true in are the same five seconds, and a
 // test pins them equal.
 const TOAST_MS = 5000;
-// The handler clamps `limit` to 200 (GymApi.cpp), and the whole `end` signal is a page coming back
+// The handler clamps `limit` to 200 (TrainingApi.cpp), and the whole `end` signal is a page coming back
 // short of what was asked for — so anything asking for more than this would be answered 200 and read
 // as the bottom of the log, hiding half a lifter's history under a foot that names the wrong day as
 // their first session. Both numbers below are bounded by it.

@@ -150,7 +150,13 @@ backend/products/gym/
                                   join · namesVisibleMovement — and nothing else
     postgres/PgLogRepository.h/.cpp · PgCatalogRepository · PgProgramRepository ·
              PgAskThreadRepository · PgPreferencesRepository        one adapter per port
-    http/GymApi.h/.cpp            every /v1/gym/* route but one
+    http/TrainingApi.h/.cpp       the log's routes — sessions · sets · last · stats · the CSV of
+                                  sets · the coach share (the one adapter that takes appBaseUrl)
+    http/CatalogApi.h/.cpp        the movements — list · create · rename · record
+    http/ProgramApi.h/.cpp        routines + the proposal ledger, incl. THE TAP
+    http/PreferencesApi.h/.cpp    the settings document, read and written whole
+    http/ThreadsApi.h/.cpp        Ask's threads — list · read · delete · CSV
+                                  (one adapter per port; TrainingApi.h holds the status ladder)
     http/AskApi.h/.cpp            POST /v1/gym/ask — the one conditional route
     mcp/GymToolCatalog.h/.cpp     the sixteen declarations + the handshake paragraph
     mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
@@ -168,7 +174,9 @@ right. Id tags are gym's own (`ExerciseTag`, `SessionTag`, `SetTag` → `Exercis
 just nested one namespace deeper. `routes.h` declares `gym::GymDeps` and
 `gym::registerRoutes`, colliding with nothing.
 
-Five ports, one service, one Api. Gym is still a single bounded store — the catalog, the plan and
+Five ports, one service, five HTTP adapters cut along the same seams — and one `routes.cpp` that
+mounts them, so a route's method, path and reason are still read in one column. Gym is still a
+single bounded store — the catalog, the plan and
 the log live or die together (a routine entry references a movement, a session freezes a routine, a
 set references both a session and a movement), and `LogService` is the one consumer of all five —
 so the ports are cut by AGGREGATE, not by consumer: the log (sessions, sets, revisions, the coach
@@ -590,7 +598,7 @@ create table if not exists gym_preferences (
 §I's rows, one row per account. **Units are a display transform and nothing else** — §9.4's
 canonical-kg decision is untouched by this table and cannot be reached by it. There is no `lb`
 column here or anywhere in the schema; every weight in gym is kilograms, forever, and switching to
-`lb` changes what a screen prints. `GymApiTest` proves it end to end: an account that sets `lb`
+`lb` changes what a screen prints. `PreferencesApiTest` proves it end to end: an account that sets `lb`
 before it logs anything gets the same kilogram back from the session read, the log row's tonnage and
 the CSV cell, and switching back leaves all three byte-identical.
 
@@ -1726,6 +1734,12 @@ query, ordered by pattern then name. Identity rules, stated once:
 
 ## 6. Wire surfaces — the HTTP routes, and the MCP tools behind the grant
 
+The routes are served by five adapters that mirror the five ports — `TrainingApi` (everything under
+`/v1/gym/sessions`, `/last`, `/exercises/last`, `/stats`, `/export`, `/shared`), `CatalogApi`
+(`/exercises` and a movement's record), `ProgramApi` (`/routines`, `/proposals`), `PreferencesApi`
+(`/preferences`), `ThreadsApi` (`/threads`, `/export/threads`) — plus `AskApi` for the one
+conditional route; `routes.cpp` is the one place every path is named, in this order.
+
 | Method & path | Purpose | Phase |
 |---|---|---|
 | `GET  /v1/gym/exercises` | the catalog (seeds + own customs), each under the name THIS account calls it | 0 |
@@ -2142,7 +2156,8 @@ The full cost of mounting the third product, itemized against the actual seams:
   domain/RoutineTest.cpp,
   domain/ReviewTest.cpp, domain/StatisticsTest.cpp, domain/RecordTest.cpp,
   application/LogServiceTest.cpp,
-  adapters/http/GymApiTest.cpp, adapters/mcp/GymToolsTest.cpp,
+  adapters/http/{GymApiFixture.h, TrainingApiTest.cpp, CatalogApiTest.cpp, ProgramApiTest.cpp,
+  PreferencesApiTest.cpp, ThreadsApiTest.cpp}, adapters/mcp/GymToolsTest.cpp,
   adapters/postgres/{PgGymFixture.h, PgLogRepositoryTest.cpp, PgCatalogRepositoryTest.cpp,
   PgProgramRepositoryTest.cpp, PgAskThreadRepositoryTest.cpp, PgPreferencesRepositoryTest.cpp}}`
   mirroring the tree, full assertions —
@@ -2383,7 +2398,7 @@ stand behind: *last set 1:47 ago*.
    it back as `If-None-Match` — read per RFC 9110 §13.1.2: a comma-separated list, `W/` stripped
    per entry, `*` matching any current representation — and an unchanged workout answers 304 with
    no body, so the steady state costs a header exchange and no re-render. The tag lives at the
-   HTTP edge (`GymApi.cpp`); `LogService` stays wire-blind and the MCP tools never see it. The 401
+   HTTP edge (`TrainingApi.cpp`); `LogService` stays wire-blind and the MCP tools never see it. The 401
    and the 404 never carry the header — absent stays byte-identical to forbidden.
 
    **No socket, and that is a decision.** A set lands once every 60–120 seconds. Roadmap already

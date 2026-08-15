@@ -101,7 +101,7 @@ test('every call is cookie-credentialed json against the gym root', async () => 
 // carries an entry for a movement this account has a LAST TIME for and NOTHING for one it has not.
 // The bytes below are read off the writer and the handler rather than off a probe — no server was
 // running when this landed, so the claim is only as strong as those two files: `movements` is the
-// object's one key (GymApi.cpp::lastSets) and each line is exactly exerciseId · weightKg · reps ·
+// object's one key (TrainingApi.cpp::lastSets) and each line is exactly exerciseId · weightKg · reps ·
 // at, with no name and no nulls (TrainingJson.cpp::toJson(vector<LastSet>)). The account here has
 // two movements behind it and sixty-two it has no last time for; there is no row for those
 // sixty-two — no null, no zero, no sentinel — which is what the picker draws `no last time` from,

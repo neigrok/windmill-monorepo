@@ -249,7 +249,7 @@ function deepLog(rows) {
         return log.slice()
           .sort((left, right) => right.startedAt - left.startedAt || (left.id < right.id ? 1 : -1))
           .filter((row) => row.startedAt < before || (row.startedAt === before && row.id < beforeId))
-          // The handler's own ceiling (GymApi.cpp: std::min(value, 200)), mirrored because the whole
+          // The handler's own ceiling (TrainingApi.cpp: std::min(value, 200)), mirrored because the whole
           // `end` signal is a page coming back short of what was asked for. A LOG_PAGE raised past
           // 200 would be answered 200 by the real server and read as the bottom of the log — a fake
           // that hands back everything it was asked for would keep the suite green through it.
