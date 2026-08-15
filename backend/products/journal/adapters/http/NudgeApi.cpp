@@ -135,8 +135,16 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
     settings.pausedUntilMs = (*json)["pausedUntil"].asUInt64();
   }
 
+  // Nobody the engine cannot reach may switch themselves on — the same rule roadmap's reminders
+  // keep. The web mounts the panel only when `armed` is true, which gates a person with a browser
+  // and nobody with an API key: a row saying "on" for an account outside the allowlist would sit
+  // dark until the day the list grows, and then mail someone who consented through no door we meant.
+  if (settings.enabled && !sweep_->arming().allows(*caller)) {
+    cb(error(drogon::k403Forbidden, "nudges aren't switched on for this account yet"));
+    return;
+  }
   nudges_->upsertSettings(*caller, settings);
-  cb(jsonResponse(toJson(settings, sweep_->arming().allows(*caller))));
+  cb(jsonResponse(toJson(settings, true)));
 }
 
 void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

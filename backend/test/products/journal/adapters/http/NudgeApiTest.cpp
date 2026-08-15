@@ -130,7 +130,7 @@ TEST(nudge_get_without_a_row_answers_the_defaults) {
 }
 
 TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
-  Harness h;
+  Harness h(NudgeArming(true, "u1"));
   UserId me = h.signIn("s-live");
   Json::Value body(Json::objectValue);
   body["enabled"] = true;
@@ -142,7 +142,7 @@ TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"adaptive":true,"armed":false,"channel":"email",)"
+           std::string(R"({"adaptive":true,"armed":true,"channel":"email",)"
                        R"("enabled":true,"nextDueAt":1700000900000,"suppressed":false})"));
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
   REQUIRE(stored.has_value());
@@ -152,6 +152,41 @@ TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
   CHECK(stored->slotDay == std::optional<LocalDate>(ld("2026-07-28")));
   CHECK(stored->pausedUntilMs == std::optional<std::uint64_t>());
   CHECK_FALSE(stored->suppressed);
+}
+
+// The gate the web enforced by not mounting the panel, enforced where an API key can reach: an
+// account the dark-launch allowlist does not name cannot store a row that says "on".
+TEST(nudge_patch_enabling_outside_the_allowlist_is_403_and_stores_nothing) {
+  Harness h;
+  UserId me = h.signIn("s-live");
+  Json::Value body(Json::objectValue);
+  body["enabled"] = true;
+
+  drogon::HttpResponsePtr response =
+      patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(body), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"error":"nudges aren't switched on for this account yet"})"));
+  CHECK_FALSE(h.nudges->settingsFor(me).has_value());
+}
+
+// Switching OFF is never gated — a refusal there would pin a row on for someone we cannot reach.
+TEST(nudge_patch_disabling_outside_the_allowlist_still_lands) {
+  Harness h;
+  UserId me = h.signIn("s-live");
+  NudgeSettings on;
+  on.enabled = true;
+  h.nudges->upsertSettings(me, on);
+  Json::Value body(Json::objectValue);
+  body["enabled"] = false;
+
+  drogon::HttpResponsePtr response =
+      patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(body), "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  REQUIRE(h.nudges->settingsFor(me).has_value());
+  CHECK_FALSE(h.nudges->settingsFor(me)->enabled);
 }
 
 TEST(nudge_patch_with_a_malformed_slot_day_is_400_and_stores_nothing) {
