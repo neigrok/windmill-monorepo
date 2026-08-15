@@ -44,7 +44,7 @@ std::optional<ToolCaller> McpKeyService::resolveKey(const std::string& secret) {
   const std::optional<ActiveKey> key = repo_.findActiveKey(digest, now);
   if (!key) return std::nullopt;
   repo_.touchUsed(digest, now, kTouchThrottleMs);
-  return ToolCaller{key->user, parseToolScope(key->scope)};
+  return ToolCaller{key->user, parseToolScope(key->scope), ToolConnection{key->id, key->name}};
 }
 
 }

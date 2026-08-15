@@ -512,10 +512,13 @@ std::vector<ToolDeclaration> GymTools::declareTools() const { return gymToolCata
 // flattens them.
 ToolResult GymTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
-  // The MCP door: a connected agent, and every call standing alone, so the reply's envelope is the
-  // whole accounting there is.
+  // The MCP door: a connected agent, named by the connection the transport resolved — its id and its
+  // registered name — so a proposal says which agent asked, and two agents on one account each hold
+  // their own. Every call stands alone, so the reply's envelope is the whole accounting there is.
   ReadReceipt oneReply;
-  return callTool(name, arguments, caller, ProposalSource{ProposalDoor::mcp, "", "", std::nullopt},
+  return callTool(name, arguments, caller,
+                  ProposalSource{ProposalDoor::mcp, caller.connection.id, caller.connection.name,
+                                 std::nullopt},
                   oneReply);
 }
 

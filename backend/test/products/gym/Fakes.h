@@ -1241,7 +1241,11 @@ private:
           !(held.head.routine == incoming.head.routine))
         continue;
       if (held.head.state != ProposalState::pending || held.head.id == incoming.head.id) continue;
-      if (!(held.head.source == incoming.head.source)) continue;
+      // The partial unique index's own key, (routine, door, connection) — not the whole source, so
+      // the fake supersedes exactly what the SQL would otherwise refuse and nothing more.
+      if (held.head.source.door != incoming.head.source.door ||
+          held.head.source.connection != incoming.head.source.connection)
+        continue;
       held.head.state = ProposalState::superseded;
       held.head.settledAtMs = incoming.head.createdAtMs;
     }

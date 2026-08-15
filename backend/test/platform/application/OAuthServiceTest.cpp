@@ -32,6 +32,8 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
   std::optional<ToolCaller> caller = svc.resolveAccessToken(granted.tokens->accessToken, "https://mcp.example.com");
   REQUIRE(caller.has_value());
   CHECK_EQ(caller->user, UserId{"u1"});
+  // The connection is the client the token was minted for, under the name it registered.
+  CHECK((caller->connection == ToolConnection{client->clientId, "Claude"}));
 
   // The code is single-use.
   CHECK(svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource).error ==
@@ -42,6 +44,30 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
   CHECK(rotated.error == OAuthService::GrantError::ok);
   CHECK(svc.resolveAccessToken(rotated.tokens->accessToken, kResource).has_value());
   CHECK(svc.refresh(granted.tokens->refreshToken, client->clientId).error == OAuthService::GrantError::invalidGrant);
+}
+
+// A client row that is gone costs the connection its name and nothing else: the token still resolves,
+// still says which client id it belongs to, and a tool storing that connection stores an honest empty
+// name rather than refusing the call.
+TEST(oauth_a_token_whose_client_row_is_gone_still_resolves_with_an_empty_connection_name) {
+  FakeOAuthRepository repo;
+  fake::FakeTokens tokens;
+  fake::FakeClock clock;
+  OAuthService svc(repo, tokens, clock);
+  const std::string verifier = "the-code-verifier";
+  std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude");
+  REQUIRE(client.has_value());
+  std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge(verifier), kResource,
+                                   "", UserId{"u1"});
+  OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
+  REQUIRE(granted.tokens.has_value());
+
+  repo.clients.erase(client->clientId);
+  std::optional<ToolCaller> caller = svc.resolveAccessToken(granted.tokens->accessToken, kResource);
+
+  REQUIRE(caller.has_value());
+  CHECK_EQ(caller->user, UserId{"u1"});
+  CHECK((caller->connection == ToolConnection{client->clientId, ""}));
 }
 
 TEST(oauth_token_exchange_rejects_wrong_pkce_verifier) {

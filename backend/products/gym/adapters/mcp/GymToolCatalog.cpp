@@ -258,8 +258,10 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "`targetReps` means `max` — as many as you can — and is omitted rather than zero, which is a "
         "rep target this product can express and a zero could not. `revision` is the routine's "
         "version; read it and never send it. `pendingProposal` is present ONLY while a change is "
-        "waiting for the lifter to tap Apply — read it before you propose anything, because a new "
-        "proposal on that routine replaces the one already waiting there.",
+        "waiting for the lifter to tap Apply — the newest one, from any connection or from the app's "
+        "own Ask; its `source` says whose. Read it before you propose anything: a new proposal of "
+        "yours on that routine replaces the one YOU already have waiting there and leaves another "
+        "agent's standing.",
         p, {}));
   }
   {

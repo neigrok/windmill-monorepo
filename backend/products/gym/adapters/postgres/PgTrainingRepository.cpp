@@ -451,10 +451,11 @@ void supersedeOnRoutine(pqxx::work& txn, const UserId& user, const RoutineId& ro
 }
 
 // The other rule, and it is narrower on purpose: ONE PENDING PROPOSAL PER (routine, door,
-// connection), so a mint replaces only what that same door had waiting. Another door's proposal
-// stands — the lifter has two things to decide, from two places, and losing one because the other
-// spoke second would be the ledger deciding for them. It is the partial unique index's own key,
-// cleared before the new row lands.
+// connection), so a mint replaces only what that same door AND connection had waiting. Another
+// door's proposal stands, and so does another agent's on the same account — the lifter has two
+// things to decide, from two places, and losing one because the other spoke second would be the
+// ledger deciding for them. It is the partial unique index's own key, cleared before the new row
+// lands.
 // THE SPENT ID, ANSWERED BEFORE ANYTHING IS WRITTEN, and both halves of that sentence are
 // load-bearing. It is asked GLOBALLY rather than under the caller's scope because the id is a
 // primary key across every account, so an id another lifter holds must be refused rather than read
@@ -1923,9 +1924,9 @@ ProposalMintOutcome PgTrainingRepository::insertProposal(const RoutineProposal& 
       return {std::nullopt, ProposalMintError::unknownRoutine};
     if (std::optional<ProposalMintOutcome> answered = spentId(txn, incoming)) return *answered;
 
-    // One pending proposal per (routine, door, connection): the older one from THIS door is settled
-    // as superseded before the new row lands, which is what the partial unique index would otherwise
-    // refuse. Another door's stands.
+    // One pending proposal per (routine, door, connection): the older one from THIS door and
+    // connection is settled as superseded before the new row lands, which is what the partial unique
+    // index would otherwise refuse. Another door's stands, and so does another connection's.
     supersedeFromDoor(txn, incoming);
     pqxx::result inserted = txn.exec_params(
         "INSERT INTO gym_proposals (id, routine_id, user_id, intent, base_revision, base_name, "

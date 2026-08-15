@@ -61,6 +61,9 @@ TEST(resolve_key_returns_the_owner_and_refuses_garbage_and_revoked_keys) {
   // The mint endpoint asks for no scope, so a key resolves as the legacy account-wide grant. That is
   // the door a scope model covering only OAuth would leave standing open.
   CHECK(owner->scope == ToolScope::everything());
+  // And the key is the connection: its public id and the name it was minted under, so a tool can
+  // tell this key's calls from another key's on the same account.
+  CHECK((owner->connection == ToolConnection{key.id, "Laptop"}));
 
   // An unknown or empty secret resolves to nobody.
   CHECK_FALSE(svc.resolveKey("garbage").has_value());

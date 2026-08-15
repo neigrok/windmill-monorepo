@@ -89,7 +89,11 @@ std::optional<ToolCaller> OAuthService::resolveAccessToken(const std::string& ac
   if (!token || token->expiresAt <= now) return std::nullopt;
   if (!audienceMatches(token->resource, serverResource)) return std::nullopt;
   repo_.touchGrantUsed(token->user, token->clientId, now, OAuthPolicy::grantTouchThrottleMs);
-  return ToolCaller{token->user, parseToolScope(token->scope)};
+  // The connection is the client: its id from the token, its registered name from the client row.
+  // A client row that is gone costs the name and nothing else — the token still stands on its own.
+  const std::optional<OAuthClient> client = repo_.findClient(token->clientId);
+  return ToolCaller{token->user, parseToolScope(token->scope),
+                    ToolConnection{token->clientId, client ? client->name : ""}};
 }
 
 std::vector<GrantView> OAuthService::listGrants(const UserId& user) { return repo_.listGrants(user); }

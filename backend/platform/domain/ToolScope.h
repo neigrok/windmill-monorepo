@@ -115,12 +115,26 @@ inline std::vector<std::string> supportedScopes(const std::vector<std::string>& 
   return tokens;
 }
 
-// Who is calling and how far their credential reaches, resolved once at the transport's
-// authentication point and carried unchanged from there to the tool. The two travel together because
-// every credential answers both questions at once and neither is useful alone.
+// The credential's own identity, as distinct from the account it acts for: over OAuth the client id
+// and the display name the client registered under; over an MCP key the key's public id and the
+// name the person gave it when they minted it. Both empty means no connection stands behind this
+// call at all — stdio's configured user, tending's internal calls, Ask — and is never a placeholder
+// for one we did not look up.
+struct ToolConnection {
+  std::string id;
+  std::string name;
+
+  bool operator==(const ToolConnection&) const = default;
+};
+
+// Who is calling, how far their credential reaches, and which connection the credential is —
+// resolved once at the transport's authentication point and carried unchanged from there to the
+// tool. They travel together because every credential answers all three questions at once, and a
+// tool that stores what an agent asked for needs the third to say which agent asked.
 struct ToolCaller {
   UserId user;
   ToolScope scope;
+  ToolConnection connection;
 };
 
 }

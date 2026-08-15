@@ -844,6 +844,73 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
   CHECK_EQ(h.service.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
 }
 
+// THE PROPOSAL NAMES THE AGENT THAT MADE IT. The transport resolves a connection — an OAuth client
+// or an MCP key, its id and its registered name — and the tool stores both on the proposal, so the
+// card a lifter reads says "Claude Desktop" where it used to draw a fallback for an agent nobody
+// could name.
+TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_name) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+  args["entries"] = oneEntry("bench-press", 5, 3, 87.5);
+  const ToolCaller claude{uid(), ToolScope::everything(), ToolConnection{"cli_x", "Claude Desktop"}};
+
+  const ToolResult minted = h.tools.callTool("propose_routine_change", args, claude);
+
+  REQUIRE(!minted.isError);
+  REQUIRE_EQ(h.repo.proposalRows.size(), std::size_t{1});
+  CHECK((h.repo.proposalRows[0].head.source ==
+         ProposalSource{ProposalDoor::mcp, "cli_x", "Claude Desktop", std::nullopt}));
+  // And the wire carries both, exactly where every client already reads them.
+  const Json::Value& source = body(minted)["proposal"]["source"];
+  CHECK_EQ(source["door"].asString(), std::string("mcp"));
+  CHECK_EQ(source["connection"].asString(), std::string("cli_x"));
+  CHECK_EQ(source["agent"].asString(), std::string("Claude Desktop"));
+  const Json::Value listed = body(h.tools.callTool("list_routines", Json::Value(Json::objectValue), claude));
+  CHECK_EQ(listed["routines"][0]["pendingProposal"]["source"]["connection"].asString(),
+           std::string("cli_x"));
+  CHECK_EQ(listed["routines"][0]["pendingProposal"]["source"]["agent"].asString(),
+           std::string("Claude Desktop"));
+}
+
+// One pending proposal per (routine, door, CONNECTION): two agents on one account each hold their
+// own, and the second does not take the first off the lifter's screen — while the same agent
+// proposing twice still replaces its own. Before the connection travelled, every MCP proposal
+// stored an empty one and two agents superseded each other.
+TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_connection_holds_one) {
+  Harness h;
+  h.repo.routineRows.push_back(pushA());
+  const ToolCaller claude{uid(), ToolScope::everything(), ToolConnection{"cli_x", "Claude Desktop"}};
+  const ToolCaller cursor{uid(), ToolScope::everything(), ToolConnection{"key_y", "Cursor"}};
+  auto proposeAs = [&](const char* id, double kg, const ToolCaller& who) {
+    Json::Value args(Json::objectValue);
+    args["id"] = id;
+    args["routineId"] = "rt_00000001";
+    args["entries"] = oneEntry("bench-press", 5, 3, kg);
+    return h.tools.callTool("propose_routine_change", args, who);
+  };
+
+  REQUIRE(!proposeAs("prop_00000001", 87.5, claude).isError);
+  h.clock.now += 60'000;
+  REQUIRE(!proposeAs("prop_00000002", 90.0, cursor).isError);
+  h.clock.now += 60'000;
+  REQUIRE(!proposeAs("prop_00000003", 92.5, claude).isError);
+
+  const std::vector<ProposalHead> heads =
+      h.service.proposals(uid(), ProposalQuery{std::nullopt, false});
+  REQUIRE_EQ(heads.size(), std::size_t{3});
+  CHECK_EQ(heads[0].id, ProposalId{"prop_00000003"});
+  CHECK_EQ(heads[0].state, ProposalState::pending);
+  CHECK_EQ(heads[1].id, ProposalId{"prop_00000002"});
+  CHECK_EQ(heads[1].state, ProposalState::pending);
+  CHECK_EQ(heads[2].id, ProposalId{"prop_00000001"});
+  CHECK_EQ(heads[2].state, ProposalState::superseded);
+  CHECK_EQ(heads[2].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
+  CHECK_EQ(h.service.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{2});
+}
+
 // A replay reads back the proposal it already minted. Without it an agent that lost a reply would
 // mint a second id, supersede its own first, and leave a spurious superseded row in a lifter's
 // history — which is why the id is the idempotency key here exactly as it is everywhere else.

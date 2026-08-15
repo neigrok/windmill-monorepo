@@ -54,12 +54,14 @@ std::optional<ActiveKey> PgMcpKeyRepository::findActiveKey(const std::string& to
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT k.user_id::text, k.scope FROM mcp_keys k JOIN users u ON u.id = k.user_id "
+      "SELECT k.user_id::text, k.scope, k.id::text, k.name FROM mcp_keys k JOIN users u ON u.id = k.user_id "
       "WHERE k.token_hash = $1 AND u.deleted_at IS NULL "
       "AND (k.expires_ms IS NULL OR k.expires_ms > $2)",
       tokenDigest, nowMs);
   if (rows.empty()) return std::nullopt;
-  return ActiveKey{UserId{rows[0]["user_id"].as<std::string>()}, rows[0]["scope"].as<std::string>()};
+  const auto& row = rows[0];
+  return ActiveKey{UserId{row["user_id"].as<std::string>()}, row["scope"].as<std::string>(),
+                   row["id"].as<std::string>(), row["name"].as<std::string>()};
 }
 
 void PgMcpKeyRepository::touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) {

@@ -8,12 +8,15 @@
 
 namespace wm {
 
-// A live key resolved from a presented secret: the account it acts as and the scope it was minted
-// with, in the same wire spelling OAuth uses. v1 mints every key account-wide (scope ''), so the two
-// credentials read alike and neither is the hole the other one closes.
+// A live key resolved from a presented secret: the account it acts as, the scope it was minted
+// with — in the same wire spelling OAuth uses; v1 mints every key account-wide (scope ''), so the two
+// credentials read alike and neither is the hole the other one closes — and the key's own public id
+// and display name, which is how a tool tells one of the account's keys from another.
 struct ActiveKey {
   UserId user;
   std::string scope;
+  std::string id;
+  std::string name;
 };
 
 // One row of the settings MCP-keys list: the public id the revoke endpoint addresses, the

@@ -507,7 +507,7 @@ Json::Value toJson(const std::vector<Routine>& routines, const std::vector<Propo
   for (const Routine& routine : routines) {
     std::optional<ProposalHead> standing;
     // The heads arrive newest first, so the FIRST match is the newest — which is the one a card
-    // draws when two doors each have one waiting.
+    // draws when two doors, or two agents on one account, each have one waiting.
     for (const ProposalHead& head : pending)
       if (!standing && head.routine == routine.id && head.state == ProposalState::pending)
         standing = head;

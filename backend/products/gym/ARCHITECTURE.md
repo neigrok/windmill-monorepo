@@ -691,10 +691,11 @@ weight it did not change — moves nothing and settles nothing: killing a lifter
 did nothing is the ledger deciding for them. Neither does a drag up the routines screen, because
 `position` is not part of any proposal (`appliedTo` keeps the base's own).
 
-**One pending proposal per (routine, door, connection).** A newer one from the same door supersedes
-the older, which keeps a lifter's Today from filling with an agent's second thoughts; another door's
-stands, because two doors are two things to decide and losing one because the other spoke second
-would be the ledger deciding for them. A superseded proposal is **not deleted** — applied, dismissed
+**One pending proposal per (routine, door, connection).** A newer one from the same door and
+connection supersedes the older, which keeps a lifter's Today from filling with an agent's second
+thoughts; another door's — or another agent's on the same account — stands, because two of those are
+two things to decide and losing one because the other spoke second would be the ledger deciding for
+them. A superseded proposal is **not deleted** — applied, dismissed
 and superseded alike stay as a dated record on the routine, which is the History section §B6 draws:
 *"Kept on the routine as a dated record — the program's history, not a toast that disappears."*
 **For as long as the routine stands**, and that is the honest end of the sentence: `routine_id`
@@ -703,12 +704,16 @@ cascades, so an applied REMOVAL takes the whole ledger with it, the applied rows
 **`door` / `connection` / `agent` are provenance, and they are COLUMNS rather than a fork.** *"A
 change appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's own chat"* is the
 exact mental-model failure this design exists to prevent, and W7's Ask mints through this same object
-with `door = 'ask'`. **`connection` and `agent` are empty today and that is a fact about the
-transport rather than a shrug:** `ToolCaller` (`platform/domain/ToolScope.h`) carries the account and
-the grant and nothing that tells one connection from another, so gym cannot honestly fill either yet.
-The columns exist so that the day it does, one line fills them and the unique index above sharpens
-from "per door" to "per connection" with no index change. Until then a card renders a fallback rather
-than an empty string where a model's name should be — the wire omits both fields when empty.
+with `door = 'ask'`. **`connection` and `agent` come from the transport, not from gym:**
+`ToolCaller` (`platform/domain/ToolScope.h`) carries the account, the grant and a `ToolConnection`
+— over OAuth the client id and the name the client registered under (`OAuthService::resolveAccessToken`,
+capped at registration to 64 printable characters); over an MCP key the key's public id and the name
+the person minted it under (`McpKeyService::resolveKey`, capped at 60) — and the MCP door of
+`GymTools::callTool` copies both onto the `ProposalSource`, which is what sharpened the unique index
+above from "per door" to "per connection" with no index change (2026-08-15). Ask stores both empty
+because its door is the whole identity, and so does a caller with no connection behind it (stdio's
+configured user); the wire omits either field when empty and a card renders a fallback rather than an
+empty string where a model's name should be.
 
 **Nothing a proposal touches is a logged set or a frozen plan snapshot.** The change rows carry
 targets and nothing else, and applying one writes `gym_routines` + `gym_routine_entries` and no other

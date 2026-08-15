@@ -284,7 +284,7 @@ struct FakeAccountFootprint : AccountFootprint {
 };
 
 // Personal MCP API keys as a fake: the digest→row map the real table keys on, plus the public
-// id. findActiveKey models just the digest→(user, scope) + expiry gate (the real deleted_at JOIN is
+// id. findActiveKey models just the digest→(user, scope, id, name) + expiry gate (the real deleted_at JOIN is
 // SQL-only); touchUsed and revoke mirror the throttled last-used write and the owner-scoped delete.
 struct FakeMcpKeyRepository : McpKeyRepository {
   struct KeyRow {
@@ -326,7 +326,7 @@ struct FakeMcpKeyRepository : McpKeyRepository {
     auto it = keys.find(tokenDigest);
     if (it == keys.end()) return std::nullopt;
     if (it->second.expiresMs && *it->second.expiresMs <= nowMs) return std::nullopt;
-    return ActiveKey{it->second.user, it->second.scope};
+    return ActiveKey{it->second.user, it->second.scope, it->second.id, it->second.name};
   }
   void touchUsed(const std::string& tokenDigest, long long nowMs, long long throttleMs) override {
     auto it = keys.find(tokenDigest);

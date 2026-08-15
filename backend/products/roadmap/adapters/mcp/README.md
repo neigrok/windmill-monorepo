@@ -130,17 +130,21 @@ two writers at one database if you can avoid it (see *Operating notes*).
 ## Auth
 
 `McpAuth` (`platform/adapters/mcp/McpHttpEndpoint.h`) is how a request becomes a `ToolCaller` —
-the account it acts as AND the grant its credential carries — and `McpHttpEndpoint::resolveCaller`
+the account it acts as, the grant its credential carries, AND the connection the credential is
+(`ToolConnection{id, name}`: the OAuth client id and registered name, or the MCP key's public id and
+the name it was minted under; both empty for the shared token and the unauthenticated shape, which is
+"no connection stands behind this call", never a placeholder) — and `McpHttpEndpoint::resolveCaller`
 tries three credentials in order against the `Authorization: Bearer …` header:
 
 1. **An OAuth access token** — validated by `OAuthService::resolveAccessToken`, which requires
    it to be unexpired *and* audience-bound to this server's resource URL, and which answers with
-   the token's parsed scope. This is the real path: a client discovers the authorization server
+   the token's parsed scope and its client as the connection (a client row that has since vanished
+   costs the name and nothing else). This is the real path: a client discovers the authorization server
    through the RFC 9728 metadata document, runs the authorization-code + PKCE flow against the
    API host, and acts as the granting account, within the grant the human approved.
 2. **A personal MCP API key** — `McpKeyService::resolveKey`, the static-token fallback for
    clients that cannot do OAuth. Minted in settings, stored as a digest, resolvable to its owner
-   until revoked or the account closes. Only `windmill_server` wires this one. `mcp_keys.scope`
+   — with the key itself as the connection — until revoked or the account closes. Only `windmill_server` wires this one. `mcp_keys.scope`
    exists and is honoured; the mint endpoint asks for none, so every key today is account-wide.
 3. **`WINDMILL_MCP_TOKEN`** — one shared secret, compared in constant time, that acts as
    `WINDMILL_MCP_USER` with `McpAuth::fallbackScope`. It exists for CI and for an agent on the
