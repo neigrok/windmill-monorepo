@@ -29,7 +29,20 @@ Everything above the "Gym" heading is **roadmap's** narrative. Journal's design 
 > written once on the platform — decide → claim → send — and reminders and nudges fill in the
 > blanks (nudges gained the per-user guard they never had); and `MailArming` replaced two
 > byte-identical siblings. Every close is annotated on its node with what was proved and what was
-> not. STILL TRUE, and unchanged by any of it: the phase-1 dogfood gate has never run.
+> not. Then, later the same night, THE SECOND PHONE HUNT — two executing hunters, one per phone,
+> each finding proved with a fake that finally modelled the server's settle, its 409 and its 404 —
+> found the phones losing lifts to the log's own guesses (a workout auto-closed under sets the log
+> never saw, then those sets refused), a cold launch with no signal turning the signed-in room into
+> the anonymous one, and a basement where Start was refused signed in. The root moved to the backend:
+> a finished session remembers who finished it, a set that continues a workout the log only guessed
+> closed still lands and moves the guess, and the lifter's own finish is what ends it. Both phones
+> drain owed sets before any start, compose a workout on the device under the same id when the log
+> cannot be reached, keep the seat unverified rather than signed out when the network fails, and say
+> what blocked a lane. The web mirror learned to keep looking for a workout that starts after the tab
+> opened, and twenty desk defects went with it. Under it all the gym backend took the shape its
+> ports had: five aggregates, port → adapter → service → HTTP, one fixture per layer. STILL TRUE, and
+> unchanged by any of it: the phase-1 dogfood gate has never run — but the phone it runs on has been
+> hunted twice.
 
 > **Status (2026-08-09, later the same day): the first-open wave — the door stopped being the
 > product's first screen.** A real Android user's first run surfaced three failures at once: the
