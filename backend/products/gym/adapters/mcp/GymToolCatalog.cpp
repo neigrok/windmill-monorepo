@@ -278,7 +278,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["id"] = str("The id YOU mint for this workout (`ses_` + hex is the house shape).");
-    p["startedAt"] = instant("When the workout began, epoch ms.");
+    p["startedAt"] = instant("When the workout began, epoch ms — a real instant, never one ahead of now (a start in the future is refused).");
     p["joinOpenSession"] = boolean("Default true: join whatever session is open instead of failing.");
     p["routineId"] = str("The day of the program this is. Omitted, the workout is ad-hoc.");
     tools.push_back(tool("start_session", Access::write,

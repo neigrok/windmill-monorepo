@@ -386,7 +386,7 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
 
   // A later workout that actually squats, so the two lines are dated by two different sessions.
   send(h.api, &GymApi::startSession,
-       postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'400'000), "s-live"));
+       postRequest("/v1/gym/sessions", startBody("ses_22222222", (h.clock.now = 1'700'000'400'000)), "s-live"));
   send(h.api, &GymApi::appendSet,
        postRequest("/v1/gym/sessions/ses_22222222/sets",
                    setBody("set_22222221", "back-squat", 100.0, 1'700'000'460'000), "s-live"),
@@ -397,7 +397,7 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
 
   // And today, still running and much heavier: the today list, never a last time.
   send(h.api, &GymApi::startSession,
-       postRequest("/v1/gym/sessions", startBody("ses_33333333", 1'700'001'000'000), "s-live"));
+       postRequest("/v1/gym/sessions", startBody("ses_33333333", (h.clock.now = 1'700'001'000'000)), "s-live"));
   send(h.api, &GymApi::appendSet,
        postRequest("/v1/gym/sessions/ses_33333333/sets",
                    setBody("set_33333331", "bench-press", 140.0, 1'700'001'060'000), "s-live"),
@@ -464,6 +464,23 @@ TEST(gym_start_round_trips_the_resolved_session) {
       send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
   CHECK_EQ(dump(bodyOf(replayed)), std::string(R"({"id":"ses_11111111","startedAt":1700000000000})"));
   CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+}
+
+TEST(gym_start_ahead_of_the_logs_clock_is_400_and_names_the_gap) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      send(h.api, &GymApi::startSession,
+           postRequest("/v1/gym/sessions", startBody("ses_11111111", 1'700'000'000'000 + 26 * 60'000),
+                       "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"clock-ahead","error":"this device's clock is 26 minutes ahead of )"
+                       R"(the log \u2014 a workout cannot start in the future. Check the clock and )"
+                       R"(start again."})"));
+  CHECK(h.repo.sessions.empty());
 }
 
 TEST(gym_start_with_an_id_another_account_already_spent_is_409) {

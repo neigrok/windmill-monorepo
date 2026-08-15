@@ -222,6 +222,13 @@ ToolResult startSession(LogService& log, const UserId& caller, const Json::Value
     return ToolResult::failure("no routine of yours has that id, so this workout was not started "
                                "rather than started with no plan. Call list_routines, or leave "
                                "routineId out for an ad-hoc workout.");
+  if (outcome.error == StartError::clockAhead)
+    return ToolResult::failure("that startedAt is " +
+                               std::to_string((outcome.clockAheadMs + 59'999) / 60'000) +
+                               " minutes ahead of the log's clock, and a workout cannot start in the "
+                               "future — the log would be locked behind it until it aged out. Send "
+                               "the instant the workout actually began (now, for one starting now), "
+                               "in epoch milliseconds.");
   if (outcome.error == StartError::alreadyOpen)
     // Reachable only from `joinOpenSession: false`, so the remedy is neither of the other two: a
     // fresh id changes nothing while a workout is open.

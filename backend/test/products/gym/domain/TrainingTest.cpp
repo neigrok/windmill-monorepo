@@ -312,6 +312,22 @@ TEST(can_finish_at_refuses_zero_the_ceiling_and_ending_before_beginning) {
   CHECK_FALSE(canFinishAt(session, 18'446'744'073'709'551'615ull));
 }
 
+// A start may sit anywhere in the past — a basement's set carries the instant it happened — and
+// up to five minutes past the log's now, which is the skew an honest clock is allowed. Past that
+// it is a workout in the future, and the trap the header describes.
+TEST(can_start_at_the_past_now_and_an_honest_clocks_skew) {
+  const std::uint64_t now = 1'700'000'000'000;
+  CHECK(canStartAt(1'600'000'000'000, now));                 // long ago
+  CHECK(canStartAt(now, now));
+  CHECK(canStartAt(now + kMaxClockAheadMs, now));            // exactly the allowance
+}
+
+TEST(can_start_at_refuses_a_start_past_the_clocks_allowance) {
+  const std::uint64_t now = 1'700'000'000'000;
+  CHECK_FALSE(canStartAt(now + kMaxClockAheadMs + 1, now));  // one ms past it
+  CHECK_FALSE(canStartAt(now + 24ull * 60 * 60 * 1000, now)); // "tomorrow"
+}
+
 // ---- corrected: the fix, and what a fix may not reach ---------------------------------------
 
 TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {

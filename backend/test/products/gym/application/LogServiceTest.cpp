@@ -60,11 +60,17 @@ struct Harness {
 
   // A whole workout of squats, start to finish — the door the finish surface is read behind. The
   // set ids come off the session's so no test has to mint one, and the sets land a minute apart.
+  // Seeds a finished workout at any instant a test names — including one ahead of the harness
+  // clock, which the log refuses (canStartAt) — by standing the clock at that instant for the start
+  // and handing it back after, so a test's own arithmetic against `clock.now` is untouched.
   void trained(const std::string& session, std::uint64_t startedAtMs, double weightKg, int reps,
                int sets, std::optional<std::string> routine = std::nullopt) {
+    const std::uint64_t held = clock.now;
+    if (startedAtMs > clock.now) clock.now = startedAtMs;
     service.start(uid(), SessionStart{sid(session), startedAtMs, true,
                                       routine ? std::optional<RoutineId>(rtId(*routine))
                                               : std::nullopt});
+    clock.now = held;
     for (int number = 1; number <= sets; ++number)
       service.append(uid(), sid(session),
                      SetWrite{setId("set_" + session.substr(4) + std::to_string(number)),
@@ -119,6 +125,26 @@ TEST(start_stores_and_returns_the_fresh_session) {
   CHECK(started.error == StartError::none);
   CHECK_EQ(*started.session, Session(sid(), uid(), h.clock.now));
   CHECK_EQ(h.repo.sessions, std::vector<Session>{Session(sid(), uid(), h.clock.now)});
+}
+
+// A start ahead of the log's clock is refused, naming the gap — never stored, because a session
+// that began in the future is one nothing can finish, discard or age out, and every later start
+// would join it. A replay and a join are not held to the clock: they create nothing.
+TEST(start_refuses_a_session_that_begins_in_the_logs_future) {
+  Harness h;
+
+  StartOutcome ahead = h.startAt(h.clock.now + kMaxClockAheadMs + 60'000);
+
+  CHECK(ahead.error == StartError::clockAhead);
+  CHECK_FALSE(ahead.session.has_value());
+  CHECK_EQ(ahead.clockAheadMs, kMaxClockAheadMs + 60'000);
+  CHECK(h.repo.sessions.empty());
+
+  StartOutcome live = h.startAt(h.clock.now);
+  h.clock.now -= 60 * 60 * 1000;  // the server's clock now reads an hour BEHIND the open workout
+  StartOutcome joined = h.startAt(h.clock.now + 24ull * 60 * 60 * 1000, "ses_00000002");
+  CHECK(joined.error == StartError::none);
+  CHECK_EQ(*joined.session, *live.session);
 }
 
 TEST(start_replay_converges_on_the_same_session) {
@@ -2266,8 +2292,11 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
 // rather than trusting it. A record is set, then corrected downward, and the record goes with it.
 TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   Harness h;
-  h.trained("ses_00000001", h.clock.now, 100, 5, 4);
-  h.service.start(uid(), SessionStart{sid("ses_00000002"), h.clock.now + kWeek});
+  const std::uint64_t week0 = h.clock.now;
+  h.trained("ses_00000001", week0, 100, 5, 4);
+  h.clock.now = week0 + kWeek;  // a week on, the second squat day starts under a clock that agrees
+  h.service.start(uid(), SessionStart{sid("ses_00000002"), h.clock.now});
+  h.clock.now = week0;
   for (int number = 1; number <= 3; ++number)
     h.service.append(uid(), sid("ses_00000002"),
                      SetWrite{setId("set_0000002" + std::to_string(number)),

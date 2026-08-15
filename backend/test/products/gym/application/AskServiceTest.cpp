@@ -412,6 +412,7 @@ TEST(the_run_is_handed_gyms_three_levels_and_no_other_product) {
 // is three chances to forget.
 TEST(a_lifter_with_a_workout_open_is_refused_before_anything_is_spent) {
   Harness h;
+  h.clock.now = 1'700'100'000'000;
   h.log.start(h.lifter, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
 
   const AskReply reply = h.question("what should I do next?");
@@ -424,6 +425,7 @@ TEST(a_lifter_with_a_workout_open_is_refused_before_anything_is_spent) {
 // session does not lock Ask out for good.
 TEST(a_stale_workout_the_four_hour_rule_closes_does_not_hold_ask_shut) {
   Harness h;
+  h.clock.now = 1'700'100'000'000;
   h.log.start(h.lifter, SessionStart{SessionId{"ses_33333333"}, 1'700'100'000'000});
   h.clock.now = 1'700'100'000'000 + 5 * 60 * 60 * 1000;  // five hours later, nothing logged since
 

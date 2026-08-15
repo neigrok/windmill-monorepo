@@ -108,13 +108,14 @@ struct ExerciseWrite {
 // is exactly how a deleted set would come back under a new number the first time an append whose
 // reply was lost is replayed. Nothing repairs this one: the set is not owed, and the queue holding
 // it drops it.
-enum class StartError { none, idTaken, alreadyOpen, unknownRoutine };
+enum class StartError { none, idTaken, alreadyOpen, unknownRoutine, clockAhead };
 enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted };
 enum class FinishError { none, notFound, badInstant };
 
 struct StartOutcome {
   std::optional<Session> session;
   StartError error;
+  std::uint64_t clockAheadMs = 0;  // clockAhead only: how far the named start sits past the log's now
 };
 
 struct AppendOutcome {

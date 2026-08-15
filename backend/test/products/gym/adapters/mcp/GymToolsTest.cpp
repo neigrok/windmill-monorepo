@@ -462,6 +462,22 @@ TEST(gym_a_set_naming_no_movement_points_at_the_catalog) {
                        "create_exercise to add one."));
 }
 
+// A model that says "tomorrow" would otherwise brick the log: the phantom never ages out and every
+// later start joins it. Refused before it is stored, naming the gap and the instant to send.
+TEST(gym_a_start_in_the_logs_future_is_refused_and_names_the_gap) {
+  Harness h;
+
+  const ToolResult refused = h.start("ses_00000001", h.clock.now + 24ull * 60 * 60 * 1000);
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("start_session: that startedAt is 1440 minutes ahead of the log's clock, and "
+                       "a workout cannot start in the future — the log would be locked behind it "
+                       "until it aged out. Send the instant the workout actually began (now, for "
+                       "one starting now), in epoch milliseconds."));
+  CHECK(h.repo.sessions.empty());
+}
+
 TEST(gym_a_start_that_refuses_to_join_says_what_to_do_about_the_open_workout) {
   Harness h;
   h.start("ses_00000001", h.clock.now);
@@ -1431,6 +1447,7 @@ TEST(gym_a_log_page_claims_the_workouts_it_named_and_not_their_sets) {
   h.start("ses_00000001", 1'700'000'000'000);
   h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'300'000);
   h.finish("ses_00000001", 1'700'000'900'000);
+  h.clock.now = 1'700'600'000'000;
   h.start("ses_00000002", 1'700'600'000'000);
   h.logSet("ses_00000002", "set_00000002", "back-squat", 100, 5, 1'700'600'300'000);
   h.finish("ses_00000002", 1'700'600'900'000);

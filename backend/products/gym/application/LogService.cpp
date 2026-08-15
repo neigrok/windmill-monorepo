@@ -62,6 +62,11 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
   settleOpen(repo_, user, clock_.nowMs());
   std::optional<StartOutcome> already = heldFor(repo_, user, incoming);
   if (already) return *already;
+  // Only a start that would CREATE is held to the clock: a replay hands back the row it already
+  // has, and a join hands over the workout that is open, whatever the caller's clock says.
+  const std::uint64_t nowMs = clock_.nowMs();
+  if (!canStartAt(incoming.startedAtMs, nowMs))
+    return {std::nullopt, StartError::clockAhead, incoming.startedAtMs - nowMs};
   std::optional<PlanSnapshot> plan;
   if (incoming.routine) {
     std::optional<Routine> planned = repo_.routine(user, *incoming.routine);

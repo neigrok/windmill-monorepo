@@ -223,6 +223,18 @@ void GymApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
+  if (outcome.error == StartError::clockAhead) {
+    // A workout that began in the server's future is refused rather than stored: the whole product
+    // would otherwise be locked behind it (Training.h, canStartAt). The sentence names the gap
+    // because the fix is on the device — a clock, not a retry — and its own code because a phone's
+    // flush queue treats every 400 as terminal and should be able to say which one this was.
+    cb(error(drogon::k400BadRequest,
+             "this device's clock is " + std::to_string((outcome.clockAheadMs + 59'999) / 60'000) +
+                 " minutes ahead of the log — a workout cannot start in the future. Check the "
+                 "clock and start again.",
+             "clock-ahead"));
+    return;
+  }
   if (outcome.error == StartError::alreadyOpen) {
     // Only a caller that sent `joinOpenSession: false` can reach this: it meant "create exactly this
     // session, which is not now", and this lifter has a workout in progress. The join the default

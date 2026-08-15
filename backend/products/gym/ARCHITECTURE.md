@@ -990,7 +990,7 @@ future kind added by a newer deploy can't crash an older reader. Id shape valida
 rule: `^[A-Za-z0-9_-]{8,64}$`, recommended prefixes `ses_` / `set_` / `rt_` (client-minted,
 opaque to the server; the same client-supplied-id move the tree import uses).
 
-### 3.2 The two pure session rules — auto-close and the legal end
+### 3.2 The three pure session rules — auto-close, the legal end, and the legal beginning
 
 Lift had a three-way crash-recovery UX because its store was device-local. Server-as-truth
 deletes the problem, and `session-resume` was deliberately cut as a bet and kept as a rule:
@@ -1020,6 +1020,25 @@ bool canFinishAt(const Session&, std::uint64_t finishedAtMs);
 It needs the stored session, so the wire cannot enforce it alone — only the row knows when the
 session began. And it has to be right the first time: `close` is `WHERE finished_at IS NULL`,
 first-writer-wins by design, so the first instant that lands is the session's end **forever**.
+
+The third rule (2026-08-16) is about the one instant a client names for a session that does not
+exist yet, and it closes a trap the first two made together:
+
+```cpp
+// A device's clock is the truth about the past, never the future: a start more than five minutes
+// past the log's now is refused, naming the gap. Only a start that would CREATE is held to it.
+constexpr std::uint64_t kMaxClockAheadMs = 5ull * 60 * 1000;
+bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
+```
+
+Without it a session started with a clock ahead of the server — a phone set wrong, or an MCP
+model that said "tomorrow" — locked the whole product: `autoCloseAt` measures four hours from the
+device stamp, so the phantom was never stale; the phone's honest finish was earlier than the
+start and refused; discard refuses an open session; and every later start joined it. Each refusal
+was right on its own. Replays and joins are not held to the clock — they create nothing — so a
+phone whose clock drifted mid-workout still lands back in its own session. The refusal is
+`400 clock-ahead` on HTTP (a phone's flush queue treats every 400 as terminal, and should be able
+to say which one) and a sentence naming the instant to send on MCP.
 A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt: 0` is falsy in
 JS and the row renders "in progress" for the rest of time, unfixable until phase-2 log-editing.
 That is one refusal's worth of work.

@@ -265,6 +265,16 @@ std::optional<std::uint64_t> autoCloseAt(const Session& session,
 // the first write to finished_at is permanent, so there is no second chance to get it right.
 bool canFinishAt(const Session& session, std::uint64_t finishedAtMs);
 
+// The rule for the one instant a client names for a session that does NOT exist yet. A device's
+// wall clock is deliberately the truth about the PAST — a set logged in a basement carries the
+// instant it happened — but a workout cannot begin in the server's future, and one that claims to
+// is a trap the whole product cannot escape: auto-close measures four hours from the device
+// stamp, so a start ahead of the server is never stale; the phone's finish is earlier than the
+// start and refused; discard refuses an open session; and every later start joins the phantom. Five
+// minutes is the skew an honest clock is allowed; past it, the start is refused naming the gap.
+constexpr std::uint64_t kMaxClockAheadMs = 5ull * 60 * 1000;
+bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
+
 // The third pure session rule, and the only one about a reader who is not the owner. A coach share
 // is a capability with an END — thirty days, which is longer than any conversation about one
 // workout and shorter than a lifter's memory of having sent the link. A share that never expired
