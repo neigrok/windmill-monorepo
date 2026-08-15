@@ -301,7 +301,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/gym/adapters/postgres/PgProgramRepository.cpp
     products/gym/adapters/postgres/PgAskThreadRepository.cpp
     products/gym/adapters/postgres/PgPreferencesRepository.cpp
-    products/gym/adapters/http/GymApi.cpp
+    products/gym/adapters/http/TrainingApi.cpp
+    products/gym/adapters/http/CatalogApi.cpp
+    products/gym/adapters/http/ProgramApi.cpp
+    products/gym/adapters/http/PreferencesApi.cpp
+    products/gym/adapters/http/ThreadsApi.cpp
     products/gym/adapters/http/AskApi.cpp
     products/gym/adapters/llm/AnthropicAsk.cpp
     products/gym/adapters/mcp/GymTools.cpp

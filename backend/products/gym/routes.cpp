@@ -1,7 +1,11 @@
 #include "products/gym/routes.h"
 
 #include "products/gym/adapters/http/AskApi.h"
-#include "products/gym/adapters/http/GymApi.h"
+#include "products/gym/adapters/http/CatalogApi.h"
+#include "products/gym/adapters/http/PreferencesApi.h"
+#include "products/gym/adapters/http/ProgramApi.h"
+#include "products/gym/adapters/http/ThreadsApi.h"
+#include "products/gym/adapters/http/TrainingApi.h"
 
 #include <drogon/drogon.h>
 
@@ -13,21 +17,29 @@ namespace wm::gym {
 
 // The gym product's whole HTTP surface, mounted behind one named seam — the same shape roadmap's
 // and journal's registerRoutes have. main.cpp builds the collaborators, bundles them into GymDeps,
-// and calls this beside the other two mounts. Every path below is owner-scoped but the last one,
-// which is the coach share's read and is the only unauthenticated route in the product.
+// and calls this beside the other two mounts. The handlers live on five adapters that mirror the
+// five aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
+// PreferencesApi, ThreadsApi — and this file is the ONE place the paths are named, so a route's
+// method, its path and the reason it hangs where it does are read in one column. Every path below is
+// owner-scoped but the coach share's read, which is the only unauthenticated route in the product.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
-  auto api = std::make_shared<GymApi>(deps.logService, deps.authService, deps.appBaseUrl);
+  auto training =
+      std::make_shared<TrainingApi>(deps.logService, deps.authService, deps.appBaseUrl);
+  auto catalog = std::make_shared<CatalogApi>(deps.logService, deps.authService);
+  auto program = std::make_shared<ProgramApi>(deps.logService, deps.authService);
+  auto preferences = std::make_shared<PreferencesApi>(deps.logService, deps.authService);
+  auto threads = std::make_shared<ThreadsApi>(deps.logService, deps.authService);
 
   app.registerHandler(
       "/v1/gym/exercises",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->listExercises(req, std::move(cb));
+      [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        catalog->listExercises(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/exercises",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->createExercise(req, std::move(cb));
+      [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        catalog->createExercise(req, std::move(cb));
       },
       {drogon::Post});
   // The picker's meta line for every movement this lifter has trained. It hangs off the catalog's
@@ -37,8 +49,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // — same rule, one movement, the whole block instead of its last line.
   app.registerHandler(
       "/v1/gym/exercises/last",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->lastSets(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->lastSets(req, std::move(cb));
       },
       {drogon::Get});
   // The rename is a PATCH and not a PUT because ONE field of a movement is a lifter's to change:
@@ -46,8 +58,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // catalog rather than to any one account.
   app.registerHandler(
       "/v1/gym/exercises/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->renameExercise(req, std::move(cb), id);
+      [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        catalog->renameExercise(req, std::move(cb), id);
       },
       {drogon::Patch});
   // A movement's record — the page that replaced the statistics room. It hangs off the movement's
@@ -55,20 +67,20 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // screen: the tiles, the chart, the ladder and the days in one call.
   app.registerHandler(
       "/v1/gym/exercises/{id}/record",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->exerciseRecord(req, std::move(cb), id);
+      [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        catalog->exerciseRecord(req, std::move(cb), id);
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/sessions",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->startSession(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->startSession(req, std::move(cb));
       },
       {drogon::Post});
   app.registerHandler(
       "/v1/gym/sessions/{id}/sets",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->appendSet(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->appendSet(req, std::move(cb), id);
       },
       {drogon::Post});
   // Fix a set, and delete one. They hang off the set's own path under the workout that holds it,
@@ -85,78 +97,78 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // absence so it cannot be added by accident.
   app.registerHandler(
       "/v1/gym/sessions/{id}/sets/{setId}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
-            const std::string& setId) { api->fixSet(req, std::move(cb), id, setId); },
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+            const std::string& setId) { training->fixSet(req, std::move(cb), id, setId); },
       {drogon::Patch});
   app.registerHandler(
       "/v1/gym/sessions/{id}/sets/{setId}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
-            const std::string& setId) { api->deleteSet(req, std::move(cb), id, setId); },
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
+            const std::string& setId) { training->deleteSet(req, std::move(cb), id, setId); },
       {drogon::Delete});
   app.registerHandler(
       "/v1/gym/sessions/{id}/finish",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->finishSession(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->finishSession(req, std::move(cb), id);
       },
       {drogon::Post});
   app.registerHandler(
       "/v1/gym/sessions",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->listSessions(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->listSessions(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/sessions/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getSession(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->getSession(req, std::move(cb), id);
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/sessions/{id}/review",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->reviewSession(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->reviewSession(req, std::move(cb), id);
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/sessions/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->discardSession(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->discardSession(req, std::move(cb), id);
       },
       {drogon::Delete});
   app.registerHandler(
       "/v1/gym/last",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->lastTime(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->lastTime(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/routines",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->listRoutines(req, std::move(cb));
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        program->listRoutines(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/routines",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->createRoutine(req, std::move(cb));
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        program->createRoutine(req, std::move(cb));
       },
       {drogon::Post});
   app.registerHandler(
       "/v1/gym/routines/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getRoutine(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->getRoutine(req, std::move(cb), id);
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/routines/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->replaceRoutine(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->replaceRoutine(req, std::move(cb), id);
       },
       {drogon::Put});
   app.registerHandler(
       "/v1/gym/routines/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->deleteRoutine(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->deleteRoutine(req, std::move(cb), id);
       },
       {drogon::Delete});
   // ── THE PROPOSAL LEDGER, AND WHY APPLY IS ONLY EVER HERE ──
@@ -170,26 +182,26 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // `GymToolsTest` pins the absence so it cannot be added by accident.
   app.registerHandler(
       "/v1/gym/proposals",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->listProposals(req, std::move(cb));
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        program->listProposals(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/proposals/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getProposal(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->getProposal(req, std::move(cb), id);
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/proposals/{id}/apply",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->applyProposal(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->applyProposal(req, std::move(cb), id);
       },
       {drogon::Post});
   app.registerHandler(
       "/v1/gym/proposals/{id}/dismiss",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->dismissProposal(req, std::move(cb), id);
+      [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        program->dismissProposal(req, std::move(cb), id);
       },
       {drogon::Post});
   // §I's settings section. It is a PUT and not a PATCH for the reason the routine's replace is one:
@@ -199,26 +211,26 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // timer). There is no DELETE: the way back is the defaults, sent as a document like any other.
   app.registerHandler(
       "/v1/gym/preferences",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->preferences(req, std::move(cb));
+      [preferences](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        preferences->preferences(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/preferences",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->savePreferences(req, std::move(cb));
+      [preferences](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        preferences->savePreferences(req, std::move(cb));
       },
       {drogon::Put});
   app.registerHandler(
       "/v1/gym/stats",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->stats(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->stats(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/export",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->exportSets(req, std::move(cb));
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        training->exportSets(req, std::move(cb));
       },
       {drogon::Get});
   // The second file, and it hangs off the same path because it is the same promise: everything this
@@ -226,8 +238,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // one because a CSV row is one shape and a set and a sentence are not.
   app.registerHandler(
       "/v1/gym/export/threads",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->exportThreads(req, std::move(cb));
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        threads->exportThreads(req, std::move(cb));
       },
       {drogon::Get});
   // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only
@@ -236,14 +248,14 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // simply cannot be asked anything new.
   app.registerHandler(
       "/v1/gym/threads",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        api->listThreads(req, std::move(cb));
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        threads->listThreads(req, std::move(cb));
       },
       {drogon::Get});
   app.registerHandler(
       "/v1/gym/threads/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->getThread(req, std::move(cb), id);
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        threads->getThread(req, std::move(cb), id);
       },
       {drogon::Get});
   // Delete deletes the CONVERSATION and not the consequence: the proposals it minted keep their rows
@@ -251,22 +263,22 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // gone.
   app.registerHandler(
       "/v1/gym/threads/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->deleteThread(req, std::move(cb), id);
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        threads->deleteThread(req, std::move(cb), id);
       },
       {drogon::Delete});
   // The coach share's two owner-scoped doors. They hang off the session's path because that is what
   // a share is about — one workout — and neither of them touches the session's own row.
   app.registerHandler(
       "/v1/gym/sessions/{id}/share",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->shareSession(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->shareSession(req, std::move(cb), id);
       },
       {drogon::Post});
   app.registerHandler(
       "/v1/gym/sessions/{id}/share",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->revokeShare(req, std::move(cb), id);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        training->revokeShare(req, std::move(cb), id);
       },
       {drogon::Delete});
   // And the one door with no caller behind it. It deliberately does NOT live under
@@ -274,8 +286,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // other path is owner-scoped should be readable by a stranger.
   app.registerHandler(
       "/v1/gym/shared/{token}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& token) {
-        api->sharedSession(req, std::move(cb), token);
+      [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& token) {
+        training->sharedSession(req, std::move(cb), token);
       },
       {drogon::Get});
 

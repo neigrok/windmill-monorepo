@@ -37,7 +37,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // conversation titled by this question verbatim. A client no longer sends a history: the stored
 // thread is what the model is shown, so the conversation a lifter reads back is the one it saw.
 //
-// The threads themselves are read, exported and deleted through `GymApi` and NOT here, and that is
+// The threads themselves are read, exported and deleted through `ThreadsApi` and NOT here, and that is
 // deliberate: a deployment with no vendor key registers no route on this class at all, and the
 // conversations a lifter already had are still theirs.
 //
