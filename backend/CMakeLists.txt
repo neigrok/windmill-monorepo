@@ -387,7 +387,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
     test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
-    test/products/gym/adapters/http/GymApiTest.cpp
+    test/products/gym/adapters/http/TrainingApiTest.cpp
+    test/products/gym/adapters/http/CatalogApiTest.cpp
+    test/products/gym/adapters/http/ProgramApiTest.cpp
+    test/products/gym/adapters/http/PreferencesApiTest.cpp
+    test/products/gym/adapters/http/ThreadsApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
     test/products/gym/application/AskServiceTest.cpp
     test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
