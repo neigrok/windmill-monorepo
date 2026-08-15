@@ -12,7 +12,7 @@ namespace {
 // document shape the browser gets.
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
-               "seedStatus", "state", "description", "links"});
+               "seedStatus", "state", "summary", "description", "links"});
 }
 
 // The ids of a read's nodes, in the order it answered with — what a caller trusts when it takes
@@ -867,7 +867,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
                                               "order", "position", "prerequisites", "seedStatus",
-                                              "state", "status"}));
+                                              "state", "status", "summary"}));
   CHECK_EQ(b["id"].asString(), std::string("b"));
   CHECK_EQ(b["label"].asString(), std::string("B"));
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
@@ -881,6 +881,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["status"].asString(), std::string("none"));        // …and the caller's own, unmarked
   CHECK_EQ(b["state"].asString(), std::string("locked"));       // …and what the tree derives: a is not done
   CHECK_EQ(b["description"].asString(), std::string("the whole annotation"));
+  CHECK_EQ(b["summary"].asString(), std::string("the whole annotation"));  // short: the summary IS the text
   CHECK_EQ(b["links"][0]["url"].asString(), std::string("https://spec"));
   CHECK_EQ(b["links"][0]["label"].asString(), std::string("Spec"));
 
@@ -891,6 +892,36 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   const Json::Value match = body(h.call("find_nodes", search))["nodes"][0];
   CHECK_EQ(keys(match), (std::vector<std::string>{"description", "id"}));
   CHECK_EQ(match["description"].asString(), std::string("the whole annotation"));
+}
+
+// A long note answers its opening under `summary` — cut at a word, ellipsized — and its whole self
+// under `description`; a short note answers the same text under both, so a reader can tell the two
+// apart by the ellipsis alone. On an annotated tree, a page of full descriptions is what runs past a
+// client's result ceiling; the summary is what lets it skim.
+TEST(mcp_summary_is_the_descriptions_opening_and_says_when_it_was_cut) {
+  Harness h;
+  std::string words;
+  for (int i = 0; i < 60; ++i) words += "word" + std::to_string(i) + " ";  // ~400 chars, spaces throughout
+  Json::Value annotated = node("long", "Long");
+  annotated["description"] = words;
+  h.call("create_node", annotated);
+  Json::Value terse = node("short", "Short");
+  terse["description"] = "one line";
+  h.call("create_node", terse);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "summary"});
+  const Json::Value nodes = body(h.call("get_tree", args))["tree"]["nodes"];
+  REQUIRE_EQ(nodes.size(), 2u);
+  const std::string summary = nodes[0]["summary"].asString();
+  const std::string ellipsis = "\u2026";
+  CHECK(summary.size() <= 200 + ellipsis.size());
+  CHECK_EQ(summary.substr(summary.size() - ellipsis.size()), ellipsis);
+  CHECK_EQ(summary.back(), ellipsis.back());
+  CHECK(summary.find(' ' + ellipsis) == std::string::npos);  // cut AT the word, never leaving a trailing space
+  CHECK_EQ(words.rfind(summary.substr(0, summary.size() - ellipsis.size()), 0), 0u);  // a prefix of the note
+  CHECK_EQ(nodes[1]["summary"].asString(), std::string("one line"));
+  CHECK_FALSE(nodes[1].isMember("description"));  // asked for the summary, not the whole
 }
 
 TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
@@ -923,7 +954,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
-                       "prerequisites, position, status, seedStatus, state, description, links}"));
+                       "prerequisites, position, status, seedStatus, state, summary, description, links}"));
 
   // Each shape refuses against ITS OWN vocabulary — the legend's and the overlay's differ.
   Json::Value kindArgs(Json::objectValue);

@@ -21,7 +21,7 @@ namespace {
 // not the compiler, that catches "same version, different bytes". What the byte-compare itself
 // catches is the change that compiles green and still moves the wire — pqxx row_ref/row, jsoncpp's
 // infinity, a projection that quietly grows a field.
-constexpr int kWireCorpusVersion = 4;  // v4: `state` (the derived cascade) joins the full-fields read and find_nodes filters on it
+constexpr int kWireCorpusVersion = 5;  // v5: `summary` joins the vocabulary (tools/list schema enum)
 
 // One move in the plan: a tool and its arguments. The harness fills treeId.
 struct Step {
@@ -112,8 +112,8 @@ std::vector<Step> plan() {
       // launch, a non-empty filtered page — plus the full vocabulary, `state` beside `status`.
       {"find_nodes", with("state", "locked")},
       {"get_tree", obj({{"fields", strings({"id", "label", "icon", "color", "order", "prerequisites",
-                                            "position", "status", "seedStatus", "state", "description",
-                                            "links"})}})},
+                                            "position", "status", "seedStatus", "state", "summary",
+                                            "description", "links"})}})},
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
       {"get_health", kNoArgs},

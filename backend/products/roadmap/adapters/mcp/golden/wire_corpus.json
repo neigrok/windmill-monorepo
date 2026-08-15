@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 4,
+  "schemaVersion" : 5,
   "steps" : 
   [
     {
@@ -525,7 +525,8 @@
                     },
                     "prerequisites" : [],
                     "state" : "complete",
-                    "status" : "complete"
+                    "status" : "complete",
+                    "summary" : "the crown of the tree"
                   },
                   {
                     "color" : "plum",

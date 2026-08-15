@@ -31,9 +31,13 @@ namespace wm {
 // they would silently convert into each other on a read-then-import round trip. `state` is the
 // third fact and the one the tree DERIVES: locked / available / active / complete, the unlock
 // cascade UnlockRules runs over the caller's marks — the answer to "what can I work on" that a
-// caller otherwise reconstructs from the whole graph, and gets silently wrong.
+// caller otherwise reconstructs from the whole graph, and gets silently wrong. `summary` is the
+// description's opening — its first kSummaryChars, cut at a word and marked with an ellipsis when
+// cut — for a reader skimming a whole tree's notes: on an annotated tree a page of full
+// descriptions runs past any client's result ceiling, and the full text is one call away.
 enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus, state,
-                       description, links };
+                       summary, description, links };
+constexpr std::size_t kSummaryChars = 200;
 enum class KindField { id, hue, label, description };
 enum class ProgressField { completed, inProgress, cleared };
 

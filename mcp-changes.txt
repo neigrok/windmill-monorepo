@@ -344,8 +344,8 @@ Observed while driving this very tree and gym over MCP, and closed the same nigh
   the join answers the open workout under ITS id and leaves yours unspent — log into the id the
   reply carries, and never resend the start once that workout has ended.
 
-Still awkward, noted for the next round: find_nodes with `description` in `fields` on THIS tree
-(383 nodes) answers ~430k characters — over any client's result ceiling — because there is no
-server-side cap on total description bytes per page. A `descriptionChars` cap argument (or a
-default truncation with an ellipsis marker and the full text one call away) would let a reader
-skim a whole tree's notes without paging by hand.
+Was still awkward, closed the same night: find_nodes with `description` in `fields` on THIS tree
+(383 nodes) answered ~430k characters — over any client's result ceiling. `summary` joins the
+vocabulary — the description's opening 200 characters, cut at a word, ellipsized when cut — so a
+reader skims a whole tree's notes in one page and asks for `description` on the one node it needs
+(wire corpus v5).

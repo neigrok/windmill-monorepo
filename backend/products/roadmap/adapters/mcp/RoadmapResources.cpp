@@ -66,7 +66,10 @@ roots available, the rest locked.
 
 `get_tree`, `find_nodes` and `get_progress` take `fields`; `get_tree` also takes `kindFields`.
 Ask for `["id","label"]` when you only need an index to pick edit targets — the default already
-omits `description`, `links`, `position`, `icon`, both status fields and `state`. Both node reads
+omits `description`, `links`, `position`, `icon`, both status fields and `state`. To skim a
+tree's notes ask for `summary` — each description's opening 200 characters, cut at a word and
+ellipsized when cut — and for `description` only when you need one node's whole text: on an
+annotated tree a page of full descriptions runs past most clients' result ceiling. Both node reads
 page: `limit` (default 200, max 1000) and the `nextCursor` they hand back.
 
 `find_nodes`' `query` is a case-insensitive substring over a node's **id, label and description**,

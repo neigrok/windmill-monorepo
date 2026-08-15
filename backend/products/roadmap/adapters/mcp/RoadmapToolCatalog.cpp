@@ -231,7 +231,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "is your own mark on each node (active/complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · active · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark.",
+        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters, "
+        "cut at a word, ellipsized when cut) — ask for it to skim a whole tree's notes, and for "
+        "`description` when you need one node's whole text.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
         "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
@@ -290,7 +292,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "`status` is your own mark on each node (active/complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
         "and your marks — locked · available · active · complete — the answer to \"what can I work "
-        "on\"; `status` stays your raw mark.",
+        "on\"; `status` stays your raw mark. `summary` is the description's opening (200 characters, "
+        "cut at a word, ellipsized when cut) — ask for it to skim a whole tree's notes, and for "
+        "`description` when you need one node's whole text.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");

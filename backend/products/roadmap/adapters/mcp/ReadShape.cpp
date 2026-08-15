@@ -13,6 +13,18 @@ Json::Value idArray(const std::set<NodeId>& ids) {
   return array;
 }
 
+// The description's opening, cut at the last word boundary inside the budget and marked with an
+// ellipsis when anything was cut, so a reader can tell a short note from a long one they are
+// only seeing the head of. Bytes, not code points: a multi-byte character straddling the cut is
+// dropped whole rather than split, which is what the last-space search does for free in UTF-8.
+std::string summaryOf(const std::string& description) {
+  if (description.size() <= kSummaryChars) return description;
+  std::string head = description.substr(0, kSummaryChars);
+  const std::size_t lastSpace = head.find_last_of(" \n\t");
+  if (lastSpace != std::string::npos && lastSpace > kSummaryChars / 2) head.resize(lastSpace);
+  return head + "\u2026";
+}
+
 // The caller's own mark on one node, spelled the way set_progress spells it — one word for one
 // concept, whichever end of the surface you are on.
 const char* markOn(const Progress& marks, const NodeId& node) {
@@ -34,6 +46,7 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"status", NodeField::status},
                                                  {"seedStatus", NodeField::seedStatus},
                                                  {"state", NodeField::state},
+                                                 {"summary", NodeField::summary},
                                                  {"description", NodeField::description},
                                                  {"links", NodeField::links}});
   return vocabulary;
@@ -75,6 +88,7 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
   if (fields.count(NodeField::status)) n["status"] = markOn(context.marks, node.id);
   if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *node.status;
   if (fields.count(NodeField::state)) n["state"] = std::string(toString(context.states.at(node.id)));
+  if (fields.count(NodeField::summary) && !node.description.empty()) n["summary"] = summaryOf(node.description);
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
   if (fields.count(NodeField::links) && !node.links.empty()) n["links"] = linksToJson(node.links);
   return n;

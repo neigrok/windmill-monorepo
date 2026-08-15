@@ -237,6 +237,12 @@ nothing. An anonymous reader's cascade runs over no marks — roots available, t
 the rest and applied after the ranked selection but before the page, so `count` and the cursor
 speak of the filtered set: `find_nodes {state: "available"}` is the frontier in one call.
 
+**`summary` is a projection of `description`**, not a fourth fact: its opening 200 characters,
+cut at a word and ellipsized when anything was cut, so a reader can tell a short note from the
+head of a long one. It exists because a page of full descriptions on an annotated tree runs past
+most clients' result ceiling; ask for `summary` to skim and for `description` for one node's whole
+text.
+
 ### Bulk & ergonomics
 
 - **`import_subgraph`** takes the exact JSON `get_tree` returns (`{title?, nodes[], kinds[]}`,
