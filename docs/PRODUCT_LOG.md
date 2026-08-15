@@ -8,6 +8,29 @@ tree node can't: the thesis, the metric contract, the cuts, and the risks.
 Everything above the "Gym" heading is **roadmap's** narrative. Journal's design lives in
 `backend/products/journal/ARCHITECTURE.md`; gym's plan is the last section of this file.
 
+> **Status (2026-08-15 → 16, overnight): the growth round — the ledger's small nodes, closed
+> in one sitting, and two structural promotions.** Nothing here changes the thesis; it changes how
+> much of the ledger was still true. Closed from the tree, each through the gauntlet and each
+> deployed the same night: the phones' change offer moves ONE row of a program and refuses out loud
+> when that row is gone (both phones had rewritten every line naming a movement and PUT an unchanged
+> routine that superseded every pending proposal); a retired MCP tool name answers with its
+> replacement on every door (W6's sentences had zero production readers); the MCP caller carries its
+> connection, so a proposal names the agent that made it and the pending index is truly per
+> connection; the frontier is one read — `state` on every node read, `find_nodes {state:
+> "available"}` — and `summary` lets a reader skim a whole tree's notes; the handshake dates its
+> catalog with the deployed sha; a WS reject frame carries a code and the two write-refusal truths
+> live once beside `canWrite`; gym's one 665-line store port and its 2,389-line Postgres adapter became five aggregate ports, five adapters, one fake store with five doors and five test files — no behaviour moved, 760 adapter cases unchanged; the mail-suppression one-way door has a way back (turning the mail on
+> is the lift); journal's nudge gate is enforced where an API key can reach it, and its panel says
+> when we can't reach you; the embedder sidecar ships as an image the deploy actually pulls
+> (it could not have started on any host nobody hand-provisioned); the phone list ends above the
+> action lane (21 of 31 scroll offsets sent a mark-done tap to the view pill); the week's ask stands
+> aside for a ceremony that is still coming; a workout cannot start in the log's future (the trap
+> that could lock an account's gym for skew + four hours). The two promotions: the MAIL SWEEP is
+> written once on the platform — decide → claim → send — and reminders and nudges fill in the
+> blanks (nudges gained the per-user guard they never had); and `MailArming` replaced two
+> byte-identical siblings. Every close is annotated on its node with what was proved and what was
+> not. STILL TRUE, and unchanged by any of it: the phase-1 dogfood gate has never run.
+
 > **Status (2026-08-09, later the same day): the first-open wave — the door stopped being the
 > product's first screen.** A real Android user's first run surfaced three failures at once: the
 > emailed link died in a browser before the app could spend it, the web could still start a live
