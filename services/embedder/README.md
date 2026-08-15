@@ -123,27 +123,23 @@ binaries are glibc. The build prunes `onnxruntime-web` (the node entry point nev
 every ORT binary for a platform that isn't the target — **in the same layer as `npm ci`**, because a
 `rm` in a later layer only writes a whiteout and ships the bytes anyway. It was 1.12GB before that.
 
-This image is not what production runs today: `backend/deploy/docker-compose.yml` takes a stock
-`node:22-slim` and bind-mounts this directory into it, so the container's `node_modules` is the
-host's. Which of the two shapes wins is a deploy decision, not this file's — what matters here is
-that the snippet below is the deployed one, quoted rather than imagined.
+This image IS what production runs, since 2026-08-15: `.github/workflows/backend.yml` builds it
+beside the server image, under the same GHCR package, tagged `embedder-<sha>`, and
+`backend/deploy/docker-compose.yml` pulls both by one `IMAGE_TAG`. (Before that the compose file
+took a stock `node:22-slim` and bind-mounted this directory from the host — a directory the deploy
+workflow never shipped, so on any host nobody had hand-provisioned the sidecar could not start.
+Found 2026-08-05, fixed by going to the image the README had described all along.)
 
 ### The model files are mounted, not copied
 
-**Decision: bind mount.** No weights travel in an image.
+**Decision: bind mount for the weights, an image for the code.** No weights travel in an image.
 
 ```yaml
   embedder:
-    image: node:22-slim
+    image: ghcr.io/neigrok/windmill-monorepo:embedder-${IMAGE_TAG:-latest}
     restart: unless-stopped
-    working_dir: /app
-    environment:
-      PORT: "8081"
-      MODEL_DIR: /models
     volumes:
-      - ../../services/embedder:/app:ro
       - ./web/models:/models:ro         # the deployed site's own models/ directory
-    command: ["node", "server.js"]
 ```
 
 and on the `server` service:
@@ -165,12 +161,8 @@ The price, which an operator must know:
   directory. `docker compose config` will not catch this.
 - A missing or wrong mount surfaces as `/health` reporting `{"status":"failed"}` with the path it
   looked in, and the container stays up saying so. It does not crash-loop, and it does not lie.
-- **The `/app` mount has its own precondition, and nothing enforces it.** `.github/workflows/deploy.yml`
-  copies the compose file, the Caddyfile and the rendered `.env` to the VPS and nothing else, while
-  `node_modules/` is gitignored — so the host path this service is mounted from has to be put there,
-  with its dependencies installed, by some means outside the deploy workflow. Verified 2026-08-05 by
-  reading both files; whether the fix is shipping the directory or going back to the built image is
-  the deploy owner's call.
+- **A rollback to a sha before 2026-08-15 has no `embedder-<sha>` image**, and `docker compose pull`
+  fails loudly rather than starting a stale sidecar. Dispatch the deploy with a newer tag.
 - Prove a deployment rather than trusting it: `docker compose exec embedder node check/fixture.mjs`
   re-embeds the five pinned sentences against the mounted weights and compares them to the vectors
   committed in this repo.

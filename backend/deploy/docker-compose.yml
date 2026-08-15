@@ -148,17 +148,17 @@ services:
   #
   # Consequence worth knowing: on a fresh host the WEB deploy must land before this service starts,
   # or the mount is empty and /health reports 503 naming the missing path (the container stays up).
+  #
+  # The code is an IMAGE built by Backend CI/CD from services/embedder — the same package as the
+  # server, tagged `embedder-<sha>`, pulled by the same IMAGE_TAG — since 2026-08-15. Until then this
+  # was `node:22-slim` with services/embedder bind-mounted from the host, a directory the deploy
+  # never copied to the VPS, so the sidecar could not start on any host nobody had hand-provisioned.
+  # A rollback to a sha older than that has no embedder image at its tag; dispatch with a newer one.
   embedder:
-    image: node:22-slim
+    image: ghcr.io/neigrok/windmill-monorepo:embedder-${IMAGE_TAG:-latest}
     restart: unless-stopped
-    working_dir: /app
-    environment:
-      PORT: "8081"
-      MODEL_DIR: /models
     volumes:
-      - ../../services/embedder:/app:ro
       - ./web/models:/models:ro
-    command: ["node", "server.js"]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8081/health').then(r=>r.json()).then(j=>process.exit(j.status==='ready'?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
