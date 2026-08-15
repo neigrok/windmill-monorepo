@@ -316,7 +316,7 @@ TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
       patchSettings(h, request(drogon::Patch, "/v1/journal/nudge", dump(patch), "s-live"));
   CHECK_EQ(off->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*off->getJsonObject()),
-           std::string(R"({"adaptive":true,"armed":true,"channel":"email","enabled":false,)"
+           std::string(R"({"adaptive":true,"armed":false,"channel":"email","enabled":false,)"
                        R"("nextDueAt":1700003600000,"suppressed":true})"));
   CHECK(h.nudges->settingsFor(me)->suppressed);
   CHECK_FALSE(h.nudges->settingsFor(me)->enabled);

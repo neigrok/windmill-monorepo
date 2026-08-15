@@ -136,11 +136,13 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
   // provider left it. Being wrong costs exactly one more bounce, which suppresses again. The web
   // refetches after the 204 and the ordinary face returns.
   const bool turningOn = json->isMember("enabled") && settings.enabled;
-  if (turningOn && settings.suppressed) reminders_->liftSuppression(*caller);
   if (!reminders_->upsertSettings(*caller, settings.enabled, settings.timezone)) {
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;
   }
+  // Lifted only once the settings themselves landed: a refused timezone must not discard the
+  // provider's verdict on the way to a 400.
+  if (turningOn && settings.suppressed) reminders_->liftSuppression(*caller);
   callback(noContent());
 }
 

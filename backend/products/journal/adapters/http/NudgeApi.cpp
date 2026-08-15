@@ -163,7 +163,7 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
     settings.suppressed = false;
   }
   nudges_->upsertSettings(*caller, settings);
-  cb(jsonResponse(toJson(settings, true)));
+  cb(jsonResponse(toJson(settings, sweep_->arming().allows(*caller))));
 }
 
 void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

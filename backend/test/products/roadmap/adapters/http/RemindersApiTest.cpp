@@ -442,6 +442,25 @@ TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) 
   CHECK_FALSE(h.reminders->stopMailing(Email{"stranger@example.com"}));
 }
 
+// A turn-on the store refuses lifts nothing: the provider's verdict is not discarded on the way to
+// a 400 that left reminders exactly as they were.
+TEST(reminders_a_refused_turn_on_leaves_a_suppression_standing) {
+  Harness h(MailArming(true, "u1"));
+  UserId me = h.signIn("s-live");
+  h.reminders->unknownTimezones.insert("Nowhere/Land");
+  h.reminders->owners["sam@example.com"] = me.str();
+  CHECK(h.reminders->stopMailing(Email{"sam@example.com"}));
+
+  CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders",
+                             R"({"enabled":true,"timezone":"Nowhere/Land"})"))
+               ->getStatusCode(),
+           drogon::k400BadRequest);
+
+  const ReminderSettings& row = h.reminders->settings[me.str()];
+  CHECK(row.suppressed);
+  CHECK_FALSE(row.enabled);
+}
+
 TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
   // The one deliberate act that clears the provider's verdict: the owner, signed in, saying
   // "on" — which is them saying the address works now. Being wrong costs one more bounce.

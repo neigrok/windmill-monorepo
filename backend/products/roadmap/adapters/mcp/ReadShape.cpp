@@ -15,13 +15,20 @@ Json::Value idArray(const std::set<NodeId>& ids) {
 
 // The description's opening, cut at the last word boundary inside the budget and marked with an
 // ellipsis when anything was cut, so a reader can tell a short note from a long one they are
-// only seeing the head of. Bytes, not code points: a multi-byte character straddling the cut is
-// dropped whole rather than split, which is what the last-space search does for free in UTF-8.
+// only seeing the head of. The budget is bytes; the cut is never mid-character: with no word
+// boundary in the back half (an unbroken run of CJK, a long URL) the head is backed off to the
+// start of the code point straddling the edge — a UTF-8 continuation byte is 10xxxxxx — so
+// jsoncpp is never handed a dangling lead byte to re-decode as something else.
 std::string summaryOf(const std::string& description) {
   if (description.size() <= kSummaryChars) return description;
   std::string head = description.substr(0, kSummaryChars);
   const std::size_t lastSpace = head.find_last_of(" \n\t");
-  if (lastSpace != std::string::npos && lastSpace > kSummaryChars / 2) head.resize(lastSpace);
+  if (lastSpace != std::string::npos && lastSpace > kSummaryChars / 2) {
+    head.resize(lastSpace);
+    return head + "\u2026";
+  }
+  while (!head.empty() && (static_cast<unsigned char>(description[head.size()]) & 0xC0) == 0x80)
+    head.pop_back();
   return head + "\u2026";
 }
 

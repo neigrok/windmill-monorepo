@@ -924,6 +924,28 @@ TEST(mcp_summary_is_the_descriptions_opening_and_says_when_it_was_cut) {
   CHECK_FALSE(nodes[1].isMember("description"));  // asked for the summary, not the whole
 }
 
+// A note with no word boundary in the back half of the budget — an unbroken run of CJK, a long URL
+// — is cut at a code point, never inside one: 200 bytes is not a multiple of three, so a byte cut
+// would hand jsoncpp a dangling lead byte to re-decode as a different character.
+TEST(mcp_summary_never_cuts_inside_a_multibyte_character) {
+  Harness h;
+  std::string cjk;
+  for (int i = 0; i < 120; ++i) cjk += "\u5b57";  // 360 bytes of 字
+  Json::Value annotated = node("cjk", "CJK");
+  annotated["description"] = cjk;
+  h.call("create_node", annotated);
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "summary"});
+  const std::string summary = body(h.call("get_tree", args))["tree"]["nodes"][0]["summary"].asString();
+  const std::string ellipsis = "\u2026";
+  const std::string head = summary.substr(0, summary.size() - ellipsis.size());
+  CHECK_EQ(summary.substr(summary.size() - ellipsis.size()), ellipsis);
+  CHECK_EQ(head.size() % 3, 0u);                              // whole characters only
+  CHECK_EQ(head.size(), 198u);                                // the last whole one under 200
+  CHECK_EQ(cjk.rfind(head, 0), 0u);
+}
+
 TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   Harness h;
   h.call("create_node", node("a", "A"));
