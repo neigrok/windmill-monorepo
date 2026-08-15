@@ -135,8 +135,16 @@ private fun refusal(status: Int, code: String? = null, message: String) =
 // The port of the iOS FakeTraining, kept beside the interface so the store wave can drive
 // TrainingStore against the same log the doors were proven with — swapping the placeholder
 // exceptions for the platform's once that seam exists.
+//
+// THREE OF THE LOG'S OWN RULES ARE MODELLED HERE, because the phone hunt of 2026-08-16 found that
+// a fake without them let a whole class of lost lifts stay green: a settling read (a start, a log
+// page, a movement's record) auto-closes an open session with no activity for four hours, at its
+// last activity; an append into a finished session is 409 `session-finished`; and an append or a
+// finish into a session the log does not hold is 404. The clock the settle runs on is the test's
+// (`nowMs`), and a test that never sets it settles nothing.
 internal class FakeTraining : TrainingSyncing {
     var online = true
+    var nowMs: () -> Long = { 0L }
     var catalog = listOf<Exercise>()
     var settings: GymPreferences? = null
     val stored = mutableMapOf<String, Session>()
@@ -208,6 +216,18 @@ internal class FakeTraining : TrainingSyncing {
         if (!online) throw IOException("offline")
     }
 
+    // The log's lazy auto-close, run before a start and on the reads that settle (ARCHITECTURE
+    // §3.2): an open session with no activity for four hours ended at its last set, and one with no
+    // sets ended when it began. `closedItself` is what the log row would say about it.
+    private fun settle() {
+        val now = nowMs()
+        for (open in stored.values.filter { it.isOpen }) {
+            val lastActivity = sets[open.id]?.maxOfOrNull { it.completedAtMs } ?: open.startedAtMs
+            if (now < lastActivity + 4L * 60 * 60 * 1000) continue
+            stored[open.id] = open.copy(finishedAtMs = lastActivity)
+        }
+    }
+
     override suspend fun exercises(): List<Exercise> {
         calls.add("exercises")
         reachable()
@@ -233,6 +253,7 @@ internal class FakeTraining : TrainingSyncing {
         started.add(start)
         reachable()
         refuseStart(start)?.let { throw it }
+        settle()
         stored[start.id]?.let { return it }
         stored.values.firstOrNull { it.isOpen }?.let { open ->
             if (start.joinOpenSession == false) {
@@ -253,9 +274,13 @@ internal class FakeTraining : TrainingSyncing {
         onAppend(write)
         reachable()
         refuse(write)?.let { throw it }
+        val session = stored[sessionId] ?: throw refusal(404, message = "no such session")
         // The id IS the idempotency key: a replay answers with the stored row, even after the
         // session closed, and never files a second one.
         sets[sessionId]?.firstOrNull { it.id == write.id }?.let { return it }
+        // A set that never landed is refused once the session is over — the rule the whole queue
+        // is shaped around.
+        if (!session.isOpen) throw refusal(409, "session-finished", "that session is finished")
 
         val number = (sets[sessionId] ?: emptyList()).count { it.exerciseId == write.exerciseId } + 1
         val row = TrainingSet(id = write.id, exerciseId = write.exerciseId, setNumber = number,
@@ -302,7 +327,7 @@ internal class FakeTraining : TrainingSyncing {
         finished.add(sessionId to finishedAtMs)
         onFinish()
         reachable()
-        val live = stored[sessionId] ?: throw IllegalStateException("404")
+        val live = stored[sessionId] ?: throw refusal(404, message = "no such session")
         // First-writer-wins, exactly as the log's close is: a replayed finish answers the stored
         // row unchanged.
         if (!live.isOpen) return live
@@ -325,6 +350,7 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
         calls.add("sessions")
         reachable()
+        settle()
         return stored.values
             .sortedWith(compareByDescending<Session> { it.startedAtMs }.thenByDescending { it.id })
             .filter { row ->
@@ -534,6 +560,7 @@ internal class FakeTraining : TrainingSyncing {
     override suspend fun record(exerciseId: String): MovementRecord? {
         calls.add("record")
         reachable()
+        settle()
         refuseRecord?.let { throw it }
         return records[exerciseId]
     }

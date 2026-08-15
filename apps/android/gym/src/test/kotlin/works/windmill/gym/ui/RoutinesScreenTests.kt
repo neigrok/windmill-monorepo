@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.store.DeviceCatalog
+import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
@@ -46,7 +46,7 @@ class RoutinesScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCatalog = DeviceCatalog(File(tmp.root, "catalog.json")),
+            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
             scope = scope,

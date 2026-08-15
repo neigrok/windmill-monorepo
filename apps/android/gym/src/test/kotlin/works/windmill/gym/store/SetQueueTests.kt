@@ -210,4 +210,37 @@ class SetQueueTests {
         assertEquals("a different session is a different workout",
             emptyList<String>(), queue.order)
     }
+
+    // R2 — WHETHER THE LIVE SESSION IS THE LOG'S IS WRITTEN TO DISK, per session: held false by
+    // every caller the server answered, true by the on-device start, false again by the claim's
+    // landed start for the same id, and gone with the session. A file from a build before the bit
+    // existed reads as UNCLAIMED — that build re-sent every live start on every connect, so its
+    // file says nothing about the log, and one idempotent start replay is the cheap side of that
+    // doubt; reading it as claimed could forget a device-composed workout as "gone" on its first
+    // 404.
+    @Test
+    fun testTheUnclaimedBitIsPerSessionOnDiskAndAbsentReadsAsUnclaimed() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.hold(Session(id = "ses_1", startedAtMs = 1_000))
+        queue.flush()
+        assertFalse("answered by the server", queue.sessionIsUnclaimed)
+        assertFalse(SetQueue(file).sessionIsUnclaimed)
+
+        queue.hold(Session(id = "ses_mine", startedAtMs = 2_000), unclaimed = true)
+        queue.flush()
+        assertTrue("composed on the device", SetQueue(file).sessionIsUnclaimed)
+
+        queue.claimed("ses_other")
+        assertTrue("a claim for some other id changes nothing", queue.sessionIsUnclaimed)
+        queue.claimed("ses_mine")
+        queue.flush()
+        assertFalse("the claim's start landed it", SetQueue(file).sessionIsUnclaimed)
+
+        queue.forget("ses_mine")
+        assertFalse("no session, nothing unclaimed", queue.sessionIsUnclaimed)
+
+        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
+        assertTrue("a file written before the bit existed reads as unclaimed", SetQueue(file).sessionIsUnclaimed)
+    }
 }

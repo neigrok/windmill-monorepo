@@ -312,10 +312,22 @@ class LiveLinesTests {
 
     @Test
     fun testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {
-        assertNull(LiveLines.onThisDeviceLine(0))
+        assertNull(LiveLines.onThisDeviceLine(0, Blocker.Offline))
         assertEquals("1 set is saved on this device only. No signal down here — they flush when you’re back up.",
-                     LiveLines.onThisDeviceLine(1))
+                     LiveLines.onThisDeviceLine(1, Blocker.Offline))
         assertEquals("3 sets are saved on this device only. No signal down here — they flush when you’re back up.",
-                     LiveLines.onThisDeviceLine(3))
+                     LiveLines.onThisDeviceLine(3, Blocker.Offline))
+    }
+
+    // "No signal" is asserted only when the transport failed. A log that answered 500, or a session
+    // that lapsed, blocked the same sets for a different reason, and the strip names that reason.
+    @Test
+    fun testTheStripNamesWhatBlockedTheSetsRatherThanAssertingNoSignal() {
+        assertEquals("2 sets are saved on this device only. The log didn’t answer — they flush when it does.",
+                     LiveLines.onThisDeviceLine(2, Blocker.LogFailed))
+        assertEquals("1 set is saved on this device only. Your sign-in lapsed — they flush once you sign in again.",
+                     LiveLines.onThisDeviceLine(1, Blocker.SignInLapsed))
+        assertEquals("1 set is saved on this device only. They flush when the log takes them.",
+                     LiveLines.onThisDeviceLine(1, null))
     }
 }

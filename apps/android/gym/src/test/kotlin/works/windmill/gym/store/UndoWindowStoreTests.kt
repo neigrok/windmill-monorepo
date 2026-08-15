@@ -44,7 +44,7 @@ class UndoWindowStoreTests {
 
     private fun TestScope.makeStore(server: FakeTraining) = TrainingStore(
         queue = SetQueue(queueFile) { clockMs },
-        deviceCatalog = DeviceCatalog(catalogFile),
+        deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile),
         localPreferences = LocalPreferences(preferencesFile),
         scope = backgroundScope,

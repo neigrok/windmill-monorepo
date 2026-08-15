@@ -57,7 +57,7 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.AskOutcome
-import works.windmill.gym.store.DeviceCatalog
+import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalLog
@@ -208,7 +208,7 @@ fun GymRoom(account: Account) {
     val store = remember {
         TrainingStore(
             SetQueue(File(context.filesDir, SetQueue.fileName)),
-            DeviceCatalog(File(context.filesDir, DeviceCatalog.fileName)),
+            DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
             LocalLog(File(context.filesDir, LocalLog.fileName)),
             LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
             scope,
@@ -344,11 +344,13 @@ fun GymRoom(account: Account) {
         tab = Tab.Routines
     }
 
-    // Re-runs whenever who is signed in changes. `connect` drains what the device is still holding
+    // Re-runs whenever who is signed in changes — and once more when a seat that stood unverified
+    // on the device's last-known user is verified, because that is the moment the reads it made off
+    // the device's copies can land on the log. `connect` drains what the device is still holding
     // BEFORE it reads the log, because reading the log settles a stale open session and a set that
     // arrives after that close is refused forever; and landing back inside a workout that never
     // stopped stands where the lifter was, not in the picker over a session of sets.
-    LaunchedEffect(account.user?.id) {
+    LaunchedEffect(account.user?.id, account.verified) {
         // A CONVERSATION BELONGS TO THE LOG IT WAS ABOUT, and this is where it changes hands: every
         // question and every answer in a thread is somebody's own training, so a phone that changed
         // seats would be showing one lifter's numbers to the next person holding it.
@@ -438,9 +440,10 @@ fun GymRoom(account: Account) {
     }
 
     // Start. A double tap is a second session, so the door closes while the first one is in flight.
-    // A refusal is repeated in the LOG'S OWN WORDS: "no such routine" and "the log didn't answer"
-    // are different facts, and reporting the first as the second points the lifter at their signal
-    // instead of at the routine that is gone.
+    // A refusal is repeated in the LOG'S OWN WORDS: "no such routine" is a fact about the routine,
+    // and it is said as one. A log that could not be reached is not a refusal at all any more — the
+    // store composes the workout on the device and the claim lands it, so a lifter in a basement
+    // begins rather than reading that the log didn't answer.
     //
     // A USER-TAPPED START NEVER SILENTLY JOINS (decisions §5): the store sends joinOpenSession
     // false, and a 409 while a workout is already open on the account comes back here as a refusal
@@ -454,7 +457,7 @@ fun GymRoom(account: Account) {
                 note = null
                 val opened = store.start(routineId)
                 if (opened is GymResult.Failed) {
-                    note = opened.why.line("a session starts there")
+                    note = opened.why.line("nothing started")
                     return@launch
                 }
                 // Whatever screen was open is over: the workout is what this phone is for, and Done
@@ -492,8 +495,11 @@ fun GymRoom(account: Account) {
                 }
                 is FinishOutcome.Stranded ->
                     note = "${Readout.setCount(ended.count)} still on this device — the session stays open until they land"
-                FinishOutcome.NoAnswer ->
-                    note = "the log didn’t answer — the session is still open"
+                // The log's own words for a refusal; "the log didn't answer" only when it did not.
+                // A workout the log no longer holds says so, and by then the store is standing over
+                // no session — there is nothing left here to finish.
+                is FinishOutcome.Failed ->
+                    note = ended.why.line("the session is still open")
             }
         }
     }
@@ -640,8 +646,9 @@ fun GymRoom(account: Account) {
     fun keep(sets: List<TrainingSet>, name: String) {
         scope.launch {
             note = null
-            if (store.keep(sets, name) == null) {
-                note = "the log didn’t answer — the routine wasn’t kept"
+            val kept = store.keep(sets, name)
+            if (kept is GymResult.Failed) {
+                note = kept.why.line("the routine wasn’t kept")
                 return@launch
             }
             keptRoutine = true

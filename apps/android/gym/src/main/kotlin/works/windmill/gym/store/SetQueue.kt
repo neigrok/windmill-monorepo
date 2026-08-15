@@ -5,6 +5,8 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import works.windmill.gym.domain.Blocker
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
 
@@ -32,8 +34,9 @@ import works.windmill.gym.domain.TrainingSet
 //     else. A jam that stopped the whole queue stopped a whole workout, silently.
 //
 // And the rule the backend made non-negotiable: a set that never landed is REFUSED once the session
-// is finished. So the queue flushes BEFORE finish and before the boot read, and a refusal is
-// reported rather than counted as delivered.
+// is finished. So the queue flushes BEFORE finish, before the boot read and before the claim's
+// starts — an append settles nothing and every one of those does — and a refusal is reported rather
+// than counted as delivered.
 class SetQueue(
     private val file: File,
     private val clock: () -> Long = { System.currentTimeMillis() },
@@ -90,6 +93,26 @@ class SetQueue(
         // what "no sets yet — logging one starts it" is drawing. Defaulted for the same reason
         // Entry's hold is: an older file must still open.
         val order: List<String>? = null,
+        // WHETHER THE LIVE SESSION IS THE LOG'S YET. True for a session composed on this device with
+        // no server answered — signed out, mid-claim, or signed in with no signal — and the claim's
+        // landed start is what turns it false, for that same id. Persisted, because deriving it
+        // from how the last claim pass ended made a WAIT on somebody else's open workout — or one
+        // 5xx — mark a session the server had already answered for as unclaimed: its lanes were
+        // parked, its finish went to the shelf, and the server row stayed open.
+        //
+        // ABSENT READS AS UNCLAIMED, and that is the honest default for THIS shelf's history: every
+        // build before this one re-sent the live session's start on every connect, so a file it
+        // wrote says nothing about whether the log ever answered. Reading absent as claimed would
+        // let a device-composed workout from that build meet a 404 on its first append and be
+        // forgotten as "gone" (`TrainingStore.deliver`). Reading it as unclaimed costs one start
+        // replay, idempotent under the session's own id, and then the bit is written — unless a
+        // shelf session stands behind a live one the LOG holds (the state the old wait left): that
+        // shelf start 409-waits on the phone's own workout, the claim halts before the live start,
+        // and the live session's owed sets stay parked with no cadence until the first log read
+        // adopts it — which flips the bit and walks them (`TrainingStore.loadLog`). One read late,
+        // never a tap late, and only for a file this build did not write. (iOS reads absent as
+        // claimed — its file carried the bit from the day its claim existed.)
+        val unclaimed: Boolean? = null,
     )
 
     private var held: Held = runCatching {
@@ -111,12 +134,27 @@ class SetQueue(
 
     val session: Session? get() = held.session
 
+    // The live session was composed here and the log has not answered for it. Nothing walks its
+    // sets while this holds — the claim's start opens their road — and no read may trade it for the
+    // account's other open workout.
+    val sessionIsUnclaimed: Boolean get() = held.session != null && (held.unclaimed ?: true)
+
     // A different session is a different workout, so the movement order goes with the old one. It
     // is cleared rather than merged: the two lists share nothing, and carrying yesterday's
     // movements into today would draw a session the lifter never started.
-    fun hold(session: Session?) {
+    //
+    // `unclaimed` defaults to false because every caller but the device start is holding a session
+    // the SERVER answered with; only the on-device start passes true, and `claimed` turns it back
+    // for the same id once the log has the row.
+    fun hold(session: Session?, unclaimed: Boolean = false) {
         val kept = if (held.session?.id == session?.id) held.order else null
-        held = held.copy(session = session, order = kept)
+        held = held.copy(session = session, order = kept, unclaimed = if (session == null) null else unclaimed)
+    }
+
+    // The claim's start landed: the log holds this session now, and its sets may walk.
+    fun claimed(sessionId: String) {
+        if (held.session?.id != sessionId) return
+        held = held.copy(unclaimed = false)
     }
 
     // The open session's sets in the order they were performed — queued and delivered together,
@@ -247,7 +285,7 @@ class SetQueue(
     // The session row and its movement order are one fact and end together — an order left standing
     // over no session is a list of movements belonging to a workout that is over.
     private fun letGo() {
-        held = held.copy(session = null, order = null)
+        held = held.copy(session = null, order = null, unclaimed = null)
     }
 
     fun flush() {
@@ -266,7 +304,17 @@ data class RefusalFacts(
     val sentence: String? = null,
     val offline: Boolean = false,
     val malformed: Boolean = false,
-)
+) {
+    // What a retryable failure is BLOCKED BY, for the strip that names it. Only a transport
+    // failure is "offline"; a lapsed session is its own fact; everything else that keeps a set owed
+    // is the log's own trouble.
+    val blocker: Blocker
+        get() = when {
+            offline -> Blocker.Offline
+            status == 401 -> Blocker.SignInLapsed
+            else -> Blocker.LogFailed
+        }
+}
 
 // THE FOUR VERDICTS, and none of them is guesswork about English. The code is the contract; the
 // sentence is copy for a human reading a banner, and it may be reworded any day — a queue that told
@@ -310,7 +358,10 @@ sealed class Verdict {
             // 401 waits for a sign-in and 404 for a session to exist. Terminal and retryable never
             // both hold, and neither follows from the other's absence — a queue that read "not
             // retryable" as "lost" would throw away a set that was only waiting for the session
-            // secret to come back.
+            // secret to come back. The 404 is only WAITING here: whether the session can still come
+            // to exist is a fact about the session, not the set, and the walks decide it before
+            // they ask this — for a session the log once answered for, a 404 is the workout gone
+            // (TrainingStore.deliver, ClaimReplay), said and let go rather than waited on.
             return Retry
         }
     }
@@ -463,7 +514,14 @@ data class RefusedSet(
 // The claim's own loss: a movement or routine document the server refuses outright, let go from
 // the shelf so the same terminal write is not re-sent on every connect. Said under its name — a
 // document has no numbers to carry.
-data class RefusedClaim(val name: String, override val reason: String) : RefusedWrite
+//
+// A SESSION IS NAMED BY THE DAY IT WAS AND THE DAY OF THE PROGRAM IT RAN — the two facts a lifter
+// can find it by, since a minted id means nothing on a banner. The id rides anyway, unshown: it is
+// what makes two passes refusing the SAME live workout one loss on the banner and not one per pass.
+data class RefusedClaim(val id: String, val name: String, override val reason: String) : RefusedWrite {
+    constructor(session: Session, reason: String) :
+        this(session.id, "${session.plan?.routine ?: "workout"} · ${Readout.date(session.startedAtMs)}", reason)
+}
 
 // How a write reports itself: mono, lower-case, never a toast and never an alert (the journal's
 // voice). Silence is a state — a room that has just opened says nothing. A refusal speaks in the
@@ -472,15 +530,22 @@ sealed class SaveState {
     data object Idle : SaveState()
     data object OnTheLog : SaveState()          // the account has it
     data object OnThisDevice : SaveState()      // held on purpose: nobody signed in, or the log cannot take this session yet
-    data object Offline : SaveState()           // signed in, but this set has not landed yet
+    data class Blocked(val by: Blocker) : SaveState()   // signed in and offered, and this is what stopped it landing
     data class Refused(val reason: String) : SaveState()
 
+    // "offline" is said only when the transport failed. A log that answered 500, or a session that
+    // lapsed, is a different fact and gets its own words — a lifter told "offline" under a full
+    // signal would be pointed at the wrong thing.
     val line: String?
         get() = when (this) {
             Idle -> null
             OnTheLog -> "on the log"
             OnThisDevice -> "saved on this device"
-            Offline -> "offline · saved here"
+            is Blocked -> when (by) {
+                Blocker.Offline -> "offline · saved here"
+                Blocker.LogFailed -> "the log didn’t answer · saved here"
+                Blocker.SignInLapsed -> "sign in again · saved here"
+            }
             is Refused -> reason
         }
 }

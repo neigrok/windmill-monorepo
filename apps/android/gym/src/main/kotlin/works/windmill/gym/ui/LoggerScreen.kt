@@ -252,7 +252,7 @@ fun LoggerScreen(
             onFinish = onFinish,
             onClearRest = { restStartedAtMs = null },
         )
-        LiveLines.onThisDeviceLine(store.strandedCount)?.let { line ->
+        LiveLines.onThisDeviceLine(store.strandedCount, store.strandedBy)?.let { line ->
             Text(
                 line,
                 style = GymType.numeral(12),

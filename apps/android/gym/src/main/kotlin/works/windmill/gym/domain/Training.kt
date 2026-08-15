@@ -221,15 +221,21 @@ data class LastTime(
 
     companion object {
         // The signed-out answer to "what did I do last time", read off the device's own finished
-        // sessions by the server's rule: the most recent FINISHED session holding a working set of
-        // this movement, and only its working sets — a ramp-up is not what the next set is aimed
-        // at. No history is a first time, never a failure.
+        // sessions by the server's rule: the most recent FINISHED session holding a non-warmup set
+        // of this movement, those sets in performed order. No history is a first time, never a
+        // failure.
+        //
+        // THE PREDICATE IS THE SERVER'S, `kind <> 'warmup'`, and it is not the same as "working only":
+        // a drop set and a set taken to failure both happened and both ride along in the log's own
+        // answer (PgLogRepository::lastTime). A phone that cut them here would dial a different
+        // weight signed out than the same session dials signed in — and §G18's sheet can file any of
+        // the four kinds, so this shelf really does hold them.
         fun of(exerciseId: String, history: List<SessionDetail>): LastTime {
             val last = history
                 .filter { it.session.finishedAtMs != null }
                 .sortedByDescending { it.session.startedAtMs }
                 .firstOrNull { detail ->
-                    detail.sets.any { it.exerciseId == exerciseId && it.kind == SetKind.Working }
+                    detail.sets.any { it.exerciseId == exerciseId && it.kind != SetKind.Warmup }
                 }
                 ?: return LastTime(exerciseId)
             return LastTime(
@@ -237,7 +243,7 @@ data class LastTime(
                 session = last.session,
                 routine = last.session.plan?.routine,
                 sets = last.sets
-                    .filter { it.exerciseId == exerciseId && it.kind == SetKind.Working }
+                    .filter { it.exerciseId == exerciseId && it.kind != SetKind.Warmup }
                     .sortedBy { it.completedAtMs },
             )
         }
@@ -269,10 +275,10 @@ data class LastSet(
         //
         // IT IS NOT THE SET THE PREFILL DIALS, and the two are not trying to be. This line REPORTS
         // what was lifted last, so it is one set read off the block whole; `LastTime` + `Prefill`
-        // AIM the next one, so they read the WORKING sets only — a ramp-up and a back-off are not
-        // what the next set is aimed at. A block of 100 × 5 then 60 × 12 therefore reads
-        // `last 60 × 12` here and opens the dial at 100 × 5, which is the same pair of answers the
-        // iOS twin gives (LocalLog.lastSets) and the same pair the two routes give signed in.
+        // AIM the next one off the same block — the weight from its LAST row and the reps from its
+        // FIRST. A block of 100 × 5 then 60 × 12 therefore reads `last 60 × 12` here and opens the
+        // dial at 60 × 5, which is the same pair of answers the iOS twin gives (LocalLog.lastSets)
+        // and the same pair the two routes give signed in.
         //
         // The device orders that block by the instant a set was performed where the log orders by
         // set number, which is one order: the log numbers a movement's sets in the order they land.
@@ -722,8 +728,9 @@ data class RoutineWrite(
 }
 
 // The number standing in front of the lifter. Sticky carry-forward beats the plan beats last
-// time beats the empty bar — and the asymmetry is deliberate: weight from the LAST working set
-// of last time, reps from the FIRST. Warmups never carry forward.
+// time beats the empty bar — and the asymmetry is deliberate: weight from the LAST non-warmup set
+// of last time, reps from the FIRST. Warmups never carry forward: today's sticky follows the
+// working sets only, and last time's block is the server's non-warmup block (`LastTime`).
 data class Prefill(val weightKg: Double, val reps: Int) {
     companion object {
         const val EMPTY_BAR_KG = 20.0

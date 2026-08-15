@@ -12,6 +12,7 @@ import works.windmill.platform.net.Captured
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.WindmillJson
 
 // Sign-in for the native superapp — the same one door the web has, reached the way a phone can
 // reach it. The account is an email address (backend/AUTH.md): the mint rides `door: "app"`, so
@@ -26,7 +27,11 @@ sealed class AuthStatus {
 
     data object Unknown : AuthStatus()      // the app has not yet asked /v1/me — the seat is a ghost, not empty
     data object SignedOut : AuthStatus()
-    data class SignedIn(override val user: User) : AuthStatus()
+    // `verified` is false while the seat stands on the device's last-known user because the server
+    // could not be asked — no signal, or a 5xx — and true once /v1/me has answered for it. An
+    // unverified seat is still SIGNED IN: the rooms connect for that account, off the copies the
+    // device holds for it, and `reverify` asks again on the next resume.
+    data class SignedIn(override val user: User, val verified: Boolean = true) : AuthStatus()
 }
 
 class AuthStore(
@@ -46,18 +51,37 @@ class AuthStore(
     // server's own 401 spends the secret: an unreachable host and a 500 say nothing about the
     // session, and clearing on them was silent sign-out — a lifter opening the app in a no-signal
     // basement lost their 90-day bearer and the queue's owed sets had nothing left to replay under.
-    // The seat reads signed out for now, the secret survives, and the next restore reclaims it.
+    //
+    // NOR IS A SEAT THAT COULD NOT BE ASKED A SIGNED-OUT ONE. The user this store last knew for
+    // the secret is kept beside it, so a restore the server did not answer stands the seat up
+    // SIGNED IN and unverified — the gym room connects for that account, on the copies the device
+    // holds for it — and `reverify` asks again on the next resume. Only a phone that never learned
+    // who the secret belongs to reads signed out for now, with the secret surviving for next time.
     suspend fun restore() {
         if (sessions.read() == null) {
             status = AuthStatus.SignedOut
             return
         }
         status = try {
-            AuthStatus.SignedIn(api.get<UserResponse>("/v1/me").user)
+            val user = api.get<UserResponse>("/v1/me").user
+            sessions.remember(user)
+            AuthStatus.SignedIn(user)
         } catch (unanswered: WindmillApiException) {
-            if (unanswered.isUnauthorized) sessions.clear()
-            AuthStatus.SignedOut
+            if (unanswered.isUnauthorized) {
+                sessions.clear()
+                AuthStatus.SignedOut
+            } else {
+                sessions.user()?.let { AuthStatus.SignedIn(it, verified = false) } ?: AuthStatus.SignedOut
+            }
         }
+    }
+
+    // The unverified seat asked again — on resume, and on nothing else: a verified seat has been
+    // answered for and a signed-out one holds no secret to ask with.
+    suspend fun reverify() {
+        val standing = status as? AuthStatus.SignedIn ?: return
+        if (standing.verified) return
+        restore()
     }
 
     // `door: "app"` is what makes the mail carry a code rather than a link — a link would open the
@@ -90,6 +114,7 @@ class AuthStore(
         val session = answer.session
         if (session.isNullOrEmpty()) throw MagicLink.unreadable
         sessions.write(session)
+        sessions.remember(answer.reply.user)
         linkSentTo = null
         status = AuthStatus.SignedIn(answer.reply.user)
     }
@@ -155,11 +180,15 @@ object MagicLink {
     }
 }
 
-// Where the session secret sleeps. An interface so tests get a fake for free and never touch
-// device-wide state a test suite must not mutate.
+// Where the session secret sleeps — and, beside it, the last user the secret was answered for, so a
+// launch the server cannot be asked on still knows whose seat this is. An interface so tests get a
+// fake for free and never touch device-wide state a test suite must not mutate. `clear` takes both:
+// a spent secret leaves no seat behind it.
 interface SessionStore {
     fun read(): String?
     fun write(secret: String)
+    fun user(): User?
+    fun remember(user: User)
     fun clear()
 }
 
@@ -175,13 +204,27 @@ class PrefsSessions(context: Context) : SessionStore {
         prefs.edit().putString("wm_session", secret).apply()
     }
 
+    // A user this build cannot read is no user: the seat reads signed out for now and the next
+    // answered restore rewrites it.
+    override fun user(): User? = prefs.getString("wm_user", null)
+        ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
+
+    override fun remember(user: User) {
+        prefs.edit().putString("wm_user", WindmillJson.encodeToString(User.serializer(), user)).apply()
+    }
+
     override fun clear() {
-        prefs.edit().remove("wm_session").apply()
+        prefs.edit().remove("wm_session").remove("wm_user").apply()
     }
 }
 
-class MemorySessions(private var secret: String? = null) : SessionStore {
+class MemorySessions(private var secret: String? = null, private var known: User? = null) : SessionStore {
     @Synchronized override fun read(): String? = secret
     @Synchronized override fun write(secret: String) { this.secret = secret }
-    @Synchronized override fun clear() { secret = null }
+    @Synchronized override fun user(): User? = known
+    @Synchronized override fun remember(user: User) { known = user }
+    @Synchronized override fun clear() {
+        secret = null
+        known = null
+    }
 }

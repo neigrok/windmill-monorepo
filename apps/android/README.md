@@ -50,8 +50,11 @@ mail carries a code instead of a link, and typing the code finishes the sign-in 
 (`POST /v1/auth/verify-code`). The same field still takes a pasted magic link or bare token
 (`MagicLink.token`) as the fallback — older mails, and links minted from another surface, stay
 usable; there are still no app links. The session secret rides `Authorization: Bearer` and sleeps
-behind `SessionStore`; a restore that cannot reach the server keeps the secret — only a definitive
-401 spends it.
+behind `SessionStore` beside the last user it was answered for; a restore that cannot reach the
+server (or meets a 5xx) keeps the secret AND stands the seat up signed in and **unverified** on that
+user — the gym room connects for the account, off the copies the device holds for it (`DeviceCopy`:
+names, routines, the picker's meta) — and `reverify` asks again on every resume until `/v1/me`
+answers. Only a definitive 401 spends the secret and signs the seat out.
 
 Nothing needs an account first, and **nothing starts by itself**: home is the routine list
 (Routines · The log · Ask), a fresh install's empty state points at *Build a routine* with *Just
@@ -86,7 +89,16 @@ The gym room opens and works signed out (sessions, routines, movements and the g
 live on the device in `LocalLog` + `SetQueue` +
 `LocalPreferences`), and signing in claims all of it onto the account through `ClaimReplay` — the
 settings first, then movements, then routines, then finished sessions oldest-first, each replayed
-start → sets → finish with `joinOpenSession: false`. Settings lead because nothing else references
+start → sets → finish with `joinOpenSession: false`, then the live session's start **only if the log
+has not answered for it** (`SetQueue`'s persisted `unclaimed` bit; a claimed workout is never
+re-started, because a start replay settles staleness on the server). On every connect the queue's
+owed sets drain BEFORE the claim and before the log read, since an append settles nothing and both
+of the others do; a settling read tapped mid-claim (a movement's record, an older page) waits for
+the runner to end. Signed in with no signal — or a 5xx, or a `clock-ahead` 400 — Start, "keep as a
+routine" and a new movement compose on the device exactly as signed out and the claim lands them on
+the delivery cadence; a refusal with a reason (404 routine, 409 already open) is repeated as it
+arrived. A device-held session with no activity for four hours is finished at that activity on the
+next connect — the server's own auto-close, run on the shelf it never reaches. Settings lead because nothing else references
 them and a rack set before signing in should survive the door; a settings write that does not land
 halts none of the rest of it and re-arms none of it either — it retries by itself on the delivery
 cadence (`ClaimReplay.runPreferences`) rather than putting the whole walk on a four-second poll,

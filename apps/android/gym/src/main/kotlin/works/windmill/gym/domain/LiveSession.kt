@@ -63,6 +63,31 @@ object LiveOrder {
     }
 }
 
+// THE SERVER'S AUTO-CLOSE, applied to a session only this device holds (backend/products/gym
+// ARCHITECTURE.md §3.2): an open session with no activity for four hours is over, and it ended at
+// its last set — not at whenever the phone happened to notice. A session with no sets ended when it
+// began. The log runs this rule lazily on every read and every start; a session composed signed out
+// never meets a read, so without this copy a workout abandoned for days on a phone in a drawer would
+// claim as a multi-day session, finished at whatever instant the lifter next opened the app.
+object AutoClose {
+    const val AFTER_MS = 4L * 60 * 60 * 1000
+
+    fun at(session: Session, sets: List<TrainingSet>, nowMs: Long): Long? {
+        if (session.finishedAtMs != null) return null
+        val lastActivityMs = sets.maxOfOrNull { it.completedAtMs } ?: session.startedAtMs
+        if (nowMs < lastActivityMs + AFTER_MS) return null
+        return lastActivityMs
+    }
+}
+
+// WHAT IS KEEPING A SET ON THIS DEVICE, once the walk has offered it and the log did not take it.
+// Three different facts and three different sentences: the transport failed (there is no signal
+// down here); the log answered without taking it (a 5xx, an unreadable reply — the log's own
+// trouble, and it clears when the log does); the account's session lapsed under a signed-in room
+// (a 401 — nothing lands until the lifter signs in again). A strip that said "no signal" over a
+// 500 pointed the lifter at the wrong thing entirely.
+enum class Blocker { Offline, LogFailed, SignInLapsed }
+
 object LiveLines {
     // TWO FACTS AND NOT ONE SENTENCE, because §K draws them in two places: what the plan asks for
     // sits under the movement's name, and which set this is sits over the number being dialled. The
@@ -236,9 +261,18 @@ object LiveLines {
     // The count is the sets the walk has already OFFERED and could not land (`TrainingStore
     // .strandedCount`), never every queued set: every set is briefly pending on purpose, and
     // counting those would flash this strip for the whole undo window on a healthy connection.
-    fun onThisDeviceLine(count: Int): String? {
+    //
+    // THE SECOND SENTENCE NAMES WHAT BLOCKED THEM, and only that: "no signal" is asserted only when
+    // the transport failed, never inferred from a set that merely has not landed.
+    fun onThisDeviceLine(count: Int, by: Blocker?): String? {
         if (count <= 0) return null
         val subject = if (count == 1) "1 set is" else "$count sets are"
-        return "$subject saved on this device only. No signal down here — they flush when you’re back up."
+        val why = when (by) {
+            Blocker.Offline -> "No signal down here — they flush when you’re back up."
+            Blocker.LogFailed -> "The log didn’t answer — they flush when it does."
+            Blocker.SignInLapsed -> "Your sign-in lapsed — they flush once you sign in again."
+            null -> "They flush when the log takes them."
+        }
+        return "$subject saved on this device only. $why"
     }
 }

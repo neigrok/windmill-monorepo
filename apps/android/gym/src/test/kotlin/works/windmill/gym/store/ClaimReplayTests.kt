@@ -12,6 +12,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.PlanSnapshot
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineEntry
@@ -21,6 +23,7 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.store.ClaimReplay.Outcome
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
@@ -134,7 +137,7 @@ class ClaimReplayTests {
             val queue = queue()
             settings.save(GymPreferences(restSeconds = 90))
             server.refusePreferences = IOException("offline")
-            queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+            queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
             server.refuseStart = { answer }
 
             val outcome = ClaimReplay(server, shelf(), queue, settings).run()
@@ -152,7 +155,7 @@ class ClaimReplayTests {
         val settings = settings()
         val queue = queue()
         settings.save(GymPreferences(restSeconds = 90))
-        queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+        queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
 
         val said = ClaimReplay(server, shelf(), queue, settings).runPreferences()
 
@@ -268,7 +271,7 @@ class ClaimReplayTests {
 
         assertNull("the start names no routine the account lacks", server.started.single().routineId)
         assertEquals("the loss is said under the routine's name",
-            listOf(RefusedClaim("Push Day", "that document is unclaimable")), outcome.said)
+            listOf(RefusedClaim("rt_stuck", "Push Day", "that document is unclaimable")), outcome.said)
         assertTrue("the shelf let go — a terminal write is not re-sent every connect",
             localLog.routines.isEmpty())
         assertTrue("the session itself still settled", localLog.finished.isEmpty())
@@ -290,7 +293,7 @@ class ClaimReplayTests {
         val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
 
         assertEquals("the loss is said under the movement's name",
-            listOf(RefusedClaim("Zercher Squat", "that name is unclaimable")), outcome.said)
+            listOf(RefusedClaim("ex_bad", "Zercher Squat", "that name is unclaimable")), outcome.said)
         assertTrue("the shelf let go — a terminal write is not re-sent every connect",
             localLog.exercises.isEmpty())
         assertTrue("and the claim moved on to the sessions", localLog.finished.isEmpty())
@@ -543,5 +546,117 @@ class ClaimReplayTests {
         assertEquals("the revision is the log's to keep", 1, landed.revision)
         assertTrue(outcome.said.isEmpty())
         assertTrue(localLog.routines.isEmpty())
+    }
+
+    // R2 — A LIVE SESSION THE LOG ALREADY HOLDS IS NEVER RE-STARTED. The queue's persisted bit says
+    // whether the log answered for it: a claimed one is skipped outright — no start replay, which
+    // is a settling call, goes out for it — and an unclaimed one is started once and then written
+    // claimed for its id, so the next pass skips it too.
+    @Test
+    fun testAClaimedLiveSessionIsNeverReStartedAndAnUnclaimedOneIsClaimedOnce() = runTest {
+        val server = FakeTraining()
+        val queue = queue()
+        queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+        assertFalse(queue.sessionIsUnclaimed)
+
+        val first = ClaimReplay(server, shelf(), queue, settings()).run()
+        assertEquals("no start went out for a session the log answered for", emptyList<String>(), server.calls)
+        assertTrue(first.liveLanded)
+
+        queue.hold(Session(id = "ses_mine", startedAtMs = 9_500), unclaimed = true)
+        assertTrue(queue.sessionIsUnclaimed)
+        val second = ClaimReplay(server, shelf(), queue, settings()).run()
+        assertEquals(listOf("start"), server.calls)
+        assertEquals(listOf(false), server.started.map { it.joinOpenSession })
+        assertTrue(second.liveLanded)
+        assertFalse("written claimed for its id, and on disk", queue.sessionIsUnclaimed)
+
+        val third = ClaimReplay(server, shelf(), queue, settings()).run()
+        assertEquals("the next pass skips it", listOf("start"), server.calls)
+        assertTrue(third.liveLanded)
+    }
+
+    // R2 — A SHELF START THAT MEETS THE PHONE'S OWN LIVE WORKOUT SKIPS THAT SESSION AND CARRIES ON.
+    // The queue holds a session the log has answered for, so the account's one open workout is this
+    // phone's: the shelf session stays on the shelf for the finish and the next connect to walk, the
+    // walk continues past it, and the pass ends without a wait — the live session's own state is
+    // never derived from that stop.
+    @Test
+    fun testAShelfStartMeetingThePhonesOwnLiveWorkoutSkipsItRatherThanHalting() = runTest {
+        val server = FakeTraining()
+        server.open(Session(id = "ses_live", startedAtMs = 9_000))
+        val queue = queue()
+        queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_past", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100))))
+        localLog.hold(Routine(id = "rt_1", name = "Legs",
+            entries = listOf(RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 3))))
+
+        val outcome = ClaimReplay(server, localLog, queue, settings()).run()
+
+        assertEquals("the routine landed, the past session's start was refused, and nothing waited",
+            listOf("createRoutine", "start"), server.calls)
+        assertEquals(1, localLog.finished.size)
+        assertEquals("nothing filed into the live workout", null, server.sets["ses_past"])
+        assertEquals(Outcome(said = emptyList(), liveLanded = true, retryable = false), outcome)
+        assertFalse("and the live session stays the log's", queue.sessionIsUnclaimed)
+
+        // Somebody ELSE'S open workout is still the wait.
+        queue.hold(null)
+        val waited = ClaimReplay(server, localLog, queue, settings()).run()
+        assertEquals(Outcome(said = emptyList(), liveLanded = false, retryable = false), waited)
+        assertEquals(1, localLog.finished.size)
+    }
+
+    // R4 — A START REFUSED FOR A CLOCK AHEAD OF THE LOG'S RETRIES ON THE CADENCE, because it is
+    // transient by construction: the instant ages into the past. Any OTHER 400 on a shelf start is
+    // said under the session's name and the row let go — never a silent skip re-sent every connect.
+    @Test
+    fun testAClockAheadStartRetriesAndAnyOther400IsSaidAndLetGo() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_early", startedAtMs = 1_000, finishedAtMs = 2_000,
+                plan = PlanSnapshot(routine = "Push Day")),
+            listOf(aSet("set_a", at = 1_100))))
+
+        server.refuseStart = { refusal(400, code = "clock-ahead", message = "that start is in the future") }
+        val transient = ClaimReplay(server, localLog, queue(), settings()).run()
+        assertEquals(Outcome(said = emptyList(), liveLanded = false, retryable = true), transient)
+        assertEquals("the row waits for the cadence", 1, localLog.finished.size)
+
+        server.refuseStart = { refusal(400, code = "bad-start", message = "that start cannot be taken") }
+        val terminal = ClaimReplay(server, localLog, queue(), settings()).run()
+        assertEquals(Outcome(
+            said = listOf(RefusedClaim("ses_early", "Push Day · ${Readout.date(1_000)}", "that start cannot be taken")),
+            liveLanded = true, retryable = false), terminal)
+        assertTrue("let go, so no later connect re-sends it", localLog.finished.isEmpty())
+
+        server.refuseStart = { null }
+        ClaimReplay(server, localLog, queue(), settings()).run()
+        assertEquals("nothing left to walk", listOf("start", "start"), server.calls)
+    }
+
+    // R5 — AN APPEND 404 AFTER THE START ANSWERED IS THE WORKOUT GONE FROM THE LOG, discarded from
+    // another surface between the two calls: said once under the session's name, forgotten, and
+    // never re-sent against an id the log will never know again.
+    @Test
+    fun testAnAppend404AfterTheStartAnsweredIsTheWorkoutGoneAndIsSaidOnce() = runTest {
+        val server = FakeTraining()
+        val localLog = shelf()
+        localLog.hold(LocalLog.FinishedSession(
+            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
+            listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
+        server.onAppend = { server.stored.remove("ses_1") }
+
+        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+
+        assertEquals(listOf("start", "append"), server.calls)
+        assertEquals(Outcome(
+            said = listOf(RefusedClaim("ses_1", "workout · ${Readout.date(1_000)}", "that workout is no longer on the log")),
+            liveLanded = true, retryable = false), outcome)
+        assertTrue(localLog.finished.isEmpty())
     }
 }

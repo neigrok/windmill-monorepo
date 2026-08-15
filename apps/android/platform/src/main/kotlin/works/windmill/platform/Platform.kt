@@ -29,7 +29,12 @@ interface ProductModule {
 // signed in. `user` is null while nobody has, and that is a supported state, not a degraded one: a
 // room that needs an account says so through its own door, and a room that does not must open and
 // work before there is an account to claim what it made (auth canon §2: claiming, not gating).
-class Account(val api: WindmillApi, val user: User?) {
+//
+// `verified` is false while the seat stands on the device's last-known user because the server
+// could not be asked (AuthStatus.SignedIn.verified): still signed in, and a room connects for the
+// account exactly as it would — off the copies it holds — and connects again when the seat is
+// verified, which is when its reads can land.
+class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true) {
     val isSignedIn: Boolean
         get() = user != null
 }

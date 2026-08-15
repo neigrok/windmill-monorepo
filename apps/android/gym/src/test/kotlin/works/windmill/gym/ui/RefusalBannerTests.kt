@@ -19,6 +19,6 @@ class RefusalBannerTests {
                 reps = 5, reason = "the session closed before this set reached it"), catalog))
 
         assertEquals("“Push Day” couldn’t be claimed",
-            refusalHeadline(RefusedClaim(name = "Push Day", reason = "that document is unclaimable"), catalog))
+            refusalHeadline(RefusedClaim(id = "rt_push", name = "Push Day", reason = "that document is unclaimable"), catalog))
     }
 }

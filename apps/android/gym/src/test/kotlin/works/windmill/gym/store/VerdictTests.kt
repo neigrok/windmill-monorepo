@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.TrainingSet
 
 // Refusals as the wire delivers them — a sentence for a human under "error", and, for the reasons
@@ -87,7 +88,10 @@ class VerdictTests {
         assertNull(SaveState.Idle.line)
         assertEquals("on the log", SaveState.OnTheLog.line)
         assertEquals("saved on this device", SaveState.OnThisDevice.line)
-        assertEquals("offline · saved here", SaveState.Offline.line)
+        assertEquals("offline · saved here", SaveState.Blocked(Blocker.Offline).line)
+        assertEquals("the log’s own trouble is not a missing signal",
+            "the log didn’t answer · saved here", SaveState.Blocked(Blocker.LogFailed).line)
+        assertEquals("sign in again · saved here", SaveState.Blocked(Blocker.SignInLapsed).line)
         assertEquals("the log's own words, never a paraphrase",
             "no such routine", SaveState.Refused("no such routine").line)
     }

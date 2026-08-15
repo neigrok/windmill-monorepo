@@ -1,5 +1,6 @@
 package works.windmill.gym.net
 
+import java.io.IOException
 import kotlinx.serialization.Serializable
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskQuestion
@@ -223,6 +224,9 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 // the fallback ("the log refused this set") is Verdict's own.
 fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
     is WindmillApiException.Offline -> RefusalFacts(offline = true)
+    // A transport that never carried a reply is the same fact whether the platform named it or
+    // the socket threw it — the store's "offline" is asserted only off this.
+    is IOException -> RefusalFacts(offline = true)
     is WindmillApiException.Malformed -> RefusalFacts(malformed = true)
     is WindmillApiException.Refused -> RefusalFacts(
         status = refusing.status, code = refusing.refusal.code, sentence = refusing.refusal.message)

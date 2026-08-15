@@ -313,6 +313,46 @@ class LastSetTests {
     fun testALogWithNothingInItAnswersWithNoRowsAtAll() {
         assertEquals(emptyList<LastSet>(), LastSet.of(emptyList()))
     }
+
+    // R8 — LAST TIME IS THE SERVER'S BLOCK: the newest finished session's NON-warmup sets of the
+    // movement, in performed order. A drop set and a set taken to failure are part of last time;
+    // only the warmup is not. And the prefill dials off that block — the weight it ended on and the
+    // reps it started on — so the phone opens the same number signed out as the log dials signed in.
+    @Test
+    fun testLastTimeIsTheNonWarmupBlockAndThePrefillDialsOffIt() {
+        val history = listOf(
+            aSession("ses_old", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
+                aSet("bench-press", 90.0, 5, at = 1_500))),
+            aSession("ses_new", startedAt = 5_000, finishedAt = 6_000, sets = listOf(
+                aSet("bench-press", 40.0, 10, kind = SetKind.Warmup, at = 5_100),
+                aSet("bench-press", 100.0, 5, at = 5_200),
+                aSet("bench-press", 100.0, 3, kind = SetKind.Failure, at = 5_300),
+                aSet("bench-press", 60.0, 12, kind = SetKind.Drop, at = 5_400))),
+            aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
+                aSet("bench-press", 200.0, 1, at = 9_100))),
+        )
+
+        val last = LastTime.of("bench-press", history)
+
+        assertEquals("ses_new", last.session?.id)
+        assertEquals("the failure and the drop are last time; the warmup and today's session are not",
+            listOf(100.0 to 5, 100.0 to 3, 60.0 to 12), last.sets.map { it.weightKg to it.reps })
+        assertEquals("weight from the last row of the block, reps from the first",
+            Prefill(60.0, 5), Prefill.of(emptyList(), null, last))
+        assertEquals("and the picker's line reports the same last row",
+            LastSet("bench-press", 60.0, 12, atMs = 5_000), LastSet.of(history).single())
+    }
+
+    // A movement only ever warmed up has no last time — the same absence the log answers with.
+    @Test
+    fun testAMovementOnlyWarmedUpHasNoLastTime() {
+        val last = LastTime.of("chin-up", listOf(
+            aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
+                aSet("chin-up", 0.0, 8, kind = SetKind.Warmup, at = 1_100)))))
+
+        assertEquals(LastTime("chin-up"), last)
+        assertTrue(last.isFirstTime)
+    }
 }
 
 class RoutineWriteTests {

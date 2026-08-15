@@ -59,7 +59,8 @@ class AuthStoreTest {
 
     // Only the server's own 401 spends the secret. A server that failed and a host that could not
     // be reached said nothing about the session — clearing on either was silent sign-out, and the
-    // queue's owed sets would have had no bearer left to replay under.
+    // queue's owed sets would have had no bearer left to replay under. A phone that never learned
+    // whose secret it holds reads signed out for now, with the secret surviving for next time.
     @Test
     fun aRestoreTheServerFailedKeepsTheSecretForNextTime() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
@@ -78,6 +79,72 @@ class AuthStoreTest {
         auth.restore()
         assertEquals(AuthStatus.SignedOut, auth.status)
         assertEquals("s3cret", sessions.read())
+    }
+
+    // R7 — A TRANSPORT FAILURE OR A 5XX ON RESTORE IS NOT A SIGN-OUT. The last-known user is kept
+    // beside the secret, so the seat stands up SIGNED IN and unverified — the rooms connect for that
+    // account — and `reverify` asks again on the next resume until the server answers. Its answer
+    // is what decides: a 200 verifies the seat, and only a 401 signs it out and clears both.
+    @Test
+    fun aRestoreTheServerCouldNotAnswerStandsOnTheLastKnownUserUnverified() = runTest {
+        val ana = User("u1", "a@b.c", "Ana")
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
+        val sessions = MemorySessions("s3cret", ana)
+        val auth = store(sessions)
+        auth.restore()
+        assertEquals(AuthStatus.SignedIn(ana, verified = false), auth.status)
+        assertEquals("s3cret", sessions.read())
+        assertEquals(ana, sessions.user())
+
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"u1","email":"a@b.c","name":"Ana"}}"""))
+        auth.reverify()
+        assertEquals(AuthStatus.SignedIn(ana, verified = true), auth.status)
+
+        auth.reverify()
+        assertEquals("a verified seat asks nothing more", 2, server.requestCount)
+    }
+
+    @Test
+    fun aRestoreThatNeverReachedTheServerStandsOnTheLastKnownUserUnverified() = runTest {
+        val ana = User("u1", "a@b.c", "Ana")
+        val sessions = MemorySessions("s3cret", ana)
+        val auth = store(sessions)
+        server.shutdown()
+        auth.restore()
+        assertEquals(AuthStatus.SignedIn(ana, verified = false), auth.status)
+        assertEquals("s3cret", sessions.read())
+    }
+
+    @Test
+    fun aReverifyAnsweredWithA401SignsTheUnverifiedSeatOutAndClearsBoth() = runTest {
+        val ana = User("u1", "a@b.c", "Ana")
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"sign in to continue"}"""))
+        val sessions = MemorySessions("s3cret", ana)
+        val auth = store(sessions)
+        auth.restore()
+        assertEquals(AuthStatus.SignedIn(ana, verified = false), auth.status)
+        auth.reverify()
+        assertEquals(AuthStatus.SignedOut, auth.status)
+        assertNull(sessions.read())
+        assertNull(sessions.user())
+    }
+
+    // The user is remembered by every door that signs in, so the NEXT launch has a seat to stand on.
+    @Test
+    fun aSignInRemembersTheUserBesideTheSecret() = runTest {
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"u1","email":"a@b.c","name":"Ana"}}"""))
+        val sessions = MemorySessions("s3cret")
+        val auth = store(sessions)
+        auth.restore()
+        assertEquals(User("u1", "a@b.c", "Ana"), sessions.user())
+
+        server.enqueue(
+            MockResponse().setBody("""{"user":{"id":"u2","email":"b@b.c"}}""")
+                .addHeader("Set-Cookie", "wm_session=fresh; Path=/; HttpOnly")
+        )
+        auth.completeCode("b@b.c", "483201")
+        assertEquals(User("u2", "b@b.c", ""), sessions.user())
     }
 
     // `door: "app"` is what makes the mail carry a code rather than a link.

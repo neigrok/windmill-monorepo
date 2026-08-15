@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -12,6 +13,8 @@ import kotlinx.coroutines.launch
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.AutoClose
+import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -68,7 +71,7 @@ import works.windmill.platform.net.WindmillApiException
 // composition scope, and TrainingSyncing does its own IO dispatching.
 class TrainingStore(
     private val queue: SetQueue,
-    private val deviceCatalog: DeviceCatalog,
+    private val deviceCopy: DeviceCopy,
     private val localLog: LocalLog,
     private val localPreferences: LocalPreferences,
     private val scope: CoroutineScope,
@@ -97,8 +100,18 @@ class TrainingStore(
     // for a round trip would be a logger that could not log.
     var preferences: GymPreferences by mutableStateOf(GymPreferences())
         private set
-    var routines: List<Routine> by mutableStateOf(emptyList())
-        private set
+    // THE PROGRAM, and every write to it is also written to the device copy for the seat holding
+    // it — the read at connect, a save, a delete, a decision, the shelf's redraw — so the copy is
+    // never one write behind the screen. It is drawn back at the next connect for the same seat when
+    // the log cannot be read, which is what lets a lifter whose sign-in could not be verified in a
+    // basement still open on their own program.
+    private var program: List<Routine> by mutableStateOf(emptyList())
+    var routines: List<Routine>
+        get() = program
+        private set(value) {
+            program = value
+            if (gym != null) deviceCopy.holdRoutines(owner, value)
+        }
     // THE LOG IN ITS TWO HALVES, kept apart rather than merged into one list because two questions
     // need the seam. Which rows are saved on THIS DEVICE ONLY — the log's hollow ring, and every row
     // a signed-out lifter has. And where the next page starts: the cursor is the oldest row the LOG
@@ -136,8 +149,16 @@ class TrainingStore(
     // the read did not come back — and a screen that collapsed the two would tell a lifter of ten
     // years they have never squatted because a phone was in a basement, in the one pixel the picker
     // exists for. It is null on the first frame and null again on every change of seat.
-    var lastSets: Map<String, LastSet>? by mutableStateOf(null)
-        private set
+    //
+    // Held on the device for the seat, exactly as the program is, and for the same basement: an
+    // answer the log gave this account last week is a truer picker than sixty rows of silence.
+    private var meta: Map<String, LastSet>? by mutableStateOf(null)
+    var lastSets: Map<String, LastSet>?
+        get() = meta
+        private set(value) {
+            meta = value
+            if (gym != null && value != null) deviceCopy.holdLastSets(owner, value.values.toList())
+        }
     // Whether the read was ASKED and came back empty-handed, which is a different fact from not
     // having asked yet. Without it the card says "reading your log…" forever after a failure, and a
     // movement the lifter has trained for a year reads as one they never have.
@@ -183,6 +204,10 @@ class TrainingStore(
     // another happen in the same walk, and the second one is what the strip exists to name.
     var strandedCount: Int by mutableStateOf(0)
         private set
+    // WHAT STOPPED THEM, for the strip that names it — set by the walk from the failure it met,
+    // never inferred from a set that merely has not landed. Null until a walk has been blocked.
+    var strandedBy: Blocker? by mutableStateOf(null)
+        private set
     var isLoading: Boolean by mutableStateOf(true)
         private set
     // Finish is a round trip, and a set logged into a session that closes under it is refused
@@ -207,11 +232,14 @@ class TrainingStore(
     // claim only an answer can support, and `firstSession` is the one caller that acts on it.
     private var routinesFailed = false
     private var retryTask: Job? = null
-    // The open session could not be claimed yet — the account's other workout is still running, or
-    // the claim never reached the log. While this is true the boot read may not trade the phone's
-    // own workout for a different open one, and its owed sets are "saved on this device", not
-    // "offline": nothing is wrong with the signal, the log is just not theirs to take yet.
-    private var liveUnclaimed = false
+    // The open session is this device's and not the log's yet — composed here signed out, mid-claim
+    // or with no signal, and the claim's landed start is what changes it. While this is true the
+    // boot read may not trade the phone's own workout for a different open one, and its owed sets
+    // are "saved on this device", not "offline": nothing is wrong with the signal, the log is just
+    // not theirs to take yet. IT IS THE QUEUE'S PERSISTED FACT and never derived from how a claim
+    // pass ended: a pass that stopped on somebody else's open workout, or on one 5xx, says nothing
+    // about whether the log has already answered for this session.
+    private val liveUnclaimed: Boolean get() = queue.sessionIsUnclaimed
     // The claim is mid-replay. While this is true an ordinary start may not go to the log at all:
     // a start JOINS whatever session is open, and mid-replay the open session is a PAST one the
     // claim just reopened — today's first set filed into yesterday's workout, finished at the
@@ -220,16 +248,23 @@ class TrainingStore(
     // past session as the phone's live workout (see `loadLog`).
     private var claimsRunning = 0
     private val claiming: Boolean get() = claimsRunning > 0
+    // Completed whenever no claim is running. The reads that SETTLE staleness on the server — the
+    // log page, an older page, one row re-read, a movement's record — wait on it rather than firing
+    // mid-replay: a settling read closes a stale open session, and a shelf session the claim has
+    // just reopened is exactly that until its finish lands, so the read would refuse every set the
+    // claim still had to send into it.
+    private var claimIdle = CompletableDeferred(Unit)
     // A claim was requested while one was already mid-replay — a local finish shelving a fresh
     // session, a connect on a seat change. Runners never overlap: the one running goes once more
     // when its pass ends, over whatever the shelf holds by then, instead of a second replay
     // walking the same shelf and holding a reopened session open under the first one's reads.
     private var claimAgain = false
-    // The last claim stopped on a retryable failure and the backlog is still owed. While this is
-    // true the deliver cadence re-runs the claim — the same 4s task that carries the owed sets,
-    // never a second timer. Only the retryable stops arm it: a WAIT (the account's other workout
-    // is open) stays event-driven, because polling a remote human's live session every four
-    // seconds is noise and the parked lanes already say "saved on this device".
+    // The backlog is owed to the cadence: the last claim stopped on a retryable failure, or a
+    // start composed on the device signed in is waiting for its claim. While this is true the
+    // deliver cadence re-runs the claim — the same 4s task that carries the owed sets, never a
+    // second timer. Only the retryable stops arm it: a WAIT (the account's other workout is open)
+    // stays event-driven, because polling a remote human's live session every four seconds is
+    // noise and the parked lanes already say "saved on this device".
     private var claimOwed = false
 
     // WHAT THE CADENCE IS FOR, and it is two independent facts rather than one. The shelf may be
@@ -362,11 +397,15 @@ class TrainingStore(
         // would make a lifter type "Bench Press" — minting a device movement that duplicates the
         // seeded one on the first sign-in. They fill only ids nothing else here holds, so a name
         // this account chose is never overwritten by a constant (`TheSix`).
-        val known = deviceCatalog.movements(owner).let { held ->
+        val known = deviceCopy.movements(owner).let { held ->
             held + localLog.exercises.filter { mine -> held.none { it.id == mine.id } }
         }
         catalog = known + TheSix.missingFrom(known)
-        deviceCatalog.hold(owner, catalog)
+        deviceCopy.hold(owner, catalog)
+        // The program rides with the seat the same way, and for the same basement: the copy this
+        // device last read for THIS account draws first, beside whatever the shelf still holds, and
+        // the read that follows replaces it. Signed out the shelf's is the whole program.
+        routines = deviceCopy.routines(owner).filter { localLog.routine(it.id) == null } + localLog.routines
         // Who is signed in decides which shelf answers "what did I do last time", so the cache
         // dies with the seat — the movement in hand is re-asked at the end of connect, and the
         // log's answer replaces the one the nobody pass computed off the device. The picker's meta
@@ -399,6 +438,27 @@ class TrainingStore(
                 queue.flush()
             }
         }
+        // THE SERVER'S AUTO-CLOSE, run here for the session THIS DEVICE HOLDS. The log applies it
+        // on every read and every start; a session composed here never meets a read until it
+        // claims, so a workout abandoned for days in a drawer would otherwise claim as one that
+        // ran for days and be finished at whatever instant the app next opened. It is over at its
+        // last set, exactly as the log would end it. An UNCLAIMED session moves to the shelf
+        // whole, and the claim carries it. A session the log already holds is the log's to close
+        // — on the read below, after the queue has drained into it, because an append settles
+        // nothing and a start would — so the room only LETS IT GO: no shelf, no finish call, its
+        // owed sets kept exactly where they were. Offered again it would take a set thirty hours
+        // late into a workout the log will end at its last one the moment it is read.
+        queue.session?.let { live ->
+            val overAt = AutoClose.at(live, queue.sets(live.id), now()) ?: return@let
+            if (queue.sessionIsUnclaimed) {
+                shelve(live, finishedAtMs = overAt)
+                return@let
+            }
+            queue.close(live.id)
+            queue.flush()
+            exerciseId = null
+            lastTime = null
+        }
         drawFromQueue()
         isLoading = false
 
@@ -407,9 +467,7 @@ class TrainingStore(
             // Signed out the shelf is the log: routines and history are the device's own, and
             // nothing here is pending against a server nobody named. It is also the WHOLE log, so
             // the foot is already at the bottom — there is no page behind it to ask for.
-            liveUnclaimed = false
             claimOwed = false
-            routines = localLog.routines
             logged = emptyList()
             shelved = localLog.summaries()
             older = Older.End
@@ -421,19 +479,23 @@ class TrainingStore(
             if (lastSetsWanted) loadLastSets()
             return
         }
-        // THE CLAIM, before anything else touches the wire: movements → routines → finished local
-        // sessions oldest-first (start → sets → finish, each) → the live session's own start. What
-        // was made signed out becomes the account's, and a loss is SAID through the same banner a
-        // refused set uses. Local history is drawn immediately so an offline boot still shows it.
-        shelved = localLog.summaries()
-        runClaim()
-        // The queue goes out BEFORE the first read, and it is not an optimisation: reading the log
-        // SETTLES a stale open session, and a set that arrives after that close is refused forever.
-        // Logged in a basement last night, opened in the morning — the app's own boot read is what
-        // would destroy them.
+        // THE QUEUE GOES OUT FIRST, before anything that can settle — and the claim's starts
+        // settle. An append into a session the log already holds settles nothing, so every owed
+        // set of a claimed session drains before a start or a read can close its session under it.
+        // Logged in a basement last night, opened in the morning — the boot read, or a start replay
+        // sent first, is what would auto-close that workout and refuse every set behind it.
         //
         // Forced, because nothing survives a relaunch to undo: the row is gone from the screen and
         // the window would be protecting a gesture nobody can still make.
+        shelved = localLog.summaries()
+        deliver(force = true)
+        // THEN THE CLAIM: movements → routines → finished local sessions oldest-first (start →
+        // sets → finish, each) → the live session's own start, if the log has not answered for it
+        // yet. What was made signed out becomes the account's, and a loss is SAID through the same
+        // banner a refused set uses. Local history is drawn already, so an offline boot shows it.
+        runClaim()
+        // And the sets that were parked behind the live session's start go out before the first
+        // read, for the reason the queue went out before the claim: the read settles.
         deliver(force = true)
         coroutineScope {
             launch { loadLog() }
@@ -453,7 +515,7 @@ class TrainingStore(
                 // The log's rows hold all six already, under this account's own names for them
                 // — this only has work to do against a server that has not seeded one.
                 catalog = whole + TheSix.missingFrom(whole)
-                deviceCatalog.hold(owner, catalog)
+                deviceCopy.hold(owner, catalog)
             }
             launch {
                 val written = tried { log.routines() }
@@ -481,6 +543,14 @@ class TrainingStore(
     // off the routine's own row, because a client-composed copy would freeze whatever that client
     // last read. Signed out the same rule runs against the only shelf there is: the session is
     // composed here, its plan frozen off the LOCAL routine's row at this instant.
+    //
+    // A LIFTER IN A BASEMENT CAN BEGIN. Signed in with no signal — the transport failed, or the log
+    // answered without answering (a 5xx) — the workout composes on the device off the routine this
+    // store holds, opens unclaimed, and the claim lands it on the cadence exactly as a signed-out
+    // one. So does a start the log refused for a clock ahead of its own: the instant ages into the
+    // past by itself, and the claim's replay is what lands it. Only a refusal WITH A REASON — the
+    // routine is gone, another workout is open — is repeated rather than composed around, because
+    // those are facts about the account and not about the signal.
     suspend fun start(routineId: String? = null): GymResult<Session> {
         val log = gym ?: return startOnDevice(routineId)
         // Two starts the log cannot honestly take, even signed in. Mid-claim, a server start
@@ -489,18 +559,23 @@ class TrainingStore(
         // a deterministic 404, while the plan itself is right here. Both compose on the device:
         // the session opens liveUnclaimed and the claim carries it exactly as a signed-out one.
         if (claiming || routineId?.let { localLog.routine(it) } != null) return startOnDevice(routineId)
+        // A start SETTLES a stale open session on the log, so every owed set drains first — the
+        // same order connect keeps, for the same reason: an append into a session the log already
+        // holds settles nothing, and a set sent after the close is refused forever.
+        deliver(force = true)
         // One id collision is a coincidence and a fresh id lands. Two is a device that cannot mint,
         // and looping on it would hammer the log rather than say so.
         var collision: WriteFailure = WriteFailure.NoAnswer
         repeat(2) {
             val id = mintSession()
+            val startedAt = now()
             try {
                 // A USER-TAPPED START IS NEVER A SILENT JOIN (decisions §5). The log's default is
                 // to JOIN whatever session is already open — and to ignore the routineId tapped —
                 // so "Start workout" on routine B could land the lifter in yesterday's workout
                 // under the wrong plan. The flag rides as an EXPLICIT false, never a default:
                 // WindmillJson omits defaulted values, and an omitted flag IS the join.
-                val opened = log.startSession(SessionStart(id = id, startedAt = now(),
+                val opened = log.startSession(SessionStart(id = id, startedAt = startedAt,
                     routineId = routineId, joinOpenSession = false))
                 adopt(opened, joined = opened.id != id)
                 val live = session ?: return GymResult.Failed(WriteFailure.NoAnswer)
@@ -522,40 +597,66 @@ class TrainingStore(
                     resume()
                     return GymResult.Failed(WriteFailure(refusing))
                 }
+                // No signal, and a clock the log will not take yet: the workout begins here —
+                // under the id that just went out, because a 5xx is a reply and not a promise
+                // that nothing was written.
+                val facts = RefusalFacts(refusing)
+                if (refused == null || refused.status >= 500 || facts.code == "clock-ahead") {
+                    return startOnDevice(routineId, id, startedAt)
+                }
                 // Only a spent session id is worth a second attempt. Every other refusal is a fact
                 // about the routine or the account and it is REPEATED rather than swallowed: a 404
                 // for a routine deleted from the web must not read as a phone with no signal.
-                val spent = refused?.status == 409 && refused.refusal.code == "session-id-taken"
+                val spent = refused.status == 409 && refused.refusal.code == "session-id-taken"
                 if (!spent) return GymResult.Failed(WriteFailure(refusing))
                 collision = WriteFailure(refusing)
             } catch (failed: Exception) {
-                return GymResult.Failed(WriteFailure.NoAnswer)
+                // A transport that threw rather than answering is the same basement — and the
+                // start may have landed before the reply was lost, so the same id rides.
+                return startOnDevice(routineId, id, startedAt)
             }
         }
         return GymResult.Failed(collision)
     }
 
     // The on-device start — signed out always, and signed in whenever the log cannot honestly
-    // take a start. One workout is open on this device at a time, exactly as one is open per
-    // account — a start over a live one answers with the live one, which no start door can reach
-    // anyway: a live session takes the whole screen, so this guard is for a double-tap and a
-    // recreation, never a second workout. Signed in the plan freezes off the shelf routine if it
-    // is here; a mid-claim start naming a server routine keeps the id and lands its plan when the
-    // claim's start does.
-    private suspend fun startOnDevice(routineId: String?): GymResult<Session> {
+    // take a start or cannot be reached for one. One workout is open on this device at a time,
+    // exactly as one is open per account — a start over a live one answers with the live one,
+    // which no start door can reach anyway: a live session takes the whole screen, so this guard
+    // is for a double-tap and a recreation, never a second workout. The plan freezes off the
+    // routine THIS STORE HOLDS — the shelf's row, or the account's as last read — at this instant,
+    // which is the same staleness rule the server applies on a different shelf; the claim's start
+    // still names the routine, and the log freezes its own snapshot on the row it keeps.
+    //
+    // Signed in the session opens UNCLAIMED and the claim is what lands it: on the cadence, four
+    // seconds out, or on the pass already running, marked to go once more.
+    //
+    // UNDER THE ID THE SERVER START WENT OUT WITH, when there was one. A reply lost on the wire is
+    // not a start that did not happen: the log may be holding that very session open, and a
+    // workout composed here under a FRESH id would meet it as "session-already-open" on every
+    // claim — a wait, nothing said, the lifter's sets parked for hours. Replaying the attempted id
+    // is idempotent by construction: the log answers with its own row, or opens the one it never
+    // heard of. Only a start that never went out mints here.
+    private suspend fun startOnDevice(
+        routineId: String?,
+        id: String = mintSession(),
+        startedAtMs: Long = now(),
+    ): GymResult<Session> {
         queue.session?.let { return GymResult.Ok(it) }
-        val routine = routineId?.let { localLog.routine(it) }
+        val routine = routineId?.let { wanted -> localLog.routine(wanted) ?: routines.firstOrNull { it.id == wanted } }
         if (routineId != null && routine == null && gym == null) {
             return GymResult.Failed(WriteFailure.Refused("that routine is not on this device"))
         }
-        val opened = Session(id = mintSession(), startedAtMs = now(), routineId = routineId,
+        val opened = Session(id = id, startedAtMs = startedAtMs, routineId = routineId,
             plan = routine?.let { PlanSnapshot(it) })
-        queue.hold(opened)
+        queue.hold(opened, unclaimed = true)
         queue.flush()
-        // Not the log's yet, by definition — signed in, the claim is what lands it, and until
-        // then its sets are parked with it on purpose.
-        liveUnclaimed = true
         drawFromQueue()
+        if (gym != null) {
+            if (claiming) claimAgain = true
+            claimOwed = true
+            deliver()
+        }
         return GymResult.Ok(opened)
     }
 
@@ -665,7 +766,10 @@ class TrainingStore(
             lastSets = mine.associateBy { it.exerciseId }
             return
         }
-        val served = tried { log.lastSets() } ?: return
+        // A read that missed draws the copy this device last read FOR THIS SEAT, when there is
+        // one: it is the log's own answer, one read behind, and it is what a picker in a basement
+        // has to go on. A seat with no copy is left as it was — silence, never `never logged`.
+        val served = tried { log.lastSets() } ?: deviceCopy.lastSets(owner) ?: return
         lastSets = (served + mine)
             .groupBy { it.exerciseId }
             .mapValues { (_, rows) -> rows.maxBy { it.atMs } }
@@ -721,8 +825,13 @@ class TrainingStore(
     //
     // A session the log does not hold — signed out, or opened locally and not yet claimed — closes
     // on the device instead: it moves whole onto the shelf, and the claim carries it later.
+    //
+    // THE LOG'S ANSWER COMES BACK LIKE EVERY OTHER WRITE'S: a refusal in the log's own words, no
+    // answer only when the transport gave none. A 404 is the workout GONE — discarded from another
+    // surface while this phone was still in it — so there is nothing left to close: the device lets
+    // go of it, the log is re-read, and the sentence says where the workout went.
     suspend fun finish(): FinishOutcome {
-        val live = session ?: return FinishOutcome.NoAnswer
+        val live = session ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
         val log = gym
         if (log == null || liveUnclaimed) return finishOnDevice(live)
         isFinishing = true
@@ -734,9 +843,19 @@ class TrainingStore(
 
             val stranded = queue.owed(live.id).size
             if (stranded > 0) return FinishOutcome.Stranded(stranded)
-            val closed = tried { log.finishSession(live.id, now()) } ?: return FinishOutcome.NoAnswer
+            // Null is the one refusal that ends the workout anyway: a 404 is the log no longer
+            // holding it, and there is nothing left to close. Every other refusal leaves the
+            // session standing, said in the log's words.
+            val closed: Session? = try {
+                log.finishSession(live.id, now())
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                if (RefusalFacts(refusing).status != 404) return FinishOutcome.Failed(WriteFailure(refusing))
+                null
+            }
 
-            queue.close(live.id)
+            if (closed == null) queue.forget(live.id) else queue.close(live.id)
             queue.flush()
             // The session that just closed is the next last time for every movement in it, so
             // nothing that was true a minute ago is true now.
@@ -744,7 +863,12 @@ class TrainingStore(
             exerciseId = null
             lastTime = null
             drawFromQueue()
+            // A shelf session parked behind this one — its start met the account's open workout,
+            // which was this — has its road open now, so the claim goes again before the read
+            // rather than waiting for the next connect. With nothing on the shelf it makes no call.
+            if (localLog.finished.isNotEmpty()) runClaim()
             loadLog()
+            if (closed == null) return FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log"))
             return FinishOutcome.Closed(closed)
         } finally {
             isFinishing = false
@@ -755,15 +879,7 @@ class TrainingStore(
     // the session and its sets move WHOLE onto the shelf and the queue lets go of both — the shelf
     // is the single owner of a finished local session, or the claim would send its sets twice.
     private suspend fun finishOnDevice(live: Session): FinishOutcome {
-        val performed = queue.sets(live.id)
-        val closed = live.copy(finishedAtMs = now())
-        localLog.hold(LocalLog.FinishedSession(closed, performed))
-        queue.forget(live.id)
-        queue.flush()
-        liveUnclaimed = false
-        lastTimes.clear()
-        exerciseId = null
-        lastTime = null
+        val closed = shelve(live, finishedAtMs = now())
         drawFromQueue()
         shelved = localLog.summaries()
         // The day a shelf routine was last trained is DERIVED off the sessions that just moved, so
@@ -781,6 +897,20 @@ class TrainingStore(
             loadLog()
         }
         return FinishOutcome.Closed(closed)
+    }
+
+    // The live session onto the shelf, closed at the instant given — the finish's own, or the
+    // auto-close's last activity. The queue lets go of the session and its sets in the same
+    // breath, and everything that was true of the workout in hand stops being true.
+    private fun shelve(live: Session, finishedAtMs: Long): Session {
+        val closed = live.copy(finishedAtMs = finishedAtMs)
+        localLog.hold(LocalLog.FinishedSession(closed, queue.sets(live.id)))
+        queue.forget(live.id)
+        queue.flush()
+        lastTimes.clear()
+        exerciseId = null
+        lastTime = null
+        return closed
     }
 
     // A WHOLE WORKOUT DESTROYED, and it is offered only at the finish screen: the log refuses to
@@ -814,21 +944,42 @@ class TrainingStore(
     // until the tap; declining costs nothing and the offer returns next session. The carrier
     // session exists because RoutineWrite.from reads a SessionDetail; only the sets are read, and
     // nothing of the carrier is sent or shown.
-    suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String): Routine? {
+    //
+    // It answers with WHAT WENT WRONG rather than with null: a routine with no working sets to keep
+    // is one fact, a log that refused is another, and neither is a phone with no signal. No signal
+    // — signed in, the transport failed or the log answered 5xx — keeps the routine on the shelf
+    // exactly as a signed-out keep does, and the claim carries it: what the lifter named tonight is
+    // what the account receives, on the cadence.
+    suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String): GymResult<Routine> {
         val carrier = SessionDetail(Session(id = "ses_kept", startedAtMs = now()), sets)
-        val write = RoutineWrite.from(asRoutineNamed, carrier, position = routines.size) ?: return null
-        val log = gym
-        if (log == null) {
-            // Kept on the shelf under its rt_ id — the claim sends this same document later, so
-            // what the lifter named today is what the account receives.
-            val made = Routine(write)
-            localLog.hold(made)
-            routines = localLog.routines
-            return made
+        val write = RoutineWrite.from(asRoutineNamed, carrier, position = routines.size)
+            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one working set"))
+        val log = gym ?: return GymResult.Ok(keepOnDevice(write))
+        return try {
+            val saved = log.createRoutine(write)
+            routines = routines + saved
+            GymResult.Ok(saved)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            if (Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
+                return GymResult.Failed(WriteFailure(refusing))
+            }
+            GymResult.Ok(keepOnDevice(write))
         }
-        val saved = tried { log.createRoutine(write) } ?: return null
-        routines = routines + saved
-        return saved
+    }
+
+    // Kept on the shelf under its rt_ id — the claim sends this same document later, so what the
+    // lifter named today is what the account receives. Signed in, the cadence is armed to carry it.
+    private suspend fun keepOnDevice(write: RoutineWrite): Routine {
+        val made = Routine(write)
+        localLog.hold(made)
+        routines = if (gym == null) localLog.routines else routines + localLog.routine(made.id)!!
+        if (gym != null) {
+            claimOwed = true
+            deliver()
+        }
+        return made
     }
 
     // The mid-session change offer, applied (screen 8). The server never infers this, never
@@ -909,13 +1060,10 @@ class TrainingStore(
                 return GymResult.Failed(
                     WriteFailure.Refused("that routine is on your account — sign in to change it"))
             }
-            val made = Routine(RoutineWrite(mintRoutine(), name, draft.position, draft.write))
-            localLog.hold(made)
-            routines = localLog.routines
-            return GymResult.Ok(made)
+            return GymResult.Ok(keepOnDevice(RoutineWrite(mintRoutine(), name, draft.position, draft.write)))
         }
+        val write = RoutineWrite(standing ?: mintRoutine(), name, draft.position, draft.write)
         return try {
-            val write = RoutineWrite(standing ?: mintRoutine(), name, draft.position, draft.write)
             val saved = if (standing == null) log.createRoutine(write)
                 else log.replaceRoutine(standing, write)
             routines = if (standing == null) routines + saved
@@ -924,7 +1072,14 @@ class TrainingStore(
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
-            GymResult.Failed(WriteFailure(refusing))
+            // A NEW day typed with no signal is kept on the shelf and the claim carries it, as a
+            // signed-out one is. An EDIT of the account's day cannot be — the shelf's create would
+            // land it as a second routine — so it is refused in words, and the log's own where it
+            // sent any.
+            if (standing != null || Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
+                return GymResult.Failed(WriteFailure(refusing))
+            }
+            GymResult.Ok(keepOnDevice(write))
         }
     }
 
@@ -1186,30 +1341,42 @@ class TrainingStore(
     // that never asked. The pattern is not asked for and is the domain's own value for "we did not
     // ask": nothing on this surface reads it, because the ladder is taken off the MAGNITUDE of the
     // load and never off the equipment.
+    //
+    // No signal — signed in, the transport failed or the log answered 5xx — mints it on the device
+    // exactly as a signed-out room does, and the claim carries it: a picker in a basement that
+    // could not create would still be a logger that cannot log.
     suspend fun create(name: String, equipment: String): GymResult<Exercise> {
-        val log = gym
-        if (log == null) {
-            // Minted on the device — a fresh install signed out has an empty catalog, and a picker
-            // that could not create would be a logger that cannot log. The claim carries it onto
-            // the account before any set that names it.
-            val made = Exercise(id = mintExercise(), name = name, pattern = Exercise.unclassified,
-                equipment = equipment, custom = true)
-            localLog.hold(made)
-            catalog = catalog + made
-            deviceCatalog.hold(owner, catalog)
-            return GymResult.Ok(made)
-        }
+        val log = gym ?: return GymResult.Ok(createOnDevice(name, equipment))
         return try {
             val made = log.createExercise(ExerciseWrite(id = mintExercise(), name = name,
                 pattern = Exercise.unclassified, equipment = equipment))
             catalog = catalog + made
-            deviceCatalog.hold(owner, catalog)
+            deviceCopy.hold(owner, catalog)
             GymResult.Ok(made)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
-            GymResult.Failed(WriteFailure(refusing))
+            if (Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
+                return GymResult.Failed(WriteFailure(refusing))
+            }
+            GymResult.Ok(createOnDevice(name, equipment))
         }
+    }
+
+    // Minted on the device — a fresh install signed out has an empty catalog, and a picker that
+    // could not create would be a logger that cannot log. The claim carries it onto the account
+    // before any set that names it; signed in, the cadence is armed to do so.
+    private suspend fun createOnDevice(name: String, equipment: String): Exercise {
+        val made = Exercise(id = mintExercise(), name = name, pattern = Exercise.unclassified,
+            equipment = equipment, custom = true)
+        localLog.hold(made)
+        catalog = catalog + made
+        deviceCopy.hold(owner, catalog)
+        if (gym != null) {
+            claimOwed = true
+            deliver()
+        }
+        return made
     }
 
     // §I'S WRITE, and the only one in this room that reaches no session and no set. Held on the
@@ -1362,6 +1529,8 @@ class TrainingStore(
         val log = gym ?: return
         val at = logged.indexOfFirst { it.id == sessionId }
         if (at < 0) return
+        // One row is still the log read, and the log read settles: not mid-claim.
+        claimIdle.await()
         val above = logged.getOrNull(at - 1)
         val fresh = tried { log.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) }
             ?.singleOrNull()?.takeIf { it.id == sessionId } ?: return
@@ -1419,8 +1588,12 @@ class TrainingStore(
     suspend fun loadOlder() {
         if (older == Older.Loading || older == Older.End) return
         val log = gym ?: return
-        val oldest = logged.lastOrNull()
+        // A page read SETTLES a stale open session on the log, so it waits for a claim mid-replay
+        // to end and drains the queue first — the same two rules every settling call here keeps.
         older = Older.Loading
+        claimIdle.await()
+        deliver()
+        val oldest = logged.lastOrNull()
         val page = tried { log.sessions(limit = logPage, before = oldest?.startedAtMs, beforeId = oldest?.id) }
         if (page == null) {
             older = Older.Failed
@@ -1450,6 +1623,10 @@ class TrainingStore(
                 ?: return GymResult.Failed(WriteFailure.Refused("that movement is not on this device"))
             return GymResult.Ok(MovementRecord.of(movement, localLog.details(), routines))
         }
+        // The record read SETTLES a stale open session on the log: it waits for a claim
+        // mid-replay to end and drains the queue first, as every settling call here does.
+        claimIdle.await()
+        deliver()
         return try {
             val read = log.record(exerciseId)
                 ?: return GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log"))
@@ -1502,7 +1679,7 @@ class TrainingStore(
         // printing the old name until the next connect. Held under the seat that renamed it: the
         // override belongs to this account and to no other lifter holding this phone.
         catalog = catalog.map { if (it.id == renamed.id) renamed else it }
-        deviceCatalog.hold(owner, catalog)
+        deviceCopy.hold(owner, catalog)
         return GymResult.Ok(renamed)
     }
 
@@ -1562,6 +1739,8 @@ class TrainingStore(
         val blocked = mutableSetOf<SetQueue.Lane>()
         parked?.let { held -> blocked.addAll(queue.owed(held).map { it.lane }) }
         var refusal: String? = null
+        var blockedBy: Blocker? = null
+        var gone = false
         while (true) {
             val owed = queue.nextOwed(skipping = blocked, readyAt = if (force) null else now()) ?: break
             try {
@@ -1570,7 +1749,21 @@ class TrainingStore(
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
-                val verdict = Verdict.refusing(RefusalFacts(refusing))
+                val facts = RefusalFacts(refusing)
+                // A 404 FOR A SESSION THE LOG ONCE ANSWERED FOR — and every session this walk
+                // reaches is one, the unclaimed one being parked — is the workout GONE from the
+                // log: discarded from another surface. There is nothing left to append into, so
+                // the set is terminal and SAID, the session is forgotten with every set still owed
+                // to it, and the log is re-read once the walk ends. A queue that kept retrying
+                // would send it every four seconds forever, under "offline · saved here", online.
+                if (facts.status == 404) {
+                    refusals = refusals + RefusedSet(owed.set, "that workout is no longer on the log")
+                    refusal = "that workout is no longer on the log"
+                    queue.forget(owed.sessionId)
+                    gone = true
+                    continue
+                }
+                val verdict = Verdict.refusing(facts)
                 val reason = verdict.terminalReason(afterRemints = owed.remints)
                 if (reason != null) {
                     // Removed and SAID, never swallowed. This is the only copy left of a set
@@ -1586,11 +1779,16 @@ class TrainingStore(
                     continue
                 }
                 blocked.add(owed.lane)
+                if (blockedBy == null) blockedBy = facts.blocker
             }
         }
 
         queue.flush()
+        // The strip names what blocked the walk — off the failure it met, and off nothing else.
+        // A walk that blocked nowhere clears the name.
+        strandedBy = blockedBy
         drawFromQueue()
+        if (gone) loadLog()
 
         // WHAT IS STILL OWED IS OWED WHATEVER ELSE THE WALK MET. The next attempt is scheduled off
         // the queue before anything is said, because a refusal in one lane must not take the retry
@@ -1613,14 +1811,16 @@ class TrainingStore(
         // A set the walk never offered is not a set that failed. Everything owed being inside its
         // own undo window means this device is holding them ON PURPOSE, so the next walk is the one
         // that opens — and saying "offline" over a send nobody has attempted would put the wrong
-        // word under a healthy connection.
+        // word under a healthy connection. What IS said names what blocked the walk: "offline"
+        // only when the transport failed, the log's own trouble when it answered without taking
+        // the set, a lapsed sign-in when it answered 401.
         val waiting = earliestReady - now()
         scheduleDeliver(afterMs = if (waiting > 0) waiting else retryAfterMs)
         if (refusal != null) {
             settle(SaveState.Refused(refusal))
             return
         }
-        if (waiting <= 0) settle(SaveState.Offline)
+        if (waiting <= 0) settle(SaveState.Blocked(blockedBy ?: Blocker.LogFailed))
     }
 
     // A set that did not land is not a lost set — it is on the device, still owed, and this carries
@@ -1654,21 +1854,28 @@ class TrainingStore(
         claimAgain = true
         if (claiming) return
         claimsRunning += 1
+        val idle = CompletableDeferred<Unit>()
+        claimIdle = idle
         try {
             while (claimAgain) {
                 claimAgain = false
                 val seat = gym ?: return
                 val outcome = replay(seat).run()
                 if (gym !== seat) continue
-                refusals = refusals + outcome.said
-                liveUnclaimed = queue.session != null && !outcome.liveLanded
+                // A live start the log refuses is SAID again on every pass — the workout cannot be
+                // let go — and the banner holds one copy of it, not one per pass.
+                refusals = refusals + outcome.said.filter { it !in refusals }
                 claimOwed = outcome.retryable
                 // A landed claim answers with the STORED settings — plates sorted, duplicates gone
                 // — so the room draws what the account now holds rather than what it sent.
                 preferences = localPreferences.document
+                // Whether the live session is the log's now is the queue's own fact, written by
+                // the start that landed it — the room redraws off it.
+                drawFromQueue()
             }
         } finally {
             claimsRunning -= 1
+            idle.complete(Unit)
         }
     }
 
@@ -1696,7 +1903,7 @@ class TrainingStore(
             // The seat changed while the PUT was in the air: that seat's own connect owns the
             // state now, exactly as a claim that outlived its seat settles nothing.
             if (gym !== seat) return true
-            refusals = refusals + said
+            refusals = refusals + said.filter { it !in refusals }
             preferences = localPreferences.document
             deliver()
             return true
@@ -1710,8 +1917,11 @@ class TrainingStore(
     private suspend fun loadLog() {
         // Never mid-claim, and checked again across the await: the open session a mid-replay log
         // answers with may be a PAST one the claim just reopened, and adopting it would resurrect
-        // a finished workout as the phone's live one. Whoever ends the claim reads again
-        // (`reclaimed`, `finishOnDevice`, connect), so a skipped read still lands.
+        // a finished workout as the phone's live one — and the read would SETTLE that reopened
+        // session, refusing every set the claim still had to send into it. Whoever ends the claim
+        // reads again (`reclaimed`, `finishOnDevice`, connect, `finish`), so a skipped read still
+        // lands. It stands down rather than waiting on `claimIdle` because a local finish that
+        // calls it must not block on a replay already walking the shelf.
         if (claiming) return
         val log = gym ?: return
         val page = tried { log.sessions(limit = logPage, before = null, beforeId = null) }
@@ -1761,7 +1971,13 @@ class TrainingStore(
         // The account's open workout elsewhere may not displace the phone's own unclaimed one —
         // this device's workout is what this device is for, and the claim lands when that closes.
         if (liveUnclaimed && open.session.id != queue.session?.id) return
+        // The log's open workout IS the one this device was holding as unclaimed — a queue file
+        // from before the bit was written, its start replay parked behind a shelf session that
+        // 409-waited on it. Adopting it is the log answering for it, and its parked sets have a
+        // road now: they walk here rather than on the next tap.
+        val answered = liveUnclaimed
         adopt(open.session, joined = true)
+        if (answered) deliver()
     }
 
     private suspend fun adopt(opened: Session, joined: Boolean) {
@@ -1928,8 +2144,11 @@ sealed interface AskOutcome {
     data object Absent : AskOutcome
 }
 
+// HOW A FINISH CAN END. `Failed` carries the log's answer the way every other write does: a
+// refusal in the log's own words — including "that workout is no longer on the log", after which
+// the room is standing over no session — or `NoAnswer` when the transport gave none.
 sealed interface FinishOutcome {
     data class Closed(val session: Session) : FinishOutcome
     data class Stranded(val count: Int) : FinishOutcome   // this session's sets that never landed — a closed one cannot take them
-    data object NoAnswer : FinishOutcome
+    data class Failed(val why: WriteFailure) : FinishOutcome
 }

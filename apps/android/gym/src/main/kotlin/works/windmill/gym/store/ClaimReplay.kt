@@ -50,8 +50,12 @@ import works.windmill.gym.net.TrainingSyncing
 //
 // Verdicts are by machine code only, exactly as the queue's are: an id another account spent is
 // re-minted (and every reference re-pointed); `session-already-open` WAITS — the account's live
-// workout closes first, and a later connect resumes; 401/5xx/offline leave everything on the
-// shelf and the deliver cadence retries, never dropped. A movement or routine the server refuses outright
+// workout closes first, and a later connect resumes — unless that open workout is this phone's
+// own claimed one, and then the shelf session is skipped and the walk carries on; `clock-ahead`
+// retries on the cadence, because the instant ages into the past by itself; 401/5xx/offline leave
+// everything on the shelf and the deliver cadence retries, never dropped; any other 400 or 409 on
+// a start, and a 404 after the start answered, is SAID under the session's name and the row let
+// go — never a silent skip re-sent on every connect. A movement or routine the server refuses outright
 // is SAID and let go — the sessions keep their frozen plans and replay ad-hoc — because a
 // terminal write re-sent on every connect jams the claim forever behind an answer that cannot
 // change; `session-finished` is the set-level loss, and it is SAID. The one 404 a claimed start
@@ -102,6 +106,10 @@ class ClaimReplay(
     // and `retryable` is true exactly when the stop is one a later pass can change: the store arms
     // the deliver cadence off it, while a WAIT stays event-driven and a terminal refusal was
     // already said and let go.
+    //
+    // `liveLanded` is how the run ended for the live session — landed, or nothing left to land —
+    // and it is a report, not the store's fact: whether the queue's session is the log's lives on
+    // the queue itself (`SetQueue.sessionIsUnclaimed`), written by the start that landed it.
     data class Outcome(val said: List<RefusedWrite>, val liveLanded: Boolean, val retryable: Boolean)
 
     // Why a run stopped short of landing everything. WAIT parks the claim until an event frees it
@@ -121,7 +129,7 @@ class ClaimReplay(
             val halted = claimFinished(past, said) ?: continue
             return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
         }
-        val halted = claimLive() ?: return Outcome(said, liveLanded = true, retryable = false)
+        val halted = claimLive(said) ?: return Outcome(said, liveLanded = true, retryable = false)
         return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
     }
 
@@ -152,7 +160,7 @@ class ClaimReplay(
             // The document can never land as written — a band this build let through and the log
             // does not. It is let go rather than kept owed, and the loss is said under the one name
             // this document has: the settings the lifter set.
-            said += RefusedClaim("your gym settings", facts.sentence ?: "the log refused these settings")
+            said += RefusedClaim("preferences", "your gym settings", facts.sentence ?: "the log refused these settings")
             preferences.letGo()
         }
     }
@@ -184,7 +192,7 @@ class ClaimReplay(
                     // Refused outright and it never will land as written: SAID and let go, so no
                     // later connect is jammed behind — or re-sends — the same terminal write. Its
                     // sets keep the id and are refused by name when they replay.
-                    said += RefusedClaim(movement.name, facts.sentence ?: "the log refused this movement")
+                    said += RefusedClaim(movement.id, movement.name, facts.sentence ?: "the log refused this movement")
                     localLog.claimExercise(movement.id)
                     break
                 }
@@ -220,7 +228,7 @@ class ClaimReplay(
                     if (Verdict.refusing(facts) is Verdict.Retry) return false
                     // The document can never land as written: SAID, then orphaned — the sessions
                     // that named it keep their frozen plan and replay ad-hoc.
-                    said += RefusedClaim(routine.name, facts.sentence ?: "the log refused this routine")
+                    said += RefusedClaim(routine.id, routine.name, facts.sentence ?: "the log refused this routine")
                     localLog.orphanRoutine(routine.id)
                     break
                 }
@@ -265,11 +273,29 @@ class ClaimReplay(
                     session = session.copy(routineId = null)
                     continue
                 }
-                // `session-already-open` is the WAIT: the account's live workout closes first, and
-                // the next connect resumes exactly here — event-driven, never polled. Every other
-                // retryable failure goes to the deliver cadence instead.
-                if (facts.code == "session-already-open") return Halt.Wait
+                // `session-already-open` names the account's ONE open workout — and when the queue
+                // holds a session the log has answered for, that workout is this phone's own. A
+                // wait here would park the whole walk behind a session this same device is going to
+                // finish, and the pass ending on a wait used to mark that live session unclaimed:
+                // its lanes parked, its finish sent to the shelf, the server row left open. So this
+                // shelf session is SKIPPED — it stays on the shelf, and the finish and the next
+                // connect walk it — and the claim carries on. Anybody else's open workout is the
+                // WAIT it always was: it closes first, and the next connect resumes exactly here —
+                // event-driven, never polled.
+                if (facts.code == "session-already-open") {
+                    if (queue.session != null && !queue.sessionIsUnclaimed) return null
+                    return Halt.Wait
+                }
+                // A start the log refused for a clock ahead of its own is transient by
+                // construction — the instant ages into the past — so it rides the cadence rather
+                // than being said. Every other retryable failure goes to the same cadence.
+                if (facts.code == "clock-ahead") return Halt.Retry
                 if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
+                // Refused outright and it never will land as written: SAID under the session's
+                // name and let go, never skipped in silence to be re-sent on every connect. The
+                // banner is the last copy of it.
+                said += RefusedClaim(session, facts.sentence ?: "the log refused this workout")
+                localLog.forget(session.id)
                 return null
             }
         }
@@ -322,6 +348,16 @@ class ClaimReplay(
                             set = set.copy(id = fresh)
                             repairs += 1
                             continue
+                        }
+                        // The start answered, so a 404 here is the workout GONE from the log —
+                        // discarded from another surface between the two calls. Nothing left to
+                        // append into: the loss is said once under the session's name, and the row
+                        // is let go rather than re-sent against a session id the log will never
+                        // know again.
+                        if (facts.status == 404) {
+                            said += RefusedClaim(session, "that workout is no longer on the log")
+                            localLog.forget(session.id)
+                            return null
                         }
                         val reason = Verdict.refusing(facts).terminalReason(afterRemints = SetQueue.maxRemints)
                         if (reason == null) return Halt.Retry
@@ -398,11 +434,16 @@ class ClaimReplay(
                 } catch (interrupted: CancellationException) {
                     throw interrupted
                 } catch (refusing: Exception) {
-                    // Refused outright: the sets are on the log and the session stands open there;
-                    // the shelf keeps its copy and a later pass closes it (an auto-close on the
-                    // server ends the same way — finishing a closed session is the server's own
-                    // no-op).
-                    if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) return Halt.Retry
+                    val facts = RefusalFacts(refusing)
+                    if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
+                    // Refused outright, and it will be refused the same way on every pass: a 404 is
+                    // the workout gone from the log since its start answered; anything else leaves
+                    // the sets on the log and the session standing open there, where the log's own
+                    // auto-close ends it. Either way the shelf lets go — a terminal answer re-sent
+                    // on every connect is a claim jammed forever — and the loss is SAID.
+                    said += RefusedClaim(session, if (facts.status == 404) "that workout is no longer on the log"
+                        else facts.sentence ?: "the log refused to close this workout")
+                    localLog.forget(session.id)
                     return null
                 }
                 // The close is a round trip too, and a fix made inside it is a fix on a session the
@@ -418,7 +459,12 @@ class ClaimReplay(
     }
 
     // The live session claims the same way minus finish; the queue then owns its sets as today.
-    private suspend fun claimLive(): Halt? {
+    // A LIVE SESSION THE LOG ALREADY HOLDS IS NEVER RE-STARTED: the queue's persisted bit says
+    // whether the log has answered for it, and a claimed one is skipped — a start replay settles
+    // staleness on the server, and re-sending it on every connect was how a set logged in a
+    // basement last night met an auto-close before the queue could carry it this morning.
+    private suspend fun claimLive(said: MutableList<RefusedWrite>): Halt? {
+        if (!queue.sessionIsUnclaimed) return null
         var live = queue.session ?: return null
         var remints = 0
         while (true) {
@@ -429,6 +475,8 @@ class ClaimReplay(
                     routineId = landed(live.routineId),
                     joinOpenSession = false,
                 ))
+                queue.claimed(live.id)
+                queue.flush()
                 return null
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -452,9 +500,14 @@ class ClaimReplay(
                     continue
                 }
                 // Wait, retry and refusal all leave the queue holding the workout — the cadence
-                // carries the retry, and the wait and the refusal wait for the next connect.
+                // carries the retry, and the wait and the refusal wait for the next connect. A
+                // clock ahead of the log's is a retry: the instant ages into the past by itself.
+                // A refusal that cannot change is SAID — the workout is the lifter's live one and
+                // cannot be let go, so the next connect asks again, and says so again.
                 if (facts.code == "session-already-open") return Halt.Wait
+                if (facts.code == "clock-ahead") return Halt.Retry
                 if (Verdict.refusing(facts) is Verdict.Retry) return Halt.Retry
+                said += RefusedClaim(live, facts.sentence ?: "the log refused to open this workout")
                 return Halt.Refused
             }
         }
