@@ -438,9 +438,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
 
 // The paragraph every client reads at connect, before it has called anything. The second half is
 // W6's whole contract, said once here so no tool has to say it twice — and the third is the
-// retirement, which lives here because it is the only place gym can put it: a name no product
-// declares never reaches this module's dispatcher, so the composite host answers it with its own
-// "no such tool" and gym gets no chance to name the replacement (see GymTools::dispatch).
+// retirement, said BEFORE any call so an agent written against the old catalog is not surprised on
+// its first turn; the call itself is answered by GymTools::retiredTools() through whichever host is
+// above.
 std::string gymInstructions() {
   return "gym is a training log: workouts of sets, a program of routines, and a catalog of "
          "movements. Every write is idempotent by an id YOU mint — send the same id again, carrying the "

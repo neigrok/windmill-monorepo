@@ -54,7 +54,30 @@ CompositeToolHost::CompositeToolHost(const std::vector<ToolModule>& modules) {
         products_.push_back(declaration.product);
       tools_.push_back(Registered{std::move(declaration), &module.host});
     }
+    for (ToolRetirement& retirement : module.host.retiredTools())
+      retired_.emplace(retirement.name, std::move(retirement));
   }
+
+  // Checked after every module is in, because the live tool a retirement collides with — or the
+  // replacement it points at — may belong to a module registered later.
+  for (const auto& [name, retirement] : retired_) {
+    if (byName_.count(name))
+      throw std::invalid_argument("the MCP tool \"" + name + "\" is declared by " +
+                                  tools_[byName_.at(name)].declaration.product +
+                                  " and retired at the same time — a retired name must never shadow "
+                                  "a live one");
+    if (!retirement.replacement.empty() && !byName_.count(retirement.replacement))
+      throw std::invalid_argument("the retired MCP tool \"" + name + "\" names \"" +
+                                  retirement.replacement +
+                                  "\" as its replacement, and no product declares that tool");
+  }
+}
+
+std::vector<ToolRetirement> CompositeToolHost::retiredTools() const {
+  std::vector<ToolRetirement> all;
+  all.reserve(retired_.size());
+  for (const auto& entry : retired_) all.push_back(entry.second);
+  return all;
 }
 
 std::vector<ToolDeclaration> CompositeToolHost::declareTools() const {
@@ -67,9 +90,13 @@ std::vector<ToolDeclaration> CompositeToolHost::declareTools() const {
 ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Value& arguments,
                                        const ToolCaller& caller) {
   const auto entry = byName_.find(name);
-  if (entry == byName_.end())
+  if (entry == byName_.end()) {
+    // Not scope-gated: the caller already knows the name, and the sentence names what took over.
+    const auto retired = retired_.find(name);
+    if (retired != retired_.end()) return ToolResult::failure(name + ": " + retired->second.sentence);
     return ToolResult::failure(name + ": no such tool on this server — call tools/list for the whole "
                                       "surface.");
+  }
 
   const Registered& tool = tools_[entry->second];
   const ToolDeclaration& declared = tool.declaration;

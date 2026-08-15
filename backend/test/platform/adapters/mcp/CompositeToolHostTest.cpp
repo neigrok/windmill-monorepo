@@ -22,6 +22,7 @@ struct FakeProduct : ToolHost {
 
   std::string product;
   std::vector<ToolDeclaration> catalog;
+  std::vector<ToolRetirement> retired;
   std::vector<Call> calls;
 
   explicit FakeProduct(std::string named) : product(std::move(named)) {}
@@ -42,6 +43,7 @@ struct FakeProduct : ToolHost {
   }
 
   std::vector<ToolDeclaration> declareTools() const override { return catalog; }
+  std::vector<ToolRetirement> retiredTools() const override { return retired; }
 
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller) override {
@@ -165,6 +167,81 @@ TEST(composite_owns_the_whole_server_answer_for_a_name_nothing_declared) {
   CHECK_EQ(message(missing),
            std::string("frobnicate: no such tool on this server — call tools/list for the whole surface."));
   CHECK_EQ(r.calls.size(), std::size_t{0});
+}
+
+// A RETIRED NAME ANSWERS WITH THE PRODUCT'S OWN SENTENCE. The composite resolves names against the
+// catalogs it was built from, so a name a product took away never reached that product — the agent
+// that was told about the replacement read "no such tool", true and unnamed.
+TEST(composite_answers_a_retired_name_with_the_products_sentence_and_never_calls_it) {
+  FakeProduct g = gym();
+  g.retired.push_back(ToolRetirement{"save_routine", "log_set",
+                                     "retired on 2026-08-12. Use log_set instead."});
+  CompositeToolHost surface(std::vector<ToolModule>{{g, ""}});
+
+  const ToolResult retired =
+      surface.callTool("save_routine", args({{"routineId", "r1"}}), granted("gym:read"));
+  CHECK(retired.isError);
+  CHECK_EQ(message(retired), std::string("save_routine: retired on 2026-08-12. Use log_set instead."));
+  CHECK_EQ(g.calls.size(), std::size_t{0});
+  // …and it does not shadow the live catalog or the whole-server answer for a name nothing ever had.
+  CHECK_EQ(namesIn(surface.listTools(granted(""))),
+           (std::vector<std::string>{"list_sessions", "log_set", "delete_session"}));
+  CHECK_EQ(message(surface.callTool("frobnicate", Json::Value(Json::objectValue), granted(""))),
+           std::string("frobnicate: no such tool on this server — call tools/list for the whole surface."));
+  // An outer host could nest: the composite hands every module's retirements up as its own.
+  const std::vector<ToolRetirement> all = surface.retiredTools();
+  REQUIRE_EQ(all.size(), std::size_t{1});
+  CHECK_EQ(all[0].name, std::string("save_routine"));
+  CHECK_EQ(all[0].replacement, std::string("log_set"));
+  CHECK_EQ(all[0].sentence, std::string("retired on 2026-08-12. Use log_set instead."));
+}
+
+TEST(composite_refuses_to_construct_when_a_retired_name_is_a_live_tool_of_any_module) {
+  FakeProduct r = roadmap();
+  FakeProduct g = gym();
+  g.retired.push_back(ToolRetirement{"get_tree", "list_sessions", "retired."});
+
+  bool threw = false;
+  std::string detail;
+  try {
+    CompositeToolHost surface(std::vector<ToolModule>{{r, ""}, {g, ""}});
+  } catch (const std::invalid_argument& error) {
+    threw = true;
+    detail = error.what();
+  }
+  CHECK(threw);
+  CHECK_EQ(detail, std::string("the MCP tool \"get_tree\" is declared by roadmap and retired at the same "
+                               "time — a retired name must never shadow a live one"));
+}
+
+TEST(composite_refuses_to_construct_when_a_replacement_is_not_a_live_tool) {
+  FakeProduct g = gym();
+  g.retired.push_back(ToolRetirement{"save_routine", "propose_routine_change", "retired."});
+
+  bool threw = false;
+  std::string detail;
+  try {
+    CompositeToolHost surface(std::vector<ToolModule>{{g, ""}});
+  } catch (const std::invalid_argument& error) {
+    threw = true;
+    detail = error.what();
+  }
+  CHECK(threw);
+  CHECK_EQ(detail, std::string("the retired MCP tool \"save_routine\" names \"propose_routine_change\" "
+                               "as its replacement, and no product declares that tool"));
+}
+
+// Some retirements have no successor, and that is a sentence, not a boot failure.
+TEST(composite_accepts_a_retirement_with_no_replacement) {
+  FakeProduct g = gym();
+  g.retired.push_back(ToolRetirement{"get_preferences", "", "retired, and nothing replaced it."});
+  CompositeToolHost surface(std::vector<ToolModule>{{g, ""}});
+
+  const ToolResult retired =
+      surface.callTool("get_preferences", Json::Value(Json::objectValue), granted(""));
+  CHECK(retired.isError);
+  CHECK_EQ(message(retired), std::string("get_preferences: retired, and nothing replaced it."));
+  CHECK_EQ(g.calls.size(), std::size_t{0});
 }
 
 // A name answered by whichever product happened to register first is a coin flip nobody can debug

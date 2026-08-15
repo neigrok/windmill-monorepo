@@ -29,6 +29,10 @@ public:
   GymTools(LogService& log, std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
+  // The three names W6 and the plate wave took away, each answering with what replaced it. Written
+  // here and dispatched nowhere in this class: the hosts above — the composite over MCP, Ask
+  // in-process — consult these after a name misses their catalog and answer with the sentence.
+  std::vector<ToolRetirement> retiredTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller) override;
 

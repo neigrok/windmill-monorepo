@@ -280,6 +280,29 @@ TEST(ask_refuses_an_argument_no_schema_declares_and_names_the_one_it_takes) {
   CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
 }
 
+// A RETIRED NAME ANSWERS ON THIS DOOR TOO. Ask's catalog is filtered from gym's, so a name gym took
+// away misses it the same way it misses the composite — and the answer is gym's own sentence naming
+// the replacement, not "no such tool".
+TEST(ask_answers_a_retired_name_with_gyms_own_sentence) {
+  Harness h;
+  AskTools hands(h.gymTools, ThreadId{"thr_00000001"});
+  const ToolCaller actor{h.lifter, ToolScope::everything()};
+
+  const ToolResult retired = hands.callTool("save_routine", Json::Value(Json::objectValue), actor);
+
+  REQUIRE(retired.isError);
+  CHECK_EQ(retired.content[0]["text"].asString(),
+           "save_routine: " + h.gymTools.retirement("save_routine")->sentence);
+  CHECK(retired.content[0]["text"].asString().find("propose_routine_change") != std::string::npos);
+  CHECK(retired.content[0]["text"].asString().find("granted") == std::string::npos);
+  // …while a name nothing ever had is still Ask's own whole-door answer.
+  const ToolResult missing = hands.callTool("frobnicate", Json::Value(Json::objectValue), actor);
+  REQUIRE(missing.isError);
+  CHECK_EQ(missing.content[0]["text"].asString(),
+           std::string("frobnicate: no such tool — call tools/list for what Ask may do."));
+  CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
+}
+
 // THE RECEIPT NEVER CLAIMS A ROW IT DID NOT HAND OVER, and a refusal hands over none: `get_stats`
 // marked every week on the run's line before its own argument could fail, so a read that answered
 // with one sentence still inflated the number printed under the answer.

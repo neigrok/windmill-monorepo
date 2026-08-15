@@ -37,6 +37,7 @@ public:
   explicit CompositeToolHost(const std::vector<ToolModule>& modules);
 
   std::vector<ToolDeclaration> declareTools() const override;
+  std::vector<ToolRetirement> retiredTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller) override;
 
@@ -53,6 +54,7 @@ private:
 
   std::vector<Registered> tools_;
   std::map<std::string, std::size_t> byName_;  // tool name -> index into tools_, built once at boot
+  std::map<std::string, ToolRetirement> retired_;  // consulted only after byName_ misses
   std::vector<std::string> products_;
   std::string instructions_;
 };

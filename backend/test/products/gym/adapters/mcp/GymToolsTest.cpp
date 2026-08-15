@@ -208,22 +208,37 @@ TEST(gym_publishes_no_tool_that_applies_or_dismisses_a_proposal) {
 // THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its first
 // turn after this deploy, and what it reads is a connected user's whole first experience of the
 // wave. It names the replacement — never "you were not granted gym:write", which would be FALSE:
-// the level was granted, the tool was retired.
+// the level was granted, the tool was retired. The sentences live in retiredTools(), which is what
+// the composite over MCP and Ask in-process answer from once a name misses the live catalog.
 TEST(gym_the_retired_routine_tools_name_what_replaced_them) {
   Harness h;
 
-  const ToolResult saved = h.call("save_routine", Json::Value(Json::objectValue));
-  const ToolResult deleted = h.call("delete_routine", Json::Value(Json::objectValue));
+  const std::vector<ToolRetirement> retired = h.tools.retiredTools();
 
+  REQUIRE_EQ(retired.size(), std::size_t{3});
+  CHECK_EQ(retired[0].name, std::string("save_routine"));
+  CHECK_EQ(retired[0].replacement, std::string("propose_routine_change"));
+  CHECK(retired[0].sentence.find("propose_routine_change") != std::string::npos);
+  CHECK(retired[0].sentence.find("create_routine") != std::string::npos);
+  CHECK_EQ(retired[1].name, std::string("delete_routine"));
+  CHECK_EQ(retired[1].replacement, std::string("propose_routine_removal"));
+  CHECK(retired[1].sentence.find("propose_routine_removal") != std::string::npos);
+  CHECK_EQ(retired[2].name, std::string("get_preferences"));
+  CHECK_EQ(retired[2].replacement, std::string(""));
+  for (const ToolRetirement& retirement : retired) {
+    CHECK(retirement.sentence.find("granted") == std::string::npos);
+    CHECK_EQ(h.tools.retirement(retirement.name)->sentence, retirement.sentence);
+    // Retired means gone: the dispatcher itself has no branch for the name any more.
+    CHECK(h.call(retirement.name.c_str(), Json::Value(Json::objectValue)).isError);
+  }
+  // Through the composite — the door an MCP client actually uses — the sentence is the answer.
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
+  const ToolResult saved = surface.callTool("save_routine", Json::Value(Json::objectValue),
+                                            ToolCaller{uid(), ToolScope::everything()});
   CHECK(saved.isError);
-  CHECK(message(saved).find("propose_routine_change") != std::string::npos);
-  CHECK(message(saved).find("create_routine") != std::string::npos);
-  CHECK(message(saved).find("granted") == std::string::npos);
-  CHECK(deleted.isError);
-  CHECK(message(deleted).find("propose_routine_removal") != std::string::npos);
-  CHECK(message(deleted).find("granted") == std::string::npos);
-  // And the handshake every client reads at connect carries the same retirement, because a name no
-  // product declares never reaches this dispatcher over MCP.
+  CHECK_EQ(message(saved), "save_routine: " + retired[0].sentence);
+  // And the handshake every client reads at connect carries the same retirement, so an agent
+  // written against the old two learns it before its first call.
   CHECK(gymInstructions().find("save_routine") != std::string::npos);
   CHECK(gymInstructions().find("propose_routine_change") != std::string::npos);
 }
@@ -1204,21 +1219,23 @@ TEST(gym_publishes_no_tool_that_reads_or_writes_a_lifters_settings) {
 // after the deploy, and this is a connected lifter's whole first experience of the change.
 TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
   Harness h;
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
 
-  const ToolResult refused = h.call("get_preferences", Json::Value(Json::objectValue));
+  const ToolResult refused = surface.callTool("get_preferences", Json::Value(Json::objectValue),
+                                              ToolCaller{uid(), parseToolScope("gym:read")});
 
   CHECK(refused.isError);
   CHECK(message(refused).find("retired on 2026-08-13") != std::string::npos);
   CHECK(message(refused).find("nothing replaced it") != std::string::npos);
   // Never the false reason. The level WAS granted; the tool is gone.
   CHECK(message(refused).find("granted") == std::string::npos);
+  CHECK_EQ(h.tools.retirement("get_preferences")->replacement, std::string(""));
 }
 
-// The same sentence reaches a client that never calls it, because a name no product declares never
-// arrives at this dispatcher — the composite answers with its own unnamed "no such tool". So the
-// retirement is also in the paragraph every client reads at connect, and pinned here beside the
-// dispatcher's copy so the two cannot drift apart.
-TEST(gym_connect_paragraph_carries_the_retirement_the_dispatcher_cannot_reach) {
+// The same sentence reaches a client before it calls anything, because the retirement is also in
+// the paragraph every client reads at connect — pinned here beside retiredTools()'s copy so the two
+// cannot drift apart.
+TEST(gym_connect_paragraph_carries_the_retirement) {
   const std::string paragraph = gymInstructions();
 
   CHECK(paragraph.find("Retired on 2026-08-13 with NO replacement: `get_preferences`") !=

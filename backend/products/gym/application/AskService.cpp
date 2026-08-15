@@ -106,8 +106,12 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
   for (ToolDeclaration& candidate : inner_.declareTools())
     if (candidate.name() == name) declared = std::move(candidate);
 
-  if (!declared)
+  if (!declared) {
+    // A name gym retired answers with what replaced it, on this door as over MCP.
+    if (std::optional<ToolRetirement> retired = inner_.retirement(name))
+      return ToolResult::failure(name + ": " + retired->sentence);
     return ToolResult::failure(name + ": no such tool — call tools/list for what Ask may do.");
+  }
   if (declared->access != Access::read && !mintsProposal(name))
     // The sentence the model reads is the sentence the lifter reads back, because §L's refusal is
     // said out loud and hands the job over rather than failing quietly. It is asked FIRST, before the

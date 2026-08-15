@@ -4,6 +4,7 @@
 
 #include <json/json.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,17 @@ struct ToolDeclaration {
   std::string name() const { return descriptor.get("name", "").asString(); }
 };
 
+// A tool name that used to be declared and is not any more, with the whole answer an agent that
+// still calls it should read. `sentence` is the product's own words — it knows what replaced the
+// tool and why — and `replacement` is empty when nothing took over. It rides on the host beside the
+// live catalog because the product is the only thing that knows its own history; the hosts above it
+// (the composite over MCP, Ask in-process) are what turn it into an answer.
+struct ToolRetirement {
+  std::string name;
+  std::string replacement;
+  std::string sentence;
+};
+
 // The catalog and executor of a product's tools — the one seam the protocol engine drives. A module
 // declares its whole surface and never its own gate: the gate is one decision, taken above every
 // module by CompositeToolHost, which is what McpServer binds.
@@ -74,6 +86,19 @@ struct ToolHost {
   // the account, within the grant.
   virtual ToolResult callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) = 0;
+
+  // The names this product retired, each with the sentence that answers a call to it. Empty by
+  // default: most hosts have retired nothing.
+  virtual std::vector<ToolRetirement> retiredTools() const { return {}; }
+
+  // The retirement standing behind a name, if any. Concrete and shared so every host answers a miss
+  // the same way, and consulted ONLY after a name misses the live catalog: a retired name must never
+  // shadow a live one, and the hot path — a live tool called by name — never pays for this scan.
+  std::optional<ToolRetirement> retirement(const std::string& name) const {
+    for (ToolRetirement& retired : retiredTools())
+      if (retired.name == name) return retired;
+    return std::nullopt;
+  }
 
   // The `tools/list` array this caller's grant may see. Concrete and shared on purpose: one filter
   // rule, read from the same declarations the dispatcher gates on, so a catalog can never advertise a

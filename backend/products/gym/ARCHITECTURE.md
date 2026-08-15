@@ -1747,21 +1747,17 @@ a diff and write nothing. **The receipt is never shaped like a write** — it ca
 tell its human the program changed. That is the one defect this wave could not afford: a well-behaved
 agent turned into a liar. **The retirement answers name their replacements** rather than reading
 "this connection was not granted gym:write", which would be false — the level was granted, the tool
-was retired. `gymInstructions()` carries the same retirement in the handshake every client reads at
-connect, because a name no product declares never reaches gym's dispatcher over MCP (see the REQUEST
-below).
+was retired. The sentences live in `GymTools::retiredTools()` — the `ToolHost` seam landed 2026-08-15 —
+and the hosts above answer them: `CompositeToolHost` over MCP, `AskTools` in-process, each consulting
+the retirements only after a name misses the live catalog. `gymInstructions()` carries the same
+retirement in the handshake every client reads at connect, so an agent written against the old two
+learns it before its first call.
 
 **No apply tool at any grant level, and that is a product rule rather than an economy.** Apply is not
 a capability, it is a human act: `gym:delete` proposes destructive changes and does not imply the
 right to make one. The two routes that settle a proposal are HTTP and owner-scoped (`routes.cpp` says
 it beside the mounts), `LogService::replaceRoutine` is the human's other hand and is unreachable from
 `GymTools`, and `GymToolsTest` pins every one of those absences by name.
-
-**REQUEST, open against the platform:** `CompositeToolHost` resolves a `tools/call` name against the
-catalogs it was built from, so `save_routine` reaches gym's dispatcher only through an in-process
-host — over MCP it gets the composite's own *"no such tool on this server"*, which is true and
-unnamed. A `retiredTools()` seam on `ToolHost` would let the composite answer with the sentence the
-product wrote. Until it exists the named answer lives in the handshake and in `GymTools::dispatch`.
 
 Six rules hold this together, and each is load-bearing:
 

@@ -472,6 +472,35 @@ ToolResult revokeShare(LogService& log, const UserId& caller, const Json::Value&
 GymTools::GymTools(LogService& log, std::string appBaseUrl)
     : log_(log), appBaseUrl_(std::move(appBaseUrl)) {}
 
+// THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its very
+// first turn after the deploy, and the answer it gets is a connected user's whole first experience
+// of the wave. It names what replaced it rather than saying "no such tool", because the true and
+// useless answer costs a round trip and the FALSE one — "this connection was not granted gym:write"
+// — would be a lie: the level was granted, the tool was retired. get_preferences was retired with
+// no replacement, which its sentence has to say plainly or it sends an agent hunting for the tool
+// that took over — its name was vague enough that agents reached for it at the top of a turn
+// whether or not the turn was about equipment, and what it answered with was a plate inventory this
+// product no longer keeps.
+std::vector<ToolRetirement> GymTools::retiredTools() const {
+  return {
+      ToolRetirement{"save_routine", "propose_routine_change",
+                     "retired on 2026-08-12, and the level you hold was not the problem. Use "
+                     "propose_routine_change to change a day of the program that already stands — it "
+                     "hands the lifter a typed diff and changes nothing until they tap Apply — or "
+                     "create_routine to add one that does not exist yet, which still lands "
+                     "immediately."},
+      ToolRetirement{"delete_routine", "propose_routine_removal",
+                     "retired on 2026-08-12, and the level you hold was not the problem. Use "
+                     "propose_routine_removal: it puts the day's lines in front of the lifter as a "
+                     "diff of what would go, and nothing is deleted until they tap Apply."},
+      ToolRetirement{"get_preferences", "",
+                     "retired on 2026-08-13, and nothing replaced it. gym no longer keeps a plate "
+                     "inventory or a bar weight, and the rest target and reading unit it also carried "
+                     "are the lifter's own dials rather than context for a proposal. Propose loads in "
+                     "kilograms and let them round at the rack."},
+  };
+}
+
 std::vector<ToolDeclaration> GymTools::declareTools() const { return gymToolCatalog(); }
 
 // Every failure an agent reads names the tool it came from, and names it exactly once: here, on
@@ -558,42 +587,10 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
     return proposeRoutineRemoval(log_, caller, arguments, source, appBaseUrl_);
   if (name == "revoke_share")    return revokeShare(log_, caller, arguments);
 
-  // THE RETIREMENT ANSWER. An agent written against the old catalog calls one of these on its very
-  // first turn after this deploy, and the answer it gets is a connected user's whole first
-  // experience of this wave. It names what replaced it rather than saying "no such tool", because
-  // the true and useless answer costs a round trip and the FALSE one — "this connection was not
-  // granted gym:write" — would be a lie: the level was granted, the tool was retired.
-  //
-  // It is dispatched here and reached only by a host that routes by product. `CompositeToolHost`
-  // resolves a name against the catalogs it was built from, so over MCP these two never arrive —
-  // they get the composite's own "no such tool on this server", which is true but unnamed. That is
-  // why the retirement is also written into the handshake paragraph every client reads at connect
-  // (gymInstructions), and why the platform REQUEST beside this wave is a `retiredTools()` seam on
-  // ToolHost so the composite can answer with these sentences instead.
-  if (name == "save_routine")
-    return ToolResult::failure("retired on 2026-08-12, and the level you hold was not the problem. "
-                               "Use propose_routine_change to change a day of the program that "
-                               "already stands — it hands the lifter a typed diff and changes "
-                               "nothing until they tap Apply — or create_routine to add one that "
-                               "does not exist yet, which still lands immediately.");
-  if (name == "delete_routine")
-    return ToolResult::failure("retired on 2026-08-12, and the level you hold was not the problem. "
-                               "Use propose_routine_removal: it puts the day's lines in front of "
-                               "the lifter as a diff of what would go, and nothing is deleted until "
-                               "they tap Apply.");
-  // Retired with no replacement, which the sentence has to say plainly or it sends an agent hunting
-  // for the tool that took over — there isn't one. Its name was vague enough that agents reached for
-  // it at the top of a turn whether or not the turn was about equipment, and what it answered with
-  // was a plate inventory this product no longer keeps.
-  if (name == "get_preferences")
-    return ToolResult::failure("retired on 2026-08-13, and nothing replaced it. gym no longer keeps "
-                               "a plate inventory or a bar weight, and the rest target and reading "
-                               "unit it also carried are the lifter's own dials rather than context "
-                               "for a proposal. Propose loads in kilograms and let them round at the "
-                               "rack.");
-
-  // The whole-server answer belongs to CompositeToolHost, which is the only thing that knows what
-  // else is connected; a name that reaches this far named nothing in the gym surface.
+  // A retired name never reaches here on purpose: the retirements live in retiredTools(), and the
+  // host above — the composite over MCP, Ask in-process — answers them with their sentence before
+  // this dispatcher is asked. Only a name gym never had falls through, and the whole-server answer
+  // for that belongs to CompositeToolHost, which is the only thing that knows what else is connected.
   return ToolResult::failure("no such gym tool — call tools/list for the surface this connection "
                              "may use.");
 }
