@@ -315,3 +315,37 @@ CAN date its catalog — a `serverInfo.version` (or a build stamp in `instructio
 scout can compare against the repo turns "prod looks stale" into "my connection predates
 the deploy, reconnect" in one read. Cheap, honest, and it ends the false alarm at the
 first probe.
+
+--- 2026-08-15 · the growth round: five things the surface could not say, now said ---
+
+Observed while driving this very tree and gym over MCP, and closed the same night:
+
+- THE FRONTIER (mcp-frontier-read, 613d524). "What can I work on?" cost the whole graph plus a
+  hand-rolled cascade. Every node read takes `state` — locked · available · active · complete,
+  derived by the same UnlockRules the app paints from — and `find_nodes {state: "available"}` is
+  the frontier in one call. Never in a default field set; anonymous callers get the cascade over
+  no marks. Caveat: a dangling prerequisite never reaches the read (the room snapshot carries live
+  edges only), so a ghost-prerequisite node reads as a root; get_diagnostics is where the dangle
+  shows.
+- A RETIRED NAME ANSWERS (d279636). W6's sentences pointing at propose_routine_change had zero
+  production readers — the composite AND Ask both said "no such tool" first. ToolHost carries
+  retiredTools(); consulted only after a catalog miss; boot refuses a retirement that shadows a
+  live tool or names a missing replacement.
+- THE CALLER CARRIES ITS CONNECTION (439e704). ToolCaller {user, scope, connection{id,name}} —
+  OAuth client id + registered name, or MCP key id + the name it was minted under. gym proposals
+  name the agent that made them, and the pending index is truly one per (routine, door,
+  connection). list_routines' `pendingProposal` is the NEWEST from any connection; `source` says
+  whose.
+- THE HANDSHAKE DATES ITS CATALOG (305f3d7). serverInfo.version is 0.1.0+<sha7> and the
+  instructions say what a stale cached tools/list means — closes the 2026-08-14 entry above.
+  (Proved on ourselves the same evening: the harness's cached find_nodes schema lacked `state`
+  after the deploy; the handshake's build stamp is what settles "prod is old" vs "reconnect".)
+- start_session's idempotency promise now says what a JOIN does to the id you minted (4bcd2ab):
+  the join answers the open workout under ITS id and leaves yours unspent — log into the id the
+  reply carries, and never resend the start once that workout has ended.
+
+Still awkward, noted for the next round: find_nodes with `description` in `fields` on THIS tree
+(383 nodes) answers ~430k characters — over any client's result ceiling — because there is no
+server-side cap on total description bytes per page. A `descriptionChars` cap argument (or a
+default truncation with an ellipsis marker and the full text one call away) would let a reader
+skim a whole tree's notes without paging by hand.
