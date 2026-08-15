@@ -199,12 +199,16 @@ curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/finish -H "$C" -H "
   -d '{"finishedAt":1785603600000}'
 curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
 
-# Routines, the plan snapshot, and the end of a session. A rep target may be OMITTED — that is
-# how "3 × max" is expressed, and it is the one field whose absence means something.
+# Routines, the plan snapshot, and the end of a session. A rep target may be OMITTED — that is how
+# "3 × max" is expressed — and since W10 so may targetSets, which is how a line is left OPEN: the
+# movement is in the day and what to do with it is decided at the rack. Both absences survive into
+# the frozen `plan` below, and a zero in either would be a target the lifter never set.
 curl -s -X POST localhost:8088/v1/gym/routines -H "$C" -H "$J" -d '{"id":"rt_probe00001",
   "name":"Push A","position":0,"entries":[
     {"exerciseId":"bench-press","targetSets":5,"targetReps":5,"targetWeightKg":82.5},
-    {"exerciseId":"chin-up","targetSets":3}]}'
+    {"exerciseId":"chin-up","targetSets":3},
+    {"exerciseId":"barbell-row"}]}'
+curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C"   # + `history`: created, by whom, how many
 curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \
   -d '{"id":"ses_probe0002","startedAt":1785686400000,"routineId":"rt_probe00001"}'   # freezes `plan`
 curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"   # stats · record? · against?
