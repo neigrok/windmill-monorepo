@@ -1185,6 +1185,12 @@
   color: var(--lamp-400);
   font: 400 13px/1.5 var(--font-body), sans-serif;
 }
+.journal-nudge-suppressed .journal-nudge-when { margin-top: 0; color: var(--journal-ink, #F2ECDE); font-size: 14px; }
+.journal-nudge-note {
+  margin: 10px 0 0;
+  color: var(--journal-ink-dim, #8A98AC);
+  font: 400 13px/1.5 var(--font-body), sans-serif;
+}
 .journal-nudge-channel { display: flex; gap: 8px; margin-top: 18px; }
 .journal-nudge-chip {
   padding: 7px 14px;

@@ -43,5 +43,9 @@ export function useNudge() {
   const setChannel = useCallback((channel) => apply({ channel }), [apply]);
   const snooze = useCallback(() => apply({ pausedUntil: Date.now() + WEEK_MS }), [apply]);
 
-  return { settings, loading, armed: !!settings?.armed, enable, disable, setChannel, snooze };
+  // `suppressed` sits beside `armed` and not beside `enabled` on purpose: both are OUR facts about
+  // reaching this writer — the gate, and a mailbox the provider called dead — never the writer's
+  // own preference, which `enabled` alone carries.
+  return { settings, loading, armed: !!settings?.armed, suppressed: !!settings?.suppressed,
+           enable, disable, setChannel, snooze };
 }

@@ -2,7 +2,8 @@
 // switch to be nudged, the hour the device learned you write ("around 9pm"), a channel, and a way to
 // pause for a week. The line under it tells the truth the engine keeps: the rhythm is worked out on
 // this device and never leaves; only the single next moment is sent. The whole panel only exists when
-// the engine is armed for this writer (JournalApp gates it), so it never promises a knock it can't send.
+// the engine is armed for this writer (JournalApp gates it), so it never promises a knock it can't send —
+// and when the provider has called the mailbox dead, the switch gives way to saying so.
 
 import React from 'react';
 
@@ -13,7 +14,7 @@ function hourLabel(ms) {
 }
 
 export function NudgePanel({ nudge, onClose }) {
-  const { settings, enable, disable, setChannel, snooze } = nudge;
+  const { settings, suppressed, enable, disable, setChannel, snooze } = nudge;
   const enabled = !!settings?.enabled;
   const channel = settings?.channel || 'email';
 
@@ -27,6 +28,49 @@ export function NudgePanel({ nudge, onClose }) {
       <div className="journal-nudge-panel">
         <p className="journal-nudge-lead">Nudges</p>
 
+        {suppressed ? <SuppressedNotice /> : (
+          <NudgeControls enabled={enabled} channel={channel} settings={settings}
+                         enable={enable} disable={disable} setChannel={setChannel}
+                         snooze={snooze} onClose={onClose} />
+        )}
+
+        <p className="journal-nudge-foot">
+          The rhythm is learned on this device and never leaves it. Only the next moment is sent.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// The face a dead mailbox gets, mirrored from roadmap's ReminderSection: the switch is REMOVED, not
+// disabled — flipping it would change a stored preference and nothing a reader could observe. The
+// copy says "can't reach", never "stopped nudging": the webhook creates the row when it is missing
+// and the bounce may have been a magic link, so "stopped" would be a lie told to someone who never
+// received a nudge. Sign-in mail is unaffected (nothing in the auth path reads suppressed), and
+// nothing clears this yet — both said plainly rather than implied.
+function SuppressedNotice() {
+  return (
+    <div className="journal-nudge-suppressed">
+      <p className="journal-nudge-when">We can't reach your email address.</p>
+      <p className="journal-nudge-note">
+        Mail we sent came back permanently undeliverable, or was reported as spam. Either way we
+        stopped writing to an address that can't receive it, rather than keep trying.
+      </p>
+      <p className="journal-nudge-note">
+        Sign-in email is unaffected — magic links still go to this address, so you can always get
+        back in.
+      </p>
+      <p className="journal-nudge-note">
+        There's no way to clear this from here yet, and we won't retry on our own. If the address
+        works again, tell us and we'll lift it.
+      </p>
+    </div>
+  );
+}
+
+function NudgeControls({ enabled, channel, settings, enable, disable, setChannel, snooze, onClose }) {
+  return (
+    <>
         <button
           type="button"
           className={'journal-nudge-toggle' + (enabled ? ' is-on' : '')}
@@ -68,11 +112,6 @@ export function NudgePanel({ nudge, onClose }) {
             Pause for a week
           </button>
         )}
-
-        <p className="journal-nudge-foot">
-          The rhythm is learned on this device and never leaves it. Only the next moment is sent.
-        </p>
-      </div>
-    </div>
+    </>
   );
 }
