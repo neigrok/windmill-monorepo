@@ -501,7 +501,7 @@ public:
     // fills in, which is how a fake comes to agree with an answer the real store cannot produce.
     // The snapshot is typed now, so "the name is a string or there is no name" is a fact of the
     // type; what the adapter's `jsonb_typeof(plan->'routine') = 'string'` guard still defends
-    // against is a raw blob no writer of ours can lay down (PgTrainingRepositoryTest pins that).
+    // against is a raw blob no writer of ours can lay down (PgLogRepositoryTest pins that).
     return {LastTime{*newest, newest->plan ? newest->plan->routineName : "", block},
             LastTimeError::none};
   }

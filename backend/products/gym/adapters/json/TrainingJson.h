@@ -156,7 +156,7 @@ namespace wm::gym {
 // back — and it renders as a title with nothing under it rather than as anything invented.
 //
 // `plan` is the one shape written at BOTH edges — jsonb on the session row and an object on the
-// wire — so its codec pair lives here, once, and PgTrainingRepository serializes through it. The
+// wire — so its codec pair lives here, once, and PgLogRepository serializes through it. The
 // name stays a plain STRING at the top level because the prefill's SQL type-checks exactly that
 // (`jsonb_typeof(plan->'routine') = 'string'`); anything else there and the card silently loses the
 // day of the program it was trained on. Reading a stored plan CLAMPS the way every other stored

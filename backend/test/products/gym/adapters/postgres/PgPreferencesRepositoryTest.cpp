@@ -1,4 +1,4 @@
-#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -25,7 +25,7 @@ using namespace wm::gym::pgtest;
 TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgPreferencesRepository repo{wm::pgTestPool()};
 
   const std::optional<GymPreferences> before = repo.preferences(wm::UserId{kUser});
   const GymPreferences saved = repo.savePreferences(
@@ -51,7 +51,7 @@ TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
 TEST(pg_gym_preferences_are_owner_scoped_and_cascade_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgPreferencesRepository repo{wm::pgTestPool()};
   repo.savePreferences(GymPreferences{wm::UserId{kUser}, Unit::lb, 90, false, false, true});
 
   CHECK_EQ(repo.preferences(wm::UserId{kOther}), std::optional<GymPreferences>());
@@ -100,7 +100,7 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
     txn.exec_params("INSERT INTO gym_preferences (user_id) VALUES ($1::uuid)", kUser);
     txn.commit();
   }
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgPreferencesRepository repo{wm::pgTestPool()};
   CHECK_EQ(repo.preferences(wm::UserId{kUser}),
            std::optional<GymPreferences>(GymPreferences{wm::UserId{kUser}}));
   reset();

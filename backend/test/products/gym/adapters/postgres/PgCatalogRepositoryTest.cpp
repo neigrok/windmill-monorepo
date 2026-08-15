@@ -1,4 +1,6 @@
-#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/adapters/postgres/PgCatalogRepository.h"
+#include "products/gym/adapters/postgres/PgLogRepository.h"
+#include "products/gym/adapters/postgres/PgProgramRepository.h"
 
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -20,7 +22,7 @@ using namespace wm::gym::pgtest;
 TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
 
   std::vector<Exercise> catalog = repo.catalog(wm::UserId{kUser});
 
@@ -36,7 +38,9 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
 TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
+  PgProgramRepository program{wm::pgTestPool()};
   const Exercise mine{ExerciseId{"pg-zercher-squat"}, "Zercher Squat", Pattern::squat,
                       Equipment::machine, 5.0, true};
 
@@ -62,12 +66,12 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   CHECK_EQ(repo.catalog(wm::UserId{kUser}).size(), static_cast<std::size_t>(65));
   CHECK_EQ(repo.catalog(wm::UserId{kOther}).size(), static_cast<std::size_t>(64));
   // And a created movement is a movement: a set may name it, and a plan may hold it.
-  repo.insertSession(sessionAt("ses_pg000001", 1'700'000'000'123));
-  CHECK(repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
+  log.insertSession(sessionAt("ses_pg000001", 1'700'000'000'123));
+  CHECK(log.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
                            ExerciseId{"pg-zercher-squat"}, 0, 60.0, 8, SetKind::working,
                            std::nullopt, "", 1'700'000'001'123})
             .error == SetInsertError::none);
-  CHECK(inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "pg-zercher-squat")}))
+  CHECK(inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "pg-zercher-squat")}))
             .error == RoutineWriteError::none);
 }
 
@@ -78,7 +82,7 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
 TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
   const Exercise ceiling{ExerciseId{"pg-heavy-step"}, "Heavy Step", Pattern::squat,
                          Equipment::machine, kMaxStepKg, true};
   const Exercise floorStep{ExerciseId{"pg-fine-step"}, "Fine Step", Pattern::isolation,
@@ -118,7 +122,7 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
 TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_untouched) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
 
   const std::optional<Exercise> renamed =
       repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
@@ -149,7 +153,7 @@ TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_unto
 TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_drops_the_line) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
   repo.insertExercise(wm::UserId{kUser},
                       Exercise{ExerciseId{"ex_pg000001"}, "Zercher Squat", Pattern::squat,
                                Equipment::barbell, 2.5, true});
@@ -189,7 +193,7 @@ TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_d
 TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_off) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
   repo.insertExercise(wm::UserId{kUser},
                       Exercise{ExerciseId{"ex_pg000001"}, "Hammer row", Pattern::pull,
                                Equipment::machine, 2.5, true});
@@ -238,20 +242,21 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
 TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgCatalogRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'000;
 
-  repo.insertSession(sessionAt("ses_pg000001", t1));
-  repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  log.insertSession(sessionAt("ses_pg000001", t1));
+  log.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
+  log.close(SessionId{"ses_pg000001"}, t1 + 2'000);
   repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
-  repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "tok_pg000001",
+  log.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "tok_pg000001",
                                 t1 + 30ull * 86'400'000},
                    t1);
 
-  const std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 50));
-  const std::vector<ExportedSet> exported = repo.exportedSets(wm::UserId{kUser});
-  const std::optional<SharedSession> shared = repo.sharedSession("tok_pg000001", t1 + 1);
+  const std::vector<SessionSummary> listed = pageOf(log, wm::UserId{kUser}, page(t1 + 9'000, 50));
+  const std::vector<ExportedSet> exported = log.exportedSets(wm::UserId{kUser});
+  const std::optional<SharedSession> shared = log.sharedSession("tok_pg000001", t1 + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].exerciseNames, std::vector<std::string>{"Low-bar Squat"});

@@ -296,7 +296,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   target_sources(windmill_gym PRIVATE
     products/gym/adapters/json/TrainingJson.cpp
     products/gym/adapters/csv/TrainingCsv.cpp
-    products/gym/adapters/postgres/PgTrainingRepository.cpp
+    products/gym/adapters/postgres/PgLogRepository.cpp
+    products/gym/adapters/postgres/PgCatalogRepository.cpp
+    products/gym/adapters/postgres/PgProgramRepository.cpp
+    products/gym/adapters/postgres/PgAskThreadRepository.cpp
+    products/gym/adapters/postgres/PgPreferencesRepository.cpp
     products/gym/adapters/http/GymApi.cpp
     products/gym/adapters/http/AskApi.cpp
     products/gym/adapters/llm/AnthropicAsk.cpp

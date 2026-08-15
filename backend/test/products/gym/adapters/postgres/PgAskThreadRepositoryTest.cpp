@@ -1,4 +1,5 @@
-#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/adapters/postgres/PgAskThreadRepository.h"
+#include "products/gym/adapters/postgres/PgProgramRepository.h"
 
 // The in-memory twin is included for the thread export alone: the two export cases below build the
 // same threads in it and assert the rows match, so neither rendering can drift on its own.
@@ -24,7 +25,7 @@ using namespace wm::gym::pgtest;
 TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgAskThreadRepository repo{wm::pgTestPool()};
   const std::string typed = "Bench \xE2\x80\x9Cstuck\xE2\x80\x9D at 82.5 \xE2\x80\x94 3 weeks, why?";
 
   openedAt(repo, "thr_pg000001", typed);
@@ -52,7 +53,7 @@ TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent
 TEST(pg_gym_a_thread_id_another_account_holds_is_refused_and_their_words_stay_theirs) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgAskThreadRepository repo{wm::pgTestPool()};
   openedAt(repo, "thr_pg000001", "mine");
   said(repo, "thr_pg000001", "mine", "answered");
 
@@ -71,7 +72,7 @@ TEST(pg_gym_a_thread_id_another_account_holds_is_refused_and_their_words_stay_th
 TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgAskThreadRepository repo{wm::pgTestPool()};
   openedAt(repo, "thr_pg000001", "never answered");
   openedAt(repo, "thr_pg000002", "answered once");
   said(repo, "thr_pg000002", "answered once", "here you go");
@@ -88,13 +89,14 @@ TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
 TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
-  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  PgAskThreadRepository repo{wm::pgTestPool()};
+  PgProgramRepository program{wm::pgTestPool()};
+  inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   openedAt(repo, "thr_pg000001", "older");
   said(repo, "thr_pg000001", "older", "answered");
   openedAt(repo, "thr_pg000002", "newer", kNow + 1'000);
   said(repo, "thr_pg000002", "newer", "answered", kNow + 1'000);
-  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+  program.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
                                  ProposalDoor::ask, kUser, ThreadId{"thr_pg000002"}));
 
   const std::vector<AskThread> listed = repo.threads(wm::UserId{kUser});
@@ -120,15 +122,16 @@ TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) 
 TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_history) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
-  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  PgAskThreadRepository repo{wm::pgTestPool()};
+  PgProgramRepository program{wm::pgTestPool()};
+  inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   openedAt(repo, "thr_pg000001", "Bench has been stuck at 82.5 for three weeks. What do you see?");
   said(repo, "thr_pg000001", "Bench has been stuck at 82.5 for three weeks. What do you see?",
        "Try heavier triples.");
-  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+  program.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
                                  ProposalDoor::ask, kUser, ThreadId{"thr_pg000001"}));
   const Routine becomes = routineAt("rt_pg000001", "Push A", {benchAt(87.5, 3)});
-  REQUIRE(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow).error ==
+  REQUIRE(program.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, becomes, kNow).error ==
           ProposalSettleError::none);
 
   CHECK(repo.deleteThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}));
@@ -138,7 +141,7 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   CHECK(repo.threads(wm::UserId{kUser}).empty());
   // The consequence is not. The routine's history still carries the change…
   const std::vector<RoutineEvent> history =
-      repo.routineHistory(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+      program.routineHistory(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
   REQUIRE_EQ(history.size(), 2u);
   CHECK(history[0].kind == RoutineEventKind::proposal);
   REQUIRE(history[0].proposal.has_value());
@@ -149,7 +152,7 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   // …and simply no longer opens a conversation that exists.
   CHECK_FALSE(history[0].proposal->source.thread.has_value());
   // And the program itself is exactly what the apply made it.
-  const std::optional<Routine> standing = repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
+  const std::optional<Routine> standing = program.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
   REQUIRE(standing.has_value());
   CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchAt(87.5, 3)});
   // Deleting it twice is not a second deletion, and another account's is nobody's.
@@ -163,7 +166,7 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
 TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgAskThreadRepository repo{wm::pgTestPool()};
   openedAt(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?");
   said(repo, "thr_pg000001", "why is my bench, uh, \"stuck\"?", "Your top set has not moved.");
   openedAt(repo, "thr_pg000002", "and the squat?", kNow + 1'000);
@@ -205,7 +208,7 @@ TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin
 TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgAskThreadRepository repo{wm::pgTestPool()};
   openedAt(repo, "thr_pg000001", "a question whose run never came back");
   openedAt(repo, "thr_pg000002", "answered once", kNow + 1'000);
   said(repo, "thr_pg000002", "answered once", "here you go", kNow + 1'000);
@@ -241,14 +244,15 @@ TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
 TEST(pg_gym_every_thread_is_read_for_the_archive_past_the_lists_own_ceiling) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
-  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  PgAskThreadRepository repo{wm::pgTestPool()};
+  PgProgramRepository program{wm::pgTestPool()};
+  inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   for (int number = 0; number <= kThreadList; ++number) {
     const std::string id = "thr_pg" + std::string(6 - std::to_string(number).size(), '0') +
                            std::to_string(number);
     openedAt(repo, id, "question " + id, kNow + static_cast<std::uint64_t>(number));
   }
-  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
+  program.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)},
                                  ProposalDoor::ask, kUser, ThreadId{"thr_pg000000"}));
 
   const std::vector<AskThread> every = repo.allThreads(wm::UserId{kUser});

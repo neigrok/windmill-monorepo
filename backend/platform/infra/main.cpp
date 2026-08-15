@@ -76,7 +76,11 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
-#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/adapters/postgres/PgAskThreadRepository.h"
+#include "products/gym/adapters/postgres/PgCatalogRepository.h"
+#include "products/gym/adapters/postgres/PgLogRepository.h"
+#include "products/gym/adapters/postgres/PgPreferencesRepository.h"
+#include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/LogService.h"
 #include "products/gym/routes.h"
@@ -413,10 +417,13 @@ int main() {
   // and the difference is the whole point: a share becomes a link a human opens in the browser app,
   // not a call into the JSON API. One origin answers both in production, which is exactly why
   // passing the wrong one went unnoticed until a coach was handed a page of JSON.
-  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(pool);
-  auto logService = std::make_shared<gym::LogService>(*gymRepository, *gymRepository, *gymRepository,
-                                                      *gymRepository, *gymRepository, *systemClock,
-                                                      *tokens);
+  auto gymLog = std::make_shared<gym::PgLogRepository>(pool);
+  auto gymCatalog = std::make_shared<gym::PgCatalogRepository>(pool);
+  auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
+  auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
+  auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
+  auto logService = std::make_shared<gym::LogService>(*gymLog, *gymCatalog, *gymProgram, *gymThreads,
+                                                      *gymPreferences, *systemClock, *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
 
   // ASK — the SECOND door onto the very tools built above, for a lifter who has no agent of their

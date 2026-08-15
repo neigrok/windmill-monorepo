@@ -1,4 +1,6 @@
-#include "products/gym/adapters/postgres/PgTrainingRepository.h"
+#include "products/gym/adapters/postgres/PgCatalogRepository.h"
+#include "products/gym/adapters/postgres/PgLogRepository.h"
+#include "products/gym/adapters/postgres/PgProgramRepository.h"
 
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -24,7 +26,7 @@ using namespace wm::gym::pgtest;
 TEST(pg_gym_routine_create_is_idempotent_and_the_whole_document_round_trips) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   // The same movement twice at two positions — bench heavy, then bench back-off — is the case the
   // (routine_id, position) key exists for, and it must survive a round trip in order.
   const Routine pushA = routineAt("rt_pg000001", "Push A",
@@ -52,7 +54,7 @@ TEST(pg_gym_routine_create_is_idempotent_and_the_whole_document_round_trips) {
 TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   const Routine pushA =
       routineAt("rt_pg000001", "Push A",
                 {entryAt(1, "pull-up", 3, std::nullopt, std::nullopt, 180),
@@ -91,7 +93,8 @@ TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
 TEST(pg_gym_an_open_routine_line_round_trips_as_a_null_target_sets) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
   const Routine heavy = routineAt(
       "rt_pg000001", "Heavy Thursday",
       {entryAt(1, "bench-press", 5, 5, 82.5, 180),
@@ -116,16 +119,16 @@ TEST(pg_gym_an_open_routine_line_round_trips_as_a_null_target_sets) {
              1);
   }
   // And the session started under it freezes the absence, so the logger asks at the rack.
-  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, kNow, std::nullopt,
+  log.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, kNow, std::nullopt,
                              RoutineId{"rt_pg000001"}, snapshotOf(*read)});
-  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"})->plan->entries[1].sets,
+  CHECK_EQ(log.session(wm::UserId{kUser}, SessionId{"ses_pg000001"})->plan->entries[1].sets,
            std::optional<int>());
 }
 
 TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, Routine{RoutineId{"rt_pg000001"}, wm::UserId{kOther}, "Their plan", 0,
                              {entryAt(1, "bench-press")}});
 
@@ -148,7 +151,7 @@ TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
 TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
 
   RoutineWriteOutcome refused = inserted(repo, 
       routineAt("rt_pg000001", "Push A",
@@ -170,8 +173,9 @@ TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
 TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
-  repo.insertExercise(wm::UserId{kOther},
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgCatalogRepository catalog{wm::pgTestPool()};
+  catalog.insertExercise(wm::UserId{kOther},
                       Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
                                Pattern::squat, Equipment::barbell, 2.5, true});
   const Routine stored = routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")});
@@ -197,7 +201,7 @@ TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
 TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A",
                                {entryAt(1, "bench-press"), entryAt(2, "back-squat")}));
   // The revision moves on the lifter's own write — the token a proposal is minted against and
@@ -230,17 +234,18 @@ TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) 
 TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snapshot) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
-  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+  log.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000001"}, pushA()});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  log.close(SessionId{"ses_pg000001"}, t1 + 1'000);
 
   CHECK(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
   CHECK_FALSE(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
 
-  std::optional<Session> ran = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  std::optional<Session> ran = log.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
   REQUIRE(ran.has_value());
   CHECK_EQ(ran->routine, std::optional<RoutineId>());          // on delete set null
   CHECK_EQ(ran->plan, std::optional<PlanSnapshot>(pushA()));   // the copy is what survives
@@ -260,17 +265,18 @@ TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snaps
 TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   inserted(repo, routineAt("rt_pg000002", "Pull A", {entryAt(1, "back-squat")}));
   inserted(repo, routineAt("rt_pg000003", "Legs", {entryAt(1, "back-squat")}));
-  repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
+  log.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000002"}, PlanSnapshot{"Pull A", {}}});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
-  repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
+  log.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  log.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
                              std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
-  repo.close(SessionId{"ses_pg000002"}, t1 + 11'000);
+  log.close(SessionId{"ses_pg000002"}, t1 + 11'000);
   // Another account training its own routine cannot move this account's order.
   inserted(repo, Routine{RoutineId{"rt_pg000004"}, wm::UserId{kOther}, "Theirs", 0,
                              {entryAt(1, "bench-press")}});
@@ -294,7 +300,7 @@ TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
 TEST(pg_gym_a_routines_history_is_its_proposals_and_its_creation_in_one_read) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A",
                            {entryAt(1, "bench-press"), entryAt(2, "back-squat")}));
   repo.insertProposal(proposalAt("prop_pg000001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
@@ -328,7 +334,7 @@ TEST(pg_gym_a_routines_history_is_its_proposals_and_its_creation_in_one_read) {
 TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   const RoutineProposal minted = proposalAt(
       "prop_pg00001", "rt_pg000001", 1,
@@ -354,7 +360,7 @@ TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
 TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into_history) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
 
@@ -382,7 +388,7 @@ TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into
 TEST(pg_gym_a_replayed_mint_reads_back_the_stored_proposal) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   const RoutineProposal minted = proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)});
   repo.insertProposal(minted);
@@ -401,11 +407,12 @@ TEST(pg_gym_a_replayed_mint_reads_back_the_stored_proposal) {
 TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unseen_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgCatalogRepository catalog{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   inserted(repo, Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
                              {entryAt(1, "bench-press")}});
-  repo.insertExercise(wm::UserId{kOther},
+  catalog.insertExercise(wm::UserId{kOther},
                       Exercise{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
                                Pattern::squat, Equipment::barbell, 2.5, true});
   repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000009", 1, {benchAt(87.5, 3)},
@@ -438,7 +445,7 @@ TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unsee
 TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   inserted(repo, Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
                              {entryAt(1, "bench-press")}});
@@ -476,7 +483,7 @@ TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
 TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_proposal) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
 
@@ -514,7 +521,7 @@ TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_
 TEST(pg_gym_applying_a_proposal_writes_the_document_moves_the_revision_and_dates_the_record) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1,
                                  {benchAt(87.5, 3), entryAt(2, "back-squat", 3, 8, 100.0, 240)}));
@@ -545,7 +552,7 @@ TEST(pg_gym_applying_a_proposal_writes_the_document_moves_the_revision_and_dates
 TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refuses) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
   const Routine stale = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
@@ -576,7 +583,7 @@ TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refu
 TEST(pg_gym_dismissing_keeps_the_card_and_refuses_the_other_decision) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
   const Routine becomes = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
@@ -603,11 +610,12 @@ TEST(pg_gym_dismissing_keeps_the_card_and_refuses_the_other_decision) {
 TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
+  PgLogRepository log{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
-  repo.insertSession(sessionAt("ses_pg000001", 1'700'000'000'000));
-  repo.insertSet(benchSet("set_pg000001", 82.5, 1'700'000'060'000));
-  repo.insertSet(benchSet("set_pg000002", 82.5, 1'700'000'120'000));
+  log.insertSession(sessionAt("ses_pg000001", 1'700'000'000'000));
+  log.insertSet(benchSet("set_pg000001", 82.5, 1'700'000'060'000));
+  log.insertSet(benchSet("set_pg000002", 82.5, 1'700'000'120'000));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {}));
 
   std::optional<RoutineProposal> read =
@@ -625,7 +633,7 @@ TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
 TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {}));
 
@@ -646,7 +654,7 @@ TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
 TEST(pg_gym_a_proposal_another_account_holds_resolves_to_nothing_on_every_door) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, Routine{RoutineId{"rt_pg000009"}, wm::UserId{kOther}, "Their plan", 0,
                              {entryAt(1, "bench-press")}});
   repo.insertProposal(proposalAt("prop_pg00009", "rt_pg000009", 1, {benchAt(87.5, 3)},
@@ -672,7 +680,7 @@ TEST(pg_gym_a_proposal_another_account_holds_resolves_to_nothing_on_every_door) 
 TEST(pg_gym_deleting_a_routine_takes_its_proposals_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgTrainingRepository repo{wm::pgTestPool()};
+  PgProgramRepository repo{wm::pgTestPool()};
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
 
