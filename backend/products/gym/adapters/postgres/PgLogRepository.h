@@ -36,7 +36,7 @@ public:
   std::optional<Set> setOf(const UserId& user, const SetId& id) override;
   std::optional<std::uint64_t> lastActivity(const SessionId& id) override;
   void insertSession(const Session& incoming) override;
-  void close(const SessionId& id, std::uint64_t finishedAtMs) override;
+  void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override;
   SetInsertOutcome insertSet(const Set& incoming) override;
   std::optional<Set> updateSet(const UserId& user, const Set& corrected) override;
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override;

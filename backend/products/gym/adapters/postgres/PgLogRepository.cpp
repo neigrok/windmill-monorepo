@@ -20,7 +20,7 @@ namespace {
 constexpr std::string_view kSessionColumns =
     "id, user_id, routine_id, coalesce(plan::text, '') AS plan, "
     "(extract(epoch from started_at) * 1000)::bigint AS started_ms, "
-    "(extract(epoch from finished_at) * 1000)::bigint AS finished_ms";
+    "(extract(epoch from finished_at) * 1000)::bigint AS finished_ms, coalesce(closed_by, '') AS closed_by";
 
 constexpr std::string_view kSetColumns =
     "id, session_id, exercise_id, set_number, weight_kg::float8 AS weight_kg, reps, kind, "
@@ -50,7 +50,8 @@ Session sessionFrom(const Row& row) {
   return Session{SessionId{row["id"].template as<std::string>()},
                  UserId{row["user_id"].template as<std::string>()},
                  instantFrom(row["started_ms"]), finished, routine,
-                 planFrom(parse(row["plan"].template as<std::string>()))};
+                 planFrom(parse(row["plan"].template as<std::string>())),
+                 closedByFromStored(row["closed_by"].template as<std::string>())};
 }
 
 template <typename Row>
@@ -184,15 +185,16 @@ void PgLogRepository::insertSession(const Session& incoming) {
   txn.commit();
 }
 
-void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs) {
+void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) {
   // The trailing IS NULL makes the close idempotent AND first-writer-wins: a finish replay, or a
-  // finish racing the lazy auto-close, keeps whichever instant landed first.
+  // finish racing the lazy auto-close, keeps whichever instant landed first — and whichever WORD
+  // landed first, which is what decides whether a late set may move the finish (insertSet below).
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
-      "UPDATE gym_sessions SET finished_at = to_timestamp($2::bigint / 1000.0) "
+      "UPDATE gym_sessions SET finished_at = to_timestamp($2::bigint / 1000.0), closed_by = $3 "
       "WHERE id = $1 AND finished_at IS NULL",
-      id.str(), static_cast<long long>(finishedAtMs));
+      id.str(), static_cast<long long>(finishedAtMs), toString(closedBy));
   txn.commit();
 }
 
@@ -230,8 +232,7 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
     pqxx::result locked = txn.exec_params(
-        "SELECT user_id, finished_at IS NOT NULL AS finished FROM gym_sessions WHERE id = $1 "
-        "FOR UPDATE",
+        "SELECT " + std::string(kSessionColumns) + " FROM gym_sessions WHERE id = $1 FOR UPDATE",
         incoming.session.str());
     // No session row at all is the answer a spent id gets, and it is the same answer the shape
     // below would reach anyway: the INSERT..SELECT would select nothing, so nothing lands and the
@@ -256,7 +257,12 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
         "LIMIT 1",
         incoming.id.str(), locked[0]["user_id"].as<std::string>());
     if (!deleted.empty()) return {std::nullopt, SetInsertError::deleted};
-    if (locked[0]["finished"].as<bool>()) return {std::nullopt, SetInsertError::finished};
+    // The boundary of §3.3, with the one door lateSetLands opens: a set continuing a workout the
+    // four-hour rule closed under it lands, and the finish moves forward to it below — in this
+    // transaction, under this lock, so a reader never sees the set standing past the close.
+    const Session session = sessionFrom(locked[0]);
+    const bool continuesStaleClose = session.finishedAtMs && lateSetLands(session, incoming.completedAtMs);
+    if (session.finishedAtMs && !continuesStaleClose) return {std::nullopt, SetInsertError::finished};
     // The catalog's own predicate, in the owner the locked row names — the fact the foreign key
     // cannot state, and it is translated HERE the way every other adapter translates its vendor
     // errors: it leaves the port as a value, and the wire layer answers it without knowing gym is
@@ -278,6 +284,11 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
         "SELECT " + std::string(kSetColumns) + " FROM gym_sets WHERE id = $1 AND session_id = $2",
         incoming.id.str(), incoming.session.str());
     if (!rows.empty()) stored = setFrom(rows[0]);
+    if (stored && continuesStaleClose)
+      txn.exec_params(
+          "UPDATE gym_sessions SET finished_at = greatest(finished_at, to_timestamp($2::bigint / 1000.0)) "
+          "WHERE id = $1",
+          incoming.session.str(), static_cast<long long>(incoming.completedAtMs));
     txn.commit();
   }
   if (!stored) return {std::nullopt, SetInsertError::idTaken};

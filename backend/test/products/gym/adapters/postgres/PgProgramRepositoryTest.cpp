@@ -240,7 +240,7 @@ TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snaps
   inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   log.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000001"}, pushA()});
-  log.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  log.close(SessionId{"ses_pg000001"}, t1 + 1'000, ClosedBy::finish);
 
   CHECK(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
   CHECK_FALSE(repo.deleteRoutine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}));
@@ -273,10 +273,10 @@ TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
   inserted(repo, routineAt("rt_pg000003", "Legs", {entryAt(1, "back-squat")}));
   log.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000002"}, PlanSnapshot{"Pull A", {}}});
-  log.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  log.close(SessionId{"ses_pg000001"}, t1 + 1'000, ClosedBy::finish);
   log.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
                              std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
-  log.close(SessionId{"ses_pg000002"}, t1 + 11'000);
+  log.close(SessionId{"ses_pg000002"}, t1 + 11'000, ClosedBy::finish);
   // Another account training its own routine cannot move this account's order.
   inserted(repo, Routine{RoutineId{"rt_pg000004"}, wm::UserId{kOther}, "Theirs", 0,
                              {entryAt(1, "bench-press")}});

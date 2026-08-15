@@ -328,6 +328,28 @@ TEST(can_start_at_refuses_a_start_past_the_clocks_allowance) {
   CHECK_FALSE(canStartAt(now + 24ull * 60 * 60 * 1000, now)); // "tomorrow"
 }
 
+// A set continues a STALE-closed workout when it sits within four hours of the close — which is
+// that workout's last landed activity — and never continues one the lifter finished by hand, and
+// never one closed before the log kept who closed it (absent reads as finish).
+TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
+  const std::uint64_t t = 1'700'000'000'000;
+  Session stale = openSession(t);
+  stale.finishedAtMs = t + 3'600'000;
+  stale.closedBy = ClosedBy::stale;
+  CHECK(lateSetLands(stale, t + 3'600'000 + 1));                     // a minute after the last set
+  CHECK(lateSetLands(stale, t + 3'600'000 + kAutoCloseMs));           // exactly the window
+  CHECK_FALSE(lateSetLands(stale, t + 3'600'000 + kAutoCloseMs + 1));  // past it: another day
+  CHECK(lateSetLands(stale, t + 60'000));                             // earlier than the close: a set that was owed all along
+
+  Session finished = stale;
+  finished.closedBy = ClosedBy::finish;
+  CHECK_FALSE(lateSetLands(finished, t + 3'600'000 + 1));
+  Session legacy = stale;
+  legacy.closedBy = std::nullopt;
+  CHECK_FALSE(lateSetLands(legacy, t + 3'600'000 + 1));
+  CHECK_FALSE(lateSetLands(openSession(t), t + 1));                   // open: nothing to continue
+}
+
 // ---- corrected: the fix, and what a fix may not reach ---------------------------------------
 
 TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {

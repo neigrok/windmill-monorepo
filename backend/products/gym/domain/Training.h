@@ -183,6 +183,15 @@ struct PlanSnapshot {
 // One workout. The client-minted id is the idempotency key; plan is the frozen routine snapshot the
 // server takes at start (absent = ad-hoc); instants are the device's wall clock, epoch-ms, because
 // offline logging means the device's clock is the only honest one.
+// How a finished session came to be finished. `finish` is the lifter's word — the explicit end, and
+// nothing lands after it. `stale` is the log's own guess — the four-hour rule closed a workout at
+// its last landed set because nothing more had arrived — and a guess is revisable: a set that lands
+// late but continues that workout proves the guess early (see lateSetLands). Absent on a row that
+// was closed before the log kept this fact, and absent means `finish`, the terminal reading.
+enum class ClosedBy { finish, stale };
+std::string toString(ClosedBy closedBy);
+std::optional<ClosedBy> closedByFromStored(std::string_view text);  // "" or unknown → absent
+
 struct Session {
   SessionId id;
   UserId user;
@@ -190,11 +199,13 @@ struct Session {
   std::optional<std::uint64_t> finishedAtMs;
   std::optional<RoutineId> routine;
   std::optional<PlanSnapshot> plan;
+  std::optional<ClosedBy> closedBy;
 
   Session(SessionId id, UserId user, std::uint64_t startedAtMs,
           std::optional<std::uint64_t> finishedAtMs = std::nullopt,
           std::optional<RoutineId> routine = std::nullopt,
-          std::optional<PlanSnapshot> plan = std::nullopt);
+          std::optional<PlanSnapshot> plan = std::nullopt,
+          std::optional<ClosedBy> closedBy = std::nullopt);
 
   bool operator==(const Session&) const = default;
 };
@@ -274,6 +285,17 @@ bool canFinishAt(const Session& session, std::uint64_t finishedAtMs);
 // minutes is the skew an honest clock is allowed; past it, the start is refused naming the gap.
 constexpr std::uint64_t kMaxClockAheadMs = 5ull * 60 * 1000;
 bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
+
+// The fourth rule, and the one that keeps a phone's owed sets from being lost to the log's own
+// guess. A workout the four-hour rule closed was closed at its LAST LANDED set — but a phone that
+// logged on in a basement holds sets the log never saw, and any read that settled staleness in the
+// meantime (the web mirror overnight, a record page, the phone's own start on reconnect) has
+// already closed the workout under them. Refusing those sets as "landed after the finish" would
+// be the log insisting on a guess it made without the facts. So a set continues a STALE-closed
+// session when it sits within the four-hour window of that session's last activity — which is what
+// finished_at IS on a stale close — and landing it moves the finish forward to it. An explicit
+// finish is never reopened: that instant was the lifter's word, not the log's estimate.
+bool lateSetLands(const Session& session, std::uint64_t completedAtMs);
 
 // The third pure session rule, and the only one about a reader who is not the owner. A coach share
 // is a capability with an END — thirty days, which is longer than any conversation about one

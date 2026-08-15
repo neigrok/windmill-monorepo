@@ -43,8 +43,8 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"}), std::optional<Session>());
 
   // close is idempotent and first-writer-wins; once closed, a new session may open.
-  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
-  repo.close(SessionId{"ses_pg000001"}, t1 + 9'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000, ClosedBy::finish);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 9'000, ClosedBy::finish);
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());
   std::optional<Session> closed = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
   CHECK_EQ(closed->finishedAtMs, std::optional<std::uint64_t>(t1 + 1'000));
@@ -119,7 +119,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
 
   // The same lifter reusing one of their own spent ids in a later session: the same refusal, and
   // the first row is untouched — no silent move, no silent drop reported as a success.
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000003", t1 + 4'000));
   SetInsertOutcome reused = repo.insertSet(
       Set{SetId{"set_pg000001"}, SessionId{"ses_pg000003"}, ExerciseId{"back-squat"}, 0, 222.5, 9,
@@ -203,13 +203,43 @@ TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1));
   SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
 
   SetInsertOutcome refused = repo.insertSet(benchSet("set_pg000002", 85.0, t1 + 3'000));
 
   CHECK(refused.error == SetInsertError::finished);
   CHECK_EQ(refused.set, std::optional<Set>());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
+}
+
+// The one door through the finished boundary: a set continuing a STALE-closed workout lands and
+// moves finished_at forward in the same transaction; after the lifter's own finish nothing does,
+// and a legacy close (closed_by NULL) reads as a finish.
+TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgLogRepository repo{wm::pgTestPool()};
+  const std::uint64_t t1 = 1'700'000'000'123;
+  repo.insertSession(sessionAt("ses_pg000001", t1));
+  repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000, ClosedBy::stale);
+
+  SetInsertOutcome owed = repo.insertSet(benchSet("set_pg000002", 85.0, t1 + 600'000));
+  SetInsertOutcome tomorrow = repo.insertSet(benchSet("set_pg000003", 60.0, t1 + 600'000 + kAutoCloseMs + 1));
+
+  CHECK(owed.error == SetInsertError::none);
+  CHECK_EQ(owed.set->setNumber, 2);
+  CHECK(tomorrow.error == SetInsertError::finished);
+  std::optional<Session> extended = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  CHECK_EQ(extended->finishedAtMs, std::optional<std::uint64_t>(t1 + 600'000));
+  CHECK(extended->closedBy == std::optional<ClosedBy>(ClosedBy::stale));
+  CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());   // extended, not reopened
+
+  repo.insertSession(sessionAt("ses_pg000002", t1 + 900'000));
+  repo.insertSet(benchSet("set_pg000004", 82.5, t1 + 901'000, "ses_pg000002"));
+  repo.close(SessionId{"ses_pg000002"}, t1 + 902'000, ClosedBy::finish);
+  SetInsertOutcome afterFinish = repo.insertSet(benchSet("set_pg000005", 85.0, t1 + 901'500, "ses_pg000002"));
+  CHECK(afterFinish.error == SetInsertError::finished);
 }
 
 // max+1 numbering under parallel appends: every append to one session serializes behind the
@@ -247,7 +277,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
   repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
   repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"},
                      0, 100.0, 5, SetKind::working, std::nullopt, "", t1 + 2'000});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t2));
 
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t2 + 1, 50));
@@ -274,13 +304,13 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   PgLogRepository repo{wm::pgTestPool()};
   const std::uint64_t t1 = 1'700'000'000'123;
   repo.insertSession(sessionAt("ses_pg000001", t1 + 3'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 9'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 9'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + 2'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 9'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 9'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000003", t1 + 2'000));   // the tie
-  repo.close(SessionId{"ses_pg000003"}, t1 + 9'000);
+  repo.close(SessionId{"ses_pg000003"}, t1 + 9'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000004", t1 + 1'000));
-  repo.close(SessionId{"ses_pg000004"}, t1 + 9'000);
+  repo.close(SessionId{"ses_pg000004"}, t1 + 9'000, ClosedBy::finish);
 
   std::vector<SessionSummary> first = pageOf(repo, wm::UserId{kUser}, page(t1 + 9'000, 2));
   std::vector<SessionSummary> second = pageOf(
@@ -315,14 +345,14 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 8, t1 + 120'000));
   repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 140, 1, t1 + 30'000, SetKind::warmup));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000, ClosedBy::finish);
   // Left running and never touched again: the auto-close ends it AT its last set.
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000'000));
   repo.insertSet(squatSet("set_pg000004", "ses_pg000002", 90, 5, t1 + 10'060'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 10'060'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 10'060'000, ClosedBy::finish);
   // Abandoned holding no set at all: the same rule ends it at its own start.
   repo.insertSession(sessionAt("ses_pg000004", t1 + 30'000'000));
-  repo.close(SessionId{"ses_pg000004"}, t1 + 30'000'000);
+  repo.close(SessionId{"ses_pg000004"}, t1 + 30'000'000, ClosedBy::finish);
   // Warmed up and still running — inserted LAST, because the one-open index allows exactly one.
   repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000'000));
   repo.insertSet(squatSet("set_pg000005", "ses_pg000003", 60, 10, t1 + 20'060'000,
@@ -363,11 +393,11 @@ TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_
   repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 100, 5, t1 + 3'000));
   repo.insertSet(benchSet("set_pg000004", 82.5, t1 + 4'000));                     // 82.5 × 8
   repo.insertSet(benchSet("set_pg000005", -20, t1 + 5'000));                      // assisted × 8
-  repo.close(SessionId{"ses_pg000001"}, t1 + 6'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 6'000, ClosedBy::finish);
   // A whole session of chin-ups: working sets that moved no measurable load at all.
   repo.insertSession(sessionAt("ses_pg000002", t1 + 100'000));
   repo.insertSet(benchSet("set_pg000006", 0, t1 + 101'000, "ses_pg000002"));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 102'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 102'000, ClosedBy::finish);
 
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 200'000, 50));
 
@@ -398,7 +428,7 @@ TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   repo.insertSet(squatSet("set_pg000004", "ses_pg000001", 95, 10, t1 + 4'000));
   repo.insertSet(squatSet("set_pg000005", "ses_pg000001", 95, 8, t1 + 5'000));
   repo.insertSet(squatSet("set_pg000006", "ses_pg000001", -20, 12, t1 + 6'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 7'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 7'000, ClosedBy::finish);
 
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 100'000, 50));
 
@@ -456,7 +486,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
 
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
 
   repo.insertSession(Session{SessionId{"ses_pg000002"}, wm::UserId{kUser}, t1 + 10'000,
                              std::nullopt, std::nullopt,
@@ -468,7 +498,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
       repo.insertSet(benchSet("set_pg000004", 80.0, t1 + 13'000, "ses_pg000002"));
   repo.insertSet(Set{SetId{"set_pg000005"}, SessionId{"ses_pg000002"}, ExerciseId{"back-squat"}, 0,
                      100.0, 5, SetKind::working, std::nullopt, "", t1 + 14'000});
-  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000, ClosedBy::finish);
 
   // Today, live and heavier: an unfinished session is never a last time.
   repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000));
@@ -476,7 +506,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   // And another account's newer, heavier bench, which this caller must never see.
   repo.insertSession(Session{SessionId{"ses_pg000004"}, wm::UserId{kOther}, t1 + 30'000});
   repo.insertSet(benchSet("set_pg000007", 142.5, t1 + 31'000, "ses_pg000004"));
-  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000);
+  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000, ClosedBy::finish);
 
   LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
 
@@ -506,7 +536,7 @@ TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 0,
                      60.0, 10, SetKind::warmup, std::nullopt, "", t1 + 1'000});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   {
     wm::PgLease c{*wm::pgTestPool()};
     pqxx::work w{*c};
@@ -546,11 +576,11 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
 
   repo.insertSession(sessionAt("ses_pg000001", t1));                       // a week ago
   repo.insertSet(benchSet("set_pg000001", 60.0, t1 + 30 * day));           // stamped 30 days ahead
-  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 1'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + 6 * day));             // yesterday
   SetInsertOutcome honest =
       repo.insertSet(benchSet("set_pg000002", 100.0, t1 + 6 * day + 1'000, "ses_pg000002"));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 6 * day + 2'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 6 * day + 2'000, ClosedBy::finish);
 
   LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 7 * day, 50));
@@ -573,7 +603,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              std::nullopt, PlanSnapshot{"A private routine", {}}});
   repo.insertSet(benchSet("set_pg000001", 142.5, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   {
     // A set row inside the owner's session carrying ANOTHER account's user_id. No API path mints
     // one today; the read must not depend on that staying true.
@@ -634,7 +664,7 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
       w.commit();
     }
     SetInsertOutcome landed = repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
-    repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+    repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
 
     LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
 
@@ -658,7 +688,7 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   // An older, HEAVIER bench session, so a row that reported the heaviest set would say 100 here.
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 100.0, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
 
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
   repo.insertSet(Set{SetId{"set_pg000002"}, SessionId{"ses_pg000002"}, ExerciseId{"bench-press"}, 0,
@@ -667,7 +697,7 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   repo.insertSet(benchSet("set_pg000004", 80.0, t1 + 13'000, "ses_pg000002"));
   // Squatted only as a ramp-up, which is the same silence as never squatting at all.
   repo.insertSet(squatSet("set_pg000005", "ses_pg000002", 60.0, 5, t1 + 14'000, SetKind::warmup));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 15'000, ClosedBy::finish);
 
   // Today, live and far heavier.
   repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000));
@@ -676,7 +706,7 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   // And another account's newer, heavier bench.
   repo.insertSession(Session{SessionId{"ses_pg000004"}, wm::UserId{kOther}, t1 + 30'000});
   repo.insertSet(benchSet("set_pg000007", 142.5, t1 + 31'000, "ses_pg000004"));
-  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000);
+  repo.close(SessionId{"ses_pg000004"}, t1 + 32'000, ClosedBy::finish);
 
   std::vector<LastSet> ours = repo.lastSets(wm::UserId{kUser});
   std::vector<LastSet> theirs = repo.lastSets(wm::UserId{kOther});
@@ -707,12 +737,12 @@ TEST(pg_gym_last_sets_carries_one_row_per_movement_ordered_by_id) {
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 120.0, 5, t1 + 2'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
 
   // A later session squats again, so the two rows are dated by two different workouts.
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
   repo.insertSet(squatSet("set_pg000003", "ses_pg000002", 125.0, 5, t1 + 11'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 12'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 12'000, ClosedBy::finish);
 
   CHECK_EQ(repo.lastSets(wm::UserId{kUser}),
            (std::vector<LastSet>{LastSet{ExerciseId{"back-squat"}, 125.0, 5, t1 + 10'000},
@@ -739,7 +769,7 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000001"}, frozen});
   repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
 
   std::optional<Session> stored = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
   LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
@@ -778,10 +808,10 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   repo.insertSet(squatSet("set_pg000005", "ses_pg000001", 140, 3, t1 - 2 * week + 30'000,
                           SetKind::warmup));
   repo.insertSet(benchSet("set_pg000006", 80, t1 - 2 * week + 300'000, "ses_pg000001"));
-  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000003", t1));
   repo.insertSet(squatSet("set_pg000010", "ses_pg000003", 105, 5, t1 + 60'000));
-  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000, ClosedBy::finish);
   // Inserted last, because the one-open index allows exactly one of these at a time: a session
   // nobody ever closed, holding the heaviest squat in the log.
   repo.insertSession(sessionAt("ses_pg000002", t1 - week));
@@ -812,16 +842,16 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1 - 2 * week,
                              std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 95, 5, t1 - 2 * week + 60'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000, ClosedBy::finish);
   // The same movement a week later, with no day of the program behind it: not what this stands
   // against, however recent.
   repo.insertSession(sessionAt("ses_pg000002", t1 - week));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 100, 5, t1 - week + 60'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 - week + 3'600'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 - week + 3'600'000, ClosedBy::finish);
   repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000001"}, pushA()});
   repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 105, 5, t1 + 60'000));
-  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000, ClosedBy::finish);
 
   std::optional<Session> reviewed = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000003"});
   REQUIRE(reviewed.has_value());
@@ -849,7 +879,7 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 82.5, t1 + 1'000));
   repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
 
   CHECK_FALSE(repo.deleteSession(wm::UserId{kOther}, SessionId{"ses_pg000001"}));
   CHECK(repo.deleteSession(wm::UserId{kUser}, SessionId{"ses_pg000001"}));
@@ -1061,7 +1091,7 @@ TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bri
   }
   // A closed workout does not change the answer, and does not get to answer FIRST: `session-finished`
   // would tell a queue the set never reached the log, and this one reached it and was taken out.
-  repo.close(SessionId{"ses_pg000001"}, t1 + 5'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 5'000, ClosedBy::finish);
   CHECK(repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000)).error == SetInsertError::deleted);
 }
 
@@ -1077,7 +1107,7 @@ TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(benchSet("set_pg000001", 80.0, t1 + 1'000));
   repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000001"});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
   Session theirs{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1 + 10'000, std::nullopt,
                  std::nullopt, std::nullopt};
@@ -1288,7 +1318,7 @@ TEST(pg_gym_discarding_a_session_takes_its_revisions_with_it) {
   fix.weightKg = 60;
   repo.updateSet(wm::UserId{kUser}, corrected(*stored, fix));
   repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_pg000001"}, SetId{"set_pg000002"});
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
   {
     wm::PgLease c{*wm::pgTestPool()};
     pqxx::work w{*c};
@@ -1349,10 +1379,10 @@ TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_count
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 110, 2, t1 + 120'000));
   repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 60, 10, t1 + 180'000, SetKind::warmup));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + week));
   repo.insertSet(squatSet("set_pg000004", "ses_pg000002", 105, 5, t1 + week + 60'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + week + 3'600'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + week + 3'600'000, ClosedBy::finish);
 
   TrainingLog log = repo.trainingLog(wm::UserId{kUser});
 
@@ -1384,10 +1414,10 @@ TEST(pg_gym_statistics_weeks_are_contiguous_across_a_week_nobody_trained) {
 
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'600'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + 2 * week));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 105, 5, t1 + 2 * week + 60'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 2 * week + 3'600'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 2 * week + 3'600'000, ClosedBy::finish);
 
   TrainingLog log = repo.trainingLog(wm::UserId{kUser});
 
@@ -1407,7 +1437,7 @@ TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 60'000));
   repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, t1});
   repo.insertSet(squatSet("set_pg000003", "ses_pg000003", 200, 5, t1 + 60'000));
-  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000);
+  repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000, ClosedBy::finish);
 
   TrainingLog log = repo.trainingLog(wm::UserId{kUser});
 
@@ -1464,7 +1494,7 @@ TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) 
   PgLogRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(sessionAt("ses_pg000001", now));
-  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000, ClosedBy::finish);
 
   std::optional<SessionShare> first =
       repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-one",
@@ -1499,7 +1529,7 @@ TEST(pg_gym_share_never_reaches_an_absent_or_another_accounts_session) {
   PgLogRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(Session{SessionId{"ses_pg000003"}, wm::UserId{kOther}, now});
-  repo.close(SessionId{"ses_pg000003"}, now + 3'600'000);
+  repo.close(SessionId{"ses_pg000003"}, now + 3'600'000, ClosedBy::finish);
 
   CHECK_FALSE(repo.insertShare(SessionShare{SessionId{"ses_pg000009"}, wm::UserId{kUser}, "pg-a",
                                             now + kShareLifetimeMs},
@@ -1521,7 +1551,7 @@ TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
                              std::nullopt, pushA()});
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, now + 60'000));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 110, 2, now + 120'000));
-  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000, ClosedBy::finish);
   repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-live",
                                 now + kShareLifetimeMs},
                    now);
@@ -1554,7 +1584,7 @@ TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   PgLogRepository repo{wm::pgTestPool()};
   const std::uint64_t now = 1'700'000'000'000;
   repo.insertSession(sessionAt("ses_pg000001", now));
-  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000);
+  repo.close(SessionId{"ses_pg000001"}, now + 3'600'000, ClosedBy::finish);
   repo.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "pg-tok-doomed",
                                 now + kShareLifetimeMs},
                    now);
@@ -1582,10 +1612,10 @@ TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
   repo.insertSet(benchSet("set_pg000002", 80.0, t1 + 2'000, "ses_pg000001"));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + day));
   repo.insertSet(squatSet("set_pg000003", "ses_pg000002", 105, 5, t1 + day + 1'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + day + 2'000);
+  repo.close(SessionId{"ses_pg000002"}, t1 + day + 2'000, ClosedBy::finish);
 
   const LogPage newest = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 1));
   const LogPage whole = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 50));
@@ -1614,7 +1644,7 @@ TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_p
 
   repo.insertSession(sessionAt("ses_pg000001", t1));
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + day));   // still running, and the heavier day
   repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 110, 5, t1 + day + 1'000));
 
@@ -1654,7 +1684,7 @@ TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_t
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000001", 100, 5, t1 + 2'000));
   repo.insertSet(squatSet("set_pg000003", "ses_pg000001", 95, 10, t1 + 3'000));
-  repo.close(SessionId{"ses_pg000001"}, t1 + 4'000);
+  repo.close(SessionId{"ses_pg000001"}, t1 + 4'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000002", t1 + day));   // still open: not history yet
 
   const MovementHistory history =

@@ -15,7 +15,7 @@ void settleOpen(LogRepository& log, const UserId& user, std::uint64_t nowMs) {
   if (!open) return;
   std::optional<std::uint64_t> closeAt = autoCloseAt(*open, log.lastActivity(open->id), nowMs);
   if (!closeAt) return;
-  log.close(open->id, *closeAt);
+  log.close(open->id, *closeAt, ClosedBy::stale);
 }
 
 // What the store ALREADY holds for this caller, and nothing else: their own row under this id first
@@ -168,7 +168,7 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
   if (!stored) return {std::nullopt, FinishError::notFound};
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
   if (stored->finishedAtMs) return {*stored, FinishError::none};   // replay, or already auto-closed
-  log_.close(session, finishedAtMs);
+  log_.close(session, finishedAtMs, ClosedBy::finish);
   std::optional<Session> closed = log_.session(user, session);
   if (!closed) return {std::nullopt, FinishError::notFound};
   return {*closed, FinishError::none};

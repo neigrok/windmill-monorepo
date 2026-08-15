@@ -287,9 +287,12 @@ public:
     db.sessions.push_back(incoming);
   }
 
-  void close(const SessionId& id, std::uint64_t finishedAtMs) override {
-    for (Session& session : db.sessions)
-      if (session.id == id && !session.finishedAtMs) session.finishedAtMs = finishedAtMs;
+  void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
+    for (Session& session : db.sessions) {
+      if (!(session.id == id) || session.finishedAtMs) continue;
+      session.finishedAtMs = finishedAtMs;
+      session.closedBy = closedBy;
+    }
   }
 
   SetInsertOutcome insertSet(const Set& incoming) override {
@@ -312,7 +315,11 @@ public:
       if (db.ownsSession(ran->user, row.set.session))
         return {std::nullopt, SetInsertError::deleted};
     }
-    if (ran->finishedAtMs) return {std::nullopt, SetInsertError::finished};
+    // The one door through the finished boundary, the same one the SQL opens: a set continuing a
+    // STALE-closed workout lands and moves the finish forward to it (below), never a set after the
+    // lifter's own finish.
+    const bool continuesStaleClose = ran->finishedAtMs && lateSetLands(*ran, incoming.completedAtMs);
+    if (ran->finishedAtMs && !continuesStaleClose) return {std::nullopt, SetInsertError::finished};
     // Scoped on the SESSION's owner, the way the write is scoped in SQL. A foreign key alone would
     // admit another lifter's private movement, and their movement name would then be printed by
     // this account's log, its export and its coach share.
@@ -332,6 +339,10 @@ public:
     Set stored = incoming;
     stored.setNumber = number;
     db.sets.push_back(stored);
+    if (continuesStaleClose)
+      for (Session& session : db.sessions)
+        if (session.id == incoming.session)
+          session.finishedAtMs = std::max(*session.finishedAtMs, incoming.completedAtMs);
     return {stored, SetInsertError::none};
   }
 

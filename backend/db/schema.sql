@@ -1300,8 +1300,15 @@ create table if not exists gym_sessions (
   routine_id  text references gym_routines(id) on delete set null,
   plan        jsonb,
   started_at  timestamptz not null,
-  finished_at timestamptz
+  finished_at timestamptz,
+  -- Who closed it (2026-08-16): 'finish' is the lifter's word and final; 'stale' is the log's own
+  -- four-hour guess, closed at the last landed set — and a set that lands late but continues that
+  -- workout (within four hours of finished_at) is accepted and moves finished_at forward, because a
+  -- phone in a basement holds sets the log never saw and the guess was made without them
+  -- (domain lateSetLands). NULL is a row closed before this column existed, read as 'finish'.
+  closed_by   text check (closed_by in ('finish', 'stale'))
 );
+alter table gym_sessions add column if not exists closed_by text check (closed_by in ('finish', 'stale'));
 create index if not exists gym_sessions_log on gym_sessions (user_id, started_at desc);
 create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
   where finished_at is null;

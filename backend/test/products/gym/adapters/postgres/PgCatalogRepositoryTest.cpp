@@ -248,7 +248,7 @@ TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
 
   log.insertSession(sessionAt("ses_pg000001", t1));
   log.insertSet(squatSet("set_pg000001", "ses_pg000001", 100, 5, t1 + 1'000));
-  log.close(SessionId{"ses_pg000001"}, t1 + 2'000);
+  log.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
   log.insertShare(SessionShare{SessionId{"ses_pg000001"}, wm::UserId{kUser}, "tok_pg000001",
                                 t1 + 30ull * 86'400'000},

@@ -111,8 +111,8 @@ struct ClosedUnderTheLock : FakeLogRepository {
 
 struct DiscardedUnderTheFinish : FakeLogRepository {
   using FakeLogRepository::FakeLogRepository;
-  void close(const SessionId& id, std::uint64_t finishedAtMs) override {
-    FakeLogRepository::close(id, finishedAtMs);
+  void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
+    FakeLogRepository::close(id, finishedAtMs, closedBy);
     std::erase_if(db.sessions, [&](const Session& session) { return session.id == id; });
   }
 };
@@ -193,7 +193,8 @@ TEST(start_replay_of_an_already_finished_start_returns_the_stored_session) {
 
   CHECK(replayed.error == StartError::none);
   CHECK_EQ(*replayed.session,
-           Session(sid(), uid(), h.clock.now, std::optional<std::uint64_t>(h.clock.now + 1'000)));
+           Session(sid(), uid(), h.clock.now, std::optional<std::uint64_t>(h.clock.now + 1'000),
+                   std::nullopt, std::nullopt, ClosedBy::finish));
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
@@ -308,6 +309,46 @@ TEST(append_of_a_new_set_to_a_finished_session_is_finished) {
   CHECK(outcome.error == AppendError::finished);
   CHECK_FALSE(outcome.set.has_value());
   CHECK(h.repo.db.sets.empty());
+}
+
+// THE BASEMENT. A phone logs on with no signal; overnight the web mirror's read settles the workout
+// stale — closed at the one set the log had. On reconnect the phone's owed sets arrive: they
+// continue that workout, they land, and the finish moves forward to the last of them. Sets a day
+// later do not (that is another workout), and nothing lands after a finish the lifter said.
+TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.clock.now += kAutoCloseMs + 3'600'000;   // a read the next morning settles it stale…
+  h.service.log(uid(), LogCursor{kMaxInstantMs, std::nullopt, 10});
+  REQUIRE(h.repo.db.sessions[0].finishedAtMs.has_value());
+  CHECK_EQ(*h.repo.db.sessions[0].finishedAtMs, h.clock.now - kAutoCloseMs - 3'600'000 + 60'000);
+  CHECK(h.repo.db.sessions[0].closedBy == ClosedBy::stale);
+  const std::uint64_t lastNight = h.clock.now - kAutoCloseMs - 3'600'000;
+
+  AppendOutcome second = h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, lastNight + 120'000));
+  AppendOutcome third = h.service.append(uid(), sid(), h.bench("set_00000003", 85.0, lastNight + 180'000));
+  AppendOutcome tomorrow = h.service.append(uid(), sid(), h.bench("set_00000004", 60.0, h.clock.now));
+
+  CHECK(second.error == AppendError::none);
+  CHECK(third.error == AppendError::none);
+  CHECK(tomorrow.error == AppendError::finished);
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(*h.repo.db.sessions[0].finishedAtMs, lastNight + 180'000);   // the finish followed the last owed set
+  CHECK(h.repo.db.sessions[0].closedBy == ClosedBy::stale);            // still the log's word, still revisable
+}
+
+TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.service.finish(uid(), sid(), h.clock.now + 120'000);
+
+  AppendOutcome late = h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 90'000));
+
+  CHECK(late.error == AppendError::finished);
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(*h.repo.db.sessions[0].finishedAtMs, h.clock.now + 120'000);
 }
 
 // The flush queue treats 409 as terminal and drops the write, so a set that is ALREADY durable

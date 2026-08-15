@@ -1015,7 +1015,7 @@ future kind added by a newer deploy can't crash an older reader. Id shape valida
 rule: `^[A-Za-z0-9_-]{8,64}$`, recommended prefixes `ses_` / `set_` / `rt_` (client-minted,
 opaque to the server; the same client-supplied-id move the tree import uses).
 
-### 3.2 The three pure session rules — auto-close, the legal end, and the legal beginning
+### 3.2 The four pure session rules — auto-close, the legal end, the legal beginning, and the late set
 
 Lift had a three-way crash-recovery UX because its store was device-local. Server-as-truth
 deletes the problem, and `session-resume` was deliberately cut as a bet and kept as a rule:
@@ -1064,6 +1064,32 @@ was right on its own. Replays and joins are not held to the clock — they creat
 phone whose clock drifted mid-workout still lands back in its own session. The refusal is
 `400 clock-ahead` on HTTP (a phone's flush queue treats every 400 as terminal, and should be able
 to say which one) and a sentence naming the instant to send on MCP.
+
+The fourth rule (2026-08-16) is what keeps the first from eating a phone's owed sets, and it
+turned up when two executing hunts over the phones each found the same loss from a different
+door:
+
+```cpp
+// A finished session remembers WHO finished it: `finish` is the lifter's word and final; `stale`
+// is the log's own four-hour guess, closed at the last landed set. A set that lands late but
+// continues a stale-closed workout — within four hours of its finished_at — is accepted, and the
+// finish moves forward to it. Nothing lands after the lifter's own finish.
+enum class ClosedBy { finish, stale };
+bool lateSetLands(const Session& session, std::uint64_t completedAtMs);
+```
+
+The auto-close is lazy and it is a *guess*: it closes a workout at its last **landed** set because
+nothing more had arrived — but a phone in a basement holds sets the log never saw, and any read
+that settled staleness in the meantime (the web mirror overnight, a movement's record page, the
+phone's own start on reconnect) had already closed the workout under them; refusing those sets as
+"landed after the finish" was the log insisting on a guess it made without the facts, and every
+client's queue treats that 409 as terminal — lost lifts. So `close()` records `closed_by`
+(§2.2), and `insertSet` — under the same session lock, in the same transaction — lets a set through
+the finished boundary exactly when `lateSetLands` says it continues a stale close, moving
+`finished_at` forward to it. An explicit finish stays terminal; a row closed before the column
+existed reads as a finish. The phones still drain owed appends before any call that settles
+(§11.7) — that stops the close-and-extend churn — but the loss itself is closed at the root, for
+every client.
 A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt: 0` is falsy in
 JS and the row renders "in progress" for the rest of time, unfixable until phase-2 log-editing.
 That is one refusal's worth of work.
@@ -2015,7 +2041,7 @@ on carries a machine word under `code` beside the human sentence:
 | 409 | `session-already-open` | start that said `joinOpenSession: false` while another of this lifter's sessions is open | `another session is already open` | terminal until the open workout ends — a new id changes nothing; finish it (or let the four-hour auto-close fire) and send the same body again |
 | 409 | `set-id-taken` | append a NEW set id already spent by a row outside this session | `that set id is already used` | mint a NEW set id and send the same set again |
 | 409 | `set-deleted` | append an id that names a set **this account deleted** — a replay of the POST that logged it, from a queue whose 200 was lost or from a claim | `that set was deleted` | terminal — drop the set. **Never the re-mint above:** a fresh id is exactly how the deletion would undo itself |
-| 409 | `session-finished` | append a NEW set to a session already finished | `that session is finished` | terminal — this set will never land here |
+| 409 | `session-finished` | append a NEW set to a session already finished — after the lifter's own finish, or more than four hours past a stale close's last landed set (a set continuing a stale close lands, §3.2) | `that session is finished` | terminal — this set will never land here |
 | 409 | `routine-id-taken` | create a routine under an id another account holds | `that routine id is taken` | mint a NEW routine id and send the same document again |
 | 409 | `exercise-id-taken` | create a movement under a seeded slug or another account's id — never the caller's **own**, which answers 200 with the movement already stored under it (§2.1: a 409 there forces a re-mint, and the re-mint is a second "Zercher Squat" every later set forks history across) | `that movement id is taken` | mint a NEW movement id and send it again |
 | 409 | `session-open` | discard a session that is still running | `that session is still running` | terminal until the workout ends — no id to re-mint and no body to fix; finish it (or let the four-hour auto-close fire) and send the same delete again |
@@ -2546,8 +2572,11 @@ On sign-in, and on every connect while a local backlog exists:
    workout; that exact bug shipped once (§11.4). Then ALL its sets, per-(session, exercise) lane in
    original order — `set_number` is server-assigned in arrival order — then `finish` with the true
    local `finishedAt`. No log or stats reads interleaved mid-session: `settleOpen` auto-closes a
-   session whose last set is over four hours old, and every later NEW set id then gets terminal
-   409 `session-finished` — lost lifts.
+   session whose last set is over four hours old. Since 2026-08-16 a set that continues that
+   stale-closed workout still lands and moves the finish forward (§3.2, `lateSetLands`) — the
+   loss is closed at the root — but a set more than four hours past the last landed one, or any
+   set after the lifter's own finish, gets terminal 409 `session-finished`, so the ordering rule
+   stands: drain the owed appends before anything that settles.
 3. **Verdicts by code only.** 409 `session-already-open` → wait until the open session closes;
    409 `session-id-taken` during claim → re-mint the session id AND remap that session's queued
    sets onto it; 401 / 404 / 5xx / offline → retry, never drop; 409 `session-finished` → dropped

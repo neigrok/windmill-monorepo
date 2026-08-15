@@ -275,16 +275,21 @@ struct LogRepository {
   virtual std::optional<Set> setOf(const UserId& user, const SetId& id) = 0;
   virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
-  virtual void close(const SessionId& id, std::uint64_t finishedAtMs) = 0;
+  // First-writer-wins and idempotent (a replayed finish, or a finish racing the lazy auto-close,
+  // keeps whichever instant landed first), and it records WHO closed: the lifter's finish is final,
+  // the log's stale guess is revisable by a late set (lateSetLands).
+  virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
   // Assigns the number and returns the stored row; anything that stops the write comes back as a
   // typed fact beside it, and EVERY refusal below this line is decided here and nowhere above it —
   // one fact decided in two layers gets decided in two orders. A REPLAY IS NOT RESOLVED HERE —
   // `LogService::append` answers it through `setOf` before this is ever reached, which is what lets
   // this method answer `finished` for every write that arrives after the locked row closed, replay
-  // or not. Stating it the other way round would be a contract a second implementation could keep
-  // and still lose a set. And an id this account holds as DELETED is refused before either: it is
-  // the one refusal the primary key cannot make, because the row it would have collided with is
-  // gone.
+  // or not — every write but the one lateSetLands admits: a set that continues a STALE-closed
+  // workout lands and moves that workout's finish forward to it, in the same transaction, because
+  // the close was the log's guess and the set is the fact. Stating it the other way round would be a
+  // contract a second implementation could keep and still lose a set. And an id this account holds
+  // as DELETED is refused before either: it is the one refusal the primary key cannot make, because
+  // the row it would have collided with is gone.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
 
   // The two writes that change a set already stored, and the only pair here that leaves something

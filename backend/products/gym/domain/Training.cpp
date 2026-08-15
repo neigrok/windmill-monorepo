@@ -180,9 +180,10 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
 
 Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
                  std::optional<std::uint64_t> finishedAtMs, std::optional<RoutineId> routine,
-                 std::optional<PlanSnapshot> plan)
+                 std::optional<PlanSnapshot> plan, std::optional<ClosedBy> closedBy)
     : id(std::move(id)), user(std::move(user)), startedAtMs(startedAtMs),
-      finishedAtMs(finishedAtMs), routine(std::move(routine)), plan(std::move(plan)) {
+      finishedAtMs(finishedAtMs), routine(std::move(routine)), plan(std::move(plan)),
+      closedBy(closedBy) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad session id");
   if (this->user.empty()) throw InvalidTraining("a session belongs to an account");
   if (startedAtMs == 0 || startedAtMs > kMaxInstantMs)
@@ -243,6 +244,21 @@ bool canFinishAt(const Session& session, std::uint64_t finishedAtMs) {
 
 bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs) {
   return startedAtMs <= nowMs + kMaxClockAheadMs;
+}
+
+std::string toString(ClosedBy closedBy) {
+  return closedBy == ClosedBy::stale ? "stale" : "finish";
+}
+
+std::optional<ClosedBy> closedByFromStored(std::string_view text) {
+  if (text == "stale") return ClosedBy::stale;
+  if (text == "finish") return ClosedBy::finish;
+  return std::nullopt;
+}
+
+bool lateSetLands(const Session& session, std::uint64_t completedAtMs) {
+  if (!session.finishedAtMs || session.closedBy != ClosedBy::stale) return false;
+  return completedAtMs <= *session.finishedAtMs + kAutoCloseMs;
 }
 
 std::uint64_t shareExpiryAt(std::uint64_t nowMs) {
