@@ -10,12 +10,12 @@ namespace {
 // persist the close if the domain says the session is over. Called before a start and before a log
 // read — the two routes whose reply carries the session state a close rewrites — so no ticker ever
 // runs for gym, and no close ever lands where the client cannot see it.
-void settleOpen(TrainingRepository& repo, const UserId& user, std::uint64_t nowMs) {
-  std::optional<Session> open = repo.open(user);
+void settleOpen(LogRepository& log, const UserId& user, std::uint64_t nowMs) {
+  std::optional<Session> open = log.open(user);
   if (!open) return;
-  std::optional<std::uint64_t> closeAt = autoCloseAt(*open, repo.lastActivity(open->id), nowMs);
+  std::optional<std::uint64_t> closeAt = autoCloseAt(*open, log.lastActivity(open->id), nowMs);
   if (!closeAt) return;
-  repo.close(open->id, *closeAt);
+  log.close(open->id, *closeAt);
 }
 
 // What the store ALREADY holds for this caller, and nothing else: their own row under this id first
@@ -23,11 +23,11 @@ void settleOpen(TrainingRepository& repo, const UserId& user, std::uint64_t nowM
 // caller's stated intent decides. Both answers carry the session's OWN stored snapshot, which is
 // how pressing Start cannot re-plan a workout that is already running. An empty answer means the
 // store holds nothing this caller is entitled to, and only then does a session get created.
-std::optional<StartOutcome> heldFor(TrainingRepository& repo, const UserId& user,
+std::optional<StartOutcome> heldFor(LogRepository& log, const UserId& user,
                                     const SessionStart& incoming) {
-  std::optional<Session> own = repo.session(user, incoming.id);
+  std::optional<Session> own = log.session(user, incoming.id);
   if (own) return StartOutcome{*own, StartError::none};
-  std::optional<Session> open = repo.open(user);
+  std::optional<Session> open = log.open(user);
   if (!open) return std::nullopt;
   if (incoming.joinOpenSession) return StartOutcome{*open, StartError::none};
   return StartOutcome{std::nullopt, StartError::alreadyOpen};
@@ -35,7 +35,8 @@ std::optional<StartOutcome> heldFor(TrainingRepository& repo, const UserId& user
 }
 
 LogService::LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& tokens)
-    : repo_(repo), clock_(clock), tokens_(tokens) {}
+    : log_(repo), catalog_(repo), program_(repo), threads_(repo), preferences_(repo),
+      clock_(clock), tokens_(tokens) {}
 
 // Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved FIRST: a
 // replayed POST reads back the session it minted — open, finished or auto-closed — so a replay
@@ -59,8 +60,8 @@ LogService::LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& t
 // nothing resolves even then, the insert no-oped on a row owned by someone else — the reply is a
 // refusal, never a session the store never accepted.
 StartOutcome LogService::start(const UserId& user, const SessionStart& incoming) {
-  settleOpen(repo_, user, clock_.nowMs());
-  std::optional<StartOutcome> already = heldFor(repo_, user, incoming);
+  settleOpen(log_, user, clock_.nowMs());
+  std::optional<StartOutcome> already = heldFor(log_, user, incoming);
   if (already) return *already;
   // Only a start that would CREATE is held to the clock: a replay hands back the row it already
   // has, and a join hands over the workout that is open, whatever the caller's clock says.
@@ -69,13 +70,13 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
     return {std::nullopt, StartError::clockAhead, incoming.startedAtMs - nowMs};
   std::optional<PlanSnapshot> plan;
   if (incoming.routine) {
-    std::optional<Routine> planned = repo_.routine(user, *incoming.routine);
+    std::optional<Routine> planned = program_.routine(user, *incoming.routine);
     if (!planned) return {std::nullopt, StartError::unknownRoutine};
     plan = snapshotOf(*planned);
   }
-  repo_.insertSession(
+  log_.insertSession(
       Session{incoming.id, user, incoming.startedAtMs, std::nullopt, incoming.routine, plan});
-  std::optional<StartOutcome> landed = heldFor(repo_, user, incoming);
+  std::optional<StartOutcome> landed = heldFor(log_, user, incoming);
   if (landed) return *landed;
   return {std::nullopt, StartError::idTaken};
 }
@@ -103,14 +104,14 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
 // LogService.h gives: repairing it as a spent id is exactly how the deletion would undo itself.
 AppendOutcome LogService::append(const UserId& user, const SessionId& session,
                                  const SetWrite& incoming) {
-  std::optional<Session> stored = repo_.session(user, session);
+  std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, AppendError::notFound};
   Set set{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
           incoming.kind, incoming.rpe, incoming.note, incoming.completedAtMs};
-  std::optional<Set> replayed = repo_.setOf(user, set.id);
+  std::optional<Set> replayed = log_.setOf(user, set.id);
   if (replayed && replayed->session == session) return {*replayed, AppendError::none};
   if (replayed) return {std::nullopt, AppendError::idTaken};
-  SetInsertOutcome written = repo_.insertSet(set);
+  SetInsertOutcome written = log_.insertSet(set);
   if (written.error == SetInsertError::idTaken) return {std::nullopt, AppendError::idTaken};
   if (written.error == SetInsertError::unknownExercise)
     return {std::nullopt, AppendError::unknownExercise};
@@ -137,9 +138,9 @@ AppendOutcome LogService::append(const UserId& user, const SessionId& session,
 // put the correction rule in SQL where the domain could not state it once.
 std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& session, const SetId& id,
                                       const SetFix& fix) {
-  std::optional<Set> stored = repo_.setOf(user, id);
+  std::optional<Set> stored = log_.setOf(user, id);
   if (!stored || !(stored->session == session)) return std::nullopt;
-  return repo_.updateSet(user, corrected(*stored, fix));
+  return log_.updateSet(user, corrected(*stored, fix));
 }
 
 // The delete, and it says nothing back on purpose: a set that was never there does not stand either,
@@ -148,7 +149,7 @@ std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& sessi
 // (ports/TrainingRepository.h) — and nothing on any surface may promise that back, because there is
 // no door that reads it.
 void LogService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
-  repo_.deleteSet(user, session, id);
+  log_.deleteSet(user, session, id);
 }
 
 // The first write to finished_at is permanent (close is first-writer-wins), so the instant is
@@ -161,12 +162,12 @@ void LogService::deleteSet(const UserId& user, const SessionId& session, const S
 // absent — the discard won the race, and the caller learns exactly what a second finish would tell it.
 FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
                                  std::uint64_t finishedAtMs) {
-  std::optional<Session> stored = repo_.session(user, session);
+  std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, FinishError::notFound};
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
   if (stored->finishedAtMs) return {*stored, FinishError::none};   // replay, or already auto-closed
-  repo_.close(session, finishedAtMs);
-  std::optional<Session> closed = repo_.session(user, session);
+  log_.close(session, finishedAtMs);
+  std::optional<Session> closed = log_.session(user, session);
   if (!closed) return {std::nullopt, FinishError::notFound};
   return {*closed, FinishError::none};
 }
@@ -182,8 +183,8 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
 // filtered differently and a row above a still-open workout is judged against a workout its own
 // finish screen cannot see.
 std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor) {
-  settleOpen(repo_, user, clock_.nowMs());
-  LogPage page = repo_.log(user, cursor);
+  settleOpen(log_, user, clock_.nowMs());
+  LogPage page = log_.log(user, cursor);
 
   std::vector<SessionMarks> walked;
   for (auto row = page.sessions.rbegin(); row != page.sessions.rend(); ++row)
@@ -203,18 +204,18 @@ std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor)
 }
 
 std::optional<Session> LogService::openSession(const UserId& user) {
-  settleOpen(repo_, user, clock_.nowMs());
-  return repo_.open(user);
+  settleOpen(log_, user, clock_.nowMs());
+  return log_.open(user);
 }
 
 std::optional<SessionDetail> LogService::detail(const UserId& user, const SessionId& session) {
-  std::optional<Session> stored = repo_.session(user, session);
+  std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
-  return SessionDetail{*stored, repo_.setsOf(session)};
+  return SessionDetail{*stored, log_.setsOf(session)};
 }
 
 std::vector<Exercise> LogService::catalog(const UserId& user) {
-  return repo_.catalog(user);
+  return catalog_.catalog(user);
 }
 
 // The number the logger puts in front of a lifter before they touch anything — and the one route
@@ -227,26 +228,26 @@ std::vector<Exercise> LogService::catalog(const UserId& user) {
 // back untouched: no history at all, and no such movement, which look identical from here and are
 // not the same thing to a client.
 LastTimeOutcome LogService::lastTime(const UserId& user, const ExerciseId& exercise) {
-  return repo_.lastTime(user, exercise);
+  return log_.lastTime(user, exercise);
 }
 
 // The same read for the whole catalog at once, and it settles nothing for the same reason the one
 // above does not: the picker opens mid-workout, and the only open session it could reach is the
 // caller's own live one.
 std::vector<LastSet> LogService::lastSets(const UserId& user) {
-  return repo_.lastSets(user);
+  return log_.lastSets(user);
 }
 
 std::vector<Routine> LogService::routines(const UserId& user) {
-  return repo_.routines(user);
+  return program_.routines(user);
 }
 
 std::optional<Routine> LogService::routine(const UserId& user, const RoutineId& id) {
-  return repo_.routine(user, id);
+  return program_.routine(user, id);
 }
 
 std::vector<RoutineEvent> LogService::routineHistory(const UserId& user, const RoutineId& id) {
-  return repo_.routineHistory(user, id);
+  return program_.routineHistory(user, id);
 }
 
 // Both routine writes are one construction and one call, and that is the whole point of the shape:
@@ -257,27 +258,27 @@ std::vector<RoutineEvent> LogService::routineHistory(const UserId& user, const R
 // the STORED routine untouched, exactly as a replayed start does.
 RoutineWriteOutcome LogService::createRoutine(const UserId& user, const RoutineWrite& incoming,
                                              std::optional<ProposalDoor> byAgent) {
-  return repo_.insertRoutine(
+  return program_.insertRoutine(
       Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries}, byAgent,
       clock_.nowMs());
 }
 
 RoutineWriteOutcome LogService::replaceRoutine(const UserId& user, const RoutineId& id,
                                                const RoutineWrite& incoming) {
-  return repo_.replaceRoutine(
+  return program_.replaceRoutine(
       Routine{id, user, incoming.name, incoming.position, incoming.entries}, clock_.nowMs());
 }
 
 bool LogService::deleteRoutine(const UserId& user, const RoutineId& id) {
-  return repo_.deleteRoutine(user, id);
+  return program_.deleteRoutine(user, id);
 }
 
 std::vector<ProposalHead> LogService::proposals(const UserId& user, const ProposalQuery& query) {
-  return repo_.proposalHeads(user, query);
+  return program_.proposalHeads(user, query);
 }
 
 std::optional<RoutineProposal> LogService::proposal(const UserId& user, const ProposalId& id) {
-  return repo_.proposal(user, id);
+  return program_.proposal(user, id);
 }
 
 // The mint, as an ordered pipeline that reads top to bottom: load the routine this is about, build
@@ -291,7 +292,7 @@ std::optional<RoutineProposal> LogService::proposal(const UserId& user, const Pr
 // Nothing here writes to the program, and there is no branch in this method that could: it hands
 // the store a proposal and the store has no verb that touches gym_routines.
 ProposalMintOutcome LogService::propose(const UserId& user, const ProposalWrite& incoming) {
-  std::optional<Routine> base = repo_.routine(user, incoming.routine);
+  std::optional<Routine> base = program_.routine(user, incoming.routine);
   if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
 
   const std::string name = incoming.name.value_or(base->name);
@@ -313,7 +314,7 @@ ProposalMintOutcome LogService::propose(const UserId& user, const ProposalWrite&
                           counted,
                           clock_.nowMs(),
                           std::nullopt};
-  return repo_.insertProposal(
+  return program_.insertProposal(
       RoutineProposal{head, base->revision, base->name, becomes.name, std::move(changes)});
 }
 
@@ -322,7 +323,7 @@ ProposalMintOutcome LogService::propose(const UserId& user, const ProposalWrite&
 ProposalMintOutcome LogService::proposeRemoval(const UserId& user, const ProposalId& id,
                                                const RoutineId& routine, const std::string& summary,
                                                const ProposalSource& source) {
-  std::optional<Routine> base = repo_.routine(user, routine);
+  std::optional<Routine> base = program_.routine(user, routine);
   if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
 
   std::vector<RoutineChange> changes = changesBetween(base->entries, {});
@@ -336,7 +337,7 @@ ProposalMintOutcome LogService::proposeRemoval(const UserId& user, const Proposa
                           static_cast<int>(changes.size()),
                           clock_.nowMs(),
                           std::nullopt};
-  return repo_.insertProposal(
+  return program_.insertProposal(
       RoutineProposal{head, base->revision, base->name, base->name, std::move(changes)});
 }
 
@@ -348,12 +349,12 @@ ProposalMintOutcome LogService::proposeRemoval(const UserId& user, const Proposa
 // A removal has no document to compute, so it takes the store's other verb. The intent is read off
 // the proposal and never off the caller, because the caller is a lifter tapping one button.
 ProposalSettleOutcome LogService::apply(const UserId& user, const ProposalId& id) {
-  std::optional<RoutineProposal> held = repo_.proposal(user, id);
+  std::optional<RoutineProposal> held = program_.proposal(user, id);
   if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
   const std::uint64_t nowMs = clock_.nowMs();
-  if (held->head.intent == ProposalIntent::remove) return repo_.applyRemoval(user, id, nowMs);
+  if (held->head.intent == ProposalIntent::remove) return program_.applyRemoval(user, id, nowMs);
 
-  std::optional<Routine> base = repo_.routine(user, held->head.routine);
+  std::optional<Routine> base = program_.routine(user, held->head.routine);
   // The routine went between the two reads — a delete of the plan. Nothing to apply to, and the
   // same fact as a proposal that names nothing.
   if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
@@ -364,18 +365,18 @@ ProposalSettleOutcome LogService::apply(const UserId& user, const ProposalId& id
   // them here as well would be one fact decided in two layers, which is how they come to be decided
   // in two orders. The document is computed from the base for the one case that writes it, and is
   // simply not read in any other.
-  return repo_.applyRevision(user, id, appliedTo(*base, *held), nowMs);
+  return program_.applyRevision(user, id, appliedTo(*base, *held), nowMs);
 }
 
 ProposalSettleOutcome LogService::dismiss(const UserId& user, const ProposalId& id) {
-  return repo_.dismissProposal(user, id, clock_.nowMs());
+  return program_.dismissProposal(user, id, clock_.nowMs());
 }
 
 // The one site that applies the equipment's default step, so a movement created without one climbs
 // like the seed row it sits beside and no client has to carry the table. Every created movement is
 // custom by construction — the seeds are the schema's, and nothing on the wire can mint one.
 ExerciseInsertOutcome LogService::createExercise(const UserId& user, const ExerciseWrite& incoming) {
-  return repo_.insertExercise(
+  return catalog_.insertExercise(
       user, Exercise{incoming.id, incoming.name, incoming.pattern, incoming.equipment,
                      incoming.stepKg.value_or(defaultStepKg(incoming.equipment)), true});
 }
@@ -388,7 +389,7 @@ ExerciseInsertOutcome LogService::createExercise(const UserId& user, const Exerc
 // demonstrate.
 std::optional<Exercise> LogService::renameExercise(const UserId& user, const ExerciseId& id,
                                                    const std::string& name) {
-  return repo_.renameExercise(user, id, name);
+  return catalog_.renameExercise(user, id, name);
 }
 
 // Two phases and no third: load the session, its sets and the history the rules need, then hand all
@@ -397,9 +398,9 @@ std::optional<Exercise> LogService::renameExercise(const UserId& user, const Exe
 // records for one workout. Nothing is stored either: the review is recomputed on every read, which
 // is what keeps it right after a set arrives late from a flush queue.
 std::optional<Review> LogService::review(const UserId& user, const SessionId& session) {
-  std::optional<Session> stored = repo_.session(user, session);
+  std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
-  return wm::gym::review(*stored, repo_.setsOf(session), repo_.historyFor(user, *stored));
+  return wm::gym::review(*stored, log_.setsOf(session), log_.historyFor(user, *stored));
 }
 
 // The one destructive action in the product, and its only refusal is the one the store cannot state:
@@ -410,10 +411,10 @@ std::optional<Review> LogService::review(const UserId& user, const SessionId& se
 // refusal is the race — the row went between the load and the delete — and it is the same fact as
 // never having been there at all.
 DiscardOutcome LogService::discard(const UserId& user, const SessionId& session) {
-  std::optional<Session> stored = repo_.session(user, session);
+  std::optional<Session> stored = log_.session(user, session);
   if (!stored) return DiscardOutcome::notFound;
   if (!stored->finishedAtMs) return DiscardOutcome::open;
-  if (!repo_.deleteSession(user, session)) return DiscardOutcome::notFound;
+  if (!log_.deleteSession(user, session)) return DiscardOutcome::notFound;
   return DiscardOutcome::done;
 }
 
@@ -423,8 +424,8 @@ DiscardOutcome LogService::discard(const UserId& user, const SessionId& session)
 // rule ended hours ago but nobody has read since would be missing from every chart, and a hole in a
 // chart is read as "I did not train that week".
 Statistics LogService::statistics(const UserId& user) {
-  settleOpen(repo_, user, clock_.nowMs());
-  return wm::gym::statistics(repo_.trainingLog(user));
+  settleOpen(log_, user, clock_.nowMs());
+  return wm::gym::statistics(log_.trainingLog(user));
 }
 
 // The record page, and it is the statistics read's own shape narrowed to one movement: settle
@@ -436,8 +437,8 @@ Statistics LogService::statistics(const UserId& user) {
 std::optional<MovementRecord> LogService::movementRecord(const UserId& user,
                                                          const ExerciseId& exercise) {
   const std::uint64_t nowMs = clock_.nowMs();
-  settleOpen(repo_, user, nowMs);
-  MovementHistory history = repo_.movementHistory(user, exercise);
+  settleOpen(log_, user, nowMs);
+  MovementHistory history = log_.movementHistory(user, exercise);
   if (!history.exercise) return std::nullopt;
   return wm::gym::movementRecord(*history.exercise, history, nowMs);
 }
@@ -447,7 +448,7 @@ std::optional<MovementRecord> LogService::movementRecord(const UserId& user,
 // finished_at says, and a door whose whole promise is "here is your data, untouched" has no
 // business writing to the log on the way out.
 std::vector<ExportedSet> LogService::exportedSets(const UserId& user) {
-  return repo_.exportedSets(user);
+  return log_.exportedSets(user);
 }
 
 // Two loads and one rule between them: the store renders every turn as text (it does gym's calendar
@@ -462,10 +463,10 @@ std::vector<ExportedSet> LogService::exportedSets(const UserId& user) {
 // — the old nested walk was O(threads × turns) over a whole account, per export.
 std::vector<ExportedThreadTurn> LogService::exportedThreadTurns(const UserId& user) {
   std::unordered_map<std::string, ThreadOutcome> outcomes;
-  for (const AskThread& thread : repo_.allThreads(user))
+  for (const AskThread& thread : threads_.allThreads(user))
     outcomes.emplace(thread.id.str(), outcomeOf(thread));
 
-  std::vector<ExportedThreadTurn> turns = repo_.exportedThreadTurns(user);
+  std::vector<ExportedThreadTurn> turns = threads_.exportedThreadTurns(user);
   for (ExportedThreadTurn& turn : turns) {
     const auto found = outcomes.find(turn.threadId);
     if (found == outcomes.end()) continue;
@@ -484,11 +485,11 @@ std::vector<ExportedThreadTurn> LogService::exportedThreadTurns(const UserId& us
 // and the fourth copy is the one that quietly disagrees. Nothing is written on the way out; a lifter who
 // never touches this screen never grows a row.
 GymPreferences LogService::preferences(const UserId& user) {
-  return repo_.preferences(user).value_or(GymPreferences{user});
+  return preferences_.preferences(user).value_or(GymPreferences{user});
 }
 
 GymPreferences LogService::savePreferences(const GymPreferences& incoming) {
-  return repo_.savePreferences(incoming);
+  return preferences_.savePreferences(incoming);
 }
 
 // The token is minted HERE and never parsed from anywhere: the one id in this product the client
@@ -500,34 +501,34 @@ std::optional<SessionShare> LogService::share(const UserId& user, const SessionI
   // one already on this session has ended. Asking the clock twice, or letting the database answer
   // one of them, is how a share that expired between the two questions comes back as live.
   const std::uint64_t nowMs = clock_.nowMs();
-  return repo_.insertShare(
+  return log_.insertShare(
       SessionShare{session, user, tokens_.mint().secret, shareExpiryAt(nowMs)}, nowMs);
 }
 
 bool LogService::revokeShare(const UserId& user, const SessionId& session) {
-  return repo_.revokeShare(user, session);
+  return log_.revokeShare(user, session);
 }
 
 std::optional<SharedSession> LogService::shared(const std::string& token) {
-  return repo_.sharedSession(token, clock_.nowMs());
+  return log_.sharedSession(token, clock_.nowMs());
 }
 
 // The three thread doors, and all three are pass-throughs on purpose: a conversation is stored
 // exactly as it was had, so there is no rule to apply on the way out. The outcome is the one derived
 // thing about a thread and it is derived where it is drawn, from the proposals that ride with it.
-std::vector<AskThread> LogService::threads(const UserId& user) { return repo_.threads(user); }
+std::vector<AskThread> LogService::threads(const UserId& user) { return threads_.threads(user); }
 
 std::optional<AskThread> LogService::thread(const UserId& user, const ThreadId& id) {
-  return repo_.thread(user, id);
+  return threads_.thread(user, id);
 }
 
 bool LogService::deleteThread(const UserId& user, const ThreadId& id) {
-  return repo_.deleteThread(user, id);
+  return threads_.deleteThread(user, id);
 }
 
 ThreadOpenOutcome LogService::openThread(const UserId& user, const ThreadId& id,
                                          const std::string& title) {
-  return repo_.openThread(user, id, title, clock_.nowMs());
+  return threads_.openThread(user, id, title, clock_.nowMs());
 }
 
 // ONE CLOCK READ FOR THE PAIR, because the pair is one exchange: the question and the answer to it
@@ -537,11 +538,11 @@ void LogService::appendTurns(const UserId& user, const ThreadId& id,
                              std::vector<ThreadTurn> turns) {
   const std::uint64_t nowMs = clock_.nowMs();
   for (ThreadTurn& turn : turns) turn.atMs = nowMs;
-  repo_.appendTurns(user, id, turns);
+  threads_.appendTurns(user, id, turns);
 }
 
 void LogService::discardEmptyThread(const UserId& user, const ThreadId& id) {
-  repo_.discardEmptyThread(user, id);
+  threads_.discardEmptyThread(user, id);
 }
 
 }

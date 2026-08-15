@@ -348,7 +348,11 @@ public:
   bool deleteThread(const UserId& user, const ThreadId& id);
 
 private:
-  TrainingRepository& repo_;
+  LogRepository& log_;
+  CatalogRepository& catalog_;
+  ProgramRepository& program_;
+  AskThreadRepository& threads_;
+  PreferencesRepository& preferences_;
   Clock& clock_;
   TokenGenerator& tokens_;
 };
