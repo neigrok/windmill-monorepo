@@ -61,14 +61,11 @@ struct TopWorkingSet {
 // along unfiltered: which of them Epley is defined for is the domain's rule to state, and it states
 // it in exactly one place.
 //
-// closedItself is INFERRED and carries no column, because the rule that closes a session already
-// signs its work: autoCloseAt (§3.2) stamps finished_at at the last set's instant exactly, or at
-// started_at for a session holding none, while a lifter's own finish carries the instant their
-// device named. So `finished_at = max(completed_at)`, or `= started_at` with no sets, IS that
-// rule's signature. A manual finish landing on exactly the same millisecond as the last set reads
-// as an auto-close, and the whole cost of that coincidence is one wrong subtitle on one log row —
-// cheaper than a column two writers would have to keep honest forever. Both implementations of this
-// port compute it the same way, and PgLogRepository::log is where the SQL says so.
+// closedItself reads `closed_by` — the column the late-set rule gave sessions on 2026-08-16 (§2.2),
+// so the log row's subtitle and the rule that revises a stale close are one fact — and for a row
+// closed before that column existed it falls back to the four-hour rule's own signature:
+// autoCloseAt stamps finished_at at the last set's instant exactly, or at started_at for a session
+// holding none. Both implementations of this port read it the same way.
 struct SessionSummary {
   Session session;
   int setCount;
@@ -275,9 +272,11 @@ struct LogRepository {
   virtual std::optional<Set> setOf(const UserId& user, const SetId& id) = 0;
   virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
-  // First-writer-wins and idempotent (a replayed finish, or a finish racing the lazy auto-close,
-  // keeps whichever instant landed first), and it records WHO closed: the lifter's finish is final,
-  // the log's stale guess is revisable by a late set (lateSetLands).
+  // Lands on an open session, and it records WHO closed: the lifter's finish is final; the log's
+  // stale guess is revisable — by a late set (lateSetLands), and by the lifter's own finish, which
+  // UPGRADES a stale close (finished_at moves to the later of the two, closed_by becomes finish) so
+  // that their word ends the workout the guess only paused. A finish never moves once it is one:
+  // a replayed finish, or a finish racing another, keeps whichever landed first.
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
   // Assigns the number and returns the stored row; anything that stops the write comes back as a
   // typed fact beside it, and EVERY refusal below this line is decided here and nowhere above it —

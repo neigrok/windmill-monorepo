@@ -139,7 +139,8 @@ enum class DiscardOutcome { done, notFound, open };
 // session + its last set instant → the pure rule → persist the close) and the write-then-resolve
 // idempotency story — every write returns the resolved row, so a replayed or double-tapped client
 // sees the winning truth in one round trip. No cron, no sweep: staleness is settled lazily, before a
-// start, before a log read and before the statistics read — the three replies a close rewrites.
+// start and before every read whose answer a close rewrites (the log page, one session's detail,
+// the open-session read, the statistics, a movement's record).
 //
 // The program port is here for exactly one write: a start that names a routine freezes that day's
 // plan onto the session (§2.5), and the plan is loaded from the store's own routine rather than

@@ -165,7 +165,10 @@ FinishOutcome TrainingService::finish(const UserId& user, const SessionId& sessi
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, FinishError::notFound};
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
-  if (stored->finishedAtMs) return {*stored, FinishError::none};   // replay, or already auto-closed
+  // A replay of a finish hands back the row; a session the log closed as STALE still takes the
+  // lifter's finish — as an upgrade, so their word ends the workout the guess only paused and no
+  // late set moves it again.
+  if (stored->finishedAtMs && stored->closedBy != ClosedBy::stale) return {*stored, FinishError::none};
   log_.close(session, finishedAtMs, ClosedBy::finish);
   std::optional<Session> closed = log_.session(user, session);
   if (!closed) return {std::nullopt, FinishError::notFound};

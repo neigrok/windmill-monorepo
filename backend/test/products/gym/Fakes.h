@@ -288,10 +288,19 @@ public:
   }
 
   void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
+    // The SQL's two doors: an open row takes the instant and the word; a stale-closed row takes a
+    // FINISH as an upgrade (the later instant, the word becomes finish); nothing lands over a finish.
     for (Session& session : db.sessions) {
-      if (!(session.id == id) || session.finishedAtMs) continue;
-      session.finishedAtMs = finishedAtMs;
-      session.closedBy = closedBy;
+      if (!(session.id == id)) continue;
+      if (!session.finishedAtMs) {
+        session.finishedAtMs = finishedAtMs;
+        session.closedBy = closedBy;
+        continue;
+      }
+      if (session.closedBy == ClosedBy::stale && closedBy == ClosedBy::finish) {
+        session.finishedAtMs = std::max(*session.finishedAtMs, finishedAtMs);
+        session.closedBy = ClosedBy::finish;
+      }
     }
   }
 
@@ -429,10 +438,12 @@ public:
       // are in hand, and a fake that skipped this would hand back a vector the SQL never would.
       std::vector<PriorMark> marks = ordered(marksOf(held));
       for (PriorMark& one : marks) one.atMs = session.startedAtMs;
-      // The SQL's `finished_at = coalesce(max(completed_at), started_at)`: the four-hour rule's own
-      // signature, inferred rather than stored, for the reason SessionSummary spells out.
-      const bool closedItself = session.finishedAtMs &&
-                                *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
+      // The SQL reads closed_by when the row carries it, and falls back to the four-hour rule's own
+      // signature (`finished_at = coalesce(max(completed_at), started_at)`) for a legacy row.
+      const bool closedItself =
+          session.closedBy ? session.closedBy == ClosedBy::stale
+                           : session.finishedAtMs &&
+                                 *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
       out.sessions.push_back(SessionSummary{session, count, working, tonnage,
                                             std::vector<std::string>(names.begin(), names.end()),
                                             top, std::move(marks), closedItself});
@@ -1040,10 +1051,10 @@ public:
       for (const RoutineEntry& entry : incoming.entries)
         if (!db.visibleTo(incoming.user, entry.exercise))
           return {std::nullopt, RoutineWriteError::unknownExercise};
-      if (expectedRevision && routine.revision != *expectedRevision)
-        return {std::nullopt, RoutineWriteError::stale};
       const bool moved =
           routine.name != incoming.name || !(routine.entries == incoming.entries);
+      if (moved && expectedRevision && routine.revision != *expectedRevision)
+        return {std::nullopt, RoutineWriteError::stale};
       routine = Routine{incoming.id,       incoming.user,           incoming.name,
                         incoming.position, incoming.entries,        incoming.lastTrainedAtMs,
                         moved ? routine.revision + 1 : routine.revision};

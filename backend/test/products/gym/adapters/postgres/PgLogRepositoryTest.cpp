@@ -349,10 +349,10 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   // Left running and never touched again: the auto-close ends it AT its last set.
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000'000));
   repo.insertSet(squatSet("set_pg000004", "ses_pg000002", 90, 5, t1 + 10'060'000));
-  repo.close(SessionId{"ses_pg000002"}, t1 + 10'060'000, ClosedBy::finish);
+  repo.close(SessionId{"ses_pg000002"}, t1 + 10'060'000, ClosedBy::stale);
   // Abandoned holding no set at all: the same rule ends it at its own start.
   repo.insertSession(sessionAt("ses_pg000004", t1 + 30'000'000));
-  repo.close(SessionId{"ses_pg000004"}, t1 + 30'000'000, ClosedBy::finish);
+  repo.close(SessionId{"ses_pg000004"}, t1 + 30'000'000, ClosedBy::stale);
   // Warmed up and still running — inserted LAST, because the one-open index allows exactly one.
   repo.insertSession(sessionAt("ses_pg000003", t1 + 20'000'000));
   repo.insertSet(squatSet("set_pg000005", "ses_pg000003", 60, 10, t1 + 20'060'000,
@@ -373,6 +373,18 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_EQ(listed[3].session.id.str(), std::string("ses_pg000001"));
   CHECK_EQ(listed[3].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100, 8}));
   CHECK_FALSE(listed[3].closedItself);
+
+  // A row closed before closed_by existed reads the four-hour rule's own signature: finished_at at
+  // the last set's instant is the rule's work, an hour later is a tap.
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("UPDATE gym_sessions SET closed_by = NULL WHERE id IN ('ses_pg000001', 'ses_pg000002')");
+    txn.commit();
+  }
+  std::vector<SessionSummary> legacy = pageOf(repo, wm::UserId{kUser}, page(t1 + 40'000'000, 50));
+  CHECK(legacy[2].closedItself);
+  CHECK_FALSE(legacy[3].closedItself);
 }
 
 // The aggregate's two counts and its tonnage, against the real statement. Both counts come off ONE

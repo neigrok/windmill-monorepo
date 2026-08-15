@@ -186,14 +186,19 @@ void PgLogRepository::insertSession(const Session& incoming) {
 }
 
 void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) {
-  // The trailing IS NULL makes the close idempotent AND first-writer-wins: a finish replay, or a
-  // finish racing the lazy auto-close, keeps whichever instant landed first — and whichever WORD
-  // landed first, which is what decides whether a late set may move the finish (insertSet below).
+  // Two doors in one statement. An OPEN row takes the instant and the word, first-writer-wins: a
+  // finish replay, or a finish racing the lazy auto-close, keeps whichever landed first. A row the
+  // log closed as STALE takes the lifter's finish as an upgrade — the later of the two instants,
+  // and the word becomes finish — so their word ends what the guess only paused; a stale close
+  // never lands over a finish, and nothing lands over a finish at all.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
-      "UPDATE gym_sessions SET finished_at = to_timestamp($2::bigint / 1000.0), closed_by = $3 "
-      "WHERE id = $1 AND finished_at IS NULL",
+      "UPDATE gym_sessions "
+      "SET finished_at = CASE WHEN finished_at IS NULL THEN to_timestamp($2::bigint / 1000.0) "
+      "                       ELSE greatest(finished_at, to_timestamp($2::bigint / 1000.0)) END, "
+      "    closed_by = $3 "
+      "WHERE id = $1 AND (finished_at IS NULL OR (closed_by = 'stale' AND $3 = 'finish'))",
       id.str(), static_cast<long long>(finishedAtMs), toString(closedBy));
   txn.commit();
 }
@@ -458,20 +463,20 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   //
   // The row's two other facts ride the sessions statement. The top set is a lateral over this
   // session's WORKING sets, heaviest first and ties to more reps — the rule TopWorkingSet states,
-  // and never volume. `closed_itself` is the auto-close's own signature rather than a column: autoCloseAt
-  // stamps finished_at at the last set's instant exactly (or at started_at for a session holding
-  // none), so a finish equal to that instant is the four-hour rule's work. A manual finish landing
-  // on precisely the same millisecond reads as an auto-close, and the whole cost of that
-  // coincidence is one wrong subtitle — cheaper than a column two writers would keep honest.
+  // and never volume. `closed_itself` reads closed_by since 2026-08-16 — the column the late-set
+  // rule needed anyway — and falls back to the four-hour rule's own signature (finished_at at the
+  // last set's instant exactly, or at started_at with none) for a row closed before the column
+  // existed.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result sessions = txn.exec_params(
       "SELECT " + std::string(kSessionColumns) +
           ", top.weight_kg::float8 AS top_weight_kg, top.reps AS top_reps, "
-          "(finished_at IS NOT NULL AND finished_at = coalesce("
-          "   (SELECT max(a.completed_at) FROM gym_sets a WHERE a.session_id = gym_sessions.id), "
-          "   started_at)) AS closed_itself "
+          "(CASE WHEN closed_by IS NOT NULL THEN closed_by = 'stale' "
+          "      ELSE finished_at IS NOT NULL AND finished_at = coalesce("
+          "        (SELECT max(a.completed_at) FROM gym_sets a WHERE a.session_id = gym_sessions.id), "
+          "        started_at) END) AS closed_itself "
           "FROM gym_sessions "
           "LEFT JOIN LATERAL (SELECT w.weight_kg, w.reps FROM gym_sets w "
           "                   WHERE w.session_id = gym_sessions.id AND w.kind = 'working' "

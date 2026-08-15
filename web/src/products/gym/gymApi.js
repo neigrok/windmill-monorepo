@@ -279,7 +279,7 @@
 // between one and fifty entries.
 // NO `lastTrainedAt` IS `untested` — there is no second field for it, nothing stores one, and the
 // store's own aggregate over the log is what says a routine has been trained (log.js `isUntested`).
-// `revision` is READ-ONLY on the wire and is what a proposal is frozen
+// `revision` is the store's to move and is what a proposal is frozen
 // against: the human's own PUT moves it and supersedes whatever was pending, which is what stops a
 // mid-session save from destroying a diff's base — and is also why a routine RENAME is that same
 // whole-document PUT and not a route of its own. `pendingProposal` is a proposal HEAD — {id,

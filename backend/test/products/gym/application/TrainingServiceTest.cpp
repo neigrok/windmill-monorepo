@@ -249,6 +249,37 @@ TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
   CHECK(h.repo.db.sessions[0].closedBy == ClosedBy::stale);            // still the log's word, still revisable
 }
 
+// The lifter's finish ends a workout the log only guessed closed: it upgrades the stale close —
+// the later of the two instants, the word becomes finish — and no late set moves it after that.
+TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
+  Harness h;
+  h.startAt(h.clock.now);
+  const std::uint64_t t0 = h.clock.now;
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, t0 + 600'000));
+  h.clock.now = t0 + 5 * 3'600'000;
+  h.training.detail(uid(), sid());                                    // the mirror settles it stale
+  REQUIRE(h.repo.db.sessions[0].closedBy == ClosedBy::stale);
+
+  FinishOutcome finished = h.training.finish(uid(), sid(), t0 + 2 * 3'600'000);
+  AppendOutcome after = h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, t0 + 3 * 3'600'000));
+
+  CHECK(finished.error == FinishError::none);
+  CHECK_EQ(finished.session->finishedAtMs, std::optional<std::uint64_t>(t0 + 2 * 3'600'000));
+  CHECK(finished.session->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
+  CHECK(after.error == AppendError::finished);
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  // A finish EARLIER than the stale close keeps the later instant (the set that stands is the truth)
+  // but still becomes the lifter's word.
+  h.startAt(h.clock.now, "ses_00000002");
+  h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
+  const std::uint64_t t1 = h.clock.now;
+  h.clock.now = t1 + 5 * 3'600'000;
+  h.training.detail(uid(), sid("ses_00000002"));
+  FinishOutcome early = h.training.finish(uid(), sid("ses_00000002"), t1 + 60'000);
+  CHECK_EQ(early.session->finishedAtMs, std::optional<std::uint64_t>(t1 + 600'000));
+  CHECK(early.session->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
+}
+
 TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
   Harness h;
   h.startAt(h.clock.now);

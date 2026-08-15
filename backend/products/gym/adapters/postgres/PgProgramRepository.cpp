@@ -490,12 +490,14 @@ RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming,
     // A row holding no lines is no plan at all (loadRoutine says so), and the safe reading of one is
     // that this write moves it.
     const std::optional<Routine> standing = loadRoutine(txn, incoming.user, incoming.id);
-    // The editor's own read, checked under the same lock — a day that moved since (a proposal
-    // applied on the phone, another tab's save) is refused rather than overwritten.
-    if (expectedRevision && standing && standing->revision != *expectedRevision)
-      return {std::nullopt, RoutineWriteError::stale};
     const bool moved = !standing || standing->name != incoming.name ||
                        !(standing->entries == incoming.entries);
+    // The editor's own read, checked under the same lock — a day that moved since (a proposal
+    // applied on the phone, another tab's save) is refused rather than overwritten. Only a write that
+    // would MOVE the document is refused: a replay whose bytes already stand reads back what landed,
+    // whatever revision it named, because a lost reply must never turn into a refusal.
+    if (moved && expectedRevision && standing && standing->revision != *expectedRevision)
+      return {std::nullopt, RoutineWriteError::stale};
     txn.exec_params(
         "UPDATE gym_routines SET name = $3, position = $4, revision = revision + $5 "
         "WHERE id = $1 AND user_id = $2::uuid",

@@ -298,7 +298,8 @@ create table if not exists gym_sessions (
   routine_id  text references gym_routines(id) on delete set null,
   plan        jsonb,
   started_at  timestamptz not null,
-  finished_at timestamptz
+  finished_at timestamptz,
+  closed_by   text check (closed_by in ('finish', 'stale'))   -- who closed it (§3.2, the fourth rule); NULL = a row from before, read as finish
 );
 create index if not exists gym_sessions_log on gym_sessions (user_id, started_at desc);
 create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
@@ -1091,8 +1092,9 @@ phone's own start on reconnect) had already closed the workout under them; refus
 client's queue treats that 409 as terminal — lost lifts. So `close()` records `closed_by`
 (§2.2), and `insertSet` — under the same session lock, in the same transaction — lets a set through
 the finished boundary exactly when `lateSetLands` says it continues a stale close, moving
-`finished_at` forward to it. An explicit finish stays terminal; a row closed before the column
-existed reads as a finish. The phones still drain owed appends before any call that settles
+`finished_at` forward to it. An explicit finish stays terminal — and the lifter's own finish landing
+on a stale close UPGRADES it (the later instant, the word becomes finish), so their word ends what
+the guess only paused; a row closed before the column existed reads as a finish. The phones still drain owed appends before any call that settles
 (§11.7) — that stops the close-and-extend churn — but the loss itself is closed at the root, for
 every client.
 A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt: 0` is falsy in
@@ -1168,7 +1170,11 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   So: `FOR UPDATE` on the session row, then `set_number = max+1` for that (session, exercise)
   computed in the next statement, `ON CONFLICT (id) DO NOTHING`, then a read-back scoped to
   **(id, session_id)** — which is the row returned. The device's background flush can replay the
-  queue in any order, any number of times; the log converges on exactly one row per minted id.
+  queue in any order, any number of times; the log converges on exactly one row per minted id — with
+  one order that matters (2026-08-16): into a session the log closed as STALE, a set lands only
+  within four hours of the close's last activity, and each landing moves that activity forward, so
+  a queue draining oldest-first lands every owed set while newest-first can hand its newest a
+  terminal 409 before the sets that would have made room for it. Both phones drain oldest-first.
   A concurrent same-exercise append no longer races the numbering (§2.3): appends to one session
   serialize behind its row, which costs one lock on a write that is already one round trip.
   The insert's own four refusals come back beside the row as `SetInsertError` (§3.4) and the
@@ -1515,13 +1521,11 @@ query, ordered by pattern then name. Identity rules, stated once:
   behaviour for every double gym sends (`weightKg`, `rpe`, the review's own estimate) and the
   precision belongs to the platform's HTTP and MCP writers, not to this product.
 
-  `closedItself` is **inferred and has no column**: `autoCloseAt` stamps `finished_at` at the last
-  set's instant exactly, or at `started_at` for a session holding none, while a lifter's own finish
-  carries the instant their device named — so
-  `finished_at = coalesce(max(completed_at), started_at)` *is* that rule's signature. A manual finish
-  landing on precisely the same millisecond reads as an auto-close, and the whole cost of that
-  coincidence is one wrong subtitle on one log row; a column would be a second writer to keep honest
-  forever, on both surfaces and in the import.
+  `closedItself` **reads `closed_by`** since 2026-08-16 — the column the late-set rule (§3.2)
+  gave sessions, so the row's subtitle and the rule that revises a stale close are one fact. It was
+  inferred until then (`finished_at = coalesce(max(completed_at), started_at)` is `autoCloseAt`'s
+  own signature), and a row closed before the column existed still reads that signature — the fall
+  back both implementations keep for legacy rows.
 
   The cursor is the previous page's **last row, both halves**, because `started_at` alone is not
   unique: two sessions started in the same millisecond straddling a page edge, and an exclusive
@@ -1713,7 +1717,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 
   **Finished sessions only**, for the reason `lastTime` and `historyFor` exclude them too: today's
   live workout is today's screen, and a statistics read that moved under a lifter between two sets
-  would be reporting on a session in flight. This is the **third** door that settles staleness
+  would be reporting on a session in flight. This is one of the doors that settle staleness
   (§3.2), and it has to be one — the answer counts finished sessions, so a workout the four-hour
   rule ended hours ago but nobody has read since would be a hole in the chart, and a hole reads as
   "I did not train that week".
@@ -1796,7 +1800,7 @@ conditional route; `routes.cpp` is the one place every path is named, in this or
 | `GET  /v1/gym/routines` | the plan, most recently trained first — each routine carrying its `revision` and the `pendingProposal` waiting on it | 2 |
 | `POST /v1/gym/routines` | create a routine — the whole document, idempotent on its id | 2 |
 | `GET  /v1/gym/routines/{id}` | one routine, plus its `history` — the day's creation and every proposal ever minted against it, one list, newest first with the creation row last (§M30). The LIST read carries none of it | 2 |
-| `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document. Moves `revision` and supersedes every pending proposal on it **only when the document or the name actually moved** (§2.9) | 2 |
+| `PUT  /v1/gym/routines/{id}` | replace a routine — the whole document. Moves `revision` and supersedes every pending proposal on it **only when the document or the name actually moved** (§2.9). May name the `revision` it read; a day that moved since answers `409 routine-stale` unless the bytes already stand | 2 |
 | `DELETE /v1/gym/routines/{id}` | remove a routine — `204`; entries, its proposals and their change rows cascade, sessions keep their snapshots | 2 |
 | `GET  /v1/gym/proposals` | the ledger, newest first. `?routineId=` narrows to one day of the program (the routine editor's History), `?state=pending` to what is waiting (Today's card) | 6 |
 | `GET  /v1/gym/proposals/{id}` | one proposal with its typed diff — the screen an agent's receipt deep-links to | 6 |
@@ -2051,6 +2055,9 @@ on carries a machine word under `code` beside the human sentence:
 | 400 | — | the log cursor is not a digits-only instant plus, optionally, a well-formed id beside it | `bad cursor` | terminal, and a read-path fault — never the queue's |
 | 409 | `session-id-taken` | start with a session id spent by an account this caller cannot see — never the caller's own, which replays | `that session id is taken` | mint a NEW session id and start again |
 | 409 | `session-already-open` | start that said `joinOpenSession: false` while another of this lifter's sessions is open | `another session is already open` | terminal until the open workout ends — a new id changes nothing; finish it (or let the four-hour auto-close fire) and send the same body again |
+| 400 | `clock-ahead` | a start that would CREATE a session more than five minutes past the log's now (§3.2, `canStartAt`); replays and joins are exempt | `this device's clock is N minutes ahead of the log — a workout cannot start in the future…` | terminal for that body — the fix is the clock, not a retry; the phones compose the workout on the device and claim it once the instant is past |
+| 409 | `routine-stale` | a routine PUT that NAMED the revision it read, over a day that moved since, and whose bytes would move it (a replay whose bytes already stand reads back what landed) | `that routine changed since you read it — reload it and save again` | re-read the routine and save again; a PUT naming no revision never earns this |
+| 503 | `ask-not-configured` | `POST /v1/gym/ask` on a deployment with no model (the route is normally not mounted at all) | `Ask isn't available right now` | terminal — Ask is absent here; a 503 WITHOUT this code is a proxy or a restart, and asking again is the repair |
 | 409 | `set-id-taken` | append a NEW set id already spent by a row outside this session | `that set id is already used` | mint a NEW set id and send the same set again |
 | 409 | `set-deleted` | append an id that names a set **this account deleted** — a replay of the POST that logged it, from a queue whose 200 was lost or from a claim | `that set was deleted` | terminal — drop the set. **Never the re-mint above:** a fresh id is exactly how the deletion would undo itself |
 | 409 | `session-finished` | append a NEW set to a session already finished — after the lifter's own finish, or more than four hours past a stale close's last landed set (a set continuing a stale close lands, §3.2) | `that session is finished` | terminal — this set will never land here |
@@ -2083,9 +2090,9 @@ and it is the same family of honesty, a refusal where the edge used to answer 20
 caller never asked for.
 
 `409 that session is finished` answers **new** ids only. A set that already landed replays 200
-with its stored row even after the session closes — the flush queue's whole premise is replay in
-any order, any number of times, converging on one row per minted id, and a queue told 409 for a
-set it had already delivered would drop it and count the loss as intended.
+with its stored row even after the session closes — the flush queue's whole premise is replay,
+converging on one row per minted id (oldest-first into a stale close, §3.3), and a queue told 409
+for a set it had already delivered would drop it and count the loss as intended.
 
 **The discard is the one destructive action in the product, and its one refusal is the only thing
 the store cannot state for itself.** `DELETE /v1/gym/sessions/{id}` takes the session and its sets
@@ -2268,8 +2275,9 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
    created movements); `ON CONFLICT DO NOTHING` + an owner-scoped read-back is the whole retry
    story, so a replay reads back what landed and only another account's id is a conflict; one open
    session per user is a partial unique index, not a guard flag. (§2.2, §3.3, §4)
-6. **Auto-close** — a pure domain rule (4 h, closes at last activity), applied lazily on start, on
-   the log read and on the statistics read; no cron. The export settles nothing (it hands back every
+6. **Auto-close** — a pure domain rule (4 h, closes at last activity), applied lazily on start and
+   on every read whose answer a close rewrites — the log page, one session's detail, the open-session
+   read, the statistics, a movement's record; no cron. The export settles nothing (it hands back every
    set whatever `finished_at` says) and neither does the share's unauthenticated read (a stranger
    holding a link must not write to the owner's log). (§3.2, §5)
 7. **Namespacing** — `wm::gym` for everything; `gym::Set` at call sites, `Set` inside. (§1)
@@ -2597,8 +2605,9 @@ On sign-in, and on every connect while a local backlog exists:
    session whose last set is over four hours old. Since 2026-08-16 a set that continues that
    stale-closed workout still lands and moves the finish forward (§3.2, `lateSetLands`) — the
    loss is closed at the root — but a set more than four hours past the last landed one, or any
-   set after the lifter's own finish, gets terminal 409 `session-finished`, so the ordering rule
-   stands: drain the owed appends before anything that settles.
+   set after the lifter's own finish (which UPGRADES a stale close to a finish), gets terminal 409
+   `session-finished`, so the ordering rule stands: drain the owed appends, oldest first, before
+   anything that settles.
 3. **Verdicts by code only.** 409 `session-already-open` → wait until the open session closes;
    409 `session-id-taken` during claim → re-mint the session id AND remap that session's queued
    sets onto it; 401 / 404 / 5xx / offline → retry, never drop; 409 `session-finished` → dropped

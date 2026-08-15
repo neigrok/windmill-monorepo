@@ -270,6 +270,15 @@ TEST(gym_replace_routine_naming_a_stale_revision_is_409_and_writes_nothing) {
   CHECK_EQ(blind->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(blind)["name"].asString(), std::string("Push A4"));
   CHECK_EQ(bodyOf(blind)["revision"].asInt(), 3);
+
+  // A REPLAY of a revision-named PUT whose bytes already stand reads back what landed, whatever
+  // revision it named — a lost reply must never turn into a refusal.
+  Json::Value replayed = routineBody("rt_11111111", "Push A4");
+  replayed["revision"] = 2;                                                       // stale by now, identical body
+  drogon::HttpResponsePtr again = send(h.program, &ProgramApi::replaceRoutine,
+                                       putRequest("/v1/gym/routines/rt_11111111", replayed, "s-live"), "rt_11111111");
+  CHECK_EQ(again->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(again)["revision"].asInt(), 3);
 }
 
 TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
