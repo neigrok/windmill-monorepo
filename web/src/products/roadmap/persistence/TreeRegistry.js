@@ -5,7 +5,7 @@
 //
 // list() degrades to [] whenever the registry can't answer (not built yet, offline,
 // signed out) so the switcher still shows the current tree + New tree. create() is the
-// signed-in plant path (POST /v1/trees, docs/backend/landing-and-quests.md §2); a 401
+// signed-in plant path (POST /v1/trees); a 401
 // surfaces as an AuthError the birth canvas turns into a sign-in prompt.
 
 import { AuthError } from '../../../shell/auth/AuthClient.js';
