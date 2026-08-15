@@ -1635,8 +1635,8 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         stored[session.id] = session
     }
 
-    // LogService::settleOpen, to the rule: the one open session ends at its last set — or at its
-    // start, with no sets — once four hours have passed without one.
+    // The backend's settleOpen (TrainingService.cpp), to the rule: the one open session ends at its
+    // last set — or at its start, with no sets — once four hours have passed without one.
     func settleOpen() {
         for (id, session) in stored where session.isOpen {
             guard let closeAt = session.autoCloseAt(lastSetAtMs: sets[id]?.last?.completedAtMs,

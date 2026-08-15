@@ -1500,7 +1500,7 @@ public final class TrainingStore: ObservableObject {
         guard let gym, !localLog.exercises.contains(where: { $0.id == exerciseId }) else {
             return .success(Record.Answer(localLog.record(of: named), from: .thisDevice))
         }
-        // A served record SETTLES the log's open session (LogService::movementRecord), so it waits
+        // A served record SETTLES the log's open session (TrainingService::movementRecord), so it waits
         // out a claim mid-replay like every other settling read — see `waitOutTheClaim`.
         await waitOutTheClaim()
         do {

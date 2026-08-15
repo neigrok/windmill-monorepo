@@ -236,7 +236,7 @@ std::vector<ExportedThreadTurn> PgAskThreadRepository::exportedThreadTurns(const
   // Every value TEXT and every rendering Postgres's, exactly as the sets export is: the instants
   // ISO-8601 UTC, the numbers at their own scale, and the turn itself byte for byte. The outcome
   // columns come back EMPTY on purpose — that ladder is the domain's (domain/Thread.h) and
-  // LogService stamps it on, because a CASE expression here would be a second copy of a rule in a
+  // ThreadService stamps it on, because a CASE expression here would be a second copy of a rule in a
   // language the domain cannot read.
   //
   // Ordered by the thread's own (created_at, id) and then by the turns inside it: the order the

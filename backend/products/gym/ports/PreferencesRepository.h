@@ -16,7 +16,7 @@ struct PreferencesRepository {
 
   // The settings row (§I), and the one value in gym's storage a lifter is allowed to have none of: a
   // lifter who has never opened that screen has no row, which is a fact rather than a fault. The
-  // DEFAULTS are the domain's answer to it (domain/Preferences.h) and LogService is where they are
+  // DEFAULTS are the domain's answer to it (domain/Preferences.h) and PreferencesService is where they are
   // given, so the store says "nothing stored" and never invents a document nobody wrote.
   // `savePreferences` is a whole-document upsert keyed on the account — idempotent by SHAPE like the
   // two set writes rather than by a client-minted id, because there is one row per lifter and

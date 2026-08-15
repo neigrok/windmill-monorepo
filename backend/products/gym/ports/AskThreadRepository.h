@@ -18,7 +18,7 @@ namespace wm::gym {
 // section refuses.
 //
 // THE STORE LEAVES `outcome`, `changes` AND `routine` EMPTY. They are `outcomeOf` (domain/Thread.h)
-// read over the thread's proposals, and LogService stamps them on after the load — the same
+// read over the thread's proposals, and ThreadService stamps them on after the load — the same
 // two-phase shape every computed surface in this product takes. A CASE expression in SQL would be a
 // second copy of that ladder in a language the domain cannot read, and the second copy is the one
 // that goes wrong.

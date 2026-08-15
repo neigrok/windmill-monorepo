@@ -282,7 +282,7 @@ struct LogRepository {
   // Assigns the number and returns the stored row; anything that stops the write comes back as a
   // typed fact beside it, and EVERY refusal below this line is decided here and nowhere above it —
   // one fact decided in two layers gets decided in two orders. A REPLAY IS NOT RESOLVED HERE —
-  // `LogService::append` answers it through `setOf` before this is ever reached, which is what lets
+  // `TrainingService::append` answers it through `setOf` before this is ever reached, which is what lets
   // this method answer `finished` for every write that arrives after the locked row closed, replay
   // or not — every write but the one lateSetLands admits: a set that continues a STALE-closed
   // workout lands and moves that workout's finish forward to it, in the same transaction, because

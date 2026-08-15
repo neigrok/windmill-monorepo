@@ -161,7 +161,7 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
 
 // The export: one row per turn, the thread's facts beside each, everything text and every rendering
 // Postgres's — asserted against the in-memory twin so neither can drift on its own. The outcome
-// columns come back EMPTY on both sides, because that ladder is the domain's and LogService stamps
+// columns come back EMPTY on both sides, because that ladder is the domain's and ThreadService stamps
 // it on.
 TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);

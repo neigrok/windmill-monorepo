@@ -649,7 +649,7 @@ export function sessionDetailMeta(session, sets) {
 }
 
 // The chip that names the snapshot the section below is read against. The instant is the session's
-// START, because that is when the plan was frozen (backend LogService) — a routine renamed or
+// START, because that is when the plan was frozen (backend TrainingService) — a routine renamed or
 // retargeted since must not rewrite what the log says about the past, and this line is what says
 // out loud that it cannot. A session with no snapshot has no chip and no comparison to draw.
 export function planFrozenLabel(session) {

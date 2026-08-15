@@ -41,7 +41,7 @@ PgPreferencesRepository::PgPreferencesRepository(std::shared_ptr<PgPool> pool)
 std::optional<GymPreferences> PgPreferencesRepository::preferences(const UserId& user) {
   // Absent is a fact and not a fault, so it crosses as an absence: a lifter who has never opened the
   // settings screen holds no row, and the DEFAULTS are the domain's answer to that rather than a
-  // document this store invents on their behalf (application/LogService.cpp).
+  // document this store invents on their behalf (application/PreferencesService.cpp).
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows =

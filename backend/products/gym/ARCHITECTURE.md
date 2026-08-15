@@ -45,8 +45,8 @@ happens on the device. The backend's job is narrow and load-bearing:
    grant gate: `gym:read` answers questions, `gym:write` **records what happened and proposes changes
    to the program**, `gym:delete` destroys a workout or a coach link and **proposes** destructive
    changes to the program, and **none of the three implies another**. Every tool goes through
-   `LogService` — the same core the REST handlers use, never the repository — and acts **as** the
-   caller, so an agent is one more owner-scoped client and never an admin. There is no coach here —
+   the same services the REST handlers use (`TrainingService`, `CatalogService`, `ProgramService`),
+   never a repository — and acts **as** the caller, so an agent is one more owner-scoped client and never an admin. There is no coach here —
    there is the lifter's own agent, and Ask (§12) for a lifter who has none. (§6, §8)
 5. **The proposal ledger — shipped W6, 2026-08-12.** An agent reads this log and never writes to the
    program: a change to a day that already stands arrives as a typed field-level diff that does
@@ -104,7 +104,7 @@ happens on the device. The backend's job is narrow and load-bearing:
   product sells — scheduled agents, forty-step plans skimmed once, subagents. **It is a predicate and
   not a table**, so a mutation invented in 2027 is classified by what it does rather than by whether
   somebody remembered to add it to a list. **The enforcement point is the tool layer**, because that
-  is the only place gym can tell an agent from a hand: `LogService::replaceRoutine` is
+  is the only place gym can tell an agent from a hand: `ProgramService::replaceRoutine` is
   `PUT /v1/gym/routines/{id}` and is unreachable from `GymTools`, and there is **no apply tool at any
   grant level** — Apply is not a capability, it is a human act (§2.9, §6).
 
@@ -141,7 +141,13 @@ backend/products/gym/
   ports/AskThreadRepository.h  Ask's threads and turns
   ports/PreferencesRepository.h  the settings row
   ports/AskAgent.h           Ask's port: AskTurn · AskStep · AskAnswer
-  application/LogService.h/.cpp   start/finish/append/log/routines/proposals/stats/export/share
+  application/TrainingService.h/.cpp   the log: start/append/fixSet/finish/log/detail/lastTime/
+                                       review/discard/statistics/movementRecord/export/share
+  application/CatalogService.h/.cpp    catalog · createExercise · renameExercise
+  application/ProgramService.h/.cpp    routines + the proposal ledger (propose · apply · dismiss)
+  application/ThreadService.h/.cpp     Ask's threads: read · delete · export · the three writes Ask makes
+  application/PreferencesService.h/.cpp  the settings document, read (defaults) and written whole
+                                       (one service per port; none depends on another)
   application/AskService.h/.cpp   AskTools (reads + the two proposal mints) + Ask's refusal ladder
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
@@ -159,7 +165,7 @@ backend/products/gym/
                                   (one adapter per port; TrainingApi.h holds the status ladder)
     http/AskApi.h/.cpp            POST /v1/gym/ask — the one conditional route
     mcp/GymToolCatalog.h/.cpp     the sixteen declarations + the handshake paragraph
-    mcp/GymTools.h/.cpp           the dispatch behind them, over LogService alone
+    mcp/GymTools.h/.cpp           the dispatch behind them, over Training/Catalog/ProgramService
     llm/AnthropicAsk.h/.cpp       Ask's prompt, its opening read, and its one vendor call
                                   (the LOOP is platform's: adapters/llm/AgentLoop.h)
   routes.h/.cpp              gym::GymDeps + gym::registerRoutes(app, deps)
@@ -174,12 +180,11 @@ right. Id tags are gym's own (`ExerciseTag`, `SessionTag`, `SetTag` → `Exercis
 just nested one namespace deeper. `routes.h` declares `gym::GymDeps` and
 `gym::registerRoutes`, colliding with nothing.
 
-Five ports, one service, five HTTP adapters cut along the same seams — and one `routes.cpp` that
+Five ports, five services, five HTTP adapters cut along the same seams — and one `routes.cpp` that
 mounts them, so a route's method, path and reason are still read in one column. Gym is still a
 single bounded store — the catalog, the plan and
 the log live or die together (a routine entry references a movement, a session freezes a routine, a
-set references both a session and a movement), and `LogService` is the one consumer of all five —
-so the ports are cut by AGGREGATE, not by consumer: the log (sessions, sets, revisions, the coach
+set references both a session and a movement) — so the ports are cut by AGGREGATE, not by consumer: the log (sessions, sets, revisions, the coach
 share, which reads a session in the statement that mints it), the catalog, the program (routines
 AND the proposal ledger, because `replaceRoutine` supersedes pending proposals in the same
 transaction and a store holding them in two ports would hold that lock order twice), Ask's threads,
@@ -444,7 +449,7 @@ which is the frozen half of §2.4's `3 × max`, and `sets`, which is the frozen 
 a session started under a half-built routine has to be able to say *you decide* about a movement,
 and a snapshot that filled the number in is where that would have been lost.
 
-**The server composes it, always** — from its own routine row, inside `LogService::start`. A
+**The server composes it, always** — from its own routine row, inside `TrainingService::start`. A
 client-composed snapshot would freeze whatever that client last read, which is exactly the staleness
 the snapshot exists to prevent; and a start naming a routine the caller cannot read is `404 no such
 routine` rather than a session quietly started ad-hoc. Frozen at start; mid-session changes are
@@ -703,7 +708,7 @@ keeps the reading safe: the removals come last or the entity refuses to exist.
 session's plan snapshot is — the base revision AND the base name — and the write lands only while
 `gym_routines.revision` still equals it. A routine that moved since is **superseded, never merged
 over the top**, and that comparison is made in exactly ONE place: the store, under its own lock,
-because only a lock decides a race. `LogService::apply` loads the proposal, loads the routine and
+because only a lock decides a race. `ProgramService::apply` loads the proposal, loads the routine and
 hands the domain's `appliedTo` result down; it deliberately re-decides none of the store's facts,
 because one fact decided in two layers is how the two come to be decided in two orders.
 
@@ -1028,7 +1033,7 @@ std::optional<std::uint64_t> autoCloseAt(const Session&, std::optional<std::uint
                                          std::uint64_t nowMs);
 ```
 
-Pure, clock-free, tested against every branch. `LogService` applies it lazily — before a new
+Pure, clock-free, tested against every branch. `TrainingService` applies it lazily — before a new
 session starts and when the log is read — via the two-phase shape: load the open session +
 its last set instant → `autoCloseAt` → persist the close if the domain says so. No cron, no
 sweep, no heartbeat thread: gym phase 0–2 arms **zero** tickers, which is why its `main.cpp`
@@ -1094,10 +1099,15 @@ A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt:
 JS and the row renders "in progress" for the rest of time, unfixable until phase-2 log-editing.
 That is one refusal's worth of work.
 
-### 3.3 The write path (`application/LogService`)
+### 3.3 The write path (`application/TrainingService`)
 
-`LogService` holds the five ports (`LogRepository&`, `CatalogRepository&`, `ProgramRepository&`,
-`AskThreadRepository&`, `PreferencesRepository&`) and reads top-to-bottom like the plain-English rule:
+The application layer is five services, one per aggregate port, and none of them holds another:
+`TrainingService` (`LogRepository&`, plus `ProgramRepository&` for the one write that freezes a
+plan, the clock and the token mint), `CatalogService` (`CatalogRepository&`), `ProgramService`
+(`ProgramRepository&` + the clock), `ThreadService` (`AskThreadRepository&` + the clock),
+`PreferencesService` (`PreferencesRepository&`). Each HTTP adapter and `GymTools` takes only the
+service(s) it reads. The log's writes below are `TrainingService`'s, and each reads top-to-bottom
+like the plain-English rule:
 
 Each write answers with a small outcome — `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a
 resolved row plus a typed refusal — because every refusal here is a *fact*, not an exception:
@@ -1223,7 +1233,7 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   **Nothing is refused for a finished session.** A lifter reads the log *after* the workout, which
   is exactly when they see the 4 they meant to log as a 5, so the `finished` boundary the append has
   does not exist here. Neither write settles staleness, and neither goes anywhere near
-  `gym_sessions.plan` or a routine entry — *Push A keeps its own numbers*, and `LogServiceTest` and
+  `gym_sessions.plan` or a routine entry — *Push A keeps its own numbers*, and `TrainingServiceTest` and
   `PgLogRepositoryTest` each assert that rather than trust it.
 
   **The delete answers nothing at all**, which is the contract and not an omission: a set that was
@@ -1317,7 +1327,7 @@ struct SessionSummary { Session session;
 struct LogPage { std::vector<SessionSummary> sessions; std::vector<PriorMark> standing; };
 
 // The application puts the two facts on the row that are RULES rather than aggregations
-// (`application/LogService.h`); the store never sees Epley and neither does any client. Both run
+// (`application/TrainingService.h`); the store never sees Epley and neither does any client. Both run
 // over `workingMarks` — `topE1rmOf` for the estimate, which the movement simply does not enter, and
 // `recordedIn` for the gold dot, which is per movement. One projection, and the same functions the
 // finish screen goes through, so one workout cannot carry two verdicts two taps apart.
@@ -1490,7 +1500,7 @@ query, ordered by pattern then name. Identity rules, stated once:
   back-offs and **116.7** off its heaviest set, so a row that ran Epley on `topSet` made one workout
   say two different things under the word `e1RM` two taps apart. Picking a set *by* e1RM is not an
   ordering the store can make — it is the formula — so the store hands over `workingMarks`, one row
-  per (movement, working load) carrying the best reps at it, and `LogService` runs the domain over
+  per (movement, working load) carrying the best reps at it, and `TrainingService` runs the domain over
   that.
   At a fixed load Epley rises with reps, so that projection and the full set list answer identically.
   This is the §11.5 rule applied to the second formula in the product: one copy per language and none
@@ -1662,7 +1672,7 @@ query, ordered by pattern then name. Identity rules, stated once:
 
   Nothing is stored. The review is recomputed on every call, which is what keeps it right when a set
   arrives late from a flush queue, and it is why there is no `ReviewService`: one load, one pure
-  rule, one answer, on `LogService` beside `detail`.
+  rule, one answer, on `TrainingService` beside `detail`.
 - **The statistics ENGINE** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, the
   review's shape over a longer window: one load, one pure rule, one answer, computed on every read
   and stored nowhere. It takes no parameters at all — no window, no movement filter, no page —
@@ -1844,14 +1854,16 @@ learns it before its first call.
 **No apply tool at any grant level, and that is a product rule rather than an economy.** Apply is not
 a capability, it is a human act: `gym:delete` proposes destructive changes and does not imply the
 right to make one. The two routes that settle a proposal are HTTP and owner-scoped (`routes.cpp` says
-it beside the mounts), `LogService::replaceRoutine` is the human's other hand and is unreachable from
+it beside the mounts), `ProgramService::replaceRoutine` is the human's other hand and is unreachable from
 `GymTools`, and `GymToolsTest` pins every one of those absences by name.
 
 Six rules hold this together, and each is load-bearing:
 
-- **Every tool goes through `LogService`, never the repository.** The service owns the two-phase
+- **Every tool goes through a service, never the repository** — `TrainingService` for the log,
+  `CatalogService` for the movements, `ProgramService` for the plan; no tool reads a thread or the
+  settings, so `GymTools` holds three of the five. The services own the two-phase
   load → rule → persist shape, the lazy auto-close and the write-then-resolve idempotency; a tool
-  reaching past it would be a second copy of rules that exist once. The tools are therefore a second
+  reaching past them would be a second copy of rules that exist once. The tools are therefore a second
   *door on the same core*, not a second client of the HTTP API.
 - **Every tool acts as the caller.** The `ToolCaller`'s `UserId` is what every read and write is
   scoped by, exactly as `callerOf(req, auth)` scopes the handlers — absent, another account's and
@@ -2122,7 +2134,7 @@ The full cost of mounting the third product, itemized against the actual seams:
 
 - **CMake:** `add_library(windmill_gym products/gym/domain/Training.cpp
   products/gym/domain/Preferences.cpp products/gym/domain/Routine.cpp products/gym/domain/Review.cpp
-  products/gym/domain/Statistics.cpp products/gym/application/LogService.cpp)` linking
+  products/gym/domain/Statistics.cpp` + the five `products/gym/application/*Service.cpp`)` linking
   `windmill_platform PUBLIC` — plus `products/gym/domain/Record.cpp` — after the journal block; adapters + `routes.cpp` folded in via `target_sources` under the existing
   `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` added to the four
   `target_link_libraries` lines (domain tests, server, adapters tests, and — since the tool
@@ -2141,18 +2153,27 @@ The full cost of mounting the third product, itemized against the actual seams:
   auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
   auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
   auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
-  auto logService = std::make_shared<gym::LogService>(*gymLog, *gymCatalog, *gymProgram, *gymThreads,
-                                                      *gymPreferences, *systemClock, *tokens);
-  auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
+  auto gymTrainingService =
+      std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens);
+  auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog);
+  auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock);
+  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock);
+  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
+  auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
+                                                  *gymProgramService, appBaseUrl);
   const std::vector<ToolModule> mcpModules{{*mcpTools, roadmapInstructions()},
                                            {*gymTools, gym::gymInstructions()}};
   …
-  gym::GymDeps gymDeps{.logService = logService, .authService = authService};
+  gym::GymDeps gymDeps{.trainingService = gymTrainingService, .catalogService = gymCatalogService,
+                       .programService = gymProgramService,
+                       .preferencesService = gymPreferencesService,
+                       .threadService = gymThreadService, .authService = authService,
+                       .askService = gymAsk, .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
   ```
 
-  One service, two doors: the tools and the routes hold the *same* `LogService`, so a rule can
-  never be true on one surface and not the other. `apiBaseUrl` is there for one thing — a minted
+  One core, two doors: the tools and the routes hold the *same* services, so a rule can
+  never be true on one surface and not the other. `appBaseUrl` is there for one thing — a minted
   coach share is a token, and only gym knows the route that turns it into a URL. Tending is
   deliberately NOT given the composite (it keeps roadmap's host directly), so a prompt-injection-
   exposed agent cannot reach a training log. Still no env vars, no arming flags, no sweeps and no
@@ -2181,7 +2202,8 @@ The full cost of mounting the third product, itemized against the actual seams:
 - **Tests:** `test/products/gym/{Fakes.h, domain/TrainingTest.cpp, domain/PreferencesTest.cpp,
   domain/RoutineTest.cpp,
   domain/ReviewTest.cpp, domain/StatisticsTest.cpp, domain/RecordTest.cpp,
-  application/LogServiceTest.cpp,
+  application/{GymServiceFixture.h, TrainingServiceTest.cpp, CatalogServiceTest.cpp,
+  ProgramServiceTest.cpp, ThreadServiceTest.cpp},
   adapters/http/{GymApiFixture.h, TrainingApiTest.cpp, CatalogApiTest.cpp, ProgramApiTest.cpp,
   PreferencesApiTest.cpp, ThreadsApiTest.cpp}, adapters/mcp/GymToolsTest.cpp,
   adapters/postgres/{PgGymFixture.h, PgLogRepositoryTest.cpp, PgCatalogRepositoryTest.cpp,
@@ -2277,7 +2299,7 @@ with the coach's `#/gym/shared/<token>` link held outside the room chrome by the
     Volume as a headline, muscle-group taxonomy, streaks, a cardio or duration axis, and any grade
     or percentage stay cut for the reasons they were cut for. (§5, §8)
 11. **The tool catalog is a second door on the same core, and its classification IS the gate.** Every
-    tool goes through `LogService` (never the repository) and acts as the caller, so an agent is an
+    tool goes through a service (never the repository) and acts as the caller, so an agent is an
     owner-scoped client and the ownership rules are enforced in exactly one place. The level rides on
     the declaration beside the description, so the two cannot drift. Tools merge where one argument
     does the job — `list_routines` is the list and the single read, `get_session` carries the finish
@@ -2351,7 +2373,7 @@ where the product puts a control, not a new rule on the wire.
 
 **The server contract does not change, deliberately.** A surface gate — the backend refusing a set
 that does not carry a device claim — was considered and refused on three counts: `tools/lift-import`
-writes sets over this same public API, gym's **MCP tools write through the same `LogService` behind
+writes sets over this same public API, gym's **MCP tools write through the same services behind
 it** (§6) so a rule stated at the HTTP edge would not reach them at all, and making the durable write
 conditional on who is asking inverts §0, where server-as-truth is the reason gym exists here. The
 stance lives in the surfaces. Every route — and every tool — stays owner-scoped and surface-blind.
@@ -2424,7 +2446,7 @@ stand behind: *last set 1:47 ago*.
    it back as `If-None-Match` — read per RFC 9110 §13.1.2: a comma-separated list, `W/` stripped
    per entry, `*` matching any current representation — and an unchanged workout answers 304 with
    no body, so the steady state costs a header exchange and no re-render. The tag lives at the
-   HTTP edge (`TrainingApi.cpp`); `LogService` stays wire-blind and the MCP tools never see it. The 401
+   HTTP edge (`TrainingApi.cpp`); `TrainingService` stays wire-blind and the MCP tools never see it. The 401
    and the 404 never carry the header — absent stays byte-identical to forbidden.
 
    **No socket, and that is a decision.** A set lands once every 60–120 seconds. Roadmap already

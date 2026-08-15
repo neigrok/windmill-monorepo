@@ -299,7 +299,7 @@ public:
     // The lock statement, which READS the state it locks: whose session this is and whether it has
     // already been closed. Both refusals come off it before anything is written, exactly as they do
     // in the SQL. Without a session row the real INSERT..SELECT selects nothing, so nothing lands
-    // and the read-back finds nothing — the same answer as a spent id, and LogService loads the
+    // and the read-back finds nothing — the same answer as a spent id, and TrainingService loads the
     // session before it ever gets here. A CLOSED one refuses outright: a set that never landed may
     // not land after the finish, and only the locked row can say so without a race.
     std::optional<Session> ran;
@@ -1355,7 +1355,7 @@ public:
       int position = 0;
       for (const ThreadTurn& turn : row.turns) {
         ++position;
-        // The outcome columns come back EMPTY: that ladder is the domain's, and LogService stamps
+        // The outcome columns come back EMPTY: that ladder is the domain's, and ThreadService stamps
         // it on — the same split the SQL keeps.
         out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
                                          isoUtc(row.createdAtMs), std::to_string(position),
@@ -1411,7 +1411,7 @@ public:
 
   // The settings row, under the primary key's own rule: at most one per account, and a lifter who
   // has never written holds NONE — the absence is the fact, and the defaults are given a layer up
-  // (LogService), never invented here. The write is a whole-document upsert and last write wins,
+  // (PreferencesService), never invented here. The write is a whole-document upsert and last write wins,
   // which is the same ordering the claim replay leans on when a signed-in account meets the
   // settings an anonymous device just touched.
   std::optional<GymPreferences> preferences(const UserId& user) override {

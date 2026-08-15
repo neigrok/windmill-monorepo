@@ -263,7 +263,7 @@ Set corrected(const Set& stored, const SetFix& fix);
 
 // An open session with no activity for four hours is over, and it ended at its last set —
 // not at whenever the server happened to notice. A session with no sets ended when it began.
-// Pure and clock-free; LogService applies it lazily before a start, before a log read and before
+// Pure and clock-free; TrainingService applies it lazily before a start, before a log read and before
 // the statistics read — the three replies whose answer a close rewrites.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
 std::optional<std::uint64_t> autoCloseAt(const Session& session,
@@ -272,7 +272,7 @@ std::optional<std::uint64_t> autoCloseAt(const Session& session,
 
 // The other pure session rule. An explicit finish is the one instant a client names for a session
 // that already exists, so the rule needs the stored row: a workout cannot end before it began, at
-// zero, or past what the store can hold. LogService::finish refuses exactly what this refuses —
+// zero, or past what the store can hold. TrainingService::finish refuses exactly what this refuses —
 // the first write to finished_at is permanent, so there is no second chance to get it right.
 bool canFinishAt(const Session& session, std::uint64_t finishedAtMs);
 

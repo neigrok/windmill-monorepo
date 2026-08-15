@@ -8,8 +8,8 @@
 
 namespace wm::gym {
 
-// ASK'S HEAD AND MOUTH. ToolHost is its hands, and those already exist — the same seventeen tools an
-// agent drives over MCP, executed as the same account, through the same LogService. Putting a chat in
+// ASK'S HEAD AND MOUTH. ToolHost is its hands, and those already exist — the same sixteen tools an
+// agent drives over MCP, executed as the same account, through the same services. Putting a chat in
 // front of them is running that loop against them ourselves, which is the whole design: one system,
 // two doors (ARCHITECTURE §0), never a second way for a model to reach this log.
 //
