@@ -22,7 +22,7 @@ import { NODE_COLORS, NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { deleteCostLine, progressVerb } from '../ui/mobile/editorSheet.js';
 import { buildOutline, nextUp, treatmentOf, indentPx, progressOf } from './outline.js';
 import { filterOutline, kindOptions, gateOf } from './explore.js';
-import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, stillEditing, holdCancelledByMove, HOLD_MS } from './editing.js';
+import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, scrollerClearance, stillEditing, holdCancelledByMove, HOLD_MS } from './editing.js';
 import { NeedPicker } from './NeedPicker.jsx';
 import './list.css';
 
@@ -306,11 +306,16 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     return () => clearTimeout(timer);
   }, [born, outline, nodesById, shown, clearFilters]);
 
-  // The keyboard contract: while an edit field or the search field is up, the body pads its
-  // bottom by the keyboard inset the shared hook measures — the same inset the picker lifts its
-  // sheet by.
+  // The bottom-edge contract. The scroller ENDS where the action lane begins (§5) — the host
+  // measures the lane, because its height moves with its tenants (the Tend bar's starter chips
+  // come and go) — so no row is ever under the pill at ANY scroll position, not only at rest.
+  // While an edit field or the search field is up, the keyboard (§7, the inset the shared hook
+  // measures — the same one the picker lifts its sheet by) is padded inside, by only what it
+  // covers of the body: the lane is fixed to the layout viewport, so the keyboard is already
+  // sitting on top of it, and reserving both would leave a sliver between two fields.
   const editing = edit != null;
   const kbInset = useKeyboardInset(editing || searching);
+  const clearance = scrollerClearance({ laneInset: laneInset > 0 ? laneInset : LANE_FALLBACK_PX, keyboardInset: kbInset });
 
   // Pin the active field just above the keyboard: scroll the body down to it, never up, never
   // the page. Runs once the field is mounted and again as the measured inset settles.
@@ -322,9 +327,9 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     const bodyRect = body.getBoundingClientRect();
     const fieldRect = field.getBoundingClientRect();
     const rowBottom = body.scrollTop + (fieldRect.bottom - bodyRect.top);
-    const target = keyboardPin({ rowBottom, bodyHeight: body.clientHeight, keyboardInset: kbInset, scrollTop: body.scrollTop });
+    const target = keyboardPin({ rowBottom, bodyHeight: body.clientHeight, keyboardInset: clearance.keyboardCover, scrollTop: body.scrollTop });
     if (target > body.scrollTop) body.scrollTo({ top: target, behavior: 'auto' });
-  }, [edit, kbInset]);
+  }, [edit, clearance.keyboardCover]);
 
   const startEdit = useCallback((next) => {
     setRecoloring(null);
@@ -501,13 +506,7 @@ export function ListView({ tree, nodesById, states, completedAt = {}, legend, he
     </div>
   ) : null;
 
-  // The scroller clears the action lane by what the lane actually occupies (§5) — the host
-  // measures it, because its height moves with its tenants (the Tend bar's starter chips come
-  // and go) — plus the keyboard when one is up (§7). While the lookup is open the two overlap
-  // rather than stack: the lane is fixed to the layout viewport, so the keyboard is already
-  // sitting on top of it, and reserving both would leave a sliver of results between two fields.
-  const lane = laneInset > 0 ? laneInset : LANE_FALLBACK_PX;
-  const bodyStyle = { '--lane-inset': `${searching ? Math.max(lane, kbInset) : lane + kbInset}px` };
+  const bodyStyle = { '--lane-inset': `${clearance.lane}px`, '--keyboard-cover': `${clearance.keyboardCover}px` };
 
   return (
     <div className="st-list">

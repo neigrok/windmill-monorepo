@@ -1,8 +1,9 @@
 // The list's interaction math (X8 L3/L4), kept pure so node:test can pin the thresholds the
 // finger actually feels. No DOM and no React: the swipe-to-done state machine (a gesture + a
-// delta in, a fresh gesture or a verdict out), the keyboard pin that floats the active row just
-// above the on-screen keyboard, the need-picker's legal / would-loop partition, and the field
-// identity guard that lets an unmount drain a pending commit without stomping the next editor.
+// delta in, a fresh gesture or a verdict out), the scroller's clearances under the action lane and
+// the keyboard, the keyboard pin that floats the active row just above that keyboard, the
+// need-picker's legal / would-loop partition, and the field identity guard that lets an unmount
+// drain a pending commit without stomping the next editor.
 // ListView owns the pointers, the scroll and the sheet; this owns only the rules.
 
 import { illegalTargets } from '../ui/mobile/aim.js';
@@ -59,8 +60,18 @@ export function stillEditing(edit, mode, key) {
   return mode === 'add' ? edit.parentId === key : edit.id === key;
 }
 
+// What the scroller keeps clear of the two things that own the screen's bottom edge (§5, §7). The
+// action lane's box is cut OUT of the scroller — the body ends at the lane's top edge — so no row
+// can lie under the pill or Share at any scroll position, not only at rest: a seat is tappable as
+// the seat or is not on screen. The keyboard rises from the screen bottom, so it swallows the
+// lane's band before it reaches a row; only the part of the body it still covers is padded INSIDE.
+export function scrollerClearance({ laneInset, keyboardInset }) {
+  return { lane: laneInset, keyboardCover: Math.max(0, keyboardInset - laneInset) };
+}
+
 // Where the list body must scroll so the field the finger is in clears the keyboard: the row's
-// bottom minus the visible strip left above the keyboard. Only ever scrolls the list DOWN — a
+// bottom minus the visible strip left above the keyboard (`keyboardCover` from scrollerClearance —
+// the body's own covered strip, not the whole keyboard). Only ever scrolls the list DOWN — a
 // field already above the keyboard is left where it sits, and the page itself never moves.
 export function keyboardPin({ rowBottom, bodyHeight, keyboardInset, scrollTop }) {
   const target = rowBottom - (bodyHeight - keyboardInset - PIN_MARGIN_PX);

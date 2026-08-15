@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
-import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, pickerCandidates, stillEditing, holdCancelledByMove, HOLD_MS } from '../../../../src/products/roadmap/list/editing.js';
+import { swipeBegin, swipeMove, swipeEnd, swipeCancel, keyboardPin, scrollerClearance, pickerCandidates, stillEditing, holdCancelledByMove, HOLD_MS } from '../../../../src/products/roadmap/list/editing.js';
 
 function tree(nodes) {
   return new SkillTree({ id: 't', title: 'T', nodes });
@@ -57,6 +57,18 @@ test('swipeCancel — a cancelled pointer never commits, even past the threshold
   assert.deepEqual(swipeCancel({ armed: true, live: true, dx: 120 }), { commit: false, swallow: true });
   assert.deepEqual(swipeCancel({ armed: true, live: true, dx: 40 }), { commit: false, swallow: true });
   assert.deepEqual(swipeCancel({ armed: false, live: true, dx: 0 }), { commit: false, swallow: false });
+});
+
+test('scrollerClearance — the lane is cut out of the scroller whole; with no keyboard nothing is padded inside', () => {
+  assert.deepEqual(scrollerClearance({ laneInset: 70, keyboardInset: 0 }), { lane: 70, keyboardCover: 0 });
+});
+
+test('scrollerClearance — a keyboard taller than the lane covers the body by only the excess', () => {
+  assert.deepEqual(scrollerClearance({ laneInset: 70, keyboardInset: 300 }), { lane: 70, keyboardCover: 230 });
+});
+
+test('scrollerClearance — a keyboard shorter than the lane band never reaches the body', () => {
+  assert.deepEqual(scrollerClearance({ laneInset: 132, keyboardInset: 100 }), { lane: 132, keyboardCover: 0 });
 });
 
 test('keyboardPin — scrolls down just enough to clear the keyboard, leaving a 16px margin', () => {

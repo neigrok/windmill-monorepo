@@ -286,15 +286,18 @@
   white-space: nowrap;
 }
 
-/* ---- The one scroller. Its bottom clears the action lane by what the lane measured itself to
-   occupy (§5) — the host sets --lane-inset; the fallback only covers the frame before it does —
-   plus a row's worth of air, so the last step never kisses the pill. ---- */
+/* ---- The one scroller. Its box ENDS at the action lane's top edge — the lane measured what it
+   occupies (§5) and the host sets --lane-inset; the fallback only covers the frame before it does —
+   so a row can never scroll under the pill or Share: a seat is tappable as the seat, or off screen.
+   Inside, the bottom pads by what the keyboard covers of this box (--keyboard-cover, §7) plus a
+   row's worth of air, so the last step never kisses the lane. ---- */
 .st-list-body {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: var(--space-2) 0 calc(var(--lane-inset, 132px) + var(--space-3));
+  margin-bottom: var(--lane-inset, 132px);
+  padding: var(--space-2) 0 calc(var(--keyboard-cover, 0px) + var(--space-3));
 }
 
 /* ---- The lens (§4): the legend as a filter row, and the first thing in the scroller — content,

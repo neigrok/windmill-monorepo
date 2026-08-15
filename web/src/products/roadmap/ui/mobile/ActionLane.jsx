@@ -7,7 +7,8 @@
 // It also reports what it occupies. Its height is not knowable in advance — the Tend bar grows
 // starter chips only while it is idle and empty, the pill comes and goes with the view — so it
 // measures from its own top edge down to the bottom of the screen and hands that number to the
-// host. The list pads its scroller by exactly that, and no row is ever born under a button.
+// host. The list ends its scroller exactly there, so no row is ever under a button — at rest or
+// mid-scroll.
 
 import React, { useEffect, useRef } from 'react';
 import { Icon } from '../../../../design-system';

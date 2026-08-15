@@ -721,10 +721,19 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
   no way to scroll them clear — and the numbers that would have fixed it (`pillLift`'s `216`, `300`,
   `18 + 50 + 12`) were already hand-arithmetic about controls the list never measured. The lane is a
   real element now (`ActionLane`): it seats the pill, the Tend bar and Share, measures from its own
-  top edge to the bottom of the screen, and reports that. The list pads by the measurement. A tenant
+  top edge to the bottom of the screen, and reports that. The list ends its scroller there. A tenant
   can come and go (the starter chips only exist while the bar is idle and empty) and the clearance
   follows for free. **Anything that overlaps a scroller should publish its own height, never let the
   scroller guess it.**
+- **Padding clears a rest position; only a shorter box clears every position.** The list first
+  PADDED its scroller by the lane's height, which only promised the LAST row would sit clear — every
+  other row still slid under the pill on the way there, and at 375×812 the centre of a fully visible
+  mark-done seat hit-tested to the view pill at 21 of 31 scroll offsets (a tap to mark done flipped
+  the view). Now the scroller's box ENDS at the lane's top (`margin-bottom: var(--lane-inset)`), so
+  no row exists under a lane button at any offset, and only the keyboard's cover of that shorter
+  box is padded inside (`scrollerClearance` in `list/editing.js`). **A floating control over a
+  scroller must be cut OUT of the scroller's box, not padded past — a seat is tappable as the seat
+  or is not on screen.**
 - **Three affordances on one line need three elements.** Making the fruit the check-off control
   (§6) was impossible while the row line was itself a `<button>` — a button inside a button. The row
   is now a carrier div holding a seat (fruit, 24px visual in a 44px pseudo-element hit), an opener,
