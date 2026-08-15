@@ -13,7 +13,10 @@ import { Avatar } from '../../design-system';
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, onMyTrees, treeCount = null, footer, expired = false, claimBusy }) {
+// `mine` is the row that returns a signed-in visitor to their own work — { label, count, onSelect } —
+// and the PRODUCT supplies the noun ("My trees", "My pages", "My log"): the shell owns no sentence
+// about anybody's data, so a page with nothing true to offer passes none and the row is absent.
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -242,7 +245,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                   </div>
                 </div>
               </div>
-              {onMyTrees && <MenuRow label="My trees" detail={treeCount != null ? String(treeCount) : null} onSelect={() => choose(onMyTrees)} />}
+              {mine && <MenuRow label={mine.label} detail={mine.count != null ? String(mine.count) : null} onSelect={() => choose(mine.onSelect)} />}
               {onConnect && <MenuRow label="Connect your LLM tools" onSelect={() => choose(onConnect)} />}
               <MenuRow label="Account settings" onSelect={() => choose(onSettings)} />
               <MenuRow label="Sign out" onSelect={() => choose(onSignOut)} />

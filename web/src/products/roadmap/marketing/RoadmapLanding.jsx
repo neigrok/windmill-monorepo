@@ -331,9 +331,10 @@ export function RoadmapLanding() {
   // "Start your tree" would be claiming zero. The chrome keeps the cluster's box and waits.
   const resolving = status === 'signed-in' && trees === null;
 
-  // The seat's count and its parting line are roadmap sentences — the chrome makes no claim about
-  // anybody's trees — so this page says both, or a landing that has nothing true to say says none.
-  const seat = { count: trees?.length ?? null, note: 'Signing out keeps your trees on this device.' };
+  // The seat's noun, its count and its parting line are roadmap sentences — the chrome makes no
+  // claim about anybody's trees — so this page says all three, or a landing that has nothing true
+  // to say says none.
+  const seat = { label: 'My trees', count: trees?.length ?? null, note: 'Signing out keeps your trees on this device.' };
 
   return (
     <LandingPage

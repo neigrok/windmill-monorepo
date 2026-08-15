@@ -151,9 +151,9 @@ function NavCluster({ cta, resume, resolving, seat }) {
   // `status` decides nothing about it: a pre-open product can still pass a resume, when the work a
   // signed-in visitor would return to is real and reachable. A landing with nothing true to offer
   // passes none and falls back to its CTA, or to nothing at all.
-  // The seat's count and its parting line are the product's to say — the shell owns no sentence
-  // about somebody's data — so a landing with nothing true to report passes no `seat` and gets
-  // a seat that stays quiet rather than one that guesses.
+  // The seat's noun, its count and its parting line are the product's to say — the shell owns no
+  // sentence about somebody's data — so a landing with nothing true to report passes no `seat` and
+  // gets a seat that stays quiet rather than one that guesses.
   if (status === 'signed-in' && user) {
     const verb = resume ?? cta;
     return (
@@ -163,9 +163,8 @@ function NavCluster({ cta, resume, resolving, seat }) {
           user={user}
           status={status}
           size={28}
-          treeCount={seat?.count ?? null}
           footer={seat?.note}
-          onMyTrees={seat && verb ? () => { window.location.href = verb.href; } : undefined}
+          mine={seat && verb ? { label: seat.label, count: seat.count ?? null, onSelect: () => { window.location.href = verb.href; } } : undefined}
           onSettings={() => { window.location.hash = '#/settings'; }}
           onSignOut={signOut}
         />

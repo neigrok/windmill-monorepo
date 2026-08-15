@@ -124,7 +124,6 @@ export function Shell({ location, neutral = null }) {
             user={user}
             status={status}
             size={30}
-            treeCount={null}
             onSignIn={openSignInDoor}
             onSettings={() => navigate('/app/settings')}
             onConnect={() => navigate('/app/connect')}
