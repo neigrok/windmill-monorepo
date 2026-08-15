@@ -105,13 +105,19 @@ function entryWrite(entry) {
 // The routine as it goes back over the wire. `lastTrainedAt` is the store's to say and the entry
 // positions are the store's to number, so neither travels back — sending a position beside an order
 // that already carries the same fact is two answers to one question.
-export function routineWrite(routine) {
-  return {
+// `revision` travels back ONLY when the caller names the one it read: an editor saving the whole
+// document over a day that moved since (a proposal applied on the phone, another tab's save) is
+// refused 409 routine-stale rather than landing over it, and re-reads. A write that names none —
+// the fresh create — lands as before.
+export function routineWrite(routine, readRevision = null) {
+  const write = {
     id: routine.id,
     name: routine.name,
     position: routine.position,
     entries: routine.entries.map(entryWrite),
   };
+  if (readRevision != null) write.revision = readRevision;
+  return write;
 }
 
 // "Keep this as a routine" (screen 3) — the first routine most lifters ever have, and a by-product

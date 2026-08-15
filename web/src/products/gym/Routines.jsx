@@ -196,7 +196,10 @@ export function RoutineEditor({ id, log }) {
   const commit = async () => {
     if (missing || saving) return false;
     setSaving(true);
-    const write = routineWrite({ ...draft, name: draft.name.trim() });
+    // The save names the revision it read, so a day that moved under this editor — a proposal
+    // applied on the phone, another tab's save — is refused rather than overwritten whole; the
+    // repair is a re-read, and the draft stays on screen for the lifter to compare.
+    const write = routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision);
     try {
       if (fresh) await gymApi.createRoutine(write);
       else await gymApi.replaceRoutine(draft.id, write);
@@ -204,6 +207,12 @@ export function RoutineEditor({ id, log }) {
       return true;
     } catch (error) {
       setSaving(false);
+      if (error?.code === 'routine-stale') {
+        log.say('That routine changed since you opened it — here is what it says now. Your edits were not saved.');
+        setEdits(null);
+        view.retry();
+        return false;
+      }
       log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
       return false;
     }

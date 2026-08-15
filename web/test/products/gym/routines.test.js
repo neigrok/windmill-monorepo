@@ -92,6 +92,13 @@ test('routineFromSession — modal reps, ties to the earliest, and the heaviest 
 
 // What the store numbered is the store's to number, and what it remembers is its to remember: a
 // write carries the order and nothing that repeats it.
+// The save names the revision the editor read, and only when it read one: a fresh create names none.
+test('routineWrite — carries the read revision only when the caller names it', () => {
+  const stored = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 4, entries: [] };
+  assert.deepEqual(routineWrite(stored, 4), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [], revision: 4 });
+  assert.deepEqual(routineWrite(stored), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [] });
+});
+
 test('routineWrite — entry positions and lastTrainedAt do not travel back', () => {
   const stored = {
     id: 'rt_push_a',
