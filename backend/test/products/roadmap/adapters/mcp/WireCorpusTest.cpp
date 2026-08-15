@@ -21,7 +21,7 @@ namespace {
 // not the compiler, that catches "same version, different bytes". What the byte-compare itself
 // catches is the change that compiles green and still moves the wire — pqxx row_ref/row, jsoncpp's
 // infinity, a projection that quietly grows a field.
-constexpr int kWireCorpusVersion = 2;  // v2: import_subgraph's receipt gained progressSkipped
+constexpr int kWireCorpusVersion = 3;  // v3: import_subgraph's receipt counts the edges it carried
 
 // One move in the plan: a tool and its arguments. The harness fills treeId.
 struct Step {

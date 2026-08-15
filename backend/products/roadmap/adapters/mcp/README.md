@@ -231,7 +231,9 @@ a shared document.
 - **`import_subgraph`** takes the exact JSON `get_tree` returns (`{title?, nodes[], kinds[]}`,
   plus an optional `progress[]`) and applies it in **one** op via the subgraph CRDT graft path.
   It is **upsert by id**: an incoming id already present is overwritten and reported in
-  `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. Pass `dryRun: true`
+  `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. The receipt counts
+  `nodes`, `edges` and `kinds` as carried, so a batch whose prerequisites were put in the wrong
+  place reads as `edges: 0` rather than as a tree that quietly has none. Pass `dryRun: true`
   to preview the collisions and change nothing. This collapses hundreds of `create_node` +
   `connect` + `set_progress` calls into a single call.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory

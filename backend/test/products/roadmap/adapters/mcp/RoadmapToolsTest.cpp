@@ -368,6 +368,7 @@ TEST(mcp_import_subgraph_bulk_upserts_and_reports_collisions) {
   const Json::Value imported = body(result);
   CHECK(imported["imported"].asBool());
   CHECK_EQ(imported["nodes"].asInt(), 2);
+  CHECK_EQ(imported["edges"].asInt(), 1);
   CHECK_EQ(imported["newNodes"].asInt(), 1);
   REQUIRE_EQ(imported["nodeCollisions"].size(), 1u);
   CHECK_EQ(imported["nodeCollisions"][0].asString(), std::string("a"));
@@ -396,6 +397,7 @@ TEST(mcp_import_subgraph_dry_run_reports_without_applying) {
   CHECK_FALSE(result.isError);
   const Json::Value preview = body(result);
   CHECK(preview["dryRun"].asBool());
+  CHECK_EQ(preview["edges"].asInt(), 0);
   CHECK_EQ(preview["newNodes"].asInt(), 1);
   CHECK_EQ(preview["nodeCollisions"].size(), 1u);
   CHECK_FALSE(preview.isMember("imported"));

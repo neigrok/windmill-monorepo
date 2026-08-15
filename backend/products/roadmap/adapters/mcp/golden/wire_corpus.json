@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 2,
+  "schemaVersion" : 3,
   "steps" : 
   [
     {
@@ -296,6 +296,7 @@
             "text" : 
             {
               "diagnosticsClean" : true,
+              "edges" : 3,
               "imported" : true,
               "introducedDiagnostics" : [],
               "kindCollisions" : [],
@@ -324,6 +325,7 @@
             "text" : 
             {
               "dryRun" : true,
+              "edges" : 0,
               "kindCollisions" : [],
               "kinds" : 0,
               "newKinds" : 0,
@@ -352,6 +354,7 @@
             "text" : 
             {
               "diagnosticsClean" : true,
+              "edges" : 0,
               "imported" : true,
               "introducedDiagnostics" : [],
               "kindCollisions" : [],

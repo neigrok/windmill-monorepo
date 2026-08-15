@@ -275,9 +275,10 @@ runs through ScopedToolHost into RoadmapTools directly (deliberately — see bel
 tending agent's misnamed argument is still dropped in silence. Unchanged from before, not
 made worse, and worth doing if the tend loop ever earns a second reader.
 
-Still open from that entry: import_subgraph's receipt reports newNodes and nodeCollisions
-but no edge count. An `edges:` number would have made the original defect visible on the
-first call, and it is still the cheapest independent guard.
+Closed 2026-08-15: import_subgraph's receipt counts `edges` — the prerequisites across the
+nodes the batch carried — beside `nodes` and `kinds`, in the dry run and the real run alike
+(wire corpus v3). A graft whose edges went into the wrong place now reads `edges: 0` on the
+first call. The tend loop's direct path is still the one place a misnamed argument is silent.
 
 --- 2026-08-07 · the permission gate, and what it changes for a client ---
 

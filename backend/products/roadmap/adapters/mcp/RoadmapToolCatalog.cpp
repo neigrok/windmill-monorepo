@@ -542,8 +542,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "offending element — but never against a merely untidy result (a dangling edge lands and is "
         "reported in introducedDiagnostics). Upsert by id: an incoming id already present is "
         "overwritten (reported in nodeCollisions/kindCollisions), a new id is added; nothing is "
-        "removed, and the tree's title is not touched. Pass dryRun to preview the collisions and "
-        "change nothing. This collapses hundreds of create/connect calls into one.",
+        "removed, and the tree's title is not touched. The receipt counts what the batch carried — "
+        "`nodes`, `edges` (the prerequisites across them), `kinds` — so check `edges` against what "
+        "you meant to send. Pass dryRun to preview the collisions and change nothing. This "
+        "collapses hundreds of create/connect calls into one.",
         p, {"treeId", "nodes"}));
   }
   {

@@ -665,8 +665,15 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     for (const Kind& k : incoming.kinds)
       if (presentKinds.count(k.id.str())) kindCollisions.append(k.id.str());
 
+    // The receipt counts the EDGES the batch carried, so a graft whose prerequisites never landed —
+    // an agent that put them in a top-level `edges` it borrowed from connect, once, on a live tree —
+    // reads as `edges: 0` on the first call rather than as a tree that quietly has none.
+    int edges = 0;
+    for (const NodeSpec& n : incoming.nodes) edges += static_cast<int>(n.prerequisites.size());
+
     Json::Value out(Json::objectValue);
     out["nodes"] = static_cast<int>(incoming.nodes.size());
+    out["edges"] = edges;
     out["kinds"] = static_cast<int>(incoming.kinds.size());
     out["nodeCollisions"] = nodeCollisions;
     out["kindCollisions"] = kindCollisions;
