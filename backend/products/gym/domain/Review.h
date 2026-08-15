@@ -128,7 +128,7 @@ std::optional<PersonalRecord> recordAgainst(const std::vector<PriorMark>& earned
 // collapse a session's sets — and the slight rule below is stated in working sets.
 //
 // `finished` is what keeps the walk and the finish read reading ONE history. The finish read stands
-// a session against its FINISHED predecessors (the store's window, ports/TrainingRepository.h), so
+// a session against its FINISHED predecessors (the store's window, ports/LogRepository.h), so
 // a page that folded an open workout into the marks would judge the row above it against history
 // that session's own finish screen cannot see. A page is not sorted by finishedness — started_at is
 // the device's, one-open-at-a-time is the only rule, and a queued offline start flushed late puts an

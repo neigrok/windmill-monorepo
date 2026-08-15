@@ -24,7 +24,7 @@ namespace wm::gym {
 // logs a negative load, so the total FALLS as the band comes off, and four light sets outrank three
 // heavy ones. e1RM is the headline here and everywhere else. What that refuses is not tonnage as a
 // CAPTION, which the log prints on its week dividers and its rows (the sum is the store's, in
-// ports/TrainingRepository.h) — the scale of a week, sitting beside the facts a lifter scans. It is
+// ports/LogRepository.h) — the scale of a week, sitting beside the facts a lifter scans. It is
 // allowed there because it is stated with the negative case handled rather than ignored: an
 // assisted set contributes ZERO, having moved no external load, and a bodyweight set contributes
 // zero for the same reason, gym holding no bodyweight to add to it. That carries one rule with it,

@@ -1101,7 +1101,7 @@ create table if not exists gym_exercise_names (
 -- lifter renames more than once, so one column would keep the oldest name or the newest and lose
 -- the other. The name is part of the primary key, which is what makes renaming BACK a delete of one
 -- row rather than a second copy of a name that is no longer a memory (products/gym/adapters/
--- postgres/PgTrainingRepository.cpp states the three statements). The list is capped per movement by
+-- postgres/PgCatalogRepository.cpp states the three statements). The list is capped per movement by
 -- that same write (domain/Training.h's kMaxAliases): this row set ships on the catalog read, which
 -- is the product's most-fired read, and a lifter's fiftieth try at a name is not muscle memory.
 --
@@ -1315,7 +1315,7 @@ create unique index if not exists gym_sessions_one_open on gym_sessions (user_id
 -- The primary key is not the whole of that replayability any more, and W3 is why: a row can now
 -- LEAVE this table, which frees its id, and a replayed append would then hand a lifter back the set
 -- they deleted. So a delete SPENDS the id for good — insertSet asks gym_set_revisions whether this
--- id names a deleted set before it writes (products/gym/adapters/postgres/PgTrainingRepository.cpp).
+-- id names a deleted set before it writes (products/gym/adapters/postgres/PgLogRepository.cpp).
 -- kind / rpe / note land NOW though their UI is phase 2 — Lift's lesson is that this is a
 -- schema decision, not a feature decision: a warmup must not count toward volume, and
 -- band-assisted work logs NEGATIVE kg, which naive volume = weight × reps silently subtracts

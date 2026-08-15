@@ -108,9 +108,10 @@ the environment could not run, and is never folded into the passed count. If a c
 process down anyway, the harness names it — `*** CRASHED mid-case; no later case in this binary
 ran: <case> ***` — and re-raises, so the exit status still tells the truth.
 
-The 29 Postgres integration cases skip by default: they need a live database with `db/schema.sql`
+The Postgres integration cases skip by default: they need a live database with `db/schema.sql`
 applied, so they run only under `WM_PG_TEST` (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`,
-`PgTrainingRepositoryTest`; they seed and clean their own rows, so they are safe to re-run).
+and gym's five `Pg*RepositoryTest` files; they seed and clean their own rows, so they are safe to
+re-run).
 
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \

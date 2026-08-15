@@ -2,7 +2,11 @@
 
 #include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
-#include "products/gym/ports/TrainingRepository.h"
+#include "products/gym/ports/AskThreadRepository.h"
+#include "products/gym/ports/CatalogRepository.h"
+#include "products/gym/ports/LogRepository.h"
+#include "products/gym/ports/PreferencesRepository.h"
+#include "products/gym/ports/ProgramRepository.h"
 
 #include <cstdint>
 #include <optional>
@@ -155,7 +159,7 @@ struct SessionDetail {
 // opened The log would have read two numbers under the word `e1RM`, two taps apart.
 //
 // Epley reaches neither the database — picking a set BY e1RM is the formula, not an ordering, so the
-// store hands over its per-load projection instead (`ports/TrainingRepository.h`) — nor a client,
+// store hands over its per-load projection instead (`ports/LogRepository.h`) — nor a client,
 // because the formula has one copy per language (§11.5) and a log row that computed its own would be
 // the second copy in JavaScript. It is absent exactly where Epley is undefined: a session holding no
 // working set, and one whose working sets were all chin-ups at 0 kg or band-assisted pulls at −20,
@@ -228,7 +232,7 @@ public:
   std::vector<Routine> routines(const UserId& user);
   std::optional<Routine> routine(const UserId& user, const RoutineId& id);
   // The routine's dated history — its creation and every proposal ever minted against it, in one
-  // list (ports/TrainingRepository.h). It rides on the routine's own read rather than on a route of
+  // list (ports/ProgramRepository.h). It rides on the routine's own read rather than on a route of
   // its own, because it is one section of one screen (§M30) and a page that made a call per section
   // draws in stages.
   std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id);

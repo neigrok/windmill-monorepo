@@ -521,7 +521,7 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
     }
 
     // Newest-trained first, and never by when they were made — that is how a lifter picks one, and
-    // it is the order `GET /v1/gym/routines` already answers in (PgTrainingRepository, last_trained
+    // it is the order `GET /v1/gym/routines` already answers in (PgProgramRepository, last_trained
     // DESC NULLS LAST then position). Stated here as well because the device's own unclaimed
     // routines are folded in AFTER the served ones, and one list may not read in two orders.
     public static func byLastTrained(_ routines: [Routine]) -> [Routine] {

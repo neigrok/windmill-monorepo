@@ -135,14 +135,21 @@ backend/products/gym/
   domain/Statistics.h/.cpp   the per-movement line · the standing bests       (pure, no I/O)
   domain/Record.h/.cpp       a movement's record — chart · ladder · tiles     (pure, no I/O)
   domain/ReadReceipt.h/.cpp  what a read SERVED, counted by id: sets · sessions · weeks (pure)
-  ports/TrainingRepository.h the one store port + its DTOs
+  ports/LogRepository.h      sessions · sets · revisions · the coach share, + its DTOs
+  ports/CatalogRepository.h  the seeds, an account's movements, names and aliases
+  ports/ProgramRepository.h  routines + the proposal ledger (one port: one transaction writes both)
+  ports/AskThreadRepository.h  Ask's threads and turns
+  ports/PreferencesRepository.h  the settings row
   ports/AskAgent.h           Ask's port: AskTurn · AskStep · AskAnswer
   application/LogService.h/.cpp   start/finish/append/log/routines/proposals/stats/export/share
   application/AskService.h/.cpp   AskTools (reads + the two proposal mints) + Ask's refusal ladder
   adapters/
     json/TrainingJson.h/.cpp      the cross-surface wire codec
     csv/TrainingCsv.h/.cpp        the export's framing, and nothing else
-    postgres/PgTrainingRepository.h/.cpp
+    postgres/PgGymRows.h          what the five adapters share: instantFrom · the movement-row
+                                  join · namesVisibleMovement — and nothing else
+    postgres/PgLogRepository.h/.cpp · PgCatalogRepository · PgProgramRepository ·
+             PgAskThreadRepository · PgPreferencesRepository        one adapter per port
     http/GymApi.h/.cpp            every /v1/gym/* route but one
     http/AskApi.h/.cpp            POST /v1/gym/ask — the one conditional route
     mcp/GymToolCatalog.h/.cpp     the sixteen declarations + the handshake paragraph
@@ -161,12 +168,22 @@ right. Id tags are gym's own (`ExerciseTag`, `SessionTag`, `SetTag` → `Exercis
 just nested one namespace deeper. `routes.h` declares `gym::GymDeps` and
 `gym::registerRoutes`, colliding with nothing.
 
-One port, one service, one Api, deliberately: gym is a single bounded store (the catalog, the plan
-and the log live or die together — a routine entry references a movement, a session freezes a
-routine, a set references both a session and a movement), and the repo convention says a file earns
-existence by consumers, not by category. The split (CatalogRepository, RoutineRepository) waits for
-a second consumer, which routines and custom movements did not turn out to be: every one of their
-reads and writes is used by exactly the one service the log is already served by.
+Five ports, one service, one Api. Gym is still a single bounded store — the catalog, the plan and
+the log live or die together (a routine entry references a movement, a session freezes a routine, a
+set references both a session and a movement), and `LogService` is the one consumer of all five —
+so the ports are cut by AGGREGATE, not by consumer: the log (sessions, sets, revisions, the coach
+share, which reads a session in the statement that mints it), the catalog, the program (routines
+AND the proposal ledger, because `replaceRoutine` supersedes pending proposals in the same
+transaction and a store holding them in two ports would hold that lock order twice), Ask's threads,
+and the settings row. The reason is not the port file — one port with section headers read fine —
+but the three files that grew in lockstep behind it: the Postgres adapter, the in-memory fake and
+the Pg test file, which every wave added hundreds of lines to and which could only split cleanly
+along a port seam. What the split is NOT is table ownership: the log's reads still join the catalog
+to print a movement, the program's mint checks a movement against the catalog's predicate, a thread
+reads its proposals — the schema's cascades cross the seams and the fake keeps one shared store
+(`FakeGymStore`) so every cross-aggregate rule is written once. Each adapter's preamble says what it
+still reads from another aggregate's tables; the three helpers more than one adapter needs live in
+`PgGymRows.h`, and that header refuses to grow.
 
 ---
 
@@ -534,7 +551,7 @@ takes these rows and **discarding a workout takes its revisions too** — which 
 must never make the history of a set unwritable. `revision_id` is the one id in gym the server
 mints — a kept row is not something a client names, because nothing names it at all.
 
-**Both writes keep their copy in the same statement that moves the row** (`PgTrainingRepository`),
+**Both writes keep their copy in the same statement that moves the row** (`PgLogRepository`),
 so there is no instant in which a version is gone and unkept: the delete's `DELETE … RETURNING`
 feeds the `INSERT`, and the correction's data-modifying CTE copies the row beside the `UPDATE` —
 **only where the row actually moves.** `{}` is a legal fix and a resent identical fix is what a
@@ -598,7 +615,7 @@ Three decisions worth the ink:
 - **Defaults live on the columns AND in `domain/Preferences.h`, and must agree.** A lifter who never
   opens this screen holds no row and is served the domain's copy — kg, the rest timer **off**,
   confirmation on wherever a platform has one. Off, because a timer nobody asked for that starts
-  beeping in a gym is the kind of thing this product does not do. `PgTrainingRepositoryTest` pins the
+  beeping in a gym is the kind of thing this product does not do. `PgPreferencesRepositoryTest` pins the
   two copies together by inserting a row with nothing but an owner and reading back the domain's
   document.
 - **`rest_seconds` is NULL by default and null MEANS something** — no timer — exactly as a routine
@@ -1045,7 +1062,8 @@ That is one refusal's worth of work.
 
 ### 3.3 The write path (`application/LogService`)
 
-`LogService` holds `TrainingRepository&` and reads top-to-bottom like the plain-English rule:
+`LogService` holds the five ports (`LogRepository&`, `CatalogRepository&`, `ProgramRepository&`,
+`AskThreadRepository&`, `PreferencesRepository&`) and reads top-to-bottom like the plain-English rule:
 
 Each write answers with a small outcome — `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a
 resolved row plus a typed refusal — because every refusal here is a *fact*, not an exception:
@@ -1172,7 +1190,7 @@ flow control never travels as a throw, and `InvalidTraining` stays reserved for 
   is exactly when they see the 4 they meant to log as a 5, so the `finished` boundary the append has
   does not exist here. Neither write settles staleness, and neither goes anywhere near
   `gym_sessions.plan` or a routine entry — *Push A keeps its own numbers*, and `LogServiceTest` and
-  `PgTrainingRepositoryTest` each assert that rather than trust it.
+  `PgLogRepositoryTest` each assert that rather than trust it.
 
   **The delete answers nothing at all**, which is the contract and not an omission: a set that was
   never there does not stand either, so the client whose reply was lost sends the same request again
@@ -1186,11 +1204,17 @@ is entitled to, it gets a refusal, never a row it is not. The delete is the one 
 proves the rule: there is no row left to hand back, and a second reply that differed from the first
 is exactly what an idempotent delete must not have.
 
-### 3.4 The port (`ports/TrainingRepository.h`)
+### 3.4 The ports (`ports/LogRepository.h` · `CatalogRepository.h` · `ProgramRepository.h` · `AskThreadRepository.h` · `PreferencesRepository.h`)
+
+Sketched below as ONE listing for reading; in the code it is five structs — `LogRepository` (open …
+deleteSession, movementHistory, trainingLog, exportedSets, the three share doors),
+`CatalogRepository` (catalog, insertExercise, renameExercise), `ProgramRepository` (routines …
+deleteRoutine plus the proposal ledger, §D), `AskThreadRepository` (§O) and `PreferencesRepository`
+(§I) — each file carrying its own DTOs. The proposal, thread and preferences methods are not sketched
+here; their sections state them.
 
 ```cpp
-struct TrainingRepository {
-  virtual ~TrainingRepository() = default;
+struct LogRepository / CatalogRepository / ProgramRepository {   // one listing, five structs
   virtual std::vector<Exercise> catalog(const UserId&) = 0;          // seeds + own customs
   virtual std::optional<Session> open(const UserId&) = 0;
   virtual std::optional<Session> session(const UserId&, const SessionId&) = 0;
@@ -1302,7 +1326,7 @@ answers `notFound`, and `unknownExercise` is either one's. The service does not 
 second enum that could only say the same words; it hands the port's outcome straight back, the same
 pass-through `lastTime` is.
 
-DTOs live with the port (the house convention). **Every method that can resolve a row carries the
+DTOs live with their port (the house convention). **Every method that can resolve a row carries the
 credential that may see it** — a `UserId` everywhere but one, and on `sharedSession` an unguessable
 token instead, which is the whole of why that one is safe to leave uncredentialed (§2.6). That
 includes `setOf`, the one lookup keyed by a client-minted set id:
@@ -2066,14 +2090,19 @@ The full cost of mounting the third product, itemized against the actual seams:
   means editing the Dockerfile's `--target` list, so there isn't one.
 - **Dockerfile:** untouched. `windmill_server` statically absorbs the new lib; `schema.sql`
   already rides at `/app/db/schema.sql`.
-- **main.cpp:** five lines, plus one entry in the account-footprint list. The core is built **up
+- **main.cpp:** nine lines, plus one entry in the account-footprint list. The core is built **up
   with the MCP surface** rather than beside the routes, because the composite host is constructed
   once before the server takes traffic and gym's tools have to be in it; the mount stays down with
   the other two products' —
 
   ```cpp
-  auto gymRepository = std::make_shared<gym::PgTrainingRepository>(connString);
-  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
+  auto gymLog = std::make_shared<gym::PgLogRepository>(pool);
+  auto gymCatalog = std::make_shared<gym::PgCatalogRepository>(pool);
+  auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
+  auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
+  auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
+  auto logService = std::make_shared<gym::LogService>(*gymLog, *gymCatalog, *gymProgram, *gymThreads,
+                                                      *gymPreferences, *systemClock, *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, apiBaseUrl);
   const std::vector<ToolModule> mcpModules{{*mcpTools, roadmapInstructions()},
                                            {*gymTools, gym::gymInstructions()}};
@@ -2114,7 +2143,9 @@ The full cost of mounting the third product, itemized against the actual seams:
   domain/ReviewTest.cpp, domain/StatisticsTest.cpp, domain/RecordTest.cpp,
   application/LogServiceTest.cpp,
   adapters/http/GymApiTest.cpp, adapters/mcp/GymToolsTest.cpp,
-  adapters/postgres/PgTrainingRepositoryTest.cpp}` mirroring the tree, full assertions —
+  adapters/postgres/{PgGymFixture.h, PgLogRepositoryTest.cpp, PgCatalogRepositoryTest.cpp,
+  PgProgramRepositoryTest.cpp, PgAskThreadRepositoryTest.cpp, PgPreferencesRepositoryTest.cpp}}`
+  mirroring the tree, full assertions —
   `GymToolsTest` rides in `windmill_mcp_tests` beside roadmap's, the other three in the domain and
   adapters binaries. Its high-value targets are the ones only this surface has: the whole
   (tool → level) table pinned in order, `tools/list` shrinking to exactly what a grant named, a

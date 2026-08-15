@@ -60,8 +60,8 @@ failed`. Read all four numbers: *skipped* is never counted as passed, and a case
 short is counted as *stopped before the end*. `--output-on-failure` prints nothing while green, so
 use `-V` when the skip count is what you came for.
 
-The Postgres integration cases (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`,
-`PgTrainingRepositoryTest`) need a live database and skip without `WM_PG_TEST`. They seed and clean
+The Postgres integration cases (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`, and gym's five
+`Pg*RepositoryTest` files) need a live database and skip without `WM_PG_TEST`. They seed and clean
 their own rows, so re-running them is free — and they are the only proof the SQL half works, since
 CI runs ctest in a container with no database:
 

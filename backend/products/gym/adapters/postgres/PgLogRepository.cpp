@@ -360,7 +360,7 @@ std::optional<Set> PgLogRepository::updateSet(const UserId& user, const Set& cor
 
 // The delete, and it takes the SESSION's lock first for the reason the correction above does — one
 // order for all three writes — plus the one only this write needs. A set id is spent once and for
-// good (ports/TrainingRepository.h): insertSet asks gym_set_revisions whether this id names a set
+// good (ports/LogRepository.h): insertSet asks gym_set_revisions whether this id names a set
 // that was deleted, and it asks under this same lock, so a replayed append and the delete it races
 // cannot both look and both find nothing. Locked, the two orders are the only two there are: the
 // append lands and this delete removes it, or this delete commits and the append is refused.

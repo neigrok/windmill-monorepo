@@ -355,7 +355,7 @@ public final class LocalLog {
     //
     // THE PREDICATE IS THE SERVER'S, `kind <> 'warmup'`, and it is not the same as "working only":
     // a drop set and a set taken to failure both happened and both ride along in the log's own answer
-    // (PgTrainingRepository::lastTime). A phone that cut them here would dial a different weight
+    // (PgLogRepository::lastTime). A phone that cut them here would dial a different weight
     // signed out than the same session dials signed in — and §G18's sheet can file any of the four
     // kinds, so this shelf really does hold them.
     public func lastTime(_ exerciseId: String) -> LastTime? {
@@ -464,7 +464,7 @@ public final class LocalLog {
 
     // A heavier load takes the mark; a tied load goes to more reps, then to the earlier one — the
     // server's marks projection (DISTINCT ON (exercise, weight) … reps DESC, completed_at ASC in
-    // PgTrainingRepository), so the same log shows the same best before and after the claim. The
+    // PgLogRepository), so the same log shows the same best before and after the claim. The
     // marks arrive oldest first, which is what makes "then the earlier one" a rule rather than an
     // accident. No estimate rides along, for the reason no local read has one.
     private func heaviest(of marks: [MovementMark]) -> MovementMark? {

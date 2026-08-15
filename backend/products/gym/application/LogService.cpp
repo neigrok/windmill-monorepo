@@ -148,7 +148,7 @@ std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& sessi
 // The delete, and it says nothing back on purpose: a set that was never there does not stand either,
 // so the reply a client whose network dropped sends this again for is the reply it already had. What
 // it does NOT do is destroy anything — the row moves whole into the revisions table, marked deleted
-// (ports/TrainingRepository.h) — and nothing on any surface may promise that back, because there is
+// (ports/LogRepository.h) — and nothing on any surface may promise that back, because there is
 // no door that reads it.
 void LogService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
   log_.deleteSet(user, session, id);

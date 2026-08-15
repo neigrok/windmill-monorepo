@@ -256,7 +256,7 @@ Json::Value toJson(const std::vector<ProposalHead>& heads);
 Json::Value toJson(const ThreadOutcome& outcome);
 Json::Value toJson(const AskThread& thread);
 Json::Value toJson(const std::vector<AskThread>& threads);
-// The routine's own dated ledger, both kinds of row in one list (ports/TrainingRepository.h). It is
+// The routine's own dated ledger, both kinds of row in one list (ports/ProgramRepository.h). It is
 // composed onto the single-routine read by the handler rather than folded into `toJson(routine,
 // pending)`, because the LIST read hands back routines too and must not carry it.
 Json::Value toJson(const std::vector<RoutineEvent>& history);
@@ -269,7 +269,7 @@ Json::Value toJson(const Review& review);
 // The other two one-way shapes, for the same reason the review is one: every number in them is
 // computed or read on each call and there is nothing for a client to send back. The share's is
 // deliberately NOT `toJson(const Session&)` — that one carries the ids and the frozen plan, and a
-// reader who is not the owner gets neither (ports/TrainingRepository.h says why).
+// reader who is not the owner gets neither (ports/LogRepository.h says why).
 Json::Value toJson(const Statistics& statistics);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);

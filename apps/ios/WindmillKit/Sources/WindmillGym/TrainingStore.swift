@@ -11,7 +11,7 @@ import WindmillPlatform
 // log, or owe it. Nothing is ever held in memory waiting for a network call to decide whether it
 // counts, and nothing about logging changes offline.
 //
-// Named for what it holds — the training, beside `TrainingRepository` and `TrainingSyncing` — and not
+// Named for what it holds — the training, beside `TrainingSyncing` and the backend's TrainingJson — and not
 // for the session, because `WindmillPlatform.SessionStore` is the Keychain secret store behind
 // AuthStore. Two unrelated things wearing one name in one app is the shape that hides a bug.
 
