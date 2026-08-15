@@ -240,6 +240,38 @@ TEST(gym_a_routine_entry_key_the_schema_never_declared_is_400_and_nothing_lands)
   CHECK(h.repo.db.routineRows.empty());
 }
 
+// An editor that says which revision it read is refused when the day moved since — a proposal
+// applied on the phone, another tab's save — rather than landing whole over it; a PUT that names no
+// revision keeps landing (the phone's one-weight read-modify-write). The remedy is a re-read, and
+// the code says so.
+TEST(gym_replace_routine_naming_a_stale_revision_is_409_and_writes_nothing) {
+  Harness h;
+  h.signIn("s-live");
+  send(h.program, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", routineBody(), "s-live"));
+  Json::Value first = routineBody("rt_11111111", "Push A2");        // revision 1 → 2
+  first["revision"] = 1;
+  Json::Value stale = routineBody("rt_11111111", "Push A3");        // still names revision 1
+  stale["revision"] = 1;
+  Json::Value unnamed = routineBody("rt_11111111", "Push A4");      // names none: lands
+
+  drogon::HttpResponsePtr moved = send(h.program, &ProgramApi::replaceRoutine,
+                                       putRequest("/v1/gym/routines/rt_11111111", first, "s-live"), "rt_11111111");
+  drogon::HttpResponsePtr refused = send(h.program, &ProgramApi::replaceRoutine,
+                                         putRequest("/v1/gym/routines/rt_11111111", stale, "s-live"), "rt_11111111");
+  drogon::HttpResponsePtr blind = send(h.program, &ProgramApi::replaceRoutine,
+                                       putRequest("/v1/gym/routines/rt_11111111", unnamed, "s-live"), "rt_11111111");
+
+  CHECK_EQ(moved->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(moved)["revision"].asInt(), 2);
+  CHECK_EQ(refused->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(bodyOf(refused)),
+           std::string(R"({"code":"routine-stale","error":"that routine changed since you read it )"
+                       R"(\u2014 reload it and save again"})"));
+  CHECK_EQ(blind->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(blind)["name"].asString(), std::string("Push A4"));
+  CHECK_EQ(bodyOf(blind)["revision"].asInt(), 3);
+}
+
 TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
   Harness h;
   h.signIn("s-live");

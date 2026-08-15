@@ -18,7 +18,11 @@ namespace wm::gym {
 // (absent and another account's are the same fact). unknownExercise is either one's, and it is the
 // same fact a set's write states under the same predicate: an entry names a movement this account's
 // catalog does not hold.
-enum class RoutineWriteError { none, idTaken, notFound, unknownExercise };
+// `stale` is replaceRoutine's alone and only when the caller NAMED the revision it read: the day
+// moved under them — a proposal applied on the phone, a save from another tab — and a whole-document
+// PUT over it would silently undo that; the caller re-reads and saves again. A PUT that names no
+// revision is the phone's read-modify-write of one weight, which keeps landing as it always has.
+enum class RoutineWriteError { none, idTaken, notFound, unknownExercise, stale };
 
 struct RoutineWriteOutcome {
   std::optional<Routine> routine;
@@ -145,7 +149,8 @@ struct ProgramRepository {
   // mid-session "Save 87.5 to Push A" from silently destroying a proposal's base. `nowMs` is the
   // instant those supersessions are dated by, read from the one clock the service holds rather than
   // from the database's, so a test can drive it.
-  virtual RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) = 0;
+  virtual RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
+                                             std::optional<int> expectedRevision) = 0;
   virtual bool deleteRoutine(const UserId& user, const RoutineId& id) = 0;  // false = nothing to remove
 
   // THE PROPOSAL LEDGER. An agent reaches exactly one of these — the mint — and the other three are

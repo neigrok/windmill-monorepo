@@ -34,8 +34,8 @@ RoutineWriteOutcome ProgramService::createRoutine(const UserId& user, const Rout
 
 RoutineWriteOutcome ProgramService::replaceRoutine(const UserId& user, const RoutineId& id,
                                                    const RoutineWrite& incoming) {
-  return program_.replaceRoutine(
-      Routine{id, user, incoming.name, incoming.position, incoming.entries}, clock_.nowMs());
+  return program_.replaceRoutine(Routine{id, user, incoming.name, incoming.position, incoming.entries},
+                                 clock_.nowMs(), incoming.expectedRevision);
 }
 
 bool ProgramService::deleteRoutine(const UserId& user, const RoutineId& id) {

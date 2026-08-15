@@ -225,8 +225,15 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
   if (!body["name"].isString()) throw InvalidTraining("name must be a string");
   if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
+  // Optional, and its presence is the whole meaning: an editor that says which revision it read is
+  // asking not to overwrite a day that moved since; a writer that says nothing lands as before.
+  std::optional<int> expectedRevision;
+  if (body.isMember("revision") && !body["revision"].isNull()) {
+    if (!body["revision"].isInt()) throw InvalidTraining("revision must be a whole number");
+    expectedRevision = body["revision"].asInt();
+  }
   return RoutineWrite{RoutineId{body["id"].asString()}, body["name"].asString(),
-                      body["position"].asInt(), entriesFrom(body)};
+                      body["position"].asInt(), entriesFrom(body), expectedRevision};
 }
 
 // A proposal names its own id, the routine it is about, and the document it would take on. `name`

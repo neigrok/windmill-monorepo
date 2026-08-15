@@ -81,7 +81,7 @@ TEST(pg_gym_a_routine_line_with_no_rep_target_round_trips_as_a_null) {
   // A replace writes the null too — the whole document is laid down again, absences and all.
   RoutineWriteOutcome replaced = repo.replaceRoutine(
       routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, std::nullopt, 82.5, 180)}),
-      kNow);
+      kNow, std::nullopt);
   CHECK(replaced.error == RoutineWriteError::none);
   CHECK_EQ(replaced.routine->entries[0].targetReps, std::optional<int>());
 }
@@ -134,7 +134,7 @@ TEST(pg_gym_a_routine_id_another_account_holds_resolves_to_nothing) {
 
   RoutineWriteOutcome taken = inserted(repo, routineAt("rt_pg000001", "Mine", {entryAt(1, "back-squat")}));
   RoutineWriteOutcome replaced =
-      repo.replaceRoutine(routineAt("rt_pg000001", "Mine now", {entryAt(1, "back-squat")}), kNow);
+      repo.replaceRoutine(routineAt("rt_pg000001", "Mine now", {entryAt(1, "back-squat")}), kNow, std::nullopt);
 
   CHECK(taken.error == RoutineWriteError::idTaken);
   CHECK_EQ(taken.routine, std::optional<Routine>());   // never the stranger's plan
@@ -185,7 +185,7 @@ TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
       inserted(repo, routineAt("rt_pg000002", "Push B", {entryAt(1, "pg-their-zercher")}));
   RoutineWriteOutcome replaced =
       repo.replaceRoutine(routineAt("rt_pg000001", "Push A2", {entryAt(1, "pg-their-zercher")}),
-                          kNow);
+                          kNow, std::nullopt);
 
   CHECK(created.error == RoutineWriteError::unknownExercise);
   CHECK_EQ(created.routine, std::optional<Routine>());
@@ -213,11 +213,11 @@ TEST(pg_gym_routine_replace_rewrites_every_line_and_a_missing_one_is_not_found) 
                                    rewritten.entries, rewritten.lastTrainedAtMs,
                                    2};
 
-  RoutineWriteOutcome replaced = repo.replaceRoutine(rewritten, kNow);
+  RoutineWriteOutcome replaced = repo.replaceRoutine(rewritten, kNow, std::nullopt);
   RoutineWriteOutcome missing =
-      repo.replaceRoutine(routineAt("rt_pg000009", "Nowhere", {entryAt(1, "bench-press")}), kNow);
+      repo.replaceRoutine(routineAt("rt_pg000009", "Nowhere", {entryAt(1, "bench-press")}), kNow, std::nullopt);
   RoutineWriteOutcome refused = repo.replaceRoutine(
-      routineAt("rt_pg000001", "Push A3", {entryAt(1, "pg-no-such-movement")}), kNow);
+      routineAt("rt_pg000001", "Push A3", {entryAt(1, "pg-no-such-movement")}), kNow, std::nullopt);
 
   CHECK(replaced.error == RoutineWriteError::none);
   CHECK_EQ(replaced.routine, std::optional<Routine>(standing));
@@ -489,11 +489,11 @@ TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_
 
   RoutineWriteOutcome identical =
       repo.replaceRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}),
-                          kNow + 60'000);
+                          kNow + 60'000, std::nullopt);
   RoutineWriteOutcome dragged =
       repo.replaceRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kUser}, "Push A", 3,
                                   {entryAt(1, "bench-press")}},
-                          kNow + 60'000);
+                          kNow + 60'000, std::nullopt);
 
   REQUIRE(identical.routine.has_value());
   REQUIRE(dragged.routine.has_value());
@@ -506,7 +506,7 @@ TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_
   RoutineWriteOutcome edited =
       repo.replaceRoutine(Routine{RoutineId{"rt_pg000001"}, wm::UserId{kUser}, "Push A", 3,
                                   {entryAt(1, "bench-press", 5, 5, 85.0)}},
-                          kNow + 120'000);
+                          kNow + 120'000, std::nullopt);
 
   REQUIRE(edited.routine.has_value());
   CHECK_EQ(edited.routine->revision, 2);
@@ -560,7 +560,7 @@ TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refu
 
   RoutineWriteOutcome rewritten = repo.replaceRoutine(
       routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, 5, 85.0, 180)}),
-      kNow + 60'000);
+      kNow + 60'000, std::nullopt);
   ProposalSettleOutcome refused =
       repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 120'000);
 

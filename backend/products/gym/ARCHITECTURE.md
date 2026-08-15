@@ -1789,7 +1789,7 @@ conditional route; `routes.cpp` is the one place every path is named, in this or
 | `DELETE /v1/gym/sessions/{id}/sets/{setId}` | **delete a set** — `204`, and `204` again on a retry: a set that was never there does not stand either. Refuses nothing. The row moves into `gym_set_revisions` marked deleted (§2.7); nothing promises it back. **No MCP tool, at any level** | 2 |
 | `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent | 0 |
 | `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first | 0 |
-| `GET  /v1/gym/sessions/{id}` | one session with its sets; 200s carry a weak `ETag`, a matching `If-None-Match` answers 304 (§11.3) | 0 |
+| `GET  /v1/gym/sessions/{id}` | one session with its sets; 200s carry a weak `ETag`, a matching `If-None-Match` answers 304 (§11.3); settles staleness (2026-08-16), so the mirror's poll ends a forgotten workout at its last set instead of showing it live forever | 0 |
 | `GET  /v1/gym/sessions/{id}/review` | the finish surface — three facts, at most one record, the comparison | 2 |
 | `DELETE /v1/gym/sessions/{id}` | discard — `204`; refused `409 session-open` while it is still running | 2 |
 | `GET  /v1/gym/last?exercise=` | last-time prefill | 1 |

@@ -6,9 +6,10 @@ namespace wm::gym {
 
 namespace {
 // The lazy half of §3.2: load the user's open session and its last set instant, ask the pure rule,
-// persist the close if the domain says the session is over. Called before a start and before a log
-// read — the two routes whose reply carries the session state a close rewrites — so no ticker ever
-// runs for gym, and no close ever lands where the client cannot see it.
+// persist the close if the domain says the session is over. Called before a start and before every
+// read whose reply carries the session state a close rewrites — the log page, one session's detail,
+// the open-session read, the statistics, a movement's record — so no ticker ever runs for gym, and
+// no close ever lands where the client cannot see it.
 void settleOpen(LogRepository& log, const UserId& user, std::uint64_t nowMs) {
   std::optional<Session> open = log.open(user);
   if (!open) return;
@@ -207,7 +208,13 @@ std::optional<Session> TrainingService::openSession(const UserId& user) {
   return log_.open(user);
 }
 
+// The mirror's read, every five seconds while a desk tab is open — which made it the one read that
+// held a forgotten workout open forever: it never settled staleness, so "Training now · 5:31:02"
+// stood indefinitely, and the web mirror overnight closed nothing. It settles now (2026-08-16); a
+// phone's owed sets that arrive after that close still land under lateSetLands (§3.2), so settling
+// here can no longer cost a lifter a set — only end a workout the four-hour rule already ended.
 std::optional<SessionDetail> TrainingService::detail(const UserId& user, const SessionId& session) {
+  settleOpen(log_, user, clock_.nowMs());
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
   return SessionDetail{*stored, log_.setsOf(session)};

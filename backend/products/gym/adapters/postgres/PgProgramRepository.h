@@ -32,7 +32,8 @@ public:
   std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) override;
   RoutineWriteOutcome insertRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent,
                                     std::uint64_t nowMs) override;
-  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) override;
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
+                                     std::optional<int> expectedRevision) override;
   bool deleteRoutine(const UserId& user, const RoutineId& id) override;
   std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) override;
   std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id) override;

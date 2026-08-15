@@ -126,6 +126,14 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
   }
+  if (outcome.error == RoutineWriteError::stale) {
+    // Only a PUT that named the revision it read can earn this: the day moved under the editor — a
+    // proposal applied on the phone, another tab's save — and landing whole over it would undo that
+    // silently. The remedy is a re-read, so the code says so.
+    cb(error(drogon::k409Conflict, "that routine changed since you read it — reload it and save again",
+             "routine-stale"));
+    return;
+  }
   cb(jsonResponse(toJson(*outcome.routine)));
 }
 

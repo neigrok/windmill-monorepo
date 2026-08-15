@@ -18,6 +18,7 @@ struct RoutineWrite {
   std::string name;
   int position;
   std::vector<RoutineEntry> entries;
+  std::optional<int> expectedRevision;  // the revision the editor read; named → a moved day is refused stale
 };
 
 // What an agent proposes: the routine it is about, the document it would take on, the name it would

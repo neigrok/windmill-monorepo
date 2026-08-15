@@ -451,8 +451,8 @@ RoutineWriteOutcome PgProgramRepository::insertRoutine(const Routine& incoming,
   return {stored, RoutineWriteError::none};
 }
 
-RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming,
-                                                         std::uint64_t nowMs) {
+RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
+                                                       std::optional<int> expectedRevision) {
   // A whole-document replace: the row owner-scoped, then the lines deleted and laid down again.
   // Churning them costs no identity — entries have none, their key IS their position — and it is
   // what makes a reorder, an insertion and a deletion one write instead of three verbs the editor
@@ -490,6 +490,10 @@ RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming,
     // A row holding no lines is no plan at all (loadRoutine says so), and the safe reading of one is
     // that this write moves it.
     const std::optional<Routine> standing = loadRoutine(txn, incoming.user, incoming.id);
+    // The editor's own read, checked under the same lock — a day that moved since (a proposal
+    // applied on the phone, another tab's save) is refused rather than overwritten.
+    if (expectedRevision && standing && standing->revision != *expectedRevision)
+      return {std::nullopt, RoutineWriteError::stale};
     const bool moved = !standing || standing->name != incoming.name ||
                        !(standing->entries == incoming.entries);
     txn.exec_params(

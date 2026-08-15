@@ -794,6 +794,24 @@ TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
   CHECK_EQ(h.training.detail(uid("u2"), sid()), std::optional<SessionDetail>());
 }
 
+// The mirror's read settles the four-hour rule: a forgotten workout the desk tab polls every five
+// seconds ends at its last set on the next poll rather than reading "Training now" forever — and
+// it ends STALE, so a phone's owed set that arrives after still lands (lateSetLands).
+TEST(detail_settles_a_stale_open_session_at_its_last_set_and_leaves_the_close_revisable) {
+  Harness h;
+  h.startAt(h.clock.now);
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.clock.now += kAutoCloseMs + 3'600'000;
+
+  std::optional<SessionDetail> detail = h.training.detail(uid(), sid());
+
+  REQUIRE(detail.has_value());
+  CHECK_EQ(detail->session.finishedAtMs, std::optional<std::uint64_t>(h.clock.now - kAutoCloseMs - 3'600'000 + 60'000));
+  CHECK(detail->session.closedBy == std::optional<ClosedBy>(ClosedBy::stale));
+  AppendOutcome owed = h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now - kAutoCloseMs - 3'600'000 + 120'000));
+  CHECK(owed.error == AppendError::none);
+}
+
 // ---- last time: the number on screen before the lifter touches anything --------------------
 
 TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {

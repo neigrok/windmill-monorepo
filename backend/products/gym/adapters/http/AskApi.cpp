@@ -61,8 +61,10 @@ drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
                  "as that window rolls on",
                  "ask-out-of-budget");
   // notConfigured. Unreachable while the route is only registered on a configured deployment, and
-  // kept anyway: the honest answer if that ever stops being true is "there is no model", not a 500.
-  return error(drogon::k503ServiceUnavailable, "Ask isn't available right now");
+  // kept anyway: the honest answer if that ever stops being true is "there is no model", not a 500 —
+  // and it carries its own code, because a proxy's 503 during a restart is a different fact a
+  // client must not read as "Ask isn't switched on here" for the rest of its session.
+  return error(drogon::k503ServiceUnavailable, "Ask isn't available right now", "ask-not-configured");
 }
 
 }  // namespace

@@ -1033,12 +1033,15 @@ public:
   // the bytes already standing — an editor saving on close, a logger writing the whole document back
   // to change one weight, a drag up the routines screen — settles nothing, because it destroyed no
   // base.
-  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs) override {
+  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
+                                     std::optional<int> expectedRevision) override {
     for (Routine& routine : db.routineRows) {
       if (!(routine.id == incoming.id) || !(routine.user == incoming.user)) continue;
       for (const RoutineEntry& entry : incoming.entries)
         if (!db.visibleTo(incoming.user, entry.exercise))
           return {std::nullopt, RoutineWriteError::unknownExercise};
+      if (expectedRevision && routine.revision != *expectedRevision)
+        return {std::nullopt, RoutineWriteError::stale};
       const bool moved =
           routine.name != incoming.name || !(routine.entries == incoming.entries);
       routine = Routine{incoming.id,       incoming.user,           incoming.name,

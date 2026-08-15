@@ -263,8 +263,9 @@ Set corrected(const Set& stored, const SetFix& fix);
 
 // An open session with no activity for four hours is over, and it ended at its last set —
 // not at whenever the server happened to notice. A session with no sets ended when it began.
-// Pure and clock-free; TrainingService applies it lazily before a start, before a log read and before
-// the statistics read — the three replies whose answer a close rewrites.
+// Pure and clock-free; TrainingService applies it lazily before a start and before every read whose
+// answer a close rewrites — the log page, one session's detail (the mirror's poll), the statistics,
+// a movement's record, the open-session read.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
 std::optional<std::uint64_t> autoCloseAt(const Session& session,
                                          std::optional<std::uint64_t> lastSetAtMs,
