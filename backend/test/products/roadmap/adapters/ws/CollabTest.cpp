@@ -103,6 +103,8 @@ std::string writeFrame(const std::string& treeId) {
 }
 
 std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
+// The code is the half a client branches on; the reason is prose and may change under it.
+std::string rejectCode(const std::string& text) { return parse(text).get("code", "").asString(); }
 
 // Broadcast one live frame to whoever is subscribed to `tree` — the probe for "is this
 // connection on the bus?".
@@ -223,6 +225,8 @@ TEST(ws_write_to_a_private_tree_you_dont_own_reads_as_absent) {
   CHECK_EQ(frameType(onPrivate->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(onPrivate->sent[0]), std::string("no such tree \"t_priv\""));
   CHECK_EQ(rejectReason(onAbsent->sent[0]), std::string("no such tree \"t_ghost\""));
+  CHECK_EQ(rejectCode(onPrivate->sent[0]), std::string("no-such-tree"));
+  CHECK_EQ(rejectCode(onAbsent->sent[0]), std::string("no-such-tree"));
 }
 
 // The gate did not over-broaden: a tree you CAN read but do not own (unlisted/public) still names
@@ -239,6 +243,7 @@ TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
   REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("this tree belongs to another account"));
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("not-yours"));
 }
 
 // An unowned private tree — a crash-orphaned row — is not writable over the socket: canRead
@@ -280,6 +285,7 @@ TEST(ws_write_to_an_unowned_public_tree_is_refused_and_never_claims_it) {
   CHECK_EQ(rejectReason(conn->sent[0]),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, "
                        "or fork it into a roadmap of your own"));
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("nobodys-tree"));
   CHECK_FALSE(h.trees.byId["t_demo"].owner.has_value());  // still nobody's
   CHECK(h.trees.byId["t_demo"] == before);                // and byte-identical: nothing was written
   CHECK(h.ops.byTree["t_demo"].empty());                  // not even an op logged
@@ -309,6 +315,33 @@ TEST(ws_guest_write_is_turned_away_at_auth_before_the_tree_is_looked_up) {
 
   CHECK_EQ(rejectReason(onReal->sent[0]), std::string("sign in to edit"));
   CHECK_EQ(rejectReason(onAbsent->sent[0]), std::string("sign in to edit"));
+  CHECK_EQ(rejectCode(onReal->sent[0]), std::string("sign-in-required"));
+  CHECK_EQ(rejectCode(onAbsent->sent[0]), std::string("sign-in-required"));
+}
+
+// A guest's progress mark is refused with the same code as a guest's edit — one session
+// suspicion, whichever frame carried it — and the mark rides back so the client can requeue.
+TEST(ws_guest_progress_is_rejected_with_the_sign_in_code_and_the_mark_echoed) {
+  Harness h;
+  h.seed("t_open", UserId{"owner"}, Visibility::unlisted);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), conn);
+
+  Json::Value mark(Json::objectValue);
+  mark["t"] = "progress";
+  mark["treeId"] = "t_open";
+  mark["nodeId"] = "root";
+  mark["status"] = "complete";
+  h.collab.onMessage(conn, dump(mark));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  Json::Value reject = parse(conn->sent[0]);
+  CHECK_EQ(reject["t"].asString(), std::string("reject"));
+  CHECK_EQ(reject["code"].asString(), std::string("sign-in-required"));
+  CHECK_EQ(reject["reason"].asString(), std::string("sign in to track progress"));
+  CHECK_EQ(reject["nodeId"].asString(), std::string("root"));
+  CHECK_EQ(reject["status"].asString(), std::string("complete"));
+  CHECK_FALSE(reject.isMember("frameId"));  // a mark is not a frame: nothing banked is stranded by it
 }
 
 // The owner still writes to their own private tree — the gate admits exactly the reader it should.

@@ -19,15 +19,13 @@ constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
 constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
 
-// The two sentences a refused write earns, kept apart because the truths are different. A tree
-// someone else owns has an owner to ask. A tree NOBODY owns — the seeded demo, a legacy row
-// nothing mints any more — belongs to no account at all, so "belongs to another account" is
-// simply false, and it sends the writer looking for a person who does not exist. The second
-// sentence says what is true and names the two things that do still work: read it, or fork it.
-constexpr char kNotYours[] = "this tree belongs to another account";
-constexpr char kNobodysTree[] =
-    "no account owns this tree, so it cannot be edited — you can still read it, or fork it into a "
-    "roadmap of your own";
+// Every reject frame carries a stable `code` beside its `reason`: the code is what a client
+// branches on (an ownership verdict demotes the editor; a session suspicion re-checks the session)
+// and never changes, so the sentence stays free to. A client that meets a code it does not know
+// warns rather than guesses.
+constexpr char kNoSuchTree[] = "no-such-tree";
+constexpr char kServerError[] = "server-error";
+constexpr char kSignInRequired[] = "sign-in-required";
 
 const Principal& principalOf(const drogon::WebSocketConnectionPtr& conn) {
   return conn->getContextRef<Principal>();
@@ -39,6 +37,15 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
 
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
   if (conn->connected()) conn->send(dump(frame));
+}
+
+Json::Value rejectFrame(const std::string& treeId, const char* code, const std::string& reason) {
+  Json::Value reject(Json::objectValue);
+  reject["t"] = "reject";
+  reject["treeId"] = treeId;
+  reject["code"] = code;
+  reject["reason"] = reason;
+  return reject;
 }
 }
 
@@ -133,11 +140,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       // private-denied one are rejected with the same "no such tree" — no existence leak. Only an
       // infrastructure failure falls to the catch, which answers generically and logs its detail.
       if (!room || !canRead(caller, room->owner(), room->visibility())) {
-        Json::Value reject(Json::objectValue);
-        reject["t"] = "reject";
-        reject["treeId"] = treeId;
-        reject["reason"] = "no such tree \"" + treeId + "\"";
-        send(conn, reject);
+        send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
       // Readable: join the bus + presence under the strand, so no edit broadcast can slip
@@ -159,11 +162,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     } catch (const std::exception& error) {
       // An infrastructure failure — never the socket's to relay: log the detail, reject generically.
       LOG_ERROR << "collab join " << treeId << " failed: " << error.what();
-      Json::Value reject(Json::objectValue);
-      reject["t"] = "reject";
-      reject["treeId"] = treeId;
-      reject["reason"] = "the server could not open this tree";
-      send(conn, reject);
+      send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
       return;
     }
   }
@@ -198,11 +197,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   const Principal& principal = principalOf(conn);
   std::string frameId = frame.get("frameId", "").asString();
   if (!stillAuthorized(conn)) {
-    Json::Value reject(Json::objectValue);
-    reject["t"] = "reject";
-    reject["treeId"] = treeId;
+    Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to edit");
     reject["frameId"] = frameId;
-    reject["reason"] = "sign in to edit";
     send(conn, reject);
     return;
   }
@@ -229,7 +225,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
 
   std::optional<Seq> seq;
-  std::string refusal;  // empty while the write is still admissible; otherwise the reject's reason
+  std::optional<Json::Value> reject;  // absent while the write is still admissible
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     TreeRoom* room = registry_.open(TreeId{treeId});
@@ -238,24 +234,20 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     // read is answered "no such tree" — byte-identical to an absent one — so a rejected write
     // never confirms the id names something. Only a readable tree reaches canWrite, which admits
     // its owner and nobody else: an UNOWNED tree — the seeded demo, a crash-orphaned row — is
-    // nobody's to write, and no longer anybody's to seize by writing to it. One gate, two
-    // sentences: canWrite decides, and the owner it read decides which truth to say.
+    // nobody's to write, and no longer anybody's to seize by writing to it. writeRefusalFor is
+    // that gate and its verdict in one: which of the two truths (Access.h) this refusal states.
     if (!room || !canRead(principal.user, room->owner(), room->visibility())) {
-      refusal = "no such tree \"" + treeId + "\"";  // rejected, not a throw that closes the socket
-    } else if (!canWrite(principal.user, room->owner())) {
-      refusal = room->owner() ? kNotYours : kNobodysTree;  // someone else's, or nobody's at all
+      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // rejected, not a throw that closes the socket
+    } else if (std::optional<WriteRefusal> refusal = writeRefusalFor(principal.user, room->owner())) {
+      reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
     } else {
       seq = room->joinSubgraph(incoming, principal.user);
       if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability
     }
   }
-  if (!refusal.empty()) {
-    Json::Value reject(Json::objectValue);
-    reject["t"] = "reject";
-    reject["treeId"] = treeId;
-    reject["frameId"] = frameId;
-    reject["reason"] = refusal;
-    send(conn, reject);
+  if (reject) {
+    (*reject)["frameId"] = frameId;
+    send(conn, *reject);
     return;
   }
 
@@ -275,12 +267,9 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   if (!stillAuthorized(conn)) {
     // Progress is a private per-account overlay — but a silent drop would lose a lapsed
     // session's marks invisibly. Echo the mark back in the reject so the client can requeue.
-    Json::Value reject(Json::objectValue);
-    reject["t"] = "reject";
-    reject["treeId"] = treeId;
+    Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to track progress");
     reject["nodeId"] = frame.get("nodeId", "").asString();
     reject["status"] = frame.get("status", "").asString();
-    reject["reason"] = "sign in to track progress";
     send(conn, reject);
     return;
   }

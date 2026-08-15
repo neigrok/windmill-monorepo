@@ -264,7 +264,23 @@ TEST(patch_visibility_refuses_a_non_owner_with_403) {
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
+}
+
+TEST(patch_visibility_of_an_unowned_tree_says_it_is_nobodys) {
+  Harness h;
+  h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Demo", {}}, 0, std::nullopt, Visibility::public_};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("private"), "s-live"), "t");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(bodyOf(response)["code"].asString(), std::string("nobodys-tree"));
+  CHECK_EQ(bodyOf(response)["error"].asString(),
+           std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));
+  CHECK(h.trees.byId["t"].visibility == Visibility::public_);
 }
 
 TEST(patch_visibility_without_a_session_is_401) {

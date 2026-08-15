@@ -269,9 +269,9 @@ projection — what the render pipeline consumes.
   rather than a sibling renumber.
 - `sync/localTrees.js` · `sync/claimLocalTrees.js` — the signed-out lifecycle of a device-born
   tree, and the additive claim that adopts it into an account on sign-in.
-- `sync/refusals.js` — the server's write refusals, matched by their exact sentences (a reject
-  frame carries prose, not a code); `test/…/sync/refusals.test.js` reads the C++ constants and
-  asserts the two halves still agree.
+- `sync/refusals.js` — what the editor does about a reject frame, decided by the frame's stable
+  `code` (`not-yours` / `nobodys-tree` demote the editor; `sign-in-required` re-checks the session;
+  anything else warns) — never by its sentence, which is prose the server may reword.
 
 ## `editing/`
 

@@ -413,8 +413,9 @@ TEST(put_to_an_unowned_tree_is_403_and_leaves_it_unowned_and_unmodified) {
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   // Not "belongs to another account" — that sends the reader looking for an account that does not
   // exist. This route is public and reachable by any client, so the sentence has to be true here.
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"error":"no account owns this tree, so it cannot be edited"})"));
+  CHECK_EQ(bodyOf(response)["code"].asString(), std::string("nobodys-tree"));
+  CHECK_EQ(bodyOf(response)["error"].asString(),
+           std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));
   CHECK_FALSE(h.trees->byId["t_demo"].owner.has_value());   // nobody took it
   CHECK(h.trees->byId["t_demo"] == before);                 // and nothing was written over it
   CHECK_EQ(storedNodeIds(*h.trees, "t_demo"), std::vector<std::string>{"root"});
@@ -429,7 +430,7 @@ TEST(put_to_someone_elses_readable_tree_is_403_and_writes_nothing) {
   drogon::HttpResponsePtr response = sendPut(h.api, "s-other", "t_theirs", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"this tree belongs to another account"})"));
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
   CHECK(h.trees->byId["t_theirs"] == before);
   CHECK(h.trees->byId["t_theirs"].owner == std::optional<UserId>(UserId{"owner"}));
 }

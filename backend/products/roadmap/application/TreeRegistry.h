@@ -40,17 +40,20 @@ public:
 
   std::vector<TreeSummary> list(const UserId& owner);
 
-  enum class Removal { deleted, notFound, notOwner };
+  // Each outcome names both write refusals of Access.h (an enum cannot hold another), because
+  // an unowned tree — the demo, a legacy row — is reachable here and is nobody's, not somebody
+  // else's; the surface answering maps them back onto WriteRefusal for its code and sentence.
+  enum class Removal { deleted, notFound, notYours, nobodysTree };
   Removal remove(const TreeId& tree, const UserId& caller);
 
   // Retitle an owned tree: trim → refuse a blank (a tree always has a name) → owner check →
   // apply through RoomRegistry (live room broadcast, or a plain column write when closed).
-  enum class Renaming { renamed, notFound, notOwner, blankTitle };
+  enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
 
   // Reshare an owned tree: owner check → set its read visibility through RoomRegistry (durable
   // column write, plus the live room's cache so a just-shared tree stops 404-ing at once).
-  enum class VisibilityChange { changed, notFound, notOwner };
+  enum class VisibilityChange { changed, notFound, notYours, nobodysTree };
   VisibilityChange setVisibility(const TreeId& tree, const UserId& caller, Visibility visibility);
 
 private:

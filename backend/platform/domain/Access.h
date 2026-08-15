@@ -48,4 +48,40 @@ inline bool canWrite(const std::optional<UserId>& caller, const std::optional<Us
   return caller && owner && *caller == *owner;
 }
 
+// The two truths a refused write can state, kept apart because they are different. A resource
+// SOMEONE ELSE owns has an owner to ask. A resource NOBODY owns — the seeded demo, a legacy row
+// nothing mints any more — belongs to no account at all, so "belongs to another account" is simply
+// false there, and sends the writer looking for a person who does not exist. Every surface that
+// says no to a write says it from here: the code is what a client branches on and never changes;
+// the sentence is for a human and is free to.
+enum class WriteRefusal { notYours, nobodysTree };
+
+// Which refusal a (caller, owner) pair earns, or none when canWrite admits it — the gate and the
+// verdict decided together, so no surface can pick the sentence for the wrong case.
+inline std::optional<WriteRefusal> writeRefusalFor(const std::optional<UserId>& caller,
+                                                   const std::optional<UserId>& owner) {
+  if (canWrite(caller, owner)) return std::nullopt;
+  if (!owner) return WriteRefusal::nobodysTree;
+  return WriteRefusal::notYours;
+}
+
+inline const char* codeOf(WriteRefusal refusal) {
+  if (refusal == WriteRefusal::nobodysTree) return "nobodys-tree";
+  return "not-yours";
+}
+
+// The truth alone, for a surface that finishes the sentence with a remedy of its own (MCP names
+// the tools that still work); `sentenceOf` adds the remedy every surface can offer an unowned
+// tree — read it, or fork it — and is what a surface with nothing more to say sends.
+inline const char* truthOf(WriteRefusal refusal) {
+  if (refusal == WriteRefusal::nobodysTree) return "no account owns this tree, so it cannot be edited";
+  return "this tree belongs to another account";
+}
+
+inline std::string sentenceOf(WriteRefusal refusal) {
+  if (refusal == WriteRefusal::nobodysTree)
+    return std::string(truthOf(refusal)) + " — you can still read it, or fork it into a roadmap of your own";
+  return truthOf(refusal);
+}
+
 }

@@ -84,3 +84,26 @@ TEST(everything_writable_is_readable) {
       for (Visibility visibility : {Visibility::private_, Visibility::unlisted, Visibility::public_})
         if (canWrite(caller, owner)) CHECK(canRead(caller, owner, visibility));
 }
+
+// A refused write states one of two truths, and the pair is decided where the gate is: an unowned
+// resource is nobody's, never "another account's". The code is the client's branch and the sentence
+// the human's, and MCP builds its own remedy onto the truth alone.
+TEST(write_refusal_is_none_for_the_owner_and_names_the_right_truth_otherwise) {
+  CHECK_FALSE(writeRefusalFor(some("u1"), some("u1")).has_value());
+  CHECK(writeRefusalFor(some("u2"), some("u1")) == WriteRefusal::notYours);
+  CHECK(writeRefusalFor(none, some("u1")) == WriteRefusal::notYours);
+  CHECK(writeRefusalFor(some("u1"), none) == WriteRefusal::nobodysTree);
+  CHECK(writeRefusalFor(none, none) == WriteRefusal::nobodysTree);
+}
+
+TEST(write_refusal_codes_and_sentences_are_stable_and_distinct) {
+  CHECK_EQ(std::string(codeOf(WriteRefusal::notYours)), std::string("not-yours"));
+  CHECK_EQ(std::string(codeOf(WriteRefusal::nobodysTree)), std::string("nobodys-tree"));
+  CHECK_EQ(std::string(truthOf(WriteRefusal::notYours)), std::string("this tree belongs to another account"));
+  CHECK_EQ(std::string(truthOf(WriteRefusal::nobodysTree)),
+           std::string("no account owns this tree, so it cannot be edited"));
+  CHECK_EQ(sentenceOf(WriteRefusal::notYours), std::string("this tree belongs to another account"));
+  CHECK_EQ(sentenceOf(WriteRefusal::nobodysTree),
+           std::string("no account owns this tree, so it cannot be edited — you can still read it, or "
+                       "fork it into a roadmap of your own"));
+}

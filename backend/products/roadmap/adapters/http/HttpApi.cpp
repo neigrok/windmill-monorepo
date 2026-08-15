@@ -117,12 +117,13 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     // someone. A readable tree the caller does not own names the truth, which is not a secret.
     if (access && !canRead(caller, access->owner, access->visibility))
       return error(drogon::k404NotFound, "no such tree");
-    // Two refusals, because there are two truths. Naming an unowned tree as somebody else's is a
-    // lie a reader can act on — they go looking for the account that took it, and there is none.
-    if (access && !canWrite(caller, access->owner))
-      return error(drogon::k403Forbidden, access->owner
-                                              ? "this tree belongs to another account"
-                                              : "no account owns this tree, so it cannot be edited");
+    // Two refusals, because there are two truths (Access.h): naming an unowned tree as somebody
+    // else's is a lie a reader can act on — they go looking for the account that took it, and
+    // there is none. The code rides beside the sentence so a client branches without reading it.
+    if (access) {
+      if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
+        return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
+    }
 
     // Authorized — so now flush and close any live room, and read the row that flush just wrote.
     // Reading it any earlier would take a row the room has already run past, and lose twice over:

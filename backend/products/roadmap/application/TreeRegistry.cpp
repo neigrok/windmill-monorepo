@@ -4,6 +4,7 @@
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "platform/domain/Access.h"
 
 #include <map>
 #include <mutex>
@@ -77,7 +78,8 @@ TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& cal
   // A tree the caller cannot even read is answered as absent, never as "someone else's": the
   // second sentence would tell a stranger which private ids are real.
   if (!canRead(caller, stored->owner, stored->visibility)) return Removal::notFound;
-  if (!stored->owner || *stored->owner != caller) return Removal::notOwner;
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
+    return *refusal == WriteRefusal::nobodysTree ? Removal::nobodysTree : Removal::notYours;
   trees_.softDelete(tree);
   return Removal::deleted;
 }
@@ -106,7 +108,8 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return Renaming::notFound;
-  if (!stored->owner || *stored->owner != caller) return Renaming::notOwner;
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
+    return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
   rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
   return Renaming::renamed;
 }
@@ -118,7 +121,8 @@ TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, c
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return VisibilityChange::notFound;
-  if (!stored->owner || *stored->owner != caller) return VisibilityChange::notOwner;
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
+    return *refusal == WriteRefusal::nobodysTree ? VisibilityChange::nobodysTree : VisibilityChange::notYours;
   rooms_.setVisibility(tree, visibility);
   return VisibilityChange::changed;
 }

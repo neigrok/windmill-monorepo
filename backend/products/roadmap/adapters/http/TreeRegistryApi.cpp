@@ -10,6 +10,14 @@
 
 namespace wm {
 
+namespace {
+// A refused write answers with the shared truth (Access.h) and its code, so a client branches on
+// the code and a reader is never told an unowned tree is somebody else's.
+drogon::HttpResponsePtr forbidden(WriteRefusal refusal) {
+  return error(drogon::k403Forbidden, sentenceOf(refusal), codeOf(refusal));
+}
+}
+
 // No billing gate here: setting a tree private is free (the paid line is tending, not privacy), so
 // the registry needs only the tree store and the auth boundary.
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
@@ -95,8 +103,12 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       callback(error(drogon::k404NotFound, "no such tree"));
       return;
     }
-    if (outcome == TreeRegistry::VisibilityChange::notOwner) {
-      callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+    if (outcome == TreeRegistry::VisibilityChange::notYours) {
+      callback(forbidden(WriteRefusal::notYours));
+      return;
+    }
+    if (outcome == TreeRegistry::VisibilityChange::nobodysTree) {
+      callback(forbidden(WriteRefusal::nobodysTree));
       return;
     }
     auto response = drogon::HttpResponse::newHttpResponse();
@@ -115,8 +127,12 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (outcome == TreeRegistry::Renaming::notOwner) {
-    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+  if (outcome == TreeRegistry::Renaming::notYours) {
+    callback(forbidden(WriteRefusal::notYours));
+    return;
+  }
+  if (outcome == TreeRegistry::Renaming::nobodysTree) {
+    callback(forbidden(WriteRefusal::nobodysTree));
     return;
   }
   auto response = drogon::HttpResponse::newHttpResponse();
@@ -136,8 +152,12 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (outcome == TreeRegistry::Removal::notOwner) {
-    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+  if (outcome == TreeRegistry::Removal::notYours) {
+    callback(forbidden(WriteRefusal::notYours));
+    return;
+  }
+  if (outcome == TreeRegistry::Removal::nobodysTree) {
+    callback(forbidden(WriteRefusal::nobodysTree));
     return;
   }
   auto response = drogon::HttpResponse::newHttpResponse();

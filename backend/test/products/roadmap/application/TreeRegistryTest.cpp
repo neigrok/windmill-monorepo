@@ -230,8 +230,13 @@ TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
 
   // A tree the stranger CAN read is a different matter — nothing is hidden, so it is told why.
   s.trees.byId["t"].visibility = Visibility::unlisted;
-  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notOwner);
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notYours);
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
+
+  // A tree nobody owns is nobody's to delete either — and the outcome says so, not "not yours".
+  s.trees.byId["t"].owner = std::nullopt;
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::nobodysTree);
+  CHECK(s.trees.byId.count("t") == 1u);
 }
 
 TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
@@ -253,8 +258,10 @@ TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
-  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notOwner);
+  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notYours);
   CHECK(s.registry.rename(tid("ghost"), uid("owner"), "Anything") == TreeRegistry::Renaming::notFound);
+  s.trees.byId["t"].owner = std::nullopt;
+  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::nobodysTree);
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));  // the refusals left the name alone
 }
 
@@ -381,9 +388,12 @@ TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
-        TreeRegistry::VisibilityChange::notOwner);
+        TreeRegistry::VisibilityChange::notYours);
   CHECK(s.registry.setVisibility(tid("ghost"), uid("owner"), Visibility::public_) ==
         TreeRegistry::VisibilityChange::notFound);
+  s.trees.byId["t"].owner = std::nullopt;
+  CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
+        TreeRegistry::VisibilityChange::nobodysTree);
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // the refusals left it alone
 }
 

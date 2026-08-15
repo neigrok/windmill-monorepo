@@ -248,13 +248,14 @@ export function SkillTreeView({ treeId, demo = false }) {
       setDemotion({ edits: collabRef.current?.pendingEditCount?.() ?? 0, cardOpen: true });
     };
     const onForbidden = (event) => {
+      // event.detail is the reject frame itself; its `code` decides, never its sentence.
       if (isOwnershipRefusal(event.detail)) {
         if (demotedRef.current || waiting) return;
         lastActivityAt = Date.now(); // the rejected gesture itself counts as activity
         demote();
         return;
       }
-      // 'sign in to edit' / 'sign in to track progress' — suspicion, not verdict: re-check
+      // sign-in-required — suspicion, not verdict: re-check
       // the session and let the auth transition (or its absence) decide whether the chip speaks.
       if (suspectRef.current) return;
       suspectRef.current = true;

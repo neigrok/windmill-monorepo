@@ -1,5 +1,6 @@
 #include "products/roadmap/adapters/http/OgVideoApi.h"
 
+#include "platform/adapters/json/JsonText.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
@@ -124,6 +125,8 @@ TEST(put_by_a_signed_in_non_owner_is_403_and_stores_nothing) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-other", "t_mine", MP4);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(dump(*resp->getJsonObject()),
+           std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
   CHECK_EQ(h.videos->byId.count("t_mine"), std::size_t{0});
 }
 
@@ -136,6 +139,10 @@ TEST(put_to_an_unclaimed_tree_is_403) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_orphan", MP4);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k403Forbidden);
+  // Nobody's, and said so — "belongs to another account" would name an account that does not exist.
+  CHECK_EQ((*resp->getJsonObject())["code"].asString(), std::string("nobodys-tree"));
+  CHECK_EQ((*resp->getJsonObject())["error"].asString(),
+           std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));
   CHECK_EQ(h.videos->byId.count("t_orphan"), std::size_t{0});
 }
 

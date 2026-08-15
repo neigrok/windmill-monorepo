@@ -36,8 +36,8 @@ void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (!tree->owner || *tree->owner != *caller) {
-    callback(error(drogon::k403Forbidden, "this tree belongs to another account"));
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, tree->owner)) {
+    callback(error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal)));
     return;
   }
 

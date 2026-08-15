@@ -1,30 +1,23 @@
-// The server's write refusals, matched by their exact sentences because a reject frame carries
-// prose and no code. They are one truth stated in two languages — C++ mints them in
-// adapters/ws/Collab.cpp, this file decides what the editor does about them — so test/…/sync/
-// refusals.test.js reads the C++ constants and asserts the two halves still agree.
+// What the editor does about a reject frame is decided by the frame's `code` — the stable word the
+// server mints beside its prose (backend/products/roadmap/adapters/ws/Collab.cpp; the ownership
+// pair lives in platform/domain/Access.h) — never by the sentence, which is for humans and free to
+// change.
 //
 // The split is by what the reader can do about it. An OWNERSHIP refusal is a verdict: nothing that
-// happens in this tab changes it, so the editor demotes to read-only and says so. Two sentences say
-// it — someone else owns this tree, and nobody does (the seeded demo tree and any legacy orphan,
-// which canWrite refuses because an unowned tree is nobody's to write). A SESSION refusal is only a
+// happens in this tab changes it, so the editor demotes to read-only and says so. Two codes say it —
+// someone else owns this tree, and nobody does (the seeded demo tree and any legacy orphan, which
+// canWrite refuses because an unowned tree is nobody's to write). A SESSION refusal is only a
 // suspicion, which re-checking the session may clear.
 //
-// A sentence in neither list is deliberately neither: the caller warns rather than guessing at a
-// verdict. That is also the trap — a new refusal on the server must be taught to this file in the
-// same breath, or the chrome goes quiet on a write the user just lost. A reject frame carrying a
-// stable code would retire the whole arrangement; until it does, the test is the guard.
+// A code in neither set is deliberately neither: the caller warns rather than guessing at a verdict.
 
-const OWNERSHIP_REFUSALS = [
-  'this tree belongs to another account',
-  'no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own',
-];
+const OWNERSHIP_CODES = new Set(['not-yours', 'nobodys-tree']);
+const SESSION_CODES = new Set(['sign-in-required']);
 
-const SESSION_REFUSALS = ['sign in to edit', 'sign in to track progress'];
-
-export function isOwnershipRefusal(reason) {
-  return OWNERSHIP_REFUSALS.includes(reason);
+export function isOwnershipRefusal(frame) {
+  return OWNERSHIP_CODES.has(frame?.code);
 }
 
-export function isSessionRefusal(reason) {
-  return SESSION_REFUSALS.includes(reason);
+export function isSessionRefusal(frame) {
+  return SESSION_CODES.has(frame?.code);
 }

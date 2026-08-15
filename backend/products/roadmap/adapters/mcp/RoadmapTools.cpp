@@ -38,23 +38,18 @@ constexpr char kSeedStatusMoved[] =
     "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
 
 // The two refusals that are about who you are rather than what you sent, so they say what to do
-// next instead of naming an argument — and they are two, not one, because the truths differ.
-// A tree SOMEONE ELSE owns is in that account's list_trees, so naming that tool is a real
-// remedy. A tree NOBODY owns — the seeded demo, a legacy row nothing mints any more — is in no
-// account's list at all (listOwnedBy keys on owner_id), so pointing at list_trees would send the
-// caller looking for something that cannot be there. The honest sentence says the tree has no
-// owner, and names the path that does exist: read it, and copy it into a roadmap of your own.
-constexpr char kNotYours[] = "this tree belongs to another account. Call list_trees to see the "
-                             "roadmaps you own.";
-constexpr char kNobodysTree[] = "no account owns this tree, so it cannot be edited. You can still "
-                                "read it with get_tree, and copy it into a roadmap of your own "
-                                "with create_tree then import_subgraph.";
-
-// Which of the two a refused write has earned. The gate is canWrite either way; this only picks
-// the sentence, so the two can never drift into naming the same case.
-const char* writeRefusal(const std::optional<UserId>& owner) {
-  if (!owner) return kNobodysTree;
-  return kNotYours;
+// next instead of naming an argument. The truth is Access.h's, so it cannot drift from what every
+// other surface says; the remedy is this surface's own, because it can name tools. A tree SOMEONE
+// ELSE owns is in that account's list_trees, so naming that tool is a real remedy. A tree NOBODY
+// owns — the seeded demo, a legacy row nothing mints any more — is in no account's list at all
+// (listOwnedBy keys on owner_id), so pointing at list_trees would send the caller looking for
+// something that cannot be there; the path that does exist is to read it, and copy it into a
+// roadmap of your own.
+std::string writeRefusalSentence(WriteRefusal refusal) {
+  if (refusal == WriteRefusal::nobodysTree)
+    return std::string(truthOf(refusal)) + ". You can still read it with get_tree, and copy it into "
+                                          "a roadmap of your own with create_tree then import_subgraph.";
+  return std::string(truthOf(refusal)) + ". Call list_trees to see the roadmaps you own.";
 }
 
 // A URL-ish slug for an auto-minted node id: lowercase alphanumerics, other runs to '-'.
@@ -415,7 +410,8 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
     // Then the write gate, which admits the owner alone — an unowned tree is nobody's to edit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
     if (tool == "create_node" && payload.get("id", "").asString().empty()) {
       std::set<std::string> present;
       for (const NodeSpec& node : room.snapshot().nodes) present.insert(node.id.str());
@@ -670,7 +666,8 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     // ownership refusal ever ran. Then canWrite — an unowned tree grafts nothing.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
 
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
@@ -758,7 +755,8 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
     // The read gate first, byte-identical to absent — then the write gate. See applyEdit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (!canWrite(actor, room.owner())) return ToolResult::failure(writeRefusal(room.owner()));
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
 
     TreeDiagnostics before = room.diagnose();
     int prunedEdges = static_cast<int>(before.dangling.size() + before.selfEdges.size());
@@ -807,8 +805,10 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
   TreeRegistry::Removal outcome = registry.remove(tree, caller);
   if (outcome == TreeRegistry::Removal::notFound)
     return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-  if (outcome == TreeRegistry::Removal::notOwner)
-    return ToolResult::failure(kNotYours);
+  if (outcome == TreeRegistry::Removal::notYours)
+    return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
+  if (outcome == TreeRegistry::Removal::nobodysTree)
+    return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
   Json::Value out(Json::objectValue);
   out["deleted"] = true;
   out["id"] = tree.str();

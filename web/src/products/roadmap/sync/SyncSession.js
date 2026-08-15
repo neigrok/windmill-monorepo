@@ -290,10 +290,12 @@ export class SyncSession {
 
   receiveReject(frame) {
     if (frame.frameId) this.inFlight.delete(frame.frameId);
-    const forbidden = isOwnershipRefusal(frame.reason) || isSessionRefusal(frame.reason);
-    if (!forbidden) { console.warn('[sync] frame rejected —', frame.reason); return; }
-    if (frame.reason !== 'sign in to track progress') this.durabilityAtRisk = true; // banked edits stranded until the capability returns
-    window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame.reason }));
+    const forbidden = isOwnershipRefusal(frame) || isSessionRefusal(frame);
+    if (!forbidden) { console.warn('[sync] frame rejected —', frame.code, frame.reason); return; }
+    // A refused subgraph frame (it carries a frameId) strands the edits banked behind it until
+    // the capability returns; a refused progress mark carries no frameId and strands nothing.
+    if (frame.frameId) this.durabilityAtRisk = true;
+    window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame }));
   }
 
   emitTree() { this.treeHandler?.(this.lattice.toTreeData()); }
