@@ -9,8 +9,9 @@
 
 namespace wm::gym {
 
-PreferencesApi::PreferencesApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth)
-    : log_(std::move(log)), auth_(std::move(auth)) {}
+PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesService> preferences,
+                               std::shared_ptr<AuthService> auth)
+    : preferences_(std::move(preferences)), auth_(std::move(auth)) {}
 
 // The statistics ENGINE, over values the domain already decides: a per-movement line of top working
 // sets with Epley on top, the two standing bests, when each movement was last trained, and the
@@ -31,7 +32,7 @@ void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  cb(jsonResponse(toJson(log_->preferences(*caller))));
+  cb(jsonResponse(toJson(preferences_->preferences(*caller))));
 }
 
 // And written — the WHOLE document, the shape a routine travels in, because the screen renders all
@@ -57,7 +58,7 @@ void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCall
   // The wider catch is the owner's, which no signed-in caller can trip; it keeps a domain refusal
   // from riding out as the house 500 the phones' queues are told to retry forever.
   try {
-    cb(jsonResponse(toJson(log_->savePreferences(parsePreferences(*json, *caller)))));
+    cb(jsonResponse(toJson(preferences_->savePreferences(parsePreferences(*json, *caller)))));
   } catch (const InvalidPreference& refused) {
     cb(error(drogon::k400BadRequest, refused.what(), refused.code.c_str()));
   } catch (const InvalidTraining& malformed) {

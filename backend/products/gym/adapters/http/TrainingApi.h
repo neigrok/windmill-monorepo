@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/TrainingService.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -61,7 +61,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // match on.
 class TrainingApi {
 public:
-  TrainingApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
+  TrainingApi(std::shared_ptr<TrainingService> training, std::shared_ptr<AuthService> auth,
               std::string appBaseUrl);
 
   void startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // POST /v1/gym/sessions
@@ -96,7 +96,7 @@ public:
                      const std::string& token);                               // GET  /v1/gym/shared/{token}
 
 private:
-  std::shared_ptr<LogService> log_;
+  std::shared_ptr<TrainingService> training_;
   std::string appBaseUrl_;   // where the browser app is served — a share's link, and nothing else
   std::shared_ptr<AuthService> auth_;
 };

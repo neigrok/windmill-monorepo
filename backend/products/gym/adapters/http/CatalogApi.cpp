@@ -10,8 +10,9 @@
 
 namespace wm::gym {
 
-CatalogApi::CatalogApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth)
-    : log_(std::move(log)), auth_(std::move(auth)) {}
+CatalogApi::CatalogApi(std::shared_ptr<CatalogService> catalog,
+                       std::shared_ptr<TrainingService> training, std::shared_ptr<AuthService> auth)
+    : catalog_(std::move(catalog)), training_(std::move(training)), auth_(std::move(auth)) {}
 
 void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -20,7 +21,7 @@ void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&&
     return;
   }
   Json::Value body(Json::objectValue);
-  body["exercises"] = toJson(log_->catalog(*caller));
+  body["exercises"] = toJson(catalog_->catalog(*caller));
   cb(jsonResponse(body));
 }
 
@@ -40,7 +41,7 @@ void CatalogApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&
   }
   ExerciseInsertOutcome outcome{std::nullopt, ExerciseInsertError::none};
   try {
-    outcome = log_->createExercise(*caller, parseExerciseWrite(*json));
+    outcome = catalog_->createExercise(*caller, parseExerciseWrite(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that movement"));
     return;
@@ -75,7 +76,7 @@ void CatalogApi::renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&
   }
   std::optional<Exercise> renamed;
   try {
-    renamed = log_->renameExercise(*caller, ExerciseId{id}, parseExerciseRename(*json));
+    renamed = catalog_->renameExercise(*caller, ExerciseId{id}, parseExerciseRename(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that name"));
     return;
@@ -103,7 +104,7 @@ void CatalogApi::exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<MovementRecord> record = log_->movementRecord(*caller, ExerciseId{id});
+  std::optional<MovementRecord> record = training_->movementRecord(*caller, ExerciseId{id});
   if (!record) {
     cb(error(drogon::k404NotFound, "no such movement"));
     return;

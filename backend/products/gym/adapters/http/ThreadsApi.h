@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/ThreadService.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -19,11 +19,11 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // /v1/gym/ask` at all; the conversations a lifter already had are still theirs to read, to export
 // and to delete. A thread is somebody's own words, not a feature of the model that answered them.
 // One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the status ladder
-// they all share; routes.cpp is the one mount). It needs the log service and the auth seam and
+// they all share; routes.cpp is the one mount). It needs the thread service and the auth seam and
 // nothing else.
 class ThreadsApi {
 public:
-  ThreadsApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth);
+  ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<AuthService> auth);
 
   void listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/threads
   void getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -33,7 +33,7 @@ public:
   void exportThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/export/threads
 
 private:
-  std::shared_ptr<LogService> log_;
+  std::shared_ptr<ThreadService> threads_;
   std::shared_ptr<AuthService> auth_;
 };
 

@@ -1,6 +1,5 @@
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/TrainingService.h"
 
-#include <unordered_map>
 #include <utility>
 
 namespace wm::gym {
@@ -34,11 +33,9 @@ std::optional<StartOutcome> heldFor(LogRepository& log, const UserId& user,
 }
 }
 
-LogService::LogService(LogRepository& log, CatalogRepository& catalog,
-                       ProgramRepository& program, AskThreadRepository& threads,
-                       PreferencesRepository& preferences, Clock& clock, TokenGenerator& tokens)
-    : log_(log), catalog_(catalog), program_(program), threads_(threads),
-      preferences_(preferences), clock_(clock), tokens_(tokens) {}
+TrainingService::TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
+                                 TokenGenerator& tokens)
+    : log_(log), program_(program), clock_(clock), tokens_(tokens) {}
 
 // Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved FIRST: a
 // replayed POST reads back the session it minted — open, finished or auto-closed — so a replay
@@ -61,7 +58,7 @@ LogService::LogService(LogRepository& log, CatalogRepository& catalog,
 // and on the one-open index (a double-tap), so what the store holds AFTERWARDS is the answer. When
 // nothing resolves even then, the insert no-oped on a row owned by someone else — the reply is a
 // refusal, never a session the store never accepted.
-StartOutcome LogService::start(const UserId& user, const SessionStart& incoming) {
+StartOutcome TrainingService::start(const UserId& user, const SessionStart& incoming) {
   settleOpen(log_, user, clock_.nowMs());
   std::optional<StartOutcome> already = heldFor(log_, user, incoming);
   if (already) return *already;
@@ -103,9 +100,9 @@ StartOutcome LogService::start(const UserId& user, const SessionStart& incoming)
 // insert — which would log it again, under a fresh number, from a queue that never learned its POST
 // had landed. Only the store holds the revisions that say the id named a set taken out of the log,
 // so only the store can refuse it, and it is passed through under its own word for the reason
-// LogService.h gives: repairing it as a spent id is exactly how the deletion would undo itself.
-AppendOutcome LogService::append(const UserId& user, const SessionId& session,
-                                 const SetWrite& incoming) {
+// TrainingService.h gives: repairing it as a spent id is exactly how the deletion would undo itself.
+AppendOutcome TrainingService::append(const UserId& user, const SessionId& session,
+                                      const SetWrite& incoming) {
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, AppendError::notFound};
   Set set{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
@@ -138,8 +135,8 @@ AppendOutcome LogService::append(const UserId& user, const SessionId& session,
 // leave the second one's values standing, merged against a row it read a moment earlier. Every
 // version either of them replaced is kept, and the alternative — merging inside the store — would
 // put the correction rule in SQL where the domain could not state it once.
-std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& session, const SetId& id,
-                                      const SetFix& fix) {
+std::optional<Set> TrainingService::fixSet(const UserId& user, const SessionId& session,
+                                           const SetId& id, const SetFix& fix) {
   std::optional<Set> stored = log_.setOf(user, id);
   if (!stored || !(stored->session == session)) return std::nullopt;
   return log_.updateSet(user, corrected(*stored, fix));
@@ -150,7 +147,7 @@ std::optional<Set> LogService::fixSet(const UserId& user, const SessionId& sessi
 // it does NOT do is destroy anything — the row moves whole into the revisions table, marked deleted
 // (ports/LogRepository.h) — and nothing on any surface may promise that back, because there is
 // no door that reads it.
-void LogService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
+void TrainingService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
   log_.deleteSet(user, session, id);
 }
 
@@ -162,8 +159,8 @@ void LogService::deleteSet(const UserId& user, const SessionId& session, const S
 // does: a session discarded between the load and the close leaves nothing to hand back, and `none`
 // beside no session is a reply both wire edges dereference. It is the fact the session was already
 // absent — the discard won the race, and the caller learns exactly what a second finish would tell it.
-FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
-                                 std::uint64_t finishedAtMs) {
+FinishOutcome TrainingService::finish(const UserId& user, const SessionId& session,
+                                      std::uint64_t finishedAtMs) {
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, FinishError::notFound};
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
@@ -184,7 +181,7 @@ FinishOutcome LogService::finish(const UserId& user, const SessionId& session,
 // over, and the walk folds only the ones that are; without that the two halves of one history are
 // filtered differently and a row above a still-open workout is judged against a workout its own
 // finish screen cannot see.
-std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor) {
+std::vector<LogRow> TrainingService::log(const UserId& user, const LogCursor& cursor) {
   settleOpen(log_, user, clock_.nowMs());
   LogPage page = log_.log(user, cursor);
 
@@ -205,19 +202,15 @@ std::vector<LogRow> LogService::log(const UserId& user, const LogCursor& cursor)
   return rows;
 }
 
-std::optional<Session> LogService::openSession(const UserId& user) {
+std::optional<Session> TrainingService::openSession(const UserId& user) {
   settleOpen(log_, user, clock_.nowMs());
   return log_.open(user);
 }
 
-std::optional<SessionDetail> LogService::detail(const UserId& user, const SessionId& session) {
+std::optional<SessionDetail> TrainingService::detail(const UserId& user, const SessionId& session) {
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
   return SessionDetail{*stored, log_.setsOf(session)};
-}
-
-std::vector<Exercise> LogService::catalog(const UserId& user) {
-  return catalog_.catalog(user);
 }
 
 // The number the logger puts in front of a lifter before they touch anything — and the one route
@@ -229,169 +222,15 @@ std::vector<Exercise> LogService::catalog(const UserId& user) {
 // stamps it the session is open, which is already not a last time. The store's own two facts come
 // back untouched: no history at all, and no such movement, which look identical from here and are
 // not the same thing to a client.
-LastTimeOutcome LogService::lastTime(const UserId& user, const ExerciseId& exercise) {
+LastTimeOutcome TrainingService::lastTime(const UserId& user, const ExerciseId& exercise) {
   return log_.lastTime(user, exercise);
 }
 
 // The same read for the whole catalog at once, and it settles nothing for the same reason the one
 // above does not: the picker opens mid-workout, and the only open session it could reach is the
 // caller's own live one.
-std::vector<LastSet> LogService::lastSets(const UserId& user) {
+std::vector<LastSet> TrainingService::lastSets(const UserId& user) {
   return log_.lastSets(user);
-}
-
-std::vector<Routine> LogService::routines(const UserId& user) {
-  return program_.routines(user);
-}
-
-std::optional<Routine> LogService::routine(const UserId& user, const RoutineId& id) {
-  return program_.routine(user, id);
-}
-
-std::vector<RoutineEvent> LogService::routineHistory(const UserId& user, const RoutineId& id) {
-  return program_.routineHistory(user, id);
-}
-
-// Both routine writes are one construction and one call, and that is the whole point of the shape:
-// the entity's constructor is the entire validation (it throws InvalidTraining, which the wire
-// turns into a 400), and the store's outcome is the entire refusal set. Neither write reads before
-// it writes — a load-then-decide here would be a race the SQL already settles, and the create's
-// idempotency is the id, not a lookup: a create that lost its reply and was sent again reads back
-// the STORED routine untouched, exactly as a replayed start does.
-RoutineWriteOutcome LogService::createRoutine(const UserId& user, const RoutineWrite& incoming,
-                                             std::optional<ProposalDoor> byAgent) {
-  return program_.insertRoutine(
-      Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries}, byAgent,
-      clock_.nowMs());
-}
-
-RoutineWriteOutcome LogService::replaceRoutine(const UserId& user, const RoutineId& id,
-                                               const RoutineWrite& incoming) {
-  return program_.replaceRoutine(
-      Routine{id, user, incoming.name, incoming.position, incoming.entries}, clock_.nowMs());
-}
-
-bool LogService::deleteRoutine(const UserId& user, const RoutineId& id) {
-  return program_.deleteRoutine(user, id);
-}
-
-std::vector<ProposalHead> LogService::proposals(const UserId& user, const ProposalQuery& query) {
-  return program_.proposalHeads(user, query);
-}
-
-std::optional<RoutineProposal> LogService::proposal(const UserId& user, const ProposalId& id) {
-  return program_.proposal(user, id);
-}
-
-// The mint, as an ordered pipeline that reads top to bottom: load the routine this is about, build
-// the document it would become, diff it against what stands, store the diff against that revision.
-//
-// The document is built through the Routine CONSTRUCTOR and thrown away — its only job is to refuse
-// what a plan cannot hold, here, at the mint, rather than at the tap. A proposal a lifter reads and
-// cannot apply is worse than no proposal, because the refusal arrives at the one moment they have
-// already decided to trust it.
-//
-// Nothing here writes to the program, and there is no branch in this method that could: it hands
-// the store a proposal and the store has no verb that touches gym_routines.
-ProposalMintOutcome LogService::propose(const UserId& user, const ProposalWrite& incoming) {
-  std::optional<Routine> base = program_.routine(user, incoming.routine);
-  if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
-
-  const std::string name = incoming.name.value_or(base->name);
-  const Routine becomes{base->id, base->user, name, base->position, incoming.entries};
-  std::vector<RoutineChange> changes = changesBetween(base->entries, becomes.entries);
-  const int counted = countedChanges(base->entries, changes, base->name, becomes.name);
-  // A document identical to what the routine already says proposes nothing, and a card reading
-  // `Apply all 0` is a notification about nothing in an app that has no notifications on purpose.
-  // Identical means identical top to bottom: the same lines in a different ORDER is a change, and
-  // the count above is what knows it — a day is trained down the page.
-  if (counted == 0) return {std::nullopt, ProposalMintError::noChange};
-  const ProposalHead head{incoming.id,
-                          base->id,
-                          user,
-                          ProposalIntent::revise,
-                          ProposalState::pending,
-                          incoming.source,
-                          incoming.summary,
-                          counted,
-                          clock_.nowMs(),
-                          std::nullopt};
-  return program_.insertProposal(
-      RoutineProposal{head, base->revision, base->name, becomes.name, std::move(changes)});
-}
-
-// The other intent, and the same pipeline with no document to build: the whole plan is what leaves,
-// so every line of it is a removed row and the diff screen draws exactly what goes.
-ProposalMintOutcome LogService::proposeRemoval(const UserId& user, const ProposalId& id,
-                                               const RoutineId& routine, const std::string& summary,
-                                               const ProposalSource& source) {
-  std::optional<Routine> base = program_.routine(user, routine);
-  if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
-
-  std::vector<RoutineChange> changes = changesBetween(base->entries, {});
-  const ProposalHead head{id,
-                          base->id,
-                          user,
-                          ProposalIntent::remove,
-                          ProposalState::pending,
-                          source,
-                          summary,
-                          static_cast<int>(changes.size()),
-                          clock_.nowMs(),
-                          std::nullopt};
-  return program_.insertProposal(
-      RoutineProposal{head, base->revision, base->name, base->name, std::move(changes)});
-}
-
-// The tap. Load the proposal, load the routine it is about, let the domain say what the routine
-// becomes, and write that — three phases, and the store's own revision check is the fourth party
-// nobody has to remember: a routine that moved between the load and the write refuses the whole
-// apply rather than landing half of it.
-//
-// A removal has no document to compute, so it takes the store's other verb. The intent is read off
-// the proposal and never off the caller, because the caller is a lifter tapping one button.
-ProposalSettleOutcome LogService::apply(const UserId& user, const ProposalId& id) {
-  std::optional<RoutineProposal> held = program_.proposal(user, id);
-  if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-  const std::uint64_t nowMs = clock_.nowMs();
-  if (held->head.intent == ProposalIntent::remove) return program_.applyRemoval(user, id, nowMs);
-
-  std::optional<Routine> base = program_.routine(user, held->head.routine);
-  // The routine went between the two reads — a delete of the plan. Nothing to apply to, and the
-  // same fact as a proposal that names nothing.
-  if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-  // Every remaining decision is the STORE's, taken under its own lock, because only a lock decides
-  // a race: a proposal already settled (a replayed tap reads back what it did; the other decision
-  // is refused), and a base that has moved since the mint (superseded — merging a diff over a
-  // document it no longer describes is the one thing this ledger exists to refuse). Deciding any of
-  // them here as well would be one fact decided in two layers, which is how they come to be decided
-  // in two orders. The document is computed from the base for the one case that writes it, and is
-  // simply not read in any other.
-  return program_.applyRevision(user, id, appliedTo(*base, *held), nowMs);
-}
-
-ProposalSettleOutcome LogService::dismiss(const UserId& user, const ProposalId& id) {
-  return program_.dismissProposal(user, id, clock_.nowMs());
-}
-
-// The one site that applies the equipment's default step, so a movement created without one climbs
-// like the seed row it sits beside and no client has to carry the table. Every created movement is
-// custom by construction — the seeds are the schema's, and nothing on the wire can mint one.
-ExerciseInsertOutcome LogService::createExercise(const UserId& user, const ExerciseWrite& incoming) {
-  return catalog_.insertExercise(
-      user, Exercise{incoming.id, incoming.name, incoming.pattern, incoming.equipment,
-                     incoming.stepKg.value_or(defaultStepKg(incoming.equipment)), true});
-}
-
-// A pass-through like every other write here, and for the same reason: the entity's constructor is
-// the whole validation and the store's answer is the whole refusal. The construction happens where
-// the stored row and the new name are both in hand — inside the store, before it writes — because
-// what a rename changes is what a movement is CALLED and nothing else about it moves: not its
-// pattern, not its step, and least of all its id, which is the promise the record page exists to
-// demonstrate.
-std::optional<Exercise> LogService::renameExercise(const UserId& user, const ExerciseId& id,
-                                                   const std::string& name) {
-  return catalog_.renameExercise(user, id, name);
 }
 
 // Two phases and no third: load the session, its sets and the history the rules need, then hand all
@@ -399,7 +238,7 @@ std::optional<Exercise> LogService::renameExercise(const UserId& user, const Exe
 // number on the finish screen is the domain's, so the web and the phone cannot print two different
 // records for one workout. Nothing is stored either: the review is recomputed on every read, which
 // is what keeps it right after a set arrives late from a flush queue.
-std::optional<Review> LogService::review(const UserId& user, const SessionId& session) {
+std::optional<Review> TrainingService::review(const UserId& user, const SessionId& session) {
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
   return wm::gym::review(*stored, log_.setsOf(session), log_.historyFor(user, *stored));
@@ -412,7 +251,7 @@ std::optional<Review> LogService::review(const UserId& user, const SessionId& se
 // deliberately not here: a write on the way to a delete would be a rule this door invented. The last
 // refusal is the race — the row went between the load and the delete — and it is the same fact as
 // never having been there at all.
-DiscardOutcome LogService::discard(const UserId& user, const SessionId& session) {
+DiscardOutcome TrainingService::discard(const UserId& user, const SessionId& session) {
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return DiscardOutcome::notFound;
   if (!stored->finishedAtMs) return DiscardOutcome::open;
@@ -425,7 +264,7 @@ DiscardOutcome LogService::discard(const UserId& user, const SessionId& session)
 // third door that settles it — the answer counts finished sessions only, so a workout the four-hour
 // rule ended hours ago but nobody has read since would be missing from every chart, and a hole in a
 // chart is read as "I did not train that week".
-Statistics LogService::statistics(const UserId& user) {
+Statistics TrainingService::statistics(const UserId& user) {
   settleOpen(log_, user, clock_.nowMs());
   return wm::gym::statistics(log_.trainingLog(user));
 }
@@ -436,8 +275,8 @@ Statistics LogService::statistics(const UserId& user) {
 // ago but nobody has read since would be missing from the chart, and a hole in a chart is read as
 // "I did not train that week". The clock is read once and passed in, so the twelve-week window and
 // the settle cannot disagree about what now is.
-std::optional<MovementRecord> LogService::movementRecord(const UserId& user,
-                                                         const ExerciseId& exercise) {
+std::optional<MovementRecord> TrainingService::movementRecord(const UserId& user,
+                                                              const ExerciseId& exercise) {
   const std::uint64_t nowMs = clock_.nowMs();
   settleOpen(log_, user, nowMs);
   MovementHistory history = log_.movementHistory(user, exercise);
@@ -449,56 +288,15 @@ std::optional<MovementRecord> LogService::movementRecord(const UserId& user,
 // not: it hands back every set unconditionally, so no session can be missing from it whatever
 // finished_at says, and a door whose whole promise is "here is your data, untouched" has no
 // business writing to the log on the way out.
-std::vector<ExportedSet> LogService::exportedSets(const UserId& user) {
+std::vector<ExportedSet> TrainingService::exportedSets(const UserId& user) {
   return log_.exportedSets(user);
-}
-
-// Two loads and one rule between them: the store renders every turn as text (it does gym's calendar
-// work, and a second date formatter is a second answer), the domain reads each thread's proposals
-// for what came of it, and the outcome is stamped onto that thread's rows here. Nothing about a
-// conversation is decided in SQL.
-//
-// `allThreads` AND NOT `threads`, WHICH IS THE FIX FOR A REAL HOLE: the list read stops at
-// kThreadList, so an account's 201st conversation exported with a blank outcome while the app's own
-// read of that same thread said `applied · 4 · Push A`. A ceiling is honest on a screen and a lie in
-// an archive. Folding the outcomes into a map first is the same correction seen from the other side
-// — the old nested walk was O(threads × turns) over a whole account, per export.
-std::vector<ExportedThreadTurn> LogService::exportedThreadTurns(const UserId& user) {
-  std::unordered_map<std::string, ThreadOutcome> outcomes;
-  for (const AskThread& thread : threads_.allThreads(user))
-    outcomes.emplace(thread.id.str(), outcomeOf(thread));
-
-  std::vector<ExportedThreadTurn> turns = threads_.exportedThreadTurns(user);
-  for (ExportedThreadTurn& turn : turns) {
-    const auto found = outcomes.find(turn.threadId);
-    if (found == outcomes.end()) continue;
-    turn.outcome = toString(found->second.kind);
-    // A count of nothing is an EMPTY CELL and never a zero: `read only` counts no changes because
-    // none were proposed, and a 0 there would read as a real number somebody could sum.
-    if (found->second.changes > 0) turn.changes = std::to_string(found->second.changes);
-    turn.routine = found->second.routineName;
-  }
-  return turns;
-}
-
-// A lifter who has never opened the settings screen holds no row, and the answer to that is the
-// DEFAULTS rather than an absence: every client needs the rest target and the reading unit before it
-// can draw its first frame, so an empty answer would put a copy of the defaults in each of them —
-// and the fourth copy is the one that quietly disagrees. Nothing is written on the way out; a lifter who
-// never touches this screen never grows a row.
-GymPreferences LogService::preferences(const UserId& user) {
-  return preferences_.preferences(user).value_or(GymPreferences{user});
-}
-
-GymPreferences LogService::savePreferences(const GymPreferences& incoming) {
-  return preferences_.savePreferences(incoming);
 }
 
 // The token is minted HERE and never parsed from anywhere: the one id in this product the client
 // does not choose, because a client that chose it would choose a guessable one. The store resolves
 // the write like every other — a live share answers with itself, an expired one is replaced, and a
 // session this caller cannot read answers with nothing.
-std::optional<SessionShare> LogService::share(const UserId& user, const SessionId& session) {
+std::optional<SessionShare> TrainingService::share(const UserId& user, const SessionId& session) {
   // One clock reads once and decides both halves — what the new share would end at, and whether the
   // one already on this session has ended. Asking the clock twice, or letting the database answer
   // one of them, is how a share that expired between the two questions comes back as live.
@@ -507,44 +305,12 @@ std::optional<SessionShare> LogService::share(const UserId& user, const SessionI
       SessionShare{session, user, tokens_.mint().secret, shareExpiryAt(nowMs)}, nowMs);
 }
 
-bool LogService::revokeShare(const UserId& user, const SessionId& session) {
+bool TrainingService::revokeShare(const UserId& user, const SessionId& session) {
   return log_.revokeShare(user, session);
 }
 
-std::optional<SharedSession> LogService::shared(const std::string& token) {
+std::optional<SharedSession> TrainingService::shared(const std::string& token) {
   return log_.sharedSession(token, clock_.nowMs());
-}
-
-// The three thread doors, and all three are pass-throughs on purpose: a conversation is stored
-// exactly as it was had, so there is no rule to apply on the way out. The outcome is the one derived
-// thing about a thread and it is derived where it is drawn, from the proposals that ride with it.
-std::vector<AskThread> LogService::threads(const UserId& user) { return threads_.threads(user); }
-
-std::optional<AskThread> LogService::thread(const UserId& user, const ThreadId& id) {
-  return threads_.thread(user, id);
-}
-
-bool LogService::deleteThread(const UserId& user, const ThreadId& id) {
-  return threads_.deleteThread(user, id);
-}
-
-ThreadOpenOutcome LogService::openThread(const UserId& user, const ThreadId& id,
-                                         const std::string& title) {
-  return threads_.openThread(user, id, title, clock_.nowMs());
-}
-
-// ONE CLOCK READ FOR THE PAIR, because the pair is one exchange: the question and the answer to it
-// are dated by the moment it settled, and two reads would let the answer appear to arrive before the
-// question on a clock that stepped between them.
-void LogService::appendTurns(const UserId& user, const ThreadId& id,
-                             std::vector<ThreadTurn> turns) {
-  const std::uint64_t nowMs = clock_.nowMs();
-  for (ThreadTurn& turn : turns) turn.atMs = nowMs;
-  threads_.appendTurns(user, id, turns);
-}
-
-void LogService::discardEmptyThread(const UserId& user, const ThreadId& id) {
-  threads_.discardEmptyThread(user, id);
 }
 
 }

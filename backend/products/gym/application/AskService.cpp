@@ -144,9 +144,9 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
   return outcome;
 }
 
-AskService::AskService(LogService& log, AskAgent& agent, GymTools& gymTools,
-                       Entitlements& entitlements)
-    : log_(log), agent_(agent), gymTools_(gymTools), entitlements_(entitlements) {
+AskService::AskService(TrainingService& training, ThreadService& threads, AskAgent& agent,
+                       GymTools& gymTools, Entitlements& entitlements)
+    : training_(training), threads_(threads), agent_(agent), gymTools_(gymTools), entitlements_(entitlements) {
   workers_.start();
 }
 
@@ -193,7 +193,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   // the ceilings because it is a fact about WHEN Ask exists at all: a lifter between sets should hear
   // that, not something about the day's questions. The read settles a stale workout on its way past,
   // so a session somebody walked away from yesterday does not hold Ask shut for good.
-  if (log_.openSession(caller)) {
+  if (training_.openSession(caller)) {
     done(AskReply{AskRefusal::sessionOpen});
     return;
   }
@@ -212,7 +212,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   //
   // The title is this question, VERBATIM, and only on a thread that did not exist. A thread is named
   // by how it opened; nothing here, and nothing behind here, ever writes a title a model composed.
-  const ThreadOpenOutcome opened = log_.openThread(caller, thread, question);
+  const ThreadOpenOutcome opened = threads_.openThread(caller, thread, question);
   if (opened.error == ThreadOpenError::idTaken || !opened.thread) {
     // NO THREAD AND NO NAMED ERROR IS THE RACE, AND IT IS THE SAME ANSWER. Two accounts can mint one
     // id at once: the loser's global probe found the id free, its insert lost to `ON CONFLICT DO
@@ -230,7 +230,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   // The pair this ask would add — the question and the answer to come — has to fit under the cap
   // with everything already said, or the conversation would be capped halfway through answering.
   if (turns.size() + 2 > kMaxThreadTurns) {
-    log_.discardEmptyThread(caller, thread);
+    threads_.discardEmptyThread(caller, thread);
     done(AskReply{AskRefusal::tooManyTurns});
     return;
   }
@@ -239,7 +239,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   // nothing and must therefore cost nothing. A lifter turned away mid-workout, or held at our own
   // ceiling, walks out with the day's questions intact.
   if (!perAccount_.take(caller.str())) {
-    log_.discardEmptyThread(caller, thread);
+    threads_.discardEmptyThread(caller, thread);
     done(AskReply{AskRefusal::dailyLimit});
     return;
   }
@@ -299,11 +299,11 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
         // A proposal the dead run managed to mint keeps its row and loses its thread link, which is
         // the rule the lifter's own delete obeys: the conversation goes, the consequence stays.
         if (!reply.answer.ok) {
-          log_.discardEmptyThread(caller, thread);
+          threads_.discardEmptyThread(caller, thread);
           done(std::move(reply));
           return;
         }
-        log_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
+        threads_.appendTurns(caller, thread, {ThreadTurn{true, turns.back().text},
                                           ThreadTurn{false, reply.answer.answer}});
         done(std::move(reply));
       });

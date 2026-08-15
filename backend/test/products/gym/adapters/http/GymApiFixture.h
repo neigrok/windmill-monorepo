@@ -44,13 +44,20 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
   FakeGym repo;
-  std::shared_ptr<LogService> log = std::make_shared<LogService>(
-      repo.log, repo.catalog, repo.program, repo.threads, repo.preferences, clock, tokens);
-  TrainingApi training{log, auth, "https://windmill.works"};
-  CatalogApi catalog{log, auth};
-  ProgramApi program{log, auth};
-  PreferencesApi preferences{log, auth};
-  ThreadsApi threads{log, auth};
+  std::shared_ptr<TrainingService> trainingService =
+      std::make_shared<TrainingService>(repo.log, repo.program, clock, tokens);
+  std::shared_ptr<CatalogService> catalogService = std::make_shared<CatalogService>(repo.catalog);
+  std::shared_ptr<ProgramService> programService =
+      std::make_shared<ProgramService>(repo.program, clock);
+  std::shared_ptr<PreferencesService> preferencesService =
+      std::make_shared<PreferencesService>(repo.preferences);
+  std::shared_ptr<ThreadService> threadService =
+      std::make_shared<ThreadService>(repo.threads, clock);
+  TrainingApi training{trainingService, auth, "https://windmill.works"};
+  CatalogApi catalog{catalogService, trainingService, auth};
+  ProgramApi program{programService, auth};
+  PreferencesApi preferences{preferencesService, auth};
+  ThreadsApi threads{threadService, auth};
 
   Harness() {
     repo.db.seed(benchPress());

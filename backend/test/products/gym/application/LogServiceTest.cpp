@@ -1,4 +1,7 @@
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/CatalogService.h"
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/ThreadService.h"
+#include "products/gym/application/TrainingService.h"
 
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
@@ -19,8 +22,10 @@ struct Harness {
   FakeGym repo;
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
-  LogService service{repo.log, repo.catalog, repo.program, repo.threads, repo.preferences,
-                     clock, tokens};
+  TrainingService training{repo.log, repo.program, clock, tokens};
+  CatalogService catalog{repo.catalog};
+  ProgramService program{repo.program, clock};
+  ThreadService threads{repo.threads, clock};
 
   Harness() {
     repo.db.seed(benchPress());
@@ -28,12 +33,12 @@ struct Harness {
   }
 
   StartOutcome startAt(std::uint64_t ms, std::string id = "ses_00000001") {
-    return service.start(uid(), SessionStart{sid(std::move(id)), ms});
+    return training.start(uid(), SessionStart{sid(std::move(id)), ms});
   }
 
   // The other door into a workout: the day of the program, named by id and frozen by the server.
   StartOutcome startFrom(std::uint64_t ms, std::string id, std::string routine) {
-    return service.start(uid(),
+    return training.start(uid(),
                          SessionStart{sid(std::move(id)), ms, true, rtId(std::move(routine))});
   }
 
@@ -46,12 +51,12 @@ struct Harness {
   // and the one that leaves the routine's history naming no agent. The tests that are about an
   // agent's create call the service directly and say which door.
   RoutineWriteOutcome create(const RoutineWrite& incoming) {
-    return service.createRoutine(uid(), incoming, std::nullopt);
+    return program.createRoutine(uid(), incoming, std::nullopt);
   }
 
   // The other Start: "create exactly this session, which is not now" — backfill and lift-import.
   StartOutcome startExactly(std::uint64_t ms, std::string id) {
-    return service.start(uid(), SessionStart{sid(std::move(id)), ms, false});
+    return training.start(uid(), SessionStart{sid(std::move(id)), ms, false});
   }
 
   SetWrite bench(std::string id, double weightKg, std::uint64_t completedAtMs) {
@@ -68,17 +73,17 @@ struct Harness {
                int sets, std::optional<std::string> routine = std::nullopt) {
     const std::uint64_t held = clock.now;
     if (startedAtMs > clock.now) clock.now = startedAtMs;
-    service.start(uid(), SessionStart{sid(session), startedAtMs, true,
+    training.start(uid(), SessionStart{sid(session), startedAtMs, true,
                                       routine ? std::optional<RoutineId>(rtId(*routine))
                                               : std::nullopt});
     clock.now = held;
     for (int number = 1; number <= sets; ++number)
-      service.append(uid(), sid(session),
+      training.append(uid(), sid(session),
                      SetWrite{setId("set_" + session.substr(4) + std::to_string(number)),
                               ExerciseId{"back-squat"}, weightKg, reps, SetKind::working,
                               std::nullopt, "",
                               startedAtMs + static_cast<std::uint64_t>(number) * 60'000});
-    service.finish(uid(), sid(session), startedAtMs + 3'600'000);
+    training.finish(uid(), sid(session), startedAtMs + 3'600'000);
   }
 
   // The same workout put straight into the store, for the one state the service's own doors cannot
@@ -95,7 +100,7 @@ struct Harness {
   }
 
   std::vector<LogRow> logBefore(std::uint64_t beforeMs, int limit = 50) {
-    return service.log(uid(), LogCursor{beforeMs, std::nullopt, limit});
+    return training.log(uid(), LogCursor{beforeMs, std::nullopt, limit});
   }
 };
 
@@ -181,13 +186,13 @@ TEST(start_refuses_a_session_id_that_belongs_to_another_account) {
   CHECK(started.error == StartError::idTaken);
   CHECK_FALSE(started.session.has_value());
   CHECK_EQ(h.repo.db.sessions, std::vector<Session>{Session(sid(), uid("u2"), h.clock.now - 5'000)});
-  CHECK_EQ(h.service.detail(uid(), sid()), std::optional<SessionDetail>());
+  CHECK_EQ(h.training.detail(uid(), sid()), std::optional<SessionDetail>());
 }
 
 TEST(start_replay_of_an_already_finished_start_returns_the_stored_session) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.finish(uid(), sid(), h.clock.now + 1'000);
+  h.training.finish(uid(), sid(), h.clock.now + 1'000);
 
   StartOutcome replayed = h.startAt(h.clock.now);
 
@@ -215,7 +220,7 @@ TEST(start_auto_closes_a_stale_session_at_its_last_set_instant) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   const std::uint64_t lastSetAt = h.clock.now + 60'000;
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, lastSetAt));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, lastSetAt));
   h.clock.now = lastSetAt + kAutoCloseMs;
 
   h.startAt(h.clock.now, "ses_00000002");
@@ -280,7 +285,7 @@ TEST(start_that_will_not_join_still_replays_its_own_open_session) {
 TEST(append_to_a_missing_session_is_not_found) {
   Harness h;
 
-  AppendOutcome outcome = h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, 1'000));
+  AppendOutcome outcome = h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, 1'000));
 
   CHECK(outcome.error == AppendError::notFound);
   CHECK_FALSE(outcome.set.has_value());
@@ -292,7 +297,7 @@ TEST(append_to_anothers_session_is_the_same_not_found) {
   h.startAt(h.clock.now);
 
   AppendOutcome outcome =
-      h.service.append(uid("u2"), sid(), h.bench("set_00000001", 80.0, h.clock.now));
+      h.training.append(uid("u2"), sid(), h.bench("set_00000001", 80.0, h.clock.now));
 
   CHECK(outcome.error == AppendError::notFound);
   CHECK(h.repo.db.sets.empty());
@@ -301,10 +306,10 @@ TEST(append_to_anothers_session_is_the_same_not_found) {
 TEST(append_of_a_new_set_to_a_finished_session_is_finished) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.finish(uid(), sid(), h.clock.now + 1'000);
+  h.training.finish(uid(), sid(), h.clock.now + 1'000);
 
   AppendOutcome outcome =
-      h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now));
+      h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now));
 
   CHECK(outcome.error == AppendError::finished);
   CHECK_FALSE(outcome.set.has_value());
@@ -318,17 +323,17 @@ TEST(append_of_a_new_set_to_a_finished_session_is_finished) {
 TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
   h.clock.now += kAutoCloseMs + 3'600'000;   // a read the next morning settles it stale…
-  h.service.log(uid(), LogCursor{kMaxInstantMs, std::nullopt, 10});
+  h.training.log(uid(), LogCursor{kMaxInstantMs, std::nullopt, 10});
   REQUIRE(h.repo.db.sessions[0].finishedAtMs.has_value());
   CHECK_EQ(*h.repo.db.sessions[0].finishedAtMs, h.clock.now - kAutoCloseMs - 3'600'000 + 60'000);
   CHECK(h.repo.db.sessions[0].closedBy == ClosedBy::stale);
   const std::uint64_t lastNight = h.clock.now - kAutoCloseMs - 3'600'000;
 
-  AppendOutcome second = h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, lastNight + 120'000));
-  AppendOutcome third = h.service.append(uid(), sid(), h.bench("set_00000003", 85.0, lastNight + 180'000));
-  AppendOutcome tomorrow = h.service.append(uid(), sid(), h.bench("set_00000004", 60.0, h.clock.now));
+  AppendOutcome second = h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, lastNight + 120'000));
+  AppendOutcome third = h.training.append(uid(), sid(), h.bench("set_00000003", 85.0, lastNight + 180'000));
+  AppendOutcome tomorrow = h.training.append(uid(), sid(), h.bench("set_00000004", 60.0, h.clock.now));
 
   CHECK(second.error == AppendError::none);
   CHECK(third.error == AppendError::none);
@@ -341,10 +346,10 @@ TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
 TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.service.finish(uid(), sid(), h.clock.now + 120'000);
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.training.finish(uid(), sid(), h.clock.now + 120'000);
 
-  AppendOutcome late = h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 90'000));
+  AppendOutcome late = h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 90'000));
 
   CHECK(late.error == AppendError::finished);
   CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
@@ -356,11 +361,11 @@ TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
 TEST(append_replays_an_already_stored_set_across_the_finish_boundary) {
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome landed = h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.service.finish(uid(), sid(), h.clock.now + 1'000);
+  AppendOutcome landed = h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.training.finish(uid(), sid(), h.clock.now + 1'000);
 
   AppendOutcome replayed =
-      h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+      h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(*replayed.set, *landed.set);
@@ -376,23 +381,23 @@ TEST(append_refuses_a_set_id_minted_by_another_account) {
   h.startAt(h.clock.now);
 
   AppendOutcome outcome =
-      h.service.append(uid(), sid(), h.bench("set_00000001", 7.5, h.clock.now + 1));
+      h.training.append(uid(), sid(), h.bench("set_00000001", 7.5, h.clock.now + 1));
 
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // never the stranger's row, not even to say it exists
   REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sets[0].weightKg, 142.5);
-  CHECK_EQ(h.service.detail(uid(), sid())->sets, std::vector<Set>{});
+  CHECK_EQ(h.training.detail(uid(), sid())->sets, std::vector<Set>{});
 }
 
 TEST(append_refuses_a_set_id_the_same_lifter_spent_in_another_session) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
   h.startAt(h.clock.now + 3, "ses_00000002");
 
-  AppendOutcome outcome = h.service.append(
+  AppendOutcome outcome = h.training.append(
       uid(), sid("ses_00000002"),
       SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 222.5, 9, SetKind::working,
                std::nullopt, "", h.clock.now + 4});
@@ -400,7 +405,7 @@ TEST(append_refuses_a_set_id_the_same_lifter_spent_in_another_session) {
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // the old row is NOT reported as this write's result
   CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.service.detail(uid(), sid("ses_00000002"))->sets, std::vector<Set>{});
+  CHECK_EQ(h.training.detail(uid(), sid("ses_00000002"))->sets, std::vector<Set>{});
 }
 
 // Only the store knows the catalog, so the refusal is born there and travels as a value. The
@@ -409,7 +414,7 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
   Harness h;
   h.startAt(h.clock.now);
 
-  AppendOutcome outcome = h.service.append(
+  AppendOutcome outcome = h.training.append(
       uid(), sid(),
       SetWrite{setId("set_00000001"), ExerciseId{"zercher-squat"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 1});
@@ -417,7 +422,7 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
   CHECK(outcome.error == AppendError::unknownExercise);
   CHECK_FALSE(outcome.set.has_value());
   CHECK(h.repo.db.sets.empty());
-  CHECK_EQ(h.service.detail(uid(), sid())->sets, std::vector<Set>{});
+  CHECK_EQ(h.training.detail(uid(), sid())->sets, std::vector<Set>{});
 }
 
 // A set may not NAME a movement this account cannot see. A foreign key only asks whether the row
@@ -431,7 +436,7 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
   h.repo.db.seedCustom(uid("u2"), theirs);
   h.startAt(h.clock.now);
 
-  AppendOutcome refused = h.service.append(
+  AppendOutcome refused = h.training.append(
       uid(), sid(),
       SetWrite{setId("set_00000001"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 1});
@@ -442,8 +447,8 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
 
   // And it is a SCOPE, not a claim that the movement does not exist: its owner logs it as normal,
   // which is what makes the two accounts' answers differ without either learning about the other.
-  h.service.start(uid("u2"), SessionStart{sid("ses_00000002"), h.clock.now});
-  AppendOutcome mine = h.service.append(
+  h.training.start(uid("u2"), SessionStart{sid("ses_00000002"), h.clock.now});
+  AppendOutcome mine = h.training.append(
       uid("u2"), sid("ses_00000002"),
       SetWrite{setId("set_00000002"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 2});
@@ -458,7 +463,7 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
 TEST(append_that_reaches_a_session_closed_under_the_lock_is_refused_by_the_store) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.finish(uid(), sid(), h.clock.now + 1'000);
+  h.training.finish(uid(), sid(), h.clock.now + 1'000);
 
   SetInsertOutcome landed =
       h.repo.log.insertSet(Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 0, 80.0, 8,
@@ -476,8 +481,7 @@ TEST(append_reports_the_stores_finish_refusal_as_the_finished_the_wire_already_k
   ClosedUnderTheLock log{repo.db};
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
-  LogService service{log, repo.catalog, repo.program, repo.threads, repo.preferences, clock,
-                     tokens};
+  TrainingService service{log, repo.program, clock, tokens};
   repo.db.seed(benchPress());
   service.start(uid(), SessionStart{sid(), clock.now});
 
@@ -496,9 +500,9 @@ TEST(append_numbers_max_plus_one_per_exercise_across_interleaving) {
   SetWrite squat{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5, SetKind::working,
                  std::nullopt, "", h.clock.now + 2};
 
-  AppendOutcome bench1 = h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  AppendOutcome squat1 = h.service.append(uid(), sid(), squat);
-  AppendOutcome bench2 = h.service.append(uid(), sid(), h.bench("set_00000003", 82.5, h.clock.now + 3));
+  AppendOutcome bench1 = h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome squat1 = h.training.append(uid(), sid(), squat);
+  AppendOutcome bench2 = h.training.append(uid(), sid(), h.bench("set_00000003", 82.5, h.clock.now + 3));
 
   CHECK_EQ(bench1.set->setNumber, 1);
   CHECK_EQ(squat1.set->setNumber, 1);   // its own count, not the session's
@@ -508,11 +512,11 @@ TEST(append_numbers_max_plus_one_per_exercise_across_interleaving) {
 TEST(append_replay_returns_the_stored_row_byte_for_byte) {
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome first = h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome first = h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   // The replay arrives with a different weight — the flush queue re-sending after a lost reply.
   AppendOutcome replayed =
-      h.service.append(uid(), sid(), h.bench("set_00000001", 90.0, h.clock.now + 99));
+      h.training.append(uid(), sid(), h.bench("set_00000001", 90.0, h.clock.now + 99));
 
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(*replayed.set, *first.set);
@@ -526,15 +530,15 @@ TEST(finish_is_idempotent_and_keeps_the_first_instant) {
   Harness h;
   h.startAt(h.clock.now);
 
-  FinishOutcome first = h.service.finish(uid(), sid(), h.clock.now + 1'000);
-  FinishOutcome replayed = h.service.finish(uid(), sid(), h.clock.now + 2'000);
+  FinishOutcome first = h.training.finish(uid(), sid(), h.clock.now + 1'000);
+  FinishOutcome replayed = h.training.finish(uid(), sid(), h.clock.now + 2'000);
 
   CHECK(first.error == FinishError::none);
   CHECK_EQ(first.session->finishedAtMs, std::optional<std::uint64_t>(h.clock.now + 1'000));
   CHECK(replayed.error == FinishError::none);
   CHECK_EQ(*replayed.session, *first.session);
 
-  FinishOutcome unknown = h.service.finish(uid(), SessionId{"ses_unknown1"}, h.clock.now + 1);
+  FinishOutcome unknown = h.training.finish(uid(), SessionId{"ses_unknown1"}, h.clock.now + 1);
   CHECK(unknown.error == FinishError::notFound);
   CHECK_FALSE(unknown.session.has_value());
 }
@@ -548,8 +552,7 @@ TEST(finish_that_finds_the_session_gone_under_it_is_not_found_and_never_an_empty
   DiscardedUnderTheFinish log{repo.db};
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
-  LogService service{log, repo.catalog, repo.program, repo.threads, repo.preferences, clock,
-                     tokens};
+  TrainingService service{log, repo.program, clock, tokens};
   service.start(uid(), SessionStart{sid(), clock.now});
 
   FinishOutcome outcome = service.finish(uid(), sid(), clock.now + 1'000);
@@ -565,9 +568,9 @@ TEST(finish_refuses_an_instant_the_session_could_not_have_ended_at) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started);
 
-  FinishOutcome zero = h.service.finish(uid(), sid(), 0);
-  FinishOutcome beforeStart = h.service.finish(uid(), sid(), started - 1);
-  FinishOutcome pastTheCeiling = h.service.finish(uid(), sid(), kMaxInstantMs + 1);
+  FinishOutcome zero = h.training.finish(uid(), sid(), 0);
+  FinishOutcome beforeStart = h.training.finish(uid(), sid(), started - 1);
+  FinishOutcome pastTheCeiling = h.training.finish(uid(), sid(), kMaxInstantMs + 1);
 
   CHECK(zero.error == FinishError::badInstant);
   CHECK(beforeStart.error == FinishError::badInstant);
@@ -575,7 +578,7 @@ TEST(finish_refuses_an_instant_the_session_could_not_have_ended_at) {
   CHECK_FALSE(zero.session.has_value());
   CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>());
 
-  FinishOutcome atTheStart = h.service.finish(uid(), sid(), started);   // a workout with one rep
+  FinishOutcome atTheStart = h.training.finish(uid(), sid(), started);   // a workout with one rep
   CHECK(atTheStart.error == FinishError::none);
   CHECK_EQ(atTheStart.session->finishedAtMs, std::optional<std::uint64_t>(started));
 }
@@ -596,11 +599,11 @@ TEST(log_auto_closes_the_stale_open_session_before_listing) {
 TEST(log_lists_newest_first_with_counts_and_sorted_names) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.service.finish(uid(), sid(), h.clock.now + 3);
+  h.training.finish(uid(), sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
 
@@ -621,18 +624,18 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
 TEST(log_carries_the_top_working_set_of_each_session) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 8,
                             SetKind::working, std::nullopt, "", h.clock.now + 3});
   // Heavier than anything worked, and not a working set: a ramp-up is not what the row says.
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000004"), ExerciseId{"back-squat"}, 140.0, 1,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 4});
-  h.service.finish(uid(), sid(), h.clock.now + 5);
+  h.training.finish(uid(), sid(), h.clock.now + 5);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");   // nothing logged into it yet
 
@@ -650,17 +653,17 @@ TEST(log_carries_the_top_working_set_of_each_session) {
 TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 60.0, 10,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.service.append(uid(), sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
-  h.service.finish(uid(), sid(), h.clock.now + 5);
+  h.training.append(uid(), sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
+  h.training.finish(uid(), sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -677,19 +680,19 @@ TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) 
 TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_subtract) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, -20.0, 10,
                             SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.service.finish(uid(), sid(), h.clock.now + 3);
+  h.training.finish(uid(), sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 0.0, 9,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -707,22 +710,22 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
 TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_estimate) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid(), h.clock.now + 2);
+  h.training.finish(uid(), sid(), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 0.0, 9,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000003");   // warmed up and nothing else
-  h.service.append(uid(), sid("ses_00000003"),
+  h.training.append(uid(), sid("ses_00000003"),
                    SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 40.0, 10,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid("ses_00000003"), h.clock.now + 2);
+  h.training.finish(uid(), sid("ses_00000003"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -742,18 +745,18 @@ TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_est
 TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_set) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
   for (int number = 2; number <= 4; ++number)
-    h.service.append(uid(), sid(),
+    h.training.append(uid(), sid(),
                      SetWrite{setId("set_0000000" + std::to_string(number)),
                               ExerciseId{"back-squat"}, 95.0, 10, SetKind::working, std::nullopt,
                               "", h.clock.now + static_cast<std::uint64_t>(number)});
-  h.service.finish(uid(), sid(), h.clock.now + 5);
+  h.training.finish(uid(), sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
-  std::optional<Review> finished = h.service.review(uid(), sid());
+  std::optional<Review> finished = h.training.review(uid(), sid());
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   // The store still picks the HEAVIEST set — that is an ordering and it has its own readers — and
@@ -770,19 +773,19 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
 TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_set_would) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 95.0, 6,
                             SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 95.0, 10,
                             SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 95.0, 8,
                             SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.service.append(uid(), sid(),
+  h.training.append(uid(), sid(),
                    SetWrite{setId("set_00000004"), ExerciseId{"bench-press"}, 60.0, 12,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 4});
-  h.service.finish(uid(), sid(), h.clock.now + 5);
+  h.training.finish(uid(), sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -806,11 +809,11 @@ TEST(log_says_which_sessions_the_four_hour_rule_closed) {
   Harness h;
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 60'000));
-  h.service.finish(uid(), sid("ses_00000001"), started + 3'600'000);   // a tap, an hour later
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 60'000));
+  h.training.finish(uid(), sid("ses_00000001"), started + 3'600'000);   // a tap, an hour later
   h.clock.now = started + 10'000'000;
   h.startAt(h.clock.now, "ses_00000002");   // left running, and never touched again
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    h.bench("set_00000002", 80.0, h.clock.now + 60'000));
   const std::uint64_t abandoned = h.clock.now + 60'000;
   h.clock.now = abandoned + kAutoCloseMs;   // the next log read settles it
@@ -854,12 +857,12 @@ TEST(log_pages_across_a_tied_start_instant_without_losing_a_session) {
   h.repo.db.sessions.push_back(Session{sid("ses_00000003"), uid(), tied + 2, tied + 4});
   h.repo.db.sessions.push_back(Session{sid("ses_00000004"), uid(), tied + 1, tied + 4});
 
-  std::vector<LogRow> first = h.service.log(uid(), LogCursor{tied + 9, std::nullopt, 2});
+  std::vector<LogRow> first = h.training.log(uid(), LogCursor{tied + 9, std::nullopt, 2});
   std::vector<LogRow> second =
-      h.service.log(uid(), LogCursor{first.back().summary.session.startedAtMs,
+      h.training.log(uid(), LogCursor{first.back().summary.session.startedAtMs,
                                      first.back().summary.session.id, 2});
   std::vector<LogRow> third =
-      h.service.log(uid(), LogCursor{second.back().summary.session.startedAtMs,
+      h.training.log(uid(), LogCursor{second.back().summary.session.startedAtMs,
                                      second.back().summary.session.id, 2});
 
   REQUIRE_EQ(first.size(), static_cast<std::size_t>(2));
@@ -874,15 +877,15 @@ TEST(log_pages_across_a_tied_start_instant_without_losing_a_session) {
 TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome second = h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 2));
-  AppendOutcome first = h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome second = h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 2));
+  AppendOutcome first = h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
-  std::optional<SessionDetail> detail = h.service.detail(uid(), sid());
+  std::optional<SessionDetail> detail = h.training.detail(uid(), sid());
 
   REQUIRE(detail.has_value());
   CHECK_EQ(detail->session.id, sid());
   CHECK_EQ(detail->sets, (std::vector<Set>{*first.set, *second.set}));
-  CHECK_EQ(h.service.detail(uid("u2"), sid()), std::optional<SessionDetail>());
+  CHECK_EQ(h.training.detail(uid("u2"), sid()), std::optional<SessionDetail>());
 }
 
 // ---- last time: the number on screen before the lifter touches anything --------------------
@@ -890,22 +893,22 @@ TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
 TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
   AppendOutcome top =
-      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, h.clock.now + 1));
+      h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, h.clock.now + 1));
   AppendOutcome backOff =
-      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 2));
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 3);
+      h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 2));
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + 3);
   // Today, live, heavier: these sets are the today list, and an unfinished session is not a last
   // time — otherwise the prefill would read back the number the lifter is standing under.
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000003");
-  h.service.append(uid(), sid("ses_00000003"), h.bench("set_00000004", 100.0, h.clock.now + 1));
+  h.training.append(uid(), sid("ses_00000003"), h.bench("set_00000004", 100.0, h.clock.now + 1));
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"bench-press"});
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->session.id, sid("ses_00000002"));
@@ -917,24 +920,24 @@ TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {
 TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"),
+  h.training.append(uid(), sid("ses_00000001"),
                    SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 40.0, 10,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
   AppendOutcome first =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
   AppendOutcome second =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000003", 82.5, h.clock.now + 3));
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000003", 82.5, h.clock.now + 3));
   AppendOutcome third =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
-  h.service.append(uid(), sid("ses_00000001"),
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
+  h.training.append(uid(), sid("ses_00000001"),
                    SetWrite{setId("set_00000005"), ExerciseId{"back-squat"}, 100.0, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 5});
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 6);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 6);
   // The snapshot the start froze, placed on the stored row directly so this test stays about the
   // block and its order rather than about how a session came to carry a plan.
   h.repo.db.sessions[0].plan = PlanSnapshot{"Bench day", {}};
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"bench-press"});
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
@@ -948,18 +951,18 @@ TEST(last_time_steps_over_a_session_that_only_warmed_this_movement_up) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   AppendOutcome worked =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
   // A later session that ramped up on bench, changed its mind and trained something else. A 40 kg
   // ramp-up single is not an answer to "what did I do last time".
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 40.0, 10,
                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"bench-press"});
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->session.id, sid("ses_00000001"));
@@ -970,16 +973,16 @@ TEST(last_time_never_reaches_into_another_accounts_log) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   AppendOutcome mine =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
   // The other lifter benched more recently, and heavier. It is their log.
   h.repo.db.sessions.push_back(
       Session{sid("ses_00000009"), uid("u2"), h.clock.now + 10, h.clock.now + 30});
   h.repo.db.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
                             1, 142.5, 3, SetKind::working, std::nullopt, "", h.clock.now + 20});
 
-  LastTimeOutcome ours = h.service.lastTime(uid(), ExerciseId{"bench-press"});
-  LastTimeOutcome theirs = h.service.lastTime(uid("u2"), ExerciseId{"bench-press"});
+  LastTimeOutcome ours = h.training.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome theirs = h.training.lastTime(uid("u2"), ExerciseId{"bench-press"});
 
   CHECK(ours.error == LastTimeError::none);
   CHECK_EQ(ours.lastTime->session.id, sid("ses_00000001"));
@@ -995,14 +998,14 @@ TEST(last_time_never_reaches_into_another_accounts_log) {
 TEST(last_time_of_a_first_ever_movement_is_a_fact_and_of_an_unknown_one_is_a_fault) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.service.finish(uid(), sid(), h.clock.now + 2);
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.training.finish(uid(), sid(), h.clock.now + 2);
   h.repo.db.seedCustom(uid("u2"), Exercise{ExerciseId{"landmine-press"}, "Landmine Press",
                                         Pattern::press, Equipment::barbell, 2.5, true});
 
-  LastTimeOutcome firstEver = h.service.lastTime(uid(), ExerciseId{"back-squat"});
-  LastTimeOutcome unknown = h.service.lastTime(uid(), ExerciseId{"zercher-squat"});
-  LastTimeOutcome anothersCustom = h.service.lastTime(uid(), ExerciseId{"landmine-press"});
+  LastTimeOutcome firstEver = h.training.lastTime(uid(), ExerciseId{"back-squat"});
+  LastTimeOutcome unknown = h.training.lastTime(uid(), ExerciseId{"zercher-squat"});
+  LastTimeOutcome anothersCustom = h.training.lastTime(uid(), ExerciseId{"landmine-press"});
 
   CHECK(firstEver.error == LastTimeError::none);
   CHECK_FALSE(firstEver.lastTime.has_value());
@@ -1022,17 +1025,17 @@ TEST(last_time_never_closes_the_session_the_lifter_is_in) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
   AppendOutcome lastWeek =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, started + 1));
-  h.service.finish(uid(), sid("ses_00000001"), started + 2);
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, started + 1));
+  h.training.finish(uid(), sid("ses_00000001"), started + 2);
   const std::uint64_t liveSetAt = started + 4;
   h.clock.now = started + 3;
   h.startAt(h.clock.now, "ses_00000002");
-  h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, liveSetAt));
+  h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, liveSetAt));
   h.clock.now = liveSetAt + kAutoCloseMs;   // the live workout now reads as idle past the window
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"bench-press"});
   AppendOutcome next =
-      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 102.5, h.clock.now + 1));
+      h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000003", 102.5, h.clock.now + 1));
 
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->session.id, sid("ses_00000001"));   // never the live one, closed or not
@@ -1050,19 +1053,19 @@ TEST(last_time_sees_a_stale_session_once_the_log_read_has_settled_it) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
   AppendOutcome older =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 1));
-  h.service.finish(uid(), sid("ses_00000001"), started + 2);
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 1));
+  h.training.finish(uid(), sid("ses_00000001"), started + 2);
   const std::uint64_t abandonedStart = started + 10'000;
   const std::uint64_t abandonedSetAt = abandonedStart + 1;
   h.clock.now = abandonedStart;
   h.startAt(abandonedStart, "ses_00000002");
   AppendOutcome abandoned =
-      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, abandonedSetAt));
+      h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 82.5, abandonedSetAt));
   h.clock.now = abandonedSetAt + kAutoCloseMs;
 
-  LastTimeOutcome beforeTheLogRead = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome beforeTheLogRead = h.training.lastTime(uid(), ExerciseId{"bench-press"});
   h.logBefore(h.clock.now + 1);
-  LastTimeOutcome afterTheLogRead = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome afterTheLogRead = h.training.lastTime(uid(), ExerciseId{"bench-press"});
 
   CHECK_EQ(beforeTheLogRead.lastTime->session.id, sid("ses_00000001"));
   CHECK_EQ(beforeTheLogRead.lastTime->sets, std::vector<Set>{*older.set});
@@ -1081,15 +1084,15 @@ TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamp
   const std::uint64_t day = 86'400'000;
   const std::uint64_t weekAgo = h.clock.now;
   h.startAt(weekAgo, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
-  h.service.finish(uid(), sid("ses_00000001"), weekAgo + 1'000);
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
+  h.training.finish(uid(), sid("ses_00000001"), weekAgo + 1'000);
   h.clock.now = weekAgo + 7 * day;
   h.startAt(h.clock.now, "ses_00000002");
   AppendOutcome yesterday =
-      h.service.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
+      h.training.append(uid(), sid("ses_00000002"), h.bench("set_00000002", 100.0, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + 2);
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"bench-press"});
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10'000);
 
   CHECK(last.error == LastTimeError::none);
@@ -1107,13 +1110,13 @@ TEST(last_time_names_the_routine_the_session_was_trained_under_not_the_one_store
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   AppendOutcome landed =
-      h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+      h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
 
-  h.service.replaceRoutine(uid(), rtId(), h.pushAWrite({benchEntry()}, "rt_00000001", "Bench day"));
-  LastTimeOutcome afterRename = h.service.lastTime(uid(), ExerciseId{"bench-press"});
-  h.service.deleteRoutine(uid(), rtId());
-  LastTimeOutcome afterDelete = h.service.lastTime(uid(), ExerciseId{"bench-press"});
+  h.program.replaceRoutine(uid(), rtId(), h.pushAWrite({benchEntry()}, "rt_00000001", "Bench day"));
+  LastTimeOutcome afterRename = h.training.lastTime(uid(), ExerciseId{"bench-press"});
+  h.program.deleteRoutine(uid(), rtId());
+  LastTimeOutcome afterDelete = h.training.lastTime(uid(), ExerciseId{"bench-press"});
 
   CHECK(afterRename.error == LastTimeError::none);
   CHECK_EQ(afterRename.lastTime->routineName, std::string("Push A"));
@@ -1141,8 +1144,8 @@ TEST(create_routine_stores_the_document_and_reads_it_back) {
                     RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}));
   // Never trained yet, and that absence is the routines screen's own sentence.
   CHECK_EQ(created.routine->lastTrainedAtMs, std::optional<std::uint64_t>());
-  CHECK_EQ(h.service.routine(uid(), rtId()), created.routine);
-  CHECK_EQ(h.service.routine(uid("u2"), rtId()), std::optional<Routine>());
+  CHECK_EQ(h.program.routine(uid(), rtId()), created.routine);
+  CHECK_EQ(h.program.routine(uid("u2"), rtId()), std::optional<Routine>());
 }
 
 // The id is the idempotency key here exactly as it is for a session: a create that lost its reply
@@ -1169,7 +1172,7 @@ TEST(create_routine_with_an_id_another_account_holds_is_id_taken) {
   CHECK_FALSE(created.routine.has_value());   // never the stranger's plan, not even to say it exists
   CHECK_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.routineRows[0].name, std::string("Their plan"));
-  CHECK_EQ(h.service.routine(uid(), rtId()), std::optional<Routine>());
+  CHECK_EQ(h.program.routine(uid(), rtId()), std::optional<Routine>());
 }
 
 // The catalog is storage's to know, so the refusal is born there and travels as a value — the same
@@ -1184,7 +1187,7 @@ TEST(create_routine_naming_a_movement_no_catalog_holds_is_unknown_exercise) {
   CHECK(created.error == RoutineWriteError::unknownExercise);
   CHECK_FALSE(created.routine.has_value());
   CHECK(h.repo.db.routineRows.empty());
-  CHECK_EQ(h.service.routines(uid()), std::vector<Routine>{});
+  CHECK_EQ(h.program.routines(uid()), std::vector<Routine>{});
 }
 
 // The same scope the set write is held to, on the other door a movement id can travel through: a
@@ -1199,7 +1202,7 @@ TEST(a_routine_entry_naming_another_accounts_private_movement_is_unknown_exercis
 
   RoutineWriteOutcome created = h.create(h.pushAWrite({theirs}));
   h.create(h.pushAWrite());
-  RoutineWriteOutcome replaced = h.service.replaceRoutine(uid(), rtId(), h.pushAWrite({theirs}));
+  RoutineWriteOutcome replaced = h.program.replaceRoutine(uid(), rtId(), h.pushAWrite({theirs}));
 
   CHECK(created.error == RoutineWriteError::unknownExercise);
   CHECK_FALSE(created.routine.has_value());
@@ -1213,7 +1216,7 @@ TEST(replace_routine_rewrites_the_whole_document) {
   Harness h;
   h.create(h.pushAWrite());
 
-  RoutineWriteOutcome replaced = h.service.replaceRoutine(
+  RoutineWriteOutcome replaced = h.program.replaceRoutine(
       uid(), rtId(),
       h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 4, 6, 100.0, 240}, benchEntry(2)},
                    "rt_00000001", "Push A2"));
@@ -1227,7 +1230,7 @@ TEST(replace_routine_rewrites_the_whole_document) {
                    std::nullopt, 2));
   // A reorder, an insertion and a deletion are one write: the lines have no identity to churn.
   CHECK_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.service.routine(uid(), rtId()), replaced.routine);
+  CHECK_EQ(h.program.routine(uid(), rtId()), replaced.routine);
 }
 
 TEST(replace_of_a_missing_or_anothers_routine_is_the_same_not_found) {
@@ -1235,8 +1238,8 @@ TEST(replace_of_a_missing_or_anothers_routine_is_the_same_not_found) {
   h.repo.db.routineRows.push_back(Routine{rtId("rt_00000002"), uid("u2"), "Their plan", 0,
                                        {benchEntry()}});
 
-  RoutineWriteOutcome missing = h.service.replaceRoutine(uid(), rtId(), h.pushAWrite());
-  RoutineWriteOutcome theirs = h.service.replaceRoutine(
+  RoutineWriteOutcome missing = h.program.replaceRoutine(uid(), rtId(), h.pushAWrite());
+  RoutineWriteOutcome theirs = h.program.replaceRoutine(
       uid(), rtId("rt_00000002"), h.pushAWrite({benchEntry()}, "rt_00000002", "Mine now"));
 
   CHECK(missing.error == RoutineWriteError::notFound);
@@ -1249,19 +1252,19 @@ TEST(delete_routine_takes_the_pointer_off_every_session_that_ran_it_and_leaves_t
   Harness h;
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
 
-  CHECK_FALSE(h.service.deleteRoutine(uid("u2"), rtId()));   // another account cannot reach it
-  CHECK(h.service.deleteRoutine(uid(), rtId()));
-  CHECK_FALSE(h.service.deleteRoutine(uid(), rtId()));       // and it is gone, not gone twice
+  CHECK_FALSE(h.program.deleteRoutine(uid("u2"), rtId()));   // another account cannot reach it
+  CHECK(h.program.deleteRoutine(uid(), rtId()));
+  CHECK_FALSE(h.program.deleteRoutine(uid(), rtId()));       // and it is gone, not gone twice
 
-  std::optional<SessionDetail> detail = h.service.detail(uid(), sid("ses_00000001"));
+  std::optional<SessionDetail> detail = h.training.detail(uid(), sid("ses_00000001"));
   REQUIRE(detail.has_value());
   CHECK_EQ(detail->session.routine, std::optional<RoutineId>());
   CHECK_EQ(detail->session.plan,
            std::optional<PlanSnapshot>(PlanSnapshot{
                "Push A", {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180}}}));
-  CHECK_EQ(h.service.routines(uid()), std::vector<Routine>{});
+  CHECK_EQ(h.program.routines(uid()), std::vector<Routine>{});
 }
 
 // The routines screen's order: most recently trained first, the never-trained after them rather
@@ -1273,12 +1276,12 @@ TEST(routines_list_is_most_recently_trained_first_with_the_untrained_last) {
   h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Pull A"));
   h.create(h.pushAWrite({benchEntry()}, "rt_00000003", "Legs"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000002");
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
   const std::uint64_t later = h.clock.now + 10'000;
   h.startFrom(later, "ses_00000002", "rt_00000001");
-  h.service.finish(uid(), sid("ses_00000002"), later + 1);
+  h.training.finish(uid(), sid("ses_00000002"), later + 1);
 
-  std::vector<Routine> listed = h.service.routines(uid());
+  std::vector<Routine> listed = h.program.routines(uid());
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
   CHECK_EQ(listed[0].name, std::string("Push A"));
@@ -1287,7 +1290,7 @@ TEST(routines_list_is_most_recently_trained_first_with_the_untrained_last) {
   CHECK_EQ(listed[1].lastTrainedAtMs, std::optional<std::uint64_t>(h.clock.now));
   CHECK_EQ(listed[2].name, std::string("Legs"));
   CHECK_EQ(listed[2].lastTrainedAtMs, std::optional<std::uint64_t>());
-  CHECK_EQ(h.service.routines(uid("u2")), std::vector<Routine>{});
+  CHECK_EQ(h.program.routines(uid("u2")), std::vector<Routine>{});
 }
 
 // A routine built at the kitchen table is savable while it is still incomplete: the open line is
@@ -1303,7 +1306,7 @@ TEST(a_routine_saves_with_an_open_line_and_freezes_it_open) {
                                                          std::nullopt, std::nullopt, std::nullopt}}));
   // UNTESTED until its first session, and that is an absence rather than a flag: it needs nothing
   // written to become true and nothing unwritten to stop being true.
-  const std::optional<std::uint64_t> beforeItRan = h.service.routines(uid())[0].lastTrainedAtMs;
+  const std::optional<std::uint64_t> beforeItRan = h.program.routines(uid())[0].lastTrainedAtMs;
 
   StartOutcome started = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
 
@@ -1318,11 +1321,11 @@ TEST(a_routine_saves_with_an_open_line_and_freezes_it_open) {
   CHECK_EQ(beforeItRan, std::optional<std::uint64_t>());
   // And the first session is what ends it — the badge is off the moment the day is trained, with
   // nothing to write and nothing that could be left standing after a discard.
-  CHECK_EQ(h.service.routines(uid())[0].lastTrainedAtMs,
+  CHECK_EQ(h.program.routines(uid())[0].lastTrainedAtMs,
            std::optional<std::uint64_t>(h.clock.now));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
-  h.service.discard(uid(), sid("ses_00000001"));
-  CHECK_EQ(h.service.routines(uid())[0].lastTrainedAtMs, std::optional<std::uint64_t>());
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.training.discard(uid(), sid("ses_00000001"));
+  CHECK_EQ(h.program.routines(uid())[0].lastTrainedAtMs, std::optional<std::uint64_t>());
 }
 
 // The day's own history, and the row §M30 draws at the bottom of it: when it was built, by whom,
@@ -1333,7 +1336,7 @@ TEST(a_routine_built_by_hand_carries_its_creation_in_its_history) {
   h.create(h.pushAWrite({benchEntry(1), RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
                                                      std::nullopt, std::nullopt}}));
 
-  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+  const std::vector<RoutineEvent> history = h.program.routineHistory(uid(), rtId());
 
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
   CHECK(history[0].kind == RoutineEventKind::created);
@@ -1342,7 +1345,7 @@ TEST(a_routine_built_by_hand_carries_its_creation_in_its_history) {
   CHECK_EQ(history[0].movements, std::optional<int>(2));
   CHECK_EQ(history[0].proposal, std::optional<ProposalHead>());
   // Another account's routine has no history at all, which is the one fact every read here gives.
-  CHECK(h.service.routineHistory(uid("u2"), rtId()).empty());
+  CHECK(h.program.routineHistory(uid("u2"), rtId()).empty());
 }
 
 // A day an AGENT typed says so. `create_routine` is a real door onto this table — a routine that
@@ -1350,9 +1353,9 @@ TEST(a_routine_built_by_hand_carries_its_creation_in_its_history) {
 // history that said `created by you` about it would be putting words in a lifter's mouth.
 TEST(a_routine_an_agent_created_names_the_door_it_came_through) {
   Harness h;
-  h.service.createRoutine(uid(), h.pushAWrite(), ProposalDoor::mcp);
+  h.program.createRoutine(uid(), h.pushAWrite(), ProposalDoor::mcp);
 
-  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+  const std::vector<RoutineEvent> history = h.program.routineHistory(uid(), rtId());
 
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history[0].door, std::optional<ProposalDoor>(ProposalDoor::mcp));
@@ -1391,7 +1394,7 @@ TEST(a_routine_line_with_no_rep_target_survives_the_write_and_the_freeze) {
 
   CHECK(created.error == RoutineWriteError::none);
   CHECK_EQ(created.routine->entries[0].targetReps, std::optional<int>());
-  CHECK_EQ(h.service.routine(uid(), rtId())->entries[0].targetReps, std::optional<int>());
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].targetReps, std::optional<int>());
   CHECK(started.error == StartError::none);
   CHECK_EQ(started.session->plan,
            std::optional<PlanSnapshot>(PlanSnapshot{
@@ -1444,7 +1447,7 @@ TEST(start_replay_keeps_the_plan_the_session_was_started_under) {
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
   StartOutcome first = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
 
   StartOutcome replayed = h.startFrom(h.clock.now, "ses_00000001", "rt_00000002");
 
@@ -1465,7 +1468,7 @@ TEST(start_replay_and_join_survive_a_routine_deleted_since_the_workout_began) {
   Harness h;
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   StartOutcome live = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  CHECK(h.service.deleteRoutine(uid(), rtId("rt_00000001")));
+  CHECK(h.program.deleteRoutine(uid(), rtId("rt_00000001")));
 
   StartOutcome replayed = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   StartOutcome joined = h.startFrom(h.clock.now + 5, "ses_00000002", "rt_00000001");
@@ -1490,12 +1493,12 @@ TEST(start_resolves_its_own_id_before_it_ever_looks_at_a_routine) {
   Harness h;
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
   h.startFrom(h.clock.now + 10, "ses_00000002", "rt_00000001");   // and this one stays open
-  CHECK(h.service.deleteRoutine(uid(), rtId("rt_00000001")));
+  CHECK(h.program.deleteRoutine(uid(), rtId("rt_00000001")));
 
   StartOutcome finishedReplay = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  StartOutcome willNotJoin = h.service.start(
+  StartOutcome willNotJoin = h.training.start(
       uid(), SessionStart{sid("ses_00000003"), h.clock.now + 20, false, rtId("rt_00000001")});
 
   CHECK(finishedReplay.error == StartError::none);
@@ -1510,10 +1513,10 @@ TEST(start_resolves_its_own_id_before_it_ever_looks_at_a_routine) {
 TEST(create_exercise_takes_the_equipments_default_step_and_joins_the_callers_catalog) {
   Harness h;
 
-  ExerciseInsertOutcome created = h.service.createExercise(
+  ExerciseInsertOutcome created = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat,
                            Equipment::machine, std::nullopt});
-  ExerciseInsertOutcome stated = h.service.createExercise(
+  ExerciseInsertOutcome stated = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"ex_22222222"}, "Landmine Press", Pattern::press,
                            Equipment::barbell, 1.25});
 
@@ -1522,9 +1525,9 @@ TEST(create_exercise_takes_the_equipments_default_step_and_joins_the_callers_cat
                                        Equipment::machine, 5.0, true));
   CHECK_EQ(stated.exercise->stepKg, 1.25);
   // Theirs alone: the catalog read serves the seeds plus the caller's own, never another's.
-  CHECK_EQ(h.service.catalog(uid()),
+  CHECK_EQ(h.catalog.catalog(uid()),
            (std::vector<Exercise>{benchPress(), *stated.exercise, backSquat(), *created.exercise}));
-  CHECK_EQ(h.service.catalog(uid("u2")), (std::vector<Exercise>{benchPress(), backSquat()}));
+  CHECK_EQ(h.catalog.catalog(uid("u2")), (std::vector<Exercise>{benchPress(), backSquat()}));
 }
 
 // A seed's slug is taken and stays taken; the caller's OWN id replays with the movement already
@@ -1532,19 +1535,19 @@ TEST(create_exercise_takes_the_equipments_default_step_and_joins_the_callers_cat
 // which is the identity fork §2.1 exists to make impossible.
 TEST(create_exercise_refuses_a_spent_id_and_replays_the_callers_own) {
   Harness h;
-  ExerciseInsertOutcome first = h.service.createExercise(
+  ExerciseInsertOutcome first = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat,
                            Equipment::barbell, std::nullopt});
   h.repo.db.seedCustom(uid("u2"), Exercise{ExerciseId{"ex_99999999"}, "Their Movement",
                                         Pattern::pull, Equipment::cable, 2.5, true});
 
-  ExerciseInsertOutcome seedSlug = h.service.createExercise(
+  ExerciseInsertOutcome seedSlug = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"bench-press"}, "My Bench", Pattern::press,
                            Equipment::barbell, std::nullopt});
-  ExerciseInsertOutcome theirs = h.service.createExercise(
+  ExerciseInsertOutcome theirs = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"ex_99999999"}, "My Movement", Pattern::pull,
                            Equipment::cable, std::nullopt});
-  ExerciseInsertOutcome replayed = h.service.createExercise(
+  ExerciseInsertOutcome replayed = h.catalog.createExercise(
       uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat (renamed)", Pattern::squat,
                            Equipment::barbell, std::nullopt});
 
@@ -1554,7 +1557,7 @@ TEST(create_exercise_refuses_a_spent_id_and_replays_the_callers_own) {
   CHECK_FALSE(theirs.exercise.has_value());   // never the stranger's row, not even to say it exists
   CHECK(replayed.error == ExerciseInsertError::none);
   CHECK_EQ(*replayed.exercise, *first.exercise);
-  CHECK_EQ(h.service.catalog(uid()),
+  CHECK_EQ(h.catalog.catalog(uid()),
            (std::vector<Exercise>{benchPress(), backSquat(), *first.exercise}));
 }
 
@@ -1562,18 +1565,18 @@ TEST(create_exercise_refuses_a_spent_id_and_replays_the_callers_own) {
 // it. Nothing about it is second-class except that only its owner can see it.
 TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
   Harness h;
-  h.service.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
+  h.catalog.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
                                                 Pattern::squat, Equipment::barbell, std::nullopt});
   RoutineWriteOutcome created = h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"ex_11111111"}, 3, 8, 60.0, 120}}));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  AppendOutcome landed = h.service.append(
+  AppendOutcome landed = h.training.append(
       uid(), sid("ses_00000001"),
       SetWrite{setId("set_00000001"), ExerciseId{"ex_11111111"}, 60.0, 8, SetKind::working,
                std::nullopt, "", h.clock.now + 1});
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 2);
 
-  LastTimeOutcome last = h.service.lastTime(uid(), ExerciseId{"ex_11111111"});
-  LastTimeOutcome theirs = h.service.lastTime(uid("u2"), ExerciseId{"ex_11111111"});
+  LastTimeOutcome last = h.training.lastTime(uid(), ExerciseId{"ex_11111111"});
+  LastTimeOutcome theirs = h.training.lastTime(uid("u2"), ExerciseId{"ex_11111111"});
 
   CHECK(created.error == RoutineWriteError::none);
   CHECK(landed.error == AppendError::none);
@@ -1591,7 +1594,7 @@ TEST(catalog_serves_seeds_plus_own_customs_ordered_by_pattern_then_name) {
   h.repo.db.seedCustom(uid("u2"), Exercise{ExerciseId{"zercher-squat"}, "Zercher Squat",
                                         Pattern::squat, Equipment::barbell, 2.5, true});
 
-  std::vector<Exercise> mineListed = h.service.catalog(uid());
+  std::vector<Exercise> mineListed = h.catalog.catalog(uid());
 
   CHECK_EQ(mineListed, (std::vector<Exercise>{benchPress(), mine, backSquat()}));
 }
@@ -1603,8 +1606,8 @@ TEST(review_of_a_missing_or_anothers_session_is_the_same_absence) {
   h.repo.db.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now,
                                     h.clock.now + 3'600'000});
 
-  CHECK_EQ(h.service.review(uid(), sid("ses_00000001")), std::optional<Review>());
-  CHECK_EQ(h.service.review(uid(), sid("ses_00000002")), std::optional<Review>());
+  CHECK_EQ(h.training.review(uid(), sid("ses_00000001")), std::optional<Review>());
+  CHECK_EQ(h.training.review(uid(), sid("ses_00000002")), std::optional<Review>());
 }
 
 // The load-bearing case, and it is the ordinary one: the review is always read AFTER the finish, so
@@ -1615,8 +1618,8 @@ TEST(review_reads_the_marks_of_earlier_sessions_and_never_the_one_it_is_reviewin
   h.trained("ses_00000001", h.clock.now - 2 * kWeek, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now - kWeek, 105, 5, 4);
 
-  std::optional<Review> result = h.service.review(uid(), sid("ses_00000002"));
-  std::optional<Review> again = h.service.review(uid(), sid("ses_00000002"));
+  std::optional<Review> result = h.training.review(uid(), sid("ses_00000002"));
+  std::optional<Review> again = h.training.review(uid(), sid("ses_00000002"));
 
   // The beaten mark is dated by the SESSION that set it — the day the record line prints beside the
   // number, and not the instant a device stamped on the set inside it (domain/Review.h).
@@ -1639,7 +1642,7 @@ TEST(review_never_takes_a_session_still_running_as_history) {
   h.stored("ses_00000002", h.clock.now - kWeek, h.clock.now - kWeek + 3'600'000, 100, 5, 4);
   h.stored("ses_00000003", h.clock.now - 3'600'000, h.clock.now, 105, 5, 4);
 
-  std::optional<Review> result = h.service.review(uid(), sid("ses_00000003"));
+  std::optional<Review> result = h.training.review(uid(), sid("ses_00000003"));
 
   REQUIRE(result.has_value());
   REQUIRE(result->record.has_value());
@@ -1653,7 +1656,7 @@ TEST(review_stands_against_the_last_session_of_the_same_routine) {
   h.trained("ses_00000002", h.clock.now - kWeek, 100, 5, 4);   // the same movement, no day behind it
   h.trained("ses_00000003", h.clock.now - 3'600'000, 105, 5, 4, "rt_00000001");
 
-  std::optional<Review> result = h.service.review(uid(), sid("ses_00000003"));
+  std::optional<Review> result = h.training.review(uid(), sid("ses_00000003"));
 
   const std::vector<AgainstMovement> movements{
       AgainstMovement{ExerciseId{"back-squat"}, TopSet{105, 5, 4}, TopSet{95, 5, 4},
@@ -1673,9 +1676,9 @@ TEST(review_stands_against_the_last_session_of_the_same_routine) {
 TEST(discard_refuses_a_session_that_is_still_running) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
 
-  DiscardOutcome refused = h.service.discard(uid(), sid());
+  DiscardOutcome refused = h.training.discard(uid(), sid());
 
   CHECK(refused == DiscardOutcome::open);
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
@@ -1686,8 +1689,8 @@ TEST(discard_takes_the_session_and_its_sets_and_asking_twice_is_the_same_fact) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - 3'600'000, 100, 5, 4);
 
-  DiscardOutcome first = h.service.discard(uid(), sid("ses_00000001"));
-  DiscardOutcome again = h.service.discard(uid(), sid("ses_00000001"));
+  DiscardOutcome first = h.training.discard(uid(), sid("ses_00000001"));
+  DiscardOutcome again = h.training.discard(uid(), sid("ses_00000001"));
 
   CHECK(first == DiscardOutcome::done);
   CHECK(again == DiscardOutcome::notFound);
@@ -1700,7 +1703,7 @@ TEST(discard_never_reaches_another_accounts_session) {
   h.repo.db.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now,
                                     h.clock.now + 3'600'000});
 
-  DiscardOutcome theirs = h.service.discard(uid(), sid("ses_00000002"));
+  DiscardOutcome theirs = h.training.discard(uid(), sid("ses_00000002"));
 
   CHECK(theirs == DiscardOutcome::notFound);   // absent and forbidden are one answer
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
@@ -1713,11 +1716,11 @@ TEST(statistics_draws_a_point_per_finished_session_and_leaves_the_open_one_out) 
   h.trained("ses_00000001", h.clock.now - 2 * kWeek, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now - kWeek, 105, 5, 4);
   h.startAt(h.clock.now, "ses_00000003");   // today's workout, still being logged into
-  h.service.append(uid(), sid("ses_00000003"),
+  h.training.append(uid(), sid("ses_00000003"),
                    SetWrite{setId("set_99999999"), ExerciseId{"back-squat"}, 110, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + 60'000});
 
-  Statistics answer = h.service.statistics(uid());
+  Statistics answer = h.training.statistics(uid());
 
   REQUIRE_EQ(answer.movements.size(), static_cast<std::size_t>(1));
   REQUIRE_EQ(answer.movements[0].points.size(), static_cast<std::size_t>(2));
@@ -1734,9 +1737,9 @@ TEST(statistics_settles_a_session_the_four_hour_rule_already_ended) {
   Harness h;
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.startAt(began, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
 
-  Statistics answer = h.service.statistics(uid());
+  Statistics answer = h.training.statistics(uid());
 
   REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>(began + 60'000));
@@ -1751,7 +1754,7 @@ TEST(statistics_never_reaches_another_accounts_log) {
   h.repo.db.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"), ExerciseId{"back-squat"}, 1,
                             200, 5, SetKind::working, std::nullopt, "", h.clock.now - kWeek});
 
-  Statistics answer = h.service.statistics(uid());
+  Statistics answer = h.training.statistics(uid());
 
   CHECK_EQ(answer.movements.size(), static_cast<std::size_t>(0));
   CHECK_EQ(answer.weeks.size(), static_cast<std::size_t>(0));
@@ -1763,11 +1766,11 @@ TEST(export_carries_every_set_the_account_holds_including_the_open_session) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 2);
   h.startAt(h.clock.now, "ses_00000002");
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    SetWrite{setId("set_99999999"), ExerciseId{"bench-press"}, 82.5, 8,
                             SetKind::warmup, 8.5, "felt light", h.clock.now + 60'000});
 
-  std::vector<ExportedSet> rows = h.service.exportedSets(uid());
+  std::vector<ExportedSet> rows = h.training.exportedSets(uid());
 
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(3));
   CHECK_EQ(rows[0].sessionId, "ses_00000001");
@@ -1791,9 +1794,9 @@ TEST(export_settles_nothing_and_leaves_an_abandoned_session_open) {
   Harness h;
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.startAt(began, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
 
-  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(1));
 
   CHECK_FALSE(h.repo.db.sessions[0].finishedAtMs);
 }
@@ -1804,7 +1807,7 @@ TEST(export_never_reaches_another_accounts_sets) {
   h.repo.db.sets.push_back(Set{setId("set_00000002"), sid("ses_00000002"), ExerciseId{"back-squat"}, 1,
                             200, 5, SetKind::working, std::nullopt, "", h.clock.now});
 
-  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(0));
+  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(0));
 }
 
 // ---- the coach share: one workout, expiring, revocable -------------------------------------
@@ -1813,8 +1816,8 @@ TEST(share_is_idempotent_on_the_session) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
 
-  std::optional<SessionShare> first = h.service.share(uid(), sid("ses_00000001"));
-  std::optional<SessionShare> again = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> first = h.training.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> again = h.training.share(uid(), sid("ses_00000001"));
 
   REQUIRE(first);
   REQUIRE(again);
@@ -1827,8 +1830,8 @@ TEST(share_of_an_absent_or_another_accounts_session_is_one_answer) {
   Harness h;
   h.repo.db.sessions.push_back(Session{sid("ses_00000002"), uid("u2"), h.clock.now, h.clock.now + 1});
 
-  CHECK_FALSE(h.service.share(uid(), sid("ses_00000009")));
-  CHECK_FALSE(h.service.share(uid(), sid("ses_00000002")));
+  CHECK_FALSE(h.training.share(uid(), sid("ses_00000009")));
+  CHECK_FALSE(h.training.share(uid(), sid("ses_00000002")));
   CHECK(h.repo.db.shares.empty());
 }
 
@@ -1837,25 +1840,25 @@ TEST(share_of_an_absent_or_another_accounts_session_is_one_answer) {
 TEST(share_that_has_already_expired_is_replaced_rather_than_returned) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
-  std::optional<SessionShare> first = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> first = h.training.share(uid(), sid("ses_00000001"));
   REQUIRE(first);
   h.clock.now += kShareLifetimeMs + 1;
 
-  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> minted = h.training.share(uid(), sid("ses_00000001"));
 
   REQUIRE(minted);
   CHECK(minted->token != first->token);
   CHECK_EQ(h.repo.db.shares.size(), static_cast<std::size_t>(1));
-  CHECK_FALSE(h.service.shared(first->token));
+  CHECK_FALSE(h.training.shared(first->token));
 }
 
 TEST(shared_session_resolves_a_live_token_and_names_no_account) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
-  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> minted = h.training.share(uid(), sid("ses_00000001"));
   REQUIRE(minted);
 
-  std::optional<SharedSession> read = h.service.shared(minted->token);
+  std::optional<SharedSession> read = h.training.shared(minted->token);
 
   REQUIRE(read);
   CHECK_EQ(read->startedAtMs, h.clock.now - kWeek);
@@ -1870,15 +1873,15 @@ TEST(shared_session_resolves_a_live_token_and_names_no_account) {
 TEST(shared_session_of_a_revoked_or_unknown_token_is_the_same_nothing) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
-  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> minted = h.training.share(uid(), sid("ses_00000001"));
   REQUIRE(minted);
-  CHECK(h.service.shared(minted->token));
+  CHECK(h.training.shared(minted->token));
 
-  CHECK(h.service.revokeShare(uid(), sid("ses_00000001")));
+  CHECK(h.training.revokeShare(uid(), sid("ses_00000001")));
 
-  CHECK_FALSE(h.service.shared(minted->token));
-  CHECK_FALSE(h.service.shared("a token nobody ever minted"));
-  CHECK_FALSE(h.service.revokeShare(uid(), sid("ses_00000001")));   // nothing left to revoke
+  CHECK_FALSE(h.training.shared(minted->token));
+  CHECK_FALSE(h.training.shared("a token nobody ever minted"));
+  CHECK_FALSE(h.training.revokeShare(uid(), sid("ses_00000001")));   // nothing left to revoke
   CHECK(h.repo.db.shares.empty());
 }
 
@@ -1886,12 +1889,12 @@ TEST(shared_session_of_a_revoked_or_unknown_token_is_the_same_nothing) {
 TEST(shared_session_stops_answering_the_moment_the_share_expires) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - kWeek, 100, 5, 4);
-  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> minted = h.training.share(uid(), sid("ses_00000001"));
   REQUIRE(minted);
 
   h.clock.now = minted->expiresAtMs;
 
-  CHECK_FALSE(h.service.shared(minted->token));
+  CHECK_FALSE(h.training.shared(minted->token));
 }
 
 // A stranger holding a link must never be able to write to the owner's log — not even the
@@ -1900,10 +1903,10 @@ TEST(shared_session_never_settles_the_owners_open_session) {
   Harness h;
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.stored("ses_00000001", began, std::nullopt, 100, 5, 2);
-  std::optional<SessionShare> minted = h.service.share(uid(), sid("ses_00000001"));
+  std::optional<SessionShare> minted = h.training.share(uid(), sid("ses_00000001"));
   REQUIRE(minted);
 
-  CHECK(h.service.shared(minted->token));
+  CHECK(h.training.shared(minted->token));
 
   CHECK_FALSE(h.repo.db.sessions[0].finishedAtMs);
 }
@@ -1914,10 +1917,10 @@ TEST(revoke_never_reaches_another_accounts_share) {
   h.repo.db.shares.push_back(
       SessionShare{sid("ses_00000002"), uid("u2"), "theirs", h.clock.now + kShareLifetimeMs});
 
-  CHECK_FALSE(h.service.revokeShare(uid(), sid("ses_00000002")));
+  CHECK_FALSE(h.training.revokeShare(uid(), sid("ses_00000002")));
 
   CHECK_EQ(h.repo.db.shares.size(), static_cast<std::size_t>(1));
-  CHECK(h.service.shared("theirs"));   // and it is still live for the account that minted it
+  CHECK(h.training.shared("theirs"));   // and it is still live for the account that minted it
 }
 
 // ---- the log's gold dot, the rename, and a movement's record ---------------------------------
@@ -1971,7 +1974,7 @@ TEST(a_still_open_workout_on_the_page_never_stands_under_the_row_above_it) {
   h.stored("ses_00000003", h.clock.now + 2 * kWeek, h.clock.now + 2 * kWeek + 3'600'000, 105, 5, 4);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 3 * kWeek);
-  std::optional<Review> finish = h.service.review(uid(), sid("ses_00000003"));
+  std::optional<Review> finish = h.training.review(uid(), sid("ses_00000003"));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
   REQUIRE(finish.has_value());
@@ -2004,7 +2007,7 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   Harness h;
   h.trained("ses_00000001", h.clock.now, 100, 5, 4);
 
-  std::optional<Exercise> renamed = h.service.renameExercise(uid(), ExerciseId{"back-squat"},
+  std::optional<Exercise> renamed = h.catalog.renameExercise(uid(), ExerciseId{"back-squat"},
                                                              "Low-bar Squat");
 
   REQUIRE(renamed.has_value());
@@ -2012,8 +2015,8 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   CHECK_EQ(renamed->name, std::string("Low-bar Squat"));
   CHECK_EQ(renamed->custom, false);
   // What the catalog says to each account, which is the whole of the hazard.
-  CHECK_EQ(h.service.catalog(uid())[1].name, std::string("Low-bar Squat"));
-  CHECK_EQ(h.service.catalog(uid("u2"))[1].name, std::string("Back Squat"));
+  CHECK_EQ(h.catalog.catalog(uid())[1].name, std::string("Low-bar Squat"));
+  CHECK_EQ(h.catalog.catalog(uid("u2"))[1].name, std::string("Back Squat"));
   // And the history is whole: the log row still names the movement, under its new name.
   std::vector<LogRow> listed = h.logBefore(h.clock.now + kWeek);
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
@@ -2024,10 +2027,10 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
 // override that says nothing is not an override.
 TEST(renaming_a_seed_back_to_its_own_name_clears_the_line) {
   Harness h;
-  h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
+  h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
 
   std::optional<Exercise> restored =
-      h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Back Squat");
+      h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, "Back Squat");
 
   REQUIRE(restored.has_value());
   CHECK_EQ(restored->name, std::string("Back Squat"));
@@ -2037,11 +2040,11 @@ TEST(renaming_a_seed_back_to_its_own_name_clears_the_line) {
 // A movement the caller created is their own row and renames in place — no line, nothing global.
 TEST(renaming_a_movement_of_your_own_edits_its_row) {
   Harness h;
-  h.service.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_00000001"}, "Zercher Squat",
+  h.catalog.createExercise(uid(), ExerciseWrite{ExerciseId{"ex_00000001"}, "Zercher Squat",
                                                 Pattern::squat, Equipment::barbell, std::nullopt});
 
   std::optional<Exercise> renamed =
-      h.service.renameExercise(uid(), ExerciseId{"ex_00000001"}, "Zercher");
+      h.catalog.renameExercise(uid(), ExerciseId{"ex_00000001"}, "Zercher");
 
   REQUIRE(renamed.has_value());
   CHECK_EQ(renamed->name, std::string("Zercher"));
@@ -2056,11 +2059,11 @@ TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_it_cannot_ho
   h.repo.db.seedCustom(uid("u2"), Exercise{ExerciseId{"ex_00000002"}, "Theirs", Pattern::squat,
                                         Equipment::barbell, 2.5, true});
 
-  CHECK_EQ(h.service.renameExercise(uid(), ExerciseId{"ex_00000002"}, "Mine"), std::nullopt);
-  CHECK_EQ(h.service.renameExercise(uid(), ExerciseId{"no-such"}, "Mine"), std::nullopt);
+  CHECK_EQ(h.catalog.renameExercise(uid(), ExerciseId{"ex_00000002"}, "Mine"), std::nullopt);
+  CHECK_EQ(h.catalog.renameExercise(uid(), ExerciseId{"no-such"}, "Mine"), std::nullopt);
   bool refused = false;
   try {
-    h.service.renameExercise(uid(), ExerciseId{"back-squat"}, std::string(kMaxNameLength + 1, 'x'));
+    h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, std::string(kMaxNameLength + 1, 'x'));
   } catch (const InvalidTraining&) {
     refused = true;
   }
@@ -2069,7 +2072,7 @@ TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_it_cannot_ho
   // the movement then had no name to find it by anywhere it was drawn.
   bool blankRefused = false;
   try {
-    h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "   ");
+    h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, "   ");
   } catch (const InvalidTraining&) {
     blankRefused = true;
   }
@@ -2084,9 +2087,9 @@ TEST(a_movements_record_answers_the_whole_page_from_one_read) {
   h.create(h.pushAWrite({RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}));
   h.trained("ses_00000001", h.clock.now, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now + kWeek, 105, 5, 4);
-  h.service.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
+  h.catalog.renameExercise(uid(), ExerciseId{"back-squat"}, "Low-bar Squat");
 
-  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"back-squat"});
+  std::optional<MovementRecord> page = h.training.movementRecord(uid(), ExerciseId{"back-squat"});
 
   REQUIRE(page.has_value());
   CHECK_EQ(page->exercise.name, std::string("Low-bar Squat"));
@@ -2107,14 +2110,14 @@ TEST(a_movements_record_answers_the_whole_page_from_one_read) {
 TEST(a_record_of_a_movement_never_lifted_is_empty_and_of_an_unknown_one_is_absent) {
   Harness h;
 
-  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"bench-press"});
+  std::optional<MovementRecord> page = h.training.movementRecord(uid(), ExerciseId{"bench-press"});
 
   REQUIRE(page.has_value());
   CHECK_EQ(page->sessions, 0);
   CHECK(page->routines.empty());
   CHECK_EQ(page->bestE1rm, std::nullopt);
   CHECK(page->series.empty());
-  CHECK_EQ(h.service.movementRecord(uid(), ExerciseId{"no-such"}), std::nullopt);
+  CHECK_EQ(h.training.movementRecord(uid(), ExerciseId{"no-such"}), std::nullopt);
 }
 
 // ---- the fix: the log moves, the routine does not -------------------------------------------
@@ -2122,12 +2125,12 @@ TEST(a_record_of_a_movement_never_lifted_is_empty_and_of_an_unknown_one_is_absen
 TEST(a_fix_rewrites_the_stored_set_and_keeps_the_version_it_replaced) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   SetFix fix;
   fix.weightKg = 80.0;
   fix.reps = 5;
 
-  std::optional<Set> fixed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  std::optional<Set> fixed = h.training.fixSet(uid(), sid(), setId("set_00000001"), fix);
 
   REQUIRE(fixed.has_value());
   CHECK_EQ(*fixed, Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 5,
@@ -2146,12 +2149,12 @@ TEST(a_fix_rewrites_the_stored_set_and_keeps_the_version_it_replaced) {
 TEST(a_replayed_fix_answers_the_same_row) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   SetFix fix;
   fix.weightKg = 80.0;
 
-  std::optional<Set> first = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
-  std::optional<Set> replayed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  std::optional<Set> first = h.training.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  std::optional<Set> replayed = h.training.fixSet(uid(), sid(), setId("set_00000001"), fix);
 
   CHECK_EQ(first, replayed);
   CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
@@ -2162,8 +2165,8 @@ TEST(a_replayed_fix_answers_the_same_row) {
 TEST(a_fix_reaches_no_set_outside_the_workout_the_path_names) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.service.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 3'600'000);
+  h.training.append(uid(), sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 3'600'000);
   h.startAt(h.clock.now + 4'000'000, "ses_00000002");
   h.repo.db.sessions.push_back(Session{sid("ses_00000009"), uid("u2"), h.clock.now});
   h.repo.db.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
@@ -2171,9 +2174,9 @@ TEST(a_fix_reaches_no_set_outside_the_workout_the_path_names) {
   SetFix fix;
   fix.weightKg = 60.0;
 
-  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000002"), setId("set_00000001"), fix), std::nullopt);
-  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000001"), setId("set_99999999"), fix), std::nullopt);
-  CHECK_EQ(h.service.fixSet(uid(), sid("ses_00000009"), setId("set_00000009"), fix), std::nullopt);
+  CHECK_EQ(h.training.fixSet(uid(), sid("ses_00000002"), setId("set_00000001"), fix), std::nullopt);
+  CHECK_EQ(h.training.fixSet(uid(), sid("ses_00000001"), setId("set_99999999"), fix), std::nullopt);
+  CHECK_EQ(h.training.fixSet(uid(), sid("ses_00000009"), setId("set_00000009"), fix), std::nullopt);
   CHECK_EQ(h.repo.db.sets[0].weightKg, 82.5);
   CHECK_EQ(h.repo.db.sets[1].weightKg, 100.0);
   CHECK(h.repo.db.kept.empty());
@@ -2184,12 +2187,12 @@ TEST(a_fix_reaches_no_set_outside_the_workout_the_path_names) {
 TEST(a_finished_workout_is_still_correctable) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.service.finish(uid(), sid(), h.clock.now + 3'600'000);
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.finish(uid(), sid(), h.clock.now + 3'600'000);
   SetFix fix;
   fix.reps = 5;
 
-  std::optional<Set> fixed = h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  std::optional<Set> fixed = h.training.fixSet(uid(), sid(), setId("set_00000001"), fix);
 
   REQUIRE(fixed.has_value());
   CHECK_EQ(fixed->reps, 5);
@@ -2201,10 +2204,10 @@ TEST(a_finished_workout_is_still_correctable) {
 TEST(a_deleted_set_leaves_the_log_and_is_kept_marked_deleted) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.service.append(uid(), sid(), h.bench("set_00000002", 85.0, h.clock.now + 120'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000002", 85.0, h.clock.now + 120'000));
 
-  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
+  h.training.deleteSet(uid(), sid(), setId("set_00000001"));
 
   REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sets[0].id, setId("set_00000002"));
@@ -2221,14 +2224,14 @@ TEST(a_deleted_set_leaves_the_log_and_is_kept_marked_deleted) {
 TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   h.repo.db.sessions.push_back(Session{sid("ses_00000009"), uid("u2"), h.clock.now});
   h.repo.db.sets.push_back(Set{setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
                             1, 100.0, 3, SetKind::working, std::nullopt, "", h.clock.now});
 
-  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
-  h.service.deleteSet(uid(), sid(), setId("set_00000001"));
-  h.service.deleteSet(uid(), sid("ses_00000009"), setId("set_00000009"));
+  h.training.deleteSet(uid(), sid(), setId("set_00000001"));
+  h.training.deleteSet(uid(), sid(), setId("set_00000001"));
+  h.training.deleteSet(uid(), sid("ses_00000009"), setId("set_00000009"));
 
   CHECK_EQ(h.repo.db.sets, std::vector<Set>{Set(setId("set_00000009"), sid("ses_00000009"),
                                              ExerciseId{"bench-press"}, 1, 100.0, 3,
@@ -2245,12 +2248,12 @@ TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
 TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
-  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.training.deleteSet(uid(), sid(), setId("set_00000002"));
 
   AppendOutcome replayed =
-      h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+      h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
 
   CHECK_EQ(replayed.set, std::optional<Set>());
   CHECK(replayed.error == AppendError::deleted);
@@ -2259,8 +2262,8 @@ TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
   CHECK_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
   // And it stays refused after the workout ends, under its own word — `session-finished` would tell
   // the queue this set never reached the log, and it reached it and was taken out by hand.
-  h.service.finish(uid(), sid(), h.clock.now + 300'000);
-  CHECK(h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000)).error ==
+  h.training.finish(uid(), sid(), h.clock.now + 300'000);
+  CHECK(h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000)).error ==
         AppendError::deleted);
   CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
 }
@@ -2271,10 +2274,10 @@ TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
 TEST(a_fix_that_changes_nothing_answers_the_row_and_keeps_no_version_of_it) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
 
   for (int retry = 0; retry < 4; ++retry) {
-    std::optional<Set> answered = h.service.fixSet(uid(), sid(), setId("set_00000001"), SetFix{});
+    std::optional<Set> answered = h.training.fixSet(uid(), sid(), setId("set_00000001"), SetFix{});
     REQUIRE(answered.has_value());
     CHECK_EQ(answered->weightKg, 82.5);
   }
@@ -2282,7 +2285,7 @@ TEST(a_fix_that_changes_nothing_answers_the_row_and_keeps_no_version_of_it) {
 
   SetFix moves;
   moves.weightKg = 90.0;
-  h.service.fixSet(uid(), sid(), setId("set_00000001"), moves);
+  h.training.fixSet(uid(), sid(), setId("set_00000001"), moves);
   REQUIRE_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.kept[0].set.weightKg, 82.5);
   CHECK_FALSE(h.repo.db.kept[0].deleted);
@@ -2293,12 +2296,12 @@ TEST(a_fix_that_changes_nothing_answers_the_row_and_keeps_no_version_of_it) {
 TEST(a_delete_leaves_the_numbers_alone_and_the_next_set_never_reuses_one) {
   Harness h;
   h.startAt(h.clock.now);
-  h.service.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
-  h.service.append(uid(), sid(), h.bench("set_00000003", 85.0, h.clock.now + 180'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.training.append(uid(), sid(), h.bench("set_00000003", 85.0, h.clock.now + 180'000));
 
-  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
-  AppendOutcome next = h.service.append(uid(), sid(), h.bench("set_00000004", 87.5,
+  h.training.deleteSet(uid(), sid(), setId("set_00000002"));
+  AppendOutcome next = h.training.append(uid(), sid(), h.bench("set_00000004", 87.5,
                                                               h.clock.now + 240'000));
 
   REQUIRE(next.set.has_value());
@@ -2315,8 +2318,8 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
   Harness h;
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.service.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.service.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.training.append(uid(), sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.training.append(uid(), sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
   const std::optional<PlanSnapshot> frozen = h.repo.db.sessions[0].plan;
   const std::vector<RoutineEntry> planned = h.repo.db.routineRows[0].entries;
   REQUIRE(frozen.has_value());
@@ -2324,8 +2327,8 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
   SetFix fix;
   fix.weightKg = 60.0;
   fix.reps = 3;
-  h.service.fixSet(uid(), sid(), setId("set_00000001"), fix);
-  h.service.deleteSet(uid(), sid(), setId("set_00000002"));
+  h.training.fixSet(uid(), sid(), setId("set_00000001"), fix);
+  h.training.deleteSet(uid(), sid(), setId("set_00000002"));
 
   CHECK_EQ(h.repo.db.sessions[0].plan, frozen);
   CHECK_EQ(*h.repo.db.sessions[0].plan,
@@ -2343,29 +2346,29 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   const std::uint64_t week0 = h.clock.now;
   h.trained("ses_00000001", week0, 100, 5, 4);
   h.clock.now = week0 + kWeek;  // a week on, the second squat day starts under a clock that agrees
-  h.service.start(uid(), SessionStart{sid("ses_00000002"), h.clock.now});
+  h.training.start(uid(), SessionStart{sid("ses_00000002"), h.clock.now});
   h.clock.now = week0;
   for (int number = 1; number <= 3; ++number)
-    h.service.append(uid(), sid("ses_00000002"),
+    h.training.append(uid(), sid("ses_00000002"),
                      SetWrite{setId("set_0000002" + std::to_string(number)),
                               ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt, "",
                               h.clock.now + kWeek + number * 60'000});
-  h.service.append(uid(), sid("ses_00000002"),
+  h.training.append(uid(), sid("ses_00000002"),
                    SetWrite{setId("set_00000024"), ExerciseId{"back-squat"}, 120, 5,
                             SetKind::working, std::nullopt, "", h.clock.now + kWeek + 240'000});
-  h.service.finish(uid(), sid("ses_00000002"), h.clock.now + kWeek + 3'600'000);
-  REQUIRE(h.service.review(uid(), sid("ses_00000002"))->record.has_value());   // 120 kg, the PR
+  h.training.finish(uid(), sid("ses_00000002"), h.clock.now + kWeek + 3'600'000);
+  REQUIRE(h.training.review(uid(), sid("ses_00000002"))->record.has_value());   // 120 kg, the PR
   SetFix fix;
   fix.weightKg = 90.0;
 
   std::optional<Set> fixed =
-      h.service.fixSet(uid(), sid("ses_00000002"), setId("set_00000024"), fix);
+      h.training.fixSet(uid(), sid("ses_00000002"), setId("set_00000024"), fix);
 
   REQUIRE(fixed.has_value());
   // the session itself
-  CHECK_EQ(h.service.detail(uid(), sid("ses_00000002"))->sets[3].weightKg, 90.0);
+  CHECK_EQ(h.training.detail(uid(), sid("ses_00000002"))->sets[3].weightKg, 90.0);
   // the finish readout — the loud line is gone with the load that earned it
-  std::optional<Review> review = h.service.review(uid(), sid("ses_00000002"));
+  std::optional<Review> review = h.training.review(uid(), sid("ses_00000002"));
   REQUIRE(review.has_value());
   CHECK_EQ(review->record, std::nullopt);
   CHECK_EQ(review->stats.topE1rm, e1rm(100, 5));
@@ -2378,21 +2381,21 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   CHECK_EQ(rows[0].topE1rm, e1rm(100, 5));
   CHECK_FALSE(rows[0].record);
   // the record page
-  std::optional<MovementRecord> page = h.service.movementRecord(uid(), ExerciseId{"back-squat"});
+  std::optional<MovementRecord> page = h.training.movementRecord(uid(), ExerciseId{"back-squat"});
   REQUIRE(page.has_value());
   CHECK_EQ(page->heaviest, std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
   CHECK_EQ(page->bestE1rm, std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
   // the statistics engine
-  Statistics stats = h.service.statistics(uid());
+  Statistics stats = h.training.statistics(uid());
   REQUIRE_EQ(stats.movements.size(), static_cast<std::size_t>(1));
   CHECK_EQ(stats.movements[0].heaviest,
            std::optional<Best>(Best{100, 5, h.clock.now, e1rm(100, 5)}));
   // the prefill the logger puts on screen before a lifter touches anything
-  LastTimeOutcome prefill = h.service.lastTime(uid(), ExerciseId{"back-squat"});
+  LastTimeOutcome prefill = h.training.lastTime(uid(), ExerciseId{"back-squat"});
   REQUIRE(prefill.lastTime.has_value());
   CHECK_EQ(prefill.lastTime->sets[3].weightKg, 90.0);
   // and the file a lifter walks away with
-  std::vector<ExportedSet> exported = h.service.exportedSets(uid());
+  std::vector<ExportedSet> exported = h.training.exportedSets(uid());
   REQUIRE_EQ(exported.size(), static_cast<std::size_t>(8));
   CHECK_EQ(exported[7].weightKg, std::string("90.00"));
 }
@@ -2403,17 +2406,17 @@ TEST(a_deleted_set_is_gone_from_the_log_the_review_and_the_export) {
   Harness h;
   h.trained("ses_00000001", h.clock.now, 100, 5, 3);
 
-  h.service.deleteSet(uid(), sid("ses_00000001"), setId("set_000000012"));
+  h.training.deleteSet(uid(), sid("ses_00000001"), setId("set_000000012"));
 
   std::vector<LogRow> rows = h.logBefore(h.clock.now + kWeek);
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
   CHECK_EQ(rows[0].summary.setCount, 2);
   CHECK_EQ(rows[0].summary.workingSetCount, 2);
   CHECK_EQ(rows[0].summary.tonnageKg, 1000.0);
-  CHECK_EQ(h.service.review(uid(), sid("ses_00000001"))->stats.workingSets, 2);
-  CHECK_EQ(h.service.detail(uid(), sid("ses_00000001"))->sets.size(),
+  CHECK_EQ(h.training.review(uid(), sid("ses_00000001"))->stats.workingSets, 2);
+  CHECK_EQ(h.training.detail(uid(), sid("ses_00000001"))->sets.size(),
            static_cast<std::size_t>(2));
-  CHECK_EQ(h.service.exportedSets(uid()).size(), static_cast<std::size_t>(2));
+  CHECK_EQ(h.training.exportedSets(uid()).size(), static_cast<std::size_t>(2));
 }
 
 // ---- the proposal ledger ----------------------------------------------------------------------
@@ -2440,11 +2443,11 @@ RoutineEntry benchAt(double weightKg, int reps = 5, int position = 1) {
 TEST(a_routines_history_holds_its_proposals_and_its_creation_in_one_list) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.clock.now += 1'000;
-  h.service.propose(uid(), proposalFor({benchAt(90.0, 3)}, "prop_00000002"));
+  h.program.propose(uid(), proposalFor({benchAt(90.0, 3)}, "prop_00000002"));
 
-  const std::vector<RoutineEvent> history = h.service.routineHistory(uid(), rtId());
+  const std::vector<RoutineEvent> history = h.program.routineHistory(uid(), rtId());
 
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(3));
   CHECK(history[0].kind == RoutineEventKind::proposal);
@@ -2464,7 +2467,7 @@ TEST(a_proposal_is_minted_against_the_routine_and_changes_nothing) {
   h.create(h.pushAWrite());
   const std::vector<Routine> before = h.repo.db.routineRows;
 
-  ProposalMintOutcome minted = h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  ProposalMintOutcome minted = h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
 
   REQUIRE(minted.proposal.has_value());
   CHECK(minted.error == ProposalMintError::none);
@@ -2491,7 +2494,7 @@ TEST(a_proposal_that_could_not_be_stored_as_a_plan_is_refused_before_it_is_minte
 
   bool refused = false;
   try {
-    h.service.propose(uid(), proposalFor({}));   // a routine with no movement is not a plan
+    h.program.propose(uid(), proposalFor({}));   // a routine with no movement is not a plan
   } catch (const InvalidTraining&) {
     refused = true;
   }
@@ -2504,7 +2507,7 @@ TEST(a_proposal_naming_a_routine_this_account_cannot_read_is_the_one_absent_fact
   Harness h;
   h.repo.db.routineRows.push_back(Routine{rtId(), uid("u2"), "Their plan", 0, {benchEntry()}});
 
-  ProposalMintOutcome minted = h.service.propose(uid(), proposalFor({benchAt(87.5)}));
+  ProposalMintOutcome minted = h.program.propose(uid(), proposalFor({benchAt(87.5)}));
 
   CHECK(minted.error == ProposalMintError::unknownRoutine);
   CHECK_EQ(minted.proposal, std::optional<RoutineProposal>());
@@ -2515,12 +2518,12 @@ TEST(a_proposal_naming_a_routine_this_account_cannot_read_is_the_one_absent_fact
 TEST(applying_a_proposal_writes_the_whole_document_and_dates_the_record) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3), RoutineEntry{2, ExerciseId{"back-squat"},
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3), RoutineEntry{2, ExerciseId{"back-squat"},
                                                                       3, 8, 100.0, 180}},
                                        "prop_00000001", "Push A — heavy"));
   h.clock.now += 60'000;
 
-  ProposalSettleOutcome tapped = h.service.apply(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome tapped = h.program.apply(uid(), ProposalId{"prop_00000001"});
 
   REQUIRE(tapped.proposal.has_value());
   REQUIRE(tapped.routine.has_value());
@@ -2533,9 +2536,9 @@ TEST(applying_a_proposal_writes_the_whole_document_and_dates_the_record) {
   CHECK_EQ(tapped.routine->entries[0].targetWeightKg, std::optional<double>(87.5));
   CHECK_EQ(tapped.routine->entries[1].exercise, ExerciseId{"back-squat"});
   // It stays in the routine's history rather than disappearing.
-  CHECK_EQ(h.service.proposals(uid(), ProposalQuery{rtId(), false}).size(),
+  CHECK_EQ(h.program.proposals(uid(), ProposalQuery{rtId(), false}).size(),
            static_cast<std::size_t>(1));
-  CHECK(h.service.proposals(uid(), ProposalQuery{rtId(), true}).empty());
+  CHECK(h.program.proposals(uid(), ProposalQuery{rtId(), true}).empty());
 }
 
 // THE LINE THIS WHOLE WAVE TURNS ON. The mid-session "Save 87.5 to Push A" is a full
@@ -2544,20 +2547,20 @@ TEST(applying_a_proposal_writes_the_whole_document_and_dates_the_record) {
 TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.clock.now += 60'000;
 
-  h.service.replaceRoutine(uid(), rtId(),
+  h.program.replaceRoutine(uid(), rtId(),
                            h.pushAWrite({benchAt(85.0)}, "rt_00000001", "Push A"));
-  ProposalSettleOutcome tapped = h.service.apply(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome tapped = h.program.apply(uid(), ProposalId{"prop_00000001"});
 
   CHECK(tapped.error == ProposalSettleError::superseded);
   CHECK_EQ(tapped.routine, std::optional<Routine>());
   // The lifter's own numbers stand, untouched by the diff that was waiting.
-  CHECK_EQ(h.service.routine(uid(), rtId())->entries[0].targetWeightKg, std::optional<double>(85.0));
-  CHECK_EQ(h.service.routine(uid(), rtId())->revision, 2);
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].targetWeightKg, std::optional<double>(85.0));
+  CHECK_EQ(h.program.routine(uid(), rtId())->revision, 2);
   // And the superseded proposal is a dated record on the routine rather than a row that vanished.
-  const std::vector<ProposalHead> history = h.service.proposals(uid(), ProposalQuery{rtId(), false});
+  const std::vector<ProposalHead> history = h.program.proposals(uid(), ProposalQuery{rtId(), false});
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history[0].state, ProposalState::superseded);
   CHECK_EQ(history[0].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
@@ -2571,21 +2574,21 @@ TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it
 TEST(a_put_that_changes_neither_the_document_nor_the_name_leaves_a_pending_proposal_standing) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   h.clock.now += 60'000;
 
-  h.service.replaceRoutine(uid(), rtId(), h.pushAWrite());                              // identical
-  h.service.replaceRoutine(uid(), rtId(), RoutineWrite{rtId(), "Push A", 3, {benchEntry()}});
+  h.program.replaceRoutine(uid(), rtId(), h.pushAWrite());                              // identical
+  h.program.replaceRoutine(uid(), rtId(), RoutineWrite{rtId(), "Push A", 3, {benchEntry()}});
 
-  CHECK_EQ(h.service.routine(uid(), rtId())->revision, 1);
-  CHECK_EQ(h.service.routine(uid(), rtId())->position, 3);
-  const std::vector<ProposalHead> waiting = h.service.proposals(uid(), ProposalQuery{rtId(), true});
+  CHECK_EQ(h.program.routine(uid(), rtId())->revision, 1);
+  CHECK_EQ(h.program.routine(uid(), rtId())->position, 3);
+  const std::vector<ProposalHead> waiting = h.program.proposals(uid(), ProposalQuery{rtId(), true});
   REQUIRE_EQ(waiting.size(), static_cast<std::size_t>(1));
   CHECK_EQ(waiting[0].state, ProposalState::pending);
   // And the tap it was minted for still lands, because nothing about its base moved.
-  CHECK(h.service.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::none);
-  CHECK_EQ(h.service.routine(uid(), rtId())->entries[0].targetWeightKg, std::optional<double>(87.5));
-  CHECK_EQ(h.service.routine(uid(), rtId())->position, 3);
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::none);
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].targetWeightKg, std::optional<double>(87.5));
+  CHECK_EQ(h.program.routine(uid(), rtId())->position, 3);
 }
 
 // A resent id carrying a DIFFERENT document is not a replay, and answering it with the stored
@@ -2594,10 +2597,10 @@ TEST(a_put_that_changes_neither_the_document_nor_the_name_leaves_a_pending_propo
 TEST(a_spent_proposal_id_carrying_a_different_document_is_refused_rather_than_replayed) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
 
-  ProposalMintOutcome second = h.service.propose(uid(), proposalFor({benchAt(60.0, 12)}));
-  ProposalMintOutcome replayed = h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  ProposalMintOutcome second = h.program.propose(uid(), proposalFor({benchAt(60.0, 12)}));
+  ProposalMintOutcome replayed = h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
 
   CHECK(second.error == ProposalMintError::idReused);
   CHECK_EQ(second.proposal, std::optional<RoutineProposal>());
@@ -2620,7 +2623,7 @@ TEST(a_proposal_that_only_reorders_the_day_is_minted_rather_than_called_no_chang
                                                RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8,
                                                             100.0, 180}}));
 
-  ProposalMintOutcome minted = h.service.propose(
+  ProposalMintOutcome minted = h.program.propose(
       uid(), proposalFor({RoutineEntry{1, ExerciseId{"back-squat"}, 3, 8, 100.0, 180},
                           benchEntry(2)}));
 
@@ -2630,9 +2633,9 @@ TEST(a_proposal_that_only_reorders_the_day_is_minted_rather_than_called_no_chang
   CHECK_EQ(minted.proposal->changes[0].kind, ChangeKind::kept);
   CHECK_EQ(minted.proposal->changes[1].kind, ChangeKind::kept);
   // And the tap writes the order the lifter read.
-  CHECK(h.service.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::none);
-  CHECK_EQ(h.service.routine(uid(), rtId())->entries[0].exercise, ExerciseId{"back-squat"});
-  CHECK_EQ(h.service.routine(uid(), rtId())->entries[1].exercise, ExerciseId{"bench-press"});
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::none);
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].exercise, ExerciseId{"back-squat"});
+  CHECK_EQ(h.program.routine(uid(), rtId())->entries[1].exercise, ExerciseId{"bench-press"});
 }
 
 // Applying one proposal moves the routine, so every OTHER proposal waiting on it is now against a
@@ -2640,7 +2643,7 @@ TEST(a_proposal_that_only_reorders_the_day_is_minted_rather_than_called_no_chang
 TEST(applying_one_proposal_supersedes_every_other_waiting_on_that_routine) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}, "prop_00000001"));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}, "prop_00000001"));
   // A second door's proposal on the same routine: pending beside the first rather than superseding
   // it, because the pending rule is per (routine, door, connection).
   h.repo.db.proposalRows.push_back(
@@ -2651,11 +2654,11 @@ TEST(applying_one_proposal_supersedes_every_other_waiting_on_that_routine) {
                       1, "Push A", "Push A", changesBetween({benchEntry()}, {benchAt(90.0)})});
   h.clock.now += 60'000;
 
-  h.service.apply(uid(), ProposalId{"prop_00000001"});
+  h.program.apply(uid(), ProposalId{"prop_00000001"});
 
-  const std::vector<ProposalHead> history = h.service.proposals(uid(), ProposalQuery{rtId(), false});
+  const std::vector<ProposalHead> history = h.program.proposals(uid(), ProposalQuery{rtId(), false});
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(2));
-  CHECK(h.service.proposals(uid(), ProposalQuery{rtId(), true}).empty());
+  CHECK(h.program.proposals(uid(), ProposalQuery{rtId(), true}).empty());
   for (const ProposalHead& head : history)
     CHECK(head.state == ProposalState::applied || head.state == ProposalState::superseded);
 }
@@ -2665,11 +2668,11 @@ TEST(applying_one_proposal_supersedes_every_other_waiting_on_that_routine) {
 TEST(dismissing_a_proposal_changes_nothing_and_keeps_it_in_the_history) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
   const std::vector<Routine> before = h.repo.db.routineRows;
   h.clock.now += 60'000;
 
-  ProposalSettleOutcome dismissed = h.service.dismiss(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome dismissed = h.program.dismiss(uid(), ProposalId{"prop_00000001"});
 
   REQUIRE(dismissed.proposal.has_value());
   CHECK(dismissed.error == ProposalSettleError::none);
@@ -2684,16 +2687,16 @@ TEST(dismissing_a_proposal_changes_nothing_and_keeps_it_in_the_history) {
 TEST(a_settled_proposal_replays_its_own_decision_and_refuses_the_other_one) {
   Harness h;
   h.create(h.pushAWrite());
-  h.service.propose(uid(), proposalFor({benchAt(87.5, 3)}));
-  h.service.apply(uid(), ProposalId{"prop_00000001"});
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}));
+  h.program.apply(uid(), ProposalId{"prop_00000001"});
 
-  ProposalSettleOutcome again = h.service.apply(uid(), ProposalId{"prop_00000001"});
-  ProposalSettleOutcome other = h.service.dismiss(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome again = h.program.apply(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome other = h.program.dismiss(uid(), ProposalId{"prop_00000001"});
 
   CHECK(again.error == ProposalSettleError::none);
   REQUIRE(again.proposal.has_value());
   CHECK_EQ(again.proposal->head.state, ProposalState::applied);
-  CHECK_EQ(h.service.routine(uid(), rtId())->revision, 2);   // and it did not apply twice
+  CHECK_EQ(h.program.routine(uid(), rtId())->revision, 2);   // and it did not apply twice
   CHECK(other.error == ProposalSettleError::settled);
 }
 
@@ -2710,15 +2713,15 @@ TEST(a_proposal_of_another_account_is_the_same_fact_as_no_proposal_at_all) {
                       1, "Their plan", "Their plan",
                       changesBetween({benchEntry()}, {benchAt(90.0)})});
 
-  CHECK_EQ(h.service.proposal(uid(), ProposalId{"prop_00000001"}),
+  CHECK_EQ(h.program.proposal(uid(), ProposalId{"prop_00000001"}),
            std::optional<RoutineProposal>());
-  CHECK(h.service.proposals(uid(), ProposalQuery{std::nullopt, false}).empty());
-  CHECK(h.service.apply(uid(), ProposalId{"prop_00000001"}).error ==
+  CHECK(h.program.proposals(uid(), ProposalQuery{std::nullopt, false}).empty());
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error ==
         ProposalSettleError::notFound);
-  CHECK(h.service.dismiss(uid(), ProposalId{"prop_00000001"}).error ==
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error ==
         ProposalSettleError::notFound);
   // And their plan is exactly where it was.
-  CHECK_EQ(h.service.routine(uid("u2"), rtId("rt_00000002"))->entries[0].targetWeightKg,
+  CHECK_EQ(h.program.routine(uid("u2"), rtId("rt_00000002"))->entries[0].targetWeightKg,
            std::optional<double>(82.5));
 }
 
@@ -2728,20 +2731,20 @@ TEST(applying_a_removal_takes_the_day_out_and_leaves_the_log_alone) {
   Harness h;
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.service.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
-  h.service.proposeRemoval(uid(), ProposalId{"prop_00000001"}, rtId(), "Not trained in months.",
+  h.training.finish(uid(), sid("ses_00000001"), h.clock.now + 1);
+  h.program.proposeRemoval(uid(), ProposalId{"prop_00000001"}, rtId(), "Not trained in months.",
                            ProposalSource{ProposalDoor::mcp, "", ""});
   h.clock.now += 60'000;
 
-  ProposalSettleOutcome tapped = h.service.apply(uid(), ProposalId{"prop_00000001"});
+  ProposalSettleOutcome tapped = h.program.apply(uid(), ProposalId{"prop_00000001"});
 
   REQUIRE(tapped.proposal.has_value());
   CHECK(tapped.error == ProposalSettleError::none);
   CHECK_EQ(tapped.proposal->head.state, ProposalState::applied);
   CHECK_EQ(tapped.routine, std::optional<Routine>());
-  CHECK_EQ(h.service.routine(uid(), rtId()), std::optional<Routine>());
+  CHECK_EQ(h.program.routine(uid(), rtId()), std::optional<Routine>());
   // The frozen copy survives the plan it was taken from — the log still says what the workout was.
-  CHECK_EQ(h.service.detail(uid(), sid("ses_00000001"))->session.plan->routineName,
+  CHECK_EQ(h.training.detail(uid(), sid("ses_00000001"))->session.plan->routineName,
            std::string("Push A"));
 }
 
@@ -2771,7 +2774,7 @@ TEST(a_thread_past_the_list_ceiling_still_exports_the_outcome_the_app_shows_it) 
                    opened, std::nullopt},
       1, "Push A", "Push A", changesBetween({benchEntry()}, {benchAt(90.0)})});
 
-  const std::vector<ExportedThreadTurn> exported = h.service.exportedThreadTurns(uid());
+  const std::vector<ExportedThreadTurn> exported = h.threads.exportedThreadTurns(uid());
 
   CHECK_EQ(exported.size(), static_cast<std::size_t>(kThreadList) + 1);
   CHECK_EQ(exported[0].threadId, std::string("thr_probe1000"));
@@ -2779,7 +2782,7 @@ TEST(a_thread_past_the_list_ceiling_still_exports_the_outcome_the_app_shows_it) 
   CHECK_EQ(exported[0].changes, std::string("4"));
   CHECK_EQ(exported[0].routine, std::string("Push A"));
   // And it is the same sentence the thread's own read gives — which is the whole of the complaint.
-  CHECK_EQ(toString(outcomeOf(*h.service.thread(uid(), ThreadId{"thr_probe1000"})).kind),
+  CHECK_EQ(toString(outcomeOf(*h.threads.thread(uid(), ThreadId{"thr_probe1000"})).kind),
            std::string("applied"));
 }
 
@@ -2793,7 +2796,7 @@ TEST(a_conversation_whose_run_never_answered_exports_as_itself_with_nothing_unde
                                         "a question whose run never came back", 1'700'000'009'000,
                                         1'700'000'009'000, {}, {}});
 
-  const std::vector<ExportedThreadTurn> exported = h.service.exportedThreadTurns(uid());
+  const std::vector<ExportedThreadTurn> exported = h.threads.exportedThreadTurns(uid());
 
   REQUIRE(exported.size() == 1u);
   CHECK_EQ(exported[0].threadId, std::string("thr_orphan01"));
@@ -2805,5 +2808,5 @@ TEST(a_conversation_whose_run_never_answered_exports_as_itself_with_nothing_unde
   CHECK_EQ(exported[0].text, std::string(""));
   CHECK_EQ(exported[0].saidAt, std::string(""));
   // The same thread the list read carries, so the two doors agree about what this account holds.
-  CHECK_EQ(h.service.threads(uid()).size(), 1u);
+  CHECK_EQ(h.threads.threads(uid()).size(), 1u);
 }

@@ -74,11 +74,13 @@ struct Harness {
   FakeSubscriptionRepository subs;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
-  LogService log{repo.log, repo.catalog, repo.program, repo.threads, repo.preferences, clock,
-                 tokens};
-  GymTools gymTools{log, "https://windmill.works"};
+  TrainingService training{repo.log, repo.program, clock, tokens};
+  CatalogService catalog{repo.catalog};
+  ProgramService program{repo.program, clock};
+  ThreadService threadService{repo.threads, clock};
+  GymTools gymTools{training, catalog, program, "https://windmill.works"};
   FakeAsk agent;
-  AskService ask{log, agent, gymTools, entitlements};
+  AskService ask{training, threadService, agent, gymTools, entitlements};
 
   const UserId lifter{"lifter"};
   const SessionId session{"ses_11111111"};
@@ -86,11 +88,11 @@ struct Harness {
   Harness() {
     repo.db.seed(benchPress());
     repo.db.seed(backSquat());
-    log.start(lifter, SessionStart{session, 1'700'000'000'000});
-    log.append(lifter, session,
+    training.start(lifter, SessionStart{session, 1'700'000'000'000});
+    training.append(lifter, session,
                SetWrite{setId(), ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt,
                         "", 1'700'000'300'000});
-    log.finish(lifter, session, 1'700'000'900'000);
+    training.finish(lifter, session, 1'700'000'900'000);
   }
 
   void subscribe() { subs.subscribe(lifter, "active"); }
@@ -189,7 +191,7 @@ TEST(ask_tools_refuse_a_destructive_tool_and_the_workout_survives) {
 
   CHECK(refused.isError);
   CHECK(refused.content[0]["text"].asString().find("theirs to change") != std::string::npos);
-  CHECK(h.log.detail(h.lifter, h.session).has_value());  // the workout is still in the log
+  CHECK(h.training.detail(h.lifter, h.session).has_value());  // the workout is still in the log
 }
 
 TEST(ask_tools_refuse_a_write_tool_even_when_the_arguments_are_perfect) {
@@ -235,7 +237,7 @@ TEST(ask_tools_refuse_a_tool_the_callers_grant_does_not_reach) {
               .content[0]["text"]
               .asString()
               .find("theirs to change") != std::string::npos);
-  CHECK(h.log.detail(h.lifter, h.session).has_value());
+  CHECK(h.training.detail(h.lifter, h.session).has_value());
 }
 
 TEST(ask_tools_refuse_a_name_no_catalog_holds) {
@@ -372,7 +374,7 @@ TEST(a_proposal_ask_mints_is_recorded_by_id_and_carries_its_own_door) {
   CHECK_EQ(hands.proposals()[0], std::string("prop_00000001"));
   CHECK_EQ(minted.payload["proposal"]["source"]["door"].asString(), std::string("ask"));
   // …and it changed nothing: the routine still reads as it did.
-  const std::optional<Routine> standing = h.log.routine(h.lifter, rtId());
+  const std::optional<Routine> standing = h.program.routine(h.lifter, rtId());
   REQUIRE(standing.has_value());
   CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchEntry()});
 }
@@ -414,7 +416,7 @@ TEST(the_run_is_handed_gyms_three_levels_and_no_other_product) {
 TEST(a_lifter_with_a_workout_open_is_refused_before_anything_is_spent) {
   Harness h;
   h.clock.now = 1'700'100'000'000;
-  h.log.start(h.lifter, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
+  h.training.start(h.lifter, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
 
   const AskReply reply = h.question("what should I do next?");
 
@@ -427,7 +429,7 @@ TEST(a_lifter_with_a_workout_open_is_refused_before_anything_is_spent) {
 TEST(a_stale_workout_the_four_hour_rule_closes_does_not_hold_ask_shut) {
   Harness h;
   h.clock.now = 1'700'100'000'000;
-  h.log.start(h.lifter, SessionStart{SessionId{"ses_33333333"}, 1'700'100'000'000});
+  h.training.start(h.lifter, SessionStart{SessionId{"ses_33333333"}, 1'700'100'000'000});
   h.clock.now = 1'700'100'000'000 + 5 * 60 * 60 * 1000;  // five hours later, nothing logged since
 
   const AskReply reply = h.question("how has my squat moved?");
@@ -468,8 +470,8 @@ TEST(a_thread_id_another_account_holds_is_refused_rather_than_appended_to) {
   CHECK(h.question(shared, "and mine?", stranger).refusal == AskRefusal::threadTaken);
   // Their question never reached the model, and the thread still holds one exchange: the lifter's.
   CHECK_EQ(h.agent.runs, 1);
-  CHECK_EQ(h.log.thread(h.lifter, shared)->turns.size(), 2u);
-  CHECK_FALSE(h.log.thread(stranger, shared).has_value());
+  CHECK_EQ(h.threadService.thread(h.lifter, shared)->turns.size(), 2u);
+  CHECK_FALSE(h.threadService.thread(stranger, shared).has_value());
 }
 
 // THE SAME ANSWER WHEN THE STORE LOST THE RACE RATHER THAN LOSING THE PROBE. Two accounts minting
@@ -484,7 +486,7 @@ TEST(a_thread_the_store_could_not_open_costs_no_vendor_call_and_no_lost_answer) 
   CHECK(h.question(h.nextThread(), "how did the squats go?", h.lifter).refusal ==
         AskRefusal::threadTaken);
   CHECK_EQ(h.agent.runs, 0);
-  CHECK_EQ(h.log.threads(h.lifter).size(), 0u);
+  CHECK_EQ(h.threadService.threads(h.lifter).size(), 0u);
 }
 
 TEST(a_blank_question_and_an_oversized_one_are_each_their_own_refusal) {
@@ -513,9 +515,9 @@ TEST(a_question_the_store_cannot_hold_is_refused_before_a_thread_is_opened) {
         AskRefusal::questionUnstorable);
   CHECK_EQ(h.agent.runs, 0);
   // Nothing was opened, so nothing has to be taken back: neither id names a conversation.
-  CHECK_FALSE(h.log.thread(h.lifter, nulled).has_value());
-  CHECK_FALSE(h.log.thread(h.lifter, malformed).has_value());
-  CHECK_EQ(h.log.threads(h.lifter).size(), 0u);
+  CHECK_FALSE(h.threadService.thread(h.lifter, nulled).has_value());
+  CHECK_FALSE(h.threadService.thread(h.lifter, malformed).has_value());
+  CHECK_EQ(h.threadService.threads(h.lifter).size(), 0u);
 }
 
 // The cap is the THREAD's now rather than the request body's, and it bites on the pair this ask
@@ -535,7 +537,7 @@ TEST(a_conversation_as_long_as_ask_holds_refuses_the_next_question) {
   CHECK(h.question(thread, "once more", h.lifter).refusal == AskRefusal::tooManyTurns);
   CHECK_EQ(h.agent.runs, 0);
   // The refusal stored nothing: the conversation is exactly as long as it was.
-  CHECK_EQ(h.log.thread(h.lifter, thread)->turns.size(), kMaxThreadTurns);
+  CHECK_EQ(h.threadService.thread(h.lifter, thread)->turns.size(), kMaxThreadTurns);
 }
 
 // THE DAILY LIMIT — the plainly-worded cap that lets Ask ship open. One bucket says both halves: three
@@ -706,7 +708,7 @@ TEST(a_refused_tool_marks_its_step_and_leaves_the_log_alone) {
   CHECK(reply.refusal == AskRefusal::none);
   REQUIRE_EQ(reply.answer.steps.size(), 1u);
   CHECK(reply.answer.steps[0].failed);
-  CHECK(h.log.detail(h.lifter, h.session).has_value());
+  CHECK(h.training.detail(h.lifter, h.session).has_value());
   CHECK_EQ(reply.proposals.size(), 0u);
 }
 
@@ -721,7 +723,7 @@ TEST(a_first_question_opens_a_thread_titled_by_that_question_byte_for_byte) {
 
   CHECK(h.question(thread, typed, h.lifter).refusal == AskRefusal::none);
 
-  const std::optional<AskThread> held = h.log.thread(h.lifter, thread);
+  const std::optional<AskThread> held = h.threadService.thread(h.lifter, thread);
   REQUIRE(held.has_value());
   CHECK_EQ(held->title, typed);
   // Both turns, in order, as sent and as answered.
@@ -746,7 +748,7 @@ TEST(a_second_question_is_answered_against_the_stored_conversation) {
   CHECK_FALSE(h.agent.seenTurns[1].fromLifter);
   CHECK_EQ(h.agent.seenTurns[2].text, std::string("and the bench?"));
   // …and the thread is still titled by how it opened. A conversation is named once.
-  const std::optional<AskThread> held = h.log.thread(h.lifter, thread);
+  const std::optional<AskThread> held = h.threadService.thread(h.lifter, thread);
   REQUIRE(held.has_value());
   CHECK_EQ(held->title, std::string("how did the squats go?"));
   CHECK_EQ(held->turns.size(), 4u);
@@ -762,12 +764,12 @@ TEST(a_run_that_never_answered_stores_no_turns_and_leaves_no_empty_thread) {
   const ThreadId thread = h.nextThread();
 
   CHECK_FALSE(h.question(thread, "how did the squats go?", h.lifter).answer.ok);
-  CHECK_FALSE(h.log.thread(h.lifter, thread).has_value());
-  CHECK(h.log.threads(h.lifter).empty());
+  CHECK_FALSE(h.threadService.thread(h.lifter, thread).has_value());
+  CHECK(h.threadService.threads(h.lifter).empty());
 
   h.agent.answers = true;
   CHECK(h.question(thread, "how did the squats go?", h.lifter).refusal == AskRefusal::none);
-  const std::optional<AskThread> landed = h.log.thread(h.lifter, thread);
+  const std::optional<AskThread> landed = h.threadService.thread(h.lifter, thread);
   REQUIRE(landed.has_value());
   CHECK_EQ(landed->turns.size(), 2u);
 }
@@ -782,7 +784,7 @@ TEST(a_failed_follow_up_leaves_the_conversation_that_already_happened_alone) {
   h.agent.turnsSpent = 0;
   CHECK_FALSE(h.question(thread, "and the bench?", h.lifter).answer.ok);
 
-  const std::optional<AskThread> held = h.log.thread(h.lifter, thread);
+  const std::optional<AskThread> held = h.threadService.thread(h.lifter, thread);
   REQUIRE(held.has_value());
   CHECK_EQ(held->turns.size(), 2u);
 }
@@ -811,13 +813,13 @@ TEST(a_proposal_minted_in_a_conversation_carries_that_conversation) {
   CHECK(h.question(thread, "heavier triples please", h.lifter).refusal == AskRefusal::none);
 
   const std::optional<RoutineProposal> minted =
-      h.log.proposal(h.lifter, ProposalId{"prop_00000009"});
+      h.program.proposal(h.lifter, ProposalId{"prop_00000009"});
   REQUIRE(minted.has_value());
   CHECK(minted->head.source.door == ProposalDoor::ask);
   REQUIRE(minted->head.source.thread.has_value());
   CHECK(*minted->head.source.thread == thread);
   // …and the thread says what came of it, derived from the ledger rather than stored beside it.
-  const std::optional<AskThread> held = h.log.thread(h.lifter, thread);
+  const std::optional<AskThread> held = h.threadService.thread(h.lifter, thread);
   REQUIRE(held.has_value());
   const ThreadOutcome outcome = outcomeOf(*held);
   CHECK(outcome.kind == ThreadOutcomeKind::proposed);
@@ -845,7 +847,7 @@ TEST(a_proposal_from_the_mcp_door_carries_no_conversation) {
   h.gymTools.callTool("propose_routine_change", propose, agent);
 
   const std::optional<RoutineProposal> minted =
-      h.log.proposal(h.lifter, ProposalId{"prop_00000010"});
+      h.program.proposal(h.lifter, ProposalId{"prop_00000010"});
   REQUIRE(minted.has_value());
   CHECK(minted->head.source.door == ProposalDoor::mcp);
   CHECK_FALSE(minted->head.source.thread.has_value());

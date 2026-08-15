@@ -94,7 +94,11 @@ add_library(windmill_gym
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
   products/gym/domain/ReadReceipt.cpp
-  products/gym/application/LogService.cpp)
+  products/gym/application/TrainingService.cpp
+  products/gym/application/CatalogService.cpp
+  products/gym/application/ProgramService.cpp
+  products/gym/application/ThreadService.cpp
+  products/gym/application/PreferencesService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 

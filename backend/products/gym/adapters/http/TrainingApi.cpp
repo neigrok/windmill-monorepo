@@ -61,9 +61,9 @@ bool ifNoneMatchAccepts(const std::string& header, std::string_view tag) {
 }
 }
 
-TrainingApi::TrainingApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth,
-                         std::string appBaseUrl)
-    : log_(std::move(log)), auth_(std::move(auth)), appBaseUrl_(std::move(appBaseUrl)) {}
+TrainingApi::TrainingApi(std::shared_ptr<TrainingService> training,
+                         std::shared_ptr<AuthService> auth, std::string appBaseUrl)
+    : training_(std::move(training)), auth_(std::move(auth)), appBaseUrl_(std::move(appBaseUrl)) {}
 
 void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -83,7 +83,7 @@ void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&&
   // session — a replay is handed its own row back, a double-tap is handed the first tap's.
   StartOutcome outcome{std::nullopt, StartError::none};
   try {
-    outcome = log_->start(*caller, parseSessionStart(*json));
+    outcome = training_->start(*caller, parseSessionStart(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that session"));
     return;
@@ -140,7 +140,7 @@ void TrainingApi::appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb
   }
   AppendOutcome outcome{std::nullopt, AppendError::none};
   try {
-    outcome = log_->append(*caller, SessionId{id}, parseSetWrite(*json));
+    outcome = training_->append(*caller, SessionId{id}, parseSetWrite(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that set"));
     return;
@@ -207,7 +207,7 @@ void TrainingApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, c
   }
   std::optional<Set> fixed;
   try {
-    fixed = log_->fixSet(*caller, SessionId{id}, SetId{setId}, parseSetFix(*json));
+    fixed = training_->fixSet(*caller, SessionId{id}, SetId{setId}, parseSetFix(*json));
   } catch (const InvalidTraining&) {
     // One word for every way a correction can be unreadable — a field a fix may not carry, a value
     // outside the band the store keeps, a kind nobody logs — because they share one repair: the
@@ -242,7 +242,7 @@ void TrainingApi::deleteSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  log_->deleteSet(*caller, SessionId{id}, SetId{setId});
+  training_->deleteSet(*caller, SessionId{id}, SetId{setId});
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
@@ -265,7 +265,7 @@ void TrainingApi::finishSession(const drogon::HttpRequestPtr& req, HttpCallback&
   // here, which a flush queue reads as "retry forever".
   FinishOutcome outcome{std::nullopt, FinishError::none};
   try {
-    outcome = log_->finish(*caller, SessionId{id}, parseFinish(*json));
+    outcome = training_->finish(*caller, SessionId{id}, parseFinish(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that finish"));
     return;
@@ -321,7 +321,7 @@ void TrainingApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&&
   }
 
   Json::Value sessions(Json::arrayValue);
-  for (const LogRow& row : log_->log(*caller, cursor)) sessions.append(toJson(row));
+  for (const LogRow& row : training_->log(*caller, cursor)) sessions.append(toJson(row));
   Json::Value body(Json::objectValue);
   body["sessions"] = sessions;
   cb(jsonResponse(body));
@@ -334,7 +334,7 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<SessionDetail> detail = log_->detail(*caller, SessionId{id});
+  std::optional<SessionDetail> detail = training_->detail(*caller, SessionId{id});
   if (!detail) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
@@ -383,7 +383,7 @@ void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<Review> review = log_->review(*caller, SessionId{id});
+  std::optional<Review> review = training_->review(*caller, SessionId{id});
   if (!review) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
@@ -400,7 +400,7 @@ void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  DiscardOutcome outcome = log_->discard(*caller, SessionId{id});
+  DiscardOutcome outcome = training_->discard(*caller, SessionId{id});
   if (outcome == DiscardOutcome::notFound) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
@@ -444,7 +444,7 @@ void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     cb(error(drogon::k400BadRequest, "bad exercise"));
     return;
   }
-  LastTimeOutcome outcome = log_->lastTime(*caller, ExerciseId{exercise});
+  LastTimeOutcome outcome = training_->lastTime(*caller, ExerciseId{exercise});
   if (outcome.error == LastTimeError::unknownExercise) {
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
@@ -479,7 +479,7 @@ void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     return;
   }
   Json::Value body(Json::objectValue);
-  body["movements"] = toJson(log_->lastSets(*caller));
+  body["movements"] = toJson(training_->lastSets(*caller));
   cb(jsonResponse(body));
 }
 
@@ -489,7 +489,7 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  cb(jsonResponse(toJson(log_->statistics(*caller))));
+  cb(jsonResponse(toJson(training_->statistics(*caller))));
 }
 
 // Every set this account holds, as the file a lifter walks away with. It is the trust argument for
@@ -506,7 +506,7 @@ void TrainingApi::exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& c
   response->setStatusCode(drogon::k200OK);
   response->setContentTypeCode(drogon::CT_TEXT_CSV);
   response->addHeader("Content-Disposition", "attachment; filename=\"windmill-gym-sets.csv\"");
-  response->setBody(toCsv(log_->exportedSets(*caller)));
+  response->setBody(toCsv(training_->exportedSets(*caller)));
   cb(response);
 }
 
@@ -523,7 +523,7 @@ void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&&
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<SessionShare> share = log_->share(*caller, SessionId{id});
+  std::optional<SessionShare> share = training_->share(*caller, SessionId{id});
   if (!share) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
@@ -548,7 +548,7 @@ void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& 
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  if (!log_->revokeShare(*caller, SessionId{id})) {
+  if (!training_->revokeShare(*caller, SessionId{id})) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
@@ -567,7 +567,7 @@ void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& 
 // depth — it is one workout, and nothing that could be walked to a second one.
 void TrainingApi::sharedSession(const drogon::HttpRequestPtr&, HttpCallback&& cb,
                            const std::string& token) {
-  std::optional<SharedSession> shared = log_->shared(token);
+  std::optional<SharedSession> shared = training_->shared(token);
   if (!shared) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;

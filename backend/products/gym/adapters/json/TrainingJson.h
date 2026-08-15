@@ -1,7 +1,11 @@
 #pragma once
 
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/CatalogService.h"
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/TrainingService.h"
+#include "products/gym/domain/Preferences.h"
 #include "products/gym/domain/ReadReceipt.h"
+#include "products/gym/domain/Thread.h"
 
 #include <json/value.h>
 
@@ -194,7 +198,7 @@ RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTrai
 // What an agent proposes, and it reads a routine's entries through the very same parser a routine
 // write does — an agent is told to read `list_routines`, change what it means and send all of it
 // back, so the two shapes have to be one shape or that instruction is a trap. `position` is
-// deliberately not a field here (application/LogService.h says why), and the source rides beside
+// deliberately not a field here (application/ProgramService.h says why), and the source rides beside
 // the body because provenance is the caller's fact rather than the body's.
 ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source);
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining

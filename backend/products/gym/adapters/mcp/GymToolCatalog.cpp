@@ -189,7 +189,7 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 // on the session read; pending proposals ride on list_routines rather than minting a list and a get
 // of their own).
 //
-// Seven of the seventeen are reads, which is the shape this product wants: an agent here is a reader
+// Six of the sixteen are reads, which is the shape this product wants: an agent here is a reader
 // of one lifter's log that occasionally writes into it. The verbs reserved for the HAND have no tool
 // at any level — editing a logged set, saying what a gym owns, and, since W6 (2026-08-12), APPLYING
 // A PROPOSAL. Apply is not a capability; it is a human act.

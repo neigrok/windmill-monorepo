@@ -82,7 +82,11 @@
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/CatalogService.h"
+#include "products/gym/application/PreferencesService.h"
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/ThreadService.h"
+#include "products/gym/application/TrainingService.h"
 #include "products/gym/routes.h"
 
 #include <drogon/drogon.h>
@@ -422,9 +426,14 @@ int main() {
   auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
   auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
   auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
-  auto logService = std::make_shared<gym::LogService>(*gymLog, *gymCatalog, *gymProgram, *gymThreads,
-                                                      *gymPreferences, *systemClock, *tokens);
-  auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
+  auto gymTrainingService =
+      std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens);
+  auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog);
+  auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock);
+  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock);
+  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
+  auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
+                                                  *gymProgramService, appBaseUrl);
 
   // ASK — the SECOND door onto the very tools built above, for a lifter who has no agent of their
   // own. Same key as the roadmap composer and the tend agent: one Anthropic account, one credential,
@@ -438,7 +447,8 @@ int main() {
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   std::shared_ptr<gym::AskService> gymAsk;
   if (gymAskAgent->configured())
-    gymAsk = std::make_shared<gym::AskService>(*logService, *gymAskAgent, *gymTools, *entitlements);
+    gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreadService, *gymAskAgent,
+                                               *gymTools, *entitlements);
 
   // The tool surface a connected client sees: every product's module behind one host, filtered by
   // the grant its credential carries. Roadmap and gym are wired today; adding one is a line here,
@@ -976,10 +986,15 @@ int main() {
   // auto-close applied lazily by the service. No arming flags and no sweeps; the one vendor key it
   // reads is ANTHROPIC_API_KEY, and only Ask reads it — every other route below exists whether or
   // not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
-  // the same service these routes do — one core, two doors, and no second copy of a rule.
-  gym::GymDeps gymDeps{
-      .logService = logService, .authService = authService, .askService = gymAsk,
-      .appBaseUrl = appBaseUrl};
+  // the same services these routes do — one core, two doors, and no second copy of a rule.
+  gym::GymDeps gymDeps{.trainingService = gymTrainingService,
+                       .catalogService = gymCatalogService,
+                       .programService = gymProgramService,
+                       .preferencesService = gymPreferencesService,
+                       .threadService = gymThreadService,
+                       .authService = authService,
+                       .askService = gymAsk,
+                       .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 
   // Resend's delivery webhook, mounted LAST because it is the one door that speaks for all of them.

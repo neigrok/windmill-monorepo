@@ -4,7 +4,8 @@
 #include "platform/domain/Ids.h"
 #include "platform/ports/ToolHost.h"
 #include "products/gym/adapters/mcp/GymTools.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/ThreadService.h"
+#include "products/gym/application/TrainingService.h"
 #include "products/gym/domain/ReadReceipt.h"
 #include "products/gym/ports/AskAgent.h"
 
@@ -162,7 +163,10 @@ private:
 // So the handler hands its callback over and returns; `done` fires on a worker.
 class AskService {
 public:
-  AskService(LogService& log, AskAgent& agent, GymTools& gymTools, Entitlements& entitlements);
+  // Two services and not one facade: the log answers "is a workout running" (§L, never mid-session)
+  // and the threads keep what was asked and answered. Ask holds exactly those two.
+  AskService(TrainingService& training, ThreadService& threads, AskAgent& agent,
+             GymTools& gymTools, Entitlements& entitlements);
 
   // Whether this deployment can answer at all. main.cpp reads it to decide whether the route exists:
   // a button that answers 503 is worse than a door that was never drawn.
@@ -178,7 +182,8 @@ public:
            std::string question, std::function<void(AskReply)> done);
 
 private:
-  LogService& log_;
+  TrainingService& training_;
+  ThreadService& threads_;
   AskAgent& agent_;
   GymTools& gymTools_;
   Entitlements& entitlements_;

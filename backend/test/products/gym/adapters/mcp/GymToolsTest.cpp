@@ -2,6 +2,7 @@
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
+#include "products/gym/application/PreferencesService.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
@@ -23,15 +24,17 @@ namespace {
 const char* kAppBase = "https://windmill.works";
 
 // One in-memory store, one hand-driven clock, the real service, the real tools. Nothing here is a
-// fake of gym's own logic: the tools go through LogService exactly as the HTTP handlers do, so a
+// fake of gym's own logic: the tools go through the same services the HTTP handlers do, so a
 // rule that moved would break both suites rather than one.
 struct Harness {
   FakeGym repo;
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
-  LogService service{repo.log, repo.catalog, repo.program, repo.threads, repo.preferences,
-                     clock, tokens};
-  GymTools tools{service, kAppBase};
+  TrainingService training{repo.log, repo.program, clock, tokens};
+  CatalogService catalog{repo.catalog};
+  ProgramService program{repo.program, clock};
+  PreferencesService preferences{repo.preferences};
+  GymTools tools{training, catalog, program, kAppBase};
 
   Harness() {
     repo.db.seed(benchPress());
@@ -279,7 +282,7 @@ TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
   Harness h;
   h.start("ses_00000001", 1'700'000'000'000);
   h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 8, 1'700'000'060'000);
-  h.service.deleteSet(UserId{"u1"}, SessionId{"ses_00000001"}, SetId{"set_00000001"});
+  h.training.deleteSet(UserId{"u1"}, SessionId{"ses_00000001"}, SetId{"set_00000001"});
 
   ToolResult replayed =
       h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 8, 1'700'000'060'000);
@@ -850,7 +853,7 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
 
   REQUIRE(!second.isError);
   const std::vector<ProposalHead> heads =
-      h.service.proposals(uid(), ProposalQuery{std::nullopt, false});
+      h.program.proposals(uid(), ProposalQuery{std::nullopt, false});
   REQUIRE_EQ(heads.size(), std::size_t{2});
   CHECK_EQ(heads[0].id, ProposalId{"prop_00000002"});
   CHECK_EQ(heads[0].state, ProposalState::pending);
@@ -858,7 +861,7 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
   CHECK_EQ(heads[1].state, ProposalState::superseded);
   CHECK_EQ(heads[1].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
   // And only one of them is what a card draws.
-  CHECK_EQ(h.service.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
+  CHECK_EQ(h.program.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
 }
 
 // THE PROPOSAL NAMES THE AGENT THAT MADE IT. The transport resolves a connection — an OAuth client
@@ -916,7 +919,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
   REQUIRE(!proposeAs("prop_00000003", 92.5, claude).isError);
 
   const std::vector<ProposalHead> heads =
-      h.service.proposals(uid(), ProposalQuery{std::nullopt, false});
+      h.program.proposals(uid(), ProposalQuery{std::nullopt, false});
   REQUIRE_EQ(heads.size(), std::size_t{3});
   CHECK_EQ(heads[0].id, ProposalId{"prop_00000003"});
   CHECK_EQ(heads[0].state, ProposalState::pending);
@@ -925,7 +928,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
   CHECK_EQ(heads[2].id, ProposalId{"prop_00000001"});
   CHECK_EQ(heads[2].state, ProposalState::superseded);
   CHECK_EQ(heads[2].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
-  CHECK_EQ(h.service.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{2});
+  CHECK_EQ(h.program.proposals(uid(), ProposalQuery{std::nullopt, true}).size(), std::size_t{2});
 }
 
 // A replay reads back the proposal it already minted. Without it an agent that lost a reply would
@@ -1077,7 +1080,7 @@ TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
   REQUIRE(!created.isError);
   CHECK(body(created)["entries"][0]["targetSets"].isNull());   // omitted: the line asks at the rack
   const std::vector<RoutineEvent> history =
-      h.service.routineHistory(uid(), RoutineId{"rt_00000001"});
+      h.program.routineHistory(uid(), RoutineId{"rt_00000001"});
   REQUIRE_EQ(history.size(), std::size_t{1});
   CHECK_EQ(history[0].door, std::optional<ProposalDoor>(ProposalDoor::mcp));
   CHECK_EQ(history[0].movements, std::optional<int>(1));
@@ -1151,8 +1154,8 @@ TEST(gym_the_share_tool_answers_with_a_url_a_coach_can_open) {
            std::string(kAppBase) + "/#/gym/shared/" + token);
   CHECK_EQ(body(minted)["expiresAt"].asUInt64(), shareExpiryAt(h.clock.now));
   // The link resolves, without a caller, to that one workout — which is what "anyone holding it" means.
-  REQUIRE(h.service.shared(token).has_value());
-  CHECK_EQ(h.service.shared(token)->startedAtMs, 1'000'000u);
+  REQUIRE(h.training.shared(token).has_value());
+  CHECK_EQ(h.training.shared(token)->startedAtMs, 1'000'000u);
 }
 
 TEST(gym_minting_a_share_twice_hands_back_the_same_live_link) {
@@ -1177,7 +1180,7 @@ TEST(gym_revoking_a_share_ends_the_link_and_a_second_revoke_says_there_is_nothin
   const ToolResult revoked = h.call("revoke_share", with("sessionId", "ses_00000001"));
   CHECK_FALSE(revoked.isError);
   CHECK(body(revoked)["revoked"].asBool());
-  CHECK_FALSE(h.service.shared(token).has_value());
+  CHECK_FALSE(h.training.shared(token).has_value());
 
   const ToolResult again = h.call("revoke_share", with("sessionId", "ses_00000001"));
   CHECK(again.isError);
@@ -1334,7 +1337,7 @@ TEST(gym_connect_paragraph_carries_the_retirement) {
 // service now rather than through a tool, which is the point: no tool reaches it any more.
 TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none) {
   Harness h;
-  h.service.savePreferences(GymPreferences{uid(), Unit::kg, 120, true, true, false});
+  h.preferences.savePreferences(GymPreferences{uid(), Unit::kg, 120, true, true, false});
 
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
@@ -1352,7 +1355,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
 
   CHECK_FALSE(listed.isError);
   CHECK(body(listed)["routines"][0]["entries"][0]["restSeconds"].isNull());
-  CHECK_EQ(h.service.preferences(uid()).restSeconds, std::optional<int>(120));
+  CHECK_EQ(h.preferences.preferences(uid()).restSeconds, std::optional<int>(120));
 }
 
 // `gym:read` CANNOT MINT A PROPOSAL. Reading a lifter's log does not buy the right to put a card in

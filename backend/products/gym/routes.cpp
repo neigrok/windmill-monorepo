@@ -24,11 +24,12 @@ namespace wm::gym {
 // owner-scoped but the coach share's read, which is the only unauthenticated route in the product.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   auto training =
-      std::make_shared<TrainingApi>(deps.logService, deps.authService, deps.appBaseUrl);
-  auto catalog = std::make_shared<CatalogApi>(deps.logService, deps.authService);
-  auto program = std::make_shared<ProgramApi>(deps.logService, deps.authService);
-  auto preferences = std::make_shared<PreferencesApi>(deps.logService, deps.authService);
-  auto threads = std::make_shared<ThreadsApi>(deps.logService, deps.authService);
+      std::make_shared<TrainingApi>(deps.trainingService, deps.authService, deps.appBaseUrl);
+  auto catalog =
+      std::make_shared<CatalogApi>(deps.catalogService, deps.trainingService, deps.authService);
+  auto program = std::make_shared<ProgramApi>(deps.programService, deps.authService);
+  auto preferences = std::make_shared<PreferencesApi>(deps.preferencesService, deps.authService);
+  auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService);
 
   app.registerHandler(
       "/v1/gym/exercises",

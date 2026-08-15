@@ -895,9 +895,8 @@ TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   DownRepository down{store.db};
   store.db.seed(benchPress());
   store.db.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000});
-  auto log = std::make_shared<LogService>(down, store.catalog, store.program, store.threads,
-                                          store.preferences, h.clock, h.tokens);
-  TrainingApi api{log, h.auth, "https://windmill.works"};
+  auto training = std::make_shared<TrainingService>(down, store.program, h.clock, h.tokens);
+  TrainingApi api{training, h.auth, "https://windmill.works"};
 
   // The house exception handler answers 500 "internal error" — a status the flush queue retries,
   // where the old 400 told it to drop the lifter's set forever.
@@ -921,9 +920,8 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
   h.signIn("s-live");
   FakeGym store;
   DownRepository down{store.db};
-  auto log = std::make_shared<LogService>(down, store.catalog, store.program, store.threads,
-                                          store.preferences, h.clock, h.tokens);
-  TrainingApi api{log, h.auth, "https://windmill.works"};
+  auto training = std::make_shared<TrainingService>(down, store.program, h.clock, h.tokens);
+  TrainingApi api{training, h.auth, "https://windmill.works"};
 
   bool escaped = false;
   drogon::HttpResponsePtr response;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/ProgramService.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -16,8 +16,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The program over REST — routines, and the proposal ledger an agent writes into and only a hand
 // settles. One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the
-// status ladder they all share; routes.cpp is the one mount). It needs the log service and the auth
-// seam and nothing else.
+// status ladder they all share; routes.cpp is the one mount). It needs the program service and the
+// auth seam and nothing else.
 //
 // Three of the sixteen codes are this file's. `routine-id-taken` is repaired like every other taken
 // id: mint a fresh one. The proposal pair are each a different move for the client:
@@ -28,7 +28,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // replays 200 with the stored proposal, so a double tap on a slow connection cannot report a failure.
 class ProgramApi {
 public:
-  ProgramApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth);
+  ProgramApi(std::shared_ptr<ProgramService> program, std::shared_ptr<AuthService> auth);
 
   void listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb);    // GET  /v1/gym/routines
   void createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // POST /v1/gym/routines
@@ -51,7 +51,7 @@ public:
                        const std::string& id);                                // POST /v1/gym/proposals/{id}/dismiss
 
 private:
-  std::shared_ptr<LogService> log_;
+  std::shared_ptr<ProgramService> program_;
   std::shared_ptr<AuthService> auth_;
 };
 

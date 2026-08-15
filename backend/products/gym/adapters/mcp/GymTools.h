@@ -1,7 +1,9 @@
 #pragma once
 
 #include "platform/ports/ToolHost.h"
-#include "products/gym/application/LogService.h"
+#include "products/gym/application/CatalogService.h"
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/TrainingService.h"
 #include "products/gym/domain/ReadReceipt.h"
 
 #include <string>
@@ -9,10 +11,12 @@
 namespace wm::gym {
 
 // The training log exposed over MCP — the surface behind the permission gate, and the second door
-// onto the very same application core the phone and the web talk to. Every tool goes through
-// LogService and none of them touches the repository: the service owns the two-phase
-// load → rule → persist shape, the lazy auto-close, and the write-then-resolve idempotency, and a
-// tool that reached past it would be a second copy of rules that exist once.
+// onto the very same application core the phone and the web talk to. Every tool goes through one of
+// the three services its aggregate lives on — TrainingService for the log, CatalogService for the
+// movements, ProgramService for the routines and the proposal ledger — and none of them touches a
+// repository: the services own the two-phase load → rule → persist shape, the lazy auto-close, and
+// the write-then-resolve idempotency, and a tool that reached past them would be a second copy of
+// rules that exist once. No tool reads the settings or a thread, so those two services are not held.
 //
 // Two rules make this safe to hand to a model. Every call acts AS the caller — the UserId the
 // transport authenticated — so every read and write is owner-scoped exactly as the HTTP handlers
@@ -26,7 +30,8 @@ public:
   // share is a token, and a token is only useful to a coach as a URL. Gym composes that URL because
   // gym owns the route it points at (routes.cpp) — a caller that pasted the path together would be
   // the second place that had to know it.
-  GymTools(LogService& log, std::string appBaseUrl);
+  GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
+           std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
   // The three names W6 and the plate wave took away, each answering with what replaced it. Written
@@ -57,7 +62,9 @@ private:
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller,
                       const ProposalSource& source, ReadReceipt& served);
 
-  LogService& log_;
+  TrainingService& training_;
+  CatalogService& catalog_;
+  ProgramService& program_;
   std::string appBaseUrl_;
 };
 

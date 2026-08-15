@@ -11,8 +11,8 @@
 
 namespace wm::gym {
 
-ThreadsApi::ThreadsApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth)
-    : log_(std::move(log)), auth_(std::move(auth)) {}
+ThreadsApi::ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<AuthService> auth)
+    : threads_(std::move(threads)), auth_(std::move(auth)) {}
 
 
 // ── Ask's threads (§O) ─────────────────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  cb(jsonResponse(toJson(log_->threads(*caller))));
+  cb(jsonResponse(toJson(threads_->threads(*caller))));
 }
 
 void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -37,7 +37,7 @@ void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<AskThread> held = log_->thread(*caller, ThreadId{id});
+  std::optional<AskThread> held = threads_->thread(*caller, ThreadId{id});
   if (!held) {
     // Absent and another account's, told apart by nobody — the one answer every owner-scoped read in
     // this product gives.
@@ -59,7 +59,7 @@ void ThreadsApi::deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& 
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  if (!log_->deleteThread(*caller, ThreadId{id})) {
+  if (!threads_->deleteThread(*caller, ThreadId{id})) {
     cb(error(drogon::k404NotFound, "no such conversation"));
     return;
   }
@@ -87,7 +87,7 @@ void ThreadsApi::exportThreads(const drogon::HttpRequestPtr& req, HttpCallback&&
   response->setStatusCode(drogon::k200OK);
   response->setContentTypeCode(drogon::CT_TEXT_CSV);
   response->addHeader("Content-Disposition", "attachment; filename=\"windmill-gym-threads.csv\"");
-  response->setBody(toCsv(log_->exportedThreadTurns(*caller)));
+  response->setBody(toCsv(threads_->exportedThreadTurns(*caller)));
   cb(response);
 }
 

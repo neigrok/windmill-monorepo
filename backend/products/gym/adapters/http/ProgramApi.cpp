@@ -10,8 +10,8 @@
 
 namespace wm::gym {
 
-ProgramApi::ProgramApi(std::shared_ptr<LogService> log, std::shared_ptr<AuthService> auth)
-    : log_(std::move(log)), auth_(std::move(auth)) {}
+ProgramApi::ProgramApi(std::shared_ptr<ProgramService> program, std::shared_ptr<AuthService> auth)
+    : program_(std::move(program)), auth_(std::move(auth)) {}
 
 // The plan, over four handlers that share one shape. A routine is written as its WHOLE document —
 // create and replace send the same body, and the editor's every change is a read-modify-write of it
@@ -26,8 +26,8 @@ void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& 
   Json::Value body(Json::objectValue);
   // The dot §B5 draws beside a day of the program rides on the list rather than on a second call
   // per routine — the same N+1 the log read refused when it made its summary carry its own facts.
-  body["routines"] = toJson(log_->routines(*caller),
-                            log_->proposals(*caller, ProposalQuery{std::nullopt, true}));
+  body["routines"] = toJson(program_->routines(*caller),
+                            program_->proposals(*caller, ProposalQuery{std::nullopt, true}));
   cb(jsonResponse(body));
 }
 
@@ -46,7 +46,7 @@ void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
   try {
     // No door: this route is a lifter's own hand on their own phone, which is the whole of §M's
     // third door and what the routine's history says by saying nothing about who made it.
-    outcome = log_->createRoutine(*caller, parseRoutineWrite(*json), std::nullopt);
+    outcome = program_->createRoutine(*caller, parseRoutineWrite(*json), std::nullopt);
   } catch (const InvalidTraining&) {
     // One sentence for every way a routine can be unstorable as written: no entries, a name that is
     // empty or over eighty characters, a position out of range, an entry outside its bounds.
@@ -75,7 +75,7 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<Routine> routine = log_->routine(*caller, RoutineId{id});
+  std::optional<Routine> routine = program_->routine(*caller, RoutineId{id});
   if (!routine) {
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
@@ -86,14 +86,14 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
   // than that window while still waiting. A dot that vanished once a day had twenty newer settled
   // proposals would be the product hiding a decision the lifter still has to make.
   std::optional<ProposalHead> pending;
-  for (const ProposalHead& head : log_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
+  for (const ProposalHead& head : program_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
     if (!pending) pending = head;
   // The History section (§M30) rides on this read and not on a route of its own, because it is one
   // section of the screen this read already draws — and a screen that fetched its history separately
   // would draw the day, then the day's past, in two frames. The LIST read carries none of it: a
   // routines screen prints names.
   Json::Value body = toJson(*routine, pending);
-  body["history"] = toJson(log_->routineHistory(*caller, RoutineId{id}));
+  body["history"] = toJson(program_->routineHistory(*caller, RoutineId{id}));
   cb(jsonResponse(body));
 }
 
@@ -113,7 +113,7 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
   // the two always agree, and where they could not the URL is what the store was asked for.
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
-    outcome = log_->replaceRoutine(*caller, RoutineId{id}, parseRoutineWrite(*json));
+    outcome = program_->replaceRoutine(*caller, RoutineId{id}, parseRoutineWrite(*json));
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that routine"));
     return;
@@ -136,7 +136,7 @@ void ProgramApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  if (!log_->deleteRoutine(*caller, RoutineId{id})) {
+  if (!program_->deleteRoutine(*caller, RoutineId{id})) {
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
@@ -169,7 +169,7 @@ void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&&
   if (!routine.empty()) query.routine = RoutineId{routine};
   query.pendingOnly = req->getParameter("state") == "pending";
   Json::Value body(Json::objectValue);
-  body["proposals"] = toJson(log_->proposals(*caller, query));
+  body["proposals"] = toJson(program_->proposals(*caller, query));
   cb(jsonResponse(body));
 }
 
@@ -182,7 +182,7 @@ void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  std::optional<RoutineProposal> held = log_->proposal(*caller, ProposalId{id});
+  std::optional<RoutineProposal> held = program_->proposal(*caller, ProposalId{id});
   if (!held) {
     cb(error(drogon::k404NotFound, "no such proposal"));
     return;
@@ -206,7 +206,7 @@ void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&&
   }
   ProposalSettleOutcome outcome{std::nullopt, std::nullopt, ProposalSettleError::none};
   try {
-    outcome = log_->apply(*caller, ProposalId{id});
+    outcome = program_->apply(*caller, ProposalId{id});
   } catch (const InvalidTraining&) {
     // Unreachable through the mint, which builds the document through the Routine constructor
     // before anything is stored — and kept because the alternative is a 500 on the one tap this
@@ -243,7 +243,7 @@ void ProgramApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  const ProposalSettleOutcome outcome = log_->dismiss(*caller, ProposalId{id});
+  const ProposalSettleOutcome outcome = program_->dismiss(*caller, ProposalId{id});
   if (outcome.error == ProposalSettleError::notFound) {
     cb(error(drogon::k404NotFound, "no such proposal"));
     return;

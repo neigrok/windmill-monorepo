@@ -2,10 +2,7 @@
 
 #include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
-#include "products/gym/ports/AskThreadRepository.h"
-#include "products/gym/ports/CatalogRepository.h"
 #include "products/gym/ports/LogRepository.h"
-#include "products/gym/ports/PreferencesRepository.h"
 #include "products/gym/ports/ProgramRepository.h"
 
 #include <cstdint>
@@ -50,49 +47,6 @@ struct SetWrite {
   std::optional<double> rpe;
   std::string note;
   std::uint64_t completedAtMs;
-};
-
-// The plan writes. A routine travels as its WHOLE document — a create and a replace send the same
-// shape, and the editor's every change is a read-modify-write of it — so there is no per-entry
-// route, no reorder verb, and nothing to reconcile between them. Entry positions are the order the
-// entries arrive in; the Routine constructor is what refuses anything else.
-struct RoutineWrite {
-  RoutineId id;
-  std::string name;
-  int position;
-  std::vector<RoutineEntry> entries;
-};
-
-// What an agent proposes: the routine it is about, the document it would take on, the name it would
-// carry, and the one sentence a card prints before a lifter opens the diff. The proposal's own id is
-// the caller's to mint, exactly as a session's and a set's are, so a lost reply is replayed rather
-// than turned into a second proposal that would supersede the first.
-//
-// There is no `position` here, and its absence is a decision rather than an omission: where a day
-// sits in a lifter's week is their ordering of their own life, not a program change an agent
-// proposes, so a diff about bench press cannot quietly reshuffle the routines screen.
-//
-// `source` is provenance — which door, which connection, which model — carried on the write rather
-// than inferred later, because W7's Ask mints through this same object and the difference between
-// the two doors must be a column and never a fork.
-struct ProposalWrite {
-  ProposalId id;
-  RoutineId routine;
-  std::optional<std::string> name;   // absent = the routine keeps the name it has
-  std::string summary;
-  std::vector<RoutineEntry> entries;
-  ProposalSource source;
-};
-
-// A movement a lifter created, off the picker's "no movement by that name". stepKg is the one
-// optional: omitted, the equipment decides it (defaultStepKg), which is how the 64 seeds were
-// written. It is stored and served and nothing steps a weight by it — see Training.h.
-struct ExerciseWrite {
-  ExerciseId id;
-  std::string name;
-  Pattern pattern;
-  Equipment equipment;
-  std::optional<double> stepKg;
 };
 
 // How a write can refuse, as facts the HTTP edge maps to statuses (400 / 404 / 409) — flow control
@@ -178,21 +132,28 @@ struct LogRow {
 // landed, and deleting a workout somebody is still logging into destroys the sets in flight.
 enum class DiscardOutcome { done, notFound, open };
 
-// The application seam over the training log: the HTTP adapter talks to this, never to the
-// repository. It owns the two-phase auto-close (load the open session + its last set instant →
-// the pure rule → persist the close) and the write-then-resolve idempotency story — every write
-// returns the resolved row, so a replayed or double-tapped client sees the winning truth in one
-// round trip. No cron, no sweep: staleness is settled lazily, before a start, before a log read and
-// before the statistics read — the three replies a close rewrites.
+// The application seam over the training log — one of five services, each over the aggregate port
+// of the same name (CatalogService, ProgramService, ThreadService, PreferencesService are the other
+// four), and the one that owns everything that reads or writes a workout: the HTTP adapter and the
+// MCP tools talk to this, never to the repository. It owns the two-phase auto-close (load the open
+// session + its last set instant → the pure rule → persist the close) and the write-then-resolve
+// idempotency story — every write returns the resolved row, so a replayed or double-tapped client
+// sees the winning truth in one round trip. No cron, no sweep: staleness is settled lazily, before a
+// start, before a log read and before the statistics read — the three replies a close rewrites.
+//
+// The program port is here for exactly one write: a start that names a routine freezes that day's
+// plan onto the session (§2.5), and the plan is loaded from the store's own routine rather than
+// composed by the client. It is a port and not ProgramService because services depend on ports and
+// the domain, never on each other — a service that reached for a sibling would be the facade this
+// file replaced, one layer down.
 //
 // The token generator is here for exactly one thing — minting a coach share's secret — and it is
 // the platform's own, the same mint that makes a session cookie and a magic link, so the one
 // unguessable string gym hands out is not a second-best random of gym's own.
-class LogService {
+class TrainingService {
 public:
-  LogService(LogRepository& log, CatalogRepository& catalog, ProgramRepository& program,
-             AskThreadRepository& threads, PreferencesRepository& preferences, Clock& clock,
-             TokenGenerator& tokens);
+  TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
+                  TokenGenerator& tokens);
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
@@ -218,67 +179,12 @@ public:
   // in flight. Ask asks this before it will answer at all (§L: never offered mid-session), and it is
   // one row rather than a search because one open session per account is the store's own index.
   std::optional<Session> openSession(const UserId& user);
-  std::vector<Exercise> catalog(const UserId& user);
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);
   // The picker's meta beside the catalog, and deliberately NOT inside it: the catalog is 64 rows
   // read on nearly every screen and most of them are movements a given lifter has never touched, so
   // the annotation is asked for by the one surface that draws it. Nothing here computes anything —
   // which set is "last" is the store's ordering, the same one lastTime states.
   std::vector<LastSet> lastSets(const UserId& user);
-
-  // The plan, and the catalog's one write. Every refusal these can answer is the store's own fact,
-  // so they hand the port's outcomes straight back rather than re-spelling them into a second enum
-  // that could only ever say the same words — the same pass-through lastTime is.
-  std::vector<Routine> routines(const UserId& user);
-  std::optional<Routine> routine(const UserId& user, const RoutineId& id);
-  // The routine's dated history — its creation and every proposal ever minted against it, in one
-  // list (ports/ProgramRepository.h). It rides on the routine's own read rather than on a route of
-  // its own, because it is one section of one screen (§M30) and a page that made a call per section
-  // draws in stages.
-  std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id);
-  // `byAgent` is the door a create came through, absent for the lifter's own hand. It is stated by
-  // each caller rather than defaulted: the app's route and the MCP tool are the only two, and a
-  // third one that appeared without saying which it was would quietly claim the lifter's.
-  RoutineWriteOutcome createRoutine(const UserId& user, const RoutineWrite& incoming,
-                                    std::optional<ProposalDoor> byAgent);
-  // The PATH names the routine being replaced; the body carries what it becomes.
-  //
-  // THIS IS THE HUMAN'S HAND, and it is reachable from `PUT /v1/gym/routines/{id}` alone. No MCP
-  // tool calls it at any grant level — the tool layer is the only place gym can tell an agent from
-  // a hand, and an agent that wants this asks for it through the proposal ledger below. A wave that
-  // "completes the catalog" here deletes the whole of §D from the product.
-  RoutineWriteOutcome replaceRoutine(const UserId& user, const RoutineId& id,
-                                     const RoutineWrite& incoming);
-  bool deleteRoutine(const UserId& user, const RoutineId& id);
-
-  // THE PROPOSAL LEDGER — the agent's whole reach into a day of the program that already stands.
-  //
-  // `propose` is the only one of the four an agent can call. It loads the routine under the
-  // caller's own scope, builds the document it would become — through the Routine constructor, so a
-  // proposal that could not be stored as a plan is refused at the mint rather than at the tap —
-  // asks the pure rule for the typed field-level diff, and stores that against the routine's
-  // current revision. Nothing is written to the program.
-  //
-  // `apply` and `dismiss` are the LIFTER's, reached from two owner-scoped routes and from no tool
-  // at any level, because Apply is not a capability. `apply` is atomic: the domain computes the
-  // routine the proposal makes true, the store writes it against the frozen base revision, and a
-  // routine that moved since is superseded rather than merged over the top.
-  std::vector<ProposalHead> proposals(const UserId& user, const ProposalQuery& query);
-  std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id);
-  ProposalMintOutcome propose(const UserId& user, const ProposalWrite& incoming);
-  ProposalMintOutcome proposeRemoval(const UserId& user, const ProposalId& id,
-                                     const RoutineId& routine, const std::string& summary,
-                                     const ProposalSource& source);
-  ProposalSettleOutcome apply(const UserId& user, const ProposalId& id);
-  ProposalSettleOutcome dismiss(const UserId& user, const ProposalId& id);
-  ExerciseInsertOutcome createExercise(const UserId& user, const ExerciseWrite& incoming);
-  // The rename, and the identity it exists to prove: the movement keeps its id, so every set and
-  // every plan that names it is untouched and the history stays whole. The name is validated where
-  // every other value in this product is — by constructing the entity — so a name the store cannot
-  // hold never reaches it. Absent is the store's one fact: this account's catalog holds no such
-  // movement.
-  std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
-                                         const std::string& name);
 
   // The finish surface. review is a read with no refusal of its own — an absent review is an absent
   // session, exactly as detail's is — and discard is the one door that takes something away.
@@ -290,34 +196,11 @@ public:
   // no rule at all: it hands back what is stored, which is the point of an export.
   Statistics statistics(const UserId& user);
   std::vector<ExportedSet> exportedSets(const UserId& user);
-  // Threads in the export with everything else (§O), and the second half of the trust argument for a
-  // multi-year artifact: a lifter walks away with what they asked and what was answered, byte for
-  // byte. It is the two-phase shape — the store renders the rows, the domain decides each thread's
-  // outcome, and this stamps the second onto the first. UNBOUNDED on both halves — the outcomes come
-  // from `allThreads` rather than the list read, because a ceiling that is honest on a screen is a
-  // lie in an archive, and every thread that exists is in the file whether or not it holds a turn.
-  std::vector<ExportedThreadTurn> exportedThreadTurns(const UserId& user);
   // A movement's record — the same one-load-one-rule shape, narrowed to one movement, and the read
-  // that replaced the statistics room on every surface. Absent is the store's one fact: this
+  // that replaced the statistics room on every surface. It is a read OF THE LOG and lives here even
+  // though CatalogApi mounts it under the movement's path. Absent is the store's one fact: this
   // account's catalog holds no such movement.
   std::optional<MovementRecord> movementRecord(const UserId& user, const ExerciseId& exercise);
-
-  // Settings (§I), and the one pair here that is not about the log at all — they live on this
-  // service rather than behind a second one because a service of two pass-throughs is indirection
-  // with one call site, and because the HTTP and MCP doors already hold exactly this object: one
-  // core, two doors, and a rule that cannot be true on one surface and not the other.
-  //
-  // The read answers the DEFAULTS where nothing is stored rather than an absence, because every
-  // client needs the rest target and the reading unit to draw its first frame — a 404 there would
-  // put a copy of the defaults in each of them, and the fourth copy is the one that disagrees.
-  //
-  // The write is the WHOLE document, the shape a routine travels in and for the shape's own reason:
-  // the settings screen renders every row from one value it already holds, so it always has the
-  // whole document in hand, and a partial write would need "omitted" and "cleared" to be different
-  // things on the one field whose absence already means something — an absent rest target IS the
-  // timer off. It answers with the stored row, so a client draws what the store now holds.
-  GymPreferences preferences(const UserId& user);
-  GymPreferences savePreferences(const GymPreferences& incoming);
 
   // The coach share. The mint answers with the live share on a repeat, so nothing here has to ask
   // first — the store resolves it, the same write-then-resolve every other write in this file uses.
@@ -329,36 +212,9 @@ public:
   // takes. The token is the whole credential and the clock decides whether it is still one.
   std::optional<SharedSession> shared(const std::string& token);
 
-  // ASK'S THREADS (§O) — and they live HERE rather than on AskService for a reason a lifter would
-  // recognise: a conversation they had is their data, not a feature of the model. A deployment with
-  // no vendor key wired registers no `POST /v1/gym/ask` at all, and the threads already had are
-  // still theirs to read, to export and to delete. Ask writes them; the log keeps them.
-  //
-  // Each read hands back the domain value whole and the OUTCOME is derived at the edge that draws
-  // it (`outcomeOf`, domain/Thread.h), never stored: the proposals are the outcome, and a column
-  // beside them would be a second copy of a fact the ledger already holds.
-  std::vector<AskThread> threads(const UserId& user);
-  std::optional<AskThread> thread(const UserId& user, const ThreadId& id);
-  // The three WRITES, and Ask is their only caller — they live here rather than on AskService
-  // because this is the object that holds the store and the clock, and a conversation is dated by
-  // the server's clock like every instant the server itself decides. `openThread` lands before the
-  // model runs (a proposal minted mid-conversation points at the row); `appendTurns` lands only once
-  // an answer has, so a question nobody answered is not a turn; `discardEmptyThread` is what takes
-  // back a thread whose run never answered, and it can only ever take one that holds no turns.
-  ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title);
-  void appendTurns(const UserId& user, const ThreadId& id, std::vector<ThreadTurn> turns);
-  void discardEmptyThread(const UserId& user, const ThreadId& id);
-  // The lifter's delete, and the whole of it: the conversation goes, the consequence stays. An
-  // applied change is still in the routine's history saying it came from Ask — it just no longer
-  // opens a conversation that exists.
-  bool deleteThread(const UserId& user, const ThreadId& id);
-
 private:
   LogRepository& log_;
-  CatalogRepository& catalog_;
   ProgramRepository& program_;
-  AskThreadRepository& threads_;
-  PreferencesRepository& preferences_;
   Clock& clock_;
   TokenGenerator& tokens_;
 };

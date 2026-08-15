@@ -14,10 +14,10 @@ namespace wm::gym {
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // ASK'S ONE ROUTE — the SECOND DOOR onto the tools an agent already drives over MCP, for a lifter who
-// does not have an agent of their own. There is no third thing here: the same LogService, the same
-// seventeen declarations, the same owner scoping; what this adds is a model on our side of the wire
-// and the bill that comes with it, which is why every gate below is read before the question travels
-// anywhere.
+// does not have an agent of their own. There is no third thing here: the same three services under
+// GymTools (TrainingService, CatalogService, ProgramService), the same sixteen declarations, the
+// same owner scoping; what this adds is a model on our side of the wire and the bill that comes with
+// it, which is why every gate below is read before the question travels anywhere.
 //
 // It is REQUEST/RESPONSE and deliberately not a stream. The only streaming machinery in this repo is
 // roadmap's hand-rolled HTTP/1.1 + chunked + SSE decoder, and an answer that arrives in one reply does
