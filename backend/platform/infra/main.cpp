@@ -443,8 +443,11 @@ int main() {
   // widest reach in the system is a line someone chose, not a default that reads as an omission.
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,   mcpToken,
                   mcpFallbackUser,    mcpKeyService.get(), ToolScope::everything()};
-  auto mcpServer =
-      std::make_shared<McpServer>(*mcpComposite, windmillServerInfo(*mcpComposite), roadmapResources());
+  // The deployed sha the release already carries, said in the MCP handshake too — the same stamp,
+  // one source, so a session's catalog can be dated against the repo without asking Sentry.
+  auto mcpServer = std::make_shared<McpServer>(
+      *mcpComposite, windmillServerInfo(*mcpComposite, sentryRelease ? sentryRelease : ""),
+      roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
 
   // The authorization server advertises exactly the scopes the tool surface honours, derived from the

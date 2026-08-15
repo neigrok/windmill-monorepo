@@ -314,4 +314,20 @@ TEST(windmill_server_info_names_the_connected_products_and_carries_their_paragra
         std::string::npos);
   CHECK(info.instructions.find("Roadmaps are skill trees.") != std::string::npos);
   CHECK(info.instructions.find("A gym log.") != std::string::npos);
+  CHECK_EQ(info.version, std::string("0.1.0"));
+  CHECK(info.instructions.find("build") == std::string::npos);
+}
+
+// A session's tools/list outlives a deploy. The handshake dates the catalog — the deployed sha as
+// semver build metadata and one sentence saying what a stale list means — so a reader comparing it
+// against the repo learns "reconnect", not "prod is old".
+TEST(windmill_server_info_dates_the_catalog_with_the_deployed_build) {
+  FakeProduct r = roadmap();
+  CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
+
+  const ServerInfo info = windmillServerInfo(surface, "e86762e0d1c2b3a4f5");
+  CHECK_EQ(info.version, std::string("0.1.0+e86762e"));
+  CHECK(info.instructions.find("This server is build e86762e;") != std::string::npos);
+  CHECK(info.instructions.find("reconnect rather than concluding the server is old") !=
+        std::string::npos);
 }

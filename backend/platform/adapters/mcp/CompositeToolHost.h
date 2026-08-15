@@ -63,6 +63,12 @@ private:
 // frame and product-supplied in its content — the same injection seam the resource catalog already
 // uses — because a handshake describing skill trees to a client connected for its training log is
 // the plainest kind of wrong answer.
-ServerInfo windmillServerInfo(const CompositeToolHost& tools);
+//
+// `build` is the deployed commit (the sha the deploy renders; empty on a laptop). It rides in
+// `serverInfo.version` as semver build metadata and is named in the instructions, because a client
+// session's tools/list outlives a deploy: a scout that read a cached catalog against the repo once
+// concluded prod was stale when only its connection was. One line a reader can compare against
+// `git log` turns that into "reconnect".
+ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build = "");
 
 }

@@ -110,7 +110,7 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
   return tool.host->callTool(name, arguments, caller);
 }
 
-ServerInfo windmillServerInfo(const CompositeToolHost& tools) {
+ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build) {
   std::string connected;
   for (const std::string& product : tools.products()) {
     if (!connected.empty()) connected += ", ";
@@ -126,9 +126,17 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools) {
       ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "
       "surface this connection may use — a tool you cannot see is a level that was not granted, not a "
       "tool that is missing; ask your human to reconnect and approve it.";
+  // The stamp is short the way a human quotes a commit, and it is said in the same breath as the
+  // catalog rule: a tool your session lists that this build no longer declares is a session older
+  // than the deploy, not a server older than the repo.
+  const std::string stamp = build.substr(0, 7);
+  if (!stamp.empty())
+    instructions += " This server is build " + stamp +
+                    "; a tools/list your session cached before that build may name tools it no "
+                    "longer declares — reconnect rather than concluding the server is old.";
   if (!tools.instructions().empty()) instructions += "\n\n" + tools.instructions();
 
-  return {"windmill", "0.1.0", std::move(instructions)};
+  return {"windmill", stamp.empty() ? "0.1.0" : "0.1.0+" + stamp, std::move(instructions)};
 }
 
 }
