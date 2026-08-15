@@ -4,7 +4,6 @@
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstdint>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -121,21 +120,5 @@ const char* skipReasonName(SkipReason reason);
 std::string readyPhrase(int readySteps);
 std::string remainderPhrase(int readySteps);
 std::string otherTreesPhrase(int otherReadyTrees);
-
-// The dark-launch gate. Never consulted at DECIDE time, so the ledger keeps recording honest
-// weeks while nobody can receive anything; consulted at SEND time, and again at the settings door,
-// so nobody the engine cannot reach is shown a switch or allowed to flip one. Disabled and an
-// empty allowlist both mean "nobody" — the owner runs the whole engine against their own account
-// first. `enabled` is the FEATURE's state and `allows` is one person's: answering the second
-// question with the first is the whole of how a dark rollout starts advertising itself.
-struct ReminderArming {
-  ReminderArming() = default;
-  ReminderArming(bool enabled, const std::string& allowlistCsv);
-
-  bool allows(const UserId& user) const;
-
-  bool enabled = false;
-  std::set<std::string> allowlist;
-};
 
 }

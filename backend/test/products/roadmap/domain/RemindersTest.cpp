@@ -284,38 +284,3 @@ TEST(the_other_trees_line_names_its_unit_out_loud) {
   CHECK_EQ(otherTreesPhrase(1), std::string("1 other tree has steps ready"));
   CHECK_EQ(otherTreesPhrase(3), std::string("3 other trees have steps ready"));
 }
-
-TEST(arming_defaults_to_nobody) {
-  const ReminderArming dark;
-
-  CHECK_FALSE(dark.enabled);
-  CHECK_EQ(dark.allowlist.size(), std::size_t{0});
-  CHECK_FALSE(dark.allows(UserId{"u1"}));
-}
-
-TEST(an_empty_allowlist_arms_nobody_even_when_the_engine_is_enabled) {
-  const ReminderArming armed(true, "");
-
-  CHECK(armed.enabled);
-  CHECK_EQ(armed.allowlist.size(), std::size_t{0});
-  CHECK_FALSE(armed.allows(UserId{"u1"}));
-}
-
-TEST(the_allowlist_alone_arms_nobody_while_the_engine_is_dark) {
-  const ReminderArming dark(false, "u1,u2");
-
-  CHECK_EQ(dark.allowlist.size(), std::size_t{2});
-  CHECK_FALSE(dark.allows(UserId{"u1"}));
-}
-
-TEST(the_allowlist_forgives_the_shapes_a_pasted_uuid_arrives_in) {
-  const ReminderArming armed(true, " 3F2A-ONE , u2,, u3 ,");
-
-  CHECK_EQ(armed.allowlist.size(), std::size_t{3});
-  CHECK(armed.allows(UserId{"3f2a-one"}));
-  CHECK(armed.allows(UserId{"3F2A-ONE"}));
-  CHECK(armed.allows(UserId{"u2"}));
-  CHECK(armed.allows(UserId{"u3"}));
-  CHECK_FALSE(armed.allows(UserId{"u4"}));
-  CHECK_FALSE(armed.allows(UserId{""}));
-}

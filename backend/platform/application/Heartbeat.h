@@ -32,8 +32,9 @@ namespace wm {
 //
 // What deliberately does NOT live here: the claim mutex, the arming allowlist and the send log.
 // Two of the three sweeps mail and one derives, so folding a mail pipeline into this would hand
-// EchoSweep a gate it must inherit and ignore. That promotion waits for a second mailing product
-// that actually exists.
+// EchoSweep a gate it must inherit and ignore. That pipeline is MailSweep (MailSweep.h, since
+// 2026-08-15): DECIDE → CLAIM → SEND written once, which ReminderSweep and NudgeSweep derive from
+// while each keeps a Heartbeat of its own — two things shared at two depths.
 //
 // ONE RULE FOR CALLERS: declare the Heartbeat LAST in your class, so it is destroyed FIRST. Its
 // destructor quits the loop and joins the thread, and that has to happen while the collaborators a

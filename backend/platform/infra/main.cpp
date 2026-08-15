@@ -48,6 +48,7 @@
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
 #include "platform/domain/AiFuse.h"
+#include "platform/domain/MailArming.h"
 #include "products/roadmap/application/ForkService.h"
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
@@ -396,8 +397,8 @@ int main() {
   const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
   const char* remindersAdminEnv = std::getenv("REMINDERS_ADMIN_TOKEN");
   auto reminderRepo = std::make_shared<PgReminderRepository>(pool);
-  ReminderArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
-                                remindersAllowlistEnv ? remindersAllowlistEnv : "");
+  MailArming reminderArming(remindersEnabledFlag == "true" || remindersEnabledFlag == "1",
+                            remindersAllowlistEnv ? remindersAllowlistEnv : "");
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
   auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *reminderMail, *tokens,
                                                        *systemClock, reminderArming, appBaseUrl);
@@ -894,8 +895,8 @@ int main() {
   const char* journalNudgeAllowlistEnv = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
   const char* journalNudgeAdminEnv = std::getenv("JOURNAL_NUDGE_ADMIN_TOKEN");
   auto journalNudges = std::make_shared<PgNudgeRepository>(pool);
-  NudgeArming journalNudgeArming(journalNudgeEnabledFlag == "true" || journalNudgeEnabledFlag == "1",
-                                 journalNudgeAllowlistEnv ? journalNudgeAllowlistEnv : "");
+  MailArming journalNudgeArming(journalNudgeEnabledFlag == "true" || journalNudgeEnabledFlag == "1",
+                                journalNudgeAllowlistEnv ? journalNudgeAllowlistEnv : "");
   auto journalNudgeMail = std::make_shared<ResendNudgeSender>(*resendClient);
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);

@@ -34,7 +34,7 @@ struct Harness {
   std::shared_ptr<ReminderSweep> sweep;
   std::shared_ptr<RemindersApi> api;
 
-  explicit Harness(ReminderArming arming = ReminderArming(), std::string adminToken = "")
+  explicit Harness(MailArming arming = MailArming(), std::string adminToken = "")
       : sweep(std::make_shared<ReminderSweep>(*reminders, reminderMail, *tokens, *clock,
                                               std::move(arming), "https://windmill.works")),
         api(std::make_shared<RemindersApi>(sweep, reminders, auth, tokens, clock,
@@ -164,22 +164,22 @@ TEST(reminders_armed_answers_whether_the_engine_can_reach_THIS_caller) {
   // The rollout state .env.example prescribes: the feature enabled, an allowlist of one. Answering
   // this question with the feature's flag alone would advertise the switch to every signed-in
   // stranger, who would turn it on, be told when we send, and receive nothing for a month.
-  Harness reachable(ReminderArming(true, "u1"));
+  Harness reachable(MailArming(true, "u1"));
   reachable.signIn("s-live");
   CHECK(bodyOf(get(reachable, signedIn(drogon::Get, "/v1/reminders", "")))["armed"].asBool());
 
-  Harness enabledButNotForYou(ReminderArming(true, "somebody-else"));
+  Harness enabledButNotForYou(MailArming(true, "somebody-else"));
   enabledButNotForYou.signIn("s-live");
   CHECK_FALSE(
       bodyOf(get(enabledButNotForYou, signedIn(drogon::Get, "/v1/reminders", "")))["armed"].asBool());
 
-  Harness dark(ReminderArming(false, "u1"));
+  Harness dark(MailArming(false, "u1"));
   dark.signIn("s-live");
   CHECK_FALSE(bodyOf(get(dark, signedIn(drogon::Get, "/v1/reminders", "")))["armed"].asBool());
 }
 
 TEST(reminders_a_patch_edits_only_the_fields_it_carries) {
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
 
   CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders", R"({"timezone":"Europe/Berlin"})"))
@@ -200,7 +200,7 @@ TEST(reminders_a_patch_edits_only_the_fields_it_carries) {
 TEST(reminders_enabling_without_a_timezone_is_refused) {
   // No zone means no hour to send at, and defaulting to UTC would mail US users at 4am. Refusing
   // beats accepting the row into permanent silence.
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
 
   drogon::HttpResponsePtr response =
@@ -213,7 +213,7 @@ TEST(reminders_enabling_without_a_timezone_is_refused) {
 TEST(reminders_enabling_is_refused_for_anyone_the_engine_cannot_reach) {
   // No row may claim "on" while the sweep cannot deliver to its owner: that row would decide an
   // honest week every Tuesday and withhold every single one of them.
-  Harness h(ReminderArming(true, "somebody-else"));
+  Harness h(MailArming(true, "somebody-else"));
   h.signIn("s-live");
 
   drogon::HttpResponsePtr response = patch(
@@ -226,7 +226,7 @@ TEST(reminders_enabling_is_refused_for_anyone_the_engine_cannot_reach) {
 TEST(reminders_a_field_of_the_wrong_type_is_a_400_and_never_a_500) {
   // jsoncpp's asBool/asString THROW on a type they cannot convert, and an exception out of a
   // handler is a 500, a server_errors row and a Sentry event — mintable by any signed-in caller.
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
 
   CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders", R"({"enabled":"on"})"))->getStatusCode(),
@@ -241,7 +241,7 @@ TEST(reminders_a_field_of_the_wrong_type_is_a_400_and_never_a_500) {
 }
 
 TEST(reminders_a_timezone_the_database_does_not_know_is_refused) {
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
   h.reminders->unknownTimezones.insert("Mars/Olympus_Mons");
 
@@ -324,7 +324,7 @@ TEST(reminders_the_admin_sweep_is_a_404_rather_than_a_403) {
                .response->getStatusCode(),
            drogon::k404NotFound);
 
-  Harness h(ReminderArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   CHECK_EQ(
       sweep(h, request(drogon::Post, "/v1/admin/reminders/sweep", "{}")).response->getStatusCode(),
       drogon::k404NotFound);
@@ -337,7 +337,7 @@ TEST(reminders_the_admin_sweep_is_a_404_rather_than_a_403) {
 TEST(reminders_an_admin_sweep_runs_off_the_calling_thread) {
   // A full batch is up to 200 users' worth of database round trips and provider calls. Running it
   // on the thread that took the request would pin a quarter of the server's IO for that long.
-  Harness h(ReminderArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   h.planOneDueUser();
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/reminders/sweep", "{}");
   req->addHeader("authorization", "Bearer the-secret");
@@ -356,7 +356,7 @@ TEST(reminders_an_admin_sweep_runs_off_the_calling_thread) {
 }
 
 TEST(reminders_a_time_travelling_sweep_is_refused_while_the_engine_is_armed) {
-  Harness h(ReminderArming(true, "u1"), "the-secret");
+  Harness h(MailArming(true, "u1"), "the-secret");
   h.planOneDueUser();
   drogon::HttpRequestPtr req =
       request(drogon::Post, "/v1/admin/reminders/sweep", R"({"asOfMs":1900000000000})");
@@ -372,7 +372,7 @@ TEST(reminders_a_time_travelling_sweep_is_always_a_rehearsal) {
   // The pointer advance computes next week from SQL now(), not from asOfMs, so a real run against
   // a future clock would claim the whole fleet's week and push every pointer against real time.
   // One mistyped rehearsal would cost everybody their next reminder.
-  Harness h(ReminderArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   h.planOneDueUser();
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/reminders/sweep",
                                        R"({"asOfMs":1700000000000,"dryRun":false})");
@@ -391,7 +391,7 @@ TEST(reminders_a_time_travelling_sweep_is_always_a_rehearsal) {
 }
 
 TEST(reminders_an_admin_sweep_of_the_wrong_shape_is_a_400) {
-  Harness h(ReminderArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   h.planOneDueUser();
 
   drogon::HttpRequestPtr badClock =
@@ -445,7 +445,7 @@ TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) 
 TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
   // The one deliberate act that clears the provider's verdict: the owner, signed in, saying
   // "on" — which is them saying the address works now. Being wrong costs one more bounce.
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   h.reminders->settings[me.str()].enabled = true;
   h.reminders->settings[me.str()].timezone = "Europe/Berlin";
@@ -469,7 +469,7 @@ TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
 TEST(reminders_a_patch_that_does_not_turn_them_on_leaves_a_suppression_alone) {
   // Switching off is not a claim about the mailbox, and neither is moving the timezone over a row
   // that already reads "on": the flag is the provider's fact until the owner says otherwise.
-  Harness h(ReminderArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   h.reminders->settings[me.str()].enabled = true;
   h.reminders->settings[me.str()].timezone = "Europe/Berlin";

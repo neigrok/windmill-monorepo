@@ -43,12 +43,20 @@ Json::Value toJson(const NudgeSettings& settings, bool armed) {
   return body;
 }
 
-Json::Value toJson(const NudgeSweepReport& report) {
+// The whole MailSweepReport, the same nine fields roadmap's admin door answers with. Until
+// 2026-08-15 this route answered four and folded a rehearsal's would-be sends into `sent`; now a
+// dry run reports `wouldSend` and `sent` stays what the provider accepted.
+Json::Value toJson(const MailSweepReport& report) {
   Json::Value body(Json::objectValue);
+  body["ran"] = report.ran;
+  body["due"] = report.due;
+  body["claimed"] = report.claimed;
   body["sent"] = report.sent;
-  body["skipped"] = report.skipped;
-  body["held"] = report.held;
   body["failed"] = report.failed;
+  body["held"] = report.held;
+  body["wouldSend"] = report.wouldSend;
+  body["skipped"] = report.skipped;
+  body["errors"] = report.errors;
   return body;
 }
 

@@ -36,7 +36,7 @@ struct Harness {
   std::shared_ptr<NudgeSweep> sweep;
   std::shared_ptr<NudgeApi> api;
 
-  explicit Harness(NudgeArming arming = NudgeArming(), std::string adminToken = "")
+  explicit Harness(MailArming arming = MailArming(), std::string adminToken = "")
       : sweep(std::make_shared<NudgeSweep>(*nudges, nudgeMail, *tokens, *clock, std::move(arming),
                                            "https://windmill.works")),
         api(std::make_shared<NudgeApi>(nudges, sweep, auth, tokens, clock, std::move(adminToken))) {}
@@ -130,7 +130,7 @@ TEST(nudge_get_without_a_row_answers_the_defaults) {
 }
 
 TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
-  Harness h(NudgeArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   Json::Value body(Json::objectValue);
   body["enabled"] = true;
@@ -259,7 +259,7 @@ TEST(admin_sweep_with_no_token_configured_is_403) {
 }
 
 TEST(admin_sweep_with_the_wrong_token_is_403) {
-  Harness h(NudgeArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/nudge/sweep");
   req->addHeader("x-admin-token", "the-secre");
 
@@ -270,17 +270,19 @@ TEST(admin_sweep_with_the_wrong_token_is_403) {
 }
 
 TEST(admin_sweep_with_the_right_token_reports) {
-  Harness h(NudgeArming(), "the-secret");
+  Harness h(MailArming(), "the-secret");
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/nudge/sweep");
   req->addHeader("x-admin-token", "the-secret");
 
   drogon::HttpResponsePtr response = adminSweep(h, req);
 
   // Nobody is due over an empty repository, so the report is all zeros — the door and the shape
-  // are what this case pins down.
+  // are what this case pins down: the whole MailSweepReport, the same nine fields roadmap's admin
+  // door answers with (`ran` is true: the pass took the lock and looked).
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
-           std::string(R"({"failed":0,"held":0,"sent":0,"skipped":0})"));
+           std::string(R"({"claimed":0,"due":0,"errors":0,"failed":0,"held":0,"ran":true,)"
+                       R"("sent":0,"skipped":0,"wouldSend":0})"));
 }
 
 TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
@@ -327,7 +329,7 @@ TEST(nudge_the_owner_turning_it_on_lifts_a_suppression) {
   // The one deliberate act that clears the provider's verdict: the owner, signed in, PATCHing
   // enabled:true — which is them saying the address works now. Being wrong costs one more bounce.
   // The PATCH answers the fresh settings, so the lift must show in the reply, not only in the row.
-  Harness h(NudgeArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   NudgeSettings on;
   on.enabled = true;
@@ -356,7 +358,7 @@ TEST(nudge_the_owner_turning_it_on_lifts_a_suppression) {
 TEST(nudge_a_patch_that_does_not_say_enabled_leaves_a_suppression_alone) {
   // A row already reading "on" is not the owner speaking: moving the channel over it changes a
   // preference and says nothing about the mailbox, so the provider's fact stands.
-  Harness h(NudgeArming(true, "u1"));
+  Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   NudgeSettings on;
   on.enabled = true;

@@ -28,6 +28,7 @@ add_library(windmill_platform
   platform/domain/AiUsage.cpp
   platform/domain/Auth.cpp
   platform/domain/Mail.cpp
+  platform/domain/MailArming.cpp
   platform/domain/OAuth.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
@@ -124,11 +125,13 @@ add_executable(windmill_domain_tests
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
   test/platform/domain/MailTest.cpp
+  test/platform/domain/MailArmingTest.cpp
   test/platform/domain/OAuthTest.cpp
   test/platform/application/AuthServiceTest.cpp
   test/platform/application/EntitlementsTest.cpp
   test/platform/application/OAuthServiceTest.cpp
   test/platform/application/McpKeyServiceTest.cpp
+  test/platform/application/MailSweepTest.cpp
   test/products/roadmap/domain/LooseGraphTest.cpp
   test/products/roadmap/domain/LegendTest.cpp
   test/products/roadmap/domain/SubgraphTest.cpp

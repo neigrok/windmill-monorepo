@@ -40,7 +40,7 @@ Json::Value toJson(const ReminderSettings& settings, bool armed) {
   return body;
 }
 
-Json::Value toJson(const SweepReport& report) {
+Json::Value toJson(const MailSweepReport& report) {
   Json::Value body(Json::objectValue);
   body["ran"] = report.ran;
   body["due"] = report.due;
@@ -214,7 +214,7 @@ void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   // pin a quarter of the server's capacity for as long as that takes. The sweep answers from its
   // own loop, which also serialises this run behind the heartbeat's rather than racing it.
   sweep_->runAsync(asOfMs != 0 ? asOfMs : clock_->nowMs(), dryRun,
-                   [callback = std::move(callback)](SweepReport report) {
+                   [callback = std::move(callback)](MailSweepReport report) {
                      callback(jsonResponse(toJson(report)));
                    });
 }

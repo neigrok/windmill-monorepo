@@ -16,6 +16,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -107,6 +108,7 @@ public:
   std::map<std::string, NudgeSettings> settings;   // user -> the whole owned row
   std::set<std::string> wrote;                     // "user|day-iso" the test populates
   std::set<std::string> ledger;                    // "user|day-iso" rows a claim already owns
+  std::set<std::string> unreadable;                // users whose load throws
   std::vector<Claim> claims;
   std::vector<Close> closes;
   std::map<std::string, std::string> pauseDigests; // user -> latest pause digest
@@ -147,6 +149,7 @@ public:
     return out;
   }
   bool wroteToday(const UserId& user, const LocalDate& day) override {
+    if (unreadable.count(user.str())) throw std::runtime_error("journal_pages is on fire");
     return wrote.count(dayKey(user, day)) > 0;
   }
 

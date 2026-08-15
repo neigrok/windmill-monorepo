@@ -28,7 +28,8 @@ narrow and load-bearing, and the first architectural act is to draw that line an
 1. **Pages** — durable, per-user, one row per local day. The account of record so a page
    survives a device, restores after eviction, and converges across two devices. (§3)
 2. **Nudges** — a daily, at-most-one delivery, sent at a time the *device* learned. A pure sweep
-   over `(now, database)`, cloned almost verbatim from the roadmap reminder engine. (§4)
+   over `(now, database)` on the platform's `MailSweep` spine, the one the roadmap reminder
+   engine runs on too. (§4)
 3. **Echoes** — the deep reading-across: a pass over a whole corpus, computed for the writer
    without being asked, and triggered by their own save (ruled 2026-08-09; a six-hourly pass
    remains as the repair path). It runs for *everyone*; the subscription decides how much of a
@@ -366,11 +367,14 @@ client-side for v1; the server exposes only range/point reads.
 
 ## 4. Capability 2 — Nudges: a daily sweep at a time the device chose
 
-Cloned from the roadmap reminder engine (`domain/Reminders.h`, `application/ReminderSweep.h`,
-`ports/ReminderRepository.h`) almost verbatim, with the weekly slot swapped for a daily one and
-"has ready steps" swapped for "has already written today". The engine's spine transfers whole:
-**a self-owned 15-minute ticker thread, no schedule state in the process, and DECIDE → CLAIM →
-SEND ordering with the ledger PK as the dedup mutex.**
+Built on the same spine as the roadmap reminder engine (`domain/Reminders.h`,
+`application/ReminderSweep.h`, `ports/ReminderRepository.h`), with the weekly slot swapped for a
+daily one and "has ready steps" swapped for "has already written today". Since 2026-08-15 that
+spine is written once, on the platform: `platform/application/Heartbeat.h` is the self-owned
+15-minute ticker thread with no schedule state in the process, and `platform/application/MailSweep.h`
+is the DECIDE → CLAIM → SEND pass with the ledger PK as the dedup mutex, the arming gate
+(`platform/domain/MailArming.h`) and the per-user crash guard. `NudgeSweep` derives from `MailSweep`
+and supplies only what is journal's.
 
 ### 4.1 The pivot: the rhythm stays on the device; only the knock-instant crosses
 
@@ -425,21 +429,15 @@ vocabulary at all — the mail is a single fixed line ("The house is quiet. Thre
 
 ### 4.3 The sweep (`application/NudgeSweep.h`)
 
-Same skeleton as `ReminderSweep::run` — a `pg_try_advisory_lock` work lock (dedup, not
-correctness), a batched `dueNow`, then per user DECIDE → CLAIM → SEND:
-
-```cpp
-for (const NudgeDueUser& due : nudges_.dueNow(nowMs, kBatch)) {
-  NudgeDecision decision = decideFor(due, nowMs);               // load wroteToday/paused + decide()
-  if (!nudges_.claimDay(due.user, due.slotDay, decision)) continue;  // PK-mutex; lost race = silent
-  if (decision.outcome == NudgeOutcome::skip) continue;
-  if (!arming_.allows(due.user)) { nudges_.closeDay(..., held); continue; }   // dark-launch gate
-  MintedToken pause = tokens_.mint();
-  bool ok = deliver(due, pauseLink(pause.secret));             // email now; push in wave 2
-  if (ok) nudges_.setPauseDigest(due.user, pause.digest);
-  nudges_.closeDay(due.user, due.slotDay, ok ? sent : failed);
-}
-```
+`NudgeSweep` is `MailSweep<NudgeDueUser, NudgeDecision>` (`platform/application/MailSweep.h`).
+The base owns the pass — the `SweepMutex` work lock (`pg_try_advisory_lock`; dedup, not
+correctness), a batched `dueNow`, then per user, each turn guarded so one throw costs one writer
+one day: decide → rehearse (dry run) → claim → skip → arming gate at SEND time (closed `held`) →
+mint a fresh pause token → deliver with the 30s send wait → store the pause digest only if delivered
+→ close delivered/refused → count into one `MailSweepReport` `{ran, due, claimed, sent, failed,
+held, wouldSend, skipped, errors}`. What journal supplies is the handful of overrides: `dueNow`,
+`decideFor` (load `wroteToday` + `decide()`), the send/skip verdict, `claim` → `claimDay`, `close`
+→ `closeDay`, the three-link nudge mail, `storePause`.
 
 `claimDay` is the reminder claim verbatim: an `INSERT … WHERE EXISTS (re-check enabled / not
 paused / not deleted) ON CONFLICT (user_id, slot_day) DO NOTHING RETURNING`, advancing nothing

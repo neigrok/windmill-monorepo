@@ -2,6 +2,7 @@
 
 #include "platform/domain/Auth.h"
 #include "platform/ports/MailSuppression.h"
+#include "platform/ports/SweepMutex.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Reminders.h"
 
@@ -47,15 +48,10 @@ enum class WeekOutcome { held, delivered, refused };
 //
 // It is also roadmap's MailSuppression (platform/ports/MailSuppression.h): the store that decides
 // who gets the weekly mail is the store that can stop it, so the platform webhook needs nothing
-// from this product but this one inherited verb.
-struct ReminderRepository : MailSuppression {
-
-  // A fleet-wide mutex so two processes sharing one database cannot duplicate the WORK. It is
-  // deliberately not the correctness mechanism — the claim below is — so the sweep stays correct
-  // with both of these returning true and doing nothing.
-  virtual bool tryLockSweep() = 0;
-  virtual void unlockSweep() = 0;
-
+// from this product but this one inherited verb. And it is the sweep's SweepMutex
+// (platform/ports/SweepMutex.h) — the fleet-wide work lock, deliberately not the correctness
+// mechanism (the claim below is), so the sweep stays correct with the lock a no-op.
+struct ReminderRepository : MailSuppression, SweepMutex {
   // Whose slot has arrived, oldest first, capped. One indexed range scan — the sweep knows
   // nothing about calendars, only about `next_due_at <= now`.
   virtual std::vector<DueUser> dueNow(std::uint64_t nowMs, int limit) = 0;

@@ -31,13 +31,18 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
   FakeTokens tokens;
   FakeClock clock;
 
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "u1"), "https://windmill.works");
-  const NudgeSweepReport report = sweep.run(kNow, false);
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u1"), "https://windmill.works");
+  const MailSweepReport report = sweep.run(kNow, false);
 
+  CHECK(report.ran);
+  CHECK_EQ(report.due, 1);
+  CHECK_EQ(report.claimed, 1);
   CHECK_EQ(report.sent, 1);
   CHECK_EQ(report.skipped, 0);
   CHECK_EQ(report.held, 0);
   CHECK_EQ(report.failed, 0);
+  CHECK_EQ(report.wouldSend, 0);
+  CHECK_EQ(report.errors, 0);
 
   // DECIDE → CLAIM → SEND: the day is claimed with the send decision it will act on.
   REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
@@ -71,8 +76,8 @@ TEST(a_writer_who_already_wrote_today_is_skipped_with_no_mail) {
   FakeTokens tokens;
   FakeClock clock;
 
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "u1"), "https://windmill.works");
-  const NudgeSweepReport report = sweep.run(kNow, false);
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u1"), "https://windmill.works");
+  const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.sent, 0);
   CHECK_EQ(report.skipped, 1);
@@ -96,8 +101,8 @@ TEST(a_paused_writer_is_skipped_with_no_mail) {
   FakeTokens tokens;
   FakeClock clock;
 
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "u1"), "https://windmill.works");
-  const NudgeSweepReport report = sweep.run(kNow, false);
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u1"), "https://windmill.works");
+  const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.sent, 0);
   CHECK_EQ(report.skipped, 1);
@@ -116,9 +121,9 @@ TEST(a_writer_off_the_allowlist_has_the_send_held_and_the_day_closed_held) {
   FakeClock clock;
 
   // Feature on, but a list that does not name u1: the send is decided, claimed, then withheld.
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "someone-else"),
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "someone-else"),
                    "https://windmill.works");
-  const NudgeSweepReport report = sweep.run(kNow, false);
+  const MailSweepReport report = sweep.run(kNow, false);
 
   CHECK_EQ(report.sent, 0);
   CHECK_EQ(report.held, 1);
@@ -142,9 +147,9 @@ TEST(two_sweeps_of_the_same_day_send_only_once) {
   FakeTokens tokens;
   FakeClock clock;
 
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "u1"), "https://windmill.works");
-  const NudgeSweepReport first = sweep.run(kNow, false);
-  const NudgeSweepReport second = sweep.run(kNow, false);
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u1"), "https://windmill.works");
+  const MailSweepReport first = sweep.run(kNow, false);
+  const MailSweepReport second = sweep.run(kNow, false);
 
   CHECK_EQ(first.sent, 1);
   // The claim cleared next_due_at, so the day is no longer due — the mutex, from the outside.
@@ -161,10 +166,14 @@ TEST(a_rehearsal_claims_and_sends_nothing) {
   FakeTokens tokens;
   FakeClock clock;
 
-  NudgeSweep sweep(nudges, email, tokens, clock, NudgeArming(true, "u1"), "https://windmill.works");
-  const NudgeSweepReport report = sweep.run(kNow, true);
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u1"), "https://windmill.works");
+  const MailSweepReport report = sweep.run(kNow, true);
 
-  CHECK_EQ(report.sent, 1);   // the rehearsal reports what a real run WOULD have sent
+  CHECK(report.ran);
+  CHECK_EQ(report.due, 1);
+  CHECK_EQ(report.wouldSend, 1);   // the rehearsal reports what a real run WOULD have sent…
+  CHECK_EQ(report.sent, 0);        // …apart from what the provider accepted, which is nothing
+  CHECK_EQ(report.claimed, 0);
   CHECK_EQ(report.skipped, 0);
   CHECK_EQ(report.held, 0);
   CHECK_EQ(report.failed, 0);
@@ -172,4 +181,38 @@ TEST(a_rehearsal_claims_and_sends_nothing) {
   CHECK_EQ(email.sent.size(), std::size_t{0});
   CHECK_EQ(nudges.closes.size(), std::size_t{0});
   CHECK_EQ(nudges.pauseDigests.size(), std::size_t{0});
+}
+
+TEST(a_writer_whose_facts_cannot_be_read_costs_only_their_own_turn) {
+  // The per-user guard the sweep gained when its skeleton moved to the platform: before it, one
+  // throwing load aborted the whole pass and everyone behind the broken row went unnudged. Now the
+  // throw is counted, logged, and the next writer is served as if nothing had happened.
+  FakeNudgeRepository nudges;
+  nudges.armDue(uid("u0"), Email{"broken@example.com"}, ld(kSlotDay), kNow - 120'000);
+  nudges.unreadable.insert(uid("u0").str());
+  armSendableUser(nudges);
+  FakeNudgeMail email;
+  FakeTokens tokens;
+  FakeClock clock;
+
+  NudgeSweep sweep(nudges, email, tokens, clock, MailArming(true, "u0,u1"), "https://windmill.works");
+  const MailSweepReport report = sweep.run(kNow, false);
+
+  CHECK(report.ran);
+  CHECK_EQ(report.due, 2);
+  CHECK_EQ(report.errors, 1);
+  CHECK_EQ(report.claimed, 1);
+  CHECK_EQ(report.sent, 1);
+  CHECK_EQ(report.skipped, 0);
+  CHECK_EQ(report.held, 0);
+  CHECK_EQ(report.failed, 0);
+
+  // Nudges stamp no load-failed reason, so the broken day is not claimed — the throw came before
+  // the claim, and the day is still due to the next pass — while u1's day is claimed and served.
+  REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
+  CHECK_EQ(nudges.claims[0].user, uid("u1"));
+  REQUIRE_EQ(email.sent.size(), std::size_t{1});
+  CHECK_EQ(email.sent[0].to, Email{"writer@example.com"});
+  REQUIRE_EQ(nudges.closes.size(), std::size_t{1});
+  CHECK_EQ(nudges.closes[0].outcome, DayOutcome::delivered);
 }

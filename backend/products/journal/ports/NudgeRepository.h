@@ -2,6 +2,7 @@
 
 #include "platform/domain/Auth.h"
 #include "platform/ports/MailSuppression.h"
+#include "platform/ports/SweepMutex.h"
 #include "products/journal/domain/NudgePlan.h"
 
 #include <cstdint>
@@ -45,11 +46,9 @@ enum class DayOutcome { delivered, refused, held };
 //
 // It is also journal's MailSuppression (platform/ports/MailSuppression.h): the store that decides
 // who gets the nightly knock is the store that can stop it, so the platform webhook needs nothing
-// from this product but this one inherited verb.
-struct NudgeRepository : MailSuppression {
-  virtual bool tryLockSweep() = 0;               // pg advisory lock — work dedup, NOT correctness
-  virtual void unlockSweep() = 0;
-
+// from this product but this one inherited verb. And it is the sweep's SweepMutex
+// (platform/ports/SweepMutex.h): the pg advisory lock — work dedup, NOT correctness.
+struct NudgeRepository : MailSuppression, SweepMutex {
   virtual std::vector<NudgeDueUser> dueNow(std::uint64_t nowMs, int limit) = 0;
   virtual bool wroteToday(const UserId& user, const LocalDate& day) = 0;
 

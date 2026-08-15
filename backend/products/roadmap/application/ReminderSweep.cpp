@@ -2,10 +2,7 @@
 
 #include <trantor/utils/Logger.h>
 
-#include <chrono>
 #include <exception>
-#include <future>
-#include <memory>
 #include <random>
 #include <utility>
 
@@ -19,120 +16,31 @@ constexpr double kTickSeconds = 900.0;
 // sweep, and early enough that a deploy during someone's slot still serves it.
 constexpr int kFirstTickFloorSeconds = 30;
 constexpr int kFirstTickJitterSeconds = 30;
-// The mailer answers on its own loop; this is how long the sweep waits for that answer before
-// calling the send unconfirmed. Comfortably past the provider client's own 10s timeout.
-constexpr int kSendTimeoutSeconds = 30;
-
-// The fleet-wide work lock as a scope. Correctness does not depend on it — the committed claim
-// does — so a lock that is already held simply means someone else is doing this work.
-struct SweepLock {
-  explicit SweepLock(ReminderRepository& reminders)
-      : reminders(reminders), held(reminders.tryLockSweep()) {}
-  ~SweepLock() {
-    if (!held) return;
-    // A destructor is noexcept, and handing the lock back reaches the database — which is exactly
-    // the thing most likely to have just died. Letting that throw would take the process with it;
-    // a lock left held is released by the server the moment the connection drops anyway.
-    try {
-      reminders.unlockSweep();
-    } catch (...) {
-      LOG_ERROR << "reminders: the sweep lock could not be handed back";
-    }
-  }
-
-  ReminderRepository& reminders;
-  bool held;
-};
 }
 
 ReminderSweep::ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail,
-                             TokenGenerator& tokens, Clock& clock, ReminderArming arming,
+                             TokenGenerator& tokens, Clock& clock, MailArming arming,
                              std::string appBaseUrl)
-    : reminders_(reminders), mail_(mail), tokens_(tokens), clock_(clock),
-      arming_(std::move(arming)), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder") {}
+    : MailSweep(reminders, tokens, std::move(arming)), reminders_(reminders), mail_(mail),
+      clock_(clock), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder") {}
 
 void ReminderSweep::start() {
   std::random_device entropy;
   const double firstTick = kFirstTickFloorSeconds + entropy() % kFirstTickJitterSeconds;
   heartbeat_.start(firstTick, kTickSeconds, [this] {
-    const SweepReport report = run(clock_.nowMs(), false);
+    const MailSweepReport report = run(clock_.nowMs(), false);
     if (report.due > 0)
       LOG_INFO << "reminders: swept " << report.due << " due, " << report.sent << " sent, "
                << report.held << " held, " << report.skipped << " skipped, " << report.failed
                << " failed, " << report.errors << " errored";
   });
   LOG_INFO << "reminders: heartbeat armed, first sweep in " << firstTick << "s ("
-           << (arming_.enabled ? "enabled" : "dark") << ", " << arming_.allowlist.size()
+           << (arming().enabled ? "enabled" : "dark") << ", " << arming().allowlist.size()
            << " on the allowlist)";
 }
 
-SweepReport ReminderSweep::run(std::uint64_t nowMs, bool dryRun) {
-  SweepReport report;
-  SweepLock lock(reminders_);
-  if (!lock.held) return report;  // another process is already doing exactly this work
-  report.ran = true;
-
-  for (const DueUser& due : reminders_.dueNow(nowMs, kSweepBatch)) {
-    ++report.due;
-    // One user's turn is one user's risk: an unreadable tree or a lost row costs that person
-    // this week's reminder and nothing more. The sweep carries on down the list.
-    try {
-      const ReminderDecision decision = decideFor(due, nowMs);
-      if (decision.reason == SkipReason::loadFailed) ++report.errors;
-
-      // A rehearsal decides everything and commits nothing. It reports what WOULD have gone out
-      // separately from what the arming gate withholds on a real run — two different facts that
-      // shared one counter and told the operator neither.
-      if (dryRun) {
-        if (decision.outcome == ReminderOutcome::send) ++report.wouldSend;
-        else ++report.skipped;
-        continue;
-      }
-
-      // The permission slip. Losing this race means another sweep owns the week; its pointer
-      // moved too, so falling silent here is the whole of the correct response.
-      if (!reminders_.claimWeek(due.user, due.slotDate, decision)) continue;
-      ++report.claimed;
-      // Counted only once the week is ours: a skip that lost the race belongs to another sweep's
-      // row, and reporting it here would name a decision the ledger never took.
-      if (decision.outcome == ReminderOutcome::skip) {
-        ++report.skipped;
-        continue;
-      }
-
-      // Armed at SEND time, never at decide time — so a dark launch still leaves an honest week
-      // in the ledger saying what we would have sent, and arming later cannot double-mail it. The
-      // week is closed as `held` so that row can never be mistaken for a crash between claim and
-      // send, which is what every row would look like for the whole of a dark rollout.
-      if (!arming_.allows(due.user)) {
-        reminders_.closeWeek(due.user, due.slotDate, WeekOutcome::held);
-        ++report.held;
-        continue;
-      }
-
-      // A fresh pause credential per mail, stored only once the mail carrying it actually left:
-      // rotating first would kill last week's still-in-an-inbox pause link on behalf of a
-      // replacement that never arrived.
-      const MintedToken pause = tokens_.mint();
-      const bool delivered = deliver(due.email, mailFor(decision.content, pause.secret));
-      if (delivered) reminders_.setPauseDigest(due.user, pause.digest);
-      reminders_.closeWeek(due.user, due.slotDate,
-                           delivered ? WeekOutcome::delivered : WeekOutcome::refused);
-      if (delivered) ++report.sent;
-      else ++report.failed;
-    } catch (const std::exception& error) {
-      ++report.errors;
-      LOG_ERROR << "reminders: " << due.user.str() << " skipped this week: " << error.what();
-    } catch (...) {
-      ++report.errors;
-      LOG_ERROR << "reminders: " << due.user.str() << " skipped this week";
-    }
-  }
-  return report;
-}
-
 void ReminderSweep::runAsync(std::uint64_t nowMs, bool dryRun,
-                             std::function<void(SweepReport)> done) {
+                             std::function<void(MailSweepReport)> done) {
   heartbeat_.queue([this, nowMs, dryRun, done = std::move(done)] {
     // The caller is waiting on a promise it cannot fulfil itself, so `done` fires on every path —
     // an empty report reads as "nothing ran", which is exactly what happened.
@@ -140,12 +48,16 @@ void ReminderSweep::runAsync(std::uint64_t nowMs, bool dryRun,
       done(run(nowMs, dryRun));
     } catch (const std::exception& error) {
       LOG_ERROR << "reminder sweep failed: " << error.what();
-      done(SweepReport{});
+      done(MailSweepReport{});
     } catch (...) {
       LOG_ERROR << "reminder sweep failed";
-      done(SweepReport{});
+      done(MailSweepReport{});
     }
   });
+}
+
+std::vector<DueUser> ReminderSweep::dueNow(std::uint64_t nowMs, int limit) {
+  return reminders_.dueNow(nowMs, limit);
 }
 
 ReminderDecision ReminderSweep::decideFor(const DueUser& due, std::uint64_t nowMs) {
@@ -167,8 +79,26 @@ ReminderDecision ReminderSweep::decideFor(const DueUser& due, std::uint64_t nowM
   }
 }
 
-ReminderMail ReminderSweep::mailFor(const ReminderContent& content,
-                                    const std::string& pauseSecret) const {
+SweepVerdict ReminderSweep::verdictOf(const ReminderDecision& decision) const {
+  if (decision.outcome == ReminderOutcome::send) return SweepVerdict::send;
+  if (decision.reason == SkipReason::loadFailed) return SweepVerdict::unreadable;
+  return SweepVerdict::skip;
+}
+
+bool ReminderSweep::claim(const DueUser& due, const ReminderDecision& decision) {
+  return reminders_.claimWeek(due.user, due.slotDate, decision);
+}
+
+void ReminderSweep::close(const DueUser& due, ClosedAs outcome) {
+  const WeekOutcome week = outcome == ClosedAs::held        ? WeekOutcome::held
+                           : outcome == ClosedAs::delivered ? WeekOutcome::delivered
+                                                            : WeekOutcome::refused;
+  reminders_.closeWeek(due.user, due.slotDate, week);
+}
+
+void ReminderSweep::send(const DueUser& due, const ReminderDecision& decision,
+                         const std::string& pauseSecret, std::function<void(bool)> done) {
+  const ReminderContent& content = decision.content;
   ReminderMail mail;
   mail.treeName = content.treeTitle;  // the sender sheds markup, exactly as it does for a fork link
   // The OWNER's own tree at #/app/:id — NOT the public /t/:id share page. A reminder goes to
@@ -196,19 +126,11 @@ ReminderMail ReminderSweep::mailFor(const ReminderContent& content,
     mail.steps[slot].label = content.steps[slot].label;
     mail.steps[slot].colorHex = nodeColorHex(content.steps[slot].color);
   }
-  return mail;
+  mail_.sendReminder(due.email, mail, std::move(done));
 }
 
-// The mailer is asynchronous and answers on its own loop; the sweep is a synchronous pipeline on
-// its own thread, and the row it writes next must record what actually happened. So it waits —
-// and a send that never answers is recorded as a failure, never as a success.
-bool ReminderSweep::deliver(const Email& to, const ReminderMail& mail) {
-  auto settled = std::make_shared<std::promise<bool>>();
-  std::future<bool> outcome = settled->get_future();
-  mail_.sendReminder(to, mail, [settled](bool ok) { settled->set_value(ok); });
-  if (outcome.wait_for(std::chrono::seconds(kSendTimeoutSeconds)) != std::future_status::ready)
-    return false;
-  return outcome.get();
+void ReminderSweep::storePause(const UserId& user, const std::string& digest) {
+  reminders_.setPauseDigest(user, digest);
 }
 
 }
