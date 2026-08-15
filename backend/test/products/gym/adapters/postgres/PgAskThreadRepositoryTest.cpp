@@ -169,21 +169,21 @@ TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin
   openedAt(repo, "thr_pg000002", "and the squat?", kNow + 1'000);
   said(repo, "thr_pg000002", "and the squat?", "That one is moving.", kNow + 1'000);
 
-  fake::FakeTrainingRepository twin;
-  twin.threadRows.push_back(
+  fake::FakeGym twin;
+  twin.db.threadRows.push_back(
       AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser}, "why is my bench, uh, \"stuck\"?",
                 kNow, kNow,
                 {ThreadTurn{true, "why is my bench, uh, \"stuck\"?", kNow},
                  ThreadTurn{false, "Your top set has not moved.", kNow}},
                 {}});
-  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "and the squat?",
+  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "and the squat?",
                                       kNow + 1'000, kNow + 1'000,
                                       {ThreadTurn{true, "and the squat?", kNow + 1'000},
                                        ThreadTurn{false, "That one is moving.", kNow + 1'000}},
                                       {}});
 
   const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
-  CHECK_EQ(exported, twin.exportedThreadTurns(wm::UserId{kUser}));
+  CHECK_EQ(exported, twin.threads.exportedThreadTurns(wm::UserId{kUser}));
   REQUIRE_EQ(exported.size(), 4u);
   CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
   CHECK_EQ(exported[0].turnNumber, std::string("1"));
@@ -210,17 +210,17 @@ TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
   openedAt(repo, "thr_pg000002", "answered once", kNow + 1'000);
   said(repo, "thr_pg000002", "answered once", "here you go", kNow + 1'000);
 
-  fake::FakeTrainingRepository twin;
-  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser},
+  fake::FakeGym twin;
+  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000001"}, wm::UserId{kUser},
                                       "a question whose run never came back", kNow, kNow, {}, {}});
-  twin.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "answered once",
+  twin.db.threadRows.push_back(AskThread{ThreadId{"thr_pg000002"}, wm::UserId{kUser}, "answered once",
                                       kNow + 1'000, kNow + 1'000,
                                       {ThreadTurn{true, "answered once", kNow + 1'000},
                                        ThreadTurn{false, "here you go", kNow + 1'000}},
                                       {}});
 
   const std::vector<ExportedThreadTurn> exported = repo.exportedThreadTurns(wm::UserId{kUser});
-  CHECK_EQ(exported, twin.exportedThreadTurns(wm::UserId{kUser}));
+  CHECK_EQ(exported, twin.threads.exportedThreadTurns(wm::UserId{kUser}));
   REQUIRE_EQ(exported.size(), 3u);
   CHECK_EQ(exported[0].threadId, std::string("thr_pg000001"));
   CHECK_EQ(exported[0].title, std::string("a question whose run never came back"));

@@ -34,9 +34,11 @@ std::optional<StartOutcome> heldFor(LogRepository& log, const UserId& user,
 }
 }
 
-LogService::LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& tokens)
-    : log_(repo), catalog_(repo), program_(repo), threads_(repo), preferences_(repo),
-      clock_(clock), tokens_(tokens) {}
+LogService::LogService(LogRepository& log, CatalogRepository& catalog,
+                       ProgramRepository& program, AskThreadRepository& threads,
+                       PreferencesRepository& preferences, Clock& clock, TokenGenerator& tokens)
+    : log_(log), catalog_(catalog), program_(program), threads_(threads),
+      preferences_(preferences), clock_(clock), tokens_(tokens) {}
 
 // Idempotent by construction, no guard flag anywhere, and the caller's OWN id is resolved FIRST: a
 // replayed POST reads back the session it minted — open, finished or auto-closed — so a replay

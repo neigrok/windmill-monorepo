@@ -414,7 +414,9 @@ int main() {
   // not a call into the JSON API. One origin answers both in production, which is exactly why
   // passing the wrong one went unnoticed until a coach was handed a page of JSON.
   auto gymRepository = std::make_shared<gym::PgTrainingRepository>(pool);
-  auto logService = std::make_shared<gym::LogService>(*gymRepository, *systemClock, *tokens);
+  auto logService = std::make_shared<gym::LogService>(*gymRepository, *gymRepository, *gymRepository,
+                                                      *gymRepository, *gymRepository, *systemClock,
+                                                      *tokens);
   auto gymTools = std::make_shared<gym::GymTools>(*logService, appBaseUrl);
 
   // ASK — the SECOND door onto the very tools built above, for a lifter who has no agent of their

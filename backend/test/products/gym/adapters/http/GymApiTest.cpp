@@ -26,7 +26,8 @@ namespace {
 // A store that reads fine and refuses to write — a dropped connection, a statement timeout, a
 // deadlock. Its failure is NOT InvalidTraining, and the whole point of the narrowed catch is that
 // this can never come back wearing the client's 400.
-struct DownRepository : FakeTrainingRepository {
+struct DownRepository : FakeLogRepository {
+  using FakeLogRepository::FakeLogRepository;
   void insertSession(const Session&) override { throw std::runtime_error("storage is down"); }
   SetInsertOutcome insertSet(const Set&) override { throw std::runtime_error("storage is down"); }
 };
@@ -41,13 +42,14 @@ struct Harness {
   FakeAccountFootprint footprint;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
-  FakeTrainingRepository repo;
-  std::shared_ptr<LogService> log = std::make_shared<LogService>(repo, clock, tokens);
+  FakeGym repo;
+  std::shared_ptr<LogService> log = std::make_shared<LogService>(
+      repo.log, repo.catalog, repo.program, repo.threads, repo.preferences, clock, tokens);
   GymApi api{log, auth, "https://windmill.works"};
 
   Harness() {
-    repo.seed(benchPress());
-    repo.seed(backSquat());
+    repo.db.seed(benchPress());
+    repo.db.seed(backSquat());
   }
 
   UserId signIn(const std::string& sessionSecret) {
@@ -329,11 +331,11 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK_EQ(fix->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(removeSet->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(removeSet)), std::string(R"({"error":"sign in to open your training log"})"));
-  CHECK(h.repo.sessions.empty());
-  CHECK(h.repo.sets.empty());
-  CHECK(h.repo.routineRows.empty());
-  CHECK(h.repo.customs.empty());
-  CHECK(h.repo.shares.empty());
+  CHECK(h.repo.db.sessions.empty());
+  CHECK(h.repo.db.sets.empty());
+  CHECK(h.repo.db.routineRows.empty());
+  CHECK(h.repo.db.customs.empty());
+  CHECK(h.repo.db.shares.empty());
 }
 
 // ---- the catalog --------------------------------------------------------------------------
@@ -463,7 +465,7 @@ TEST(gym_start_round_trips_the_resolved_session) {
   drogon::HttpResponsePtr replayed =
       send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
   CHECK_EQ(dump(bodyOf(replayed)), std::string(R"({"id":"ses_11111111","startedAt":1700000000000})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
 TEST(gym_start_ahead_of_the_logs_clock_is_400_and_names_the_gap) {
@@ -480,7 +482,7 @@ TEST(gym_start_ahead_of_the_logs_clock_is_400_and_names_the_gap) {
            std::string(R"({"code":"clock-ahead","error":"this device's clock is 26 minutes ahead of )"
                        R"(the log \u2014 a workout cannot start in the future. Check the clock and )"
                        R"(start again."})"));
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
@@ -488,7 +490,7 @@ TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
   h.signIn("s-live");
   // The id is taken by a row this caller can never see. The old reply was 200 for a session the
   // store never accepted — every set into it 404'd, forever, and the client never learned why.
-  h.repo.sessions.push_back(Session{sid("ses_11111111"), uid("another-account"), 1'699'000'000'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_11111111"), uid("another-account"), 1'699'000'000'000});
 
   drogon::HttpResponsePtr response =
       send(h.api, &GymApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
@@ -499,14 +501,14 @@ TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
   // unknown" the first time one was reworded — and dropped a set it should have re-minted an id for.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
-  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sessions[0].user, uid("another-account"));
+  REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions[0].user, uid("another-account"));
 }
 
 TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
   Harness h;
   UserId me = h.signIn("s-live");
-  h.repo.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
 
   Json::Value backfill = startBody("ses_22222222", 1'699'000'000'000);
   backfill["joinOpenSession"] = false;
@@ -518,7 +520,7 @@ TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
   // while a session is open — the open workout has to end first, then the same body is sent again.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-already-open","error":"another session is already open"})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
 // Omitted is the join, so every caller written before the field keeps meaning what it meant — and
@@ -526,7 +528,7 @@ TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
 TEST(gym_start_without_the_field_still_joins_the_open_session) {
   Harness h;
   UserId me = h.signIn("s-live");
-  h.repo.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_11111111"), me, 1'700'000'000'000});
 
   drogon::HttpResponsePtr response = send(h.api, &GymApi::startSession,
                                           postRequest("/v1/gym/sessions",
@@ -535,7 +537,7 @@ TEST(gym_start_without_the_field_still_joins_the_open_session) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"id":"ses_11111111","startedAt":1700000000000})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
 // A string where the boolean belongs is a 400, never a guess: the two Starts differ by which sets
@@ -551,7 +553,7 @@ TEST(gym_start_with_a_non_boolean_join_is_400) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that session"})"));
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 TEST(gym_start_with_a_malformed_id_is_400) {
@@ -563,7 +565,7 @@ TEST(gym_start_with_a_malformed_id_is_400) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that session"})"));
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 TEST(gym_start_without_a_started_instant_is_400) {
@@ -631,7 +633,7 @@ TEST(gym_append_with_an_unknown_kind_is_400_never_a_silent_downgrade) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that set"})"));
-  CHECK(h.repo.sets.empty());
+  CHECK(h.repo.db.sets.empty());
 }
 
 // The catalog is storage's to know, so this refusal is the store's fact travelling as a VALUE
@@ -652,9 +654,9 @@ TEST(gym_append_naming_a_movement_no_catalog_holds_is_400_no_such_exercise) {
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
-  CHECK(h.repo.sets.empty());
-  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
+  CHECK(h.repo.db.sets.empty());
+  REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
 
 TEST(gym_append_to_an_unknown_session_is_404) {
@@ -684,7 +686,7 @@ TEST(gym_append_to_a_finished_session_is_409) {
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-finished","error":"that session is finished"})"));
-  CHECK(h.repo.sets.empty());
+  CHECK(h.repo.db.sets.empty());
 }
 
 TEST(gym_append_replayed_into_a_finished_session_returns_the_stored_set) {
@@ -708,7 +710,7 @@ TEST(gym_append_replayed_into_a_finished_session_returns_the_stored_set) {
   CHECK_EQ(landed->getStatusCode(), drogon::k200OK);
   CHECK_EQ(replayed->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(replayed)), dump(bodyOf(landed)));
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
 }
 
 TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
@@ -718,7 +720,7 @@ TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
   // The id belongs to a row outside this session — another account's, or this account's own
   // earlier workout. Either way the reply used to be 200 carrying THAT row, so a stranger's note
   // and weight came back and the caller's set was silently dropped.
-  h.repo.sets.push_back(Set{setId("set_11111111"), sid("ses_99999999"), ExerciseId{"bench-press"},
+  h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_99999999"), ExerciseId{"bench-press"},
                             1, 142.5, 3, SetKind::working, 9.5, "knee felt off", 1'699'000'000'000});
 
   drogon::HttpResponsePtr response =
@@ -728,10 +730,10 @@ TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"set-id-taken","error":"that set id is already used"})"));
-  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sets[0].session, sid("ses_99999999"));
-  CHECK_EQ(h.repo.sets[0].note, std::string("knee felt off"));
-  CHECK_EQ(user, h.repo.sessions[0].user);
+  REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets[0].session, sid("ses_99999999"));
+  CHECK_EQ(h.repo.db.sets[0].note, std::string("knee felt off"));
+  CHECK_EQ(user, h.repo.db.sessions[0].user);
 }
 
 // ---- fix a set: the log moves, the routine does not ----------------------------------------
@@ -758,7 +760,7 @@ TEST(gym_fix_round_trips_the_corrected_set_and_a_replay_reads_it_back) {
                        R"("id":"set_11111111","kind":"working","note":"","reps":4,)"
                        R"("setNumber":1,"weightKg":47.5})"));
   CHECK_EQ(dump(bodyOf(replayed)), dump(bodyOf(fixed)));
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
 }
 
 // The kind segmented control and the two fields that carry a lifter's own words. `rpe: null` is the
@@ -847,8 +849,8 @@ TEST(gym_a_fix_of_a_set_this_workout_does_not_hold_is_404_set_not_found) {
   CHECK_EQ(dump(bodyOf(elsewhere)), dump(bodyOf(absent)));
   CHECK_EQ(stranger->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(stranger)), dump(bodyOf(absent)));
-  CHECK_EQ(h.repo.sets[0].weightKg, 82.5);
-  CHECK(h.repo.kept.empty());
+  CHECK_EQ(h.repo.db.sets[0].weightKg, 82.5);
+  CHECK(h.repo.db.kept.empty());
 }
 
 // The three fields a correction refuses by name, and the reason it refuses rather than ignores: a
@@ -880,10 +882,10 @@ TEST(gym_a_fix_naming_a_field_it_may_not_carry_is_400_fix_unreadable) {
     CHECK_EQ(dump(bodyOf(response)),
              std::string(R"({"code":"fix-unreadable","error":"could not read that fix"})"));
   }
-  CHECK_EQ(h.repo.sets[0], Set(setId("set_11111111"), sid("ses_11111111"),
+  CHECK_EQ(h.repo.db.sets[0], Set(setId("set_11111111"), sid("ses_11111111"),
                                ExerciseId{"bench-press"}, 1, 82.5, 8, SetKind::working,
                                std::nullopt, "", 1'700'000'060'000));
-  CHECK(h.repo.kept.empty());
+  CHECK(h.repo.db.kept.empty());
 }
 
 // The delete: 204 with nothing to say, and 204 again on the retry a lost reply produces. Deleting
@@ -918,12 +920,12 @@ TEST(gym_deleting_a_set_is_204_and_deleting_it_again_is_204) {
   CHECK_EQ(gone->getBody(), std::string(""));
   CHECK_EQ(again->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ(stranger->getStatusCode(), drogon::k204NoContent);
-  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sets[0].id, setId("set_22222222"));
+  REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets[0].id, setId("set_22222222"));
   // One kept row, not two: the retry destroyed nothing and the stranger reached nothing.
-  REQUIRE_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
-  CHECK(h.repo.kept[0].deleted);
-  CHECK_EQ(h.repo.kept[0].set.id, setId("set_11111111"));
+  REQUIRE_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
+  CHECK(h.repo.db.kept[0].deleted);
+  CHECK_EQ(h.repo.db.kept[0].set.id, setId("set_11111111"));
 }
 
 // THE APPEND THAT WOULD UNDO THE DELETE, on the wire where the queue meets it: a POST whose 200 was
@@ -949,9 +951,9 @@ TEST(gym_replaying_the_append_of_a_deleted_set_is_409_set_deleted_and_never_a_re
   CHECK_EQ(replayed->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(replayed)),
            std::string(R"({"code":"set-deleted","error":"that set was deleted"})"));
-  CHECK_EQ(h.repo.sets, std::vector<Set>{});
-  REQUIRE_EQ(h.repo.kept.size(), static_cast<std::size_t>(1));
-  CHECK(h.repo.kept[0].deleted);
+  CHECK_EQ(h.repo.db.sets, std::vector<Set>{});
+  REQUIRE_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
+  CHECK(h.repo.db.kept[0].deleted);
 }
 
 // A NOTE THE COLUMN CANNOT HOLD IS THE CLIENT'S FAULT, ANSWERED AS ONE. `text` is UTF-8 end to end,
@@ -990,8 +992,8 @@ TEST(gym_a_note_the_store_could_never_hold_is_400_on_both_writes_and_never_a_ret
   CHECK_EQ(fixed->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(fixed)),
            std::string(R"({"code":"fix-unreadable","error":"could not read that fix"})"));
-  REQUIRE_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sets[0].note, std::string(""));
+  REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets[0].note, std::string(""));
 }
 
 // ---- finish -------------------------------------------------------------------------------
@@ -1034,8 +1036,8 @@ TEST(gym_finish_at_a_zero_instant_is_400_and_leaves_the_session_open) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that finish"})"));
   // An unset device clock closed the session permanently at 1970 — first-writer-wins made it
   // unrepairable. The refusal is the repair: nothing was written.
-  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
+  REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
 
 TEST(gym_finish_before_the_session_began_is_400) {
@@ -1052,7 +1054,7 @@ TEST(gym_finish_before_the_session_began_is_400) {
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"error":"a session cannot finish before it began"})"));
-  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
+  CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
 
 // ---- the instant ceiling: one rule, all three instants ------------------------------------
@@ -1084,9 +1086,9 @@ TEST(gym_an_instant_past_the_end_of_time_is_400_on_every_write) {
   // to_timestamp() as an uncaught pqxx error.
   CHECK_EQ(finish->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(finish)), std::string(R"({"error":"could not read that finish"})"));
-  REQUIRE_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
-  CHECK(h.repo.sets.empty());
+  REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
+  CHECK(h.repo.db.sets.empty());
 }
 
 // ---- storage failures wear the server's status, never the client's -------------------------
@@ -1094,10 +1096,12 @@ TEST(gym_an_instant_past_the_end_of_time_is_400_on_every_write) {
 TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   Harness h;
   UserId user = h.signIn("s-live");
-  DownRepository down;
-  down.seed(benchPress());
-  down.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000});
-  auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
+  FakeGym store;
+  DownRepository down{store.db};
+  store.db.seed(benchPress());
+  store.db.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000});
+  auto log = std::make_shared<LogService>(down, store.catalog, store.program, store.threads,
+                                          store.preferences, h.clock, h.tokens);
   GymApi api{log, h.auth, "https://windmill.works"};
 
   // The house exception handler answers 500 "internal error" — a status the flush queue retries,
@@ -1114,14 +1118,16 @@ TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
 
   CHECK(escaped);
   CHECK(response == nullptr);
-  CHECK(down.sets.empty());
+  CHECK(store.db.sets.empty());
 }
 
 TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
   Harness h;
   h.signIn("s-live");
-  DownRepository down;
-  auto log = std::make_shared<LogService>(down, h.clock, h.tokens);
+  FakeGym store;
+  DownRepository down{store.db};
+  auto log = std::make_shared<LogService>(down, store.catalog, store.program, store.threads,
+                                          store.preferences, h.clock, h.tokens);
   GymApi api{log, h.auth, "https://windmill.works"};
 
   bool escaped = false;
@@ -1135,7 +1141,7 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
 
   CHECK(escaped);
   CHECK(response == nullptr);
-  CHECK(down.sessions.empty());
+  CHECK(store.db.sessions.empty());
 }
 
 // ---- the log reads ------------------------------------------------------------------------
@@ -1175,9 +1181,9 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
   UserId user = h.signIn("s-live");
   // A session the four-hour rule ended, in the state that rule leaves behind: finished at its last
   // set's instant exactly. Nothing else writes that, which is why the row can infer it.
-  h.repo.sessions.push_back(
+  h.repo.db.sessions.push_back(
       Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'060'000});
-  h.repo.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"},
+  h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"},
                             1, 40.0, 10, SetKind::warmup, std::nullopt, "", 1'700'000'060'000});
 
   drogon::HttpResponsePtr response =
@@ -1200,12 +1206,12 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
 TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
   Harness h;
   UserId user = h.signIn("s-live");
-  h.repo.sessions.push_back(
+  h.repo.db.sessions.push_back(
       Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'300'000});
-  h.repo.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"back-squat"},
+  h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"back-squat"},
                             1, 100.0, 5, SetKind::working, std::nullopt, "", 1'700'000'060'000});
   for (int number = 2; number <= 4; ++number)
-    h.repo.sets.push_back(Set{setId("set_1111111" + std::to_string(number)), sid("ses_11111111"),
+    h.repo.db.sets.push_back(Set{setId("set_1111111" + std::to_string(number)), sid("ses_11111111"),
                               ExerciseId{"back-squat"}, number, 95.0, 10, SetKind::working,
                               std::nullopt, "",
                               1'700'000'060'000 + static_cast<std::uint64_t>(number) * 1'000});
@@ -1259,10 +1265,10 @@ TEST(gym_list_sessions_pages_past_a_tied_start_instant_without_losing_one) {
   // Two workouts that started in the same millisecond — a bulk import's coarse stamps, or an
   // offline replay. On a bare `started_at <` cursor the tie-mate below the page edge is in no
   // page, ever; the (startedAt, id) cursor carries both halves, so the walk sees all four.
-  h.repo.sessions.push_back(Session{sid("ses_aaaaaaa4"), user, 1'700'000'003'000, 1'700'000'004'000});
-  h.repo.sessions.push_back(Session{sid("ses_aaaaaaa3"), user, 1'700'000'002'000, 1'700'000'004'000});
-  h.repo.sessions.push_back(Session{sid("ses_aaaaaaa2"), user, 1'700'000'002'000, 1'700'000'004'000});
-  h.repo.sessions.push_back(Session{sid("ses_aaaaaaa1"), user, 1'700'000'001'000, 1'700'000'004'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa4"), user, 1'700'000'003'000, 1'700'000'004'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa3"), user, 1'700'000'002'000, 1'700'000'004'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa2"), user, 1'700'000'002'000, 1'700'000'004'000});
+  h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa1"), user, 1'700'000'001'000, 1'700'000'004'000});
 
   drogon::HttpRequestPtr firstPage = getRequest("/v1/gym/sessions", "s-live");
   firstPage->setParameter("limit", "2");
@@ -1488,7 +1494,7 @@ TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
        "ses_11111111");
   // The snapshot a start from a routine freezes, placed on the stored row directly so this test
   // stays about the prefill reply — and it rides that reply as the object it is.
-  h.repo.sessions[0].plan = PlanSnapshot{"Bench day", {}};
+  h.repo.db.sessions[0].plan = PlanSnapshot{"Bench day", {}};
   // Today's live session benches heavier. It is the today list, not last time.
   send(h.api, &GymApi::startSession,
        postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'110'000), "s-live"));
@@ -1574,8 +1580,8 @@ TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
 
   CHECK_EQ(prefill->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(prefill)["session"]["id"].asString(), std::string("ses_11111111"));
-  CHECK_EQ(h.repo.sessions[1].id, sid("ses_22222222"));
-  CHECK_EQ(h.repo.sessions[1].finishedAtMs, std::optional<std::uint64_t>{});
+  CHECK_EQ(h.repo.db.sessions[1].id, sid("ses_22222222"));
+  CHECK_EQ(h.repo.db.sessions[1].finishedAtMs, std::optional<std::uint64_t>{});
   CHECK_EQ(next->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(next)["setNumber"].asInt(), 2);
 }
@@ -1692,7 +1698,7 @@ TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
 TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
   Harness h;
   h.signIn("s-live");
-  h.repo.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5,
+  h.repo.db.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5,
                        false});
   Json::Value body = routineBody();
   Json::Value chinUp(Json::objectValue);
@@ -1735,7 +1741,7 @@ TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
 TEST(gym_a_routine_saves_with_an_open_line_and_the_plan_freezes_it_open) {
   Harness h;
   h.signIn("s-live");
-  h.repo.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
+  h.repo.db.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
                        2.5, false});
   Json::Value body = routineBody();
   Json::Value open(Json::objectValue);
@@ -1775,13 +1781,13 @@ TEST(gym_a_routine_line_with_reps_but_no_sets_is_400) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that routine"})"));
-  CHECK(h.repo.routineRows.empty());
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 TEST(gym_create_routine_with_an_id_another_account_holds_is_409) {
   Harness h;
   h.signIn("s-live");
-  h.repo.routineRows.push_back(
+  h.repo.db.routineRows.push_back(
       Routine{rtId("rt_11111111"), uid("another-account"), "Their plan", 0, {benchEntry()}});
 
   drogon::HttpResponsePtr response = send(h.api, &GymApi::createRoutine,
@@ -1790,8 +1796,8 @@ TEST(gym_create_routine_with_an_id_another_account_holds_is_409) {
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"routine-id-taken","error":"that routine id is taken"})"));
-  REQUIRE_EQ(h.repo.routineRows.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.routineRows[0].name, std::string("Their plan"));
+  REQUIRE_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.routineRows[0].name, std::string("Their plan"));
 }
 
 TEST(gym_create_routine_naming_a_movement_no_catalog_holds_is_400_no_such_exercise) {
@@ -1808,7 +1814,7 @@ TEST(gym_create_routine_naming_a_movement_no_catalog_holds_is_400_no_such_exerci
   // against GET /v1/gym/exercises before a plan can hold it.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
-  CHECK(h.repo.routineRows.empty());
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 // One sentence for every way a routine is unstorable as written, and nothing lands for any of them.
@@ -1833,7 +1839,7 @@ TEST(gym_a_routine_that_could_not_be_stored_as_written_is_400) {
     CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that routine"})"));
   }
-  CHECK(h.repo.routineRows.empty());
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 // A key the entry schema never declared is REFUSED, never dropped — the rule the tool surface
@@ -1853,7 +1859,7 @@ TEST(gym_a_routine_entry_key_the_schema_never_declared_is_400_and_nothing_lands)
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that routine"})"));
-  CHECK(h.repo.routineRows.empty());
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
@@ -1877,7 +1883,7 @@ TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
                        R"("id":"rt_11111111","name":"Push A2","position":0,"revision":2})"));
   CHECK_EQ(missing->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(missing)), std::string(R"({"error":"no such routine"})"));
-  CHECK_EQ(h.repo.routineRows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
 }
 
 // Absent and another account's are ONE fact on every routine route, so a caller can never learn
@@ -1885,7 +1891,7 @@ TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
 TEST(gym_another_accounts_routine_is_404_on_every_route) {
   Harness h;
   h.signIn("s-live");
-  h.repo.routineRows.push_back(
+  h.repo.db.routineRows.push_back(
       Routine{rtId("rt_11111111"), uid("another-account"), "Their plan", 0, {benchEntry()}});
 
   drogon::HttpResponsePtr read = send(h.api, &GymApi::getRoutine,
@@ -1901,7 +1907,7 @@ TEST(gym_another_accounts_routine_is_404_on_every_route) {
   CHECK_EQ(dump(bodyOf(read)), std::string(R"({"error":"no such routine"})"));
   CHECK_EQ(removed->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(listed)), std::string(R"({"routines":[]})"));
-  CHECK_EQ(h.repo.routineRows.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
 }
 
 TEST(gym_delete_routine_is_204_with_no_body_and_then_404) {
@@ -1919,7 +1925,7 @@ TEST(gym_delete_routine_is_204_with_no_body_and_then_404) {
   CHECK_EQ(removed->getStatusCode(), drogon::k204NoContent);
   CHECK(removed->getBody().empty());
   CHECK_EQ(again->getStatusCode(), drogon::k404NotFound);
-  CHECK(h.repo.routineRows.empty());
+  CHECK(h.repo.db.routineRows.empty());
 }
 
 // ---- start from a routine: the plan is frozen by the server ---------------------------------
@@ -1951,7 +1957,7 @@ TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
 TEST(gym_start_naming_a_routine_this_account_cannot_read_is_404) {
   Harness h;
   h.signIn("s-live");
-  h.repo.routineRows.push_back(
+  h.repo.db.routineRows.push_back(
       Routine{rtId("rt_11111111"), uid("another-account"), "Their plan", 0, {benchEntry()}});
   Json::Value start = startBody();
   start["routineId"] = "rt_11111111";
@@ -1967,7 +1973,7 @@ TEST(gym_start_naming_a_routine_this_account_cannot_read_is_404) {
   CHECK_EQ(dump(bodyOf(theirs)), std::string(R"({"error":"no such routine"})"));
   CHECK_EQ(missing->getStatusCode(), drogon::k404NotFound);
   // Nothing landed either time, so the same body works the moment the routine does exist.
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 TEST(gym_start_with_a_non_string_routine_id_is_400) {
@@ -1981,7 +1987,7 @@ TEST(gym_start_with_a_non_string_routine_id_is_400) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that session"})"));
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 // ---- the catalog's one write -----------------------------------------------------------------
@@ -2025,7 +2031,7 @@ TEST(gym_create_exercise_with_a_spent_id_is_409_and_a_malformed_one_is_400) {
   CHECK_EQ(shortId->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(shortId)), std::string(R"({"error":"could not read that movement"})"));
   CHECK_EQ(badPattern->getStatusCode(), drogon::k400BadRequest);
-  CHECK(h.repo.customs.empty());
+  CHECK(h.repo.db.customs.empty());
 }
 
 // A step the step_kg column cannot hold is the CLIENT's mistake and terminal — a 400 — not the 500
@@ -2051,7 +2057,7 @@ TEST(gym_create_exercise_refuses_a_step_or_a_name_the_store_could_not_hold) {
     CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that movement"})"));
   }
-  CHECK(h.repo.customs.empty());
+  CHECK(h.repo.db.customs.empty());
 
   drogon::HttpResponsePtr stored =
       send(h.api, &GymApi::createExercise, postRequest("/v1/gym/exercises", theCeiling, "s-live"));
@@ -2068,10 +2074,10 @@ namespace {
 void trained(Harness& h, const wm::UserId& caller, const std::string& session,
              std::uint64_t startedAtMs, double weightKg, int reps) {
   const PlanSnapshot plan{"Legs", {PlanEntry{ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}};
-  h.repo.sessions.push_back(Session{sid(session), caller, startedAtMs, startedAtMs + 3'720'000,
+  h.repo.db.sessions.push_back(Session{sid(session), caller, startedAtMs, startedAtMs + 3'720'000,
                                     rtId("rt_11111111"), plan});
   for (int number = 1; number <= 4; ++number)
-    h.repo.sets.push_back(Set{setId("set_" + session.substr(4) + std::to_string(number)),
+    h.repo.db.sets.push_back(Set{setId("set_" + session.substr(4) + std::to_string(number)),
                               sid(session), ExerciseId{"back-squat"}, number, weightKg, reps,
                               SetKind::working, std::nullopt, "",
                               startedAtMs + static_cast<std::uint64_t>(number) * 60'000});
@@ -2081,7 +2087,7 @@ void trained(Harness& h, const wm::UserId& caller, const std::string& session,
 TEST(gym_review_carries_the_three_facts_the_record_and_the_band) {
   Harness h;
   UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{
+  h.repo.db.routineRows.push_back(Routine{
       rtId("rt_11111111"), caller, "Legs", 0,
       {RoutineEntry{1, ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}});
   trained(h, caller, "ses_22222222", 1'699'000'000'000, 90, 10);   // e1RM 120 — the mark
@@ -2109,8 +2115,8 @@ TEST(gym_review_of_an_ordinary_session_omits_every_line_it_did_not_earn) {
   Harness h;
   UserId caller = h.signIn("s-live");
   trained(h, caller, "ses_11111111", 1'700'000'000'000, 105, 5);
-  h.repo.sessions.back().routine = std::nullopt;   // ad-hoc: nothing to stand against
-  h.repo.sessions.back().plan = std::nullopt;
+  h.repo.db.sessions.back().routine = std::nullopt;   // ad-hoc: nothing to stand against
+  h.repo.db.sessions.back().plan = std::nullopt;
 
   drogon::HttpResponsePtr response =
       send(h.api, &GymApi::reviewSession,
@@ -2125,7 +2131,7 @@ TEST(gym_review_of_an_ordinary_session_omits_every_line_it_did_not_earn) {
 TEST(gym_review_of_a_missing_or_anothers_session_is_404) {
   Harness h;
   h.signIn("s-live");
-  h.repo.sessions.push_back(Session{sid("ses_22222222"), uid("another-account"),
+  h.repo.db.sessions.push_back(Session{sid("ses_22222222"), uid("another-account"),
                                     1'700'000'000'000, 1'700'000'003'600});
 
   drogon::HttpResponsePtr missing =
@@ -2156,8 +2162,8 @@ TEST(gym_discard_is_204_with_no_body_then_404_and_the_sets_go_with_it) {
   CHECK_EQ(discarded->getStatusCode(), drogon::k204NoContent);
   CHECK(discarded->getBody().empty());
   CHECK_EQ(again->getStatusCode(), drogon::k404NotFound);
-  CHECK(h.repo.sessions.empty());
-  CHECK(h.repo.sets.empty());
+  CHECK(h.repo.db.sessions.empty());
+  CHECK(h.repo.db.sets.empty());
 }
 
 TEST(gym_discard_of_a_running_session_is_409_and_leaves_every_set_where_it_is) {
@@ -2176,8 +2182,8 @@ TEST(gym_discard_of_a_running_session_is_409_and_leaves_every_set_where_it_is) {
   // Its own code: no id to re-mint and no body to fix — finish the workout and send it again.
   CHECK_EQ(dump(bodyOf(refused)),
            std::string(R"({"code":"session-open","error":"that session is still running"})"));
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(h.repo.sets.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
 }
 
 TEST(gym_unknown_session_detail_is_404) {
@@ -2300,7 +2306,7 @@ TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one)
   CHECK_EQ(dump(bodyOf(first)), dump(bodyOf(again)));
   CHECK(!bodyOf(first)["token"].asString().empty());
   CHECK_EQ(bodyOf(first)["expiresAt"].asUInt64(), h.clock.now + kShareLifetimeMs);
-  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.shares.size(), static_cast<std::size_t>(1));
 }
 
 // The reply carries the LINK, not just the secret, and the link is the browser app's route. It shipped
@@ -2329,20 +2335,20 @@ TEST(gym_share_adds_a_row_beside_the_session_and_never_touches_it) {
   Harness h;
   h.signIn("s-live");
   trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
-  const Session before = h.repo.sessions[0];
+  const Session before = h.repo.db.sessions[0];
 
   send(h.api, &GymApi::shareSession,
        postRequest("/v1/gym/sessions/ses_11111111/share", Json::Value(Json::objectValue), "s-live"),
        "ses_11111111");
 
-  CHECK_EQ(h.repo.sessions[0], before);
-  CHECK_EQ(h.repo.shares.size(), static_cast<std::size_t>(1));
+  CHECK_EQ(h.repo.db.sessions[0], before);
+  CHECK_EQ(h.repo.db.shares.size(), static_cast<std::size_t>(1));
 }
 
 TEST(gym_share_of_a_missing_or_anothers_session_is_404) {
   Harness h;
   const UserId other = h.signIn("s-other");
-  h.repo.sessions.push_back(Session{SessionId{"ses_22222222"}, other, 1'700'000'000'000,
+  h.repo.db.sessions.push_back(Session{SessionId{"ses_22222222"}, other, 1'700'000'000'000,
                                     1'700'003'600'000});
   h.authRepo.insertSession(h.tokens.digestOf("s-live"),
                            h.authRepo.createUser(Email{"lifter@example.com"}, "lifter").id,
@@ -2362,7 +2368,7 @@ TEST(gym_share_of_a_missing_or_anothers_session_is_404) {
   CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(theirs->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(absent)), dump(bodyOf(theirs)));   // absent and forbidden are one fact
-  CHECK(h.repo.shares.empty());
+  CHECK(h.repo.db.shares.empty());
 }
 
 // The one route in gym that resolves no caller: no cookie, no bearer, no account — the token in the
@@ -2442,8 +2448,8 @@ TEST(gym_revoke_answers_204_and_a_second_revoke_is_the_same_fact_as_never_having
   CHECK_EQ(first->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ(again->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(again)), std::string(R"({"error":"no such session"})"));
-  CHECK(h.repo.shares.empty());
-  CHECK_EQ(h.repo.sessions.size(), static_cast<std::size_t>(1));   // the workout itself is untouched
+  CHECK(h.repo.db.shares.empty());
+  CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));   // the workout itself is untouched
 }
 
 // ---- the rename, and a movement's record ----------------------------------------------------
@@ -2585,8 +2591,8 @@ TEST(gym_record_answers_the_whole_page_in_one_read) {
 TEST(gym_record_carries_the_days_that_name_the_movement_beside_their_count) {
   Harness h;
   const UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
-  h.repo.routineRows.push_back(
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.routineRows.push_back(
       Routine{rtId("rt_22222222"), caller, "Legs", 1, {benchEntry(), benchEntry(2)}});
   trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
 
@@ -2642,7 +2648,7 @@ TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
            std::string(R"({"confirmHaptic":true,"confirmSound":false,"restSound":true,)"
                        R"("units":"kg"})"));
   // And nothing was written on the way out: reading settings does not give a lifter a row.
-  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
 // The write is the whole document and it answers with the stored one, so the screen redraws from
@@ -2667,7 +2673,7 @@ TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
            std::string(R"({"confirmHaptic":false,"confirmSound":true,"restSeconds":90,)"
                        R"("restSound":false,"units":"lb"})"));
   CHECK_EQ(dump(bodyOf(read)), dump(bodyOf(saved)));
-  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{1});
 }
 
 // A whole-document PUT means the document IS the body: a field the sender did not name takes its
@@ -2728,7 +2734,7 @@ TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
                      std::string(R"(unknown settings field "restSecond". Settings take: units, )"
                                  R"(restSeconds, restSound, confirmHaptic, confirmSound.)")));
   // And nothing landed: a refused document leaves no row behind at all.
-  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
 TEST(gym_settings_are_owner_scoped_on_both_doors) {
@@ -2741,7 +2747,7 @@ TEST(gym_settings_are_owner_scoped_on_both_doors) {
                 putRequest("/v1/gym/preferences", Json::Value(Json::objectValue)))
                ->getStatusCode(),
            drogon::k401Unauthorized);
-  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
 // §I's first row, proved rather than promised: KILOGRAMS ARE THE ONLY THING STORED. The account
@@ -2775,7 +2781,7 @@ TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
   CHECK(logUnderLb.find("lb") == std::string::npos);
   CHECK(csvUnderLb.find("lb") == std::string::npos);
   // And the stored sets hold plain kilograms — the store never heard about the unit at all.
-  CHECK_EQ(h.repo.sets.front().weightKg, 82.5);
+  CHECK_EQ(h.repo.db.sets.front().weightKg, 82.5);
 
   Json::Value toKilos(Json::objectValue);
   toKilos["units"] = "kg";
@@ -2821,8 +2827,8 @@ RoutineEntry benchAt(double weightKg, int reps) {
 TEST(gym_a_proposal_reads_as_a_typed_field_level_diff) {
   Harness h;
   const UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
-  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
 
   drogon::HttpResponsePtr read =
       send(h.api, &GymApi::getProposal, getRequest("/v1/gym/proposals/prop_11111111", "s-live"),
@@ -2845,8 +2851,8 @@ TEST(gym_a_proposal_reads_as_a_typed_field_level_diff) {
 TEST(gym_applying_a_proposal_writes_the_whole_document_and_settles_the_card) {
   Harness h;
   const UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
-  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
 
   drogon::HttpResponsePtr applied =
       send(h.api, &GymApi::applyProposal,
@@ -2868,7 +2874,7 @@ TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
   Harness h;
   const UserId caller = h.signIn("s-live");
   send(h.api, &GymApi::createRoutine, postRequest("/v1/gym/routines", routineBody(), "s-live"));
-  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
 
   Json::Value rewritten = routineBody("rt_11111111", "Push A");
   rewritten["entries"][0]["targetWeightKg"] = 85.0;
@@ -2900,8 +2906,8 @@ TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
 TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused) {
   Harness h;
   const UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
-  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
 
   drogon::HttpResponsePtr dismissed =
       send(h.api, &GymApi::dismissProposal,
@@ -2924,8 +2930,8 @@ TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused
   CHECK_EQ(again->getStatusCode(), drogon::k200OK);   // the replayed tap is not a failure
   CHECK_EQ(applied->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(bodyOf(applied)["code"].asString(), std::string("proposal-settled"));
-  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
-  CHECK_EQ(h.repo.routineRows[0].revision, 1);
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.db.routineRows[0].revision, 1);
 }
 
 // Every proposal route is owner-scoped, and absent is byte-identical to another account's — the
@@ -2933,9 +2939,9 @@ TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused
 TEST(gym_another_accounts_proposal_is_404_on_every_route) {
   Harness h;
   h.signIn("s-live");
-  h.repo.routineRows.push_back(
+  h.repo.db.routineRows.push_back(
       Routine{rtId("rt_11111111"), uid("another-account"), "Their plan", 0, {benchEntry()}});
-  h.repo.proposalRows.push_back(proposedFor(uid("another-account"), {benchAt(87.5, 3)}));
+  h.repo.db.proposalRows.push_back(proposedFor(uid("another-account"), {benchAt(87.5, 3)}));
 
   drogon::HttpResponsePtr read =
       send(h.api, &GymApi::getProposal, getRequest("/v1/gym/proposals/prop_11111111", "s-live"),
@@ -2953,7 +2959,7 @@ TEST(gym_another_accounts_proposal_is_404_on_every_route) {
   CHECK_EQ(applied->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(bodyOf(listed)["proposals"].size(), 0u);
   // And their plan is exactly where it was.
-  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
 }
 
 // Proposals have no anonymous story: no account, no proposal. Every door 401s before it reads
@@ -2984,11 +2990,11 @@ TEST(gym_every_proposal_route_refuses_a_caller_with_no_session) {
 TEST(gym_the_routines_list_carries_the_proposal_waiting_on_a_day_of_the_program) {
   Harness h;
   const UserId caller = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
 
   drogon::HttpResponsePtr quiet =
       send(h.api, &GymApi::listRoutines, getRequest("/v1/gym/routines", "s-live"));
-  h.repo.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}));
   drogon::HttpResponsePtr waiting =
       send(h.api, &GymApi::listRoutines, getRequest("/v1/gym/routines", "s-live"));
 
@@ -3006,7 +3012,7 @@ namespace {
 // lifter's first message and the turns are what was said.
 void seedThread(Harness& h, const UserId& owner, const std::string& id, const std::string& title,
                 std::uint64_t at = 1'700'000'000'000) {
-  h.repo.threadRows.push_back(AskThread{ThreadId{id},
+  h.repo.db.threadRows.push_back(AskThread{ThreadId{id},
                                         owner,
                                         title,
                                         at,
@@ -3088,8 +3094,8 @@ TEST(gym_thread_delete_removes_the_conversation_and_answers_nothing_for_another_
 
   CHECK_EQ(removed->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ(theirs->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(h.repo.threadRows.size(), 1u);
-  CHECK_EQ(h.repo.threadRows[0].id, ThreadId{"thr_00000002"});
+  CHECK_EQ(h.repo.db.threadRows.size(), 1u);
+  CHECK_EQ(h.repo.db.threadRows[0].id, ThreadId{"thr_00000002"});
 }
 
 // The threads export: the same deliberately dull file the sets get — no parameters, nothing omitted,
@@ -3097,11 +3103,11 @@ TEST(gym_thread_delete_removes_the_conversation_and_answers_nothing_for_another_
 TEST(gym_thread_export_is_a_csv_attachment_carrying_every_turn_and_the_outcome) {
   Harness h;
   const UserId lifter = h.signIn("s-live");
-  h.repo.routineRows.push_back(Routine{RoutineId{"rt_00000001"}, lifter, "Push A", 0,
+  h.repo.db.routineRows.push_back(Routine{RoutineId{"rt_00000001"}, lifter, "Push A", 0,
                                        {RoutineEntry{1, ExerciseId{"bench-press"}, 5, 5, 82.5,
                                                      180}}});
   seedThread(h, lifter, "thr_00000001", R"(why is my bench, uh, "stuck"?)");
-  h.repo.proposalRows.push_back(RoutineProposal{
+  h.repo.db.proposalRows.push_back(RoutineProposal{
       ProposalHead{ProposalId{"prop_00000001"}, RoutineId{"rt_00000001"}, lifter,
                    ProposalIntent::revise, ProposalState::applied,
                    ProposalSource{ProposalDoor::ask, "", "", ThreadId{"thr_00000001"}},
@@ -3162,5 +3168,5 @@ TEST(gym_threads_refuse_an_unsigned_caller_on_every_door) {
   CHECK_EQ(send(h.api, &GymApi::exportThreads, getRequest("/v1/gym/export/threads"))
                ->getStatusCode(),
            drogon::k401Unauthorized);
-  CHECK_EQ(h.repo.threadRows.size(), 1u);
+  CHECK_EQ(h.repo.db.threadRows.size(), 1u);
 }

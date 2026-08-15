@@ -26,15 +26,16 @@ const char* kAppBase = "https://windmill.works";
 // fake of gym's own logic: the tools go through LogService exactly as the HTTP handlers do, so a
 // rule that moved would break both suites rather than one.
 struct Harness {
-  FakeTrainingRepository repo;
+  FakeGym repo;
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
-  LogService service{repo, clock, tokens};
+  LogService service{repo.log, repo.catalog, repo.program, repo.threads, repo.preferences,
+                     clock, tokens};
   GymTools tools{service, kAppBase};
 
   Harness() {
-    repo.seed(benchPress());
-    repo.seed(backSquat());
+    repo.db.seed(benchPress());
+    repo.db.seed(backSquat());
   }
 
   ToolResult call(const char* name, Json::Value args, const char* user = "u1") {
@@ -287,7 +288,7 @@ TEST(gym_log_set_cannot_bring_back_a_set_the_lifter_deleted) {
   CHECK_EQ(message(replayed),
            std::string("log_set: that set was deleted from the log. It is not coming back, and a "
                        "fresh id would only log it again — leave it out."));
-  CHECK_EQ(h.repo.sets, std::vector<Set>{});
+  CHECK_EQ(h.repo.db.sets, std::vector<Set>{});
 }
 
 TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
@@ -386,7 +387,7 @@ TEST(gym_a_write_into_someone_elses_workout_is_refused_as_absent) {
   CHECK_EQ(message(refused),
            std::string("log_set: no workout of yours has that id. Call list_sessions for the ids "
                        "you own."));
-  CHECK_EQ(h.repo.sets.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.sets.size(), std::size_t{0});
 }
 
 // ---- client-minted ids: a replay is the stored row, never a second one -----------------------
@@ -403,7 +404,7 @@ TEST(gym_a_replayed_set_answers_with_the_row_already_stored) {
   CHECK_FALSE(replay.isError);
   CHECK_EQ(body(replay), body(first));
   CHECK_EQ(body(replay)["setNumber"].asInt(), 1);
-  CHECK_EQ(h.repo.sets.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.sets.size(), std::size_t{1});
 }
 
 TEST(gym_a_replayed_start_answers_with_the_workout_already_open) {
@@ -414,7 +415,7 @@ TEST(gym_a_replayed_start_answers_with_the_workout_already_open) {
 
   CHECK_FALSE(replay.isError);
   CHECK_EQ(body(replay), body(first));
-  CHECK_EQ(h.repo.sessions.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.sessions.size(), std::size_t{1});
 }
 
 TEST(gym_a_set_id_spent_in_another_workout_is_refused_by_name) {
@@ -475,7 +476,7 @@ TEST(gym_a_start_in_the_logs_future_is_refused_and_names_the_gap) {
                        "a workout cannot start in the future — the log would be locked behind it "
                        "until it aged out. Send the instant the workout actually began (now, for "
                        "one starting now), in epoch milliseconds."));
-  CHECK(h.repo.sessions.empty());
+  CHECK(h.repo.db.sessions.empty());
 }
 
 TEST(gym_a_start_that_refuses_to_join_says_what_to_do_about_the_open_workout) {
@@ -509,7 +510,7 @@ TEST(gym_a_start_naming_no_routine_is_refused_rather_than_started_ad_hoc) {
            std::string("start_session: no routine of yours has that id, so this workout was not "
                        "started rather than started with no plan. Call list_routines, or leave "
                        "routineId out for an ad-hoc workout."));
-  CHECK_EQ(h.repo.sessions.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.sessions.size(), std::size_t{0});
 }
 
 TEST(gym_a_finish_before_the_start_is_refused_and_says_where_to_read_the_start) {
@@ -535,7 +536,7 @@ TEST(gym_a_value_the_domain_refuses_reaches_the_agent_as_the_domains_own_sentenc
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused), std::string("log_set: reps out of range"));
-  CHECK_EQ(h.repo.sets.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.sets.size(), std::size_t{0});
 }
 
 TEST(gym_a_missing_handle_names_the_argument_and_the_tool_that_lists_it) {
@@ -761,7 +762,7 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
 // told the routine had saved while the target it meant to set was gone.
 TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   Json::Value entry(Json::objectValue);
   entry["exerciseId"] = "bench-press";
   entry["targetSets"] = 5;
@@ -776,7 +777,7 @@ TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
            std::string("propose_routine_change: unknown routine entry field \"targetRepsl\". An "
                        "entry takes: exerciseId, targetSets, targetReps, targetWeightKg, "
                        "restSeconds."));
-  CHECK(h.repo.proposalRows.empty());
+  CHECK(h.repo.db.proposalRows.empty());
 }
 
 // THE LOOP THESE TOOLS PRINT HAS TO WORK. propose_routine_change's own description tells the caller
@@ -790,7 +791,7 @@ TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
 // AND the document we ourselves emitted is not strictness, it is an outage.
 TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_routine_change) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
 
   // Read it back exactly as an agent would, and change the one thing it came for.
   const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
@@ -808,7 +809,7 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   CHECK_EQ(proposal["changes"][0]["before"]["weightKg"].asDouble(), 82.5);
   CHECK_EQ(proposal["changes"][0]["after"]["weightKg"].asDouble(), 85.0);
   // And the routine is exactly where it was: this tool writes nothing.
-  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
 }
 
 // THE CLAIM THIS WHOLE WAVE MAKES, proved by executing it rather than by reading the code: nothing an
@@ -816,14 +817,14 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
 // so a field that moved anywhere in the document fails this case.
 TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
-  const std::vector<Routine> before = h.repo.routineRows;
+  h.repo.db.routineRows.push_back(pushA());
+  const std::vector<Routine> before = h.repo.db.routineRows;
 
   const ToolResult minted =
       h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
 
   REQUIRE(!minted.isError);
-  CHECK_EQ(h.repo.routineRows, before);
+  CHECK_EQ(h.repo.db.routineRows, before);
   // The receipt is not shaped like a write: there is no routine in it at all, the state says so, and
   // the note tells the agent what to say to its human.
   CHECK(body(minted)["routine"].isNull());
@@ -840,7 +841,7 @@ TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
 // into the routine's dated history rather than vanishing. Nothing piles up, nothing disappears.
 TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_history) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
   h.clock.now += 60'000;
 
@@ -866,7 +867,7 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
 // could name.
 TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_name) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
@@ -876,8 +877,8 @@ TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_nam
   const ToolResult minted = h.tools.callTool("propose_routine_change", args, claude);
 
   REQUIRE(!minted.isError);
-  REQUIRE_EQ(h.repo.proposalRows.size(), std::size_t{1});
-  CHECK((h.repo.proposalRows[0].head.source ==
+  REQUIRE_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
+  CHECK((h.repo.db.proposalRows[0].head.source ==
          ProposalSource{ProposalDoor::mcp, "cli_x", "Claude Desktop", std::nullopt}));
   // And the wire carries both, exactly where every client already reads them.
   const Json::Value& source = body(minted)["proposal"]["source"];
@@ -897,7 +898,7 @@ TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_nam
 // stored an empty one and two agents superseded each other.
 TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_connection_holds_one) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   const ToolCaller claude{uid(), ToolScope::everything(), ToolConnection{"cli_x", "Claude Desktop"}};
   const ToolCaller cursor{uid(), ToolScope::everything(), ToolConnection{"key_y", "Cursor"}};
   auto proposeAs = [&](const char* id, double kg, const ToolCaller& who) {
@@ -932,7 +933,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
 // history — which is why the id is the idempotency key here exactly as it is everywhere else.
 TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
 
   const ToolResult replayed =
@@ -940,7 +941,7 @@ TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
 
   REQUIRE(!replayed.isError);
   CHECK_EQ(body(replayed)["proposal"]["state"].asString(), std::string("pending"));
-  CHECK_EQ(h.repo.proposalRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
 }
 
 // THE UNFORGIVABLE DEFECT RUNNING BACKWARDS, and the reason a replay is decided on the DOCUMENT and
@@ -951,7 +952,7 @@ TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
 // same words create_routine refuses the same shape, and nothing of the caller's is spent.
 TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_answered_ok) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
 
   const ToolResult second =
@@ -961,9 +962,9 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
   CHECK(message(second).find("DIFFERENT proposal") != std::string::npos);
   CHECK(message(second).find("NOTHING WAS MINTED") != std::string::npos);
   // The first idea is still the one waiting, untouched and still pending.
-  REQUIRE_EQ(h.repo.proposalRows.size(), std::size_t{1});
-  CHECK_EQ(h.repo.proposalRows[0].head.state, ProposalState::pending);
-  CHECK_EQ(h.repo.proposalRows[0].changes[0].after,
+  REQUIRE_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.proposalRows[0].head.state, ProposalState::pending);
+  CHECK_EQ(h.repo.db.proposalRows[0].changes[0].after,
            std::optional<EntryTargets>(EntryTargets{5, 3, 87.5, std::nullopt}));
 }
 
@@ -975,7 +976,7 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
 TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_routine) {
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
 
   Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
@@ -992,14 +993,14 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_rou
   CHECK_EQ(body(duplicated)["revision"].asInt(), 1);
   // The new day carries no proposal: a card belongs to the routine it was minted against.
   CHECK(body(duplicated)["pendingProposal"].isNull());
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{2});
+  CHECK_EQ(h.repo.db.routineRows.size(), std::size_t{2});
 }
 
 // The dot §B5 draws, on the read an agent already makes — which is why there is no `list_proposals`
 // and no `get_proposal` in this catalog: a proposal always targets a routine.
 TEST(gym_list_routines_carries_the_proposal_waiting_on_a_day_of_the_program) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
 
   const Json::Value quiet = body(h.call("list_routines", Json::Value(Json::objectValue)));
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
@@ -1036,21 +1037,21 @@ TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
   REQUIRE(!created.isError);
   CHECK_EQ(body(created)["name"].asString(), std::string("Push A"));
   CHECK_EQ(body(created)["revision"].asInt(), 1);
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.routineRows.size(), std::size_t{1});
 
   // A lost reply is resent verbatim, and this product answers a replay everywhere else — so it
   // answers one here rather than refusing the caller for doing exactly what it told them to do.
   const ToolResult replayed = h.call("create_routine", args);
   CHECK_FALSE(replayed.isError);
   CHECK_EQ(body(replayed)["revision"].asInt(), 1);
-  CHECK_EQ(h.repo.routineRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.routineRows.size(), std::size_t{1});
 
   args["name"] = "Push A — heavy";
   const ToolResult again = h.call("create_routine", args);
 
   CHECK(again.isError);
   CHECK(message(again).find("propose_routine_change") != std::string::npos);
-  CHECK_EQ(h.repo.routineRows[0].name, std::string("Push A"));   // the edit did not land
+  CHECK_EQ(h.repo.db.routineRows[0].name, std::string("Push A"));   // the edit did not land
 }
 
 // An agent copying a program out of a lifter's notebook can write the day down before it knows
@@ -1060,7 +1061,7 @@ TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
 // somebody's Claude typed.
 TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
   Harness h;
-  h.repo.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
+  h.repo.db.seed(Exercise{ExerciseId{"barbell-row"}, "Barbell Row", Pattern::pull, Equipment::barbell,
                        2.5, false});
   Json::Value open(Json::objectValue);
   open["exerciseId"] = "barbell-row";
@@ -1096,14 +1097,14 @@ TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
 // proposal at all: the refusal would arrive at the one moment they had already decided to trust it.
 TEST(gym_a_proposal_naming_no_movement_is_refused_before_it_is_ever_minted) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
 
   const ToolResult refused =
       h.propose("prop_00000001", "rt_00000001", oneEntry("zercher-squat", 5, 5, 82.5));
 
   CHECK(refused.isError);
   CHECK(message(refused).find("was not minted") != std::string::npos);
-  CHECK(h.repo.proposalRows.empty());
+  CHECK(h.repo.db.proposalRows.empty());
 }
 
 TEST(gym_proposing_a_change_to_a_routine_that_is_not_yours_points_at_the_two_doors) {
@@ -1119,7 +1120,7 @@ TEST(gym_proposing_a_change_to_a_routine_that_is_not_yours_points_at_the_two_doo
 
 TEST(gym_a_routine_read_narrows_to_one_and_wears_the_same_wrapper) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
 
   const ToolResult all = h.call("list_routines", Json::Value(Json::objectValue));
   CHECK_EQ(body(all)["routines"].size(), 1u);
@@ -1163,7 +1164,7 @@ TEST(gym_minting_a_share_twice_hands_back_the_same_live_link) {
   const ToolResult again = h.call("share_session", with("sessionId", "ses_00000001"));
 
   CHECK_EQ(body(again)["token"].asString(), body(first)["token"].asString());
-  CHECK_EQ(h.repo.shares.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.shares.size(), std::size_t{1});
 }
 
 TEST(gym_revoking_a_share_ends_the_link_and_a_second_revoke_says_there_is_nothing_to_end) {
@@ -1199,8 +1200,8 @@ TEST(gym_a_running_workout_is_not_discarded_and_the_refusal_says_why) {
            std::string("discard_session: that workout is still running, and deleting one somebody "
                        "is logging into destroys the sets in flight. Close it with finish_session "
                        "first, then discard it."));
-  CHECK_EQ(h.repo.sessions.size(), std::size_t{1});
-  CHECK_EQ(h.repo.sets.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.sessions.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.sets.size(), std::size_t{1});
 }
 
 TEST(gym_discarding_a_finished_workout_takes_its_sets_with_it) {
@@ -1214,8 +1215,8 @@ TEST(gym_discarding_a_finished_workout_takes_its_sets_with_it) {
   CHECK_FALSE(discarded.isError);
   CHECK(body(discarded)["deleted"].asBool());
   CHECK_EQ(body(discarded)["sessionId"].asString(), std::string("ses_00000001"));
-  CHECK_EQ(h.repo.sessions.size(), std::size_t{0});
-  CHECK_EQ(h.repo.sets.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.sessions.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.sets.size(), std::size_t{0});
 
   const ToolResult again = h.call("discard_session", with("sessionId", "ses_00000001"));
   CHECK(again.isError);
@@ -1228,8 +1229,8 @@ TEST(gym_discarding_a_finished_workout_takes_its_sets_with_it) {
 // exactly where it was when this call returns, and the diff draws every line that would go.
 TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
-  const std::vector<Routine> before = h.repo.routineRows;
+  h.repo.db.routineRows.push_back(pushA());
+  const std::vector<Routine> before = h.repo.db.routineRows;
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
@@ -1238,7 +1239,7 @@ TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
   const ToolResult minted = h.call("propose_routine_removal", args);
 
   REQUIRE(!minted.isError);
-  CHECK_EQ(h.repo.routineRows, before);
+  CHECK_EQ(h.repo.db.routineRows, before);
   const Json::Value& proposal = body(minted)["proposal"];
   CHECK_EQ(proposal["intent"].asString(), std::string("remove"));
   CHECK_EQ(proposal["state"].asString(), std::string("pending"));
@@ -1254,7 +1255,7 @@ TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
 // removal safe to read: the day leaves the program and nothing about the log moves.
 TEST(gym_a_removal_proposal_counts_the_sets_each_line_keeps) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   h.start("ses_00000001", 1'700'000'000'000);
   h.logSet("ses_00000001", "set_00000001", "bench-press", 82.5, 5, 1'700'000'060'000);
   h.logSet("ses_00000001", "set_00000002", "bench-press", 82.5, 5, 1'700'000'120'000);
@@ -1293,7 +1294,7 @@ TEST(gym_publishes_no_tool_that_reads_or_writes_a_lifters_settings) {
   for (const char* name : {"get_preferences", "set_preferences", "save_preferences",
                            "update_preferences", "set_units"})
     CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
-  CHECK_EQ(h.repo.preferenceRows.size(), std::size_t{0});
+  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
 // The retirement ANSWERS rather than shrugging, and it is the one retirement in this catalog with no
@@ -1361,7 +1362,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
 TEST(gym_read_alone_cannot_mint_a_proposal) {
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
@@ -1372,16 +1373,16 @@ TEST(gym_read_alone_cannot_mint_a_proposal) {
 
   CHECK(refused.isError);
   CHECK(message(refused).find("gym:write") != std::string::npos);
-  CHECK(h.repo.proposalRows.empty());
+  CHECK(h.repo.db.proposalRows.empty());
   // And a grant that names the level mints, through the very same door.
   CHECK_FALSE(surface
                   .callTool("propose_routine_change", args,
                             ToolCaller{uid(), parseToolScope("gym:read gym:write")})
                   .isError);
-  CHECK_EQ(h.repo.proposalRows.size(), std::size_t{1});
+  CHECK_EQ(h.repo.db.proposalRows.size(), std::size_t{1});
   // The routine did not move either way.
-  CHECK_EQ(h.repo.routineRows[0].revision, 1);
-  CHECK_EQ(h.repo.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
+  CHECK_EQ(h.repo.db.routineRows[0].revision, 1);
+  CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
 }
 
 // A removal is `gym:delete`'s, and `gym:write` alone does not reach it — the levels are a grant
@@ -1389,7 +1390,7 @@ TEST(gym_read_alone_cannot_mint_a_proposal) {
 TEST(gym_write_alone_cannot_propose_a_removal) {
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
@@ -1399,14 +1400,14 @@ TEST(gym_write_alone_cannot_propose_a_removal) {
 
   CHECK(refused.isError);
   CHECK(message(refused).find("gym:delete") != std::string::npos);
-  CHECK(h.repo.proposalRows.empty());
+  CHECK(h.repo.db.proposalRows.empty());
 }
 
 // A document identical to what the routine already says proposes nothing, and a card reading
 // `Apply all 0` is a notification about nothing in an app that has no notifications on purpose.
 TEST(gym_a_proposal_that_changes_nothing_is_refused_rather_than_shown_to_a_lifter) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
   const Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))
                                    ["routines"][0]["entries"];
 
@@ -1414,7 +1415,7 @@ TEST(gym_a_proposal_that_changes_nothing_is_refused_rather_than_shown_to_a_lifte
 
   CHECK(refused.isError);
   CHECK(message(refused).find("already says") != std::string::npos);
-  CHECK(h.repo.proposalRows.empty());
+  CHECK(h.repo.db.proposalRows.empty());
 }
 
 // --- The read receipt, in the envelope --------------------------------------------------------
@@ -1471,7 +1472,7 @@ TEST(gym_a_read_that_served_no_log_rows_says_nothing_about_what_it_read) {
 // proposal that says so — and Ask's own door is what AskTools passes instead (AskServiceTest).
 TEST(gym_a_proposal_minted_over_mcp_carries_the_mcp_door) {
   Harness h;
-  h.repo.routineRows.push_back(pushA());
+  h.repo.db.routineRows.push_back(pushA());
 
   const ToolResult minted =
       h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));

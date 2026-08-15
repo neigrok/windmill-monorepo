@@ -68,13 +68,14 @@ struct FakeAsk : AskAgent {
 };
 
 struct Harness {
-  FakeTrainingRepository repo;
+  FakeGym repo;
   FakeClock clock;
   FakeTokens tokens;
   FakeSubscriptionRepository subs;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
-  LogService log{repo, clock, tokens};
+  LogService log{repo.log, repo.catalog, repo.program, repo.threads, repo.preferences, clock,
+                 tokens};
   GymTools gymTools{log, "https://windmill.works"};
   FakeAsk agent;
   AskService ask{log, agent, gymTools, entitlements};
@@ -83,8 +84,8 @@ struct Harness {
   const SessionId session{"ses_11111111"};
 
   Harness() {
-    repo.seed(benchPress());
-    repo.seed(backSquat());
+    repo.db.seed(benchPress());
+    repo.db.seed(backSquat());
     log.start(lifter, SessionStart{session, 1'700'000'000'000});
     log.append(lifter, session,
                SetWrite{setId(), ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt,
@@ -96,7 +97,7 @@ struct Harness {
 
   // A day of the program this lifter owns, so a proposal has something to be about.
   void seedRoutine() {
-    repo.routineRows.push_back(Routine{rtId(), lifter, "Push A", 0, {benchEntry()}});
+    repo.db.routineRows.push_back(Routine{rtId(), lifter, "Push A", 0, {benchEntry()}});
   }
 
   // ask() answers on a worker thread when it runs and inline when it refuses; both land here. The
@@ -197,7 +198,7 @@ TEST(ask_tools_refuse_a_write_tool_even_when_the_arguments_are_perfect) {
   const ToolCaller actor{h.lifter, ToolScope::everything()};
 
   CHECK(hands.callTool("share_session", sessionArgs(h.session), actor).isError);
-  CHECK(h.repo.shares.empty());  // no coach link was minted behind the lifter's back
+  CHECK(h.repo.db.shares.empty());  // no coach link was minted behind the lifter's back
 }
 
 // THE CATALOG AND THE CALL READ THE SAME GRANT. `listTools` has always filtered by the caller's
@@ -478,7 +479,7 @@ TEST(a_thread_id_another_account_holds_is_refused_rather_than_appended_to) {
 // never appeared. It is somebody else's id however it was found out, so it is refused for free.
 TEST(a_thread_the_store_could_not_open_costs_no_vendor_call_and_no_lost_answer) {
   Harness h;
-  h.repo.loseThreadRace = true;
+  h.repo.db.loseThreadRace = true;
 
   CHECK(h.question(h.nextThread(), "how did the squats go?", h.lifter).refusal ==
         AskRefusal::threadTaken);
@@ -528,7 +529,7 @@ TEST(a_conversation_as_long_as_ask_holds_refuses_the_next_question) {
   std::vector<ThreadTurn> said;
   for (std::size_t at = 0; at < kMaxThreadTurns; ++at)
     said.push_back(ThreadTurn{at % 2 == 0, "a", 1'700'000'000'000});
-  h.repo.threadRows.push_back(
+  h.repo.db.threadRows.push_back(
       AskThread{thread, h.lifter, "a", 1'700'000'000'000, 1'700'000'000'000, said, {}});
 
   CHECK(h.question(thread, "once more", h.lifter).refusal == AskRefusal::tooManyTurns);

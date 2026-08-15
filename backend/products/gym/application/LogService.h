@@ -186,7 +186,9 @@ enum class DiscardOutcome { done, notFound, open };
 // unguessable string gym hands out is not a second-best random of gym's own.
 class LogService {
 public:
-  LogService(TrainingRepository& repo, Clock& clock, TokenGenerator& tokens);
+  LogService(LogRepository& log, CatalogRepository& catalog, ProgramRepository& program,
+             AskThreadRepository& threads, PreferencesRepository& preferences, Clock& clock,
+             TokenGenerator& tokens);
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
