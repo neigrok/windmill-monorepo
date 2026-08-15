@@ -835,7 +835,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   // …and so does every field it promises. The document explains what an edit answers and what the
   // two status words mean; both claims are checked against a real receipt and a real read, because
   // a quickstart that describes the surface it used to have is worse than none.
-  for (const char* claim : {"introducedDiagnostics", "seedStatus", "id, label and description"})
+  for (const char* claim : {"introducedDiagnostics", "seedStatus", "id, label and description",
+                            "find_nodes {state: \"available\"}"})
     CHECK(text.find(claim) != std::string::npos);
 
   h.call("create_node", node("a", "A"));

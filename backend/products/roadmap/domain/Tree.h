@@ -29,6 +29,14 @@ inline std::string_view toString(NodeState state) {
   return "locked";
 }
 
+inline std::optional<NodeState> parseNodeState(std::string_view name) {
+  if (name == "locked")    return NodeState::locked;
+  if (name == "available") return NodeState::available;
+  if (name == "active")    return NodeState::active;
+  if (name == "complete")  return NodeState::complete;
+  return std::nullopt;
+}
+
 inline std::string_view toString(EdgeKind kind) {
   switch (kind) {
     case EdgeKind::trunk:        return "trunk";

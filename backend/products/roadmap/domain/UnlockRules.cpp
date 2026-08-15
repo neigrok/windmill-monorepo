@@ -4,9 +4,9 @@
 
 namespace wm {
 
-std::map<NodeId, NodeState> UnlockRules::derive(const SkillTree& tree, const Progress& progress) {
+std::map<NodeId, NodeState> UnlockRules::derive(const std::vector<NodeSpec>& nodes, const Progress& progress) {
   std::map<NodeId, NodeState> states;
-  for (const NodeSpec& node : tree.nodes()) {
+  for (const NodeSpec& node : nodes) {
     if (progress.completed.count(node.id)) {
       states[node.id] = NodeState::complete;
       continue;
@@ -20,6 +20,10 @@ std::map<NodeId, NodeState> UnlockRules::derive(const SkillTree& tree, const Pro
     states[node.id] = unlocked ? NodeState::available : NodeState::locked;
   }
   return states;
+}
+
+std::map<NodeId, NodeState> UnlockRules::derive(const SkillTree& tree, const Progress& progress) {
+  return derive(tree.nodes(), progress);
 }
 
 }

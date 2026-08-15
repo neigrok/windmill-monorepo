@@ -229,7 +229,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
         "the tree. Ask for description, links, position, order or icon when you need them; `status` "
         "is your own mark on each node (active/complete/none, always answered), `seedStatus` the "
-        "document's authored baseline.",
+        "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
+        "and your marks — locked · available · active · complete — the answer to \"what can I work "
+        "on\"; `status` stays your raw mark.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
         "Which fields each legend kind carries. Default {id, hue, label}.", kindVocabulary().names());
@@ -280,20 +282,25 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["query"] = str("Optional case-insensitive substring matched against each node's id, label and "
                      "description. Matches come back best first: an exact id, then an id prefix, then "
                      "a label hit, then an id substring, then a description-only hit.");
+    p["state"] = enumStr("Optional derived state to match — locked, available, active or complete, as "
+                         "the tree derives it from prerequisites and your marks.", kNodeStates);
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
         "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
         "`status` is your own mark on each node (active/complete/none, always answered), `seedStatus` "
-        "the document's authored baseline.",
+        "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
+        "and your marks — locked · available · active · complete — the answer to \"what can I work "
+        "on\"; `status` stays your raw mark.",
         nodeVocabulary().names());
     p["limit"] = boundedInt("Most nodes to return in one page.", 1, kMaxLimit, kDefaultLimit);
     p["cursor"] = str("Resume token from a previous page's `nextCursor`. Omit for the first page.");
     tools.push_back(tool("find_nodes", Access::read,
         "Search a roadmap's nodes. Every filter you set must match (AND): `color` or `kind` pin a hue, "
-        "`query` is a case-insensitive substring over id + label + description, best match first — so "
-        "pasting an id you already know finds that node, at the top. Omit all filters to list every "
-        "node. `count` is everything that matched, not the size of the page you got; when more remain a "
-        "`nextCursor` comes back with it.",
+        "`state` pins the derived state — `find_nodes {state: \"available\"}` is the frontier: what "
+        "you can work on right now, in one call — and `query` is a case-insensitive substring over id + "
+        "label + description, best match first — so pasting an id you already know finds that node, at "
+        "the top. Omit all filters to list every node. `count` is everything that matched, not the size "
+        "of the page you got; when more remain a `nextCursor` comes back with it.",
         p, {"treeId"}));
   }
   {

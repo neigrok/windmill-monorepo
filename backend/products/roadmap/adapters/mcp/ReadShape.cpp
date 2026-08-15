@@ -33,6 +33,7 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"position", NodeField::position},
                                                  {"status", NodeField::status},
                                                  {"seedStatus", NodeField::seedStatus},
+                                                 {"state", NodeField::state},
                                                  {"description", NodeField::description},
                                                  {"links", NodeField::links}});
   return vocabulary;
@@ -53,7 +54,7 @@ const Vocabulary<ProgressField>& progressVocabulary() {
   return vocabulary;
 }
 
-Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const Progress& marks) {
+Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const NodeReadContext& context) {
   Json::Value n(Json::objectValue);
   if (fields.count(NodeField::id)) n["id"] = node.id.str();
   if (fields.count(NodeField::label)) n["label"] = node.label;
@@ -71,8 +72,9 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const Pr
     position["y"] = node.position->y;
     n["position"] = position;
   }
-  if (fields.count(NodeField::status)) n["status"] = markOn(marks, node.id);
+  if (fields.count(NodeField::status)) n["status"] = markOn(context.marks, node.id);
   if (fields.count(NodeField::seedStatus) && node.status) n["seedStatus"] = *node.status;
+  if (fields.count(NodeField::state)) n["state"] = std::string(toString(context.states.at(node.id)));
   if (fields.count(NodeField::description) && !node.description.empty()) n["description"] = node.description;
   if (fields.count(NodeField::links) && !node.links.empty()) n["links"] = linksToJson(node.links);
   return n;

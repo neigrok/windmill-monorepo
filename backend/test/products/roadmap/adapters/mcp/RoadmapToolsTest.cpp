@@ -12,7 +12,7 @@ namespace {
 // document shape the browser gets.
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
-               "seedStatus", "description", "links"});
+               "seedStatus", "state", "description", "links"});
 }
 
 // The ids of a read's nodes, in the order it answered with — what a caller trusts when it takes
@@ -867,7 +867,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
                                               "order", "position", "prerequisites", "seedStatus",
-                                              "status"}));
+                                              "state", "status"}));
   CHECK_EQ(b["id"].asString(), std::string("b"));
   CHECK_EQ(b["label"].asString(), std::string("B"));
   CHECK_EQ(b["icon"].asString(), std::string("anchor"));
@@ -879,6 +879,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
   CHECK_EQ(b["seedStatus"].asString(), std::string("active"));  // the document's authored baseline
   CHECK_EQ(b["status"].asString(), std::string("none"));        // …and the caller's own, unmarked
+  CHECK_EQ(b["state"].asString(), std::string("locked"));       // …and what the tree derives: a is not done
   CHECK_EQ(b["description"].asString(), std::string("the whole annotation"));
   CHECK_EQ(b["links"][0]["url"].asString(), std::string("https://spec"));
   CHECK_EQ(b["links"][0]["label"].asString(), std::string("Spec"));
@@ -922,7 +923,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
-                       "prerequisites, position, status, seedStatus, description, links}"));
+                       "prerequisites, position, status, seedStatus, state, description, links}"));
 
   // Each shape refuses against ITS OWN vocabulary — the legend's and the overlay's differ.
   Json::Value kindArgs(Json::objectValue);
@@ -1066,6 +1067,134 @@ TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
   CHECK_EQ(keys(theirs), (std::vector<std::string>{"id", "status"}));
   CHECK_EQ(theirs["id"].asString(), std::string("step"));
   CHECK_EQ(theirs["status"].asString(), std::string("none"));
+}
+
+TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
+  Harness h;
+  Json::Value chain(Json::arrayValue);
+  chain.append(node("a", "A"));
+  Json::Value b = node("b", "B");
+  b["prerequisites"] = list({"a"});
+  chain.append(b);
+  Json::Value c = node("c", "C");
+  c["prerequisites"] = list({"b"});
+  chain.append(c);
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = chain;
+  CHECK_FALSE(h.call("import_subgraph", imported).isError);
+  h.call("set_progress", mark("a", "complete"));
+
+  // `state` is derived: a is complete, so b is available, and c is locked behind b — nobody had
+  // to walk the graph to learn it. `status` beside it stays the raw mark, so the two never blur.
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "state", "status"});
+  Json::Value tree = body(h.call("get_tree", args))["tree"]["nodes"];
+  CHECK_EQ(ids(tree), (std::vector<std::string>{"a", "b", "c"}));
+  CHECK_EQ(keys(tree[0]), (std::vector<std::string>{"id", "state", "status"}));
+  CHECK_EQ(tree[0]["state"].asString(), std::string("complete"));
+  CHECK_EQ(tree[1]["state"].asString(), std::string("available"));
+  CHECK_EQ(tree[1]["status"].asString(), std::string("none"));
+  CHECK_EQ(tree[2]["state"].asString(), std::string("locked"));
+
+  // An active mark answers active — the mark outranks availability, on find_nodes alike.
+  h.call("set_progress", mark("b", "active"));
+  Json::Value found = body(h.call("find_nodes", args))["nodes"];
+  CHECK_EQ(ids(found), (std::vector<std::string>{"a", "b", "c"}));
+  CHECK_EQ(found[1]["state"].asString(), std::string("active"));
+  CHECK_EQ(found[1]["status"].asString(), std::string("active"));
+  CHECK_EQ(found[2]["state"].asString(), std::string("locked"));
+
+  // A caller with no account holds no marks, and the cascade over none is the honest reading:
+  // roots available, everything behind them locked.
+  h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
+                                    h.caller, Visibility::unlisted};
+  imported["treeId"] = "open";
+  CHECK_FALSE(h.tools.callTool("import_subgraph", imported, h.actor).isError);
+  Json::Value anonymous(Json::objectValue);
+  anonymous["treeId"] = "open";
+  anonymous["fields"] = list({"id", "state"});
+  tree = body(h.tools.callTool("get_tree", anonymous, ToolCaller{UserId{}, ToolScope::everything()}))["tree"]["nodes"];
+  CHECK_EQ(keys(tree[0]), (std::vector<std::string>{"id", "state"}));
+  CHECK_EQ(tree[0]["state"].asString(), std::string("available"));
+  CHECK_EQ(tree[1]["state"].asString(), std::string("locked"));
+  CHECK_EQ(tree[2]["state"].asString(), std::string("locked"));
+
+  // …and it stays off both default projections.
+  CHECK_EQ(keys(body(h.call("find_nodes", kNoArgs))["nodes"][0]),
+           (std::vector<std::string>{"color", "id", "label"}));
+  CHECK_EQ(keys(body(h.call("get_tree", kNoArgs))["tree"]["nodes"][0]),
+           (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
+}
+
+TEST(mcp_find_nodes_by_state_is_the_frontier_in_one_call) {
+  Harness h;
+  Json::Value chain(Json::arrayValue);
+  chain.append(node("a", "A"));
+  Json::Value b = node("b", "B");
+  b["prerequisites"] = list({"a"});
+  chain.append(b);
+  Json::Value c = node("c", "C");
+  c["prerequisites"] = list({"b"});
+  chain.append(c);
+  Json::Value imported(Json::objectValue);
+  imported["nodes"] = chain;
+  CHECK_FALSE(h.call("import_subgraph", imported).isError);
+  h.call("set_progress", mark("a", "complete"));
+
+  // {state: "available"} answers what can be worked on right now — b alone — and `count` speaks
+  // of the filtered set, not of everything the other filters let through.
+  const Json::Value frontier = body(h.call("find_nodes", with("state", "available")));
+  CHECK_EQ(keys(frontier), (std::vector<std::string>{"count", "nodes"}));
+  CHECK_EQ(frontier["count"].asUInt64(), 1u);
+  CHECK_EQ(ids(frontier["nodes"]), (std::vector<std::string>{"b"}));
+  CHECK_EQ(keys(frontier["nodes"][0]), (std::vector<std::string>{"color", "id", "label"}));
+
+  // Every filter is AND: a query that names the locked node finds nothing available.
+  Json::Value both = with("state", "available");
+  both["query"] = "c";
+  CHECK_EQ(body(h.call("find_nodes", both))["count"].asUInt64(), 0u);
+  CHECK_EQ(ids(body(h.call("find_nodes", with("state", "locked")))["nodes"]),
+           (std::vector<std::string>{"c"}));
+
+  // A state outside the four is refused, naming the legal set.
+  const ToolResult bogus = h.call("find_nodes", with("state", "bogus"));
+  CHECK(bogus.isError);
+  CHECK_EQ(message(bogus),
+           std::string("find_nodes: state \"bogus\" is not one of {locked, available, active, complete}"));
+}
+
+TEST(mcp_state_still_answers_on_an_untidy_tree) {
+  Harness h;
+  // A prerequisite that names no node, and a two-node cycle: edits accept both, get_diagnostics
+  // reports both, and a read must answer rather than fail the way SkillTree would. The document a
+  // read projects carries only live edges (a dangling one lives in diagnostics, not in
+  // `prerequisites`), so the node waiting on a ghost reads as a root — available; a cycle's members
+  // wait on each other forever, so both are locked.
+  Json::Value dangling = node("waits-on-ghost", "Waits");
+  dangling["prerequisites"] = list({"ghost"});
+  CHECK_FALSE(body(h.call("create_node", dangling))["diagnosticsClean"].asBool());
+  h.call("create_node", node("x", "X"));
+  Json::Value y = node("y", "Y");
+  y["prerequisites"] = list({"x"});
+  h.call("create_node", y);
+  Json::Value back(Json::objectValue);
+  back["from"] = "y";
+  back["to"] = "x";
+  CHECK_FALSE(body(h.call("connect", back))["diagnosticsClean"].asBool());
+  CHECK_FALSE(body(h.call("get_diagnostics", kNoArgs))["cycles"].empty());
+  CHECK_FALSE(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
+
+  Json::Value args(Json::objectValue);
+  args["fields"] = list({"id", "state"});
+  const ToolResult read = h.call("get_tree", args);
+  CHECK_FALSE(read.isError);
+  const Json::Value nodes = body(read)["tree"]["nodes"];
+  CHECK_EQ(ids(nodes), (std::vector<std::string>{"waits-on-ghost", "x", "y"}));
+  CHECK_EQ(nodes[0]["state"].asString(), std::string("available"));
+  CHECK_EQ(nodes[1]["state"].asString(), std::string("locked"));
+  CHECK_EQ(nodes[2]["state"].asString(), std::string("locked"));
+  CHECK_EQ(ids(body(h.call("find_nodes", with("state", "locked")))["nodes"]),
+           (std::vector<std::string>{"x", "y"}));
 }
 
 TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {

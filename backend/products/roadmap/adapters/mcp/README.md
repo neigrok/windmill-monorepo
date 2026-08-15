@@ -193,7 +193,7 @@ proxy header is treated as internal and is not limited.
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG) |
 | read | `get_progress` | the caller's completed / in-progress node ids |
-| read | `find_nodes` | search nodes by `color`/`kind` and/or a `query` substring (id + label + description), best match first |
+| read | `find_nodes` | search nodes by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `create_node` | add a node — `prerequisites[]`, `description`, `links` all optional |
 | edit | `annotate_node` | set a node's `description` and/or `links` |
 | edit | `rename_node` · `set_node_color` · `move_node` | Class A content edits |
@@ -213,7 +213,7 @@ after it that the tree did not hold before, bracketed under the tree's strand so
 is this write's doing and nothing else's. An innocent edit on a dirty tree answers `[]`, which is
 the round trip to `get_diagnostics` that the flag alone always cost.
 
-## What `status` means
+## What `status` means — and what `state` is
 
 One word, one concept, wherever it appears: **`status` is the caller's own mark** — `active`,
 `complete` or `none`, the vocabulary `set_progress` writes and `get_progress` returns. Ask
@@ -225,6 +225,17 @@ reader sees before their own marks — is a second fact, and wears a second name
 readable through `fields` and writable as `import_subgraph`'s `nodes[].seedStatus`. An imported
 node that carries `status` is refused by name rather than silently publishing a private mark into
 a shared document.
+
+**`state` is the third fact, and the one the tree derives**: `locked`, `available`, `active` or
+`complete`, the unlock cascade `domain/UnlockRules` runs over a node's prerequisites and the
+caller's marks — the same code the app and the reminder sweep run. It is a `fields` value on
+`get_tree` and `find_nodes`, never in a default, computed once per read over the whole tree (a
+prerequisite may sit off the page), and it answers on an untidy tree too — derived over the bare
+node list, never through `SkillTree`, which throws on dirt: a cycle locks every member, and a
+dangling edge (which the projected document does not carry — it lives in `get_diagnostics`) locks
+nothing. An anonymous reader's cascade runs over no marks — roots available, the rest locked. `find_nodes` also takes `state` as a filter, ANDed with
+the rest and applied after the ranked selection but before the page, so `count` and the cursor
+speak of the filtered set: `find_nodes {state: "available"}` is the frontier in one call.
 
 ### Bulk & ergonomics
 
@@ -243,8 +254,9 @@ a shared document.
   progress rows for nodes no longer in the tree.
 - **`add_kind`** seeds `label` + `description` inline, so a legend entry lands in one op.
 - **`find_nodes`** searches without pulling the whole tree: `color` or `kind` pins a hue
-  (a node's color *is* its kind), `query` is a case-insensitive substring over **id + label +
-  description**, and every set filter must match (AND). Matches come back best first — an exact
+  (a node's color *is* its kind), `state` pins the derived unlock state, `query` is a
+  case-insensitive substring over **id + label + description**, and every set filter must match
+  (AND). Matches come back best first — an exact
   id, then an id prefix, then a label hit, then an id substring, then a description-only hit —
   so pasting an id you already know finds that node, at the top, instead of somebody else's node
   whose prose happens to mention it. Ranking and matching are one question, so both live in the

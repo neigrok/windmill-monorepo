@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -27,8 +28,11 @@ namespace wm {
 // `status` is the CALLER'S OWN mark — set_progress's vocabulary, set_progress's meaning — and
 // `seedStatus` is the document's authored baseline, the inert seed an import may carry and every
 // reader sees before their own marks. Two facts, deliberately two words: served under one name
-// they would silently convert into each other on a read-then-import round trip.
-enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus,
+// they would silently convert into each other on a read-then-import round trip. `state` is the
+// third fact and the one the tree DERIVES: locked / available / active / complete, the unlock
+// cascade UnlockRules runs over the caller's marks — the answer to "what can I work on" that a
+// caller otherwise reconstructs from the whole graph, and gets silently wrong.
+enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus, state,
                        description, links };
 enum class KindField { id, hue, label, description };
 enum class ProgressField { completed, inProgress, cleared };
@@ -118,13 +122,21 @@ const Vocabulary<NodeField>& nodeVocabulary();
 const Vocabulary<KindField>& kindVocabulary();
 const Vocabulary<ProgressField>& progressVocabulary();
 
+// The caller's side of one read: their own progress rows, and the states the tree derives from
+// them over EVERY node it holds (a prerequisite may sit off the page). Both are the same for every
+// node on the page, so a read builds this once and hands it to each projection; each half is
+// filled only when a field or a filter asks for it, and stays empty otherwise.
+struct NodeReadContext {
+  Progress marks;
+  std::map<NodeId, NodeState> states;
+};
+
 // The field semantics are TreeJson's, field for field — an empty `order`, an absent `position`
 // or `seedStatus`, an empty `description` or `links` are omitted exactly as the document omits
-// them. `status` is the exception, and deliberately: `marks` are the caller's own progress rows,
-// and an unmarked node answers "none" rather than nothing, so a reader can never mistake a node
-// with no mark for a server that does not serve the field. Pass the overlay in once per read —
-// it is the same set for every node on the page.
-Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const Progress& marks);
+// them. `status` and `state` are the exceptions, and deliberately: an unmarked node answers
+// `status: "none"` rather than nothing, so a reader can never mistake a node with no mark for a
+// server that does not serve the field, and `state` is derived for every node the tree holds.
+Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const NodeReadContext& context);
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);
 

@@ -43,7 +43,7 @@ things do refuse: the legend (hues are unique per kind, at most 6 kinds, and a k
 wear cannot be removed — `import_subgraph` is held to the same rule) and the per-tree capacity
 (10000 nodes, 20000 edges).
 
-## 4. `set_progress` is advisory, and `status` is yours
+## 4. `set_progress` is advisory, `status` is yours, and `state` is derived for you
 
 Marking a node complete whose prerequisites are unmet still records the mark and answers
 `prerequisitesMet: false` — it never fails. What it does refuse is an id the tree does not hold,
@@ -55,12 +55,19 @@ omitted. The document's own authored baseline (what a reader sees before their o
 different fact under a different name, `seedStatus`, and it is what `import_subgraph`'s
 `nodes[].seedStatus` carries. Copy a tree with `seedStatus`; carry your own marks in `progress[]`.
 
+The unlock cascade is a third fact, and the tree derives it so you never have to: ask for the
+`state` field and each node answers `locked`, `available`, `active` or `complete`, computed from
+its prerequisites and your marks — the same rule the app paints from. The read every client wants
+after it plants is the frontier, and it is one call: `find_nodes {state: "available"}` answers
+what you can work on right now. With no account behind the call the cascade runs over no marks:
+roots available, the rest locked.
+
 ## 5. Ask for less
 
 `get_tree`, `find_nodes` and `get_progress` take `fields`; `get_tree` also takes `kindFields`.
 Ask for `["id","label"]` when you only need an index to pick edit targets — the default already
-omits `description`, `links`, `position`, `icon` and both status fields. Both node reads page:
-`limit` (default 200, max 1000) and the `nextCursor` they hand back.
+omits `description`, `links`, `position`, `icon`, both status fields and `state`. Both node reads
+page: `limit` (default 200, max 1000) and the `nextCursor` they hand back.
 
 `find_nodes`' `query` is a case-insensitive substring over a node's **id, label and description**,
 answered best first: an exact id, then an id prefix, then a label hit, then an id substring, then

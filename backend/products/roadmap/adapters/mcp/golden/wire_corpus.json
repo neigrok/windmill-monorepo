@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 3,
+  "schemaVersion" : 4,
   "steps" : 
   [
     {
@@ -421,6 +421,38 @@
           {
             "text" : 
             {
+              "count" : 2,
+              "nodes" : 
+              [
+                {
+                  "color" : "olive",
+                  "id" : "docs",
+                  "label" : "Docs"
+                },
+                {
+                  "color" : "terracotta",
+                  "id" : "launch",
+                  "label" : "Launch"
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 16,
+      "tool" : "find_nodes"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
               "count" : 5,
               "seq" : 11,
               "tree" : 
@@ -445,6 +477,7 @@
                     [
                       "render"
                     ],
+                    "state" : "locked",
                     "status" : "none"
                   },
                   {
@@ -457,6 +490,7 @@
                       "docs",
                       "sync"
                     ],
+                    "state" : "locked",
                     "status" : "none"
                   },
                   {
@@ -468,6 +502,7 @@
                     [
                       "root"
                     ],
+                    "state" : "active",
                     "status" : "active"
                   },
                   {
@@ -489,6 +524,7 @@
                       "y" : 60.0
                     },
                     "prerequisites" : [],
+                    "state" : "complete",
                     "status" : "complete"
                   },
                   {
@@ -500,6 +536,7 @@
                     [
                       "root"
                     ],
+                    "state" : "complete",
                     "status" : "complete"
                   }
                 ],
@@ -512,7 +549,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 16,
+      "step" : 17,
       "tool" : "get_tree"
     },
     {
@@ -557,7 +594,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 17,
+      "step" : 18,
       "tool" : "get_diagnostics"
     },
     {
@@ -584,7 +621,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 18,
+      "step" : 19,
       "tool" : "get_progress"
     },
     {
@@ -608,7 +645,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 19,
+      "step" : 20,
       "tool" : "get_health"
     },
     {
@@ -624,7 +661,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 20,
+      "step" : 21,
       "tool" : "set_progress"
     },
     {
@@ -640,7 +677,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 22,
       "tool" : "annotate_node"
     }
   ]

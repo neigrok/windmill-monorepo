@@ -188,6 +188,24 @@ defects came from live use against production, not from reading the code.
   (`dangling edge "a" -> "ghost"`, `cycle among "a", "b"`, `self-edge on "a"`), capped at five with
   a count and a pointer to `get_diagnostics`. Both keys always, `[]` for an innocent edit.
 
+### Landed — the frontier is one read
+
+- **`state` on every node read.** Windmill's central concept — the DERIVED unlock cascade,
+  locked / available / active / complete — was readable nowhere over MCP; `status` is the raw mark,
+  so "what can I work on" cost an agent the whole graph plus a hand-rolled cascade that could be
+  silently wrong. `state` is now a `fields` value on `get_tree` and `find_nodes` (never a default),
+  derived by `UnlockRules` — the same code the UI and the reminder sweep run — once per read, over
+  the whole tree, only when asked. `find_nodes` takes `state` as a filter too, ANDed with the rest,
+  applied after the ranked selection and before the page: `find_nodes {state: "available"}` is the
+  frontier in one call, with `count` and the cursor over the filtered set.
+- **A read never 500s on dirt.** `SkillTree(TreeData)` throws on a duplicate id, an unknown
+  prerequisite or a cycle, and edits accept all three. `UnlockRules::derive` gained an overload
+  over the bare node list (the SkillTree one delegates to it): a prerequisite naming no node is one
+  nobody completed, so its dependant is locked, and a cycle locks every member. On the MCP read
+  only the cycle case is reachable — the projected document carries live edges alone, a dangling
+  one lives in `get_diagnostics` — so a node whose only prerequisite is a ghost reads as a root.
+  An anonymous reader is derived over no marks — roots available, the rest locked. Wire corpus v4.
+
 ### Observations (structure / perf)
 
 - **A before/after bracket beat the clever local rule.** The contract proposed deriving

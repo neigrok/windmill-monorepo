@@ -12,6 +12,7 @@
 #include "products/roadmap/domain/NodeQuery.h"
 #include "products/roadmap/domain/SkillTree.h"
 #include "products/roadmap/domain/TreeHealth.h"
+#include "products/roadmap/domain/UnlockRules.h"
 
 #include <cctype>
 #include <iostream>
@@ -253,13 +254,21 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
-// The caller's own progress rows, read ONCE per tree read and only when `status` was asked for:
-// the overlay is the same set for every node on the page, and an anonymous caller has no marks to
-// look up. Every node then answers `status`, marked or not.
-Progress marksFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
-                  const NodeFields& fields) {
-  if (!fields.count(NodeField::status) || !caller) return Progress{};
-  return progress.progressOf(tree, *caller);
+// The caller's side of a read — their own progress rows, and the states the tree derives from
+// them — read ONCE per tree read and only when asked for: `status` needs the marks, `state` (as a
+// field or as find_nodes' filter) needs both. The overlay is the same set for every node on the
+// page; an anonymous caller has no marks to look up, and their cascade runs over none — roots
+// available, the rest locked, the truthful reading of a tree you hold no marks on. States are
+// derived over the WHOLE tree, never a page or a match list, because a prerequisite may sit off
+// either — and over the bare node list, so an untidy tree still answers instead of failing.
+NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
+                               const std::vector<NodeSpec>& nodes, const NodeFields& fields, bool filtersOnState) {
+  const bool needsStates = fields.count(NodeField::state) || filtersOnState;
+  const bool needsMarks = fields.count(NodeField::status) || needsStates;
+  NodeReadContext context;
+  if (needsMarks && caller) context.marks = progress.progressOf(tree, *caller);
+  if (needsStates) context.states = UnlockRules::derive(nodes, context.marks);
+  return context;
 }
 
 ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
@@ -281,10 +290,10 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
     std::optional<Page> page = pageOf(data.nodes, args, error);
     if (!page) return ToolResult::failure(error);
 
-    const Progress marks = marksFor(progress, tree, caller, *nodeFields);
+    const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *nodeFields, false);
     Json::Value nodes(Json::arrayValue);
     for (std::size_t i = page->begin; i < page->end; ++i)
-      nodes.append(projectNode(data.nodes[i], *nodeFields, marks));
+      nodes.append(projectNode(data.nodes[i], *nodeFields, context));
     Json::Value kinds(Json::arrayValue);
     for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
 
@@ -357,25 +366,36 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
       return ToolResult::failure(*bad);
     if (std::optional<std::string> bad = optionalString(args["query"], "query"))
       return ToolResult::failure(*bad);
+    if (std::optional<std::string> bad = optionalOneOf(args["state"], "state", kNodeStates))
+      return ToolResult::failure(*bad);
 
     NodeFilter filter;
     if (args["color"].isString()) filter.color = parseColor(args["color"].asString());
     if (args["kind"].isString() && !args["kind"].asString().empty())
       filter.kind = KindId{args["kind"].asString()};
     filter.query = args.get("query", "").asString();
+    std::optional<NodeState> state;
+    if (args["state"].isString()) state = parseNodeState(args["state"].asString());
 
     std::string error;
     std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
     if (!fields) return ToolResult::failure(error);
 
-    const std::vector<NodeSpec> matches = selectNodes(room.snapshot(), filter);
+    // The state filter is the one filter selectNodes does not know: it is per-caller, and
+    // selectNodes is a pure function of (tree, filter) — which is what keeps a cursor valid. So it
+    // is applied here, AFTER the ranked selection (order kept) and BEFORE the page, so `count` and
+    // the cursor speak of the filtered set.
+    const TreeData data = room.snapshot();
+    const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *fields, state.has_value());
+    std::vector<NodeSpec> matches = selectNodes(data, filter);
+    if (state)
+      std::erase_if(matches, [&](const NodeSpec& node) { return context.states.at(node.id) != *state; });
     std::optional<Page> page = pageOf(matches, args, error);
     if (!page) return ToolResult::failure(error);
 
-    const Progress marks = marksFor(progress, tree, caller, *fields);
     Json::Value nodes(Json::arrayValue);
     for (std::size_t i = page->begin; i < page->end; ++i)
-      nodes.append(projectNode(matches[i], *fields, marks));
+      nodes.append(projectNode(matches[i], *fields, context));
     Json::Value out(Json::objectValue);
     out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
     out["nodes"] = nodes;
