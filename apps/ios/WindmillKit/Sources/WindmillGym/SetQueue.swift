@@ -383,7 +383,32 @@ public final class SetQueue {
     }
 }
 
-// THE FIVE VERDICTS, and none of them is guesswork about English. The code is the contract; the
+// WHAT IS KEEPING A SET ON THIS DEVICE, once the walk has offered it and the log did not take it.
+// Three different facts and three different sentences: the transport failed (there is no signal
+// down here); the log answered without taking it (a 5xx, an unreadable reply, a lane its own words
+// blocked — the log's own trouble, and it clears when the log does); the account's session lapsed
+// under a signed-in room (a 401 — nothing lands until the lifter signs in again). It is read off
+// the FAILURE and never by elimination: a strip that said "no signal" over a 500 pointed the
+// lifter at the wrong thing entirely.
+public enum Stall: Equatable {
+    case offline
+    case logFailed
+    case signInLapsed
+
+    public init(_ error: Error) {
+        guard let failure = error as? WindmillApiError else {
+            self = .logFailed
+            return
+        }
+        if case .offline = failure {
+            self = .offline
+            return
+        }
+        self = failure.isUnauthorized ? .signInLapsed : .logFailed
+    }
+}
+
+// THE SIX VERDICTS, and none of them is guesswork about English. The code is the contract; the
 // sentence is copy for a human reading a banner, and it may be reworded any day — a queue that told
 // the 409s apart by string-comparing it degrades to "terminal, reason unknown" the first time one is
 // edited, and drops a set it should have minted a fresh id for.
@@ -391,10 +416,15 @@ public enum Verdict: Equatable {
     case remint(String)     // 409 set-id-taken / session-id-taken — that id names a row elsewhere
     case dropped(String)    // 409 session-finished — this set never landed and never will
     case gone(String)       // 404 set-not-found — the row this write NAMES is not on the log
+    case vanished(String)   // 404 no such session, for a session the log ONCE HELD — the workout is gone
     case refused(String)    // 400, any other 409 — this body will never land as written
     case retry              // 5xx, no reply at all, and everything that is only waiting
 
-    public init(refusing error: Error) {
+    // `sessionOnTheLog` is whether the log has ever answered for this write's session — a session
+    // this device holds as CLAIMED. It decides what a plain 404 means: for a session the log once
+    // held, the workout has been discarded elsewhere and no amount of waiting brings it back; for a
+    // session still unclaimed, the 404 is a start that has not landed yet, and the set waits.
+    public init(refusing error: Error, sessionOnTheLog: Bool = false) {
         // A transport failure arrives as `.offline` and a reply this build could not read arrives as
         // `.malformed`. Neither is a status and neither is a lost set: replay is free, so both keep
         // the set queued.
@@ -436,6 +466,14 @@ public enum Verdict: Equatable {
             self = .refused(refusal.code == "unknown-exercise" ? "that movement is not in the catalog" : said)
             return
         }
+        // A 404 FOR A SESSION THE LOG ONCE HELD is the workout being gone — discarded from another
+        // surface — and it is terminal and SAID: a set retried every four seconds against a session
+        // that will never come back is a set labelled "offline · saved here" under a healthy
+        // connection, forever.
+        if status == 404, sessionOnTheLog {
+            self = .vanished("that workout is no longer on the log")
+            return
+        }
         // 401 waits for a sign-in and 404 for a session to exist. Terminal and retryable never both
         // hold, and neither follows from the other's absence — a queue that read "not retryable" as
         // "lost" would throw away a set that was only waiting for the Keychain to come back.
@@ -451,7 +489,7 @@ public enum Verdict: Equatable {
             return nil
         case .remint(let said):
             return remints < SetQueue.maxRemints ? nil : said
-        case .dropped(let said), .refused(let said), .gone(let said):
+        case .dropped(let said), .refused(let said), .gone(let said), .vanished(let said):
             return said
         }
     }

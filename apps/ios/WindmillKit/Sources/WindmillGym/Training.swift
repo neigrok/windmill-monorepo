@@ -163,6 +163,21 @@ public struct Session: Equatable, Codable, Sendable, Identifiable {
 
     public var isOpen: Bool { finishedAtMs == nil }
 
+    // THE SERVER'S AUTO-CLOSE RULE, restated for the sessions this device holds (backend
+    // domain/Training.h `autoCloseAt`, ARCHITECTURE §3.2): an open session with no activity for four
+    // hours is over, and it ended at its last set — never at whenever somebody noticed. A session
+    // with no sets ended when it began. The log applies it lazily on every settling read; the phone
+    // applies it on connect, so a workout abandoned in a basement for days never claims as one
+    // that lasted days.
+    public static let autoCloseMs: Int64 = 4 * 60 * 60 * 1000
+
+    public func autoCloseAt(lastSetAtMs: Int64?, nowMs: Int64) -> Int64? {
+        guard isOpen else { return nil }
+        let lastActivityMs = lastSetAtMs ?? startedAtMs
+        guard nowMs >= lastActivityMs + Self.autoCloseMs else { return nil }
+        return lastActivityMs
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, routineId, plan
         case startedAtMs = "startedAt"
@@ -380,8 +395,10 @@ public struct SessionSummary: Equatable, Codable, Sendable, Identifiable {
     }
 }
 
-// The prefill read, answered by the store: the newest FINISHED session holding this movement, its
-// working sets in order, warmups already dropped. A movement trained for the first time comes back
+// The prefill read, answered by the store: the newest FINISHED session holding this movement — the
+// movement's last block's NON-warmup rows, in order. The predicate is the SERVER's (ARCHITECTURE
+// §5): a drop or failure set is part of last time; only warmups are not. A movement trained for the
+// first time comes back
 // as the movement and nothing else — a fact, not a fault — so `session == nil` is what says there is
 // no history, and an absent REPLY means something else entirely: the log did not answer.
 public struct LastTime: Equatable, Codable, Sendable {
@@ -816,8 +833,10 @@ public struct Against: Equatable, Codable, Sendable {
 // a training log and not a form. Three sources in a fixed order, and the one that loses is still on
 // screen. The web's copy went with its logger on 2026-08-09 (§11), so this rule has one home.
 //
-// The asymmetry in "last time" is deliberate — the weight comes from the LAST working set, where the
-// lifter actually ended up, and the reps from the FIRST, before fatigue cut them.
+// The asymmetry in "last time" is deliberate — the weight comes from the LAST of last time's rows,
+// where the lifter actually ended up, and the reps from the FIRST, before fatigue cut them. Which
+// rows those are is the server's predicate: the movement's last block's NON-warmup rows — a drop or
+// failure set is part of last time; only warmups are not.
 public struct Prefill: Equatable, Sendable {
     public static let emptyBarKg = 20.0
     public static let emptyBarReps = 5

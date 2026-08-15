@@ -128,7 +128,8 @@ struct YouScreen: View {
     // telling someone their empty room is at risk.
     private var held: [(String, Holdings)] {
         products.compactMap { product in
-            let holdings = product.holdings(Account(api: auth.api, user: auth.status.user))
+            let holdings = product.holdings(Account(api: auth.api, user: auth.status.user,
+                                                     verified: auth.status.verified))
             return holdings.isEmpty ? nil : (product.label, holdings)
         }
     }

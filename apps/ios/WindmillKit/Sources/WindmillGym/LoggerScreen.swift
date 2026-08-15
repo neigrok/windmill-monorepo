@@ -99,7 +99,9 @@ struct LoggerScreen: View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             header
             if let clock = restClock { restRow(clock) }
-            if let line = LiveLines.onThisDeviceLine(store.strandedCount) { unsynced(line) }
+            if let line = LiveLines.onThisDeviceLine(store.strandedCount, stall: store.strandedBy) {
+                unsynced(line)
+            }
             RefusalRows(refusals: store.refusals, catalog: store.catalog,
                         onDismiss: { store.clearRefusals() })
 

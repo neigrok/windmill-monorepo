@@ -170,15 +170,29 @@ public extension ProductModule {
 // `user` is nil while nobody has signed in, and that is a supported state, not a degraded one: auth
 // canon §2 is "claiming, not gating", so a product must open and work before there is an account to
 // claim it. A module reads `isSignedIn` to decide whether it can sync, never whether it can run.
+//
+// `verified` is false while the seat stands on the device's last-known user because the log could
+// not be asked (AuthStatus.unverified): still signed in, and a room connects for the account off the
+// copies it holds — and connects AGAIN when the seat is verified, which is when its reads can land.
+// `seat` is the one value a room keys that connect on, so a verification re-runs it for the same
+// user exactly as a change of user would.
 public struct Account {
     public let api: WindmillApi
     public let user: User?
+    public let verified: Bool
 
     public var isSignedIn: Bool { user != nil }
+    public var seat: Seat { Seat(userId: user?.id, verified: verified) }
 
-    public init(api: WindmillApi, user: User?) {
+    public struct Seat: Equatable {
+        public let userId: String?
+        public let verified: Bool
+    }
+
+    public init(api: WindmillApi, user: User?, verified: Bool = true) {
         self.api = api
         self.user = user
+        self.verified = verified
     }
 }
 

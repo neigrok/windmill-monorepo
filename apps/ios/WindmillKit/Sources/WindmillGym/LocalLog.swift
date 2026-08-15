@@ -353,11 +353,12 @@ public final class LocalLog {
     // The prefill's question, answered from this device's history: the newest finished session
     // holding a non-warmup set of the movement, those sets in performed order.
     //
-    // THE PREDICATE IS THE SERVER'S, `kind <> 'warmup'`, and it is not the same as "working only":
-    // a drop set and a set taken to failure both happened and both ride along in the log's own answer
-    // (PgLogRepository::lastTime). A phone that cut them here would dial a different weight
-    // signed out than the same session dials signed in — and §G18's sheet can file any of the four
-    // kinds, so this shelf really does hold them.
+    // THE PREDICATE IS THE SERVER'S (ARCHITECTURE §5): the movement's last block's NON-warmup rows —
+    // a drop or failure set is part of last time; only warmups are not. It is not the same as
+    // "working only": a drop set and a set taken to failure both happened and both ride along in the
+    // log's own answer (PgLogRepository::lastTime). A phone that cut them here would dial a different
+    // weight signed out than the same session dials signed in — and §G18's sheet can file any of the
+    // four kinds, so this shelf really does hold them.
     public func lastTime(_ exerciseId: String) -> LastTime? {
         for local in sessions.reversed() {
             let performed = local.sets.filter { $0.exerciseId == exerciseId && $0.kind != .warmup }

@@ -10,10 +10,26 @@ public enum AuthStatus: Equatable {
     case unknown            // the app has not yet asked /v1/me — the seat is a ghost, not empty
     case signedOut
     case signedIn(User)
+    // The seat as this device last knew it: a secret is held and this is the user the log last
+    // named for it, but THIS launch has not heard the log confirm it — the phone had no signal, or
+    // the log fell over. It is a signed-in seat, not a signed-out one: a basement is not a sign-out,
+    // and every product connects under this user off the copy it holds. The next launch or
+    // return to the foreground asks again (`restore`).
+    case unverified(User)
 
     public var user: User? {
-        if case .signedIn(let user) = self { return user }
-        return nil
+        switch self {
+        case .signedIn(let user), .unverified(let user): return user
+        case .unknown, .signedOut: return nil
+        }
+    }
+
+    // False only for the seat the log has not confirmed THIS launch. Signed out is verified — nobody
+    // is waiting on an answer — so a room keyed on (user, verified) re-runs for a verification and
+    // for nothing else.
+    public var verified: Bool {
+        if case .unverified = self { return false }
+        return true
     }
 }
 
@@ -45,24 +61,34 @@ public final class AuthStore: ObservableObject {
                                session: urlSession)
     }
 
-    // The seat on launch. A lapsed session is a non-event (AUTH.md): drop the dead secret and show
-    // the door, never an error — nobody needs to be told their 90 days ran out.
+    // The seat on launch, and again on every return to the foreground while it is unverified. A
+    // lapsed session is a non-event (AUTH.md): drop the dead secret and show the door, never an
+    // error — nobody needs to be told their 90 days ran out.
     //
-    // Only a DEFINITIVE 401 may clear the Keychain. A phone with no signal has not been signed out:
-    // clearing on a transport failure was a silent sign-out that deleted a live 90-day secret and
-    // stranded the gym queue's owed sets behind a bearer that no longer existed.
+    // Only a DEFINITIVE 401 may clear the Keychain, and only a definitive 401 is a sign-out. A phone
+    // with no signal — or a log answering 5xx — has not been signed out: the secret stays, and the
+    // seat is the user this device last read beside it, marked unverified, so the rooms connect
+    // SIGNED IN off the copies they hold. Answering signed-out there was a silent sign-out that
+    // opened gym on the anonymous shelf, let go of the account's settings document, and stranded
+    // the queue's owed sets behind a bearer that no longer existed.
     public func restore() async {
         guard sessions.read() != nil else {
             status = .signedOut
             return
         }
         do {
-            status = .signedIn(try await api.get("/v1/me", as: UserReply.self).user)
+            let user = try await api.get("/v1/me", as: UserReply.self).user
+            sessions.write(user: user)
+            status = .signedIn(user)
         } catch let refusal as WindmillApiError where refusal.isUnauthorized {
             sessions.clear()
             status = .signedOut
         } catch {
-            status = .signedOut
+            guard let known = sessions.readUser() else {
+                status = .signedOut
+                return
+            }
+            status = .unverified(known)
         }
     }
 
@@ -150,6 +176,7 @@ public final class AuthStore: ObservableObject {
     private func adopt(session: String?, user: User) throws {
         guard let session, !session.isEmpty else { throw MagicLink.unreadable }
         sessions.write(session)
+        sessions.write(user: user)
         linkSentTo = nil
         status = .signedIn(user)
     }
@@ -227,45 +254,71 @@ public enum SignInCode {
     }
 }
 
-// Where the session secret sleeps. A protocol so tests get a fake for free and never touch the
-// real Keychain, which is process-wide state a test suite must not mutate.
+// Where the session secret sleeps — and, beside it, the user the log last named for that secret,
+// which is what lets a launch with no signal answer a seat instead of a sign-out. A protocol so
+// tests get a fake for free and never touch the real Keychain, which is process-wide state a test
+// suite must not mutate. `clear` ends both together: a secret the log refused names nobody.
 public protocol SessionStore: Sendable {
     func read() -> String?
     func write(_ secret: String)
+    func readUser() -> User?
+    func write(user: User)
     func clear()
 }
 
 public final class KeychainSessions: SessionStore {
     private let service = "works.windmill.session"
-    private let account = "wm_session"
+    private let secretAccount = "wm_session"
+    private let userAccount = "wm_user"
 
     public init() {}
 
     public func read() -> String? {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
+        guard let data = read(account: secretAccount) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     public func write(_ secret: String) {
-        let data = Data(secret.utf8)
-        if SecItemUpdate(baseQuery() as CFDictionary,
+        write(Data(secret.utf8), account: secretAccount)
+    }
+
+    // The user rides in the same Keychain item class as the secret, under its own account name:
+    // it is the secret's companion, held exactly as long and cleared in the same breath, and a
+    // file in Application Support would outlive the secret it describes.
+    public func readUser() -> User? {
+        guard let data = read(account: userAccount) else { return nil }
+        return try? JSONDecoder().decode(User.self, from: data)
+    }
+
+    public func write(user: User) {
+        guard let data = try? JSONEncoder().encode(user) else { return }
+        write(data, account: userAccount)
+    }
+
+    public func clear() {
+        SecItemDelete(baseQuery(account: secretAccount) as CFDictionary)
+        SecItemDelete(baseQuery(account: userAccount) as CFDictionary)
+    }
+
+    private func read(account: String) -> Data? {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
+    }
+
+    private func write(_ data: Data, account: String) {
+        if SecItemUpdate(baseQuery(account: account) as CFDictionary,
                          [kSecValueData as String: data] as CFDictionary) == errSecSuccess { return }
-        var insert = baseQuery()
+        var insert = baseQuery(account: account)
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         SecItemAdd(insert as CFDictionary, nil)
     }
 
-    public func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
-    }
-
-    private func baseQuery() -> [String: Any] {
+    private func baseQuery(account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
@@ -275,9 +328,21 @@ public final class KeychainSessions: SessionStore {
 public final class MemorySessions: SessionStore, @unchecked Sendable {
     private let lock = NSLock()
     private var secret: String?
+    private var user: User?
 
-    public init(secret: String? = nil) { self.secret = secret }
+    public init(secret: String? = nil, user: User? = nil) {
+        self.secret = secret
+        self.user = user
+    }
+
     public func read() -> String? { lock.withLock { secret } }
     public func write(_ value: String) { lock.withLock { secret = value } }
-    public func clear() { lock.withLock { secret = nil } }
+    public func readUser() -> User? { lock.withLock { user } }
+    public func write(user value: User) { lock.withLock { user = value } }
+    public func clear() {
+        lock.withLock {
+            secret = nil
+            user = nil
+        }
+    }
 }

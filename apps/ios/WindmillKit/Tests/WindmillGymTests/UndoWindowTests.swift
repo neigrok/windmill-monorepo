@@ -34,6 +34,7 @@ final class UndoWindowTests: XCTestCase {
         server.open(Session(id: "ses_1", startedAtMs: 1_000))
         let store = TrainingStore(queue: SetQueue(url: queueURL),
                                   deviceCatalog: DeviceCatalog(url: catalogURL),
+                                  accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
                                   localLog: LocalLog(url: catalogURL.appendingPathExtension("local")),
                                   now: { self.clockMs },
                                   mintSession: { "ses_1" },
@@ -170,6 +171,7 @@ final class UndoWindowTests: XCTestCase {
 
         let relaunched = TrainingStore(queue: SetQueue(url: queueURL),
                                        deviceCatalog: DeviceCatalog(url: catalogURL),
+                                       accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
                                        localLog: LocalLog(url: catalogURL.appendingPathExtension("local")),
                                        now: { self.clockMs },
                                        mintSession: { "ses_1" },

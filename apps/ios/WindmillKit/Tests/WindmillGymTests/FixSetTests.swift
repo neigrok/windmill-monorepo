@@ -50,6 +50,7 @@ final class FixSetTests: XCTestCase {
         TrainingStore(
             queue: SetQueue(url: queueURL),
             deviceCatalog: DeviceCatalog(url: catalogURL),
+            accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
             localLog: LocalLog(url: localURL),
             now: { self.clockMs += 1; return self.clockMs },
             mintSession: Ids.session,
@@ -625,38 +626,13 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.recent.first?.setCount, 2)
     }
 
-    // THE UNDO MUST SURVIVE THE CLAIM. A shelf deletion waits out its window on this device, and the
-    // claim rides the queue's own cadence — so an ordinary return to signal can empty the shelf while
-    // the offer is still on screen. The row goes back the one way a set ever reaches the log.
-    func testAnUndoWhoseShelfWasClaimedUnderItStillPutsTheRowBack() async {
-        seedShelf()
-        let server = FakeTraining()
-        server.online = false
-        let store = makeStore(sync: server, undoWindowMs: 9_000)
-        await store.connect(to: account(signedIn: true))
-
-        await store.delete(set("set_2", 100, 4, at: 3_000), in: "ses_local")
-        XCTAssertEqual(store.restorable?.set.id, "set_2")
-
-        server.online = true
-        await store.connect(to: account(signedIn: true))
-
-        XCTAssertTrue(shelf().sessions.isEmpty, "the claim took the shelf while the window was open")
-        XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "and the deleted row never went")
-        XCTAssertEqual(store.restorable?.set.id, "set_2", "the offer is still on screen")
-
-        let undone = await store.restore()
-        XCTAssertTrue(undone)
-        await store.flushPendingSets(force: true)
-
-        XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1", "set_2"])
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
-        XCTAssertTrue(store.refusals.isEmpty)
-    }
-
-    // And where the log will not take it back — a session it has since closed cannot be appended to —
-    // the loss is SAID, with the numbers on it. What may never happen is what did: the record
-    // cleared, the row put back nowhere, and nothing said at all.
+    // THE UNDO MUST SURVIVE THE CLAIM — AND BE HONEST ABOUT WHAT THE LOG WILL TAKE. A shelf deletion
+    // waits out its window on this device, and the claim rides the queue's own cadence — so an
+    // ordinary return to signal can empty the shelf while the offer is still on screen. The row goes
+    // back the one way a set ever reaches the log, an APPEND under its own id; and the claim has by
+    // then FINISHED that session on the log, which refuses every new set with 409 session-finished
+    // (the fake models the rule). So the loss is SAID, with the numbers on it. What may never happen
+    // is what did before this was pinned: the record cleared, the row put back nowhere, nothing said.
     func testAnUndoTheClosedSessionRefusesIsSaidRatherThanSwallowed() async {
         seedShelf()
         let server = FakeTraining()
@@ -668,12 +644,16 @@ final class FixSetTests: XCTestCase {
 
         server.online = true
         await store.connect(to: account(signedIn: true))
-        server.refuse = { _ in refusal(409, code: "session-finished", message: "that session is over") }
+        XCTAssertTrue(shelf().sessions.isEmpty, "the claim took the shelf while the window was open")
+        XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "and the deleted row never went")
+        XCTAssertNotNil(server.finishes["ses_local"], "the claim finished the session on the log")
+        XCTAssertEqual(store.restorable?.set.id, "set_2", "the offer is still on screen")
 
         let undone = await store.restore()
         XCTAssertTrue(undone)
         await store.flushPendingSets(force: true)
 
+        XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "a finished session takes no new set")
         XCTAssertEqual(store.refusals.map(\.id), ["set_2"])
         XCTAssertEqual(store.refusals.map(\.reason), ["the session closed before this set reached it"])
         XCTAssertEqual(RefusalRows.headline(of: store.refusals[0], in: []),

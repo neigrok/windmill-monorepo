@@ -93,8 +93,22 @@ other; the once-per-install flag's stored key (`windmill.gym.firstSessionOpened`
 on devices that set it, read by nothing.
 
 The queue is the room's load-bearing part: sets are kept on the device under their own client-minted
-ids and replayed until the log takes them, and the three refusals are told apart by their machine
-`code` — two mean re-mint and send again, one means that set can never land and the room says so.
+ids and replayed until the log takes them, and the refusals are told apart by their machine `code`,
+never by their sentence (`SetQueue.swift`'s `Verdict`): a spent id means re-mint and send again, a
+finished session and a workout the log no longer holds mean that set can never land and the room
+says so, and every other 400/409 is terminal in the log's own words. **A launch with no signal is
+not a sign-out** (`Auth.swift`, 2026-08-16): the platform keeps the last-known user beside the
+session secret, `restore()` answers an *unverified* signed-in seat when the log cannot be reached,
+the gym room connects under it off the device copies it holds (`AccountCopy` for the program and
+the picker's last lines, `DeviceCatalog` for names, `LocalLog` for settings), and the seat is asked
+again on every return to the foreground; the rooms key their connect on `Account.seat` — (user,
+verified) — so the restore that finally reaches the log reconnects them. Only a definitive 401 ends
+a session. Signed in with no signal, **Start composes the workout on the device** from the routine
+the store holds — under the id and instant the attempt wore, so the claim's start is a replay the
+log answers with its own row should the first have landed — and the claim lands it on the retry
+cadence; nobody in a basement is told "the log didn't answer". On connect the queue's owed sets go
+out before the claim's first start and again after it, because a start settles the log's stale open
+session exactly as a read does.
 
 **Sign in with Apple is the primary door** (one tap, no address to type), with the emailed six-digit
 code beside it rather than behind it: email is the only door that keeps one account across phone and

@@ -64,8 +64,9 @@ public struct JournalRoom: View {
         // shell reads it to dress the capsule in the lane journal reserves and never paints.
         .roomChrome(colorScheme)
         // Re-runs whenever who is signed in changes: on sign-in this claims what was written on the
-        // device before there was an account, then loads the window.
-        .task(id: account.user?.id) { await store.connect(to: account) }
+        // device before there was an account, then loads the window. And once more when an
+        // unverified seat is verified — that is when a window the launch could not read can land.
+        .task(id: account.seat) { await store.connect(to: account) }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { Task { await store.flushPendingWrite() } }
         }

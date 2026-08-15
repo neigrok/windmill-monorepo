@@ -24,6 +24,7 @@ final class TrainingStoreTests: XCTestCase {
     private var queueURL: URL!
     private var catalogURL: URL!
     private var localURL: URL!
+    private var accountURL: URL!
 
     override func setUp() async throws {
         queueURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -32,12 +33,15 @@ final class TrainingStoreTests: XCTestCase {
             .appendingPathComponent("gym-catalog-\(UUID().uuidString).json")
         localURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("gym-local-\(UUID().uuidString).json")
+        accountURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("gym-account-\(UUID().uuidString).json")
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: queueURL)
         try? FileManager.default.removeItem(at: catalogURL)
         try? FileManager.default.removeItem(at: localURL)
+        try? FileManager.default.removeItem(at: accountURL)
     }
 
     // The undo window is off here on purpose. What every test below is about is what happens to a
@@ -51,6 +55,7 @@ final class TrainingStoreTests: XCTestCase {
         return TrainingStore(
             queue: SetQueue(url: queueURL),
             deviceCatalog: DeviceCatalog(url: catalogURL),
+            accountCopy: AccountCopy(url: accountURL),
             localLog: LocalLog(url: localURL),
             now: { ms += 1; return ms },
             mintSession: { "ses_minted" },
@@ -91,7 +96,7 @@ final class TrainingStoreTests: XCTestCase {
         server.online = false
         await store.logSet(weightKg: 82.5, reps: 5)
 
-        XCTAssertEqual(store.saveState, .offline)
+        XCTAssertEqual(store.saveState, .blocked(.offline))
         XCTAssertEqual(store.saveState.line, "offline · saved here")
         XCTAssertEqual(store.sets.map(\.weightKg), [82.5], "the row is on screen — the device is holding it")
         XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
@@ -153,7 +158,7 @@ final class TrainingStoreTests: XCTestCase {
 
         server.swallowReplies = 1
         await store.logSet(weightKg: 82.5, reps: 5)
-        XCTAssertEqual(store.saveState, .offline)
+        XCTAssertEqual(store.saveState, .blocked(.offline))
         XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
 
         await store.flushPendingSets()
@@ -230,8 +235,40 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
         XCTAssertTrue(store.refusals.isEmpty, "the server failing is not the set being refused")
-        XCTAssertEqual(store.saveState, .offline)
+        // R10: a log that ANSWERED is not a phone with no signal — the note and the strip are read
+        // off the failure KIND, and "offline" is kept for the transport. Never the server's own
+        // sentence in the strip.
+        XCTAssertEqual(store.saveState, .blocked(.logFailed))
+        XCTAssertEqual(store.saveState.line, "the log didn’t answer · saved here")
+        XCTAssertEqual(store.strandedBy, .logFailed)
         XCTAssertEqual(store.sets.count, 1, "the row stays on screen — the device is holding it")
+
+        // A malformed reply is the log's trouble too — not a basement.
+        server.refuse = { _ in .malformed }
+        await store.flushPendingSets()
+        XCTAssertEqual(store.saveState, .blocked(.logFailed))
+        XCTAssertEqual(store.strandedBy, .logFailed)
+
+        // A `set-not-found` on an append is a blocked lane and it says so; still not "no signal".
+        server.refuse = { _ in refusal(404, code: "set-not-found", message: "no such set") }
+        await store.flushPendingSets()
+        XCTAssertEqual(store.saveState, .blocked(.logFailed))
+        XCTAssertEqual(store.strandedBy, .logFailed)
+        XCTAssertEqual(store.strandedCount, 1)
+
+        // A lapsed sign-in is its own fact.
+        server.refuse = { _ in refusal(401, message: "sign in to open your training log") }
+        await store.flushPendingSets()
+        XCTAssertEqual(store.saveState, .blocked(.signInLapsed))
+        XCTAssertEqual(store.saveState.line, "sign in again · saved here")
+        XCTAssertEqual(store.strandedBy, .signInLapsed)
+
+        server.refuse = { _ in nil }
+        server.online = false
+        await store.flushPendingSets()
+        XCTAssertEqual(store.saveState, .blocked(.offline))
+        XCTAssertEqual(store.saveState.line, "offline · saved here")
+        XCTAssertEqual(store.strandedBy, .offline)
     }
 
     // Order is per (session, movement), because that is the only order the server keeps. A jam that
@@ -375,15 +412,171 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(why, .refused("no such routine"))
         XCTAssertEqual(why.line("a session starts there"), "no such routine")
         XCTAssertNil(store.session)
+    }
 
-        server.refuseStart = nil
+    // R3. NO SIGNAL IS NOT A REASON TO STAND STILL. Signed in with the log unreachable, fallen over,
+    // or refusing the device's clock, Start composes the workout ON THE DEVICE from the routine the
+    // store holds — the account's own, off the copy this seat last read — holds it unclaimed, and the
+    // claim lands it on the retry cadence. "the log didn't answer — a session starts there" is retired:
+    // a lifter in a basement can begin.
+    func testAStartWithNoSignalComposesOnTheDeviceFromTheAccountsRoutineAndTheClaimLandsIt() async {
+        let server = FakeTraining()
+        server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 82.5),
+        ])
+        let online = makeStore(sync: server)
+        await online.connect(to: account(signedIn: true))
+        XCTAssertEqual(online.routines.map(\.id), ["rt_push_a"], "read once, online")
+
         server.online = false
-        guard case .failure(let quiet) = await store.start() else {
-            return XCTFail("an unreachable log is not a session either")
+        let basement = makeStore(sync: server, retryAfter: .milliseconds(40))
+        await basement.connect(to: account(signedIn: true))
+        XCTAssertEqual(basement.routines.map(\.id), ["rt_push_a"], "R7: the program is drawn from the device copy")
+
+        guard case .success(let opened) = await basement.start(routineId: "rt_push_a") else {
+            return XCTFail("a basement start composes on the device")
         }
-        XCTAssertEqual(quiet, .noAnswer)
-        XCTAssertEqual(quiet.line("a session starts there"),
-                       "the log didn’t answer — a session starts there")
+        XCTAssertEqual(opened.plan, PlanSnapshot(routine: "Push A", entries: [
+            PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
+        ]), "the plan froze off the routine the store holds")
+        XCTAssertEqual(basement.session?.id, opened.id)
+        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed, "held unclaimed until the claim lands it")
+
+        await basement.choose("bench-press")
+        XCTAssertEqual(basement.prefill, Prefill(weightKg: 82.5, reps: 5), "and the dial is the plan's")
+        await basement.logSet(weightKg: 82.5, reps: 5)
+        XCTAssertEqual(basement.saveState, .onThisDevice, "parked with its session, not offline")
+
+        server.online = true
+        for _ in 0..<200 where server.sets[opened.id] == nil { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(server.started.map(\.id), [opened.id, opened.id],
+                       "the start that got no answer, then the claim's replay UNDER THE SAME ID — so a start "
+                       + "that had landed after all is answered with its own row, never a second workout")
+        XCTAssertEqual(server.started.map(\.routineId), ["rt_push_a", "rt_push_a"])
+        XCTAssertEqual(server.started.map(\.joinOpenSession), [false, false])
+        XCTAssertEqual(server.sets[opened.id]?.map(\.weightKg), [82.5], "the cadence claimed it and the set went out")
+        XCTAssertFalse(SetQueue(url: queueURL).sessionIsUnclaimed)
+        XCTAssertEqual(basement.session?.id, opened.id, "the same workout, on the log now")
+    }
+
+    func testAStartTheLogDroppedOrRefusedForItsClockComposesOnTheDeviceAndANamedRefusalDoesNot() async {
+        let server = FakeTraining()
+        server.refuseStart = storageFailure
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        guard case .success(let fallen) = await store.start() else { return XCTFail("a 500 is not a wall") }
+        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed)
+        _ = await store.discard(fallen.id)
+
+        server.refuseStart = refusal(400, code: "clock-ahead", message: "this device's clock is 9 minutes ahead")
+        guard case .success = await store.start() else { return XCTFail("clock-ahead ages into the past by itself") }
+        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed)
+        _ = await store.discard(store.session!.id)
+
+        server.refuseStart = refusal(401, message: "sign in to open your training log")
+        guard case .failure(let said) = await store.start() else { return XCTFail("a refusal with a reason is a wall") }
+        XCTAssertEqual(said, .refused("sign in to open your training log"))
+        XCTAssertNil(store.session)
+    }
+
+    // R5. AN APPEND 404 FOR A SESSION THIS DEVICE HOLDS AS CLAIMED is the workout being gone —
+    // discarded from another surface. Terminal and SAID, the session forgotten, the log re-read:
+    // nothing retries every four seconds, nothing reads "offline · saved here" under a healthy
+    // connection, and no later workout's strip counts it.
+    func testASetIntoAWorkoutDiscardedElsewhereIsSaidAndTheWorkoutIsForgotten() async {
+        let server = FakeTraining()
+        let store = await liveStore(server, retryAfter: .milliseconds(40))
+        await store.logSet(weightKg: 82.5, reps: 5)
+        XCTAssertEqual(store.saveState, .onTheLog)
+
+        try? await server.discardSession("ses_1")
+        await store.logSet(weightKg: 85, reps: 3)
+
+        XCTAssertEqual(store.refusals, [.set(RefusedSet(
+            TrainingSet(id: store.refusals.first!.id, exerciseId: "bench-press", weightKg: 85, reps: 3,
+                        completedAtMs: 0),
+            reason: "that workout is no longer on the log"))])
+        XCTAssertEqual(store.saveState, .refused("that workout is no longer on the log"))
+        XCTAssertNil(store.session, "the workout is forgotten — the room has nothing running")
+        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "nothing is left retrying")
+        XCTAssertEqual(store.strandedCount, 0)
+        XCTAssertNil(store.strandedBy)
+        XCTAssertEqual(store.recent, [], "and the log was re-read: the discarded workout is not a row")
+        XCTAssertEqual(server.calls.filter { $0 == "sessions" }.count, 2, "one boot read, one re-read")
+
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(server.appended.filter { $0.weightKg == 85 }.count, 1, "no cadence ever re-sent it")
+    }
+
+    // R6. FINISH RETURNS THE LOG'S ANSWER like every other write: the refusal in its own words, and
+    // "didn't answer" only for the transport. A 404 is the workout being gone — forgotten, and the
+    // log re-read.
+    func testFinishSaysWhatTheLogSaidAndAGoneWorkoutIsForgotten() async {
+        let server = FakeTraining()
+        let store = await liveStore(server)
+
+        server.online = false
+        let quiet = await store.finish()
+        XCTAssertEqual(quiet, .failed(.noAnswer))
+        XCTAssertNotNil(store.session, "the session stays open")
+
+        server.online = true
+        server.refuseFinish = refusal(400, message: "a session cannot finish before it began")
+        let refused = await store.finish()
+        XCTAssertEqual(refused, .failed(.refused("a session cannot finish before it began")))
+        XCTAssertNotNil(store.session)
+
+        server.refuseFinish = nil
+        try? await server.discardSession("ses_1")
+        let gone = await store.finish()
+        XCTAssertEqual(gone, .failed(.refused("that workout is no longer on the log")))
+        XCTAssertNil(store.session, "there is nothing left to close")
+        XCTAssertTrue(SetQueue(url: queueURL).session == nil)
+        XCTAssertEqual(store.recent, [], "the log was re-read")
+    }
+
+    // R7. A SIGNED-IN CONNECT WITH NO SIGNAL draws the account from the DEVICE COPY it last read —
+    // routines, the picker's last lines, the catalog's names, the settings — and never lets go of the
+    // account's preferences document. The seat is the same, so nothing this device holds is
+    // somebody else's.
+    func testASignedInConnectWithNoSignalDrawsTheAccountFromTheDeviceCopy() async {
+        let server = FakeTraining()
+        server.catalog = [Exercise(id: "bench-press", name: "Bench (renamed)", pattern: "press",
+                                   equipment: "barbell", stepKg: 2.5)]
+        server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 82.5),
+        ])
+        server.lastSets = [LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5, atMs: 900)]
+        server.settings = GymPreferences.defaults.with(units: .lb)
+        let online = makeStore(sync: server)
+        await online.connect(to: account(signedIn: true))
+        await online.loadLastSets()
+        XCTAssertEqual(online.preferences.units, .lb)
+
+        server.online = false
+        let basement = makeStore(sync: server)
+        await basement.connect(to: account(signedIn: true))
+        await basement.loadLastSets()
+
+        XCTAssertEqual(basement.routines, [server.written["rt_push_a"]!], "the program, off the copy")
+        XCTAssertEqual(basement.lastSets?["bench-press"]?.weightKg, 82.5, "the picker's lines, off the copy")
+        XCTAssertEqual(basement.catalog.first { $0.id == "bench-press" }?.name, "Bench (renamed)",
+                       "the account's names, off the copy")
+        XCTAssertEqual(basement.preferences.units, .lb, "the settings, off the shelf")
+        XCTAssertEqual(LocalLog(url: localURL).preferences?.units, .lb,
+                       "and the account's document was not let go of")
+        XCTAssertEqual(basement.logFoot, .failed, "the log page is the one thing that honestly failed")
+
+        // Another seat draws none of it.
+        let stranger = makeStore(sync: server)
+        await stranger.connect(to: account(signedIn: true, id: "u2"))
+        XCTAssertEqual(stranger.routines, [])
+        await stranger.loadLastSets()
+        XCTAssertNil(stranger.lastSets)
+        XCTAssertEqual(stranger.preferences, .defaults)
     }
 
     // The write that moves next week's target. It answered with a bool nobody read, so the sheet
@@ -1373,8 +1566,16 @@ extension RefusedWrite {
 // stored session), then the open session for a joining start, then a refusal for `false` — because
 // the claim replay's whole safety rests on that order and a fake that joined anyway would prove
 // nothing.
+//
+// It models the three server rules the 2026-08-16 phone hunt had to add before it could show the
+// loss class at all: a SETTLING read (the log page, a start, a movement's record) auto-closes an
+// open session whose last activity is four hours behind `nowMs` — at that activity, never at now;
+// an append into a finished session is 409 `session-finished`; and an append or a finish into a
+// session the log does not hold is a plain 404. `nowMs` is the log's own clock, and it starts at
+// zero so nothing settles unless a test moves it.
 final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var online = true
+    var nowMs: Int64 = 0
     var catalog: [Exercise] = []
     var stored: [String: Session] = [:]
     var sets: [String: [TrainingSet]] = [:]
@@ -1393,6 +1594,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseFix: WindmillApiError?
     var refuseDelete: WindmillApiError?
     var refuseStart: WindmillApiError?
+    var refuseFinish: WindmillApiError?
     var refuseCreate: WindmillApiError?
     var refuseCreateRoutine: WindmillApiError?
     var refuseRoutines: WindmillApiError?
@@ -1410,6 +1612,9 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var takenRoutineIds: Set<String> = []
     var takenExerciseIds: Set<String> = []
     var swallowReplies = 0
+    // A start whose reply is lost on the way back: the row is stored — the log holds that session
+    // open — and the phone hears nothing.
+    var swallowStartReplies = 0
     // The close is a round trip, and this is the only way a test can stand inside it. The settings
     // write is the other one — a second tap while the first is on the wire is the case that decides
     // which document the log ends up holding.
@@ -1428,6 +1633,17 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
 
     func open(_ session: Session) {
         stored[session.id] = session
+    }
+
+    // LogService::settleOpen, to the rule: the one open session ends at its last set — or at its
+    // start, with no sets — once four hours have passed without one.
+    func settleOpen() {
+        for (id, session) in stored where session.isOpen {
+            guard let closeAt = session.autoCloseAt(lastSetAtMs: sets[id]?.last?.completedAtMs,
+                                                    nowMs: nowMs) else { continue }
+            stored[id] = Session(id: session.id, startedAtMs: session.startedAtMs, finishedAtMs: closeAt,
+                                 routineId: session.routineId, plan: session.plan)
+        }
     }
 
     private func refusal(_ status: Int, code: String, _ message: String) -> WindmillApiError {
@@ -1460,6 +1676,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         started.append(start)
         guard online else { throw WindmillApiError.offline }
         if let refuseStart { throw refuseStart }
+        settleOpen()
         if takenSessionIds.contains(start.id) {
             throw refusal(409, code: "session-id-taken", "that session id is taken")
         }
@@ -1486,6 +1703,10 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         let opened = Session(id: start.id, startedAtMs: start.startedAtMs,
                              routineId: start.routineId, plan: plan)
         stored[opened.id] = opened
+        if swallowStartReplies > 0 {
+            swallowStartReplies -= 1
+            throw WindmillApiError.offline
+        }
         return opened
     }
 
@@ -1497,6 +1718,10 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         // The id IS the idempotency key: a replay answers with the stored row, even after the
         // session closed, and never files a second one.
         if let already = sets[sessionId]?.first(where: { $0.id == write.id }) { return already }
+        // Absent and another's are the same plain 404; a session that is over is 409, by code, and
+        // terminal for every queue.
+        guard let held = stored[sessionId] else { throw WindmillApiError.refused(404, Refusal(Data())) }
+        if !held.isOpen { throw refusal(409, code: "session-finished", "that session is finished") }
 
         let number = (sets[sessionId] ?? []).filter { $0.exerciseId == write.exerciseId }.count + 1
         let row = TrainingSet(id: write.id, exerciseId: write.exerciseId, setNumber: number,
@@ -1541,6 +1766,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         calls.append("finish")
         await onFinish()
         guard online else { throw WindmillApiError.offline }
+        if let refuseFinish { throw refuseFinish }
         guard let live = stored[sessionId] else { throw WindmillApiError.refused(404, Refusal(Data())) }
         finishes[sessionId] = finishedAtMs
         let closed = Session(id: live.id, startedAtMs: live.startedAtMs, finishedAtMs: finishedAtMs,
@@ -1562,6 +1788,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     func sessions(before: Int64?, beforeId: String?, limit: Int) async throws -> [SessionSummary] {
         calls.append("sessions")
         guard online else { throw WindmillApiError.offline }
+        settleOpen()
         let ordered = stored.values.sorted {
             $0.startedAtMs == $1.startedAtMs ? $0.id > $1.id : $0.startedAtMs > $1.startedAtMs
         }
@@ -1763,6 +1990,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         calls.append("record")
         guard online else { throw WindmillApiError.offline }
         if let refuseRecord { throw refuseRecord }
+        settleOpen()
         return records[exerciseId]
     }
 

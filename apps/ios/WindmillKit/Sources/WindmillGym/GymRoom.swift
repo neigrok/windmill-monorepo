@@ -185,11 +185,13 @@ public struct GymRoom: View {
         .environment(\.colorScheme, .dark)
         .roomChrome(.dark)
         .tint(skin.accent)
-        // Re-runs whenever who is signed in changes. `connect` drains what the device is still
-        // holding BEFORE it reads the log, because reading the log settles a stale open session and
-        // a set that arrives after that close is refused forever; and landing back inside a workout
-        // that never stopped stands where the lifter was, not in the picker over a session of sets.
-        .task(id: account.user?.id) {
+        // Re-runs whenever who is signed in changes — and once more when a seat that stood unverified
+        // on the device's last-known user is verified, because that is the moment the reads it made off
+        // the device copy can land on the log. `connect` drains what the device is still holding
+        // BEFORE it reads the log, because reading the log settles a stale open session and a set
+        // that arrives after that close is refused forever; and landing back inside a workout that
+        // never stopped stands where the lifter was, not in the picker over a session of sets.
+        .task(id: account.seat) {
             await store.connect(to: account)
             guard store.exerciseId == nil,
                   let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
@@ -199,7 +201,8 @@ public struct GymRoom: View {
         // lands back inside the workout they are standing in, and a credential list is never allowed
         // to hold that up. Signed out the answer is known without asking — there is no account for a
         // grant or a key to hang on — and asking anyway would turn a 401 into "nobody is connected".
-        .task(id: account.user?.id) {
+        // Keyed on the seat, so a verification re-asks a list an unverified launch could not read.
+        .task(id: account.seat) {
             connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
         }
         .onChange(of: scenePhase) { _, phase in
@@ -567,8 +570,10 @@ public struct GymRoom: View {
                                        isFirst: store.recent.count <= 1)
         case .stranded(let count):
             note = "\(Readout.setCount(count)) still on this device — the session stays open until they land"
-        case .noAnswer:
-            note = "the log didn’t answer — the session is still open"
+        case .failed(let why):
+            // The log's own sentence when it sent one — a workout discarded from another surface is
+            // not a phone with no signal — and "didn't answer" only for the transport.
+            note = why.line("the session is still open")
         }
     }
 

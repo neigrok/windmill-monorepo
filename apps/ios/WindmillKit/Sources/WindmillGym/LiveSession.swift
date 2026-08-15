@@ -209,10 +209,22 @@ public enum LiveLines {
     // The count is the sets the walk has already OFFERED and could not land (`TrainingStore
     // .strandedCount`), never every queued set: every set is briefly pending on purpose, and
     // counting those would flash this strip for the whole undo window on a healthy connection.
-    public static func onThisDeviceLine(_ count: Int) -> String? {
+    //
+    // WHAT BLOCKED THEM IS SAID, AND "NO SIGNAL" ONLY WHEN THE STORE KNOWS IT: the sentence about
+    // the basement is for a transport that failed. A log that answered without taking them, and a
+    // sign-in that lapsed, each get their own line — curated here, never the server's sentence
+    // embedded in the strip — and a walk that has not met them yet asserts nothing but the count.
+    public static func onThisDeviceLine(_ count: Int, stall: Stall?) -> String? {
         guard count > 0 else { return nil }
         let subject = count == 1 ? "1 set is" : "\(count) sets are"
-        return "\(subject) saved on this device only. No signal down here — they flush when you’re back up."
+        let why: String
+        switch stall {
+        case .none: why = "They flush when the log takes them."
+        case .offline: why = "No signal down here — they flush when you’re back up."
+        case .logFailed: why = "The log didn’t answer — they flush when it does."
+        case .signInLapsed: why = "Your sign-in lapsed — they flush once you sign in again."
+        }
+        return "\(subject) saved on this device only. \(why)"
     }
 
     // The right-hand count, and only the count: what a movement with nothing in it says is the row's

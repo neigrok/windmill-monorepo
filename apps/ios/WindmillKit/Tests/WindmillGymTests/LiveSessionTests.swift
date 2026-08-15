@@ -275,10 +275,19 @@ final class LiveLinesTests: XCTestCase {
     }
 
     func testTheOfflineStripCountsSetsAndSaysNothingWhenThereAreNone() {
-        XCTAssertNil(LiveLines.onThisDeviceLine(0))
-        XCTAssertEqual(LiveLines.onThisDeviceLine(1),
+        XCTAssertNil(LiveLines.onThisDeviceLine(0, stall: .offline))
+        XCTAssertEqual(LiveLines.onThisDeviceLine(1, stall: .offline),
                        "1 set is saved on this device only. No signal down here — they flush when you’re back up.")
-        XCTAssertEqual(LiveLines.onThisDeviceLine(3),
+        XCTAssertEqual(LiveLines.onThisDeviceLine(3, stall: .offline),
                        "3 sets are saved on this device only. No signal down here — they flush when you’re back up.")
+        // "No signal" is the store's word for a transport that failed, and nobody else's: a log that
+        // answered without taking them, and a sign-in that lapsed, each get a line of their own —
+        // never the server's sentence — and a walk that has not met the sets yet asserts only the count.
+        XCTAssertEqual(LiveLines.onThisDeviceLine(2, stall: .logFailed),
+                       "2 sets are saved on this device only. The log didn’t answer — they flush when it does.")
+        XCTAssertEqual(LiveLines.onThisDeviceLine(2, stall: .signInLapsed),
+                       "2 sets are saved on this device only. Your sign-in lapsed — they flush once you sign in again.")
+        XCTAssertEqual(LiveLines.onThisDeviceLine(1, stall: nil),
+                       "1 set is saved on this device only. They flush when the log takes them.")
     }
 }

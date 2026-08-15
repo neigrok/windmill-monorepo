@@ -204,6 +204,8 @@ final class AuthStoreWireTests: XCTestCase {
                                                      body: ["email": "sam@example.com", "code": "483201"])])
         XCTAssertEqual(sessions.read(), "s3cr3t")
         XCTAssertEqual(auth.status, .signedIn(User(id: "u1", email: "sam@example.com", name: "Sam")))
+        XCTAssertEqual(sessions.readUser(), User(id: "u1", email: "sam@example.com", name: "Sam"),
+                       "the user is kept beside the secret for the launch the log cannot answer")
     }
 
     func testACodeReplyWithoutACookieRefusesRatherThanPretending() async {
@@ -219,24 +221,72 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(auth.status, .unknown, "a failed sign-in touches nothing")
     }
 
-    // THE RESTORE RULE: only a definitive 401 clears the Keychain. A phone opened in a basement is
-    // not signed out — clearing there deleted a live 90-day secret and stranded the gym queue's
-    // owed sets behind a bearer that no longer existed.
-    func testRestoreKeepsTheSecretWhenTheNetworkFails() async {
-        let sessions = MemorySessions(secret: "held")
+    // THE RESTORE RULE: only a definitive 401 clears the Keychain, and only a definitive 401 is a
+    // sign-out. A phone opened in a basement is not signed out — clearing there deleted a live
+    // 90-day secret and stranded the gym queue's owed sets behind a bearer that no longer existed;
+    // answering signed-out there opened gym on the anonymous shelf and let go of the account's
+    // settings document. The seat is the user this device last read beside the secret, marked
+    // unverified, and every product connects under it.
+    func testRestoreKeepsTheSeatUnverifiedWhenTheNetworkFails() async {
+        let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
+        let sessions = MemorySessions(secret: "held", user: sam)
         let auth = store(sessions: sessions)
         DoorWire.failWith = URLError(.notConnectedToInternet)
 
         await auth.restore()
 
-        XCTAssertEqual(auth.status, .signedOut, "the seat rests signed out until the log answers")
-        XCTAssertEqual(sessions.read(), "held", "and the secret survives to try again")
+        XCTAssertEqual(auth.status, .unverified(sam), "a basement is not a sign-out")
+        XCTAssertEqual(auth.status.user, sam, "and the rooms connect under the last-known seat")
+        XCTAssertEqual(sessions.read(), "held", "the secret survives to try again")
+        XCTAssertEqual(sessions.readUser(), sam)
     }
 
-    func testRestoreKeepsTheSecretThroughAServerFailure() async {
-        let sessions = MemorySessions(secret: "held")
+    func testRestoreKeepsTheSeatUnverifiedThroughAServerFailure() async {
+        let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
+        let sessions = MemorySessions(secret: "held", user: sam)
         let auth = store(sessions: sessions)
         DoorWire.script = [(500, [:], #"{"error":"internal error"}"#)]
+
+        await auth.restore()
+
+        XCTAssertEqual(auth.status, .unverified(sam))
+        XCTAssertEqual(sessions.read(), "held")
+    }
+
+    // R7. THE ROOMS RECONNECT WHEN THE SEAT IS VERIFIED. A room keys its connect on `Account.seat`,
+    // and the seat an unverified launch answers is a different value from the verified one for the
+    // SAME user — so the restore that finally reaches the log re-runs the room's connect, and the
+    // reads it made off the device copy land. Signed out is verified: nobody is waiting on an answer.
+    func testVerifyingTheSeatMovesTheValueTheRoomsKeyTheirConnectOn() async {
+        let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
+        let sessions = MemorySessions(secret: "held", user: sam)
+        let auth = store(sessions: sessions)
+        DoorWire.failWith = URLError(.notConnectedToInternet)
+
+        await auth.restore()
+        let basement = Account(api: auth.api, user: auth.status.user, verified: auth.status.verified)
+        XCTAssertEqual(basement.seat, Account.Seat(userId: "u1", verified: false))
+        XCTAssertTrue(basement.isSignedIn, "unverified is still signed in — the room connects for Sam")
+
+        DoorWire.failWith = nil
+        DoorWire.script = [(200, [:], #"{"user":{"id":"u1","email":"sam@example.com","name":"Sam"}}"#)]
+        await auth.restore()
+        let verified = Account(api: auth.api, user: auth.status.user, verified: auth.status.verified)
+        XCTAssertEqual(auth.status, .signedIn(sam))
+        XCTAssertEqual(verified.seat, Account.Seat(userId: "u1", verified: true))
+        XCTAssertNotEqual(verified.seat, basement.seat, "the same user, a new seat: the room's connect re-runs")
+
+        XCTAssertEqual(AuthStatus.signedOut.verified, true)
+        XCTAssertEqual(AuthStatus.unknown.verified, true)
+        XCTAssertEqual(Account(api: auth.api, user: nil).seat, Account.Seat(userId: nil, verified: true))
+    }
+
+    // A secret with no user beside it — a Keychain written before the user was kept there — has
+    // nobody to answer with, so it rests signed out until the log answers; the secret still stays.
+    func testRestoreWithNoKnownUserRestsSignedOutButKeepsTheSecret() async {
+        let sessions = MemorySessions(secret: "held")
+        let auth = store(sessions: sessions)
+        DoorWire.failWith = URLError(.notConnectedToInternet)
 
         await auth.restore()
 
@@ -244,8 +294,22 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(sessions.read(), "held")
     }
 
-    func testRestoreClearsTheSecretOnADefinitive401() async {
-        let sessions = MemorySessions(secret: "spent")
+    // The log's answer is what re-verifies the seat — and it is written beside the secret so the
+    // NEXT launch in a basement has a user to answer with.
+    func testASuccessfulRestoreVerifiesTheSeatAndKeepsTheUserBesideTheSecret() async {
+        let sessions = MemorySessions(secret: "held")
+        let auth = store(sessions: sessions)
+        DoorWire.script = [(200, [:], #"{"user":{"id":"u1","email":"sam@example.com","name":"Sam"}}"#)]
+
+        await auth.restore()
+
+        let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
+        XCTAssertEqual(auth.status, .signedIn(sam))
+        XCTAssertEqual(sessions.readUser(), sam)
+    }
+
+    func testRestoreClearsTheSecretAndTheUserOnADefinitive401() async {
+        let sessions = MemorySessions(secret: "spent", user: User(id: "u1", email: "sam@example.com", name: "Sam"))
         let auth = store(sessions: sessions)
         DoorWire.script = [(401, [:], #"{"error":"session expired"}"#)]
 
@@ -253,6 +317,7 @@ final class AuthStoreWireTests: XCTestCase {
 
         XCTAssertEqual(auth.status, .signedOut)
         XCTAssertNil(sessions.read(), "a 401 is the one answer that really ends the session")
+        XCTAssertNil(sessions.readUser(), "and nobody is left beside a secret that is gone")
     }
 }
 

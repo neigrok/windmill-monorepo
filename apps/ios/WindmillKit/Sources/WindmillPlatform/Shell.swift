@@ -28,6 +28,7 @@ public struct SuperappView: View {
     @State private var doorUp = false
     @State private var doorRefusal: String?
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system.rawValue
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(products: [any ProductModule], auth: AuthStore = AuthStore(),
                 journey: Journey = Journey()) {
@@ -88,8 +89,14 @@ public struct SuperappView: View {
         // and a link that arrives is a sign-in, which is the shell's business and no product's.
         .onOpenURL { url in Task { await arrived(from: url) } }
         // The seat resolves once on launch. Until it answers, products run signed out — a real
-        // state, not a loading state, so nothing is blocked while it happens.
+        // state, not a loading state, so nothing is blocked while it happens. A launch the log never
+        // answered leaves the seat UNVERIFIED — signed in off the user this device last read — and
+        // every return to the foreground asks again until the log confirms or refuses it.
         .task { await auth.restore() }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, case .unverified = auth.status else { return }
+            Task { await auth.restore() }
+        }
         // Launch reopens the last room you stood in, not the hub — the hub is a place you go, never
         // a toll gate. Only after the one question has been answered; before that it owns the screen.
         .onAppear { if journey.asked { openRoom = journey.lastRoom } }
@@ -98,7 +105,7 @@ public struct SuperappView: View {
     private var chosenScheme: ColorScheme? { Appearance(rawValue: appearance)?.scheme }
 
     private var account: Account {
-        Account(api: auth.api, user: auth.status.user)
+        Account(api: auth.api, user: auth.status.user, verified: auth.status.verified)
     }
 
     // Rooms sit lowest in the switcher, so the sheet is only as tall as its rows need.

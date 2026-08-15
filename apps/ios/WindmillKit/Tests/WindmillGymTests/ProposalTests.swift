@@ -324,6 +324,7 @@ final class ProposalStoreTests: XCTestCase {
         var ms: Int64 = 1_000
         return TrainingStore(queue: SetQueue(url: queueURL),
                              deviceCatalog: DeviceCatalog(url: queueURL.appendingPathExtension("cat")),
+                             accountCopy: AccountCopy(url: queueURL.appendingPathExtension("account")),
                              localLog: LocalLog(url: queueURL.appendingPathExtension("local")),
                              now: { ms += 1; return ms },
                              undoWindowMs: 0,

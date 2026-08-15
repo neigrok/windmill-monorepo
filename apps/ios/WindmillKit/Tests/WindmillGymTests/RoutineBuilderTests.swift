@@ -479,6 +479,8 @@ final class RoutineWritingTests: XCTestCase {
                                           .appendingPathComponent("q-\(UUID().uuidString).json")),
                       deviceCatalog: DeviceCatalog(url: FileManager.default.temporaryDirectory
                                                        .appendingPathComponent("c-\(UUID().uuidString).json")),
+                      accountCopy: AccountCopy(url: FileManager.default.temporaryDirectory
+                                                   .appendingPathComponent("a-\(UUID().uuidString).json")),
                       localLog: shelf,
                       sync: { _ in nil })
     }
