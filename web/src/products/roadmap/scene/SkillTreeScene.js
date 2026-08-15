@@ -854,6 +854,12 @@ export class SkillTreeScene {
     this.rafHandle = requestAnimationFrame(this.tick);
   }
 
+  // Is a ceremony live or waiting on the director — asked by the week's offer before its safety cap
+  // fires. Answered from the director, not `running`: the arrival is scheduled by setModel and its
+  // beats are plain timers, so a scene paused under the phone list still speaks it once. Disposal
+  // cancels the director, so a gone scene answers false.
+  ceremonyBusy() { return this.director.busy(); }
+
   stop() {
     this.running = false;
     if (this.rafHandle !== null) cancelAnimationFrame(this.rafHandle);

@@ -80,6 +80,11 @@ export class CeremonyDirector {
     this.drain();
   }
 
+  // A ceremony is coming: one is live, or one waits (coalesced, or held for the canvas to idle)
+  // for the floor. Every path that ends a ceremony — spoken, reduced, summary-less, yielded,
+  // cancelled — clears `live`, so this goes false even when nothing was said.
+  busy() { return this.live !== null || this.pending !== null; }
+
   cancel() {
     this.clearTimers();
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }

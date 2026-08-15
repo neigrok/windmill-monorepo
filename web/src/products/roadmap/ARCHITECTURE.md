@@ -333,6 +333,8 @@ one feature package rather than split across layers because it is a self-contain
 - `share/GalleryCard.jsx` — the in-product card (#12): drops the mat (it lives inside app chrome)
   but keeps the kind rule and the same title/readout. Presentational, light and dark.
 
+- `share/weekOfferGate.js` — `WeekOfferGate`: arm / follow / drop over a clock and a `ceremonyBusy` probe — the
+  offer's whole timing in one testable place (`test/products/roadmap/share/weekOfferGate.test.js`).
 - `share/useWeekOffer.js` — the director over all of the above: the share ledger, the two cards'
   pixels (one raster cached, so the sheet opens onto a drawn post), the week segment the sheet
   renders, and the offer's whole conduct. `SkillTreeView` holds only the triggers, because they are
@@ -340,9 +342,13 @@ one feature package rather than split across layers because it is a self-contain
   scene's one toast sink, `dropWeekOffer` from the milestone beat and the load's teardown.
 
 The period's offer is armed during the load and fired by the scene's one toast sink, 120ms after
-whatever ceremony closes the open (the welcome-back recap, or the arrival standing in for it), with
-a cap for the paused-scene case. A milestone landing in the same window drops it: one pride moment
-per open, and the ask is dropped rather than queued.
+whatever ceremony closes the open (the welcome-back recap, or the arrival standing in for it).
+`share/weekOfferGate.js` is that timing as one policy: a 2600ms safety cap that, before it fires,
+asks the scene's `ceremonyBusy()` (the director's `busy()` — live or pending) whether a ceremony
+is still coming, and stands aside for another tail if one is (a phone opening into the list still
+gets its arrival spoken once, from a scene paused after scheduling it), bounded to three deferrals
+so a wedged director never strands the ask. A milestone landing in the same window drops it: one
+pride moment per open, and the ask is dropped rather than queued.
 
 ## `SkillTreeView.jsx` + overlay UI
 

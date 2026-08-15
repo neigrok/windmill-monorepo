@@ -7,9 +7,10 @@
 // The offer's conduct is the part worth naming. It is armed during the load, fires on the tail of
 // whatever ceremony closes that open (the welcome-back recap, or the arrival standing in for it),
 // and is dropped outright when a milestone lands in the same window — one pride moment per open,
-// the ask never queued behind it. The cap is a safety net, not a schedule: under the phone list
-// the scene is paused and no ceremony ever speaks, and an offer that can never fire is a feature
-// quietly lost.
+// the ask never queued behind it. The cap is a safety net, not a schedule: it closes when no
+// ceremony is coming — and it ASKS before it closes, because a phone opening into the list still
+// gets its arrival spoken once, from a scene that paused after scheduling it, and an ask that toast
+// replaces is an ask spent unread. The policy itself is `weekOfferGate.js`; this hook only pulls it.
 //
 // What is NOT here: the Share dialog's own open flag, and the tree's share stats. Both have other
 // tenants (the control bar, the action lane, the milestone beat, every mobile plaque), so they
@@ -23,49 +24,38 @@ import { ProgressPeriod, newThisPeriod, ledgerDeltas, sinceLabel } from './progr
 import { svgToPngBlob } from './rasterize.js';
 import { uploadOgImage, uploadOgVideo } from './ogUpload.js';
 import { ShareLedger } from '../persistence/ShareLedger.js';
+import { WeekOfferGate } from './weekOfferGate.js';
 
 const shareLedger = new ShareLedger();
-const WEEK_OFFER_GAP_MS = 120;      // the week's offer follows the recap's last beat, never races it (#20 C7)
-const CEREMONY_TAIL_CAP_MS = 2600;  // past the director's 2400ms structural budget: no ceremony spoke, fire anyway
 
 export function useWeekOffer({
   treeId, tree, states, shareStats, layoutPositions, viewPrefs,
   completed, completedAt, completedRef,
   treeMine, shared, demo, demotion, demotedRef,
-  showToast, setShareOpen,
+  showToast, setShareOpen, ceremonyBusy,
 }) {
   const plantedAtRef = useRef(0);            // when this tree was planted (epoch ms, 0 unrecorded) — the period clock
   const cardCacheRef = useRef({ key: '', png: null }); // the last progress card rasterized, so the sheet opens onto a drawn one
-  const weekOfferRef = useRef(null);         // the armed week offer awaiting the open's last beat: { run, timer } | null
+  const ceremonyBusyRef = useRef(ceremonyBusy); // latest probe — the gate is built once and outlives every render
+  const weekOfferGateRef = useRef(null);       // the armed week offer's timing (weekOfferGate.js), built on first use
   const openWeekSheetRef = useRef(null);     // latest openWeekSheet — the offer's toast outlives its render
   const publishOgImageRef = useRef(null);    // same hazard on the milestone beat, which predates it
 
-  const fireWeekOffer = useCallback((delay) => {
-    const armed = weekOfferRef.current;
-    if (!armed?.run) return;
-    clearTimeout(armed.timer);
-    weekOfferRef.current = { run: null, timer: setTimeout(armed.run, delay) };
-  }, []);
-
-  const armWeekOffer = useCallback((run) => {
-    clearTimeout(weekOfferRef.current?.timer);
-    weekOfferRef.current = { run, timer: setTimeout(() => fireWeekOffer(0), CEREMONY_TAIL_CAP_MS) };
-  }, [fireWeekOffer]);
+  ceremonyBusyRef.current = ceremonyBusy;
+  if (!weekOfferGateRef.current) weekOfferGateRef.current = new WeekOfferGate(() => ceremonyBusyRef.current?.() ?? false);
+  const armWeekOffer = useCallback((run) => weekOfferGateRef.current.arm(run), []);
 
   // A milestone in the same window WINS the lane, and the week's offer is dropped rather than
   // queued behind it: one pride moment per open. It costs nothing — the ask was never committed,
   // so it comes back next period.
-  const dropWeekOffer = useCallback(() => {
-    clearTimeout(weekOfferRef.current?.timer);
-    weekOfferRef.current = null;
-  }, []);
+  const dropWeekOffer = useCallback(() => weekOfferGateRef.current.drop(), []);
 
   // Every ceremony's closing beat comes through the scene's one toast sink, which is what makes it
   // the seam the week's offer waits on: it FOLLOWS that beat by 120ms instead of racing it, so the
   // ask lands on a tree that has finished moving.
-  const followCeremony = useCallback(() => fireWeekOffer(WEEK_OFFER_GAP_MS), [fireWeekOffer]);
+  const followCeremony = useCallback(() => weekOfferGateRef.current.follow(), []);
 
-  useEffect(() => () => clearTimeout(weekOfferRef.current?.timer), []);
+  useEffect(() => () => weekOfferGateRef.current?.drop(), []);
 
   // The tree being left behind takes its period clock with it: never count a new tree's weeks
   // from an old one's planting.

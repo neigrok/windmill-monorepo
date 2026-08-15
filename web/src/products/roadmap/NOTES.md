@@ -670,10 +670,16 @@ behind the OG card, the PNG, the gallery thumb and the GIF.
 - **The recap's last beat was already a seam.** `CeremonyDirector` ends every ceremony — recap,
   arrival, growth — on `speak(summary)`, which reaches the shell through the single
   `onCeremonyToast` sink. Wrapping that sink (`speakCeremony`) is the whole hook: no scene API
-  changed, and the offer follows the beat by 120ms instead of racing it. The one hole is the phone
-  LIST, where the scene is paused and no ceremony ever speaks; a 2600ms cap (past the director's
-  2400ms structural budget) fires the armed offer there. Worth remembering that "the scene is
-  paused under the list" keeps surfacing as the exception to anything hung off ceremony timing.
+  changed, and the offer follows the beat by 120ms instead of racing it. The hole is the phone
+  LIST, where a paused scene speaks no growth ceremony; a 2600ms cap (past the director's 2400ms
+  structural budget) fires the armed offer there. It was first written as "no ceremony ever speaks
+  under the list" — false: the ARRIVAL is scheduled by setModel before the scene pauses, and its
+  timers speak it once, at ~+2.8s, 230ms after the cap had already fired the ask; the toast replaced
+  the ask and the ledger read declines:1 for a line nobody saw (2026-08-05). So the cap now asks the
+  director (`busy()`: live or pending) before it closes and stands aside, bounded, while a ceremony
+  is coming (`share/weekOfferGate.js`). Worth remembering that "the scene is paused under the list"
+  keeps surfacing as the exception to anything hung off ceremony timing — and that a paused scene's
+  director is NOT idle.
 - **Two doors, one set of facts.** The offer and the share menu both open the same sheet, so the
   week is DERIVED in one memo (`weekSegment`) rather than stashed when the offer fires. The offer
   path only accepts, pre-renders and opens. A second copy of "what this week holds" behind the

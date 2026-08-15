@@ -506,6 +506,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     completed, completedAt, completedRef,
     treeMine, shared, demo, demotion, demotedRef,
     showToast, setShareOpen,
+    ceremonyBusy: () => sceneRef.current?.ceremonyBusy() ?? false,
   });
 
   // The scene's one toast sink — every ceremony's closing beat comes through here, which is what
