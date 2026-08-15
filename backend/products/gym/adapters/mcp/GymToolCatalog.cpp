@@ -282,11 +282,14 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["joinOpenSession"] = boolean("Default true: join whatever session is open instead of failing.");
     p["routineId"] = str("The day of the program this is. Omitted, the workout is ad-hoc.");
     tools.push_back(tool("start_session", Access::write,
-        "Open a workout. YOU mint `id` and it IS the idempotency key: send the same id again and "
-        "the stored workout comes back — never invent a new id to retry, that mints a second "
-        "workout. By default this JOINS a session already open (that is how a handoff between "
-        "devices works); send `joinOpenSession: false` to mean \"create exactly this one, which is "
-        "not now\" — a backfill. A named `routineId` is frozen onto the workout as a copy.",
+        "Open a workout. YOU mint `id` and it IS the idempotency key for the workout this CREATES: "
+        "send the same id again and the stored workout comes back — never invent a new id to retry, "
+        "that mints a second workout. By default this JOINS a session already open (that is how a "
+        "handoff between devices works), and a join answers with THAT workout under ITS OWN id, "
+        "leaving yours unspent: log into the id the reply carries, and do not resend this start "
+        "once that workout has ended — with nothing open, the same id would then create a new one. "
+        "Send `joinOpenSession: false` to mean \"create exactly this one, which is not now\" — a "
+        "backfill. A named `routineId` is frozen onto the workout as a copy.",
         p, {"id", "startedAt"}));
   }
   {
