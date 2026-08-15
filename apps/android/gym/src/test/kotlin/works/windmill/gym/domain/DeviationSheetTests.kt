@@ -31,6 +31,7 @@ class DeviationTests {
         assertEquals(87.5, deviation?.liftedKg)
         assertEquals("Push A", deviation?.routine)
         assertEquals("rt_push_a", deviation?.routineId)
+        assertEquals("the plan's first line is the routine's position 1", 1, deviation?.position)
         assertEquals("Save 87.5 to Push A", deviation?.saveLabel)
         assertEquals("Today’s Bench Press ran at 87.5 against a planned 82.5. "
                      + "Today’s session already has it. Push A does not.",
@@ -93,5 +94,34 @@ class DeviationTests {
                                                              aSet("bench-press", 85.0, at = 3_000)),
                                                asked = emptySet())
         assertEquals(90.0, deviation?.liftedKg)
+    }
+
+    // THE SAME MOVEMENT TWICE — a heavy top set and a back-off — is two plan lines with two routine
+    // positions. The offer is raised against the HEAVIEST planned line and carries ITS position, so
+    // the save moves the top set alone; and a lifted weight that beat only the back-off is not a
+    // deviation from the program at all.
+    @Test
+    fun testAMovementPlannedTwiceIsMeasuredAgainstItsHeaviestLine() {
+        val topAndBackOff = Session(
+            id = "ses_3", startedAtMs = 1_000, routineId = "rt_push_b",
+            plan = PlanSnapshot(routine = "Push B", entries = listOf(
+                PlanEntry(exerciseId = "overhead-press", sets = 3, reps = 8, weightKg = 45.0),
+                PlanEntry(exerciseId = "bench-press", sets = 3, reps = 8, weightKg = 80.0),
+                PlanEntry(exerciseId = "bench-press", sets = 1, reps = 3, weightKg = 100.0),
+            ))
+        )
+
+        val deviation = DeviationOffer.leaving("bench-press", session = topAndBackOff,
+                                               sets = listOf(aSet("bench-press", 105.0),
+                                                             aSet("bench-press", 82.5, at = 2_000)),
+                                               asked = emptySet())
+        assertEquals(
+            DeviationOffer(exerciseId = "bench-press", routineId = "rt_push_b", routine = "Push B",
+                           position = 3, plannedKg = 100.0, liftedKg = 105.0),
+            deviation)
+
+        assertNull("beating only the back-off is not a deviation from the program",
+                   DeviationOffer.leaving("bench-press", session = topAndBackOff,
+                                          sets = listOf(aSet("bench-press", 90.0)), asked = emptySet()))
     }
 }

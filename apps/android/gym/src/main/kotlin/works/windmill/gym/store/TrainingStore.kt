@@ -839,11 +839,20 @@ class TrainingStore(
     // It answers with WHAT WENT WRONG rather than with a bool nobody reads. This is the write that
     // moves next week's target, and a sheet that closed identically either way would leave the
     // lifter believing their program had changed.
-    suspend fun save(weightKg: Double, toRoutine: String, forExercise: String): WriteFailure? {
+    //
+    // ADDRESSED BY POSITION, and REFUSED OUT LOUD when that row is gone. The offer was raised against
+    // one plan line, and the routine may have changed under the session from another surface — a
+    // PUT of an unchanged document would still move the revision and supersede every pending
+    // proposal, over a change that never happened. So a retarget with nothing to move writes nothing,
+    // on the shelf and on the wire alike, and the sheet hears that the routine has changed.
+    suspend fun save(weightKg: Double, toRoutine: String, atPosition: Int,
+                     forExercise: String): WriteFailure? {
         // A routine still on the shelf is the device's to move — signed out always, and signed in
         // while its claim has not landed yet. The claim carries the retargeted document.
         localLog.routine(toRoutine)?.let { mine ->
-            localLog.hold(mine.retargeting(forExercise, toWeightKg = weightKg))
+            val moved = mine.retargeting(atPosition, forExercise, toWeightKg = weightKg)
+                ?: return WriteFailure.Refused("${mine.name} has changed since this session started")
+            localLog.hold(moved)
             routines = if (gym == null) localLog.routines
                 else routines.map { if (it.id == toRoutine) localLog.routine(toRoutine)!! else it }
             return null
@@ -854,8 +863,9 @@ class TrainingStore(
             // there is no sentence from the log to repeat, and this is the plain fact instead.
             val routine = log.routine(toRoutine)
                 ?: return WriteFailure.Refused("that routine is no longer on the log")
-            val write = RoutineWrite(routine.retargeting(forExercise, toWeightKg = weightKg))
-            val saved = log.replaceRoutine(toRoutine, write)
+            val moved = routine.retargeting(atPosition, forExercise, toWeightKg = weightKg)
+                ?: return WriteFailure.Refused("${routine.name} has changed since this session started")
+            val saved = log.replaceRoutine(toRoutine, RoutineWrite(moved))
             routines = routines.map { if (it.id == saved.id) saved else it }
             null
         } catch (interrupted: CancellationException) {

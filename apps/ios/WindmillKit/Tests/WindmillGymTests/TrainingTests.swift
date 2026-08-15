@@ -248,32 +248,53 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertNil(RoutineWrite(named: "Push A", from: [], position: 0))
     }
 
-    // The mid-session change offer, applied: one target moves and the document is otherwise the one
-    // the server handed back — a PUT is a whole-document replace, so a dropped line is a deleted one.
+    // The mid-session change offer, applied: ONE target moves — the line at the position the offer
+    // was raised against — and the document is otherwise the one the server handed back. The same
+    // movement twice is two rows with two positions, so the back-off at 2 does not follow the top
+    // set at 1.
     func testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
-        let routine = Routine(id: "rt_1", name: "Push A", position: 0, entries: [
+        let routine = Routine(id: "rt_1", name: "Push A", position: 0, lastTrainedAtMs: 9_000, entries: [
             RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5, restSeconds: 180),
-            RoutineEntry(position: 2, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
+                         targetWeightKg: 100, restSeconds: 180),
+            RoutineEntry(position: 2, exerciseId: "bench-press", targetSets: 3, targetReps: 8,
+                         targetWeightKg: 80, restSeconds: 120),
+            RoutineEntry(position: 3, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
                          targetWeightKg: 45),
         ])
 
-        let write = RoutineWrite(routine.retargeting("bench-press", toWeightKg: 87.5))
+        let changed = routine.retargeting(position: 1, exerciseId: "bench-press", toWeightKg: 105)
 
-        XCTAssertEqual(write.entries.map(\.exerciseId), ["bench-press", "overhead-press"])
-        XCTAssertEqual(write.entries.map(\.targetWeightKg), [87.5, 45])
-        XCTAssertEqual(write.entries[0].restSeconds, 180, "only the weight moved")
+        XCTAssertEqual(changed, Routine(id: "rt_1", name: "Push A", position: 0, lastTrainedAtMs: 9_000, entries: [
+            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 105, restSeconds: 180),
+            RoutineEntry(position: 2, exerciseId: "bench-press", targetSets: 3, targetReps: 8,
+                         targetWeightKg: 80, restSeconds: 120),
+            RoutineEntry(position: 3, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
+                         targetWeightKg: 45),
+        ]))
+        XCTAssertEqual(RoutineWrite(changed!).entries.map(\.targetWeightKg), [105, 80, 45])
     }
 
-    // The offer is only ever raised against a planned weight, so a movement the routine does not hold
-    // means the answer arrived for some other routine — and nothing is written.
-    func testRetargetingAMovementTheRoutineDoesNotHoldChangesNothing() {
+    // The routine changed under the session: the position names another movement now, or is gone
+    // altogether. Nothing is written — an unchanged PUT would still supersede every pending proposal.
+    func testRetargetingAPositionThatNoLongerHoldsTheMovementIsNothingToWrite() {
         let routine = Routine(id: "rt_1", name: "Push A", position: 0, entries: [
-            RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
-                         targetWeightKg: 82.5),
+            RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5, targetReps: 5,
+                         targetWeightKg: 140),
         ])
 
-        XCTAssertEqual(routine.retargeting("back-squat", toWeightKg: 140), routine)
+        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "bench-press", toWeightKg: 87.5))
+        XCTAssertNil(routine.retargeting(position: 2, exerciseId: "back-squat", toWeightKg: 145))
+    }
+
+    // An open row has no planned weight, so it cannot be the row an offer was raised against — and a
+    // weight written onto it would be the half-open line the server refuses.
+    func testRetargetingAnOpenLineIsNothingToWrite() {
+        let routine = Routine(id: "rt_1", name: "Pull A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "chin-up"),
+        ])
+
+        XCTAssertNil(routine.retargeting(position: 1, exerciseId: "chin-up", toWeightKg: 10))
     }
 }
 

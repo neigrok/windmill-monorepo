@@ -448,7 +448,7 @@ final class ProposalStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
         XCTAssertEqual(store.pending(of: "rt_1").map(\.id), ["prop_1"])
 
-        let failed = await store.save(95, toRoutine: "rt_1", for: "bench-press")
+        let failed = await store.save(95, toRoutine: "rt_1", at: 1, for: "bench-press")
 
         XCTAssertNil(failed)
         XCTAssertEqual(store.pending(of: "rt_1"), [])

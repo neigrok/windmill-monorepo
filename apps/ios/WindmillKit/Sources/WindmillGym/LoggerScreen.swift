@@ -660,6 +660,7 @@ struct LoggerScreen: View {
                                    // land, or the lifter believes their program changed.
                                    guard let why = await store.save(deviation.liftedKg,
                                                                     toRoutine: deviation.routineId,
+                                                                    at: deviation.position,
                                                                     for: deviation.exerciseId) else { return }
                                    say(why.line("\(deviation.routine) wasn’t changed"))
                                }

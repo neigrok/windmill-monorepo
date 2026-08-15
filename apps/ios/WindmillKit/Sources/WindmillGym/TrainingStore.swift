@@ -894,12 +894,20 @@ public final class TrainingStore: ObservableObject {
     // It answers with WHAT WENT WRONG rather than with a bool nobody reads. This is the write that
     // moves next week's target, and a sheet that closed identically either way would leave the lifter
     // believing their program had changed.
-    public func save(_ weightKg: Double, toRoutine routineId: String,
+    //
+    // THE LINE IS ADDRESSED BY POSITION, and a routine that has changed under the session — the
+    // position gone, or naming another movement now — is REFUSED rather than written unchanged: a
+    // PUT of the same document would still move the revision and set every pending proposal on that
+    // routine aside, for a change that never happened.
+    public func save(_ weightKg: Double, toRoutine routineId: String, at position: Int,
                      for exerciseId: String) async -> WriteFailure? {
         // A routine still on the local shelf is retargeted there — same read-modify-write, same
         // whole-document rule, no wire. The claim carries the changed copy when it replays.
         if let local = localLog.routine(routineId) {
-            let changed = local.retargeting(exerciseId, toWeightKg: weightKg)
+            guard let changed = local.retargeting(position: position, exerciseId: exerciseId,
+                                                  toWeightKg: weightKg) else {
+                return .refused("\(local.name) has changed since this session started")
+            }
             localLog.replace(changed)
             localLog.flush()
             routines = routines.map { $0.id == changed.id ? changed : $0 }
@@ -912,8 +920,11 @@ public final class TrainingStore: ObservableObject {
             guard let routine = try await gym.routine(routineId) else {
                 return .refused("that routine is no longer on the log")
             }
-            let write = RoutineWrite(routine.retargeting(exerciseId, toWeightKg: weightKg))
-            let saved = try await gym.replaceRoutine(routineId, with: write)
+            guard let changed = routine.retargeting(position: position, exerciseId: exerciseId,
+                                                    toWeightKg: weightKg) else {
+                return .refused("\(routine.name) has changed since this session started")
+            }
+            let saved = try await gym.replaceRoutine(routineId, with: RoutineWrite(changed))
             routines = routines.map { $0.id == saved.id ? saved : $0 }
             // THE HUMAN'S HAND SETS EVERY PENDING PROPOSAL ON THAT ROUTINE ASIDE, in the same
             // transaction as the write — so this device's cards are stale the instant the PUT

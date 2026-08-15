@@ -355,18 +355,25 @@ data class Routine(
         },
     )
 
-    // The mid-session "Save 87.5 to Push A" (§8), and it may only move a row that HAS a target. A
-    // weight on a row with no sets is a half-open line, which the log refuses outright — so an open
-    // row is left open rather than turned into a document that cannot be written. The offer never
-    // raises for one anyway (an open line has no planned weight to have been beaten), and this is
-    // the race where it could still arrive: the routine opened that row from another surface while
-    // the session that froze its old target was still running.
-    fun retargeting(exerciseId: String, toWeightKg: Double): Routine = copy(
-        entries = entries.map {
-            if (it.exerciseId == exerciseId && it.targetSets != null) it.copy(targetWeightKg = toWeightKg)
-            else it
-        }
-    )
+    // The mid-session "Save 87.5 to Push A" (§8), addressed by POSITION — the routine row the frozen
+    // plan line was snapshotted from (plan index + 1), not the movement's name. A program legitimately
+    // holds the same movement twice — a heavy top set at 100 and a back-off at 80 are two rows with
+    // two positions — and a name-addressed rewrite moved BOTH to 105 when only the top set was beaten.
+    //
+    // NULL IS NOTHING TO WRITE. The routine may have changed under the running session from another
+    // surface: the row at that position gone, or now naming another movement, or opened. A PUT of an
+    // unchanged document is not harmless — it moves the revision and supersedes every proposal pending
+    // on the routine — so the store writes nothing and says so instead. The open-line rule stays: a
+    // weight on a row with no sets is a half-open line the log refuses outright, and the offer never
+    // raises for one anyway (an open line has no planned weight to have been beaten).
+    fun retargeting(position: Int, exerciseId: String, toWeightKg: Double): Routine? {
+        val row = entries.firstOrNull { it.position == position } ?: return null
+        if (row.exerciseId != exerciseId) return null
+        if (row.targetSets == null) return null
+        return copy(entries = entries.map {
+            if (it.position == position) it.copy(targetWeightKg = toWeightKg) else it
+        })
+    }
 }
 
 // A DAY OF THE PROGRAM, DATED — how the routine came to exist and every proposal made about it

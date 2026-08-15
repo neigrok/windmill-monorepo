@@ -379,32 +379,47 @@ class RoutineWriteTests {
 
     // The mid-session change offer, applied: one target moves and the document is otherwise the one
     // the server handed back — a PUT is a whole-document replace, so a dropped line is a deleted one.
+    // Addressed by POSITION: a program that holds the same movement twice (top set, then back-off)
+    // has the top set moved and the back-off left exactly where it stood.
     @Test
     fun testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
         val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
             RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
-                         targetWeightKg = 82.5, restSeconds = 180),
-            RoutineEntry(position = 2, exerciseId = "overhead-press", targetSets = 3, targetReps = 8,
+                         targetWeightKg = 100.0, restSeconds = 180),
+            RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 3, targetReps = 8,
+                         targetWeightKg = 80.0, restSeconds = 120),
+            RoutineEntry(position = 3, exerciseId = "overhead-press", targetSets = 3, targetReps = 8,
                          targetWeightKg = 45.0),
         ))
 
-        val retargeted = routine.retargeting("bench-press", toWeightKg = 87.5)
+        val retargeted = routine.retargeting(1, "bench-press", toWeightKg = 105.0)
 
-        assertEquals(listOf("bench-press", "overhead-press"), retargeted.entries.map { it.exerciseId })
-        assertEquals(listOf(87.5, 45.0), retargeted.entries.map { it.targetWeightKg })
-        assertEquals("only the weight moved", 180, retargeted.entries[0].restSeconds)
+        assertEquals(
+            Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
+                             targetWeightKg = 105.0, restSeconds = 180),
+                RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 3, targetReps = 8,
+                             targetWeightKg = 80.0, restSeconds = 120),
+                RoutineEntry(position = 3, exerciseId = "overhead-press", targetSets = 3, targetReps = 8,
+                             targetWeightKg = 45.0),
+            )),
+            retargeted)
     }
 
-    // The offer is only ever raised against a planned weight, so a movement the routine does not hold
-    // means the answer arrived for some other routine — and nothing is written.
+    // The routine changed under the session: the row at that position now names another movement, or
+    // there is no such row any more. Either is NOTHING TO WRITE — a PUT of an unchanged document
+    // would still move the revision and supersede every pending proposal.
     @Test
-    fun testRetargetingAMovementTheRoutineDoesNotHoldChangesNothing() {
+    fun testRetargetingARowThatNoLongerHoldsTheMovementWritesNothing() {
         val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
             RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5, targetReps = 5,
                          targetWeightKg = 82.5),
         ))
 
-        assertEquals(routine, routine.retargeting("back-squat", toWeightKg = 140.0))
+        assertNull("position 1 is the bench now, not the squat",
+                   routine.retargeting(1, "back-squat", toWeightKg = 140.0))
+        assertNull("no row stands at position 2",
+                   routine.retargeting(2, "bench-press", toWeightKg = 87.5))
     }
 }
 

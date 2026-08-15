@@ -438,6 +438,7 @@ fun LoggerScreen(
                             // The write that moves next week's target. Said when it does not land,
                             // or the lifter believes their program changed.
                             val why = store.save(open.offer.liftedKg, toRoutine = open.offer.routineId,
+                                                 atPosition = open.offer.position,
                                                  forExercise = open.offer.exerciseId)
                             if (why != null) say(why.line("${open.offer.routine} wasn’t changed"))
                         }

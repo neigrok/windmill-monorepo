@@ -14,12 +14,13 @@ package works.windmill.gym.domain
 // that back would lower next week's target off one session and then read as a failed session every
 // time it came round.
 //
-// The sheet that renders this comes with a later wave; this is the pure offer rule alone.
+// This is the pure offer rule alone; ui/DeviationSheet.kt renders it.
 
 data class DeviationOffer(
     val exerciseId: String,
     val routineId: String,
     val routine: String,
+    val position: Int,
     val plannedKg: Double,
     val liftedKg: Double,
 ) {
@@ -33,20 +34,30 @@ data class DeviationOffer(
         // The heaviest WORKING set of the movement being left, against the weight the frozen snapshot
         // named for it. Warmups, drops and failures are not what the session was, so none of them can
         // raise this.
+        //
+        // WHICH LINE, when the plan holds the movement twice: the HEAVIEST planned one — the top set.
+        // A lifted weight that beat only the back-off is not a deviation from the program. The
+        // offer carries that line's routine POSITION (the snapshot is written from the routine's rows
+        // in position order, so plan index i is routine position i + 1) and the save addresses that
+        // one row, not every row naming the movement.
         fun leaving(exerciseId: String, session: Session?, sets: List<TrainingSet>,
                     asked: Set<String>): DeviationOffer? {
             if (session == null) return null
             val routineId = session.routineId ?: return null
             val plan = session.plan ?: return null
             if (exerciseId in asked) return null
-            val planned = plan.entry(exerciseId)?.weightKg ?: return null
+            val planIndex = plan.entries.withIndex()
+                .filter { it.value.exerciseId == exerciseId && it.value.weightKg != null }
+                .maxByOrNull { it.value.weightKg!! }?.index ?: return null
+            val planned = plan.entries[planIndex].weightKg!!
             val lifted = sets
                 .filter { it.exerciseId == exerciseId && it.kind == SetKind.Working }
                 .maxOfOrNull { it.weightKg } ?: return null
             if (lifted <= planned) return null
 
             return DeviationOffer(exerciseId = exerciseId, routineId = routineId,
-                                  routine = plan.routine, plannedKg = planned, liftedKg = lifted)
+                                  routine = plan.routine, position = planIndex + 1,
+                                  plannedKg = planned, liftedKg = lifted)
         }
     }
 }

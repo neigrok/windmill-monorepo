@@ -533,23 +533,29 @@ public struct Routine: Equatable, Codable, Sendable, Identifiable {
     }
 
     // The mid-session change offer, applied (screen 8). Read-modify-write is the whole shape: the
-    // routine that comes back is this one with a single target moved, and a movement the routine
-    // does not hold leaves it untouched — the offer is only ever raised against a planned weight,
-    // so an entry that is not there means the offer was answered for some other routine.
+    // routine that comes back is this one with a single target moved. The line is addressed by
+    // POSITION and not by movement, because a program may hold the same movement twice — a heavy
+    // top set at 100 and a back-off at 80 are two rows with two positions (backend ARCHITECTURE
+    // §2.4) — and an offer raised against the top set must not drag the back-off up with it.
     //
-    // AN OPEN ROW IS LEFT OPEN for the same reason, one step further in: the offer is raised against
-    // a planned weight and an open row has none, so it cannot be the row this is about. A weight
+    // NIL IS "NOTHING TO WRITE", and it is answered out loud rather than with the document unchanged:
+    // the routine has changed under the session when the position is gone, or the row there names a
+    // different movement now — and a PUT of an unchanged document would still move the revision and
+    // set every pending proposal aside, for a change that never happened.
+    //
+    // AN OPEN ROW IS NIL for the same reason, one step further in: the offer is raised against a
+    // planned weight and an open row has none, so it cannot be the row this is about. A weight
     // written onto it would make the half-open line the server refuses outright (§M) — and would
     // quietly answer, on the lifter's behalf, the one question they left for the rack.
-    public func retargeting(_ exerciseId: String, toWeightKg weightKg: Double) -> Routine {
-        Routine(id: id, name: name, position: position, lastTrainedAtMs: lastTrainedAtMs,
-                entries: entries.map { entry in
-                    guard entry.exerciseId == exerciseId, !entry.isOpen else { return entry }
-                    return RoutineEntry(position: entry.position, exerciseId: entry.exerciseId,
-                                        targetSets: entry.targetSets, targetReps: entry.targetReps,
-                                        targetWeightKg: weightKg, restSeconds: entry.restSeconds)
-                },
-                history: history)
+    public func retargeting(position: Int, exerciseId: String, toWeightKg weightKg: Double) -> Routine? {
+        guard let entry = entries.first(where: { $0.position == position }),
+              entry.exerciseId == exerciseId, !entry.isOpen else { return nil }
+        let moved = RoutineEntry(position: entry.position, exerciseId: entry.exerciseId,
+                                 targetSets: entry.targetSets, targetReps: entry.targetReps,
+                                 targetWeightKg: weightKg, restSeconds: entry.restSeconds)
+        return Routine(id: id, name: name, position: self.position, lastTrainedAtMs: lastTrainedAtMs,
+                       entries: entries.map { $0.position == position ? moved : $0 },
+                       history: history)
     }
 
     enum CodingKeys: String, CodingKey {

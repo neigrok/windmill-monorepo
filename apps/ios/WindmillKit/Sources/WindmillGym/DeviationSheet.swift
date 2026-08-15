@@ -19,23 +19,36 @@ public struct Deviation: Equatable {
     public let exerciseId: String
     public let routineId: String
     public let routine: String
+    // The routine POSITION of the plan line this was raised against — what the save addresses,
+    // because a program may hold the same movement twice and only one of its rows is this one.
+    public let position: Int
     public let plannedKg: Double
     public let liftedKg: Double
 
     // The heaviest WORKING set of the movement being left, against the weight the frozen snapshot
     // named for it. Warmups, drops and failures are not what the session was, so none of them can
     // raise this.
+    //
+    // WHICH LINE, when the plan names the movement more than once: the HEAVIEST planned one — the
+    // top set. Beating only the back-off is not a deviation from the program. The snapshot is
+    // written from the routine's entries in position order and carries no position of its own, so
+    // plan index i IS routine position i + 1.
     public init?(leaving exerciseId: String, session: Session?, sets: [TrainingSet], asked: Set<String>) {
         guard let session, let routineId = session.routineId, let plan = session.plan else { return nil }
         guard !asked.contains(exerciseId) else { return nil }
-        guard let planned = plan.entry(for: exerciseId)?.weightKg else { return nil }
+        let planned = plan.entries.enumerated()
+            .filter { $0.element.exerciseId == exerciseId }
+            .compactMap { index, entry in entry.weightKg.map { (position: index + 1, weightKg: $0) } }
+            .max { $0.weightKg < $1.weightKg }
+        guard let planned else { return nil }
         let working = sets.filter { $0.exerciseId == exerciseId && $0.kind == .working }
-        guard let lifted = working.map(\.weightKg).max(), lifted > planned else { return nil }
+        guard let lifted = working.map(\.weightKg).max(), lifted > planned.weightKg else { return nil }
 
         self.exerciseId = exerciseId
         self.routineId = routineId
         self.routine = plan.routine
-        self.plannedKg = planned
+        self.position = planned.position
+        self.plannedKg = planned.weightKg
         self.liftedKg = lifted
     }
 

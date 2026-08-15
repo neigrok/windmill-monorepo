@@ -397,7 +397,7 @@ final class TrainingStoreTests: XCTestCase {
         let store = await liveStore(server)
 
         server.online = false
-        let quiet = await store.save(87.5, toRoutine: "rt_push_a", for: "bench-press")
+        let quiet = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
         XCTAssertEqual(quiet, .noAnswer)
         XCTAssertEqual(quiet?.line("Push A wasn’t changed"),
                        "the log didn’t answer — Push A wasn’t changed")
@@ -405,12 +405,36 @@ final class TrainingStoreTests: XCTestCase {
                        "and nothing moved")
 
         server.online = true
-        let gone = await store.save(87.5, toRoutine: "rt_gone", for: "bench-press")
+        let gone = await store.save(87.5, toRoutine: "rt_gone", at: 1, for: "bench-press")
         XCTAssertEqual(gone, .refused("that routine is no longer on the log"))
 
-        let landed = await store.save(87.5, toRoutine: "rt_push_a", for: "bench-press")
+        let landed = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
         XCTAssertNil(landed, "a write that landed says nothing at all")
         XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.targetWeightKg, 87.5)
+    }
+
+    // The routine changed under the session — the offer's position names another movement now, or
+    // is gone. REFUSED out loud, and no PUT: a PUT of the unchanged document would still move the
+    // revision and set every pending proposal on that routine aside, for a change that never
+    // happened.
+    func testAWriteBackAgainstALineTheRoutineNoLongerHoldsIsRefusedWithoutAPut() async {
+        let server = FakeTraining()
+        server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
+            RoutineEntry(position: 1, exerciseId: "overhead-press", targetSets: 3, targetReps: 8,
+                         targetWeightKg: 45),
+        ])
+        let store = await liveStore(server)
+
+        let moved = await store.save(87.5, toRoutine: "rt_push_a", at: 1, for: "bench-press")
+        XCTAssertEqual(moved, .refused("Push A has changed since this session started"))
+        XCTAssertEqual(moved?.line("Push A wasn’t changed"), "Push A has changed since this session started")
+
+        let gone = await store.save(87.5, toRoutine: "rt_push_a", at: 2, for: "bench-press")
+        XCTAssertEqual(gone, .refused("Push A has changed since this session started"))
+
+        XCTAssertFalse(server.calls.contains("replaceRoutine"), "nothing to write, so nothing was PUT")
+        XCTAssertEqual(server.routineWrites, [])
+        XCTAssertEqual(server.written["rt_push_a"]?.entries.map(\.targetWeightKg), [45])
     }
 
     // The picker closed on a movement that was never minted, and absolutely nothing was said.

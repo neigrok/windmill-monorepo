@@ -342,12 +342,14 @@ class ProgramTests {
             RoutineEntry(position = 2, exerciseId = "barbell-row"),
         ))
 
-        val moved = routine.retargeting("back-squat", toWeightKg = 115.0)
-        assertEquals(115.0, moved.entries.first().targetWeightKg)
+        assertEquals(
+            Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 5, targetWeightKg = 115.0),
+                RoutineEntry(position = 2, exerciseId = "barbell-row"),
+            )),
+            routine.retargeting(1, "back-squat", toWeightKg = 115.0))
 
-        val open = routine.retargeting("barbell-row", toWeightKg = 60.0)
-        assertNull("no sets, so no weight — the log would refuse the pair",
-            open.entries.last().targetWeightKg)
-        assertNull(open.entries.last().targetSets)
+        assertNull("no sets, so no weight — the log would refuse the pair, so nothing is written",
+            routine.retargeting(2, "barbell-row", toWeightKg = 60.0))
     }
 }

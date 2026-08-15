@@ -271,12 +271,18 @@ final class AnonymousGymTests: XCTestCase {
         await store.choose("bench-press")
         XCTAssertEqual(store.prefill, Prefill(weightKg: 82.5, reps: 5))
 
-        let retargeted = await store.save(87.5, toRoutine: "rt_local", for: "bench-press")
+        let retargeted = await store.save(87.5, toRoutine: "rt_local", at: 1, for: "bench-press")
         XCTAssertNil(retargeted)
         XCTAssertEqual(store.session?.plan?.entry(for: "bench-press")?.weightKg, 82.5,
                        "the snapshot is frozen — a retarget moves next week, never this session")
         XCTAssertEqual(shelf().routine("rt_local")?.entries.first?.targetWeightKg, 87.5,
                        "and the local routine did move")
+
+        // The shelf's own routine changed under the session — the position names no such movement —
+        // and the local write is refused the same way the wire one is, with the shelf left standing.
+        let stale = await store.save(90, toRoutine: "rt_local", at: 2, for: "bench-press")
+        XCTAssertEqual(stale, .refused("Push A has changed since this session started"))
+        XCTAssertEqual(shelf().routine("rt_local")?.entries.map(\.targetWeightKg), [87.5])
 
         guard case .failure(.refused(let why)) = await store.start(routineId: "rt_missing") else {
             return XCTFail("a routine this device does not hold cannot open a session")

@@ -436,7 +436,7 @@ class TrainingStoreTests {
         store.choose("bench-press")
         assertEquals("the prefill dials the local plan", Prefill(100.0, 5), store.prefill)
 
-        assertNull(store.save(105.0, toRoutine = kept.id, forExercise = "bench-press"))
+        assertNull(store.save(105.0, toRoutine = kept.id, atPosition = 1, forExercise = "bench-press"))
         assertEquals(105.0,
             store.routines.first { it.id == kept.id }.entries.first().targetWeightKg)
         assertEquals("and the shelf holds the retargeted document for the claim",
@@ -1085,19 +1085,52 @@ class TrainingStoreTests {
 
         server.online = false
         assertEquals(WriteFailure.NoAnswer,
-            store.save(87.5, toRoutine = "rt_push_a", forExercise = "bench-press"))
+            store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
         assertEquals("and nothing moved",
             82.5, server.written.getValue("rt_push_a").entries.first().targetWeightKg)
 
         server.online = true
         assertEquals("a routine gone from the log is not a write",
             WriteFailure.Refused("that routine is no longer on the log"),
-            store.save(87.5, toRoutine = "rt_gone", forExercise = "bench-press"))
+            store.save(87.5, toRoutine = "rt_gone", atPosition = 1, forExercise = "bench-press"))
 
-        assertNull(store.save(87.5, toRoutine = "rt_push_a", forExercise = "bench-press"))
+        assertNull(store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
         assertEquals(87.5, server.written.getValue("rt_push_a").entries.first().targetWeightKg)
         assertEquals("the copy in hand moved with the log's",
             87.5, store.routines.first { it.id == "rt_push_a" }.entries.first().targetWeightKg)
+    }
+
+    // THE ROUTINE CHANGED UNDER THE SESSION. The offer was raised against one plan line, by position;
+    // when the row there now names another movement the store writes NOTHING — no PUT, because a PUT
+    // of an unchanged document still moves the revision and supersedes every pending proposal — and
+    // says so. On the wire and on the shelf alike.
+    @Test
+    fun testARetargetWithNothingToMoveIsRefusedAndNeverPut() = runTest {
+        val server = FakeTraining()
+        server.written["rt_push_a"] = Routine(id = "rt_push_a", name = "Push A", position = 0,
+            revision = 1, entries = listOf(
+                RoutineEntry(position = 1, exerciseId = "overhead-press", targetSets = 3,
+                    targetReps = 8, targetWeightKg = 45.0),
+                RoutineEntry(position = 2, exerciseId = "bench-press", targetSets = 5,
+                    targetReps = 5, targetWeightKg = 82.5)))
+        val store = liveStore(server)
+
+        assertEquals(WriteFailure.Refused("Push A has changed since this session started"),
+            store.save(87.5, toRoutine = "rt_push_a", atPosition = 1, forExercise = "bench-press"))
+        assertFalse("nothing to write is no PUT", server.calls.contains("replaceRoutine"))
+        assertEquals("and the revision did not move", 1, server.written.getValue("rt_push_a").revision)
+        assertEquals(listOf(45.0, 82.5),
+            server.written.getValue("rt_push_a").entries.map { it.targetWeightKg })
+
+        val signedOut = makeStore(sync = null)
+        signedOut.connect(account(signedIn = false))
+        val kept = signedOut.keep(listOf(
+            TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0, reps = 5,
+                completedAtMs = 1_100)), asRoutineNamed = "Push Day")!!
+        assertEquals(WriteFailure.Refused("Push Day has changed since this session started"),
+            signedOut.save(105.0, toRoutine = kept.id, atPosition = 2, forExercise = "bench-press"))
+        assertEquals("the shelf's document stood still",
+            100.0, LocalLog(localFile).routine(kept.id)?.entries?.first()?.targetWeightKg)
     }
 
     // The picker closed on a movement that was never minted, and absolutely nothing was said.
@@ -2239,7 +2272,7 @@ class TrainingStoreTests {
         // The lifter's own hand, mid-workout: 87.5 goes to Push A from the change offer — through
         // the store's own door, because the PUT is the write this whole token exists to defend a
         // diff against and a test that moved the revision by hand would prove nothing about it.
-        assertNull(store.save(87.5, toRoutine = "rt_1", forExercise = "bench-press"))
+        assertNull(store.save(87.5, toRoutine = "rt_1", atPosition = 1, forExercise = "bench-press"))
         assertEquals("the log moved the revision under the diff", 2,
             server.written.getValue("rt_1").revision)
         assertEquals("and this room is holding the log's own answer, not its send", 2,

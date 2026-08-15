@@ -27,6 +27,7 @@ final class DeviationTests: XCTestCase {
         XCTAssertEqual(deviation?.liftedKg, 87.5)
         XCTAssertEqual(deviation?.routine, "Push A")
         XCTAssertEqual(deviation?.routineId, "rt_push_a")
+        XCTAssertEqual(deviation?.position, 1)
         XCTAssertEqual(deviation?.saveLabel, "Save 87.5 to Push A")
         XCTAssertEqual(deviation?.sentence(movement: "Bench Press"),
                        "Today’s Bench Press ran at 87.5 against a planned 82.5. "
@@ -82,5 +83,33 @@ final class DeviationTests: XCTestCase {
                                          aSet("bench-press", 85, at: 3_000)],
                                   asked: [])
         XCTAssertEqual(deviation?.liftedKg, 90)
+    }
+
+    // A program may hold the same movement twice — a top set and a back-off. The offer is raised
+    // against the HEAVIEST planned line and carries that line's position: beating only the back-off
+    // is not a deviation from the program, and the save must not touch the back-off's row.
+    func testWhenTheMovementIsPlannedTwiceTheOfferIsAgainstTheHeaviestLine() {
+        let topAndBackOff = Session(
+            id: "ses_3", startedAtMs: 1_000, routineId: "rt_push_b",
+            plan: PlanSnapshot(routine: "Push B", entries: [
+                PlanEntry(exerciseId: "overhead-press", sets: 3, reps: 8, weightKg: 45),
+                PlanEntry(exerciseId: "bench-press", sets: 3, reps: 8, weightKg: 80),
+                PlanEntry(exerciseId: "bench-press", sets: 1, reps: 3, weightKg: 100),
+            ])
+        )
+
+        let deviation = Deviation(leaving: "bench-press", session: topAndBackOff,
+                                  sets: [aSet("bench-press", 105), aSet("bench-press", 82.5, at: 2_000)],
+                                  asked: [])
+        XCTAssertEqual(deviation?.exerciseId, "bench-press")
+        XCTAssertEqual(deviation?.routineId, "rt_push_b")
+        XCTAssertEqual(deviation?.routine, "Push B")
+        XCTAssertEqual(deviation?.position, 3)
+        XCTAssertEqual(deviation?.plannedKg, 100)
+        XCTAssertEqual(deviation?.liftedKg, 105)
+
+        XCTAssertNil(Deviation(leaving: "bench-press", session: topAndBackOff,
+                               sets: [aSet("bench-press", 90)], asked: []),
+                     "heavier than the back-off but not the top set is the program as written")
     }
 }
