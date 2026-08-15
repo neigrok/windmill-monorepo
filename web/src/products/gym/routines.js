@@ -36,17 +36,19 @@ import { conversationOf, historyLabel, isPending, sourceLabel } from './proposal
 // knowing something about the program, and it knows nothing.
 export const NAME_SUGGESTIONS = ['Push C', 'Lower B', 'Thursday'];
 
-// What one line may ask for. Both counts are clamped rather than refused wherever they are composed
-// — the editor's ± is a button a thumb holds down, and a session composed into a routine hands over
-// whatever it happened to hold — because a target of zero sets is not a target at all and the far
-// ends are what one movement in one visit can plausibly be asked for. Every path that writes an
-// entry passes through the same two pairs, so the store never sees a number this screen could have
-// stopped: an EMOM of 25 chin-ups would otherwise compose a routine the domain refuses, and a 400
-// that no retry can fix reads to a lifter as the log being down.
+// What one line may ask for — THE STORE'S OWN BOUNDS (domain/Routine.cpp: 1..20 sets, 1..100 reps),
+// and not a tighter opinion of this screen's. Both counts are clamped rather than refused wherever
+// they are composed — the editor's ± is a button a thumb holds down, and a session composed into a
+// routine hands over whatever it happened to hold — because a target of zero sets is not a target at
+// all. Every path that writes an entry passes through the same two pairs, so the store never sees a
+// number this screen could have stopped: an EMOM of 25 chin-ups would otherwise compose a routine
+// the domain refuses, and a 400 that no retry can fix reads to a lifter as the log being down.
+// The bounds match the wire's exactly, because a tighter clamp here once rewrote a line an agent
+// had written within the store's rule (`15 × 100`) to `12 × 99` the moment the sheet touched it.
 export const ENTRY_SETS_MIN = 1;
-export const ENTRY_SETS_MAX = 12;
+export const ENTRY_SETS_MAX = 20;
 export const ENTRY_REPS_MIN = 1;
-export const ENTRY_REPS_MAX = 99;
+export const ENTRY_REPS_MAX = 100;
 
 // An ABSENT set target is not a clamped one either: it is the OPEN line (§M), a movement the
 // routine names without saying what to do with it, and it passes through exactly as an absent rep

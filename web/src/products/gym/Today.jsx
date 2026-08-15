@@ -3,7 +3,9 @@
 // (backend/products/gym/ARCHITECTURE.md §11.2). A session running is drawn as it happens —
 // read-only, on the poll the shared hook keeps — and a session not running is said in words rather
 // than in a greyed-out control, which is the one shape that would make the division of labour read
-// as a restriction.
+// as a restriction. "Not training now" is a claim the hook keeps checking: while nothing is
+// mirrored it watches the log for a workout starting (useTrainingLog.js), so a session begun after
+// this tab opened reaches this screen within a beat of the tab being looked at.
 //
 // The mirror still never says "resting", and the reason moved rather than went away. The rest target
 // is the ACCOUNT's now (§I, settings/preferences.js) instead of the phone's, so this surface can
@@ -19,14 +21,15 @@ import {
   recordHref, routineHref, routineNameOf, sessionHref, setCountLabel,
 } from './log.js';
 import { AskDoor } from './ask/AskRoom.jsx';
+import { LogNotOpen } from './Log.jsx';
 import { PendingProposals } from './Proposals.jsx';
 import { restLabel } from './settings/preferences.js';
 
 const BEAT_MS = 500;
 
-export function Today({ log }) {
+export function Today({ log, onSignIn }) {
   if (log.phase === 'loading') return <p className="gym-quiet">Opening the log…</p>;
-  if (log.phase === 'failed') return <p className="gym-read-failed">The log didn’t load. Open it again when you have signal.</p>;
+  if (log.phase === 'failed') return <LogNotOpen log={log} onSignIn={onSignIn} />;
 
   const last = log.summaries.find(isFinished) ?? null;
 

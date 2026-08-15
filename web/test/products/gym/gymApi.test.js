@@ -963,6 +963,15 @@ test('revokeShare — revoked is deleted, and 204 is read as a status and never 
   });
 });
 
+// A 404 on the revoke is "nothing to revoke" (§6): the link is not live, which is exactly the state a
+// revoke asks for. Read as a failure it kept a dead link drawn on the screen as "still live".
+test('revokeShare — nothing to revoke is revoked, and a store that failed is still a failure', async () => {
+  serve(refusal(404, 'no such session'));
+  assert.equal(await gymApi.revokeShare('ses_gone'), null);
+  serve(refusal(503, 'internal error'));
+  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && error.retryable);
+});
+
 // THE ONE UNAUTHENTICATED READ. The token is the whole credential, the reply names no account and
 // holds no id at any depth, and the movement travels as its display NAME because a reader with no
 // account holds no catalog to resolve a slug against.
@@ -1541,11 +1550,14 @@ test('session-already-open — a backfill that met a live workout is its own ref
 // A 400 or a 409 is the store REFUSING the document, and telling a lifter with full signal to try
 // again when they have some is the app blaming the network for its own answer — on a retry that
 // fails identically forever.
-test('failureReason — a refusal and a silence do not get the same sentence', async () => {
+test('failureReason — a refusal, a lapsed sign-in, a row that is gone and a silence each get their own sentence', async () => {
   assert.equal(failureReason(new GymError(400, 'a routine needs at least one movement')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new GymError(409, 'that routine id is taken', 'routine-id-taken')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new GymError(503, '')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(new GymError(401, '')), 'the log didn’t answer. Try again when you have signal');
+  // A lapsed cookie is not a signal problem, and neither is a session that was discarded under the
+  // screen: told to wait for signal, a lifter with full bars retries into the same answer forever.
+  assert.equal(failureReason(new GymError(401, 'sign in to open your training log')), 'you’re signed out. Sign in and try again');
+  assert.equal(failureReason(new GymError(404, 'no such session')), 'it isn’t in the log any more');
   // A request that never produced a response rejects before a GymError exists at all.
   assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
   assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');

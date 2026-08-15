@@ -126,12 +126,13 @@ test('diffRows — the marked rows are exactly what the store counted under Appl
   assert.equal(atomicLine(document), 'All four or none. Nothing is applied until you tap.');
 });
 
-// AN AGENT THAT REORDERS THE PROGRAM CANNOT DO IT BEHIND THE SCREEN. A proposal that swaps two
-// movements and retargets one arrives as ONE counted change — the store counts a `kept` row as no
-// change, and it is right, because the row's numbers did not move — but the routine's ORDER moves
-// with it. Drawing only the marked rows put a lifter one tap from a Monday that opens with cable
+// AN AGENT THAT REORDERS THE PROGRAM CANNOT DO IT BEHIND THE SCREEN. The store counts a `kept` row
+// as no change — the row's numbers did not move — but the routine's ORDER moves with where it
+// stands. Drawing only the marked rows put a lifter one tap from a Monday that opens with cable
 // flies, having read one line about bench press. So the run is drawn whole: the movement that only
-// moved is on the screen, in the place it would take.
+// moved is on the screen, in the place it would take. Here the store counted ONE change, so the
+// order (as far as the store is concerned) did not move and no Order row is drawn — the run is
+// simply drawn in the order the document holds.
 test('diffRows — a movement that only changed position is still on the screen, in its new place', () => {
   const reordered = proposal({
     changeCount: 1,
@@ -161,6 +162,51 @@ test('diffRows — a movement that only changed position is still on the screen,
   // One counted change, two rows read, and the order the routine takes on is the order drawn.
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, reordered.changeCount);
   assert.equal(applyLabel(reordered), 'Apply all 1');
+});
+
+// A REORDER IS A ROW, because the store counts it (domain/Proposal.cpp `countedChanges`): a swap
+// plus one retarget is TWO changes there, and the diff drew one marked row under `Apply all 2` — the
+// missing change was the order of the day. The client never sees the base, so it cannot tell a
+// reorder from the rows; it reads the count, and whatever the count holds beyond the marked rows is
+// the order moving.
+test('diffRows — a reorder the store counted is a row of its own, so the count under Apply is honest', () => {
+  const swapped = proposal({
+    changeCount: 2,
+    changes: [
+      { position: 1, kind: 'kept', exerciseId: 'cable-fly', before: { sets: 3, reps: 12, weightKg: 22.5 }, after: { sets: 3, reps: 12, weightKg: 22.5 } },
+      {
+        position: 2,
+        kind: 'retargeted',
+        exerciseId: 'bench-press',
+        before: { sets: 5, reps: 5, weightKg: 82.5 },
+        after: { sets: 5, reps: 3, weightKg: 87.5 },
+      },
+    ],
+  });
+  const rows = diffRows(swapped);
+  assert.deepEqual(rows, [
+    { kind: 'reordered' },
+    { kind: 'kept', exerciseId: 'cable-fly', targets: '3 × 12 · 22.5' },
+    {
+      kind: 'retargeted',
+      exerciseId: 'bench-press',
+      moves: [
+        { field: 'sets', from: '5 × 5', to: '5 × 3' },
+        { field: 'weight', from: '82.5', to: '87.5' },
+      ],
+    },
+  ]);
+  assert.equal(rows.filter((row) => row.kind !== 'kept').length, swapped.changeCount);
+  assert.equal(applyLabel(swapped), 'Apply all 2');
+
+  // A rename AND a reorder: both rows, the name's first, and the count still meets the marks.
+  const both = proposal({ name: 'Push B', changeCount: 3, changes: swapped.changes });
+  const bothRows = diffRows(both);
+  assert.deepEqual(bothRows.slice(0, 2), [
+    { kind: 'renamed', from: 'Push A', to: 'Push B' },
+    { kind: 'reordered' },
+  ]);
+  assert.equal(bothRows.filter((row) => row.kind !== 'kept').length, both.changeCount);
 });
 
 // A RENAME IS A ROW, because the store counts it: a proposal that renamed Push A and moved two lines

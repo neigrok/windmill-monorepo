@@ -32,10 +32,17 @@ const MONTH_NAMES = [
 
 export const THREADS_TITLE = 'Threads';
 
+// The list is bounded at the server (`kThreadList`, §6) with no total and no "there are more" flag,
+// so a client may print `N conversations` ONLY while it holds fewer rows than the ceiling: at the
+// ceiling the count is a floor wearing a count's clothes, which is halfway to the badge §O forbids.
+export const THREAD_LIST_CEILING = 200;
+
 // The subhead, and the second half of it is the whole of what this screen offers besides reading:
 // they are yours, and deleting one is a thing you can do. A count of nothing is not drawn at all —
-// the empty room says its own sentence instead.
+// the empty room says its own sentence instead — and neither is a count AT THE CEILING: the rows
+// still say what they can, and that is that they are yours to delete.
 export function conversationsLine(count) {
+  if (count >= THREAD_LIST_CEILING) return 'yours to delete';
   const list = count === 1 ? '1 conversation' : `${count} conversations`;
   return `${list} · yours to delete`;
 }

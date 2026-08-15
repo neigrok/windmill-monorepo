@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   comparison, finishHead, RECORD_TITLE, recordSentence, statTiles,
 } from '../../../src/products/gym/review.js';
+import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
 const CATALOG = [
   { id: 'back-squat', name: 'Back Squat' },
@@ -73,6 +74,23 @@ test('recordSentence — one sentence per kind, and the previous mark in every o
     'Back Squat 8 reps at 100 kg — past 6 from Wed 24 Jun.',
   );
   assert.equal(RECORD_TITLE, 'Personal record');
+});
+
+// The previous mark is in the record's OWN unit. For reps-at-weight it is a REP COUNT, and an account
+// reading in pounds must see the six reps it did last time — not six kilograms spelled as 13.2 lb.
+test('recordSentence — in pounds, a reps-at-weight record keeps its previous rep count as a count', (t) => {
+  t.after(() => spellWeightsIn(KG));
+  spellWeightsIn(LB);
+  const previousAt = new Date(2026, 5, 24, 18, 0).getTime();
+  assert.equal(
+    recordSentence({ kind: 'reps-at-weight', exerciseId: 'back-squat', value: 8, weightKg: 100, reps: 8, previous: 6, previousAt }, CATALOG),
+    'Back Squat 8 reps at 220.5 lb — past 6 from Wed 24 Jun.',
+  );
+  // The two loaded kinds still spell their previous mark as a weight, in the reading unit.
+  assert.equal(
+    recordSentence({ kind: 'heaviest', exerciseId: 'back-squat', value: 105, weightKg: 105, reps: 5, previous: 100, previousAt }, CATALOG),
+    'Back Squat 231.5 lb × 5 — past 220.5 from Wed 24 Jun.',
+  );
 });
 
 // The ~190 sessions in 200 that earn nothing draw nothing — and so does a kind this build has never

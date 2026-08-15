@@ -19,7 +19,7 @@
 // it holds the draft and the cursor, and asks here what a change means.
 
 import {
-  dayLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmtKg, isFinished, NO_ROUTINE, routineNameOf,
+  dayLabel, durLabel, EMPTY_BAR_KG, EMPTY_BAR_REPS, fmtKg, isFinished, NO_ROUTINE, routineNameOf,
   setCountLabel, timeLabel,
 } from './log.js';
 
@@ -43,13 +43,28 @@ export const DURATION_CHIPS = [
 //
 // It names the phone now, because on this build that is where live training happens: the web's own
 // Start is gone (§11), so the session this door defers to was opened somewhere else. It still
-// promises nothing about a draft: at the log's door there is no draft yet.
+// promises nothing about a draft: at the log's door there is no draft yet. And it claims nothing
+// about where these sets would go: the save says `joinOpenSession: false`, so the store files
+// nothing into the running workout — it refuses (409 session-already-open) until that one closes.
 export const MID_WORKOUT_REFUSAL = {
   title: 'A session is already running.',
-  body: 'Live training happens on your phone — adding now would file these sets into the running session. The door opens when it closes.',
+  body: 'Live training happens on your phone — one workout is open at a time, and this one waits for it. The door opens when it closes.',
 };
 
 export const OVERLAP_TITLE = 'These times cross a session already in the log.';
+export const AHEAD_TITLE = 'These times run past now.';
+
+// A PAST WORKOUT ENDS IN THE PAST. Start and length are typed separately, and "yesterday 23:30 for
+// 1 h 30" saved at ten past midnight ends forty minutes from now — a start the clock allows with an
+// end it does not. Nothing on the wire refuses that end (only a start ahead of the clock is checked
+// there), so it is refused here, before a session with a future close reaches the log.
+export function endsAhead({ startedAt, durationMs }, now = Date.now()) {
+  if (startedAt + durationMs <= now) return null;
+  return {
+    title: AHEAD_TITLE,
+    body: `${dayLabel(startedAt)} · ${timeLabel(startedAt)} for ${durLabel(durationMs)} ends after now. Shorten it, or start it earlier.`,
+  };
+}
 
 export function dayChips(now = Date.now()) {
   return DAY_CHIP_OFFSETS.map((days) => ({

@@ -46,14 +46,18 @@ export function statTiles(stats) {
 //
 // A kind this build has never heard of draws NOTHING. The slot is allowed to be empty, and a
 // sentence assembled out of a rule we do not know is the one thing it may not hold.
+//
+// `previous` is in the record's OWN unit: kilograms for the two loaded kinds, and a REP COUNT for
+// reps-at-weight — so only the first two go through the weight spelling. Sending a rep count through
+// `fmt` read right in kilograms by luck and printed "past 13.2" on an account that reads in pounds.
 export function recordSentence(record, catalog) {
   if (!record) return null;
   const movement = nameOfMovement(catalog, record.exerciseId);
-  const past = `past ${fmt(record.previous)} from ${dayLabel(record.previousAt)}`;
   const unit = weightUnit();
-  if (record.kind === 'e1rm') return `${movement} e1RM ${fmt(record.value)} ${unit} — ${past}.`;
-  if (record.kind === 'heaviest') return `${movement} ${fmt(record.value)} ${unit} × ${record.reps} — ${past}.`;
-  if (record.kind === 'reps-at-weight') return `${movement} ${record.reps} reps at ${fmt(record.weightKg)} ${unit} — ${past}.`;
+  const pastFrom = (mark) => `past ${mark} from ${dayLabel(record.previousAt)}`;
+  if (record.kind === 'e1rm') return `${movement} e1RM ${fmt(record.value)} ${unit} — ${pastFrom(fmt(record.previous))}.`;
+  if (record.kind === 'heaviest') return `${movement} ${fmt(record.value)} ${unit} × ${record.reps} — ${pastFrom(fmt(record.previous))}.`;
+  if (record.kind === 'reps-at-weight') return `${movement} ${record.reps} reps at ${fmt(record.weightKg)} ${unit} — ${pastFrom(String(record.previous))}.`;
   return null;
 }
 

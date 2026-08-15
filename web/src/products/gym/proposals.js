@@ -231,12 +231,23 @@ export function documentLine(proposal) {
 // is drawn unmarked and reads only its own numbers; the name is a row of its own when it moved,
 // because the store COUNTS a rename in `changeCount`: without that row the button would offer to
 // apply four changes over three visible ones, and the missing one would be the routine's name.
+//
+// AND THE ORDER IS A ROW WHEN THE STORE COUNTED IT. A reordered run is one counted change too
+// (domain/Proposal.cpp `countedChanges`), and it is the one change no row above carries a mark for
+// — the kept lines say it only by where they stand. The client cannot tell a reorder from the rows
+// alone (it never sees the base), so it reads the store's count: whatever the count holds beyond the
+// marked rows is the order moving, and it gets a row of its own beside the name's, or `Apply all 2`
+// stands over one marked line and the missing change is the order of the day.
 export function diffRows(proposal) {
   const rows = [];
   if (typeof proposal.name === 'string' && proposal.name !== proposal.baseName) {
     rows.push({ kind: 'renamed', from: proposal.baseName, to: proposal.name });
   }
   const changes = proposal.changes ?? [];
+  const marked = rows.length + changes.filter((change) => change.kind !== 'kept').length;
+  if (typeof proposal.changeCount === 'number' && proposal.changeCount > marked) {
+    rows.push({ kind: 'reordered' });
+  }
   changes.forEach((change, index) => {
     if (change.kind === 'kept') {
       rows.push({ kind: 'kept', exerciseId: change.exerciseId, targets: targetsReading(change.after) });
