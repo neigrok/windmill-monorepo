@@ -382,7 +382,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/http/GymApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
     test/products/gym/application/AskServiceTest.cpp
-    test/products/gym/adapters/postgres/PgTrainingRepositoryTest.cpp)
+    test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
+    test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp
+    test/products/gym/adapters/postgres/PgProgramRepositoryTest.cpp
+    test/products/gym/adapters/postgres/PgAskThreadRepositoryTest.cpp
+    test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()
