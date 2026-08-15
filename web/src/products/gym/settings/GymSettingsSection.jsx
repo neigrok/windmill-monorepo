@@ -17,8 +17,10 @@
 //
 // EVERY CHANGE IS A WHOLE-DOCUMENT PUT, sent the moment it is made and redrawn off what comes back
 // (preferences.js). There is no Save button because there is nothing to hold: each row is one value,
-// and the store's answer — an unknown unit clamped — is the truth the screen shows. A refusal reverts to the stored document and says the store's own sentence,
-// which names the band the value fell outside.
+// and the store's answer — an unknown unit clamped — is the truth the screen shows. A refusal reverts
+// to the document the store last CONFIRMED — every landed write moves it, including one whose reply
+// arrived after a newer write was sent — and says the store's own sentence, which names the band the
+// value fell outside.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Switch } from '../../../design-system';
@@ -44,6 +46,11 @@ export function GymSettingsSection({ api = gymApi } = {}) {
   // Which write is the live one. Rows move faster than a round trip, so an older reply landing after
   // a newer one would draw a setting the lifter has already moved past.
   const write = useRef(0);
+  // And which write the store last CONFIRMED. A reply that is stale for the screen is still the
+  // store's answer, and it moves what a refusal reverts to: units flipped to lb (landed), rest set
+  // to a value the store refuses — the revert must go back to lb, not to the document from before
+  // both. Only a reply older than one already taken is dropped, since the store's later word stands.
+  const confirmed = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -73,8 +80,11 @@ export function GymSettingsSection({ api = gymApi } = {}) {
     write.current = mine;
     try {
       const answered = readPreferences(await api.savePreferences(preferencesWrite(next)));
+      if (mine > confirmed.current) {
+        confirmed.current = mine;
+        stored.current = answered;
+      }
       if (write.current !== mine) return;
-      stored.current = answered;
       setPreferences(answered);
       spellWeightsIn(answered.units);
     } catch (error) {

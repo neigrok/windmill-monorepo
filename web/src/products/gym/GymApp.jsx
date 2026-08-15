@@ -128,17 +128,20 @@ function SignInPitch({ onSignIn }) {
 }
 
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
+  const { refresh } = useAuth();
   // ONE instance, and every room reads the mirrored session, the catalog and the log off it. A
-  // second would mean a second boot read and a second poll over the same open session.
-  const log = useTrainingLog();
+  // second would mean a second boot read and a second poll over the same open session. A boot the
+  // store answers 401 hands the account question back to the auth state: `refresh` re-asks the
+  // server, and a real lapse settles this frame to ghost — the sign-in pitch above — on its own.
+  const log = useTrainingLog({ onSignedOut: refresh });
   const screen = screenOf(hash);
 
   return (
     <>
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
       <main className="gym-column">
-        {screen === 'today' && <Today log={log} />}
-        {screen === 'log' && <LogList log={log} />}
+        {screen === 'today' && <Today log={log} onSignIn={onSignIn} />}
+        {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
         {screen === 'routines' && <RoutinesList log={log} />}
         {/* One movement, whichever door it was opened from — and with no movement named, the
             picker that asks which one (Record.jsx). */}

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   askedLabel, conversationsLine, DELETE_NOTE, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
-  THREADS_TITLE,
+  THREAD_LIST_CEILING, THREADS_TITLE,
 } from '../../../../src/products/gym/ask/threads.js';
 
 const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
@@ -25,6 +25,16 @@ test('the subhead counts the conversations and says they are yours to delete', (
   assert.equal(THREADS_TITLE, 'Threads');
   assert.equal(conversationsLine(9), '9 conversations · yours to delete');
   assert.equal(conversationsLine(1), '1 conversation · yours to delete');
+});
+
+// THE COUNT STOPS AT THE CEILING. The list is bounded at 200 with no total and no "more" flag (§6),
+// so two hundred rows is a floor and not a count — "200 conversations" over a log of three hundred
+// is a number the wire never sent, and §6 forbids printing one at the ceiling.
+test('the subhead prints no count while the list holds as many rows as the server will send', () => {
+  assert.equal(THREAD_LIST_CEILING, 200);
+  assert.equal(conversationsLine(199), '199 conversations · yours to delete');
+  assert.equal(conversationsLine(200), 'yours to delete');
+  assert.equal(conversationsLine(201), 'yours to delete');
 });
 
 // ── The outcome, which is the reason a row is worth coming back to ──────────────────────────────

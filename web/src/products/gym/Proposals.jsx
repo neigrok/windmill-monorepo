@@ -84,17 +84,17 @@ export function ProposalDot() {
   return <span className="gym-proposal-dot" aria-hidden="true" />;
 }
 
-// THE SAME FACT ON THE ROUTINE IT TOUCHES (canon screen 5) — the dot and the count on the row, so a
-// lifter who came to the routines list rather than to Today still finds it. It counts to one because
-// the ROUTINES READ carries one: `pendingProposal` is a single head, the newest, whichever door
-// wrote it. The store's own rule is one pending per (routine, door, connection) — so the day a
-// second door or a real connection id lands, this row and the card above it are drawing the newest
-// of several, and both need a count the wire does not send yet.
+// THE SAME FACT ON THE ROUTINE IT TOUCHES (canon screen 5) — the dot and the word on the row, so a
+// lifter who came to the routines list rather than to Today still finds it. It is a WORD and not a
+// count: the ROUTINES READ carries `pendingProposal` as a single head — the newest, whichever door
+// wrote it — while the store's own rule is one pending per (routine, door, connection), so the row
+// may be standing over several. "1 proposal" was a number the wire never sent; the row says what it
+// knows, which is that one is waiting.
 export function ProposalFlag() {
   return (
     <span className="gym-routine-flag">
       <ProposalDot />
-      1 proposal
+      proposal pending
     </span>
   );
 }
@@ -280,6 +280,18 @@ export function DiffRow({ row, catalog }) {
         <span className="gym-diff-moves">
           <Move from={row.from} to={row.to} />
         </span>
+      </>
+    );
+  }
+
+  // THE ORDER MOVED, and the store counted it (proposals.js `diffRows`). The lines below already
+  // stand in the order the routine would take on; this row is the mark that says so, and the count
+  // under Apply is honest with it there.
+  if (row.kind === 'reordered') {
+    return (
+      <>
+        <span className="gym-diff-name">Order</span>
+        <span className="gym-diff-note">the lines run in the order below</span>
       </>
     );
   }

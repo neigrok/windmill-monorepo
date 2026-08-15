@@ -192,7 +192,10 @@ export const NO_ANSWER_NOTE = 'Ask didn’t answer. Try again in a moment.';
 
 export function askFailure(error) {
   if (error?.status === 401) return { note: 'Sign in to open your training log.', gone: true };
-  if (error?.status === 404 || error?.status === 503) return { note: ASK_ABSENT_NOTE, gone: true };
+  // Ask is absent on a deployment with no model — the framework's bare 404 (the route was never
+  // mounted) or the server's own `ask-not-configured` — and only those retire the room. A 503 with
+  // any other face is a proxy or a restart, and asking again is exactly the repair.
+  if (error?.status === 404 || error?.code === 'ask-not-configured') return { note: ASK_ABSENT_NOTE, gone: true };
   if (error?.status === 409 && error?.code === 'ask-session-open') return { note: MID_SESSION_NOTE };
   if (error?.status === 409 && error?.code === 'ask-thread-full') return { note: THREAD_FULL_NOTE, full: true };
   // AN ID ANOTHER ACCOUNT HOLDS, which can only ever happen on the FIRST question of a thread — once

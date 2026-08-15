@@ -14,6 +14,14 @@
 // back. A set lands once every minute or two; a live transport for that is unearned. The poll rides
 // the read's weak ETag — If-None-Match up, 304 back while nothing changed — so the steady state
 // costs a header exchange, not a body and a re-render.
+//
+// AND WHILE NOTHING IS MIRRORED, THE HOOK WATCHES FOR A WORKOUT TO START. The boot read is not the
+// only moment a session can be open: the common desk sequence is a laptop opened at home and a
+// workout started at the rack an hour later, and a mirror that only ever looked once said "Not
+// training now" over that whole workout. So with no session held, `GET /sessions?limit=1` is asked
+// again on every return to the tab and on a slow beat — thirty seconds, visible only — and an open
+// row is adopted exactly as the boot adopts one. The same watch is how a boot whose detail read
+// flapped, and a re-read that lists the phone's NEXT workout open, end up mirrored.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
@@ -23,6 +31,10 @@ import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js'
 import { spellWeightsIn } from './units.js';
 
 const POLL_MS = 5000;
+// The watch for a workout starting, while none is mirrored. Slow on purpose: a set lands once a
+// minute or two and a workout starts once a day, and the moment that matters — a lifter glancing at
+// the laptop — is the visibilitychange, which asks at once.
+const WATCH_MS = 30_000;
 // A toast is up for five seconds, and that is also how long a withheld delete has to be taken back
 // (`UNDO_MS`, fix.js) — the offer and the window it is true in are the same five seconds, and a
 // test pins them equal.
@@ -51,7 +63,9 @@ function olderAfter(page, asked) {
   return 'more';
 }
 
-export function useTrainingLog({ api = gymApi } = {}) {
+// `onSignedOut` is the frame's: a boot answered 401 means the account is gone from under the tab,
+// and the frame is what settles the auth state and opens the door (GymApp.jsx).
+export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
   const [phase, setPhase] = useState('loading');
   const [session, setSession] = useState(null);
   const [sets, setSets] = useState([]);
@@ -67,8 +81,14 @@ export function useTrainingLog({ api = gymApi } = {}) {
   const [olderStatus, setOlderStatus] = useState('more');
   const [toast, setToast] = useState(null);
   // The boot read is the one read that may not be allowed to fail once and stay failed: 'failed' is
-  // the only phase nothing else leaves. This counter is how the signal returning asks it again.
+  // the only phase nothing else leaves. This counter is how the signal returning — and the lifter's
+  // own Retry — asks it again.
   const [bootAttempt, setBootAttempt] = useState(0);
+  // WHY THE BOOT FAILED, because the three reasons have three repairs and one sentence blamed the
+  // signal for all of them: 'signal' is a request that never got an answer (retry when it is back),
+  // 'server' is a store that answered and failed (retry now), 'signed-out' is a 401 — the cookie
+  // lapsed, and the repair is the sign-in door, which no amount of signal opens.
+  const [failure, setFailure] = useState(null);
 
   // The log can be re-read while an older page is still in the air — the backfill and the mirror
   // closing both do exactly that. The walk is stamped, so a page fetched against the old list's tail
@@ -86,11 +106,50 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // If-None-Match so the steady state is a 304 the poll can ignore. A ref, not state — the tag
   // changes exactly when the detail does, and it must never be a render of its own.
   const mirrorTag = useRef(null);
+  // The id the mirror holds, readable from inside any closure: `reloadLog` keeps one identity for
+  // the life of the room (below) and so cannot read `session` off state, and `adopt` has to know
+  // whether the open row it found is the one already on screen.
+  const mirrored = useRef(null);
+  // The frame's callback, held in a ref so a caller handing a fresh closure each render cannot make
+  // the boot read run again — the boot's dependencies are the api and the attempt, and nothing else.
+  const signedOut = useRef(onSignedOut);
+  signedOut.current = onSignedOut;
 
   // The one voice, and it can carry ONE move as well as a sentence: the withheld delete's Undo
   // lives on it (§G18), and it lives there because the toast's own five seconds are the window the
   // take-back is offered in — the offer and the truth behind it disappear together.
   const say = useCallback((text, action = null) => setToast({ text, action }), []);
+
+  // The mirror taking a detail read, and letting it go — the only two places the held session, its
+  // sets, its tag and the id ref move, so the four can never disagree.
+  const hold = useCallback((detail) => {
+    mirrorTag.current = detail.etag ?? null;
+    mirrored.current = detail.session.id;
+    setSession(detail.session);
+    setSets(detail.sets);
+  }, []);
+  const release = useCallback(() => {
+    mirrorTag.current = null;
+    mirrored.current = null;
+    setSession(null);
+    setSets([]);
+  }, []);
+
+  // THE OPEN ROW ON THE LOG IS THE MIRROR'S SESSION — one step, taken by the boot read, by every
+  // re-read of the log and by the watch below, so no reader of the log can list a workout open and
+  // leave Today saying nothing is running. An open session is a workout running somewhere else —
+  // the phone's, to mirror, never to adopt as this surface's own. The detail read brings its sets;
+  // the poll keeps them fresh. It fails like a poll, not like the boot: the log LOADED, so the
+  // summaries stand and the surface opens, and the watch asks again — where failing the whole boot
+  // stranded a lifter on the failure screen over a flap of this one read.
+  const adopt = useCallback(async (log) => {
+    const open = log.find((summary) => summary.finishedAt == null);
+    if (!open || open.id === mirrored.current) return;
+    const detail = await api.session(open.id).catch(() => null);
+    // A poll may have taken this session in the meantime, and its read is the newer one.
+    if (!detail || detail.session.finishedAt != null || mirrored.current === open.id) return;
+    hold(detail);
+  }, [api, hold]);
 
   useEffect(() => {
     let alive = true;
@@ -121,39 +180,38 @@ export function useTrainingLog({ api = gymApi } = {}) {
         setSummaries(log);
         // The first page settles this too: a log of three sessions must not offer to load older ones.
         setOlderStatus(olderAfter(log, LOG_PAGE));
-        // An open session on the log is a workout running somewhere else — the phone's, to mirror,
-        // never to adopt. The detail read brings its sets; the poll below keeps them fresh. And it
-        // fails like a poll, not like the boot: the log LOADED, so the summaries stand and the
-        // surface opens, just without the mirror. Failing the whole boot here stranded a lifter on
-        // the failure screen over a flap of this one read — where the 'online' event, the only
-        // recovery 'failed' has, never fires for a server-side 5xx.
-        const open = log.find((summary) => summary.finishedAt == null);
-        const detail = open ? await api.session(open.id).catch(() => null) : null;
+        await adopt(log);
         if (!alive) return;
-        if (detail && detail.session.finishedAt == null) {
-          mirrorTag.current = detail.etag ?? null;
-          setSession(detail.session);
-          setSets(detail.sets);
-        }
+        setFailure(null);
         setPhase('ready');
-      } catch {
-        if (alive) setPhase('failed');
+      } catch (error) {
+        if (!alive) return;
+        // A 401 is not a failure of the log; it is the account gone from under the tab. The frame is
+        // told, so the auth state can settle to ghost and the sign-in door open in its place.
+        if (error?.status === 401) {
+          setFailure('signed-out');
+          signedOut.current?.();
+        } else {
+          setFailure(error?.status ? 'server' : 'signal');
+        }
+        setPhase('failed');
       }
     })();
     return () => { alive = false; };
-  }, [api, bootAttempt]);
+  }, [api, adopt, bootAttempt]);
 
   useEffect(() => { reach.current = summaries.length; }, [summaries.length]);
 
-  // The signal returning is the recovery for a boot that never came back — without this, a lifter
+  // The signal returning is one recovery for a boot that never came back — without this, a lifter
   // who opened the log in a basement stayed on the failure screen while the signal returned around
-  // them.
+  // them. The other is the lifter's own Retry (below): the 'online' event never fires for a store
+  // that answered 5xx, and a screen whose only repair is an event that will not come is a dead end.
+  const retryBoot = useCallback(() => setBootAttempt((count) => count + 1), []);
   useEffect(() => {
     if (phase !== 'failed') return undefined;
-    const back = () => setBootAttempt((count) => count + 1);
-    window.addEventListener('online', back);
-    return () => window.removeEventListener('online', back);
-  }, [phase]);
+    window.addEventListener('online', retryBoot);
+    return () => window.removeEventListener('online', retryBoot);
+  }, [phase, retryBoot]);
 
   // Deeper into the log, one page at a time. The cursor is the last row IN HAND and it is BOTH
   // halves of it, always: `startedAt` alone is not unique, so two sessions that share an instant
@@ -199,17 +257,25 @@ export function useTrainingLog({ api = gymApi } = {}) {
   // fails, nothing is left to release the foot and it stays at "Loading older sessions…" until a
   // reload. 'more' is the honest guess: the list on screen is whatever survived, and asking again is
   // exactly the recovery.
+  //
+  // AND IT ADOPTS WHAT IT READS. The mirror closing on the phone's workout A is what fires this read
+  // most often — and by then the phone may already be into workout B, which this read lists open. A
+  // list saying "in progress" over a Today saying "Not training now" is the surface disagreeing with
+  // itself, so the same step the boot takes runs here.
   const reloadLog = useCallback(async () => {
     const depth = Math.min(SERVER_PAGE_CAP, Math.max(LOG_PAGE, reach.current));
     walk.current += 1;
+    let log;
     try {
-      const log = await api.sessions({ limit: depth });
-      setSummaries(log);
-      setOlderStatus(olderAfter(log, depth));
+      log = await api.sessions({ limit: depth });
     } catch {
       setOlderStatus('more');
+      return;
     }
-  }, [api]);
+    setSummaries(log);
+    setOlderStatus(olderAfter(log, depth));
+    await adopt(log);
+  }, [api, adopt]);
 
   // THE MIRROR'S BEAT (§11.3 flow 2). Five seconds while the tab is visible, nothing while it is
   // hidden — a hidden tab asks no questions — and one immediate read when it comes back, because a
@@ -234,15 +300,11 @@ export function useTrainingLog({ api = gymApi } = {}) {
       if (!alive) return;
       if (detail === UNCHANGED) return;
       if (detail == null || detail.session.finishedAt != null) {
-        mirrorTag.current = null;
-        setSession(null);
-        setSets([]);
+        release();
         reloadLog();
         return;
       }
-      mirrorTag.current = detail.etag ?? null;
-      setSession(detail.session);
-      setSets(detail.sets);
+      hold(detail);
     };
     const visible = () => document.visibilityState === 'visible';
     const beat = setInterval(() => { if (visible()) read(); }, POLL_MS);
@@ -253,7 +315,35 @@ export function useTrainingLog({ api = gymApi } = {}) {
       clearInterval(beat);
       document.removeEventListener('visibilitychange', woke);
     };
-  }, [api, session?.id, reloadLog]);
+  }, [api, session?.id, reloadLog, hold, release]);
+
+  // THE WATCH, while nothing is mirrored (head of file). One row is enough to ask for: the question
+  // is whether the newest session is open, and the summaries on screen are not touched by it — the
+  // list is re-read when the mirror closes, as it always was. Visible tab only, and at once on the
+  // way back to it, for the same reason the poll above is.
+  const watching = phase === 'ready' && session == null;
+  useEffect(() => {
+    if (!watching) return undefined;
+    let alive = true;
+    const look = async () => {
+      let log;
+      try {
+        log = await api.sessions({ limit: 1 });
+      } catch {
+        return;
+      }
+      if (alive) await adopt(log);
+    };
+    const visible = () => document.visibilityState === 'visible';
+    const beat = setInterval(() => { if (visible()) look(); }, WATCH_MS);
+    const woke = () => { if (visible()) look(); };
+    document.addEventListener('visibilitychange', woke);
+    return () => {
+      alive = false;
+      clearInterval(beat);
+      document.removeEventListener('visibilitychange', woke);
+    };
+  }, [api, adopt, watching]);
 
   // A movement the catalog does not hold, minted from the picker's two questions (§N screen 31): a
   // name and how it is loaded. It lands in the catalog here, in the one instance of it this product
@@ -313,6 +403,11 @@ export function useTrainingLog({ api = gymApi } = {}) {
 
   return {
     phase,
+    // Why 'failed', when it is: 'signal' · 'server' · 'signed-out'. Null in every other phase.
+    failure,
+    // The boot read, asked again — the lifter's own recovery for a store that answered 5xx, where the
+    // 'online' event never comes.
+    retryBoot,
     // The open session this account holds, or null. It is the phone's workout, mirrored — nothing
     // handed out here can write into it.
     session,

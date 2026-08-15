@@ -8,148 +8,33 @@
 //   · the poll rides the read's weak ETag — the last reply's tag goes up as If-None-Match, and a
 //     304 leaves the state in hand untouched, no re-render over a workout that did not move;
 //   · the retired web logger's resume note is cleared on boot, and the old offline queue's bytes
-//     are NOT — whatever sets a pre-mirror build still owed the log are the lifter's.
+//     are NOT — whatever sets a pre-mirror build still owed the log are the lifter's;
+//   · while nothing is mirrored the hook WATCHES for a workout starting — on the way back to the
+//     tab and on a slow beat — and every reader of the log adopts an open row, so "Not training now"
+//     is never said over a workout the log lists open;
+//   · a boot that failed says WHY, because a lapsed sign-in and a store that answered 5xx are not
+//     signal problems, and the one repair the failure screen used to have never fires for either.
 //
 // React is driven through its own dispatcher rather than a DOM: the hook is the unit under test,
 // effects run where React runs them, and every state change re-renders synchronously.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import React from 'react';
 
 import { GymError, UNCHANGED } from '../../../src/products/gym/gymApi.js';
 import { fmt } from '../../../src/products/gym/log.js';
 import { DEFAULT_PREFERENCES } from '../../../src/products/gym/settings/preferences.js';
 import { KG, LB, spellWeightsIn, weightUnit } from '../../../src/products/gym/units.js';
+import { browserWith, renderHook, settle } from './harness.mjs';
 
-const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 const HOUR = 3600_000;
 const POLL_MS = 5000;
+// The watch for a workout starting while none is mirrored — slow on purpose (useTrainingLog.js).
+const WATCH_MS = 30_000;
 // The toast's own five seconds, which are also the seconds a withheld delete can be taken back in
 // (`UNDO_MS`, fix.js — screens.test.js pins the two constants equal). They are the same number on
 // purpose, and that is precisely why the test below exists.
 const TOAST_MS = 5000;
-
-// Teardown is registered with the runner at mount, never trailed at the end of a test body: a
-// thrown assertion skips the rest of the body, and the hook's intervals would then hold the event
-// loop open — the runner hangs forever instead of reporting the failure.
-function renderHook(t, run) {
-  const cells = [];
-  const queued = [];
-  let cursor = 0;
-  let rendering = false;
-  let result = null;
-
-  const same = (left, right) => Array.isArray(left) && Array.isArray(right)
-    && left.length === right.length && left.every((each, index) => Object.is(each, right[index]));
-
-  const dispatcher = {
-    useState(initial) {
-      const cell = cells[cursor] ?? (cells[cursor] = { value: typeof initial === 'function' ? initial() : initial });
-      cursor += 1;
-      return [cell.value, (next) => {
-        const value = typeof next === 'function' ? next(cell.value) : next;
-        if (Object.is(value, cell.value)) return;
-        cell.value = value;
-        if (!rendering) render();
-      }];
-    },
-    useRef(initial) {
-      const cell = cells[cursor] ?? (cells[cursor] = { current: initial });
-      cursor += 1;
-      return cell;
-    },
-    useMemo(factory, deps) {
-      const cell = cells[cursor] ?? (cells[cursor] = {});
-      cursor += 1;
-      if (!('value' in cell) || !same(cell.deps, deps)) {
-        cell.value = factory();
-        cell.deps = deps;
-      }
-      return cell.value;
-    },
-    useCallback(fn, deps) { return dispatcher.useMemo(() => fn, deps); },
-    useEffect(effect, deps) {
-      const cell = cells[cursor] ?? (cells[cursor] = {});
-      cursor += 1;
-      if ('deps' in cell && same(cell.deps, deps)) return;
-      cell.deps = deps;
-      queued.push(cell, effect);
-    },
-    useLayoutEffect(effect, deps) { dispatcher.useEffect(effect, deps); },
-    useDebugValue() {},
-  };
-
-  function render() {
-    rendering = true;
-    cursor = 0;
-    const outer = ReactCurrentDispatcher.current;
-    ReactCurrentDispatcher.current = dispatcher;
-    try {
-      result = run();
-    } finally {
-      ReactCurrentDispatcher.current = outer;
-      rendering = false;
-    }
-    while (queued.length > 0) {
-      const cell = queued.shift();
-      const effect = queued.shift();
-      cell.cleanup?.();
-      cell.cleanup = effect() ?? null;
-    }
-  }
-
-  render();
-  t.after(() => cells.forEach((cell) => cell.cleanup?.()));
-  return {
-    get log() { return result; },
-  };
-}
-
-const settle = async (turns = 4) => {
-  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-};
-
-// `live` and `queue` are seeded as RAW BYTES: what a pre-mirror build left behind is a foreign
-// input, and the boot's only business with either key is remove-one, touch-nothing-else.
-function browserWith({ queue = null, live = null } = {}) {
-  const disk = new Map();
-  if (queue !== null) disk.set('windmill.gym.queue', queue);
-  if (live !== null) disk.set('windmill.gym.live', live);
-  const listeners = new Map();
-  const bind = (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]);
-  const unbind = (type, fn) => listeners.set(type, (listeners.get(type) ?? []).filter((each) => each !== fn));
-  globalThis.window = {
-    localStorage: {
-      getItem: (key) => (disk.has(key) ? disk.get(key) : null),
-      setItem: (key, value) => disk.set(key, value),
-      removeItem: (key) => disk.delete(key),
-    },
-    addEventListener: bind,
-    removeEventListener: unbind,
-    location: { hash: '#/gym' },
-  };
-  globalThis.document = { visibilityState: 'visible', addEventListener: bind, removeEventListener: unbind };
-  globalThis.navigator = { onLine: true };
-  return {
-    held: () => (disk.has('windmill.gym.queue') ? disk.get('windmill.gym.queue') : null),
-    kept: () => (disk.has('windmill.gym.live') ? disk.get('windmill.gym.live') : null),
-    hide: () => {
-      globalThis.document.visibilityState = 'hidden';
-      (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
-    },
-    show: () => {
-      globalThis.document.visibilityState = 'visible';
-      (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
-    },
-    // The signal coming back, exactly as the browser announces it. A listener that was never bound
-    // hears nothing, which is the whole of what the failed-boot test below is asking about.
-    reconnect: () => {
-      globalThis.navigator.onLine = true;
-      (listeners.get('online') ?? []).forEach((fn) => fn());
-    },
-  };
-}
 
 // A log holding one open session — the phone's workout, as GET /sessions and GET /sessions/:id
 // answer it. `wire` keeps every request so a test can say exactly what polled and what did not.
@@ -546,6 +431,207 @@ test('a poll that does not come back keeps the last true read on the mirror', as
   t.mock.timers.tick(POLL_MS);
   await settle();
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0', 'set_stored1']);
+});
+
+// THE MIRROR'S CORE PROMISE, FOR THE COMMON DESK SEQUENCE: the laptop is opened at home, the
+// workout starts at the rack an hour later. A boot that found nothing open used to be the LAST time
+// the log was read — no beat, no wake — and Today said "Not training now" over the whole workout.
+// Now, with nothing mirrored, the hook watches: one row is asked for on a slow beat while the tab is
+// visible, and at once when the tab comes back, and an open row is adopted as the boot adopts one.
+test('a workout started after the tab opened is found by the watch, on the beat and on the way back', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  const browser = browserWith();
+  const backend = phoneWorkout({ startedAt: now, sets: [] });
+  let started = false;
+  backend.api.sessions = async (query) => {
+    backend.wire.push(`GET /sessions?limit=${query.limit}`);
+    if (!started) return [];
+    return [{ ...backend.session, setCount: backend.stored.length, exercises: [] }];
+  };
+
+  const view = await open(t, backend.api);
+  assert.equal(view.log.phase, 'ready');
+  assert.equal(view.log.session, null);
+  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions?limit=50', 'GET /preferences']);
+
+  // Nothing started, and the watch costs one row every thirty seconds — never a detail read.
+  t.mock.timers.tick(WATCH_MS);
+  await settle();
+  assert.deepEqual(backend.wire.slice(3), ['GET /sessions?limit=1']);
+  assert.equal(view.log.session, null);
+
+  // The phone starts a workout; the next beat finds it and the detail read brings its sets.
+  started = true;
+  backend.stored.push(loggedSet(0, now + 60_000, 100));
+  t.mock.timers.tick(WATCH_MS);
+  await settle();
+  assert.deepEqual(backend.wire.slice(4), ['GET /sessions?limit=1', 'GET /sessions/ses_phone']);
+  assert.equal(view.log.session.id, 'ses_phone');
+  assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0']);
+  // The list is not touched by the watch: the row lands there when the mirror closes and the log is
+  // re-read, as it always did.
+  assert.deepEqual(view.log.summaries, []);
+
+  // Once mirrored, the poll owns the session and the watch is quiet: thirty seconds of beats read
+  // the DETAIL, and no one-row read is sent.
+  t.mock.timers.tick(WATCH_MS);
+  await settle();
+  assert.equal(backend.wire.slice(6).every((line) => line === 'GET /sessions/ses_phone'), true);
+  assert.equal(backend.wire.slice(6).length, WATCH_MS / POLL_MS);
+
+  // The way back to the tab asks at once, and a hidden tab asks nothing.
+  browser.show();
+  await settle();
+  browser.hide();
+  const before = backend.wire.length;
+  t.mock.timers.tick(WATCH_MS);
+  await settle();
+  assert.equal(backend.wire.length, before);
+});
+
+// A hidden tab is not watched — and the visibilitychange back is the moment that matters, since a
+// lifter glancing at the laptop mid-set should not wait out a thirty-second beat.
+test('while nothing is mirrored, coming back to the tab asks at once and a hidden tab asks nothing', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  const browser = browserWith();
+  const backend = phoneWorkout({ startedAt: now, sets: [loggedSet(0, now + 60_000, 100)] });
+  let started = false;
+  backend.api.sessions = async (query) => {
+    backend.wire.push(`GET /sessions?limit=${query.limit}`);
+    if (!started) return [];
+    return [{ ...backend.session, setCount: backend.stored.length, exercises: [] }];
+  };
+
+  const view = await open(t, backend.api);
+  browser.hide();
+  t.mock.timers.tick(WATCH_MS * 4);
+  await settle();
+  assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions?limit=50', 'GET /preferences']);
+
+  started = true;
+  browser.show();
+  await settle();
+  assert.deepEqual(backend.wire.slice(3), ['GET /sessions?limit=1', 'GET /sessions/ses_phone']);
+  assert.equal(view.log.session.id, 'ses_phone');
+});
+
+// THE BOOT'S DETAIL READ FLAPPED — one 503 — and the surface opened without the mirror, which was
+// right. What was wrong: nothing ever asked again, and the live workout stayed unmirrored for the
+// whole visit. The watch is the retry, through the very same path.
+test('a boot whose detail read flapped is mirrored by the next beat of the watch', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  browserWith();
+  const backend = phoneWorkout({ startedAt: now - HOUR, sets: [loggedSet(0, now - 120_000, 100)] });
+  let flapping = true;
+  const detail = backend.api.session;
+  backend.api.session = async (id, options) => {
+    if (!flapping) return detail(id, options);
+    backend.wire.push(`GET /sessions/${id}`);
+    throw new GymError(503, 'the log didn’t answer');
+  };
+
+  const view = await open(t, backend.api);
+  assert.equal(view.log.phase, 'ready');
+  assert.equal(view.log.session, null);
+  assert.deepEqual(view.log.summaries.map((each) => each.id), ['ses_phone']);
+
+  flapping = false;
+  t.mock.timers.tick(WATCH_MS);
+  await settle();
+  assert.equal(view.log.session.id, 'ses_phone');
+  assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0']);
+  assert.deepEqual(backend.wire, [
+    'GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone',
+    'GET /sessions', 'GET /sessions/ses_phone',
+  ]);
+});
+
+// THE PHONE FINISHES A AND STARTS B. The mirror closing on A re-reads the log, and that read lists B
+// open — a re-read that replaced the summaries and adopted nothing left the list saying "in
+// progress" under a Today saying "Not training now". One `adopt` step serves the boot, the re-read
+// and the watch alike, so no reader of the log can leave the two disagreeing.
+test('the log re-read when the mirror closes adopts the next workout it lists open', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const now = Date.now();
+  browserWith();
+  const workoutA = { id: 'ses_a', startedAt: now - HOUR, finishedAt: null };
+  const workoutB = { id: 'ses_b', startedAt: now, finishedAt: null };
+  const rows = [workoutA];
+  const asked = [];
+  const api = {
+    async exercises() { return [{ id: 'back-squat', name: 'Back Squat' }]; },
+    async preferences() { return {}; },
+    async sessions(query) {
+      asked.push(`GET /sessions?limit=${query.limit}`);
+      return rows.slice().sort((left, right) => right.startedAt - left.startedAt)
+        .map((row) => ({ ...row, setCount: 0, exercises: [] }));
+    },
+    async session(id) {
+      asked.push(`GET /sessions/${id}`);
+      const row = rows.find((each) => each.id === id);
+      return { session: { ...row }, sets: id === 'ses_b' ? [loggedSet(0, now + 30_000, 60)] : [] };
+    },
+  };
+
+  const view = await open(t, api);
+  assert.equal(view.log.session.id, 'ses_a');
+
+  workoutA.finishedAt = now - 60_000;
+  rows.push(workoutB);
+  t.mock.timers.tick(POLL_MS);
+  await settle();
+
+  assert.equal(view.log.session.id, 'ses_b');
+  assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0']);
+  assert.deepEqual(view.log.summaries.map((each) => [each.id, each.finishedAt]), [['ses_b', null], ['ses_a', now - 60_000]]);
+  assert.deepEqual(asked, [
+    'GET /sessions?limit=50', 'GET /sessions/ses_a', 'GET /sessions/ses_a',
+    'GET /sessions?limit=50', 'GET /sessions/ses_b',
+  ]);
+});
+
+// A LAPSED COOKIE IS NOT A SIGNAL PROBLEM. A boot answered 401 used to read "Open it again when you
+// have signal" and wait for an 'online' event that never comes: the repair is the sign-in door, so
+// the failure says so, and the frame is told so the auth state can settle. And a store that answered
+// 5xx is a failure the lifter can retry NOW — `retryBoot` is that, and it asks the boot again.
+test('a boot answered 401 fails as signed-out and tells the frame; a 5xx fails as the server, and Retry asks again', async (t) => {
+  const now = Date.now();
+  browserWith();
+  const backend = phoneWorkout({ startedAt: now - HOUR, sets: [] });
+  const sessions = backend.api.sessions;
+  let answer = () => { throw new GymError(401, 'sign in to open your training log'); };
+  backend.api.sessions = async (query) => answer(query);
+  const told = [];
+
+  const { useTrainingLog } = await import('../../../src/products/gym/useTrainingLog.js');
+  const view = renderHook(t, () => useTrainingLog({ api: backend.api, onSignedOut: () => told.push('signed-out') }));
+  await settle();
+  assert.equal(view.log.phase, 'failed');
+  assert.equal(view.log.failure, 'signed-out');
+  assert.deepEqual(told, ['signed-out']);
+
+  answer = () => { throw new GymError(503, 'internal error'); };
+  view.log.retryBoot();
+  await settle();
+  assert.equal(view.log.phase, 'failed');
+  assert.equal(view.log.failure, 'server');
+  assert.deepEqual(told, ['signed-out']);
+
+  // A request that never got an answer is the one failure that IS about signal.
+  answer = () => { throw new TypeError('Failed to fetch'); };
+  view.log.retryBoot();
+  await settle();
+  assert.equal(view.log.failure, 'signal');
+
+  answer = sessions;
+  view.log.retryBoot();
+  await settle();
+  assert.equal(view.log.phase, 'ready');
+  assert.equal(view.log.failure, null);
+  assert.equal(view.log.session.id, 'ses_phone');
 });
 
 // THE WALK DOWN THE LOG. The cursor is the last row in hand and BOTH halves of it — the server

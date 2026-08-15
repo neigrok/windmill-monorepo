@@ -7,9 +7,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  dayChips, DURATION_CHIPS, expandLines, fileBackfill, lineLabel, LINE_SETS_MAX, LINE_SETS_MIN,
-  MID_WORKOUT_REFUSAL, OVERLAP_TITLE, overlapWith, saveLabel, saveNote, saveReport, startedAtOf,
-  totalSets, withLineAdded, withLineChanged, withLineRemoved, withMovementAdded,
+  AHEAD_TITLE, dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel,
+  LINE_SETS_MAX, LINE_SETS_MIN, MID_WORKOUT_REFUSAL, OVERLAP_TITLE, overlapWith, saveLabel, saveNote,
+  saveReport, startedAtOf, totalSets, withLineAdded, withLineChanged, withLineRemoved,
+  withMovementAdded,
 } from '../../../src/products/gym/backfill.js';
 
 const BLOCKS = [
@@ -151,13 +152,32 @@ test('overlapWith — the edges touch without crossing, and an open session is n
   assert.equal(overlapWith({ startedAt: day, durationMs: 60 * 60_000 }, [{ id: 'ses_live', startedAt: day, finishedAt: null }]), null);
   // It names the phone, because on this build that is where live training happens — the web's own
   // Start is gone (§11), so the sentence G8 wrote is finally true. It still promises nothing about
-  // a draft: at the log's door there is no draft to keep.
+  // a draft: at the log's door there is no draft to keep. And it never says the sets would be FILED
+  // into the running workout: the save sends `joinOpenSession: false`, so the store refuses rather
+  // than files, and a sentence claiming otherwise was misinformation.
   assert.deepEqual(MID_WORKOUT_REFUSAL, {
     title: 'A session is already running.',
-    body: 'Live training happens on your phone — adding now would file these sets into the running session. The door opens when it closes.',
+    body: 'Live training happens on your phone — one workout is open at a time, and this one waits for it. The door opens when it closes.',
   });
   assert.equal(/phone/.test(MID_WORKOUT_REFUSAL.body), true);
   assert.equal(/draft/i.test(MID_WORKOUT_REFUSAL.title + MID_WORKOUT_REFUSAL.body), false);
+  assert.equal(/file/i.test(MID_WORKOUT_REFUSAL.body), false);
+});
+
+// A PAST WORKOUT ENDS IN THE PAST. Start and length are typed apart, and "yesterday 23:30 for
+// 1 h 30" saved at ten past midnight ends forty minutes from now — a start the clock allows with an
+// end it does not, and nothing on the wire refuses that end.
+test('endsAhead — a session whose end runs past now is refused, and one ending exactly now is not', () => {
+  const now = new Date(2026, 7, 16, 0, 10).getTime();
+  const startedAt = new Date(2026, 7, 15, 23, 30).getTime();
+  assert.deepEqual(endsAhead({ startedAt, durationMs: 90 * 60_000 }, now), {
+    title: AHEAD_TITLE,
+    body: 'Sat 15 Aug · 23:30 for 1h 30m ends after now. Shorten it, or start it earlier.',
+  });
+  assert.equal(AHEAD_TITLE, 'These times run past now.');
+  assert.equal(endsAhead({ startedAt, durationMs: 40 * 60_000 }, now), null);
+  assert.equal(endsAhead({ startedAt, durationMs: 30 * 60_000 }, now), null);
+  assert.equal(endsAhead({ startedAt, durationMs: 41 * 60_000 }, now).title, AHEAD_TITLE);
 });
 
 // Every edit the form makes to its draft is one of these four, so the form holds the draft and the

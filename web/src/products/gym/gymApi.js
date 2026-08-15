@@ -146,7 +146,8 @@
 //                                           one handed back. Idempotent on the SESSION: there is no
 //                                           id for a client to mint here, so tapping Share twice is
 //                                           one capability and not two
-//   DELETE /v1/gym/sessions/:id/share    -> 204, nothing back. Revoked is deleted
+//   DELETE /v1/gym/sessions/:id/share    -> 204, nothing back. Revoked is deleted; a 404 is nothing
+//                                           to revoke, and reads as revoked here (null)
 //   GET  /v1/gym/shared/:token           -> { startedAt, finishedAt?, routine?, sets: [{exercise,
 //                                           setNumber, weightKg, reps, kind, rpe?, note,
 //                                           completedAt}] } — or null on 404. THE ONE
@@ -402,10 +403,15 @@ export class GymError extends Error {
 // Why a write did not land, in the half-sentence every surface finishes its own way. A 400 or a 409
 // is the store REFUSING the document — it read it and would not take it — and telling a lifter with
 // full signal to try again when they have some is the app blaming the network for its own answer,
-// on a retry that fails identically forever. Everything else is the log not answering, where
-// retrying is the whole of the repair.
+// on a retry that fails identically forever. A 401 is a sign-in that lapsed, and the repair is the
+// door, not the signal; a 404 is the thing the write was about no longer being in the log — a
+// session discarded, a routine removed on the phone — and no retry brings it back either. Only
+// what is left, a store that failed or a request that never got an answer, is the log not
+// answering, where retrying is the whole of the repair.
 export function failureReason(error) {
   if (error?.terminal) return 'the log wouldn’t take it as written';
+  if (error?.status === 401) return 'you’re signed out. Sign in and try again';
+  if (error?.status === 404) return 'it isn’t in the log any more';
   return 'the log didn’t answer. Try again when you have signal';
 }
 
@@ -680,8 +686,13 @@ export const gymApi = {
     return json(await call(`/sessions/${id}/share`, { method: 'POST' }));
   },
 
+  // Revoked is 204, and a 404 is "nothing to revoke" (§6) — the link is not live either way, so
+  // both answer null and neither is a failure the lifter is told about. A revoke that 404s and was
+  // read as a failure kept a link drawn on screen that no reader could open.
   async revokeShare(id) {
-    return json(await call(`/sessions/${id}/share`, { method: 'DELETE' }));
+    const response = await call(`/sessions/${id}/share`, { method: 'DELETE' });
+    if (response.status === 404) return null;
+    return json(response);
   },
 
   // The coach's read, and the only one in this file that means anything without an account. The

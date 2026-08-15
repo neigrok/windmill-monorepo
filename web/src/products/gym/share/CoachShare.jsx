@@ -32,6 +32,8 @@ export function CoachShare({ sessionId }) {
     setBusy(false);
   };
 
+  // A revoke that finds nothing to revoke (404) comes back as revoked, not as a failure — gymApi
+  // answers it null — so "still live" is only ever said over a link the store still holds.
   const revoke = async () => {
     if (busy) return;
     setBusy(true);

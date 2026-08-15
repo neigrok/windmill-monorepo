@@ -37,6 +37,29 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
+// DUPLICATE COPIES THE STORED ROUTINE, NOT THE DRAFT. The hash moves to the copy the moment it
+// lands, so a copy of unsaved edits carried them off this editor and left the original without
+// them — and on a routine never saved it minted "X copy" of a document the store did not hold. The
+// copy is of the read, and a fresh routine offers no button.
+test('the editor’s Duplicate copies the routine as stored, and a fresh routine offers none', () => {
+  const source = spoken(read('Routines.jsx'));
+  assert.equal(source.includes("duplicateRoutine(view.data, { id: mintId('rt_') })"), true);
+  assert.equal(source.includes("duplicateRoutine(draft,"), false);
+  const foot = source.indexOf('className="gym-editor-duplicate"');
+  assert.notEqual(foot, -1);
+  assert.equal(source.lastIndexOf('{!fresh && (', foot) > source.lastIndexOf('<RoutineHistory', foot), true);
+});
+
+// THE FLAG ON A ROUTINE ROW IS A WORD, NOT A COUNT. The routines read carries one pending head — the
+// newest — over what may be several (one pending per routine, door and connection), so a number on
+// the row is a number the wire never sent.
+test('the routine row’s proposal flag counts nothing', () => {
+  const source = spoken(read('Proposals.jsx'));
+  const flag = source.slice(source.indexOf('export function ProposalFlag'), source.indexOf('export function ProposalDiff'));
+  assert.equal(flag.includes('proposal pending'), true);
+  assert.equal(/\d proposal/.test(flag), false);
+});
+
 // A ROUTINE MAY NAME ONE LIFT TWICE — the heavy line and the back-off line — which is the case
 // `(routine_id, position)` exists to make representable. Two rows sharing a React key is a list
 // React reconciles however it likes: the rows can swap or one can be dropped. The editor is the
@@ -501,8 +524,9 @@ test('a deleted set is withheld for the window, never sent and re-posted', () =>
   assert.equal(source.includes('setTimeout(() => sendDelete(set.id), UNDO_MS)'), true);
   // The one call that could resurrect a set. It is not on this screen and must never be.
   assert.equal(source.includes('appendSet'), false);
-  // And leaving the room sends what is still held rather than dropping it on the floor.
-  assert.equal(source.includes('useEffect(() => () => { withheld.current.forEach((held) => sendDelete(held.set.id)); }, [sendDelete]);'), true);
+  // And leaving the room sends what is still held rather than dropping it on the floor — and says
+  // so with no Undo on it, since the delete has gone (Log.test.js drives it).
+  assert.equal(source.includes('withheld.current.forEach((held) => {\n      sendDelete(held.set.id);\n      say(deletedLine(held.set));\n    });'), true);
 });
 
 // A RE-READ IS THE NEWER ANSWER AND THIS SCREEN MAY NOT PAINT OVER IT. The session is read again for

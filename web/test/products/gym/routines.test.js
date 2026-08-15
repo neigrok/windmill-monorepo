@@ -92,6 +92,13 @@ test('routineFromSession — modal reps, ties to the earliest, and the heaviest 
 
 // What the store numbered is the store's to number, and what it remembers is its to remember: a
 // write carries the order and nothing that repeats it.
+// The save names the revision the editor read, and only when it read one: a fresh create names none.
+test('routineWrite — carries the read revision only when the caller names it', () => {
+  const stored = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 4, entries: [] };
+  assert.deepEqual(routineWrite(stored, 4), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [], revision: 4 });
+  assert.deepEqual(routineWrite(stored), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [] });
+});
+
 test('routineWrite — entry positions and lastTrainedAt do not travel back', () => {
   const stored = {
     id: 'rt_push_a',
@@ -253,6 +260,15 @@ test('withEntryChanged — one line changes, the counts stay inside what a movem
   assert.equal(withEntryChanged(entries, 0, { targetSets: 99 })[0].targetSets, ENTRY_SETS_MAX);
   assert.equal(withEntryChanged(entries, 0, { targetReps: 0 })[0].targetReps, ENTRY_REPS_MIN);
   assert.equal(withEntryChanged(entries, 0, { targetReps: 500 })[0].targetReps, ENTRY_REPS_MAX);
+  // THE CLAMP IS THE STORE'S RULE AND NOT A TIGHTER ONE: a line an agent wrote at the wire's own
+  // ceiling (domain/Routine.cpp: 20 sets, 100 reps) passes through the sheet untouched — a clamp
+  // of 12 × 99 here silently rewrote `15 × 100` on the first tap and PUT the rewrite back.
+  assert.deepEqual(withEntryChanged(entries, 0, { targetSets: 15, targetReps: 100 })[0], {
+    exerciseId: 'bench-press', targetSets: 15, targetReps: 100, targetWeightKg: 82.5,
+  });
+  assert.equal(withEntryChanged(entries, 0, { targetSets: 20 })[0].targetSets, 20);
+  assert.equal(withEntryChanged(entries, 0, { targetSets: 21 })[0].targetSets, 20);
+  assert.equal(withEntryChanged(entries, 0, { targetReps: 101 })[0].targetReps, 100);
   assert.equal(withEntryChanged(entries, 1, { targetWeightKg: 60 })[1].targetWeightKg, 60);
   assert.equal(withEntryChanged(entries, 0, { targetWeightKg: null })[0].targetWeightKg, null);
   // Cleared back to "whatever you did last time" is an OMISSION on the wire, never a zero.
@@ -280,8 +296,10 @@ test('routineFromSession — a session too big to ask for is clamped to what a r
   assert.deepEqual(composed.entries, [
     { exerciseId: 'chin-up', targetSets: ENTRY_SETS_MAX, targetReps: 8, targetWeightKg: 0 },
   ]);
-  // The same ceiling the editor's own ± stops at, so one rule bounds every path to the store.
-  assert.equal(ENTRY_SETS_MAX, 12);
+  // The same ceiling the editor's own ± stops at, and it is the STORE'S ceiling (domain/Routine.cpp),
+  // so one rule bounds every path to the store and none of them is tighter than the store.
+  assert.equal(ENTRY_SETS_MAX, 20);
+  assert.equal(ENTRY_REPS_MAX, 100);
 
   const marathon = routineFromSession({ id: 'rt_2', name: 'Thursday', sets: [set('chin-up', 0, 400, 1), set('chin-up', 0, 400, 2)] });
   assert.equal(marathon.entries[0].targetReps, ENTRY_REPS_MAX);

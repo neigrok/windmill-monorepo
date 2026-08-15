@@ -38,7 +38,29 @@ import {
 import { CoachShare } from './share/CoachShare.jsx';
 import { useGymRead } from './useGymRead.js';
 
-export function LogList({ log }) {
+// THE LOG THAT DID NOT OPEN, said by its reason (useTrainingLog `failure`), because the three reasons
+// have three repairs and one sentence blamed the signal for all of them: a request that never got an
+// answer waits for signal (and Retry is there anyway); a store that answered and failed is asked
+// again NOW, since the 'online' event this screen once relied on never fires for a 5xx; and a 401 is
+// the sign-in door, which no amount of signal opens. Drawn by Today and by the log list alike.
+export function LogNotOpen({ log, onSignIn }) {
+  if (log.failure === 'signed-out') {
+    return (
+      <p className="gym-read-failed">
+        Your sign-in lapsed.
+        <button type="button" className="gym-retry" onClick={onSignIn}>Sign in</button>
+      </p>
+    );
+  }
+  return (
+    <p className="gym-read-failed">
+      {log.failure === 'signal' ? 'The log didn’t load. Open it again when you have signal.' : 'The log didn’t answer.'}
+      <button type="button" className="gym-retry" onClick={log.retryBoot}>Retry</button>
+    </p>
+  );
+}
+
+export function LogList({ log, onSignIn }) {
   const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
   // The fold is over the page in hand, and it is told whether that page is the whole log: the
@@ -73,7 +95,7 @@ export function LogList({ log }) {
         </section>
       )}
       {phase === 'loading' && <p className="gym-quiet">Opening the log…</p>}
-      {phase === 'failed' && <p className="gym-read-failed">The log didn’t load. Open it again when you have signal.</p>}
+      {phase === 'failed' && <LogNotOpen log={log} onSignIn={onSignIn} />}
       {phase !== 'loading' && phase !== 'failed' && summaries.length === 0 && (
         <>
           <p className="gym-quiet">No sessions yet.</p>
@@ -226,7 +248,18 @@ export function SessionDetail({ id, log }) {
   // merely ran out early. A tab closed inside the window sends nothing at all and the set is still
   // in the log — of the two ways this can end wrong, a set that survives is the one a lifter can
   // repair, and a set silently destroyed is the one nobody can.
-  useEffect(() => () => { withheld.current.forEach((held) => sendDelete(held.set.id)); }, [sendDelete]);
+  //
+  // AND THE UNDO GOES WITH THE WINDOW. The toast is the hook's and outlives this screen, so the
+  // offer it still carried onto the next room was an Undo that restored nothing and said nothing:
+  // the delete had already been sent. The sentence is said again here with no move on it — the set
+  // is out of the log, which is now simply true — and a refusal, if the DELETE is refused, speaks
+  // over it as it always did.
+  useEffect(() => () => {
+    withheld.current.forEach((held) => {
+      sendDelete(held.set.id);
+      say(deletedLine(held.set));
+    });
+  }, [sendDelete, say]);
 
   const withholdDelete = (set) => {
     setFixing(null);

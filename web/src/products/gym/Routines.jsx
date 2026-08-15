@@ -196,7 +196,10 @@ export function RoutineEditor({ id, log }) {
   const commit = async () => {
     if (missing || saving) return false;
     setSaving(true);
-    const write = routineWrite({ ...draft, name: draft.name.trim() });
+    // The save names the revision it read, so a day that moved under this editor — a proposal
+    // applied on the phone, another tab's save — is refused rather than overwritten whole; the
+    // repair is a re-read, and the draft stays on screen for the lifter to compare.
+    const write = routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision);
     try {
       if (fresh) await gymApi.createRoutine(write);
       else await gymApi.replaceRoutine(draft.id, write);
@@ -204,6 +207,12 @@ export function RoutineEditor({ id, log }) {
       return true;
     } catch (error) {
       setSaving(false);
+      if (error?.code === 'routine-stale') {
+        log.say('That routine changed since you opened it — here is what it says now. Your edits were not saved.');
+        setEdits(null);
+        view.retry();
+        return false;
+      }
       log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
       return false;
     }
@@ -264,28 +273,31 @@ export function RoutineEditor({ id, log }) {
           a routine nobody has saved has nothing to draw. */}
       <RoutineHistory routine={view.data} />
 
-      <div className="gym-editor-foot">
-        <button
-          type="button"
-          // Inert on exactly what Save is inert on: a copy of a draft the store would refuse is a
-          // refusal the screen can already see coming, and the missing line above says which half.
-          className={missing ? 'gym-editor-duplicate is-inert' : 'gym-editor-duplicate'}
-          onClick={async () => {
-            // The copy is of what is ON SCREEN, which leaves the original exactly as the store has
-            // it — so this is the one action here that never needs the draft committed first.
-            if (missing) return;
-            try {
-              const copy = duplicateRoutine(draft, { id: mintId('rt_') });
-              await gymApi.createRoutine(copy);
-              window.location.hash = routineHref(copy.id);
-            } catch (error) {
-              log.say(`That copy wasn’t made — ${failureReason(error)}.`);
-            }
-          }}
-        >
-          Duplicate
-        </button>
-      </div>
+      {/* DUPLICATE COPIES THE ROUTINE AS THE STORE HOLDS IT, never the draft on screen: the hash
+          moves to the copy the moment it lands, and a copy of unsaved edits would carry them off
+          this editor and leave the original without them — a lifter reading "X copy" beside "X"
+          would find the two disagree in exactly the lines they had just typed. So the copy is of
+          `view.data`, which also means it can never be a document the store would refuse. A routine
+          that has not been saved yet has no stored document to copy, and offers no button. */}
+      {!fresh && (
+        <div className="gym-editor-foot">
+          <button
+            type="button"
+            className="gym-editor-duplicate"
+            onClick={async () => {
+              try {
+                const copy = duplicateRoutine(view.data, { id: mintId('rt_') });
+                await gymApi.createRoutine(copy);
+                window.location.hash = routineHref(copy.id);
+              } catch (error) {
+                log.say(`That copy wasn’t made — ${failureReason(error)}.`);
+              }
+            }}
+          >
+            Duplicate
+          </button>
+        </div>
+      )}
 
       {target != null && (
         <TargetSheet

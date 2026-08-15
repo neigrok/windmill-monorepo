@@ -231,12 +231,20 @@ test('a question is measured in the bytes the wire counts, not in characters', (
 // A DEPLOYMENT WITH NO MODEL NEVER MOUNTS THE ROUTE, so its absence is the framework's own bare 404
 // and there is nothing here to configure. The room retires: asking again is not the repair, and a
 // composer that still took typing would be a lie.
-test('askFailure — no Ask on this deployment retires the room, 404 and 503 alike', () => {
-  for (const status of [404, 503]) {
-    const failure = askFailure({ status, code: '' });
+test('askFailure — no Ask on this deployment retires the room: the bare 404, or the server saying so', () => {
+  for (const error of [{ status: 404, code: '' }, { status: 503, code: 'ask-not-configured' }]) {
+    const failure = askFailure(error);
     assert.equal(failure.note, ASK_ABSENT_NOTE);
     assert.equal(failure.gone, true);
   }
+});
+
+// A 503 with any other face is a proxy or a restart, and asking again is the repair — it must not
+// retire the room for the rest of the session.
+test('askFailure — a bare 503 is a no-answer, not an absent Ask', () => {
+  const failure = askFailure({ status: 503, code: '' });
+  assert.equal(failure.note, NO_ANSWER_NOTE);
+  assert.equal(failure.gone, undefined);
 });
 
 test('askFailure — an account that went sends the lifter back to the door', () => {

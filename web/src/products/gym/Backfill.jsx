@@ -3,9 +3,10 @@
 // is the LINE (weight × reps × how many), because "3 × 8 at 82.5" is one fact a lifter remembers
 // rather than three rows to fill in, and every value is typed on the training log's own keypad.
 //
-// The two refusals are not the same shape and must not read as one. Times that CROSS a session
+// The refusals are not the same shape and must not read as one. Times that CROSS a session
 // already in the log are a fact about the log, so the panel offers to open that session — one visit
-// is one session, and the missing sets belong in it. A session already running is not a fault at
+// is one session, and the missing sets belong in it. Times that run PAST NOW are a fact about the
+// form, so that panel only asks for the times again. A session already running is not a fault at
 // all, so its panel carries the live dot on a neutral surface and never alarm ink; it is checked
 // here before the request, and the wire still carries `joinOpenSession: false` so the store's
 // refusal is the rule rather than this client's promise (backfill.js).
@@ -21,9 +22,9 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import {
-  dayChips, DURATION_CHIPS, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL, overlapWith,
-  saveLabel, saveNote, saveReport, startedAtOf, withLineAdded, withLineChanged, withLineRemoved,
-  withMovementAdded,
+  dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL,
+  overlapWith, saveLabel, saveNote, saveReport, startedAtOf, withLineAdded, withLineChanged,
+  withLineRemoved, withMovementAdded,
 } from './backfill.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { fmtKg, nameOfMovement, sessionHref } from './log.js';
@@ -37,17 +38,19 @@ const DEFAULT_MINUTES = 60;
 export function Backfill({ log }) {
   const [form, setForm] = useState({ days: DEFAULT_DAYS, hour: 17, minute: 30, minutes: DEFAULT_MINUTES, blocks: [] });
   const [overlap, setOverlap] = useState(null);
+  const [ahead, setAhead] = useState(null);
   const [refused, setRefused] = useState(false);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
   const [typing, setTyping] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Any edit to the draft retires both refusals: each of them is an answer about times and sets that
+  // Any edit to the draft retires every refusal: each of them is an answer about times and sets that
   // have just changed, and a panel left standing would be answering a question nobody asked again.
   const edit = (change) => {
     setForm((held) => ({ ...held, ...change }));
     setOverlap(null);
+    setAhead(null);
     setRefused(false);
   };
   const blocks = (change) => edit({ blocks: change(form.blocks) });
@@ -65,6 +68,13 @@ export function Backfill({ log }) {
     const crossed = overlapWith({ startedAt, durationMs }, log.summaries);
     if (crossed) {
       setOverlap(crossed);
+      return;
+    }
+    // A past workout ends in the past: the wire checks the start against the clock and nothing
+    // checks the end, so a session that would close in forty minutes is refused here (backfill.js).
+    const runsPastNow = endsAhead({ startedAt, durationMs });
+    if (runsPastNow) {
+      setAhead(runsPastNow);
       return;
     }
     setSaving(true);
@@ -214,6 +224,16 @@ export function Backfill({ log }) {
           <div className="gym-finish-foot">
             <a className="gym-overlap-open" href={sessionHref(overlap.session.id)}>Open that session ›</a>
             <button type="button" className="gym-overlap-fix" onClick={() => setOverlap(null)}>Change the times</button>
+          </div>
+        </section>
+      )}
+
+      {ahead && (
+        <section className="gym-overlap">
+          <p className="gym-overlap-title">{ahead.title}</p>
+          <p className="gym-overlap-body">{ahead.body}</p>
+          <div className="gym-finish-foot">
+            <button type="button" className="gym-overlap-fix" onClick={() => setAhead(null)}>Change the times</button>
           </div>
         </section>
       )}
