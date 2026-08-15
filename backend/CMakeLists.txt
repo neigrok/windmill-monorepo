@@ -179,7 +179,10 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp
   test/products/gym/domain/ReadReceiptTest.cpp
-  test/products/gym/application/LogServiceTest.cpp)
+  test/products/gym/application/TrainingServiceTest.cpp
+  test/products/gym/application/CatalogServiceTest.cpp
+  test/products/gym/application/ProgramServiceTest.cpp
+  test/products/gym/application/ThreadServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
 enable_testing()
