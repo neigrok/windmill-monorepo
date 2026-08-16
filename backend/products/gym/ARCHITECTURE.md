@@ -1049,8 +1049,9 @@ bool canFinishAt(const Session&, std::uint64_t finishedAtMs);
 ```
 
 It needs the stored session, so the wire cannot enforce it alone — only the row knows when the
-session began. And it has to be right the first time: `close` is `WHERE finished_at IS NULL`,
-first-writer-wins by design, so the first instant that lands is the session's end **forever**.
+session began. And it has to be right the first time: between finishes `close` is
+first-writer-wins by design, so the first finish that lands is the session's end **forever** — only
+a STALE close yields, to the lifter's finish, under the fourth rule below.
 
 The third rule (2026-08-16) is about the one instant a client names for a session that does not
 exist yet, and it closes a trap the first two made together:
@@ -1093,8 +1094,10 @@ client's queue treats that 409 as terminal — lost lifts. So `close()` records 
 (§2.2), and `insertSet` — under the same session lock, in the same transaction — lets a set through
 the finished boundary exactly when `lateSetLands` says it continues a stale close, moving
 `finished_at` forward to it. An explicit finish stays terminal — and the lifter's own finish landing
-on a stale close UPGRADES it (the later instant, the word becomes finish), so their word ends what
-the guess only paused; a row closed before the column existed reads as a finish. The phones still drain owed appends before any call that settles
+on a stale close UPGRADES it (`finishAfterStaleClose`: the word becomes finish; the instant moves to
+the finish when it sits within four hours of the last activity, and stays at that activity when the
+tap came later — a tap hours after the bar is not five hours under it), so their word ends what the
+guess only paused; a row closed before the column existed reads as a finish. The phones still drain owed appends before any call that settles
 (§11.7) — that stops the close-and-extend churn — but the loss itself is closed at the root, for
 every client.
 A client whose clock was unset sends `0`, the session ends in 1970, `finishedAt: 0` is falsy in

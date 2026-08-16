@@ -773,6 +773,17 @@ test('the empty routines list offers to build one, and still starts nothing', ()
   }
 });
 
+// The editor's save names the revision it read; a day that moved since answers 409 routine-stale,
+// and the editor drops the draft, re-reads and says so — a second Save landing the edits over the
+// moved day is exactly what the refusal exists to prevent.
+test('the routine editor names the revision it read and re-reads on routine-stale', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes("routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision)"), true);
+  assert.equal(source.includes("if (error?.code === 'routine-stale') {"), true);
+  assert.equal(source.includes("log.say('That routine changed since you opened it — here is what it says now. Your edits were not saved.');"), true);
+  assert.equal(source.includes('setEdits(null);\n        view.retry();'), true);
+});
+
 // ── Proposals: the agent proposes, and the tap is the only thing that applies ────────────────────
 
 // A walk of every gym source file UNDER THE APP — `marketing/` is excluded, the same way the decline

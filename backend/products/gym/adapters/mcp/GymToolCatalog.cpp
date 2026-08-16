@@ -314,8 +314,11 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["sessionId"] = sessionHandle();
     p["finishedAt"] = instant("When the workout ended, epoch ms — at or after it started.");
     tools.push_back(tool("finish_session", Access::write,
-        "Close a workout. The first close is permanent, so a workout already finished (by a tap or "
-        "by the four-hour rule) answers with the end it already has rather than being moved.",
+        "Close a workout. A finish is permanent: a workout already finished by a tap answers with "
+        "the end it already has. A workout the FOUR-HOUR RULE closed (at its last set, because "
+        "nothing more arrived) still takes this finish as the lifter's word: within four hours of "
+        "that last set the end moves to it; later than that the end stays at the last set and only "
+        "the word changes — a tap hours after the bar is not five hours under it.",
         p, {"sessionId", "finishedAt"}));
   }
   {

@@ -256,6 +256,12 @@ std::optional<ClosedBy> closedByFromStored(std::string_view text) {
   return std::nullopt;
 }
 
+std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t finishedAtMs) {
+  const std::uint64_t lastActivityMs = staleClosed.finishedAtMs.value_or(staleClosed.startedAtMs);
+  if (finishedAtMs > lastActivityMs + kAutoCloseMs) return lastActivityMs;
+  return std::max(lastActivityMs, finishedAtMs);
+}
+
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs) {
   if (!session.finishedAtMs || session.closedBy != ClosedBy::stale) return false;
   return completedAtMs <= *session.finishedAtMs + kAutoCloseMs;

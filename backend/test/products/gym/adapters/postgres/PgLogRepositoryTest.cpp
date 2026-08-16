@@ -235,6 +235,16 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   CHECK(extended->closedBy == std::optional<ClosedBy>(ClosedBy::stale));
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());   // extended, not reopened
 
+  // The lifter's finish onto the stale close: within the window it moves the end and the word;
+  // hours later only the word.
+  repo.close(SessionId{"ses_pg000001"}, t1 + 700'000, ClosedBy::finish);
+  std::optional<Session> upgraded = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  CHECK_EQ(upgraded->finishedAtMs, std::optional<std::uint64_t>(t1 + 700'000));
+  CHECK(upgraded->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
+  repo.close(SessionId{"ses_pg000001"}, t1 + 900'000, ClosedBy::finish);            // a finish never moves again
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"})->finishedAtMs,
+           std::optional<std::uint64_t>(t1 + 700'000));
+
   repo.insertSession(sessionAt("ses_pg000002", t1 + 900'000));
   repo.insertSet(benchSet("set_pg000004", 82.5, t1 + 901'000, "ses_pg000002"));
   repo.close(SessionId{"ses_pg000002"}, t1 + 902'000, ClosedBy::finish);

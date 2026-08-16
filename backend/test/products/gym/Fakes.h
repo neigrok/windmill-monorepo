@@ -289,7 +289,8 @@ public:
 
   void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
     // The SQL's two doors: an open row takes the instant and the word; a stale-closed row takes a
-    // FINISH as an upgrade (the later instant, the word becomes finish); nothing lands over a finish.
+    // FINISH as an upgrade (the instant finishAfterStaleClose says, the word becomes finish); nothing
+    // lands over a finish.
     for (Session& session : db.sessions) {
       if (!(session.id == id)) continue;
       if (!session.finishedAtMs) {
@@ -298,7 +299,7 @@ public:
         continue;
       }
       if (session.closedBy == ClosedBy::stale && closedBy == ClosedBy::finish) {
-        session.finishedAtMs = std::max(*session.finishedAtMs, finishedAtMs);
+        session.finishedAtMs = finishAfterStaleClose(session, finishedAtMs);
         session.closedBy = ClosedBy::finish;
       }
     }

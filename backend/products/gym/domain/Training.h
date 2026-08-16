@@ -298,6 +298,13 @@ bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
 // finish is never reopened: that instant was the lifter's word, not the log's estimate.
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs);
 
+// The instant the lifter's finish lands at when it arrives on a STALE close. Their word ends the
+// workout — but their instant is believable only inside the same window a late set is: within four
+// hours of the last landed activity, the finish moves the end forward to it (or keeps the later
+// activity); past that, the workout ended at its last activity and the tap hours later is the
+// lifter tidying up, not five hours under the bar. Only the word changes then.
+std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t finishedAtMs);
+
 // The third pure session rule, and the only one about a reader who is not the owner. A coach share
 // is a capability with an END — thirty days, which is longer than any conversation about one
 // workout and shorter than a lifter's memory of having sent the link. A share that never expired

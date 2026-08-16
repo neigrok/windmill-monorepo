@@ -350,6 +350,20 @@ TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
   CHECK_FALSE(lateSetLands(openSession(t), t + 1));                   // open: nothing to continue
 }
 
+// A finish onto a stale close: within four hours of the last activity the lifter's instant is
+// believed (never earlier than the activity that stands); later than that the workout ended at its
+// last activity and only the word changes.
+TEST(finish_after_a_stale_close_is_believed_only_inside_the_window) {
+  const std::uint64_t t = 1'700'000'000'000;
+  Session stale = openSession(t);
+  stale.finishedAtMs = t + 600'000;   // closed at its last set, ten minutes in
+  stale.closedBy = ClosedBy::stale;
+  CHECK_EQ(finishAfterStaleClose(stale, t + 3'600'000), t + 3'600'000);              // an hour later: believed
+  CHECK_EQ(finishAfterStaleClose(stale, t + 600'000 + kAutoCloseMs), t + 600'000 + kAutoCloseMs);
+  CHECK_EQ(finishAfterStaleClose(stale, t + 600'000 + kAutoCloseMs + 1), t + 600'000); // five hours on: the last set stands
+  CHECK_EQ(finishAfterStaleClose(stale, t + 60'000), t + 600'000);                    // earlier than the set that stands
+}
+
 // ---- corrected: the fix, and what a fix may not reach ---------------------------------------
 
 TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {

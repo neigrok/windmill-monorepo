@@ -152,9 +152,10 @@ void TrainingService::deleteSet(const UserId& user, const SessionId& session, co
   log_.deleteSet(user, session, id);
 }
 
-// The first write to finished_at is permanent (close is first-writer-wins), so the instant is
-// checked against the stored session before it can land — a workout that ends before it began, or
-// at an instant the store cannot hold, is refused rather than frozen into the log forever.
+// A finish is permanent once it is the lifter's word (close is first-writer-wins between finishes,
+// and only a stale close yields to one), so the instant is checked against the stored session before
+// it can land — a workout that ends before it began, or at an instant the store cannot hold, is
+// refused rather than frozen into the log forever.
 //
 // The read-back is answered like the load above it, and for the same reason every write in this file
 // does: a session discarded between the load and the close leaves nothing to hand back, and `none`

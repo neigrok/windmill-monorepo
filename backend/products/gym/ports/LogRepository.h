@@ -274,8 +274,10 @@ struct LogRepository {
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
   // Lands on an open session, and it records WHO closed: the lifter's finish is final; the log's
   // stale guess is revisable — by a late set (lateSetLands), and by the lifter's own finish, which
-  // UPGRADES a stale close (finished_at moves to the later of the two, closed_by becomes finish) so
-  // that their word ends the workout the guess only paused. A finish never moves once it is one:
+  // UPGRADES a stale close (closed_by becomes finish; finished_at moves as the domain's
+  // finishAfterStaleClose says — to the finish when it sits within four hours of the last activity,
+  // otherwise it stays at that activity) so their word ends the workout the guess only paused. A
+  // finish never moves once it is one:
   // a replayed finish, or a finish racing another, keeps whichever landed first.
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
   // Assigns the number and returns the stored row; anything that stops the write comes back as a

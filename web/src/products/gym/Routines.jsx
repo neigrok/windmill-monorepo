@@ -197,8 +197,10 @@ export function RoutineEditor({ id, log }) {
     if (missing || saving) return false;
     setSaving(true);
     // The save names the revision it read, so a day that moved under this editor — a proposal
-    // applied on the phone, another tab's save — is refused rather than overwritten whole; the
-    // repair is a re-read, and the draft stays on screen for the lifter to compare.
+    // applied on the phone, another tab's save — is refused rather than overwritten whole. The
+    // repair is a re-read: the draft is dropped and the routine drawn as it now stands, and the
+    // toast says the edits were not saved — landing them over the moved day is exactly what the
+    // refusal exists to prevent, and a second Save would do it.
     const write = routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision);
     try {
       if (fresh) await gymApi.createRoutine(write);

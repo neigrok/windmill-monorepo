@@ -278,6 +278,16 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   FinishOutcome early = h.training.finish(uid(), sid("ses_00000002"), t1 + 60'000);
   CHECK_EQ(early.session->finishedAtMs, std::optional<std::uint64_t>(t1 + 600'000));
   CHECK(early.session->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
+  // And a tap HOURS after the last set — an agent asked to "finish my workout" at night, a lifter
+  // tidying up — keeps the end at the last set: only the word changes.
+  h.startAt(h.clock.now, "ses_00000003");
+  h.training.append(uid(), sid("ses_00000003"), h.bench("set_00000004", 80.0, h.clock.now + 600'000));
+  const std::uint64_t t2 = h.clock.now;
+  h.clock.now = t2 + 5 * 3'600'000;
+  h.training.detail(uid(), sid("ses_00000003"));
+  FinishOutcome late = h.training.finish(uid(), sid("ses_00000003"), h.clock.now);
+  CHECK_EQ(late.session->finishedAtMs, std::optional<std::uint64_t>(t2 + 600'000));
+  CHECK(late.session->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
 }
 
 TEST(append_after_the_lifters_own_finish_never_lands_however_close) {

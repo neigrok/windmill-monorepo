@@ -188,14 +188,17 @@ void PgLogRepository::insertSession(const Session& incoming) {
 void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) {
   // Two doors in one statement. An OPEN row takes the instant and the word, first-writer-wins: a
   // finish replay, or a finish racing the lazy auto-close, keeps whichever landed first. A row the
-  // log closed as STALE takes the lifter's finish as an upgrade — the later of the two instants,
-  // and the word becomes finish — so their word ends what the guess only paused; a stale close
-  // never lands over a finish, and nothing lands over a finish at all.
+  // log closed as STALE takes the lifter's finish as an upgrade — the word becomes finish, and the
+  // instant is the domain's finishAfterStaleClose, spelled here in SQL: within four hours of the
+  // last activity the finish moves the end to it, past that the workout ended at its last activity
+  // and only the word changes. A stale close never lands over a finish; nothing lands over a finish.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
       "UPDATE gym_sessions "
       "SET finished_at = CASE WHEN finished_at IS NULL THEN to_timestamp($2::bigint / 1000.0) "
+      "                       WHEN to_timestamp($2::bigint / 1000.0) > finished_at + interval '4 hours' "
+      "                            THEN finished_at "
       "                       ELSE greatest(finished_at, to_timestamp($2::bigint / 1000.0)) END, "
       "    closed_by = $3 "
       "WHERE id = $1 AND (finished_at IS NULL OR (closed_by = 'stale' AND $3 = 'finish'))",
