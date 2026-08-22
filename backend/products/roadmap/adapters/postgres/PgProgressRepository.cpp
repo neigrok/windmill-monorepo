@@ -18,20 +18,19 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT node_id, status, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "SELECT node_id, status, hlc, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM node_progress WHERE tree_id = $1 AND user_id = $2",
       tree.str(), user.str());
 
   Progress progress;
   for (const auto& row : rows) {
-    NodeId node{row["node_id"].as<std::string>()};
-    std::string status = row["status"].as<std::string>();
-    if (status == "complete") progress.completed.insert(node);
-    else if (status == "active") progress.inProgress.insert(node);
-    else if (status == "none") progress.cleared.insert(node);
-    // The server's own clock, not the marking device's: `stamp_ms` beside it is the client
-    // HLC, which orders writes but cannot be asserted back to a reader as a time.
-    progress.markedAt.emplace(node, static_cast<std::uint64_t>(row["updated_ms"].as<long long>()));
+    ProgressMark mark;
+    mark.status = parseProgressStatus(row["status"].as<std::string>()).value_or(ProgressStatus::none);
+    mark.at = parseHlc(row["hlc"].as<std::string>());  // the stamp that won this register
+    // The server's own clock, not the marking device's: the HLC beside it orders writes but
+    // cannot be asserted back to a reader as a time (GRAPH_SYNC_DESIGN.md §12).
+    mark.markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
+    progress.record(NodeId{row["node_id"].as<std::string>()}, mark);
   }
   return progress;
 }
@@ -58,7 +57,7 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
 }
 
 void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                                     ProgressStatus status, const Hlc& at) {
+                                     ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
@@ -67,12 +66,13 @@ void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, con
   // takes effect when the incoming stamp strictly beats the stored one.
   txn.exec_params(
       "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter, updated_at) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, now()) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8 / 1000.0)) "
       "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, hlc = EXCLUDED.hlc, "
-      "stamp_ms = EXCLUDED.stamp_ms, stamp_counter = EXCLUDED.stamp_counter, updated_at = now() "
+      "stamp_ms = EXCLUDED.stamp_ms, stamp_counter = EXCLUDED.stamp_counter, updated_at = EXCLUDED.updated_at "
       "WHERE (EXCLUDED.stamp_ms, EXCLUDED.stamp_counter) > (node_progress.stamp_ms, node_progress.stamp_counter)",
       tree.str(), user.str(), node.str(), progressStatusName(status), hlcText(at),
-      static_cast<long long>(at.physicalMs), static_cast<long long>(at.counter));
+      static_cast<long long>(at.physicalMs), static_cast<long long>(at.counter),
+      static_cast<long long>(receivedAtMs));
   txn.commit();
 }
 

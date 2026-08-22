@@ -126,20 +126,23 @@ Json::Value toJson(const GalleryEntry& entry) {
   return row;
 }
 
+// The overlay as a lattice frame: one stamped register per node, which is everything a
+// replica needs to join it (GRAPH_SYNC_DESIGN.md §12). The three id sets are NOT sent — a
+// reader derives them from the statuses, and shipping both would be two spellings of one
+// fact on the wire. `none` rides along like any other value: it is a cleared register, and
+// the client needs it to converge, not a tombstone list beside the data.
 Json::Value toJson(const Progress& progress) {
+  Json::Value marks(Json::arrayValue);
+  for (const auto& [id, mark] : progress.marks) {
+    Json::Value row(Json::objectValue);
+    row["node"] = id.str();
+    row["status"] = progressStatusName(mark.status);
+    row["at"] = toString(mark.at);
+    row["markedAt"] = Json::UInt64{mark.markedAt};
+    marks.append(row);
+  }
   Json::Value root(Json::objectValue);
-  Json::Value completed(Json::arrayValue);
-  for (const NodeId& id : progress.completed) completed.append(id.str());
-  Json::Value inProgress(Json::arrayValue);
-  for (const NodeId& id : progress.inProgress) inProgress.append(id.str());
-  Json::Value cleared(Json::arrayValue);
-  for (const NodeId& id : progress.cleared) cleared.append(id.str());
-  Json::Value markedAt(Json::objectValue);
-  for (const auto& [id, at] : progress.markedAt) markedAt[id.str()] = Json::UInt64{at};
-  root["completed"] = completed;
-  root["inProgress"] = inProgress;
-  root["cleared"] = cleared;
-  root["markedAt"] = markedAt;  // node → epoch ms the server recorded the mark; the only cross-device instant
+  root["marks"] = marks;
   return root;
 }
 

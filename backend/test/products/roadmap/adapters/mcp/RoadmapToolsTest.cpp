@@ -126,12 +126,15 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
 
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue)))["completed"].size(), 2u);
 
-  // Each set_progress echoes to the caller's live web sessions — here three marks (b, a, b).
+  // Each set_progress call echoes ONE frame to the caller's live web sessions carrying that
+  // call's whole batch — here three calls (b, a, b), each a single mark.
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), 3u);
   const FakeBus::ProgressBroadcast& last = h.bus.progressBroadcasts.back();
-  CHECK_EQ(last.node, std::string("b"));
   CHECK_EQ(last.user, h.caller.str());
-  CHECK(last.status == ProgressStatus::complete);
+  REQUIRE_EQ(last.marks.marks.size(), 1u);
+  CHECK_EQ(last.marks.marks.begin()->first, nid("b"));
+  CHECK(last.marks.marks.begin()->second.status == ProgressStatus::complete);
+  CHECK(last.marks.marks.begin()->second.at.isSet());  // the echo carries the stamp the mark won with
 }
 
 TEST(mcp_get_health_needs_a_valid_dag) {

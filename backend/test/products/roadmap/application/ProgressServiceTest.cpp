@@ -17,7 +17,7 @@ TEST(progress_records_complete_but_flags_unmet_prerequisites) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1));
+  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
   CHECK_EQ(outcome.status, ProgressStatus::complete);
   CHECK_FALSE(outcome.prerequisitesMet);
 
@@ -29,8 +29,8 @@ TEST(progress_complete_with_met_prerequisites) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, at(1));
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2));
+  service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, at(1), 1);
+  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2), 2);
   CHECK(outcome.prerequisitesMet);
 }
 
@@ -38,10 +38,10 @@ TEST(progress_none_clears_the_entry) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::active, at(1));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::active, at(1), 1);
   CHECK_EQ(service.progressOf(tid(), uid()).inProgress.count(nid("a")), 1u);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2), 2);
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.inProgress.count(nid("a")), 0u);
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
@@ -51,8 +51,8 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1));
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2));
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(2), 2);
 
   auto entry = repo.byKey.find(FakeProgressRepository::key(tid(), uid(), nid("a")));
   CHECK(entry != repo.byKey.end());  // the clear is a stored LWW value, not a row delete
@@ -72,9 +72,9 @@ TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
   FakeProgressRepository repo;
   ProgressService service(repo);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1));
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(3));
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2));  // stale replay
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(1), 1);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, at(3), 3);
+  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, at(2), 2);  // stale replay
 
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.completed.count(nid("a")), 0u);

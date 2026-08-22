@@ -19,6 +19,21 @@ std::shared_ptr<Collab> g_collab;
 constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
 constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
+// One progress frame's ceiling. A batch is bounded for the same reason every other write on this
+// process is: four handler threads must not be handed an arbitrarily long list to parse, stamp and
+// upsert a row at a time. Well past any real flush — a tree's marks are bounded by its nodes.
+constexpr unsigned kMaxMarksPerFrame = 2000;
+
+// parseHlc THROWS on a stamp whose numbers are not numbers (it reaches std::stoull), and this lane
+// parses text a client wrote. Returning nullopt keeps a malformed stamp a refusable frame instead
+// of an exception unwinding a handler thread.
+std::optional<Hlc> readHlc(const std::string& text) {
+  try {
+    return parseHlc(text);
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+}
 
 // Every reject frame carries a stable `code` beside its `reason`: the code is what a client
 // branches on (an ownership verdict demotes the editor; a session suspicion re-checks the session)
@@ -245,6 +260,22 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     }
   }
   send(conn, frame);
+
+  // Both lanes re-graft on every subscribe, or a reconnect heals only half the replica: a mark
+  // made on another device while this one was offline would otherwise wait for a page reload to
+  // appear. Read OUTSIDE the strand — a room's lock is never held across a database call.
+  //
+  // The gate is `authenticated`, NOT a non-empty user: a guest connection carries a real guest
+  // identity (that is what presence announces as "Guest N"), so an emptiness check would hand an
+  // unauthenticated caller whatever overlay happens to sit under that id. This lane serves one
+  // account its own private marks or it serves nothing.
+  if (!principal.authenticated) return;
+  Progress overlay = progress_.progressOf(TreeId{treeId}, principal.user);
+  if (overlay.marks.empty()) return;
+  Json::Value graft = toJson(overlay);
+  graft["t"] = "progress";
+  graft["treeId"] = treeId;
+  send(conn, graft);
 }
 
 // A client-authored subgraph frame: the sole write path from a browser. The client stamped
@@ -379,49 +410,98 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   send(conn, ack);
 }
 
-// Progress is the private per-user overlay (§6): it rides the same socket but never joins
-// the shared op log. Record it (advisory prerequisite check against the loose graph, never
-// rejected), then echo only to the same user's other sessions — not to collaborators.
-void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
+// Progress is the private per-user lane (GRAPH_SYNC_DESIGN.md §12): it rides the same socket as
+// the shared subgraph and obeys the same laws — the client mints the stamps, the frame is refused
+// whole or applied whole, and the ack is what lets the sender's coverage advance. It joins no op
+// log and is echoed only to the SAME account's other sessions, because publishing it to the tree's
+// collaborators is the one thing this lane must never do.
+//
+// The server no longer mints the stamp. A mark carries the instant the marking replica minted, so
+// a mark made offline is orderable the moment it is made rather than the moment it lands — which
+// is what lets an offline mark converge instead of being reconstructed by a diff. The server's
+// contribution is the receipt instant it records beside each register, the only one of the two
+// clocks a reader may be shown.
+void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId,
+                      const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
-  if (!stillAuthorized(conn)) {
-    // Progress is a private per-account overlay — but a silent drop would lose a lapsed
-    // session's marks invisibly. Echo the mark back in the reject so the client can requeue.
-    Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to track progress");
-    reject["nodeId"] = frame.get("nodeId", "").asString();
-    reject["status"] = frame.get("status", "").asString();
+  const std::string frameId = frame.get("frameId", "").asString();
+  auto refuse = [&](const char* code, const std::string& reason) {
+    Json::Value reject = rejectFrame(treeId, code, reason);
+    reject["frameId"] = frameId;
     send(conn, reject);
-    return;
+  };
+
+  // A lapsed session is told, never silently dropped — but nothing is echoed back for the client
+  // to requeue any more: an unacked frame stays uncovered in its lattice and re-flushes on its own.
+  // The outbox is the lattice (§6), so "the client might lose this" stopped being a way to lose it.
+  if (!stillAuthorized(conn)) return refuse(kSignInRequired, "sign in to track progress");
+
+  const Json::Value& marks = frame["marks"];
+  if (!marks.isArray() || marks.empty()) return refuse(kBadFrame, "this frame carried no marks");
+  // One frame is bounded like every other write on this process: a caller must not be able to hand
+  // four handler threads an arbitrarily long batch to parse, stamp and upsert one row at a time.
+  if (marks.size() > kMaxMarksPerFrame)
+    return refuse(kTreeTooLarge, "a progress frame carries at most " + std::to_string(kMaxMarksPerFrame) + " marks");
+
+  const std::uint64_t nowMs = clock_.nowMs();
+  std::vector<ProgressWrite> writes;
+  writes.reserve(marks.size());
+  for (const Json::Value& mark : marks) {
+    const NodeId node{mark.get("node", "").asString()};
+    const std::optional<ProgressStatus> status = parseProgressStatus(mark.get("status", "").asString());
+    const std::optional<Hlc> at = readHlc(mark.get("at", "").asString());
+    // A mark missing any of the three cannot be merged by anyone. Refusing the whole frame is the
+    // only honest answer: acking it would drop the mark where nobody could see it go, and staying
+    // silent would leave the sender re-flushing an uncoverable frame forever.
+    if (node.empty() || !status || !at || !at->isSet())
+      return refuse(kBadFrame, "a mark needs a node, a status and a stamp");
+    // §3's clamp, on this lane too: a runaway stamp must not own a register for years.
+    if (at->physicalMs > nowMs + kMaxSkewMs) {
+      Json::Value skew(Json::objectValue);
+      skew["t"] = "skew";
+      skew["treeId"] = treeId;
+      skew["frameId"] = frameId;
+      skew["serverNow"] = static_cast<Json::Int64>(nowMs);
+      send(conn, skew);
+      return;
+    }
+    writes.push_back(ProgressWrite{node, *status, {}, *at});
   }
 
-  NodeId node{frame.get("nodeId", "").asString()};
-  std::optional<ProgressStatus> status = parseProgressStatus(frame.get("status", "").asString());
-  if (node.empty() || !status) return;
-
-  std::vector<NodeId> prerequisites;
-  Hlc hlc;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       // An absent or private-denied tree: nothing to record against, and the socket must be no
-      // existence oracle — return silently either way. Decided off the stored row first, so a mark
-      // against a tree the caller cannot read never materializes it. Only an infra failure falls
-      // to the catch.
+      // existence oracle — answer "no such tree" either way, exactly as the shared lane does.
+      // Decided off the stored row first, so a mark against a tree the caller cannot read never
+      // materializes it.
       const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
-      if (!access || !canRead(principal.user, access->owner, access->visibility)) return;
+      if (!access || !canRead(principal.user, access->owner, access->visibility))
+        return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
       TreeRoom* room = registry_.open(TreeId{treeId});
-      if (!room) return;
-      prerequisites = room->prerequisitesOf(node);
-      hlc = room->nextStamp(clock_.nowMs());  // progress shares the tree's clock so its LWW stays comparable
+      if (!room) return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
+      for (ProgressWrite& write : writes) write.prerequisites = room->prerequisitesOf(write.node);
     } catch (const std::exception&) {
       return;  // an infrastructure failure — nothing to record; its detail is not the socket's to carry
     }
   }
 
-  progress_.setStatus(prerequisites, TreeId{treeId}, principal.user, node, *status, hlc);
-  // Echo to this user's own other sessions (their other tabs, a browser watching an agent's
-  // MCP edits) — never to collaborators, since progress is a private per-account overlay.
-  bus_.broadcastProgress(TreeId{treeId}, principal.user, node, *status);
+  progress_.setStatuses(TreeId{treeId}, principal.user, writes, nowMs);
+
+  // The echo carries the registers back exactly as they were recorded — stamps and the server's
+  // receipt instant — in the same frame shape the graft serves, so a replica joins both with one
+  // codec. It reaches the sender too: that is how the marking device learns the receipt instant
+  // for its own mark without asking again, and the join is a no-op since the stamp is its own.
+  Progress recorded;
+  for (const ProgressWrite& write : writes)
+    recorded.record(write.node, ProgressMark{write.status, write.at, nowMs});
+  bus_.broadcastProgress(TreeId{treeId}, principal.user, recorded);
+
+  Json::Value ack(Json::objectValue);
+  ack["t"] = "progressAck";
+  ack["treeId"] = treeId;
+  ack["frameId"] = frameId;
+  send(conn, ack);
 }
 
 }

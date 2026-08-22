@@ -87,15 +87,15 @@ void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgrap
   }
 }
 
-void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
-                                      ProgressStatus status) {
+void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) {
   if (user.empty()) return;  // anonymous progress has no owner to notify
+  if (marks.marks.empty()) return;
 
-  Json::Value frame(Json::objectValue);
+  // One codec, both directions: the echo is the same `{marks:[…]}` frame the graft serves, so a
+  // replica folds a live mark and a whole overlay through the identical join.
+  Json::Value frame = toJson(marks);
   frame["t"] = "progress";
   frame["treeId"] = tree.str();
-  frame["nodeId"] = node.str();
-  frame["status"] = progressStatusName(status);
   const std::string text = dump(frame);
 
   // The same gate as an op broadcast: a mark echoed to this account's other tabs must not reach a

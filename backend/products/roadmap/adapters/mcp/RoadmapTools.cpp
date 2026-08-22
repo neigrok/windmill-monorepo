@@ -456,7 +456,7 @@ std::optional<std::string> applyProgressBatch(
   // as empty arrays — a caller that reads them without checking the return (import) sees [], not null.
   results = Json::Value(Json::arrayValue);
   skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree; the caller decides what to do with them
-  std::vector<ProgressMark> marks;
+  std::vector<ProgressWrite> marks;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
@@ -482,9 +482,14 @@ std::optional<std::string> applyProgressBatch(
     }
   }
 
-  std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks);
+  const std::uint64_t receivedAtMs = clock.nowMs();
+  std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks, receivedAtMs);
+  // One echo for the whole batch — an agent marking a subtree lights the caller's open web
+  // sessions in a single frame instead of one per node.
+  Progress recorded;
+  for (const ProgressWrite& write : marks) recorded.record(write.node, ProgressMark{write.status, write.at, receivedAtMs});
+  bus.broadcastProgress(tree, user, recorded);
   for (std::size_t i = 0; i < marks.size(); ++i) {
-    bus.broadcastProgress(tree, user, marks[i].node, marks[i].status);  // live in the caller's web sessions
     Json::Value row(Json::objectValue);
     row["nodeId"] = marks[i].node.str();
     row["status"] = progressStatusName(outcomes[i].status);
@@ -783,7 +788,7 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
       registry.persist(tree);
     }
     for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()));
+      progress.setStatus({}, tree, actor, node, ProgressStatus::none, room.nextStamp(clock.nowMs()), clock.nowMs());
 
     Json::Value out(Json::objectValue);
     out["prunedEdges"] = prunedEdges;

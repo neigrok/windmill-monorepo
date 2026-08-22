@@ -158,17 +158,36 @@ struct TreeData {
   std::vector<Kind> kinds;
 };
 
-// A user's progress over one tree: the two id sets the client already tracks, plus the
-// cleared tombstones — visible so a client's reconcile can tell "cleared" from "never
-// marked" and never resurrects a clear with a stale local mark. `markedAt` is when the
-// SERVER recorded each mark: the only instant that holds across devices, since a client's
-// own stamps only cover marks it made itself. Empty where the overlay came from somewhere
-// that keeps no times (an authored document's seed statuses, a test).
+// One node's mark as the overlay holds it. `at` is the stamp that won this register — minted
+// by whichever replica made the mark, and the only thing that decides what wins. `markedAt` is
+// when the SERVER recorded it, on the server's own clock, and is the only one of the two that
+// may be shown to a person: an HLC's physicalMs is a writing device's clock, which the skew
+// clamp bounds from above and nothing bounds from below (docs/GRAPH_SYNC_DESIGN.md §12).
+struct ProgressMark {
+  ProgressStatus status = ProgressStatus::none;
+  Hlc at;
+  std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
+};
+
+// A user's private progress over one tree: a last-writer-wins register per node, plus the
+// three id sets every reader actually asks for. `record` is the only way in, so the sets can
+// never drift from the registers they project. `none` is a VALUE here, not a deletion — that
+// is what makes a clear an ordinary write that converges like any other (§12).
 struct Progress {
+  std::map<NodeId, ProgressMark> marks;
   std::set<NodeId> completed;
   std::set<NodeId> inProgress;
   std::set<NodeId> cleared;
-  std::map<NodeId, std::uint64_t> markedAt;  // node → epoch ms the server recorded the mark
+
+  void record(const NodeId& node, const ProgressMark& mark) {
+    marks[node] = mark;
+    completed.erase(node);
+    inProgress.erase(node);
+    cleared.erase(node);
+    if (mark.status == ProgressStatus::complete) completed.insert(node);
+    else if (mark.status == ProgressStatus::active) inProgress.insert(node);
+    else cleared.insert(node);
+  }
 };
 
 }

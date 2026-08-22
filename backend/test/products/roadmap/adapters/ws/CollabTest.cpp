@@ -115,6 +115,31 @@ std::string writeFrame(const std::string& treeId) {
   return dump(f);
 }
 
+// One mark as a client sends it: the node, the status, and the stamp the marking replica minted.
+struct Mark {
+  std::string node;
+  std::string status;
+  std::string at;
+};
+
+// A client-authored progress frame — a batch of stamped registers, the private lane's only write.
+std::string progressFrame(const std::string& treeId, const std::string& frameId, const std::vector<Mark>& marks) {
+  Json::Value f(Json::objectValue);
+  f["t"] = "progress";
+  f["treeId"] = treeId;
+  f["frameId"] = frameId;
+  Json::Value rows(Json::arrayValue);
+  for (const Mark& mark : marks) {
+    Json::Value row(Json::objectValue);
+    row["node"] = mark.node;
+    row["status"] = mark.status;
+    row["at"] = mark.at;
+    rows.append(row);
+  }
+  f["marks"] = rows;
+  return dump(f);
+}
+
 std::string rejectReason(const std::string& text) { return parse(text).get("reason", "").asString(); }
 // The code is the half a client branches on; the reason is prose and may change under it.
 std::string rejectCode(const std::string& text) { return parse(text).get("code", "").asString(); }
@@ -128,6 +153,14 @@ void broadcastTo(WsPresenceBus& bus, const char* tree) {
 }
 
 std::string frameType(const std::string& text) { return parse(text).get("t", "").asString(); }
+
+// The last frame of a given type this socket was sent — a write answers with an ack AND an echo,
+// so "the last thing sent" is not specific enough to assert on.
+Json::Value lastFrameOfType(const FakeSocket& conn, const std::string& type) {
+  for (auto it = conn.sent.rbegin(); it != conn.sent.rend(); ++it)
+    if (frameType(*it) == type) return parse(*it);
+  return Json::Value(Json::objectValue);
+}
 
 // The actor id carried by the last "peer join" frame a connection received — what a co-viewer,
 // including a total stranger, learns about the person who just arrived.
@@ -345,27 +378,215 @@ TEST(ws_guest_write_is_turned_away_at_auth_before_the_tree_is_looked_up) {
 
 // A guest's progress mark is refused with the same code as a guest's edit — one session
 // suspicion, whichever frame carried it — and the mark rides back so the client can requeue.
-TEST(ws_guest_progress_is_rejected_with_the_sign_in_code_and_the_mark_echoed) {
+TEST(ws_guest_progress_is_rejected_with_the_sign_in_code_and_the_frame_named) {
   Harness h;
   h.seed("t_open", UserId{"owner"}, Visibility::unlisted);
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), conn);
 
-  Json::Value mark(Json::objectValue);
-  mark["t"] = "progress";
-  mark["treeId"] = "t_open";
-  mark["nodeId"] = "root";
-  mark["status"] = "complete";
-  h.collab.onMessage(conn, dump(mark));
+  h.collab.onMessage(conn, progressFrame("t_open", "f1", {{"root", "complete", "500:0:r_a"}}));
 
   REQUIRE_EQ(conn->sent.size(), 1u);
   Json::Value reject = parse(conn->sent[0]);
   CHECK_EQ(reject["t"].asString(), std::string("reject"));
   CHECK_EQ(reject["code"].asString(), std::string("sign-in-required"));
   CHECK_EQ(reject["reason"].asString(), std::string("sign in to track progress"));
-  CHECK_EQ(reject["nodeId"].asString(), std::string("root"));
-  CHECK_EQ(reject["status"].asString(), std::string("complete"));
-  CHECK_FALSE(reject.isMember("frameId"));  // a mark is not a frame: nothing banked is stranded by it
+  // The mark is NOT echoed back for the client to requeue. It does not need to be: an unacked
+  // frame stays uncovered in the sender's lattice and re-flushes on its own (§12), so naming the
+  // frame is the whole answer. Echoing the mark would be a second, lossier outbox beside the one
+  // that already cannot lose it.
+  CHECK_EQ(reject["frameId"].asString(), std::string("f1"));
+  CHECK_FALSE(reject.isMember("nodeId"));
+}
+
+// The lane's happy path: the client's own stamps go in unmodified — the server does not restamp,
+// because a stamp is immutable from the moment it is minted (§3) — and the ack is what tells the
+// sender its coverage may advance.
+TEST(ws_progress_records_the_clients_own_stamps_and_acks_the_frame) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f7",
+                                         {{"root", "complete", "900:0:r_phone"}, {"b", "active", "901:0:r_phone"}}));
+
+  Progress stored = h.progressRepo.load(TreeId{"t_priv"}, owner);
+  REQUIRE_EQ(stored.marks.size(), 2u);
+  CHECK_EQ(stored.marks.at(NodeId{"root"}).at, (Hlc{900, 0, "r_phone"}));
+  CHECK(stored.marks.at(NodeId{"root"}).status == ProgressStatus::complete);
+  CHECK(stored.marks.at(NodeId{"b"}).status == ProgressStatus::active);
+  CHECK_EQ(lastFrameOfType(*conn, "progressAck")["frameId"].asString(), std::string("f7"));
+}
+
+// A whole batch converges as one: the echo carries every register back, stamped, in the same frame
+// shape the graft serves — including the server's receipt instant, which is how the marking device
+// learns when its own mark was recorded without asking again.
+TEST(ws_progress_echoes_the_registers_with_both_clocks) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", "900:0:r_phone"}}));
+
+  Json::Value echo = lastFrameOfType(*conn, "progress");
+  REQUIRE_EQ(echo["marks"].size(), 1u);
+  CHECK_EQ(echo["marks"][0]["node"].asString(), std::string("root"));
+  CHECK_EQ(echo["marks"][0]["at"].asString(), std::string("900:0:r_phone"));  // the client's stamp, unmodified
+  CHECK_EQ(echo["marks"][0]["markedAt"].asUInt64(), h.clock.nowMs());         // the server's own clock
+}
+
+// The private lane must never become a shared one. A collaborator subscribed to the same tree sees
+// the structure frames and none of the owner's marks.
+TEST(ws_progress_never_reaches_another_account_on_the_same_tree) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto stranger = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), stranger);
+  h.collab.onMessage(stranger, subscribeFrame("t_pub"));
+  auto mine = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), mine);
+  h.collab.onMessage(mine, subscribeFrame("t_pub"));
+  stranger->sent.clear();
+
+  h.collab.onMessage(mine, progressFrame("t_pub", "f1", {{"root", "complete", "900:0:r_a"}}));
+
+  for (const std::string& text : stranger->sent) CHECK(frameType(text) != std::string("progress"));
+}
+
+// A mark with no stamp cannot be merged by anybody, so the frame is refused rather than acked —
+// acking would drop it where nobody could watch it go.
+TEST(ws_progress_refuses_a_frame_whose_mark_carries_no_stamp) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", ""}}));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK(h.progressRepo.load(TreeId{"t_priv"}, owner).marks.empty());
+}
+
+// A stamp whose numbers are not numbers reaches std::stoull inside parseHlc, which THROWS. On a
+// handler thread that is not a refusal, it is an unwind — so the lane reads stamps defensively.
+TEST(ws_progress_refuses_a_malformed_stamp_instead_of_throwing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", "not-a-number:0:r_a"}}));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+}
+
+// §3's skew clamp reaches this lane too: a runaway stamp would own its register for years, and the
+// answer is the same non-lossy one — refuse the frame whole and hand back the server's now.
+TEST(ws_progress_clamps_a_stamp_from_the_far_future) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  conn->sent.clear();
+
+  const std::string runaway = std::to_string(h.clock.nowMs() + 6 * 60 * 1000) + ":0:r_a";
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", runaway}}));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  Json::Value skew = parse(conn->sent[0]);
+  CHECK_EQ(skew["t"].asString(), std::string("skew"));
+  CHECK_EQ(skew["frameId"].asString(), std::string("f1"));
+  CHECK_EQ(skew["serverNow"].asUInt64(), h.clock.nowMs());
+  CHECK(h.progressRepo.load(TreeId{"t_priv"}, owner).marks.empty());
+}
+
+// The convergence property the whole lane exists for: an older stamp arriving late loses. This is
+// what a reconnecting replica's re-flush does, and it must not walk a newer mark backwards.
+TEST(ws_progress_is_last_writer_wins_so_a_late_older_mark_loses) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", "900:0:r_desk"}}));
+  h.collab.onMessage(conn, progressFrame("t_priv", "f2", {{"root", "none", "500:0:r_phone"}}));
+
+  Progress stored = h.progressRepo.load(TreeId{"t_priv"}, owner);
+  CHECK(stored.marks.at(NodeId{"root"}).status == ProgressStatus::complete);
+  CHECK_EQ(stored.marks.at(NodeId{"root"}).at, (Hlc{900, 0, "r_desk"}));
+}
+
+// Both lanes re-graft on subscribe. Without this a reconnect heals only the structure, and a mark
+// made on another device during the disconnect waits for a page reload to show up.
+TEST(ws_subscribe_grafts_the_callers_overlay_alongside_the_structure) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  h.progressRepo.setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{900, 0, "r_elsewhere"}, 900);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+
+  Json::Value graft = lastFrameOfType(*conn, "progress");
+  REQUIRE_EQ(graft["marks"].size(), 1u);
+  CHECK_EQ(graft["marks"][0]["node"].asString(), std::string("root"));
+  CHECK_EQ(graft["marks"][0]["at"].asString(), std::string("900:0:r_elsewhere"));
+}
+
+// The overlay is the CALLER's own or it is nothing. A guest connection is not identity-less — it
+// carries a guest id, the one presence announces as "Guest N" — so the graft must gate on being
+// AUTHENTICATED. Gating on a non-empty user instead hands an anonymous visitor whatever overlay
+// sits under that guest id, which is how a private lane quietly stops being private.
+TEST(ws_subscribe_grafts_no_overlay_to_an_anonymous_visitor) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+  h.progressRepo.setStatus(TreeId{"t_pub"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{900, 0, "r_a"}, 900);
+
+  auto visitor = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), visitor);
+  h.collab.onMessage(visitor, subscribeFrame("t_pub"));
+
+  for (const std::string& text : visitor->sent) CHECK(frameType(text) != std::string("progress"));
+}
+
+// A batch is bounded like every other write on this process — four handler threads must not be
+// handed an arbitrarily long list to parse, stamp and upsert one row at a time.
+TEST(ws_progress_refuses_a_batch_past_the_frame_ceiling) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  conn->sent.clear();
+
+  std::vector<Mark> huge;
+  for (int i = 0; i < 2001; ++i) huge.push_back({"n" + std::to_string(i), "complete", "900:0:r_a"});
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", huge));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("tree-too-large"));
+  CHECK(h.progressRepo.load(TreeId{"t_priv"}, owner).marks.empty());
 }
 
 // The owner still writes to their own private tree — the gate admits exactly the reader it should.

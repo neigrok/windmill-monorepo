@@ -38,8 +38,7 @@ struct FakeBus : PresenceBus {
   struct ProgressBroadcast {
     std::string tree;
     std::string user;
-    std::string node;
-    ProgressStatus status;
+    Progress marks;
   };
   struct SubgraphBroadcast {
     std::string tree;
@@ -51,9 +50,8 @@ struct FakeBus : PresenceBus {
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override {
     subgraphBroadcasts.push_back({tree.str(), seq, subgraph});
   }
-  void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
-                         ProgressStatus status) override {
-    progressBroadcasts.push_back({tree.str(), user.str(), node.str(), status});
+  void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override {
+    progressBroadcasts.push_back({tree.str(), user.str(), marks});
   }
 };
 
@@ -236,16 +234,18 @@ struct FakeProgressRepository : ProgressRepository {
     std::string prefix = tree.str() + "\n" + user.str() + "\n";
     for (const auto& [k, entry] : byKey) {
       if (k.rfind(prefix, 0) != 0) continue;
-      NodeId node{k.substr(prefix.size())};
-      if (entry.status == ProgressStatus::complete) progress.completed.insert(node);
-      else if (entry.status == ProgressStatus::active) progress.inProgress.insert(node);
-      else if (entry.status == ProgressStatus::none) progress.cleared.insert(node);
+      // The fake dates a mark by the stamp it arrived with. A real store answers with its OWN
+      // receipt instant, which is the only one a surface may show — a fake has no second clock
+      // to be honest with, so tests that care about the difference must use the real repository.
+      progress.record(NodeId{k.substr(prefix.size())},
+                      ProgressMark{entry.status, entry.at, entry.at.physicalMs});
     }
     return progress;
   }
 
   void setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                 ProgressStatus status, const Hlc& at) override {
+                 ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) override {
+    (void)receivedAtMs;
     std::string k = key(tree, user, node);
     auto it = byKey.find(k);
     if (it == byKey.end() || at > it->second.at) byKey[k] = Entry{status, at};

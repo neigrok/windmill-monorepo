@@ -189,7 +189,7 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
   seed(s.trees, "old", me, 100, {spec("a", NodeColor::olive), spec("b", NodeColor::olive)});
   seed(s.trees, "fresh", me, 300, {spec("x", NodeColor::sky)});
   seed(s.trees, "notmine", uid("other"), 999, {spec("z", NodeColor::gold)});
-  s.progress.setStatus(tid("old"), me, nid("a"), ProgressStatus::complete, at(150, "me"));
+  s.progress.setStatus(tid("old"), me, nid("a"), ProgressStatus::complete, at(150, "me"), 150);
 
   std::vector<TreeSummary> rows = s.registry.list(me);
 

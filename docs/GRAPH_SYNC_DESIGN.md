@@ -502,3 +502,61 @@ discipline survives intact — demoted from truth to tempo. The convergence argu
 grows beyond the forty lines of `Crdt.h` that already guard every persisted tree; we are
 not adding a CRDT, we are finishing the one that is already here and giving the frontend its
 missing half.
+
+---
+
+## 12. The private lane — progress joins the lattice
+
+Everything above describes the **shared** lane: one document, many collaborators, one
+broadcast. Progress never got onto it. It rides the same socket but not the same law — the
+server mints its stamp on arrival, so a mark made offline has no stamp at all until it
+lands, and "did the server already hear this?" cannot be asked of the mark itself. The
+answer was a diff: the client compared its local marks against a freshly-read server
+overlay and pushed what was missing, with a localStorage copy standing in as the queue.
+That worked, and it produced two bugs in one afternoon — a resurrection rule written in
+prose instead of falling out of a merge, and a local copy that lagged the server it had
+just synced with.
+
+**Progress becomes a second lattice in the same document, private to one account.** Not a
+new mechanism: the same registers, the same clock, the same outbox law, the same `join`.
+
+- **One LWW register per node**, value `complete | active | none`, stamped. `none` is a
+  *value*, not a deletion — so a clear is an ordinary write and the tombstone is free. This
+  is what makes "cleared on another device" converge on its own, with no `cleared` array
+  and no known-set diff.
+- **One clock for both lanes.** The session's `HlcClock` stamps a progress write exactly as
+  it stamps a structural one, so the two stay comparable — which the server already assumed
+  (`progress shares the tree's clock so its LWW stays comparable`), it just minted the stamp
+  at the wrong end. The §3 skew clamp applies unchanged.
+- **The outbox is derived, not kept.** Pending progress is `deltaSince(ackedProgressVector)`,
+  the §6 law verbatim. There is no queue to lose, and an offline mark flushes on reconnect
+  because it is uncovered, not because someone diffed it.
+- **Two lanes, one socket, never one frame.** A progress register must never enter a
+  subgraph frame and a subgraph must never carry an overlay: they are separate frame types,
+  and the server echoes progress only to the *same account's* other sessions. Collapsing
+  them would publish one user's progress to every collaborator on the tree — the whole
+  reason the overlay is a separate resource (§1 of SPEC).
+
+### Stamps order; the server dates
+
+An HLC's `physicalMs` is the **writing device's** clock. The skew clamp bounds it from
+above (`now + 5min`) and nothing bounds it from below — a phone a week behind mints a
+week-old stamp that orders perfectly and *reads* as a lie. So every row also carries
+`markedAt`: the instant the **server** recorded the mark, on its own clock, and the only
+value any surface is allowed to display. The HLC decides what wins; `markedAt` decides what
+a human is told. A device-local clock can support an omission, never an assertion.
+
+### What this deletes
+
+The known-set diff, the reconcile-on-graft, the claim-time push, the `server: true/false`
+flag, the load-time precedence merge, the write-back, and `ProgressStore` itself — the
+overlay persists in the same blob as the structure, so the account hand-off has one place
+to wipe instead of two.
+
+### Migration
+
+`node_progress` already stores `hlc`/`stamp_ms`/`stamp_counter` and its upsert already
+applies a strictly-later stamp — it has been a LWW register store all along. Legacy rows
+carry server-minted stamps with real wall time, so a client stamp neither dominates nor is
+dominated by accident: it is the same monotone-overtake argument as §3's legacy ticks. No
+data rewrite.

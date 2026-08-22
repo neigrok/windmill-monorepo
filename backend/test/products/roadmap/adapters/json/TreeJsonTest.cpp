@@ -79,40 +79,54 @@ TEST(tree_from_json_refuses_a_non_object_root) {
   CHECK(treeFromJson(parse("{}"), TreeId{"t"}).has_value());
 }
 
-// The overlay used to answer with three id arrays and nothing else, so a reader learned WHICH
-// steps were marked and never WHEN — and the web's activity feed, having only its own browser's
-// stamps, filed every step finished on another device under "Earlier". `markedAt` is the server's
-// own clock, the one instant that survives the device the mark was made on.
-TEST(the_progress_overlay_carries_the_instant_the_server_recorded_each_mark) {
+// The overlay answers as a lattice frame — one stamped register per node — because that is
+// everything a replica needs to join it. Two clocks ride each row and they are not
+// interchangeable: `at` is the stamp the marking replica minted and the only thing that decides
+// what wins, `markedAt` is the server's own receipt instant and the only one a person may be
+// shown (GRAPH_SYNC_DESIGN.md §12).
+TEST(the_progress_overlay_answers_as_stamped_registers) {
   Progress progress;
-  progress.completed = {nid("a")};
-  progress.inProgress = {nid("b")};
-  progress.cleared = {nid("c")};
-  progress.markedAt = {{nid("a"), 1700000000000ull}, {nid("b"), 1700000600000ull}};
+  progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(500, "r_phone"), 1700000000000ull});
+  progress.record(nid("b"), ProgressMark{ProgressStatus::active, at(600, "r_tab"), 1700000600000ull});
 
   Json::Value root = toJson(progress);
 
-  REQUIRE_EQ(root["completed"].size(), 1u);
-  CHECK_EQ(root["completed"][0].asString(), std::string("a"));
-  REQUIRE_EQ(root["inProgress"].size(), 1u);
-  CHECK_EQ(root["inProgress"][0].asString(), std::string("b"));
-  REQUIRE_EQ(root["cleared"].size(), 1u);
-  CHECK_EQ(root["cleared"][0].asString(), std::string("c"));
-  CHECK_EQ(root["markedAt"]["a"].asUInt64(), 1700000000000ull);
-  CHECK_EQ(root["markedAt"]["b"].asUInt64(), 1700000600000ull);
-  CHECK_EQ(root["markedAt"].isMember("c"), false);  // a tombstone we hold no instant for stays absent
+  REQUIRE_EQ(root["marks"].size(), 2u);
+  CHECK_EQ(root["marks"][0]["node"].asString(), std::string("a"));
+  CHECK_EQ(root["marks"][0]["status"].asString(), std::string("complete"));
+  CHECK_EQ(root["marks"][0]["at"].asString(), std::string("500:0:r_phone"));
+  CHECK_EQ(root["marks"][0]["markedAt"].asUInt64(), 1700000000000ull);
+  CHECK_EQ(root["marks"][1]["node"].asString(), std::string("b"));
+  CHECK_EQ(root["marks"][1]["status"].asString(), std::string("active"));
+  CHECK_EQ(root["marks"][1]["at"].asString(), std::string("600:0:r_tab"));
 }
 
-// An overlay from somewhere that keeps no times — an authored document's seed statuses, a fake in
-// a test — answers with the key present and empty, never absent: a reader must not have to tell
-// "this server is too old to say" apart from "nothing here was ever marked".
-TEST(an_overlay_with_no_instants_still_carries_the_markedAt_object) {
+// A cleared mark is a VALUE, not an absence: it must ride the wire like any other register, or a
+// replica that cleared a step on another device would never learn of the clear and would keep
+// re-asserting its own stale `complete` forever.
+TEST(a_cleared_register_is_carried_not_omitted) {
   Progress progress;
-  progress.completed = {nid("a")};
+  progress.record(nid("a"), ProgressMark{ProgressStatus::none, at(700, "r_phone"), 1700000000000ull});
 
   Json::Value root = toJson(progress);
 
-  CHECK_EQ(root.isMember("markedAt"), true);
-  CHECK_EQ(root["markedAt"].isObject(), true);
-  CHECK_EQ(root["markedAt"].empty(), true);
+  REQUIRE_EQ(root["marks"].size(), 1u);
+  CHECK_EQ(root["marks"][0]["node"].asString(), std::string("a"));
+  CHECK_EQ(root["marks"][0]["status"].asString(), std::string("none"));
+}
+
+// `record` is the only way into the overlay precisely so the projections cannot drift from the
+// registers. Re-marking a node must move it between the sets, never leave it in two.
+TEST(recording_over_a_node_moves_it_between_the_projected_sets) {
+  Progress progress;
+  progress.record(nid("a"), ProgressMark{ProgressStatus::active, at(500), 1});
+  progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(600), 2});
+  progress.record(nid("b"), ProgressMark{ProgressStatus::complete, at(600), 2});
+  progress.record(nid("b"), ProgressMark{ProgressStatus::none, at(700), 3});
+
+  CHECK_EQ(progress.completed, (std::set<NodeId>{nid("a")}));
+  CHECK_EQ(progress.inProgress, (std::set<NodeId>{}));
+  CHECK_EQ(progress.cleared, (std::set<NodeId>{nid("b")}));
+  CHECK_EQ(progress.marks.size(), 2u);
+  CHECK_EQ(progress.marks.at(nid("a")).status, ProgressStatus::complete);
 }

@@ -42,8 +42,7 @@ public:
   std::vector<drogon::WebSocketConnectionPtr> connections() const;
 
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
-  void broadcastProgress(const TreeId& tree, const UserId& user, const NodeId& node,
-                         ProgressStatus status) override;
+  void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override;
 
 private:
   std::set<drogon::WebSocketConnectionPtr> subscribersOf(const TreeId& tree) const;
