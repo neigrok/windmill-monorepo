@@ -7,8 +7,10 @@
 #include "test/testing.h"
 
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 using namespace wm;
@@ -120,10 +122,27 @@ drogon::HttpResponsePtr opened(Harness& h, const std::string& session,
   return captured;
 }
 
+// A pass that RUNS answers from the sweep's own loop, never the thread that called it — a repair
+// pass is minutes of embedder and curator calls, and the caller is one of the handful of IO threads
+// serving every other route in the product. So the test waits for it, as a client would. A refusal
+// still answers inline, and the wait costs it nothing.
+struct SweepAnswer {
+  drogon::HttpResponsePtr response;
+  std::thread::id answeredOn;
+};
+
+SweepAnswer sweepOf(Harness& h, const drogon::HttpRequestPtr& req) {
+  std::promise<SweepAnswer> settled;
+  std::future<SweepAnswer> answer = settled.get_future();
+  h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& r) {
+    settled.set_value(SweepAnswer{r, std::this_thread::get_id()});
+  });
+  answer.wait();
+  return answer.get();
+}
+
 drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req) {
-  drogon::HttpResponsePtr captured;
-  h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
-  return captured;
+  return sweepOf(h, req).response;
 }
 
 // One echo already on a page, planted the way a finished pass would have left it: a trigger passage
@@ -740,4 +759,17 @@ TEST(an_admin_sweep_without_a_token_is_refused) {
   CHECK_EQ(static_cast<int>(
                adminSweep(h, request(drogon::Post, "/v1/admin/journal/echo/sweep"))->statusCode()),
            403);
+}
+
+TEST(an_admin_sweep_runs_off_the_calling_thread) {
+  // A repair pass is minutes of embedder and curator calls. It used to run inline on the drogon IO
+  // thread that took the request, holding one of the twenty pooled connections throughout.
+  Harness h("the-secret");
+  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/echo/sweep");
+  req->addHeader("x-admin-token", "the-secret");
+
+  const SweepAnswer answer = sweepOf(h, req);
+
+  CHECK_EQ(static_cast<int>(answer.response->statusCode()), 200);
+  CHECK(answer.answeredOn != std::this_thread::get_id());
 }

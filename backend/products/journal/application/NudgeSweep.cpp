@@ -2,6 +2,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <exception>
 #include <utility>
 
 namespace wm {
@@ -34,6 +35,23 @@ void NudgeSweep::start() {
   LOG_INFO << "journal nudge: heartbeat armed, first sweep in " << kFirstTickSeconds << "s ("
            << (arming().enabled ? "enabled" : "dark") << ", " << arming().allowlist.size()
            << " on the allowlist)";
+}
+
+void NudgeSweep::runAsync(std::uint64_t nowMs, bool dryRun,
+                          std::function<void(MailSweepReport)> done) {
+  heartbeat_.queue([this, nowMs, dryRun, done = std::move(done)] {
+    // The caller is waiting on a promise it cannot fulfil itself, so `done` fires on every path —
+    // an empty report reads as "nothing ran", which is exactly what happened.
+    try {
+      done(run(nowMs, dryRun));
+    } catch (const std::exception& error) {
+      LOG_ERROR << "journal nudge sweep failed: " << error.what();
+      done(MailSweepReport{});
+    } catch (...) {
+      LOG_ERROR << "journal nudge sweep failed";
+      done(MailSweepReport{});
+    }
+  });
 }
 
 int NudgeSweep::batch() const { return kNudgeSweepBatch; }

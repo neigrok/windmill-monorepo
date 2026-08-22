@@ -704,3 +704,62 @@ test('span — the inclusive run of days, oldest first, gaps and all', () => {
   assert.deepEqual(span('2026-08-05', '2026-08-07'), ['2026-08-05', '2026-08-06', '2026-08-07']);
   assert.deepEqual(span('2026-08-07', '2026-08-07'), ['2026-08-07']);
 });
+
+// A page the server will never accept — the 128 KB cap the backend grew in wave 2 — must not be
+// retried as though the network were down. The words stay on the device; what changes is that the
+// writer is told the truth and the timer stops, so shortening the page is the remedy rather than
+// waiting for a signal that was never the problem.
+test('a page the server refuses is kept here and NOT retried forever', async (t) => {
+  const api = fakeApi();
+  api.onPut = () => { const refusal = new Error('too long'); refusal.status = 413; throw refusal; };
+  const { store, timers } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  store.type('a page far past the cap');
+  await timers.run();                     // the debounce fires and the PUT is refused
+
+  assert.equal(store.snapshot.saveState, 'refused');
+  assert.equal(timers.pending.size, 0);                       // nothing is waiting to try again
+  assert.equal(store.snapshot.body, 'a page far past the cap'); // and the words are still here
+});
+
+test('an outage is still an outage: offline, and it retries', async (t) => {
+  const api = fakeApi();
+  api.onPut = () => { throw new Error('network down'); };
+  const { store, timers } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  store.type('words written on a train');
+  await timers.run();                     // the debounce fires and the PUT cannot be delivered
+
+  assert.equal(store.snapshot.saveState, 'offline');
+  assert.equal(timers.pending.size, 1);
+});
+
+// The freeze this fix exists to prevent: a day the server will never accept used to stand at the
+// head of the owed queue forever, so every later day went unsent, the account's own window was
+// never read, and the canvas never finished opening — with no retry scheduled to break out of it.
+test('a refused day is stepped over: the rest of the backlog still goes, and the window is still read', async (t) => {
+  const storage = memoryStorage();
+  const api = fakeApi();
+  api.onPut = (day) => {
+    if (day === '2026-08-01') { const refusal = new Error('too long'); refusal.status = 413; throw refusal; }
+    return { day, body: 'kept', mood: 0, energy: 0, source: 'typed', stamp: '9:0:srv', updatedAt: 1 };
+  };
+  // Three days owed, oldest first, and only the oldest is the one the server refuses.
+  const cache = new PageCache(A, storage);
+  for (const day of ['2026-08-01', '2026-08-02', '2026-08-03'])
+    cache.store({ day, body: `words for ${day}`, mood: 0, energy: 0, source: 'typed', stamp: `1:0:web` }, { needsPush: true, read: true });
+  cache.flush();
+
+  const { store } = storeOn(storage, api);
+  t.after(() => store.dispose());
+  await store.connect(A);
+
+  assert.deepEqual(api.calls.put.map((p) => p.day), ['2026-08-01', '2026-08-02', '2026-08-03']);
+  assert.ok(api.calls.range.length >= 1, 'the account window is still read after a refusal');
+  assert.equal(store.snapshot.readState, 'ready');
+  assert.equal(store.snapshot.saveState, 'refused');
+});

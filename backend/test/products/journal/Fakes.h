@@ -411,6 +411,10 @@ public:
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& writes,
                                      const std::string& embedVersion, std::uint64_t) override {
+    // Every derivation that got past the embedder lands here, so this list is the ORDER the pages
+    // were worked in — which is what a fairness test asserts against, and it stays true whether or
+    // not a page ended up proposing anything for the curator to judge.
+    derived.push_back(pageKey(user, day));
     std::vector<StoredSpan>& all = spans[user.str()];
     all.erase(std::remove_if(all.begin(), all.end(),
                              [&](const StoredSpan& s) { return s.day == day; }),
@@ -613,6 +617,9 @@ public:
     return written;
   }
 
+  // Pages worked, oldest call first — see replaceSpans.
+  std::vector<std::string> derived;
+
   // What one page ended up carrying, for a test that wants to assert the whole set at once.
   std::vector<EchoRow> rowsOn(const UserId& user, const LocalDate& day) {
     auto it = echoesByPage.find(pageKey(user, day));
@@ -621,19 +628,41 @@ public:
   }
 };
 
-// A transcriber the voice tests drive: `on` toggles configured() (the 503 path), and transcribe
-// returns a fixed line plus the last audio/mime it saw, so a test can assert the bytes reached it.
+// A transcriber the voice tests drive: `on` toggles configured() (the 503 path), `answers` toggles
+// the vendor failure (the 502 path), and transcribe returns a fixed line plus the last audio/mime and
+// user it saw, so a test can assert the bytes reached it and whose spend it was.
+//
+// `hold` keeps a take with the "vendor" instead of answering it, which is how a test drives the
+// in-flight caps: the callbacks pile up in `held` and `answerHeld()` releases them.
 struct FakeTranscriber : Transcriber {
   bool on = true;
+  bool answers = true;
+  bool hold = false;
   std::string reply = "rain all morning";
   std::string lastAudio;
   std::string lastMime;
+  std::string lastUser;
+  int calls = 0;
+  std::vector<std::function<void(std::optional<Transcript>)>> held;
 
   bool configured() const override { return on; }
-  Transcript transcribe(const std::string& audio, const std::string& mimeType) override {
+  void transcribe(const UserId& user, const std::string& audio, const std::string& mimeType,
+                  std::function<void(std::optional<Transcript>)> done) override {
     lastAudio = audio;
     lastMime = mimeType;
-    return Transcript{reply};
+    lastUser = user.str();
+    ++calls;
+    if (hold) {
+      held.push_back(std::move(done));
+      return;
+    }
+    done(answers ? std::optional<Transcript>{Transcript{reply}} : std::nullopt);
+  }
+
+  void answerHeld() {
+    std::vector<std::function<void(std::optional<Transcript>)>> waiting;
+    waiting.swap(held);
+    for (auto& done : waiting) done(answers ? std::optional<Transcript>{Transcript{reply}} : std::nullopt);
   }
 };
 

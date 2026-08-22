@@ -33,6 +33,20 @@ struct LiveDerivationRules {
   // a page edited all day, every edit a paragraph long, otherwise buys a curator call each time.
   int perPageDaily = 4;
   std::uint64_t dailyWindowMs = 24ull * 60 * 60 * 1000;
+
+  // WHAT ONE ACCOUNT MAY HOLD IN THE QUEUE AT ONCE. The queue is keyed by (user, day) and every
+  // date is a valid page, so without this one account writing a thousand distinct days owns a
+  // thousand entries and the single drain thread walks them while everybody else's page waits. Five
+  // is a writer touching this week; past it a save is not queued at all — the repair pass owes that
+  // page either way, so nothing is lost, only postponed.
+  std::size_t pendingPerUser = 5;
+
+  // …and what one account may BUY in a rolling day, counted per USER rather than per page. The
+  // per-page cap above never bounded an account, because a page is free to invent: a flood of
+  // distinct days pays the embedder's CPU on every one of them before `sweepAllowanceFor` — which
+  // meters the CURATOR's dollars — has anything to say. Forty derivations is a heavy day of real
+  // writing and a wall for a flood.
+  int perUserDaily = 40;
 };
 
 // What one drain did. `deferred` is the honest one to watch: it is not an error, it is the cap
@@ -48,6 +62,10 @@ struct EchoLiveReport {
   int deferred = 0;
   int skippedOverBudget = 0;
   int alreadyDerived = 0;
+  // Saves that never entered the queue because their account already held `pendingPerUser` pages.
+  // Watched for the same reason as `deferred`: it is the fairness bound speaking, and a number that
+  // climbs for ordinary writers says the bound is too tight.
+  int queueFull = 0;
 };
 
 // The delivery path's scheduler: it turns saves into derivations, and it is the only thing in the
@@ -58,9 +76,16 @@ struct EchoLiveReport {
 // class is the "when": PageService tells it a page was saved, and seconds later the page is
 // derived on this object's own thread.
 //
+// IT IS ALSO THE FAIRNESS SEAM, because it is the only place that sees every account's saves at
+// once. One drain thread walks the queue, so whatever the queue holds is what everybody else waits
+// behind: a single account enqueuing fifteen pages measurably delayed another writer's derivation by
+// twenty seconds, strictly serially. Two bounds answer that and they are both in LiveDerivationRules
+// — how many pages one account may hold in the queue, and how many derivations it may buy in a day —
+// and the drain deals round-robin across accounts rather than walking the queue as it lies.
+//
 // TWO THINGS IT MUST NEVER DO, and they are the same thing said twice. It must never derive on the
-// request thread — drogon has four handler threads and a curator call is 1.5–8 seconds, so a save
-// that waited for its echoes would take a quarter of the server down with it; `pageSaved` therefore
+// request thread — drogon has one handler thread per core and a curator call is 1.5–8 seconds, so a save
+// that waited for its echoes would take one of them out of service for that long; `pageSaved` therefore
 // does map bookkeeping under a short mutex and returns. And it must never make the writer wait for
 // anything: there is no pending state, no progress route and no spinner, because the journal does
 // not speak on its own initiative and the client re-reads on its own.
@@ -104,8 +129,12 @@ private:
   Clock& clock_;
   LiveDerivationRules rules_;
   std::mutex lock_;
+  // Keyed "user|day" and therefore ORDERED BY USER, which is what makes both bounds cheap: the
+  // entries one account holds are one contiguous range.
   std::map<std::string, Pending> pending_;
-  std::map<std::string, Spent> spent_;
+  std::map<std::string, Spent> spent_;       // per page
+  std::map<std::string, Spent> userSpent_;   // per account — the one the flood meets
+  int queueFull_ = 0;
   Heartbeat heartbeat_;   // declared last: destructs first, before the deps a running drain holds
 };
 

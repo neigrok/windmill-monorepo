@@ -10,6 +10,7 @@
 #include "platform/application/Heartbeat.h"
 
 #include <cstdint>
+#include <functional>
 
 namespace wm {
 
@@ -46,7 +47,7 @@ struct SweepBudget {
 };
 
 // The seven steps, and the two ways into them. Its own trantor thread either way, never a request
-// loop: a curator call is seconds long and drogon has four handler threads.
+// loop: a curator call is seconds long and drogon has one handler thread per core.
 //
 //   segment → embed → reconcile → retrieve → select → curate → persist
 //
@@ -88,6 +89,11 @@ public:
   // recently enough to be worth scanning. Everything after that is decided by stamps the corpus
   // carries, never by the wall — which is why the sweep takes no "now" and cannot drift against one.
   EchoSweepReport run(std::uint64_t sinceMs);
+
+  // The same pass, queued onto this sweep's own loop and answered there — what the admin door uses.
+  // A repair pass is minutes of embedder and curator calls, and it was running on the drogon IO
+  // thread that took the request, holding one of the twenty pooled connections through all of it.
+  void runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done);
 
   // One page, because its writer just saved it. The counters mean the same things they mean above,
   // counting to one — `usersOverAiBudget` is the skip and `pagesFailed` is the vendor blip, and both

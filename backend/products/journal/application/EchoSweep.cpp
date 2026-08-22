@@ -69,6 +69,22 @@ void EchoSweep::start() {
            << "s (" << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
 }
 
+void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done) {
+  heartbeat_.queue([this, sinceMs, done = std::move(done)] {
+    // `done` fires on every path: the operator is waiting on a promise it cannot fulfil itself, and
+    // an empty report reads as "nothing ran", which is exactly what happened.
+    try {
+      done(run(sinceMs));
+    } catch (const std::exception& error) {
+      LOG_ERROR << "journal echo sweep failed: " << error.what();
+      done(EchoSweepReport{});
+    } catch (...) {
+      LOG_ERROR << "journal echo sweep failed";
+      done(EchoSweepReport{});
+    }
+  });
+}
+
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
   EchoSweepReport report;
   // Either boundary missing is the same quiet no-op it is on the repair path: no row is written and

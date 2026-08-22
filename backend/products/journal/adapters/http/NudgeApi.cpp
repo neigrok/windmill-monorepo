@@ -247,7 +247,12 @@ void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   if (asOfMs != 0) dryRun = true;
   if (asOfMs == 0) asOfMs = clock_->nowMs();
 
-  cb(jsonResponse(toJson(sweep_->run(asOfMs, dryRun))));
+  // Off this thread. A batch is up to 200 users of database round trips and Resend calls, and it
+  // was running on the drogon IO thread that took the request — one of the pooled connections held
+  // across every one of those vendor calls.
+  sweep_->runAsync(asOfMs, dryRun, [cb = std::move(cb)](const MailSweepReport& report) {
+    cb(jsonResponse(toJson(report)));
+  });
 }
 
 }

@@ -17,8 +17,8 @@ namespace wm {
 // anyone does with it. `bodyBytes` rides along so the listener can tell a typo fix from a
 // paragraph without reading the page back.
 //
-// IMPLEMENTATIONS MUST RETURN IMMEDIATELY. This is called on a drogon handler thread, of which
-// there are four.
+// IMPLEMENTATIONS MUST RETURN IMMEDIATELY. This is called on a drogon handler thread, and there is
+// one per core.
 struct PageWatcher {
   virtual ~PageWatcher() = default;
   virtual void pageSaved(const UserId& user, const LocalDate& day, std::size_t bodyBytes) = 0;

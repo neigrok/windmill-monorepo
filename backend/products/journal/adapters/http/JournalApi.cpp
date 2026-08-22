@@ -67,6 +67,12 @@ void JournalApi::putPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   std::optional<Page> incoming;
   try {
     incoming = parsePageWrite(*json, *caller, *day);
+  } catch (const PageTooLarge&) {
+    // Its own status, and its own sentence, because it is the one parse failure the writer can do
+    // something about — and because a page this long is a storage rule being enforced (kMaxPageBytes,
+    // domain/Page.h), not prose anybody should go hunting through for a typo.
+    cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
+    return;
   } catch (const std::exception&) {
     // A malformed field — a non-numeric mood, a garbled stamp — is the client's mistake, so it is a
     // 400, never a 500 that would also land a row in the server-error ledger for a plain typo.

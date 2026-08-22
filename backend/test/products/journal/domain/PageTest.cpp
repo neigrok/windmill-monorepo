@@ -35,6 +35,35 @@ TEST(local_date_rejects_malformed_shapes) {
   CHECK(rejects("2026-7-1"));      // unpadded fields
 }
 
+TEST(local_date_rejects_days_the_calendar_does_not_have) {
+  // Every one of these used to pass the shape check, reach a `$n::date` cast and throw inside pqxx —
+  // a 500, a retained server_errors row and a Sentry event, on any date-bearing journal route.
+  CHECK(rejects("2026-02-29"));   // 2026 is not a leap year
+  CHECK(rejects("2026-02-31"));
+  CHECK(rejects("2026-04-31"));   // April has 30
+  CHECK(rejects("2026-06-31"));
+  CHECK(rejects("2026-09-31"));
+  CHECK(rejects("2026-11-31"));
+  CHECK(rejects("1900-02-29"));   // divisible by 100, not by 400
+  CHECK(rejects("2100-02-29"));
+}
+
+TEST(local_date_keeps_the_leap_days_that_exist) {
+  CHECK_EQ(LocalDate{"2024-02-29"}.iso(), std::string("2024-02-29"));   // divisible by 4
+  CHECK_EQ(LocalDate{"2000-02-29"}.iso(), std::string("2000-02-29"));   // divisible by 400
+  CHECK_EQ(LocalDate{"2026-02-28"}.iso(), std::string("2026-02-28"));
+  CHECK_EQ(LocalDate{"2026-01-31"}.iso(), std::string("2026-01-31"));
+  CHECK_EQ(LocalDate{"2026-04-30"}.iso(), std::string("2026-04-30"));
+}
+
+TEST(local_date_rejects_the_year_that_is_not_a_year) {
+  CHECK(rejects("0000-01-01"));   // not a date Postgres holds — it used to arrive as a 500
+  CHECK(rejects("0000-12-31"));
+  // 0001-01-01 stands, and has to: it is the open-ended window every echo read sends as `from`.
+  CHECK_EQ(LocalDate{"0001-01-01"}.iso(), std::string("0001-01-01"));
+  CHECK_EQ(LocalDate{"9999-12-31"}.iso(), std::string("9999-12-31"));
+}
+
 TEST(mood_from_int_clamps_out_of_range_to_none) {
   CHECK_EQ(moodFromInt(0), Mood::none);
   CHECK_EQ(moodFromInt(1), Mood::m1);

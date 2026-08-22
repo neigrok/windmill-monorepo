@@ -144,6 +144,89 @@ TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
   CHECK_EQ(stack.curator.calls, 5);
 }
 
+// ---- fairness: one account can no longer own the drain thread -----------------------------
+
+// Every date is a valid page, so an account writing distinct days used to enqueue as many entries as
+// it liked and the single drain thread walked all of them before anybody else's page.
+TEST(an_account_may_hold_only_a_few_pages_in_the_queue_at_once) {
+  LiveStack stack;
+  stack.echoes.addUser(uid("u1"));
+  stack.echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, stack.embedder.embed({kOldLine})[0]);
+  EchoDerivations live{stack.sweep, stack.clock, rules()};
+
+  for (int day = 1; day <= 8; ++day) {
+    const std::string iso = "2026-06-0" + std::to_string(day);
+    stack.echoes.addDuePage(uid("u1"), ld(iso), kNewLine);
+    live.pageSaved(uid("u1"), ld(iso), kNewLine.size());
+  }
+
+  const EchoLiveReport report = live.drain(stack.clock.now + kQuietMs);
+
+  CHECK_EQ(report.derived, 5);     // the five the queue would hold
+  CHECK_EQ(report.queueFull, 3);   // and the three it refused to hold
+  CHECK_EQ(stack.echoes.derived.size(), std::size_t{5});
+  // Refused is not lost: those three pages never had a stamp advanced, so the repair pass owes them.
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-06"), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-07"), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-08"), 0).has_value());
+}
+
+// The measured harm was one account's flood delaying another writer's echo by twenty seconds,
+// strictly serially. Dealt round-robin, the second writer waits behind one page, never five.
+TEST(one_accounts_flood_does_not_go_ahead_of_another_writers_page) {
+  LiveStack stack;
+  for (const char* who : {"u1", "u2"}) {
+    stack.echoes.addUser(uid(who));
+    stack.echoes.plantSpan(uid(who), ld(kOldDay), 11, kOldLine, stack.embedder.embed({kOldLine})[0]);
+  }
+  EchoDerivations live{stack.sweep, stack.clock, rules()};
+
+  for (int day = 1; day <= 5; ++day) {
+    const std::string iso = "2026-06-0" + std::to_string(day);
+    stack.echoes.addDuePage(uid("u1"), ld(iso), kNewLine);
+    live.pageSaved(uid("u1"), ld(iso), kNewLine.size());
+  }
+  stack.echoes.addDuePage(uid("u2"), ld(kNewDay), kNewLine);
+  live.pageSaved(uid("u2"), ld(kNewDay), kNewLine.size());
+
+  const EchoLiveReport report = live.drain(stack.clock.now + kQuietMs);
+
+  CHECK_EQ(report.derived, 6);
+  REQUIRE_EQ(stack.echoes.derived.size(), std::size_t{6});
+  // The second writer's page is worked in the FIRST round, whichever account the deal starts with —
+  // never behind all five of the flood, which is what insertion order used to mean.
+  const std::string theirs = uid("u2").str() + "|" + kNewDay;
+  CHECK(stack.echoes.derived[0] == theirs || stack.echoes.derived[1] == theirs);
+}
+
+// The embedder is CPU we pay for on every derivation, before the curator's dollars are metered at
+// all — so the account, not only the page, has a day's worth.
+TEST(an_account_may_only_buy_so_many_derivations_in_a_day) {
+  LiveStack stack;
+  stack.echoes.addUser(uid("u1"));
+  stack.echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, stack.embedder.embed({kOldLine})[0]);
+  LiveDerivationRules capped = rules();
+  capped.perUserDaily = 2;
+  EchoDerivations live{stack.sweep, stack.clock, capped};
+
+  for (int day = 1; day <= 5; ++day) {
+    const std::string iso = "2026-06-0" + std::to_string(day);
+    stack.echoes.addDuePage(uid("u1"), ld(iso), kNewLine);
+    live.pageSaved(uid("u1"), ld(iso), kNewLine.size());
+  }
+
+  const EchoLiveReport report = live.drain(stack.clock.now + kQuietMs);
+
+  CHECK_EQ(report.derived, 2);
+  CHECK_EQ(report.deferred, 3);
+  CHECK_EQ(stack.curator.calls, 2);
+
+  // A day later the window has rolled, and the account may buy again.
+  stack.clock.now += 24ull * 60 * 60 * 1000;
+  live.pageSaved(uid("u1"), ld("2026-06-03"), kNewLine.size());
+  CHECK_EQ(live.drain(stack.clock.now + kQuietMs).derived, 1);
+}
+
 // The per-user AI ceiling applies to a save-triggered derivation exactly as it applies to a swept
 // one — a writer typing all evening is still a background spend. Over it, SKIPPED: nothing bought,
 // nothing written, no stamp advanced, page still owed.

@@ -344,6 +344,11 @@ create table if not exists oauth_clients (
   created_at    timestamptz not null default now()
 );
 
+-- the registration burst ceiling: how many clients registered in the last hour never completed an
+-- authorization. It runs on the anonymous registration path, so it must be an index range scan over
+-- one hour and never a scan of the table. Also what the retention sweep's TTL pass reads.
+create index if not exists oauth_clients_created on oauth_clients (created_at);
+
 create table if not exists oauth_codes (
   code_hash      text primary key,      -- digest of the authorization code
   client_id      text not null,
@@ -369,6 +374,12 @@ create table if not exists oauth_tokens (
 );
 create index if not exists oauth_tokens_user on oauth_tokens (user_id);
 create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
+-- When this row's refresh token was spent. A rotated row is NOT deleted: it stays as a tombstone,
+-- with its access token expired to 0, until its refresh window closes and the retention sweep
+-- collects it. Presenting an already-spent refresh token is the classic signal that a token leaked
+-- and two parties hold copies, and it is only tellable from a merely-invalid string if the spent
+-- row is still here to recognise — on which the grant is revoked (OAuth 2.1 §4.14.2).
+alter table oauth_tokens add column if not exists rotated_ms bigint;
 
 -- first-party funnel telemetry (event-spine): an append-only stream of beacon events.
 -- session_key is the client-minted per-browser id; user_id is resolved server-side from
@@ -384,6 +395,9 @@ create table if not exists events (
 );
 -- the funnel query: one event name over a time window
 create index if not exists events_name_ts on events (name, ts);
+-- the per-session/day ingest bound: an anonymous beacon is counted before its batch is written, and
+-- that count has to be an index range scan over one session, never a scan of the whole stream.
+create index if not exists events_session_ts on events (session_key, ts);
 
 -- the feedback door: one-click notes from anyone, signed-in or ghost. session_key is the
 -- client-minted correlation id (never identity); user_id is resolved server-side from the
@@ -746,8 +760,13 @@ create index if not exists journal_page_user_stamp on journal_page (user_id, sta
 
 -- Superseded bodies, append-only, invisible. The safety net for the one lossy case LWW admits —
 -- the same day edited on two offline devices, where the loser's text would otherwise vanish. Never
--- a merge UI (the canvas is one continuous surface); kept only so "nothing written is ever
--- withdrawn" holds literally. Prunable by age.
+-- a merge UI (the canvas is one continuous surface); kept so "nothing written is ever withdrawn"
+-- holds for the recent past. BOUNDED, and by the writer rather than by a cron: every superseding
+-- write prunes this table inside its own transaction (PgJournalRepository.cpp) to ten revisions a
+-- day, five hundred rows and 8 MB per user, and ninety days of age. Nothing else deletes from here,
+-- which is why the rule lives on the write path and not in a comment — and why the ninety days are
+-- a bound on what a WRITER accumulates, not a retention guarantee: somebody who stops writing keeps
+-- whatever their last write left, indefinitely. Their total is still bounded by the other two caps.
 create table if not exists journal_page_revision (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,

@@ -34,6 +34,53 @@ Page pageFrom(const Row& row) {
           row["stamp_actor"].template as<std::string>()},
       row["updated_ms"].template as<std::uint64_t>()};
 }
+
+// WHAT THE REVISION TRAIL MAY COST. It is append-only, nothing else in the product deletes from it,
+// and until these bounds existed four 3 MB PUTs to a single day left 9 MB of rows the writer could
+// not remove and no pass pruned — across the ~3.65 million dates a client may address, from any
+// signed-in account. Three bounds, because none of them alone holds:
+//
+//   per (user, day) — a day edited all afternoon keeps its ten most recent supersessions, so one day
+//     cannot evict every other day's history;
+//   per user — five hundred rows OR 8 MB, whichever binds first: bytes bound a few large pages, rows
+//     bound a flood of one-byte ones, and a trail is storage either way;
+//   by age — ninety days, which is the "Prunable by age" db/schema.sql promised and never had.
+//
+// The trail is a safety net for the one lossy case LWW admits (the same day edited on two offline
+// devices), and a net that big has caught anything it was ever going to catch.
+constexpr int kRevisionsPerDay = 10;
+constexpr int kRevisionsPerUser = 500;
+constexpr long long kRevisionBytesPerUser = 8 * 1024 * 1024;
+constexpr int kRevisionRetentionDays = 90;
+
+// Runs in the SAME transaction as the insert it follows, so the trail is never observed above its
+// ceiling and a rolled-back write prunes nothing. Ordered newest first and cut from the tail: what a
+// bound drops is always the oldest thing under it.
+void pruneRevisions(pqxx::work& txn, const UserId& user, const LocalDate& day) {
+  txn.exec_params(
+      "DELETE FROM journal_page_revision WHERE user_id = $1::uuid AND ctid IN ("
+      "  SELECT ctid FROM ("
+      "    SELECT ctid, row_number() OVER (ORDER BY superseded_at DESC, ctid DESC) AS rank"
+      "    FROM journal_page_revision WHERE user_id = $1::uuid AND day = $2::date) ranked"
+      "  WHERE rank > $3::int)",
+      user.str(), day.iso(), kRevisionsPerDay);
+
+  // One statement for the three user-wide bounds: whichever of rows, bytes or age names a row first
+  // takes it. `ROWS BETWEEN` and not the default frame, because rows sharing a superseded_at are
+  // peers under RANGE and would each be charged the whole tie's bytes.
+  txn.exec_params(
+      "DELETE FROM journal_page_revision WHERE user_id = $1::uuid AND ctid IN ("
+      "  SELECT ctid FROM ("
+      "    SELECT ctid, superseded_at,"
+      "           row_number() OVER w AS rank,"
+      "           sum(octet_length(body)) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
+      "             AS running"
+      "    FROM journal_page_revision WHERE user_id = $1::uuid"
+      "    WINDOW w AS (ORDER BY superseded_at DESC, ctid DESC)) ranked"
+      "  WHERE rank > $2::int OR running > $3::bigint"
+      "     OR superseded_at < now() - make_interval(days => $4::int))",
+      user.str(), kRevisionsPerUser, kRevisionBytesPerUser, kRevisionRetentionDays);
+}
 }
 
 PgJournalRepository::PgJournalRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
@@ -143,7 +190,9 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
   }
 
   // Incoming supersedes. A non-empty losing body is appended to the invisible revision trail under
-  // its own stamp before the row is overwritten, so "nothing written is ever withdrawn" holds.
+  // its own stamp before the row is overwritten — and the trail is pruned to its bounds in the same
+  // breath. "Nothing written is ever withdrawn" is now the honest sentence it can be: the CURRENT
+  // page is never touched, and the trail behind it keeps the recent past rather than all of it.
   std::string existingBody = row["body"].as<std::string>();
   if (!existingBody.empty()) {
     txn.exec_params(
@@ -152,6 +201,7 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
         incoming.user.str(), incoming.day.iso(), existingBody,
         static_cast<long long>(existingStamp.physicalMs),
         static_cast<long long>(existingStamp.counter), existingStamp.actor);
+    pruneRevisions(txn, incoming.user, incoming.day);
   }
 
   txn.exec_params(

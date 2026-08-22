@@ -188,8 +188,9 @@ create index if not exists journal_page_user_day on journal_page (user_id, day);
 
 -- Superseded bodies, append-only, invisible. A safety net for the one lossy case LWW admits:
 -- the same day edited on two offline devices, where the loser's text would otherwise vanish.
--- Never surfaced as a merge UI (the canvas is one continuous surface); kept only so "nothing
--- written is ever withdrawn" holds literally. Prunable by age. See §3.3.
+-- Never surfaced as a merge UI (the canvas is one continuous surface); kept so "nothing written is
+-- ever withdrawn" holds for the recent past. BOUNDED ON THE WRITE PATH — ten revisions a day, 500
+-- rows and 8 MB per user, 90 days of age (PgJournalRepository::pruneRevisions). See §3.3.
 create table if not exists journal_page_revision (
   user_id     uuid not null references users(id) on delete cascade,
   day         date not null,
@@ -264,9 +265,10 @@ create table if not exists journal_nudge_day (
   primary key (user_id, slot_day)
 );
 
--- (A per-user voice-minutes meter for vendor cost control is a LATER, out-of-scope addition — a
--- small journal_voice_usage(user_id, period, seconds_used) table behind the same subscription gate.
--- Not built now: the mission is the feature, not the metering. See §6 and §8.1.)
+-- (Voice metering needs no table of its own after all. The route reads the account's trailing
+-- 30-day AI allowance (Entitlements::aiAllowanceFor) before the upload, holds an in-memory byte
+-- ration per account for the day, and the vendor edge posts what the reply reports to `ai_usage`
+-- through the same UsageSink the curator uses. See §8.1.)
 ```
 
 Mapping back to the canon's §06 Data:
@@ -340,7 +342,11 @@ LWW discards the loser when the same day is edited offline on two devices. The b
 path, when it overwrites a non-empty body, first copies the outgoing body into
 `journal_page_revision` (a trigger, or a two-statement transaction in the adapter). This is a
 **safety net, never a UI**: the canon is emphatic that the canvas is one continuous surface with
-no merge/conflict affordance. Revisions are invisible, prunable by age, and exist only so a
+no merge/conflict affordance. Revisions are invisible, BOUNDED BY THE WRITE THAT ADDS TO THEM — ten
+per day, 500 rows and 8 MB per user, and 90 days for anyone who keeps writing, pruned inside the
+same transaction, since nothing else in the product ever deletes from that table. That last one is a
+bound on accumulation and not a retention promise: a person who stops writing keeps what their last
+write left, under the other two caps. Revisions exist only so a
 support path (or a future "you have another version of this day" whisper, if the design ever wants
 one) can recover text. *Recommended but severable* — ship pages without it and add it in wave 2 if
 the two-device case proves real.
@@ -576,9 +582,9 @@ genuinely cannot do itself:
 | `GET /v1/journal/page/:date` | one page (incl. the year-ago resurface) | owner only |
 | `GET /v1/journal/pages?since=&limit=` | delta feed: pages changed after an HLC cursor, ascending, paged — the one read that feeds sync, the offline cache, *and* the on-device search index (§8.2) | owner only |
 | `GET /v1/journal/pages?from=&to=` | a date range (a window, the week) | owner only |
-| `PUT /v1/journal/page/:date` | write a page (LWW upsert; carries the HLC stamp) | owner only |
-| ~~`WS /v1/journal/transcribe`~~ | **NEVER BUILT.** Designed as streaming voice → live transcript deltas; §8.1 keeps the `transcribeStream` port signature it would have needed, marked the same way. `ports/Transcriber.h` declares one method, `transcribe(audio, mimeType)`, and `routes.cpp` registers the POST alone. Struck rather than deleted so the idea is findable, not so it is believed. | — |
-| `POST /v1/journal/transcribe` | one-shot voice → `{ text }` | owner only, Windmill One |
+| `PUT /v1/journal/page/:date` | write a page (LWW upsert; carries the HLC stamp). A body past `kMaxPageBytes` (128 KB) is **413**, before storage and before the revision trail | owner only |
+| ~~`WS /v1/journal/transcribe`~~ | **NEVER BUILT.** Designed as streaming voice → live transcript deltas; §8.1 keeps the `transcribeStream` port signature it would have needed, marked the same way. `ports/Transcriber.h` declares one method, `transcribe(user, audio, mimeType, done)` — asynchronous since 2026-08-22, because a blocking one parked a handler thread for up to the vendor's 60 s — and `routes.cpp` registers the POST alone. Struck rather than deleted so the idea is findable, not so it is believed. | — |
+| `POST /v1/journal/transcribe` | one-shot voice → `{ text }`. Answers without holding a handler thread; **413** past 6 MB of audio, **429** past the account's AI allowance or the day's 30 MB of talking, **503** when eight takes are already with the vendor (two per account), **502** when the vendor does not answer — never `200 {"text":""}` | owner only, Windmill One |
 | ~~`GET /v1/journal/vectors?since=`~~ | **NEVER BUILT.** Designed as a search accelerator seeding the on-device index; no route, handler or caller has ever existed, and the browser embeds its own corpus. Kept here struck through rather than deleted so the idea is findable, not so it is believed. | — |
 | `GET /v1/journal/echoes?from=&to=` | every echo on the pages in a range, grouped by page, plus `pagesWritten`. Entitlement is asked **here**, not in the sweep: a subscriber is served the passage, everyone else its real opening words and the number withheld (§5) | owner only |
 | `POST /v1/journal/echoes/:triggerDay/offer/dismiss` | "Not now" — retire the upgrade offer on this page. It keeps every echo and every honest cut; only the asking stops. **Registered before the two rows below** — drogon matches in registration order and `{matchDay}` binds the literal `offer` quite happily (`routes.cpp`) | owner only |
@@ -634,8 +640,8 @@ update so the surface doesn't advertise voice as free while it's a subscriber fe
 a money mechanic — just keeping the product truthful.
 
 The engine itself. **The streaming half below was never built** — `ports/Transcriber.h` declares
-`configured()` and one blocking `transcribe(audio, mimeType)`, and `routes.cpp` registers the POST
-alone. It is kept struck rather than deleted so the shape of the streaming version is findable when
+`configured()` and one asynchronous `transcribe(user, audio, mimeType, done)`, and `routes.cpp`
+registers the POST alone. It is kept struck rather than deleted so the shape of the streaming version is findable when
 someone builds it:
 
 ```cpp
@@ -643,8 +649,10 @@ someone builds it:
 struct Transcriber {
   virtual ~Transcriber() = default;
   virtual bool configured() const = 0;                    // false ⇒ Talk absent (no vendor wired)
-  // NEVER BUILT — the shipped port is `Transcript transcribe(const std::string& audio,
-  //                                                          const std::string& mimeType)`
+  // NEVER BUILT — the shipped port is `void transcribe(const UserId& user,
+  //     const std::string& audio, const std::string& mimeType,
+  //     std::function<void(std::optional<Transcript>)> done)`: the reply comes back on the
+  //     vendor client's own loop, so no handler thread waits on the round trip.
   virtual std::function<void()> transcribeStream(         // opus frames in → transcript deltas out
       std::function<void(const AudioFrame&)> feed,
       std::function<void(const Transcript&, bool final)> onText) = 0;
@@ -663,7 +671,9 @@ is wholly the vendor's zero-retention contract (Deepgram supports this). **Serve
 client → our `WS`/`POST` → vendor, when the vendor can't mint client tokens; then the audio only
 ever lives in an utterance-scoped buffer, `unlink`ed on every exit path, never durable, never
 logged, destroyed before the final transcript is acked. Either way `subscribed` is checked *before*
-any audio reaches the vendor — not to meter, just so Talk is a subscriber feature. The streaming
+any audio reaches the vendor. It IS metered now as well, which the earlier "not to meter" line
+predated: the route reads the account's AI allowance and a per-account daily byte ration before the
+upload, and the vendor edge charges the reply to `ai_usage` and the hourly process fuse. The streaming
 plumbing has repo precedent: `AnthropicComposer` already streams a model over a raw trantor TLS
 connection on its own loop thread (`composeStream`) — the same shape.
 
@@ -830,10 +840,13 @@ The canon's four "Still open", plus the backend's own, with recommendations:
    per-product plan; not per-feature metering. Echoes and voice are simply subscriber features
    behind one shared seam (`Entitlements::hasWindmillOne`, which wraps `grantsAccess` over the single
    subscription), the same one roadmap reads. The canon's old "Pro = a bigger tending allowance" framing is superseded by
-   the brand's one-account-one-subscription model. Usage tuning / cost control is explicitly
-   **out of scope now** — mission first, money mechanics later, behind the same gate.
+   the brand's one-account-one-subscription model. Usage tuning is still out of scope; COST CONTROL
+   is not, and stopped being so on 2026-08-22 — every journal vendor call now sits behind the
+   account's trailing-30-day allowance, the background bucket, or the hourly process fuse. Those are
+   fuses nobody is meant to meet, not a pricing mechanic.
 7. **Voice — DECIDED: bought from a zero-retention ASR vendor, a Windmill One feature** (§8.1). No
-   self-hosting, no metering designed now. Confirm `subscribed` *before* audio reaches the vendor;
+   self-hosting. Metered since 2026-08-22 (§8.1: allowance + daily byte ration + ledger), which the
+   "no metering designed now" of the original decision no longer describes. Confirm `subscribed` *before* audio reaches the vendor;
    prefer client-direct via an ephemeral vendor token (server proxy only if the vendor can't mint
    one); faithful transcription only (no rewrite); `POST` first, streaming `WS` next. One consequence
    to own: audio leaves to a third party, so the vendor **must** be zero-retention/no-training and

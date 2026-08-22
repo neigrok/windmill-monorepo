@@ -16,7 +16,7 @@ namespace wm {
 //   in  : { "body": "...", "mood": 0..5, "energy": 0..3, "source": "typed"|"spoken", "stamp": "ms:ctr:actor" }
 //   out : { "day": "YYYY-MM-DD", "body": "...", "mood": .., "energy": .., "source": .., "stamp": .., "updatedAt": ms }
 
-Page parsePageWrite(const Json::Value& body, const UserId& user, const LocalDate& day);   // throws InvalidPage
+Page parsePageWrite(const Json::Value& body, const UserId& user, const LocalDate& day);   // throws InvalidPage; PageTooLarge past kMaxPageBytes
 Json::Value toJson(const Page& page);
 Json::Value toJson(const std::vector<Page>& pages);
 

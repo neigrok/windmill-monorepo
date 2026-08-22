@@ -32,6 +32,19 @@ void reset() {
   w.exec("DELETE FROM journal_page_revision WHERE user_id = '" + kUser + "'");
   w.commit();
 }
+// March 1st onward, day by day, so a test that needs eighty distinct pages can name them without
+// inventing a calendar — LocalDate refuses an impossible one.
+std::string dayOfMarchOnwards(int index) {
+  static constexpr int lengths[] = {31, 30, 31};   // March, April, May 2026
+  int month = 3;
+  while (index >= lengths[month - 3]) {
+    index -= lengths[month - 3];
+    ++month;
+  }
+  const std::string day = std::to_string(index + 1);
+  return "2026-0" + std::to_string(month) + "-" + (day.size() == 1 ? "0" + day : day);
+}
+
 Page page(const std::string& body, Mood mood, Energy energy, Source source, const Hlc& stamp) {
   Page p{UserId{kUser}, LocalDate{"2026-07-27"}};
   p.body = body;
@@ -86,6 +99,89 @@ TEST(pg_journal_lww_and_revision_trail) {
   int revisions = w.exec1(
       "SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser + "'")[0].as<int>();
   CHECK_EQ(revisions, 1);   // only 'first light' was superseded; the ignored 'stale' wrote nothing
+}
+
+// The trail is append-only and nothing else in the product deletes from it, so the write that adds
+// to it is the write that has to bound it. Ten supersessions of one day, and the oldest go.
+TEST(pg_journal_revision_trail_keeps_only_a_days_last_few) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+
+  for (int write = 1; write <= 15; ++write)
+    repo.save(page("body " + std::to_string(write), Mood::m1, Energy::e1, Source::typed,
+                   Hlc{static_cast<std::uint64_t>(100 * write), 0, "devA"}));
+
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
+                   "'")[0].as<int>(),
+           10);
+  // The fourteen bodies that were ever current, minus the four oldest: "body 1" is gone and
+  // "body 14" (superseded by the fifteenth write) is still here.
+  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
+                   "' AND body = 'body 1'")[0].as<int>(),
+           0);
+  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
+                   "' AND body = 'body 14'")[0].as<int>(),
+           1);
+  // And the CURRENT page is never what a bound takes.
+  CHECK_EQ(repo.load(UserId{kUser}, LocalDate{"2026-07-27"})->body, std::string("body 15"));
+}
+
+// A day is not the unit an attacker uses — every date is addressable, so the account is bounded too.
+TEST(pg_journal_revision_trail_is_bounded_per_user_by_bytes) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  const std::string big(kMaxPageBytes, 'x');   // the largest page the write boundary will accept
+
+  // Eighty distinct days, each superseded once: 10 MB of trail asked for, against an 8 MB ceiling.
+  for (int index = 0; index < 80; ++index) {
+    Page first{UserId{kUser}, LocalDate{dayOfMarchOnwards(index)}};
+    first.body = big;
+    first.stamp = Hlc{100, 0, "devA"};
+    Page second = first;
+    second.stamp = Hlc{200, 0, "devA"};
+    repo.save(first);
+    repo.save(second);
+  }
+
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  const long long bytes =
+      w.exec1("SELECT coalesce(sum(octet_length(body)), 0)::bigint FROM journal_page_revision "
+              "WHERE user_id = '" + kUser + "'")[0].as<long long>();
+  CHECK(bytes <= 8LL * 1024 * 1024);
+  CHECK(bytes > 7LL * 1024 * 1024);   // it keeps what it can, rather than emptying the trail
+}
+
+// The "Prunable by age" the schema promised for two years and never had.
+TEST(pg_journal_revision_trail_forgets_what_is_older_than_the_retention) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  repo.save(page("old body", Mood::m1, Energy::e1, Source::typed, Hlc{100, 0, "devA"}));
+  repo.save(page("newer body", Mood::m1, Energy::e1, Source::typed, Hlc{200, 0, "devA"}));
+  {
+    PgLease c{*pgTestPool()};
+    pqxx::work w{*c};
+    w.exec("UPDATE journal_page_revision SET superseded_at = now() - interval '91 days' "
+           "WHERE user_id = '" + kUser + "'");
+    w.commit();
+  }
+
+  // Any later supersession by this account is what prunes it — the writer, not a cron.
+  repo.save(page("newest body", Mood::m1, Energy::e1, Source::typed, Hlc{300, 0, "devA"}));
+
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
+                   "'")[0].as<int>(),
+           1);
+  CHECK_EQ(w.exec1("SELECT body FROM journal_page_revision WHERE user_id = '" + kUser +
+                   "'")[0].as<std::string>(),
+           std::string("newer body"));
 }
 
 // The exact combination the server runs and no other test covers: PageService calling

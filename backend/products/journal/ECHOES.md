@@ -122,7 +122,7 @@ are now two:
 **The trigger** is `PageService::write`, the one door every page save goes through, via a
 `PageWatcher`. Two things about that seam are load-bearing. A write that **lost** the last-writer-wins
 guard changed nothing and announces nothing — a phone pushing a stale body must not buy a derivation.
-And the announcement **never derives on the request thread**: drogon has four handler threads and a
+And the announcement **never derives on the request thread**: drogon has one handler thread per core and a
 curator call is 1.5–8 seconds, so `pageSaved` does map bookkeeping under a short mutex and returns.
 Derivation happens on `EchoDerivations`' own trantor thread, which is the same precedent the
 magic-link mail send set when it was made async so sign-in could not stall the four handlers.
@@ -134,6 +134,13 @@ magic-link mail send set when it was made async so sign-in could not stall the f
 | quiet time | **8 s** | past a sentence, and short enough that someone who puts the phone down still sees the mark before they close the app |
 | new material | **400 bytes** | …unless roughly a paragraph has arrived since the pending entry opened. A long evening's writing never goes quiet, and a pure debounce would deliver nothing until the writer stopped for the night |
 | per page, per rolling day | **4** | past it the page is **deferred**, not derived and not failed — nothing is written, no stamp moves, and the repair pass takes it. The rolling window opens at the page's first derivation rather than at midnight, so nobody has to name a timezone |
+| per ACCOUNT, in the queue | **5 pages** | every date is a valid page, so a per-page cap bounded no account at all: one writer enqueuing distinct days owned the one drain thread. Past five, a save is not queued — the page's stamps never moved, so the repair pass still owes it |
+| per ACCOUNT, per rolling day | **40 derivations** | what finally counts the EMBEDDER. `sweepAllowanceFor` meters the curator's dollars; the embed step is CPU spent before it, on a thread everybody shares |
+
+**The drain deals round-robin across accounts**, not in queue order. Measured before it did: fifteen
+pages from one account delayed a second writer's derivation by twenty seconds, strictly serially,
+against a 2 s embedder. Dealt one page per account per round, that same second writer waits one
+derivation — measured at 2 s on the same rig.
 
 The per-user AI ceiling (`Entitlements::sweepAllowanceFor`) is asked exactly as before and means
 exactly what it meant: over budget is **SKIPPED**, not failed, so the page's stamps never advance and
@@ -204,7 +211,12 @@ multi-megabyte loads to do four 14 ms scans.
 - **What it does not guarantee:** it is exact only *within one process*. A span written by a second
   backend replica is invisible here for at most the TTL. Today's deploy runs one container, so that
   window is theory; the day it stops being theory the answer is a shorter TTL, not a longer one.
-- **What it costs:** one warm user is their whole corpus in memory — **12.3 MB** at this file's
+- **What it holds is BOUNDED:** `corpusOf` serves at most `kCorpusSpans` (20,000) passages, the most
+  recent, so neither the load nor the warm copy grows without limit for an account that keeps
+  writing — one drain thread serves everybody, and an unbounded corpus made one account's cost
+  everybody's wait. The honest cost of the bound: past 20,000 passages the oldest days stop being
+  reachable by an echo. Nothing is deleted and no page is refused.
+- **What it costs:** one warm user is their corpus in memory — **12.3 MB** at this file's
   8,000-passage × 384-float32 measurement, ~3 MB for a corpus of a couple of thousand. Entries drop
   on the first call after they expire, so the ceiling is the number of distinct users deriving inside
   one 15-minute window, not the number of accounts. Twenty writers at the 8,000-passage extreme is a

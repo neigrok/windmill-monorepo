@@ -13,10 +13,15 @@ Page::Page(UserId user, LocalDate day)
     : user(std::move(user)), day(std::move(day)), body(), mood(Mood::none), energy(Energy::none),
       source(Source::typed), stamp(), updatedAtMs(0) {}
 
-// Strict shape check only — "YYYY-MM-DD" with an in-range month and day. It is deliberately not a
-// calendar: it never asks a time library what today is, and a valid-looking impossible day like a
-// 31st of February passes, because the writer's device owns the calendar and the boundary owns only
-// the shape. What it refuses is a value that could not have been a real date at all.
+// The real calendar, and nothing beyond it — "YYYY-MM-DD" naming a day that actually happened. It
+// still never asks a time library what today is: the writer's device owns which day it is writing,
+// and this owns only whether the day exists at all.
+//
+// It used to stop at the shape, so a 31st of February reached storage and became a `$n::date` cast
+// that threw inside pqxx — a 500, a retained server_errors row and a Sentry event, on every
+// date-bearing route in the product, from any signed-in account at the rate limiter's pace. An
+// impossible date is the client's mistake and has to be refused here, where every route already
+// passes, rather than by nine repositories each catching a driver's exception.
 LocalDate::LocalDate(std::string iso) {
   auto digit = [](char c) { return c >= '0' && c <= '9'; };
   bool shaped = iso.size() == 10 && iso[4] == '-' && iso[7] == '-' &&
@@ -24,11 +29,20 @@ LocalDate::LocalDate(std::string iso) {
                 digit(iso[5]) && digit(iso[6]) && digit(iso[8]) && digit(iso[9]);
   if (!shaped) throw InvalidPage("date must be YYYY-MM-DD: " + iso);
 
+  int year = (iso[0] - '0') * 1000 + (iso[1] - '0') * 100 + (iso[2] - '0') * 10 + (iso[3] - '0');
+  // Year 0000 is not a year — Postgres has no such date, so "0000-01-01" was the cheapest 500 in
+  // the product: shaped like a date, impossible as one.
+  if (year < kFirstJournalYear) throw InvalidPage("year out of range: " + iso);
+
   int month = (iso[5] - '0') * 10 + (iso[6] - '0');
   if (month < 1 || month > 12) throw InvalidPage("month out of range: " + iso);
 
+  const bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+  constexpr int lengths[13] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  const int daysInMonth = month == 2 && leap ? 29 : lengths[month];
+
   int day = (iso[8] - '0') * 10 + (iso[9] - '0');
-  if (day < 1 || day > 31) throw InvalidPage("day out of range: " + iso);
+  if (day < 1 || day > daysInMonth) throw InvalidPage("day out of range: " + iso);
 
   iso_ = std::move(iso);
 }

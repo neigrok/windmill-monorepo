@@ -176,6 +176,13 @@ inline int occurrenceAt(const std::string& body, const std::string& text, int lo
   return -1;
 }
 
+// THE COMPARISON SET'S CEILING. 20,000 passages is ~30 MB of 384-dim float32 vectors — two and a
+// half times the 8,000 ECHOES.md measures as the heavy case — held warm for one account, and a
+// cosine scan the sweep can still afford. A writer putting five passages on the page every night
+// reaches it after eleven years. It is a bound on OUR cost, not a rule about anybody's journal: no
+// page is refused for it, and nothing is deleted.
+constexpr int kCorpusSpans = 20'000;
+
 // Storage for the echo pipeline. Owner-scoped throughout. Entitlement is NOT asked here, and it is
 // not asked by the sweep either: the sweep derives for everyone and the READ layer decides how much
 // of a passage a reader is handed. The canon's honest-cut state has to show a non-subscriber that
@@ -221,9 +228,14 @@ struct EchoRepository {
                                              const std::string& embedVersion,
                                              std::uint64_t bodyStampMs) = 0;
 
-  // Every passage the user has, without a single page body attached — the corpus load is the whole
-  // cost of a night and a body is dead weight in it. One embedding version only: cosine across two
-  // spaces is not degraded, it is meaningless, and nothing about it looks like an error.
+  // The user's passages, without a single page body attached — the corpus load is the whole cost of
+  // a night and a body is dead weight in it. One embedding version only: cosine across two spaces is
+  // not degraded, it is meaningless, and nothing about it looks like an error.
+  //
+  // AT MOST kCorpusSpans of them, the most recent, oldest-first. Not "every passage the user has",
+  // which is what it used to say and do: an account that keeps writing makes its own derivations
+  // — and, because one thread drains them all, everybody else's — cost more, with no ceiling. What
+  // the bound costs is honest and worth stating: past it, the oldest days can no longer be echoed.
   virtual std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) = 0;
 
   virtual std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) = 0;

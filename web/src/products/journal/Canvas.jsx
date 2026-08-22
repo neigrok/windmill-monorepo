@@ -337,6 +337,11 @@ const SAVE_NOTES = {
   device: 'saved on this device',
   offline: 'offline · saved here',
   unsaved: 'not saved — no room on this device',
+  // Deliberately says nothing about WHY. The store settles this on any refusal the server will
+  // repeat — too long is the common one, but a garbled stamp or a day the server will not take
+  // answer the same way, and telling somebody their page is too long when it is not is a claim
+  // nobody checked.
+  refused: 'kept here · not synced',
 };
 
 function SavedNote({ state, tick }) {
@@ -344,8 +349,13 @@ function SavedNote({ state, tick }) {
   useEffect(() => {
     if (tick === 0) return undefined;
     setVisible(true);
+    // Every other state is a beat that passes — saved, offline, and the retry that re-announces it.
+    // `refused` is the one that does NOT come back: nothing is retrying, so a note that fades after
+    // two seconds leaves a canvas that looks saved while nothing is syncing. It stays until the
+    // next save changes the answer.
+    if (state === 'refused') return undefined;
     const timer = setTimeout(() => setVisible(false), 2200);
     return () => clearTimeout(timer);
-  }, [tick]);
+  }, [tick, state]);
   return <span className={'journal-saved' + (visible ? ' is-on' : '')}> · {SAVE_NOTES[state] ?? 'saved'}</span>;
 }

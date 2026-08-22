@@ -6,9 +6,11 @@
 #include "test/testing.h"
 
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 
 using namespace wm;
@@ -86,10 +88,28 @@ drogon::HttpResponsePtr unsubscribe(Harness& h, const drogon::HttpRequestPtr& re
   return captured;
 }
 
+// A pass that RUNS answers from the sweep's own loop, never the thread that called it, so the test
+// waits for it exactly as a client would. `answeredOn` is the proof: a batch answered on this thread
+// would have been a drogon IO thread pinned for the length of the whole batch — 200 users of
+// database round trips and Resend calls, with a pooled connection held across every one of them.
+// A refusal (no token, a refused rehearsal) still answers inline, and the wait costs it nothing.
+struct SweepAnswer {
+  drogon::HttpResponsePtr response;
+  std::thread::id answeredOn;
+};
+
+SweepAnswer sweepOf(Harness& h, const drogon::HttpRequestPtr& req) {
+  std::promise<SweepAnswer> settled;
+  std::future<SweepAnswer> answer = settled.get_future();
+  h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& response) {
+    settled.set_value(SweepAnswer{response, std::this_thread::get_id()});
+  });
+  answer.wait();
+  return answer.get();
+}
+
 drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req) {
-  drogon::HttpResponsePtr captured;
-  h.api->adminSweep(req, [&](const drogon::HttpResponsePtr& response) { captured = response; });
-  return captured;
+  return sweepOf(h, req).response;
 }
 
 // A user whose nudges are on, with a device-pushed schedule and a live pause secret — the state
@@ -330,6 +350,27 @@ TEST(admin_sweep_makes_a_time_travelling_pass_a_rehearsal_even_when_asked_for_a_
   // And the user's real knock is still on the calendar.
   REQUIRE(h.nudges->settingsFor(me).has_value());
   CHECK_EQ(h.nudges->settingsFor(me)->nextDueAtMs.value_or(0), h.clock->now);
+}
+
+TEST(admin_sweep_runs_off_the_calling_thread) {
+  // It used to run inline on the drogon IO thread that took the request, holding one of the twenty
+  // pooled connections across every outbound Resend call in the batch. Roadmap's door never did.
+  Harness h(MailArming(), "the-secret");
+  UserId me = h.signIn("s-live");
+  h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
+  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/nudge/sweep");
+  req->addHeader("x-admin-token", "the-secret");
+
+  const SweepAnswer answer = sweepOf(h, req);
+
+  CHECK_EQ(answer.response->getStatusCode(), drogon::k200OK);
+  CHECK(answer.answeredOn != std::this_thread::get_id());
+  const Json::Value body = *answer.response->getJsonObject();
+  CHECK(body["ran"].asBool());
+  CHECK_EQ(body["due"].asInt(), 1);
+  CHECK_EQ(body["claimed"].asInt(), 1);
+  CHECK_EQ(body["held"].asInt(), 1);   // dark engine: decided, claimed, withheld
+  CHECK_EQ(body["sent"].asInt(), 0);
 }
 
 TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {

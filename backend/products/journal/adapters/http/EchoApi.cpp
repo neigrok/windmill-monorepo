@@ -335,7 +335,11 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     sinceMs = nowMs > kDayMs ? nowMs - kDayMs : 0;
   }
 
-  cb(jsonResponse(toJson(sweep_->run(sinceMs))));
+  // Off this thread: a repair pass is minutes of embedder and curator calls, and the IO thread that
+  // took this request is one of the handful serving every other route in the product.
+  sweep_->runAsync(sinceMs, [cb = std::move(cb)](const EchoSweepReport& report) {
+    cb(jsonResponse(toJson(report)));
+  });
 }
 
 }

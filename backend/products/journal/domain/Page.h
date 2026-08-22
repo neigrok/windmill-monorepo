@@ -2,6 +2,7 @@
 
 #include "platform/domain/Ids.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -15,13 +16,39 @@ struct InvalidPage : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
+// A page longer than any day of writing. Its own kind because the boundary answers it differently —
+// "too long" is a fact the writer can act on, and reading it back as "could not read that page"
+// would send somebody hunting for a typo in prose that is fine.
+struct PageTooLarge : InvalidPage {
+  using InvalidPage::InvalidPage;
+};
+
+// WHAT ONE DAY MAY WEIGH, and it is a storage rule before it is a writing one. Every superseding
+// write trails the body it replaced into journal_page_revision, so an uncapped page is an uncapped
+// row TRAIL — the shared Postgres that serves all three products, filled by one account at the
+// global 8 MB body cap, one PUT at a time.
+//
+// 128 KB is about twenty-five thousand words on a single day: past any evening anybody writes,
+// past a long pasted letter, and still two orders of magnitude under what the trail could take.
+// The client sends far less (web/src/products/journal/pageStore.js sends the textarea), so this is
+// a fuse and not a limit anyone is meant to meet.
+constexpr std::size_t kMaxPageBytes = 128 * 1024;
+
+// The floor of the addressable calendar, and it is the CALENDAR's floor rather than a product
+// opinion: year 0000 is not a date at all — Postgres has no such year, so it used to arrive as a
+// pqxx exception and a 500. A tighter, more human floor (say 1900) would be defensible, and is not
+// taken here because the open-ended echo window the web client sends is literally "0001-01-01"
+// (web/src/products/journal/echoes/useEchoes.js) — a floor above it would refuse every reader's
+// echo list. Move the sentinel first, then this.
+constexpr int kFirstJournalYear = 1;
+
 // A calendar day in the writer's own zone, "YYYY-MM-DD". Not an instant: the page for a day is the
 // same page whether it is opened at 23:04 or 00:10, and the zone is always the device's, never the
 // server's UTC. The ISO shape sorts lexicographically into true date order, so the default
 // spaceship over the stored text is exactly the canvas order (oldest first).
 class LocalDate {
 public:
-  explicit LocalDate(std::string iso);           // throws InvalidPage on a shape other than YYYY-MM-DD
+  explicit LocalDate(std::string iso);           // throws InvalidPage unless this is a day that happened
   const std::string& iso() const { return iso_; }
 
   bool operator==(const LocalDate&) const = default;

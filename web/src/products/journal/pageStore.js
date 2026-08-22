@@ -73,6 +73,17 @@ export function joinBodies(account, here) {
   return `${account.replace(/\s+$/, '')}\n\n${here.replace(/^\s+/, '')}`;
 }
 
+// A refusal the server will give again for the same bytes, however long we wait. 4xx says the
+// request was wrong, not that the network was — with the three exceptions that really do come good
+// on their own: an expired session (the seat resolves and the write is re-owed), a request timeout,
+// and a rate limit. Everything else, 413 included, is answered by changing the page, not by retrying.
+function isPermanentRefusal(failure) {
+  const status = failure?.status;
+  if (typeof status !== 'number') return false;
+  if (status === 401 || status === 408 || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
 function wireOf(page) {
   return { body: page.body, mood: page.mood, energy: page.energy, source: page.source, stamp: page.stamp };
 }
@@ -296,8 +307,15 @@ export class PageStore {
   // The claim (auth canon: adoption is additive) and the reconnect drain are one walk — everything
   // this device owes, oldest first, so a backlog replays in the order it was lived. It stops at the
   // first failure: order is the point, and a retry is already scheduled.
+  //
+  // A REFUSAL IS NOT A FAILURE TO STOP AT. A page the server will never accept — too long, or a day
+  // whose stamp this device garbled — would otherwise stand at the head of the queue forever: every
+  // later day unsent, the account's own window never read, the canvas never finished opening, and no
+  // retry scheduled to break out of it. So a refusal is stepped over rather than stopped at. The
+  // day keeps its words and stays owed, the walk finishes, and the read that follows still happens.
   async pushWhatIsOwed() {
     const scope = this.scope;
+    let refused = false;
     for (const entry of this.cache.owed()) {
       const resolved = entry.read
         ? { sent: entry.page, recovered: null }
@@ -308,8 +326,15 @@ export class PageStore {
       let winner;
       try {
         winner = normalizePage(await this.api.putPage(resolved.sent.day, wireOf(resolved.sent)));
-      } catch {
+      } catch (failure) {
         this.cache.flush();
+        // A refusal is not an outage, and waiting is not the remedy for it — but it is also not a
+        // reason to abandon the days behind it. Step over it, remember that it happened, and let
+        // the walk (and the window read after it) finish.
+        if (isPermanentRefusal(failure)) {
+          refused = true;
+          continue;
+        }
         this.settle('offline');
         this.scheduleRetry();
         return false;
@@ -319,6 +344,9 @@ export class PageStore {
       this.settleDraft(entry, resolved, winner);
     }
     this.cache.flush();
+    // Said after the walk rather than during it, so the last word is about the whole backlog and
+    // not about whichever day happened to be refused in the middle of it.
+    if (refused) this.settle('refused');
     return true;
   }
 
@@ -532,10 +560,20 @@ export class PageStore {
       this.cache.flush();
       this.adoptFields(page, winner);
       this.settle('saved');
-    } catch {
+    } catch (failure) {
       // A write that did not land is not a lost write — it is on the device, marked owed, and the
       // retry carries it. Unless the device refused the bytes too, in which case nothing is holding
       // these words and the note must not pretend otherwise.
+      //
+      // And unless the SERVER refused them, which is a different thing again: the page is too long
+      // to store (413) and every retry will be refused for the same reason. Saying "offline" then
+      // is a lie repeated on a timer, so the note says what is true — the words are here, they are
+      // too long to sync — and the timer stops. A next edit owes the page again, so shortening it
+      // is the remedy.
+      if (landed && isPermanentRefusal(failure)) {
+        this.settle('refused');
+        return;
+      }
       this.settle(landed ? 'offline' : 'unsaved');
       this.scheduleRetry();
     }

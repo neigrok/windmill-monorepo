@@ -273,15 +273,25 @@ std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const L
 
 std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,
                                                  const std::string& embedVersion) {
-  // The whole comparison set, and not one page body with it: the corpus load is the entire cost of
-  // a night and a body is dead weight in it — the passage text is already here, and it is the only
-  // text an echo may ever quote.
+  // The comparison set, and not one page body with it: the corpus load is the entire cost of a night
+  // and a body is dead weight in it — the passage text is already here, and it is the only text an
+  // echo may ever quote.
+  //
+  // BOUNDED AT kCorpusSpans, newest days first, then handed back oldest-first as the port promises.
+  // Unbounded, one account could make every one of its own derivations — and, on the single drain
+  // thread, everybody else's — arbitrarily expensive by writing more passages. The cut is by
+  // RECENCY and it is the honest trade to state: past this many passages the oldest days stop being
+  // reachable by an echo. At 384 float32 dims the ceiling is ~30 MB of vectors, and a writer putting
+  // five passages a day on the page reaches it after eleven years.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT span_id, day::text AS day, text, encode(vector, 'hex') AS vector "
-      "FROM journal_span WHERE user_id = $1::uuid AND embed_version = $2 ORDER BY day, ord",
-      user.str(), embedVersion);
+      "SELECT span_id, day::text AS day, text, encode(vector, 'hex') AS vector FROM ("
+      "  SELECT span_id, day, ord, text, vector FROM journal_span "
+      "  WHERE user_id = $1::uuid AND embed_version = $2 "
+      "  ORDER BY day DESC, ord DESC LIMIT $3) recent "
+      "ORDER BY day, ord",
+      user.str(), embedVersion, kCorpusSpans);
 
   std::vector<Vectored> corpus;
   corpus.reserve(rows.size());

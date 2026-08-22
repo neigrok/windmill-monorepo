@@ -29,6 +29,14 @@ public:
 
   void start();                                          // arm the ticker (fixed first tick, then periodic)
 
+  // The pass, queued onto the sweep's OWN loop and answered there. The admin door uses this: a
+  // drogon IO thread serves every other request in flight, and parking one on a sweep would pin it
+  // for the whole batch — up to 200 users of database round trips and outbound Resend calls, with a
+  // pooled connection held across them. Queuing also serialises an operator's sweep behind the
+  // heartbeat's rather than racing it. Roadmap's ReminderSweep::runAsync is the same method for the
+  // same reason; this is journal's half of it, which the mail sweep shipped without.
+  void runAsync(std::uint64_t nowMs, bool dryRun, std::function<void(MailSweepReport)> done);
+
 private:
   std::string name() const override { return "journal nudge"; }
   int batch() const override;

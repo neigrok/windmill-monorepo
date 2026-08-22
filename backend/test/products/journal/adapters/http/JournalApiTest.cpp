@@ -229,6 +229,63 @@ TEST(journal_put_then_get_round_trips_the_stored_page) {
   CHECK_EQ(dump(bodyOf(read)), wire);
 }
 
+TEST(journal_put_of_a_page_past_the_cap_is_413_and_stores_nothing) {
+  Harness h;
+  h.signIn("s-live");
+
+  drogon::HttpResponsePtr response =
+      sendPut(h.api, putRequest(pageWrite(std::string(kMaxPageBytes + 1, 'x')), "s-live"),
+              "2026-07-27");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"that page is too long to store"})"));
+  CHECK(h.repo.byKey.empty());   // nothing stored, so nothing to trail into the revision table
+}
+
+TEST(journal_put_of_a_page_at_the_cap_is_stored) {
+  // The cap is a fuse, not a limit anybody is meant to meet: a whole evening of writing, and the
+  // exact boundary byte, both go through.
+  Harness h;
+  h.signIn("s-live");
+
+  CHECK_EQ(sendPut(h.api, putRequest(pageWrite(std::string(kMaxPageBytes, 'x')), "s-live"),
+                   "2026-07-27")
+               ->getStatusCode(),
+           drogon::k200OK);
+  CHECK_EQ(h.repo.byKey.size(), 1u);
+}
+
+TEST(journal_routes_refuse_a_date_the_calendar_does_not_have) {
+  // Not a shape complaint: "2026-02-31" is well formed and impossible, and it used to reach the SQL
+  // cast and 500 with a server_errors row behind it.
+  Harness h;
+  h.signIn("s-live");
+
+  CHECK_EQ(sendGet(h.api, getRequest("/v1/journal/page/2026-02-31", "s-live"), "2026-02-31")
+               ->getStatusCode(),
+           drogon::k400BadRequest);
+  CHECK_EQ(sendPut(h.api, putRequest(pageWrite("hi"), "s-live"), "2026-02-31")->getStatusCode(),
+           drogon::k400BadRequest);
+  CHECK_EQ(sendGet(h.api, getRequest("/v1/journal/page/0000-01-01", "s-live"), "0000-01-01")
+               ->getStatusCode(),
+           drogon::k400BadRequest);
+  CHECK(h.repo.byKey.empty());
+}
+
+TEST(journal_list_refuses_an_impossible_window) {
+  Harness h;
+  h.signIn("s-live");
+  drogon::HttpRequestPtr request = getRequest("/v1/journal/pages", "s-live");
+  request->setParameter("from", "2026-02-31");
+  request->setParameter("to", "2026-03-01");
+
+  drogon::HttpResponsePtr captured;
+  h.api.listPages(request, [&](const drogon::HttpResponsePtr& response) { captured = response; });
+
+  CHECK_EQ(captured->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(captured)), std::string(R"({"error":"bad date"})"));
+}
+
 TEST(journal_put_with_a_malformed_stamp_is_400_not_500) {
   Harness h;
   h.signIn("s-live");
