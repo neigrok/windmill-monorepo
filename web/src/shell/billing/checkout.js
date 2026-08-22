@@ -112,6 +112,7 @@ export async function openCheckout(transactionId, { onCompleted } = {}) {
 export async function beginUpgrade({ onCompleted } = {}) {
   const checkout = await startCheckout();
   if (!checkout) return false;
+  rememberMintedCheckout(checkout.transactionId);  // the only thing that makes a ?_ptxn return trip ours
   if (await openCheckout(checkout.transactionId, { onCompleted })) return true;
   if (!checkout.checkoutUrl) return false;
   window.location.href = checkout.checkoutUrl;
@@ -119,10 +120,29 @@ export async function beginUpgrade({ onCompleted } = {}) {
 }
 
 // Paddle's payment link lands back on our own origin as `?_ptxn=<transaction>`; whichever route the
-// browser opens, that parameter means "resume this checkout".
+// browser opens, that parameter means "resume this checkout". A URL parameter is not evidence,
+// though: anyone can send a link to the real origin carrying somebody else's transaction id, and
+// the page used to open that stranger's overlay on load, with no click and no session (audit
+// WEB-3). So a transaction is resumable only if THIS tab minted it — beginUpgrade writes the id
+// here as it opens the checkout, and the parameter is answered only when the two agree. A resume
+// is spent when it is read: one mint, one overlay, and a replayed link finds nothing.
+const RESUMABLE_KEY = 'windmill:checkout:mine';
+
+function rememberMintedCheckout(transactionId) {
+  try {
+    sessionStorage.setItem(RESUMABLE_KEY, transactionId);
+  } catch { /* storage unavailable — the return trip simply won't resume, which is the safe way to fail */ }
+}
+
 export function pendingTransactionId() {
   try {
-    return new URLSearchParams(window.location.search).get('_ptxn') || '';
+    const claimed = new URLSearchParams(window.location.search).get('_ptxn') || '';
+    if (!claimed) return '';  // nothing came back, so nothing is spent — a real return trip that
+                              // lands while the session is still resolving must still find its mint
+    const mine = sessionStorage.getItem(RESUMABLE_KEY) || '';
+    sessionStorage.removeItem(RESUMABLE_KEY);
+    if (claimed !== mine) return '';
+    return claimed;
   } catch {
     return '';
   }

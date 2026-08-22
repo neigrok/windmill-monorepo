@@ -23,9 +23,19 @@
 //
 // A REPLY IS A RECEIPT FOR ONE WRITE, NEVER FOR EVERY WRITE — the cache's markPushed keeps a newer
 // unsent draft owed, so a slow reply cannot swallow the last thing someone typed.
+//
+// AND THE STORE IS ALWAYS OPEN FOR EXACTLY ONE ACCOUNT. connect() is given a user id (or null for
+// signed out), and a change of that id re-opens the device tier under the arriving account's own
+// key AND clears what the departing one left in memory — the canvas, today's draft, the pending
+// save. Both halves are needed and neither is enough: the key is what protects a browser whose tab
+// crashed before anything could be cleared, and the memory reset is what protects the person
+// standing in front of a canvas that was already painted.
 
 import { journalApi } from './journalApi.js';
-import { PageCache, isWritten, normalizePage, winnerOf } from './pageCache.js';
+import {
+  PageCache, anonymousDrafts, dropAnonymousScope, dropUnclaimedPages, isWritten, normalizePage,
+  unclaimedPages, winnerOf,
+} from './pageCache.js';
 import { localDay, daysBefore, mintStamp } from './hlc.js';
 
 export const WINDOW_DAYS = 60;
@@ -69,7 +79,10 @@ function wireOf(page) {
 
 export class PageStore {
   constructor({
-    cache = new PageCache(),
+    // The device tier is opened per account rather than handed in, because who is signed in changes
+    // under a mounted canvas and the store is what has to follow that change. A fresh store belongs
+    // to nobody yet, which is the anonymous scope — connect() re-opens it the moment auth settles.
+    openCache = (account) => new PageCache(account),
     api = journalApi,
     mint = mintStamp,
     today = localDay(),
@@ -81,7 +94,9 @@ export class PageStore {
     setTimer = (run, delay) => setTimeout(run, delay),
     clearTimer = (timer) => clearTimeout(timer),
   } = {}) {
-    this.cache = cache;
+    this.openCache = openCache;
+    this.scope = null;
+    this.cache = openCache(null);
     this.api = api;
     this.mint = mint;
     this.today = today;
@@ -148,13 +163,16 @@ export class PageStore {
     for (const listener of this.listeners) listener();
   }
 
-  // Called on mount and on every change of who is signed in. Draws from the device first and always
-  // — a canvas that waited for a network round trip would be a cursor that waits.
-  async connect(signedIn) {
+  // Called on mount and on every change of WHO is signed in — `account` is a user id, or null for
+  // signed out. Draws from the device first and always — a canvas that waited for a network round
+  // trip would be a cursor that waits.
+  async connect(account = null) {
     // Connecting is what puts the store back in service, so dispose() is a pause rather than a
     // death: React StrictMode mounts, tears down and re-mounts the canvas on the SAME store, and a
     // one-way flag would leave the second life unable to read anything, in dev only.
     this.disposed = false;
+    const signedIn = Boolean(account);
+    if ((account ?? null) !== this.scope) this.openScope(account ?? null);
     this.signedIn = signedIn;
     this.drawFromCache();
     if (!signedIn) {
@@ -172,28 +190,119 @@ export class PageStore {
     await this.sync();
   }
 
+  // The account arriving at this canvas — the load-bearing half of the fix for JOURNAL-1. The
+  // device tier is re-opened under the arriving account's own key (pageCache.js), so the previous
+  // account's pages are not filtered out here, they are never read; and everything the previous
+  // account left in MEMORY goes with them, because the canvas, the draft and the queued save were
+  // painted for somebody who is no longer here.
+  //
+  // The departing account's pages STAY ON DISK under its own key. That is deliberate: they are its
+  // own unsent work and its own cache, they are unreachable from any other scope, and wiping them
+  // would mean a person who signs out and back in on their own laptop loses the page they wrote on
+  // a plane. Sign-out ends the session, not the writing.
+  openScope(account) {
+    // The last beat of typing before the account changed is put on the DEVICE — into the scope it
+    // was typed under, where it stays owed until that person signs back in — and is never sent:
+    // the only session this browser has left belongs to somebody else, and a PUT now would be
+    // JOURNAL-1 with the arriving account's cookie on it. Skipping this altogether is what the
+    // first cut did, and it ate up to SAVE_DEBOUNCE of somebody's writing on every sign-out.
+    if (this.savePending) this.keepDraftOnDevice();
+    this.clearTimer(this.saveTimer);
+    this.clearTimer(this.retryTimer);
+    this.saveTimer = null;
+    this.retryTimer = null;
+    this.savePending = false;
+    this.syncing = false;
+
+    const leavingAnon = this.scope === null;
+    this.scope = account;
+    this.cache = this.openCache(account);
+    this.history = [];
+    this.draft = { body: '', mood: null, energy: null };
+    this.touched = false;
+    this.readState = 'loading';
+    this.reach = 'more';
+    this.saveState = 'idle';
+    if (account && leavingAnon) this.claimAnonymousDrafts();
+  }
+
+  // Signing in claims what was written here while nobody was — additive, always: each anonymous
+  // draft is JOINED onto whatever this account's scope already holds for that day and held
+  // unstamped, so pushWhatIsOwed reads the account's real page and joins onto that too. Nothing an
+  // account wrote can be raced or replaced by a draft that never read it.
+  claimAnonymousDrafts() {
+    const drafts = anonymousDrafts(this.cache.storage);
+    if (!drafts.length) return;
+    // Only once the account's scope has taken the bytes: a device that refused the write is still
+    // holding these words in the anonymous scope, and the next sign-in gets to claim them again.
+    if (this.takeIntoScope(drafts)) dropAnonymousScope(this.cache.storage);
+  }
+
+  // Pages from outside this scope, taken into it — the anonymous claim, and the restore of pages
+  // quarantined from before scoping existed. They arrive HELD: joined onto whatever this account
+  // already holds for the day and carrying no stamp, so pushWhatIsOwed has to read the account's
+  // real page and join onto that too. That is what makes taking them additive rather than a race —
+  // nothing an account wrote can be replaced by prose that never read it.
+  takeIntoScope(pages) {
+    for (const page of pages) {
+      const mine = this.cache.page(page.day);
+      this.cache.hold({
+        day: page.day,
+        body: joinBodies(mine?.body ?? '', page.body),
+        mood: page.mood ?? mine?.mood ?? null,
+        energy: page.energy ?? mine?.energy ?? null,
+        source: page.source,
+      });
+    }
+    return this.cache.flush();
+  }
+
+  // The shell's forgetDevice, product side: the account that was here is gone, so nothing of theirs
+  // may remain on screen or in this store. The store falls back to the anonymous scope — the same
+  // place a signed-out writer's words live — and the arriving account (if there is one) opens its
+  // own scope on the connect that follows.
+  forget() {
+    this.openScope(null);
+    this.signedIn = false;
+    this.readState = 'device';
+    this.drawFromCache();
+  }
+
   // Everything the account and this device owe each other, in the one order that is safe: what is
   // owed goes UP first, because the window read is what settles a day as read — and a day settled
   // before its held words were joined onto it would look like an ordinary page to write over.
   async sync() {
     if (!this.signedIn || this.disposed || this.syncing) return;
+    const scope = this.scope;
     this.syncing = true;
     try {
       if (!(await this.pushWhatIsOwed())) return;
+      if (!this.holds(scope)) return;
       await this.loadWindow();
     } finally {
       this.syncing = false;
     }
   }
 
+  // Whether the store is still open for the account this walk started under. Every network step
+  // here is an await, and who is signed in can change across one — a sign-out, or another tab
+  // signing in as somebody else. An answer that belongs to the departed account must not be written
+  // into the arriving one's cache or drawn on its canvas; that is the same leak as JOURNAL-1,
+  // arriving a second late.
+  holds(scope) {
+    return !this.disposed && this.scope === scope;
+  }
+
   // The claim (auth canon: adoption is additive) and the reconnect drain are one walk — everything
   // this device owes, oldest first, so a backlog replays in the order it was lived. It stops at the
   // first failure: order is the point, and a retry is already scheduled.
   async pushWhatIsOwed() {
+    const scope = this.scope;
     for (const entry of this.cache.owed()) {
       const resolved = entry.read
         ? { sent: entry.page, recovered: null }
         : await this.joinOntoAccount(entry);
+      if (!this.holds(scope)) return false;
       if (!resolved) { this.cache.flush(); this.settle('offline'); this.scheduleRetry(); return false; }
 
       let winner;
@@ -205,6 +314,7 @@ export class PageStore {
         this.scheduleRetry();
         return false;
       }
+      if (!this.holds(scope)) return false;
       this.cache.markPushed(resolved.sent.day, winner);
       this.settleDraft(entry, resolved, winner);
     }
@@ -259,6 +369,7 @@ export class PageStore {
   }
 
   async loadWindow() {
+    const scope = this.scope;
     const from = daysBefore(this.today, WINDOW_DAYS);
     let pages;
     try {
@@ -272,6 +383,7 @@ export class PageStore {
       this.emit();
       return;
     }
+    if (!this.holds(scope)) return;
     this.absorb(from, this.today, pages);
     this.readState = 'ready';
     this.drawFromCache();
@@ -292,6 +404,7 @@ export class PageStore {
   // actually reached one.
   async reachBack() {
     if (this.readState !== 'ready' || this.reach === 'loading' || this.reach === 'end') return;
+    const scope = this.scope;
     this.reach = 'loading';
     this.emit();
 
@@ -307,6 +420,7 @@ export class PageStore {
       this.emit();
       return;
     }
+    if (!this.holds(scope)) return;
     this.absorb(from, to, pages);
     if (pages.length === 0) {
       await this.reachToBeginning(daysBefore(from, 1));
@@ -321,6 +435,7 @@ export class PageStore {
   // nothing at all — and when it does answer, what comes back IS the rest of the journal, which
   // leaves the canvas standing at its true beginning either way.
   async reachToBeginning(to) {
+    const scope = this.scope;
     let pages;
     try {
       pages = await this.api.range(BEGINNING, to);
@@ -334,6 +449,7 @@ export class PageStore {
     // Absorbed from the oldest page BACK, never from the floor: marking every day since year one as
     // read would be seven hundred thousand entries, and the days below the first page are days
     // nobody wrote rather than days the canvas draws.
+    if (!this.holds(scope)) return;
     if (pages.length > 0) {
       this.absorb(pages.reduce((oldest, page) => (page.day < oldest ? page.day : oldest), to), to, pages);
     }
@@ -344,6 +460,7 @@ export class PageStore {
   // Reach further back than the initial window so a search hit or an echo older than the canvas can
   // still be flown to. A secondary read: it never decides readState, and a failure is a no-op.
   async extendTo(date) {
+    const scope = this.scope;
     const earliest = this.history.length ? this.history[0].date : daysBefore(this.today, 1);
     if (!date || date >= earliest) return;
     const to = daysBefore(earliest, 1);
@@ -353,6 +470,7 @@ export class PageStore {
     } catch {
       return;
     }
+    if (!this.holds(scope)) return;
     this.absorb(date, to, pages);
     this.drawFromCache();
   }
@@ -397,29 +515,19 @@ export class PageStore {
     this.savePending = false;
     this.clearTimer(this.retryTimer);
     this.retryTimer = null;
+    const scope = this.scope;
     const day = this.today;
-    const draft = this.draft;
-
-    // THE STAMP RULE, at the one place a write is born. A stamp is a claim to have written LAST —
-    // backend/products/journal/domain/Page.h resolves two writers on the greater stamp — and this
-    // device may only make that claim about a page it has actually read. A day it has not read
-    // (nobody signed in, or the window read failed) is HELD here instead: unstamped, unsent, and
-    // joined onto the account's page by pushWhatIsOwed the moment one can be read.
-    if (!this.cache.hasRead(day)) {
-      this.cache.hold({ day, body: draft.body, mood: draft.mood, energy: draft.energy, source: 'typed' });
-      const landed = this.cache.flush();
-      this.settle(landed ? 'device' : 'unsaved');
+    const kept = this.keepDraftOnDevice();
+    if (!kept.page) {
+      this.settle(kept.landed ? 'device' : 'unsaved');
       if (this.signedIn) this.scheduleRetry();
       return;
     }
 
-    const page = {
-      day, body: draft.body, mood: draft.mood, energy: draft.energy, source: 'typed', stamp: this.mint(),
-    };
-    this.cache.store(page, { needsPush: true, read: true });
-    const landed = this.cache.flush();
+    const { page, landed } = kept;
     try {
       const winner = normalizePage(await this.api.putPage(day, wireOf(page)));
+      if (!this.holds(scope)) return;
       this.cache.markPushed(day, winner);
       this.cache.flush();
       this.adoptFields(page, winner);
@@ -431,6 +539,29 @@ export class PageStore {
       this.settle(landed ? 'offline' : 'unsaved');
       this.scheduleRetry();
     }
+  }
+
+  // THE WORDS LAND ON THE DEVICE FIRST — the whole of a write except the sending, which is why the
+  // scope change can borrow it: a person leaving keeps what they typed, in their own scope, owed.
+  //
+  // THE STAMP RULE lives here, at the one place a write is born. A stamp is a claim to have written
+  // LAST — backend/products/journal/domain/Page.h resolves two writers on the greater stamp — and
+  // this device may only make that claim about a page it has actually read. A day it has not read
+  // (nobody signed in, or the window read failed) is HELD instead: unstamped, unsent, and joined
+  // onto the account's page by pushWhatIsOwed the moment one can be read. That is what `page: null`
+  // means to the caller — there is nothing here that may be sent.
+  keepDraftOnDevice() {
+    const day = this.today;
+    const draft = this.draft;
+    if (!this.cache.hasRead(day)) {
+      this.cache.hold({ day, body: draft.body, mood: draft.mood, energy: draft.energy, source: 'typed' });
+      return { page: null, landed: this.cache.flush() };
+    }
+    const page = {
+      day, body: draft.body, mood: draft.mood, energy: draft.energy, source: 'typed', stamp: this.mint(),
+    };
+    this.cache.store(page, { needsPush: true, read: true });
+    return { page, landed: this.cache.flush() };
   }
 
   adoptFields(sent, winner) {
@@ -487,6 +618,45 @@ export class PageStore {
   }
 }
 
+// Every store a mounted canvas is holding. The shell tells the journal that the account changed
+// (routes.js `forgetDevice`), and the disk half of that is settled by the scope key alone — but the
+// canvas on screen was painted from memory by whoever was here a moment ago, and only the store
+// that painted it can clear it. usePages registers one store per mount and drops it on unmount, so
+// this set is exactly the canvases that exist.
+const openStores = new Set();
+
+export function holdStore(store) {
+  openStores.add(store);
+  return () => openStores.delete(store);
+}
+
+export function forgetOpenStores() {
+  for (const store of openStores) store.forget();
+}
+
+// The restore, and the ONLY way anything quarantined out of the old unscoped store ever reaches an
+// account: a signed-in person asked for it by hand (settings/YourJournalSection.jsx). The pages are
+// taken into that account's scope as held drafts — joined, unstamped, exactly like the anonymous
+// claim — and go up through the ordinary owed walk. An account is required: nobody can be given
+// pages nobody could attribute without saying out loud that they are theirs.
+//
+// Answers how many pages were taken, so the surface can say it plainly. A device that refused the
+// write keeps them in quarantine and answers 0 — the offer stands rather than the words vanishing.
+export async function restoreUnclaimedPages(account) {
+  if (!account) return 0;
+  const pages = unclaimedPages();
+  if (!pages.length) return 0;
+  const canvas = [...openStores].find((store) => store.scope === account);
+  const store = canvas ?? new PageStore();
+  if (!canvas) await store.connect(account);
+  if (!store.takeIntoScope(pages)) return 0;
+  dropUnclaimedPages(store.cache.storage);
+  store.drawFromCache();
+  await store.sync();
+  if (!canvas) store.dispose();
+  return pages.length;
+}
+
 // THE WHOLE JOURNAL, for the two readers that want all of it rather than a window: search's index
 // and the year zoom. Both read the account and only the account, which was the whole truth until
 // the device tier landed — a signed-out writer's pages are now real pages that live here, and their
@@ -495,7 +665,17 @@ export class PageStore {
 // `source` is the other half, and it is the canvas's rule said again: a corpus that could not be
 // read is not an empty journal, so a caller can say which of these three it is looking at instead
 // of drawing a blank year over a failed read.
-export async function corpus({ api = journalApi, cache = new PageCache(), signedIn = true } = {}) {
+//
+// `account` is the user id whose device scope this corpus is built from — the same scope the canvas
+// is open for. Search and the year zoom read the device tier too, so an unscoped read here would
+// have put the previous user's pages into the arriving one's ⌘K results and year grid even after
+// the canvas itself was clean.
+export async function corpus({
+  api = journalApi,
+  account = null,
+  cache = new PageCache(account),
+  signedIn = Boolean(account),
+} = {}) {
   // Nobody is signed in, so there is no account to read and nothing to be offline from: this device
   // IS the record, exactly as the canvas reads it.
   if (!signedIn) return { pages: joinCorpus([], cache), source: 'device' };

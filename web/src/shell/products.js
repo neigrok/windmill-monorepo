@@ -1,10 +1,15 @@
 // The product registry — the one place the shell learns which products exist. Each product
 // exports a uniform route table (id · label · switchHash · home · render, plus the `shell`
 // manifest the /app chrome reads: room · scope · status · landingHref · HomeCard, the
-// `landing` the brand root builds its door from: href · Component · tagline · summary, and the
+// `landing` the brand root builds its door from: href · Component · tagline · summary, the
 // optional `settingsSections: { main, data }` the neutral settings page composes — `main` in the
 // product zone under the account identity, `data` last beside the account's own close, and a
-// product with none contributes nothing); the
+// product with none contributes nothing — and the optional `forgetDevice({ previous, next })` the
+// shell calls when the signed-in account CHANGES: a sign-out (`next: null`) or one account
+// replacing another, so a product gives up what it keeps on this device before the next person on
+// this browser can read it. It is never called for ghost→signed-in — that is the claim, and the
+// anonymous work is meant to follow the person who signs in — and a product that keeps nothing on
+// the device declares none). The
 // shell composes them in this order and names the rooms in its head from the same list. The shell
 // hard-codes no product: when a neutral surface (account, sign-in landing) needs to know where
 // "home" is, it asks the active product here, defaulting to the first — the roadmap, for now.

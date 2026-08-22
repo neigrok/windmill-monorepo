@@ -10,7 +10,7 @@
 
 import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
-import { LocalTreeRegistry } from './LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner } from './LocalTreeRegistry.js';
 
 // One row per owned roadmap: { id, title, done, total, updatedAt }. Missing fields are
 // the backend's to fill; the switcher renders whatever it gets and skips the rest.
@@ -30,19 +30,31 @@ export async function listTrees() {
 // just-claimed tree keeps its flipped device entry only for signed-out listing). Rows
 // carry their origin so the switcher can tag them and route their edits: 'server' rows
 // PATCH/DELETE the registry, 'device' rows only ever touch local seams.
+//
+// The device half is scoped to the account the SERVER says is holding this browser, never
+// to the remembered marker: a signed-out browser lists its own anonymous work and nothing
+// else, and one account never sees another's rows (audit WEB-4 — a 401 used to leave every
+// device entry standing, which is how the next person was auto-navigated into a private
+// tree). The two answers are asked for together so the scope costs no extra round trip.
 export async function listAllTrees() {
-  const server = await fetchServerList();
+  const [owner, server] = await Promise.all([resolveDeviceOwner(), fetchServerList()]);
   const registry = new LocalTreeRegistry();
   const serverIds = new Set(server.rows.map((tree) => tree.id));
-  if (server.authoritative) {
-    // The server just vouched for the whole account list: a CLAIMED device entry it no
-    // longer names is a tree deleted elsewhere or never this account's — prune it, or
-    // it zombies the union forever with a "synced" tag and no affordance to remove.
-    // Unclaimed entries are local-born and waiting to claim; those always stay.
-    registry.list().filter((tree) => tree.claimed && !serverIds.has(tree.id))
+  // Both halves have to be true to touch the index: the list is the account's whole truth, and
+  // we know WHICH account it is. A list that arrived while /v1/me blipped names rows we cannot
+  // attribute — stamping them anonymous would offer this account's trees to the next one.
+  if (server.authoritative && owner) {
+    // The server just vouched for the whole account list: every row it names is this
+    // account's, which heals a device entry written before entries carried an owner…
+    registry.attribute([...serverIds], owner);
+    // …and a CLAIMED device entry it no longer names is a tree deleted elsewhere or never
+    // this account's — prune it, or it zombies the union forever with a "synced" tag and no
+    // affordance to remove. Unclaimed entries are local-born and waiting to claim; those
+    // always stay, and another account's rows are not ours to prune.
+    registry.list(owner).filter((tree) => tree.claimed && !serverIds.has(tree.id))
       .forEach((tree) => registry.remove(tree.id));
   }
-  const device = registry.list().filter((tree) => !serverIds.has(tree.id));
+  const device = registry.list(owner).filter((tree) => !serverIds.has(tree.id));
   return [
     ...server.rows.map((tree) => ({ ...tree, origin: 'server' })),
     ...device.map((tree) => ({ ...tree, origin: 'device' })),

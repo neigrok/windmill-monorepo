@@ -28,16 +28,16 @@ function dow(iso) {
   return WEEKDAYS[new Date(y, m - 1, d).getDay()];
 }
 
-export function ZoomView({ onClose, onPick, signedIn = true }) {
+export function ZoomView({ onClose, onPick, account = null }) {
   const [read, setRead] = useState(null);
   const pages = read?.pages ?? null;
   const today = localDay();
 
   useEffect(() => {
     let cancelled = false;
-    corpus({ signedIn }).then((loaded) => { if (!cancelled) setRead(loaded); });
+    corpus({ account }).then((loaded) => { if (!cancelled) setRead(loaded); });
     return () => { cancelled = true; };
-  }, [signedIn]);
+  }, [account]);
 
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose(); };

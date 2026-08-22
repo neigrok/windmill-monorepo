@@ -66,14 +66,12 @@ import { RadialLayoutEngine } from './layout/RadialLayoutEngine.js';
 import { HttpTreeRepository } from './persistence/HttpTreeRepository.js';
 import { listAllTrees, renameTree, deleteTree } from './persistence/TreeRegistry.js';
 import { SyncSession } from './sync/SyncSession.js';
-import { isOwnershipRefusal } from './sync/refusals.js';
-import { SyncStore } from './sync/SyncStore.js';
-import { TreeLattice } from './sync/lattice.js';
+import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank } from './sync/refusals.js';
 import { claimLocalTrees } from './sync/claimLocalTrees.js';
-import { renameLocalTree, deleteLocalTree } from './sync/localTrees.js';
+import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { ProgressStore } from './persistence/ProgressStore.js';
-import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner, confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
@@ -99,7 +97,6 @@ import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, F
 
 const layoutEngine = new RadialLayoutEngine();
 const progressStore = new ProgressStore();
-const syncStore = new SyncStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
@@ -126,13 +123,22 @@ function consumeSessionFlag(key) {
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor(); // the one door (shell/auth/SignInDoor.jsx) — the seat, the list notice and an expired landing all ask it
   const { breakpoint, readOnly: viewReadOnly, shared } = useViewMode();
-  const { status, refresh } = useAuth(); // this canvas reads the session; the seat that shows it lives in the shell's head
+  const { status, refresh, account } = useAuth(); // this canvas reads the session; the seat that shows it lives in the shell's head
+
+  // One source of truth for "who is confirmed on this device". `account` is the shell's
+  // SERVER-confirmed account for this document load — never its painted face, which may be a
+  // remembered hint — so handing it straight to the device scope keeps the two halves from ever
+  // disagreeing about whose trees this browser may open. The other direction is not derivable from
+  // the hook (an unconfirmed load and a confirmed 401 both read as null), so the "nobody" answer
+  // still comes from resolveDeviceOwner's own /v1/me below.
+  useEffect(() => { if (account) confirmDeviceOwner(account.id); }, [account]);
 
   // The honesty split (share-hardening): an owner's lapsed sign-in never downgrades —
   // saves stay on this device and only the chrome tells the truth (lapsed). A visitor
   // on a tree that isn't theirs gets the true downgrade (demotion) into read-only.
   const [lapsed, setLapsed] = useState(false); // owner lapse: chip persists until re-auth
   const [demotion, setDemotion] = useState(null); // visitor downgrade: { edits, cardOpen } | null
+  const [stranded, setStranded] = useState(null); // a refusal that is neither: the bank has nowhere to go
   const readOnly = viewReadOnly || !!demotion;
 
   const canvasRef = useRef(null);
@@ -253,6 +259,18 @@ export function SkillTreeView({ treeId, demo = false }) {
         if (demotedRef.current || waiting) return;
         lastActivityAt = Date.now(); // the rejected gesture itself counts as activity
         demote();
+        return;
+      }
+      // Neither a verdict nor a doubt: the tree is full, or the server minted a refusal this
+      // build does not know. The seat is fine and the ownership is fine, so neither the demotion
+      // nor the session re-check applies — but the edits behind that frame are stranded, and the
+      // one honest thing to do is stop pretending they are being saved.
+      if (!isSessionRefusal(event.detail)) {
+        if (strandsTheBank(event.detail)) {
+          setStranded(isCapacityRefusal(event.detail)
+            ? 'Not saving — this roadmap is at its limit'
+            : 'Not saving — the server refused the last change');
+        }
         return;
       }
       // sign-in-required — suspicion, not verdict: re-check
@@ -673,6 +691,11 @@ export function SkillTreeView({ treeId, demo = false }) {
     } else if (!masked.length) {
       maskedShownRef.current = '';
     }
+
+    // The stranded line is a statement about the bank, so it dies with the bank: an undo that
+    // takes the tree back under the cap, or a flush that finally lands, must not leave a chip
+    // saying nothing saves.
+    if (collabRef.current?.pendingEditCount?.() === 0) setStranded(null);
   }, [syncStructure, showToast, syncLegendFromTree]);
   onTreeChangedRef.current = onTreeChanged;
 
@@ -1194,24 +1217,19 @@ export function SkillTreeView({ treeId, demo = false }) {
     async function loadTree() {
       // The routed tree comes from the backend, per treeId — but the server is only the
       // first answer. A tree it doesn't know (local-born, or the server is unreachable)
-      // projects from the durable lattice blob instead (anon-first-tree F2); loadError
-      // means BOTH had nothing. The title baseline comes from the device index; a stamped
-      // rename inside the blob dominates it on join.
+      // projects from the durable lattice blob instead (anon-first-tree F2)…
       const repo = new HttpTreeRepository({ treeId });
+      // Who holds this device, confirmed with the server before anything is read from it OR
+      // written to it: the session below persists through the device index, and a row written
+      // by a tab that never confirmed its account is a row the NEXT account would inherit.
+      await resolveDeviceOwner();
       let seed = null;
       try { seed = await repo.loadTree(); } catch { /* fall through to the blob */ }
       if (!seed) {
-        const saved = await syncStore.load(treeId).catch(() => null);
-        if (!saved?.frame) throw new Error(`tree ${treeId}: unknown to the server and absent locally`);
-        const lattice = new TreeLattice(treeId, deviceTrees.get(treeId)?.title ?? '');
-        lattice.join(saved.frame);
-        seed = lattice.toTreeData();
-        // A device-born tree the server never saw is still THIS device's own — the blob path has no
-        // server `mine` bit to carry, so stamp ownership from the device index. Without it an anon's
-        // own planted quest loads treeMine=false and, on a phone, mobileEditable is false: the tree
-        // is a read-only dead end with no verb rail and no fork (it's yours, so there's nothing to
-        // fork). Ownership gates editing, not width (M0) — an anon owns this, so it must be editable.
-        seed.mine = !!deviceTrees.get(treeId);
+        // …and the device answers only for a tree this account has standing to open here
+        // (loadDeviceTree, audit WEB-4). loadError means BOTH had nothing for us.
+        seed = await loadDeviceTree(treeId);
+        if (!seed) throw new Error(`tree ${treeId}: unknown to the server, and not this device's to open`);
       }
       // The seed is only the first paint; the durable structure is the lattice — loaded
       // from IndexedDB (offline) and reconciled with the server on subscribe by the SyncSession.
@@ -2193,6 +2211,12 @@ export function SkillTreeView({ treeId, demo = false }) {
           and two seats on one screen is not an offer, it is a bug. It sits a row below the control
           cluster so it never collides with it, and below the detail panel's z so an open panel
           covers it just like it covers the control bar (z 20 < chip 24 < panel 25). */}
+      {stranded && !demo && (
+        <div style={{ position: 'absolute', top: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 24 }}>
+          <StatusChip>{stranded}</StatusChip>
+        </div>
+      )}
+
       {!readOnly && status !== 'signed-in' && treeMine && !demo && (
         <div style={{ position: 'absolute', top: 'calc(var(--space-6) + 52px)', right: 'var(--space-6)', zIndex: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusChip>{lapsed ? 'Signed out — saved on this device' : 'Saved on this device — sign in to keep it'}</StatusChip>

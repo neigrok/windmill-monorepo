@@ -6,6 +6,7 @@
 
 import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
+import { forgetOpenStores } from './pageStore.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -44,6 +45,23 @@ function render({ hash }) {
   return null;
 }
 
+// Called by the shell when the signed-in account CHANGES — a sign-out (next: null), or one account
+// replacing another. Never called for ghost→signed-in: that is the claim, and the anonymous work on
+// this device is meant to follow the person who signs in (pageStore.claimAnonymousDrafts).
+//
+// What it drops is the departing account's state IN MEMORY: the open canvas, today's draft, the
+// queued save, and — because the store falls back to the anonymous scope — what search and the year
+// zoom would rebuild from next. What it deliberately does NOT drop is that account's pages on disk.
+// They live under their own key (pageCache.js `keyForScope`), no other scope can read them, and
+// wiping them would mean signing out on your own laptop threw away the page you wrote on a plane.
+// Sign-out ends the session, not the writing.
+//
+// The shell hands this `{ previous, next }` and the journal needs neither id: which pages are
+// readable is decided by the key the device tier is opened under, not by anything remembered here.
+function forgetDevice() {
+  forgetOpenStores();
+}
+
 export const journalRoutes = {
   id: 'journal',
   label: 'Journal',
@@ -52,6 +70,7 @@ export const journalRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importJournalApp,
+  forgetDevice,
   settingsSections: {
     data: [YourJournalSection],
   },

@@ -4,6 +4,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { fetchMe, logout } from './AuthClient.js';
+import { DeviceSeat } from './accountChange.js';
 
 const AuthContext = createContext(null);
 const CHANNEL_NAME = 'wm-auth';
@@ -37,44 +38,59 @@ function readAuthHint() {
 }
 
 export default function AuthProvider({ children }) {
-  // Seed from the last remembered answer so a returning signed-in tab renders signed-in on
-  // the first frame; a first-ever visit has no hint and settles through 'loading' as before.
+  // The hint PAINTS: a returning signed-in tab renders signed-in on the first frame instead of
+  // flashing signed-out. It is never the account — `account` below stays null until the server has
+  // answered once on this load, because a hint is the device claiming an identity and the device
+  // cannot tell the owner from a stranger holding it (see accountChange.js).
   const [user, setUser] = useState(() => readAuthHint()?.user ?? null);
   const [status, setStatus] = useState(() => readAuthHint()?.status ?? 'loading'); // 'loading' | 'ghost' | 'signed-in'
+  // What a product may derive a device scope from: the account /v1/me confirmed on THIS document
+  // load, or nobody. A cold start with no network therefore opens a signed-out journal or roadmap
+  // even though the pages are still on the disk under it — the deliberate cost of asking the server
+  // rather than the device, and the data comes back with the network.
+  const [account, setAccount] = useState(null);
   const channelRef = useRef(null);
   const statusRef = useRef(status);
+  // The seat is seeded from nothing at all: it holds only accounts the server confirmed, so an
+  // unconfirmed hint can neither be handed out nor be treated as the previous account of a change.
+  const [seat] = useState(() => new DeviceSeat());
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
-  // fetchMe's three answers: a user → signed-in, null (a real 401) → ghost, undefined
-  // (a blip — server error or unreachable) → keep the current status untouched and let
-  // the next nudge retry. The one exception is boot: 'loading' has to resolve, and a
-  // ghost still works offline, so an unreachable server at boot settles there.
+  // fetchMe's three answers — a user → signed-in, null (a real 401) → ghost, undefined (a blip:
+  // server error or unreachable) — are all handed to the seat, which owns what each one means and
+  // answers null when the answer changes nothing (a blip once this load has a confirmed account:
+  // the network dying mid-session must never throw anyone out of their own work).
+  const settle = useCallback((me) => {
+    const settled = seat.receive(me);
+    if (!settled) return null;
+    setUser(settled.user);
+    setStatus(settled.status);
+    setAccount(settled.account);
+    if (settled.confirmed) rememberAuth(settled.status, settled.user); // an unreachable blip never poisons the hint
+    return settled;
+  }, [seat]);
+
+  // Answers what the caller has always been told: the user, null for no session, and undefined for
+  // "unknown" — a blip a confirmed seat simply held.
   const refresh = useCallback(async () => {
-    const me = await fetchMe();
-    if (me === undefined && statusRef.current !== 'loading') return undefined;
-    setUser(me ?? null);
-    setStatus(me ? 'signed-in' : 'ghost');
-    if (me !== undefined) rememberAuth(me ? 'signed-in' : 'ghost', me); // an unreachable blip never poisons the hint
-    return me ?? null;
-  }, []);
+    const settled = settle(await fetchMe());
+    if (!settled) return undefined;
+    return settled.user;
+  }, [settle]);
 
   const signIn = useCallback((nextUser) => {
-    setUser(nextUser);
-    setStatus('signed-in');
-    rememberAuth('signed-in', nextUser);
+    settle(nextUser);
     channelRef.current?.postMessage({ type: 'signed-in' });
-  }, []);
+  }, [settle]);
 
   const signOut = useCallback(async () => {
     await logout();
-    setUser(null);
-    setStatus('ghost');
-    rememberAuth('ghost', null);
+    settle(null);
     channelRef.current?.postMessage({ type: 'signed-out' });
-  }, []);
+  }, [settle]);
 
   // Boot once, then wake the tab from three nudges: another tab's broadcast, a poll
   // while we're still a ghost, and a window refocus. Each just re-asks the server —
@@ -109,6 +125,6 @@ export default function AuthProvider({ children }) {
     };
   }, [refresh]);
 
-  const value = { user, status, signIn, signOut, refresh };
+  const value = { user, status, account, signIn, signOut, refresh };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

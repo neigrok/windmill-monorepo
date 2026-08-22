@@ -11,17 +11,22 @@ import { nextNudge } from './rhythm.js';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function useNudge() {
+export function useNudge(account = null) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Re-read whenever the signed-in account changes: these settings are one account's schedule and
+  // one account's mailbox, and a panel still showing the previous person's is the device-residue
+  // class of JOURNAL-1 said in a smaller room.
   useEffect(() => {
     let cancelled = false;
+    setSettings(null);
+    setLoading(true);
     journalApi.nudge()
       .then((next) => { if (!cancelled) { setSettings(next); setLoading(false); } })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [account]);
 
   const apply = useCallback(async (patch) => {
     const next = await journalApi.patchNudge(patch);

@@ -32,12 +32,37 @@ export function track(name, props) {
 // is queryable as `name = 'client_error'`. Still fire-and-forget: reporting a crash can't crash.
 export function reportError(error, kind = 'error') {
   if (typeof window === 'undefined') return;
-  const stack = String(error?.stack ?? '');
-  const message = String(error?.message ?? error ?? 'unknown');
-  const route = (window.location?.hash || window.location?.pathname || '').slice(0, 120);
+  const stack = scrubbed(String(error?.stack ?? ''));
+  const message = scrubbed(String(error?.message ?? error ?? 'unknown'));
+  const route = routeFamily(window.location?.hash || window.location?.pathname || '');
   track('client_error', { kind: String(kind).slice(0, 40), message: message.slice(0, 280), stack: stack.slice(0, 480), route });
   captureError(kind, message, stack, route); // also surface in Sentry (fuller message + stack) — no-op without a DSN
   flush('beacon');
+}
+
+// Windmill puts its secrets in the fragment precisely so they never reach a log, a referrer or a
+// vendor: #/auth?token=<magic link>, #/gym/shared/<coach-share token>, #/oauth/authorize?…. A crash
+// while one of those routes was current used to copy the live credential into the events table and
+// on to Amplitude and Sentry (audit WEB-2), so the route is cut down to its FAMILY before it leaves
+// the page — the part that says which screen broke and nothing that can be spent. The query is
+// dropped whole (nothing after a `?` names a screen), and the two segments that ARE capabilities
+// become `*`: a coach-share token, and the tree id in a #/t/ share link, which is the whole of what
+// makes an unlisted tree readable. An id that only names a thing the server still guards for its
+// owner — #/app/<treeId> — is kept, because that is what makes a crash report actionable.
+export function routeFamily(route) {
+  const path = String(route).split('?')[0].slice(0, 120);
+  return path.replace(/^(#\/gym\/shared)\/.+$/, '$1/*').replace(/^(#\/t)\/.+$/, '$1/*');
+}
+
+// The same secrets can ride a message or a stack — an error that stringifies the URL it failed on is
+// one of the commonest shapes there is — so every capability routeFamily strips is struck out of the
+// prose too, wherever in the string it appears, plus the `code=` an OAuth error carries.
+function scrubbed(text) {
+  return text
+    .replace(/token=[^&\s'"]+/gi, 'token=*')
+    .replace(/code=[^&\s'"]+/gi, 'code=*')
+    .replace(/(\/gym\/shared\/)[^/\s'"]+/gi, '$1*')
+    .replace(/(#\/t\/)[^/\s'"?]+/gi, '$1*');
 }
 
 function flush(transport) {

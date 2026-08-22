@@ -16,8 +16,8 @@ function dateLabel(iso) {
   return `${weekday} ${String(d).padStart(2, '0')} ${MONTHS[m - 1]}`;
 }
 
-export function SearchOverlay({ open, onClose, onSelect, signedIn = true }) {
-  const { ready, indexing, sharpening, mode, version, source, search } = useSearch(open, signedIn);
+export function SearchOverlay({ open, onClose, onSelect, account = null }) {
+  const { ready, indexing, sharpening, mode, version, source, search } = useSearch(open, account);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const inputRef = useRef(null);

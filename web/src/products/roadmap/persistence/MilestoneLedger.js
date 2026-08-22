@@ -36,6 +36,16 @@ export class MilestoneLedger {
 
   // Reset starts the tree over from a blank slate, so its milestones become offerable again —
   // wiped alongside progress, workspace, legend and the return ledger.
+  // Every tree this device holds offered milestones for. The account hand-off sweeps by tree id, and
+  // residue written for a tree the device index never knew is only reachable through the keys.
+  treeIds() {
+    try {
+      return Object.keys(this.storage).filter((key) => key.startsWith(KEY_PREFIX)).map((key) => key.slice(KEY_PREFIX.length));
+    } catch {
+      return [];
+    }
+  }
+
   clear(treeId) {
     try {
       this.storage.removeItem(KEY_PREFIX + treeId);

@@ -285,16 +285,25 @@ function AppRoutes() {
 
 // Paddle's payment link lands back on our own origin carrying `?_ptxn=<transaction>` — the signal
 // to resume that checkout. It can arrive on any route, so this is read at the root rather than
-// owned by a route. The parameter is stripped once consumed, so a refresh doesn't reopen it.
+// owned by a route.
+//
+// Two things have to be true before an overlay opens, because a link is not a decision: the server
+// must have confirmed an account on this load (a checkout belongs to one, and a hint is not an
+// account), and pendingTransactionId must recognise the id as one this tab itself minted. A
+// stranger's link to our own origin therefore opens nothing (audit WEB-3). Nothing is read or
+// stripped before then: a genuine return trip can land while the session is still resolving, and
+// consuming its mint at that moment would destroy the resume it exists for.
 function ResumeCheckout() {
+  const { account } = useAuth();
   React.useEffect(() => {
+    if (!account) return;
     const transactionId = pendingTransactionId();
-    if (!transactionId) return;
     const url = new URL(window.location.href);
+    if (!url.searchParams.has('_ptxn')) return;
     url.searchParams.delete('_ptxn');
-    window.history.replaceState({}, '', url.toString());
-    openCheckout(transactionId);
-  }, []);
+    window.history.replaceState({}, '', url.toString());  // one resume per return trip, never on a refresh
+    if (transactionId) openCheckout(transactionId);
+  }, [account]);
   return null;
 }
 

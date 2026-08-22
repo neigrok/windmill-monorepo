@@ -157,6 +157,20 @@ test('every product brings the words its door on the brand root is made of', () 
   assert.deepEqual(doorCopyMissing, []);
 });
 
+// The device hand-off seam (audit JOURNAL-1 / WEB-4). The shell owns the MOMENT an account is
+// replaced on this browser and calls forgetDevice on every product; each product owns what it keeps
+// on the device. It is optional — a product that writes nothing device-side has nothing to forget —
+// but a product that declares one and makes it something other than a function would be skipped in
+// silence on the one transition that matters, so the shape is checked here rather than discovered
+// on a shared laptop.
+const handoffMalformed = PRODUCTS
+  .filter((product) => 'forgetDevice' in product && typeof product.forgetDevice !== 'function')
+  .map((p) => `product "${p.id}" declares forgetDevice as ${typeof p.forgetDevice} — the shell calls it on an account change, so a non-function is residue left on the device`);
+
+test('a product that declares the device hand-off declares it as a function', () => {
+  assert.deepEqual(handoffMalformed, []);
+});
+
 // The crawlable seam. LANDING_HEADS used to be a hand-written list on the shell side that restated,
 // for every product, its pathname and a path into its source tree — the import graph could not see
 // it, so nothing here could either, and the only thing that caught a stale module path was the

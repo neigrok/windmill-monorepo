@@ -48,7 +48,7 @@ function seenFirstEcho() {
   }
 }
 
-export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
+export function useEchoes({ today = localDay(), account = null, onFly = () => {} } = {}) {
   const [pages, setPages] = useState(new Map());       // trigger day -> { day, entitled, matches, verified }
   const [floored, setFloored] = useState(false);       // fewer than ~20 pages: the canvas stays quiet
   const [firstEver, setFirstEver] = useState(false);
@@ -70,6 +70,19 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
 
   useEffect(() => {
     let cancelled = false;
+    // Everything below is the ACCOUNT's own prose — the quotes, and the bodies fetched to re-locate
+    // them — so a change of who is signed in drops all of it before anything is asked again. An
+    // echo left standing across a hand-over is the previous person's writing on the new person's
+    // canvas: JOURNAL-1, one room over.
+    setPages(new Map());
+    setFloored(false);
+    setFirstEver(false);
+    setOpenDay(null);
+    setSheetDay(null);
+    setHops([]);
+    setFollowedDay(null);
+    bodies.current = new Map();
+    verifying.current = new Set();
     journalApi.echoes('0001-01-01', today)
       .then((reply) => {
         if (cancelled) return;
@@ -88,7 +101,7 @@ export function useEchoes({ today = localDay(), onFly = () => {} } = {}) {
       })
       .catch(() => { /* no echoes to show — leave the canvas quiet */ });
     return () => { cancelled = true; };
-  }, [today]);
+  }, [today, account]);
 
   // Fetch the bodies this page's quotes live in, re-locate every one, and drop the ones that no
   // longer stand. Runs when a page's tab mounts, because the tab carries the count at rest: a number

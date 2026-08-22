@@ -44,11 +44,16 @@ export function JournalApp({ hash }) {
   const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
-  const { status } = useAuth();
+  const { account: confirmed } = useAuth();
+  // The device tier is scoped by account (pageCache.js), and search, the echoes and the year zoom
+  // read it as much as the canvas does — so they are told WHICH account's journal they are reading,
+  // never merely that somebody is signed in. It is the CONFIRMED account (shell/auth): a remembered
+  // hint paints a face on the first frame and may not open anybody's pages.
+  const account = confirmed?.id ?? null;
   // Walking an echo is a position change, so the hook hands the canvas the same flight a search hit
   // gets: load the day if it is older than the window, centre it, and light the passage for a beat.
-  const echoes = useEchoes({ onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
-  const nudge = useNudge();
+  const echoes = useEchoes({ account, onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
+  const nudge = useNudge(account);
   // Talk is a tool and sits in the rail with the others, but what it produces is today's writing —
   // so the canvas lends the rail the one write into today and keeps the store to itself.
   const writeRef = useRef(null);
@@ -126,13 +131,14 @@ export function JournalApp({ hash }) {
         />
       </div>
       {/* Search and the zoom read the whole journal rather than a window, and the whole journal is
-          the account's pages plus this device's — so both need to know whether there is an account
-          to read at all. It is asked once, here, where the auth status already is. */}
+          the account's pages plus this device's — so both need to know WHICH account they are
+          reading, which is also which device scope they may open. Asked once, here, where the
+          confirmed account already is. */}
       <SearchOverlay
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSelect={(hit) => { setFlyTo({ ...hit, at: Date.now() }); setSearchOpen(false); }}
-        signedIn={status === 'signed-in'}
+        account={account}
       />
       {sheetPage && (
         <OneSheet
@@ -147,7 +153,7 @@ export function JournalApp({ hash }) {
         <ZoomView
           onClose={() => setZoomOpen(false)}
           onPick={(date) => { setFlyTo({ day: date, at: Date.now() }); setZoomOpen(false); }}
-          signedIn={status === 'signed-in'}
+          account={account}
         />
       )}
       <div className="wm-post wm-post-switch">

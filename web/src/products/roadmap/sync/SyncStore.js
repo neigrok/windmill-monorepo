@@ -53,6 +53,17 @@ export class SyncStore {
     });
   }
 
+  // Every tree with a blob on this device. The account hand-off sweeps by tree id, and a blob
+  // whose device-index row is long gone is exactly the residue that painted a stranger's tree.
+  async treeIds() {
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+      request.onsuccess = () => resolve(request.result ?? []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   async clear(treeId) {
     const db = await this.db();
     return new Promise((resolve, reject) => {

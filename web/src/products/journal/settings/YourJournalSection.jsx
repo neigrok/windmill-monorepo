@@ -1,13 +1,17 @@
-// Settings · Your journal — the export, and nothing else. The route it calls has been live since
-// the product shipped; until this section there was no way to reach it from inside the product, so
-// a writer could not get their own pages out. A product owns its export; the account owns its close.
+// Settings · Your journal — the export, and the pages this browser could not attribute. The export
+// route it calls has been live since the product shipped; until this section there was no way to
+// reach it from inside the product, so a writer could not get their own pages out. A product owns
+// its export; the account owns its close.
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';
+import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { buildJournalArchive } from './journalExport.js';
+import { UnclaimedPagesRow } from './UnclaimedPagesRow.jsx';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 
 export function YourJournalSection() {
+  const { account } = useAuth();
   const [phase, setPhase] = useState('idle'); // idle | working | done | error
   const [note, setNote] = useState('');
 
@@ -37,6 +41,7 @@ export function YourJournalSection() {
           {note}
         </p>
       )}
+      <UnclaimedPagesRow account={account?.id ?? null} />
     </Section>
   );
 }

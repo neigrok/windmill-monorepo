@@ -9,6 +9,11 @@
 // alone: a signed-out writer's pages are real pages that live on this device, and ⌘K was blind to
 // every one of them. `source` rides out with the results so the overlay can say when it is searching
 // a journal it could not read all of, rather than answering "nothing close to that yet."
+//
+// AND THE INDEX BELONGS TO ONE ACCOUNT. `account` is the user id the corpus was built for; when it
+// changes — a sign-out, a hand-over to somebody else — the index built for the previous one is
+// dropped and rebuilt rather than kept. Built once and kept, it was a second copy of the departed
+// account's private pages, answering ⌘K for the person who arrived after them (JOURNAL-1).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { corpus } from '../pageStore.js';
@@ -16,11 +21,11 @@ import { SearchIndex } from './searchIndex.js';
 import { LexicalEmbedder } from './embedders.js';
 import { NeuralEmbedder } from './neural/neuralEmbedder.js';
 
-export function useSearch(active, signedIn = true) {
+export function useSearch(active, account = null) {
   const activeIndexRef = useRef(null);
   const neuralRef = useRef(null);
   const aliveRef = useRef(true);
-  const startedRef = useRef(false);
+  const builtForRef = useRef(undefined);   // the account the live index was built for
   const [ready, setReady] = useState(false);      // lexical index built — search is usable
   const [indexing, setIndexing] = useState(false); // the one-time lexical build
   const [sharpening, setSharpening] = useState(false); // neural index building in the background
@@ -29,18 +34,25 @@ export function useSearch(active, signedIn = true) {
   const [source, setSource] = useState('account'); // where the indexed pages came from
 
   useEffect(() => {
-    if (!active || startedRef.current) return;
-    startedRef.current = true;
+    if (builtForRef.current === account) return;
+    // Whatever is in hand was built for somebody else, so it stops answering the moment the account
+    // changes — before the overlay is ever opened again, not when the rebuild happens to land.
+    activeIndexRef.current = null;
+    setReady(false);
+    setMode('lexical');
+    if (!active) return;   // rebuilt on the next open, for whoever is signed in by then
+    builtForRef.current = account;
+    const generation = account;
     (async () => {
       setIndexing(true);
-      const read = await corpus({ signedIn });
+      const read = await corpus({ account });
       const pages = read.pages;
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || builtForRef.current !== generation) return;
       setSource(read.source);
 
       const lexical = new SearchIndex(new LexicalEmbedder());
       await lexical.ingest(pages);
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || builtForRef.current !== generation) return;
       activeIndexRef.current = lexical;
       setReady(true);
       setIndexing(false);
@@ -50,11 +62,11 @@ export function useSearch(active, signedIn = true) {
         const neural = new NeuralEmbedder();
         neuralRef.current = neural;
         await neural.ready;
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || builtForRef.current !== generation) return;
         setSharpening(true);
         const meaning = new SearchIndex(neural);
         await meaning.ingest(pages);
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || builtForRef.current !== generation) return;
         activeIndexRef.current = meaning;
         setMode('neural');
         setSharpening(false);
@@ -63,7 +75,7 @@ export function useSearch(active, signedIn = true) {
         if (aliveRef.current) setSharpening(false);   // no model — search stays lexical, silently
       }
     })();
-  }, [active, signedIn]);
+  }, [active, account]);
 
   useEffect(() => () => { aliveRef.current = false; neuralRef.current?.dispose(); }, []);
 

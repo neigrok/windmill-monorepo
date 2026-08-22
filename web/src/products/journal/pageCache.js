@@ -27,10 +27,37 @@
 // So `store` is for stamped pages only and `hold` is for the unstamped draft. They are different
 // verbs because they obey different rules — a stamped page races, a held draft simply replaces
 // whatever this browser was holding for that day.
+//
+// ONE SCOPE PER ACCOUNT, AND A SCOPE IS A KEY. Pages belong to the account that read or wrote them,
+// so the account is IN the key: `wm.journal.pages.u.<userId>`, or `wm.journal.pages.anon` for the
+// writing done while nobody is signed in. Until 2026-08-22 every page this browser had ever seen
+// lived under one key with no owner in it, and the next person to sign in on the same browser was
+// shown the previous person's journal and PUT it into their own account on the first keystroke.
+// A filter would have fixed that only where somebody remembered to write one; a key fixes it
+// everywhere, because a cache opened for one account never READS another account's bytes at all —
+// not after a crashed tab, not on a build that predates the hook, not on a path nobody thought of.
+//
+// Two things cross a scope, and NEITHER crosses on its own:
+//   · the anonymous claim — words written while nobody was signed in follow the person who signs
+//     in, unstamped, joined onto their page (anonymousDrafts, below);
+//   · the QUARANTINE — the unsent pages recovered from the old unscoped store, which no account may
+//     be given without a person saying so out loud (unclaimedPages, below).
 
 import { compareStamps, ZERO_STAMP } from './hlc.js';
 
-const CACHE_KEY = 'wm.journal.pages';
+// The unscoped store every browser that ran journal before 2026-08-22 still holds. Read once, on
+// the first open under the new code, and retired — never written again. See retireLegacyStore().
+const LEGACY_KEY = 'wm.journal.pages';
+const ANON_KEY = 'wm.journal.pages.anon';
+// Where the unsent pages out of the legacy store wait. No scope ever opens this key: nothing here
+// is drawn on a canvas, indexed by search or sent anywhere until a signed-in person restores it.
+const UNCLAIMED_KEY = 'wm.journal.pages.unclaimed';
+
+// The scope is a user id, or null for "nobody is signed in". Nothing may open the device tier
+// without naming one, which is why there is no default.
+export function keyForScope(account) {
+  return account ? `wm.journal.pages.u.${account}` : ANON_KEY;
+}
 
 // How many days of read pages survive a reload. Reaching further back than the canvas's window
 // (pageStore.js) pulls months — sometimes years — into memory, and every one of them belongs on
@@ -43,7 +70,7 @@ const RETAIN_DAYS = 120;
 
 // Private-mode browsers throw on first use rather than on the property, and a Node test run has no
 // localStorage at all — both read as "no device tier", never as an exception out of a constructor.
-export function deviceStorage(key = CACHE_KEY) {
+export function deviceStorage(key = ANON_KEY) {
   try {
     const storage = globalThis.localStorage;
     storage.getItem(key);
@@ -102,11 +129,85 @@ function readEntries(storage, key) {
   }
 }
 
+// The unscoped blob, dealt with once and for all on the first open under the new code — and dealt
+// with by QUARANTINE, because there is no honest way to attribute it. An OWED entry in it is unsent
+// prose, but "unsent" says nothing about who wrote it: it is as likely a signed-in person's page
+// written on a plane as a signed-out visitor's draft. Moving it into the anonymous scope would hand
+// it to whoever signs in next — which is JOURNAL-1 again, with the migration doing the leaking, and
+// it was proven end to end in a browser before this was written.
+//
+// So the unsent pages go to a key NO scope opens, and stay there until a signed-in person restores
+// them by hand (settings · Your journal). Nothing paints them, nothing indexes them, and no PUT can
+// carry them until somebody says yes. Losing nobody's words is still the constraint —
+// quarantined-and-visible beats deleted, and deleted beats delivered to a stranger.
+//
+// Everything else in the blob is a cached copy of some account's server window. The key never said
+// whose, so it cannot be attributed now either, and the safe reading of an unattributable cache is
+// that it is NOT the arriving account's — it is dropped. Nothing is lost by that: a read page is
+// one range read away from the account that owns it, which is where it came from in the first place.
+//
+// A storage that refuses the write keeps the legacy key, so the next open tries again rather than
+// dropping the unsent pages on the floor.
+function retireLegacyStore(storage) {
+  try {
+    if (storage.getItem(LEGACY_KEY) === null) return;
+    const quarantined = {};
+    for (const [day, entry] of readEntries(storage, UNCLAIMED_KEY)) quarantined[day] = entry;
+    for (const [day, entry] of readEntries(storage, LEGACY_KEY)) {
+      if (!entry.needsPush || quarantined[day]) continue;
+      quarantined[day] = { page: { ...entry.page, stamp: ZERO_STAMP }, needsPush: true, read: false };
+    }
+    storage.setItem(UNCLAIMED_KEY, JSON.stringify(quarantined));
+    storage.removeItem(LEGACY_KEY);
+  } catch {
+    // No device tier, or it refused: the legacy key stays exactly as it is and the next open retries.
+  }
+}
+
+// What is waiting in quarantine, oldest first — for the one surface that offers it back
+// (settings/YourJournalSection.jsx) and for the restore that follows a person's yes. Reading it is
+// not claiming it: these pages belong to whoever wrote them on this browser before scoping existed,
+// and the product's only honest move is to show them and ask.
+export function unclaimedPages(storage = deviceStorage()) {
+  if (!storage) return [];
+  return readEntries(storage, UNCLAIMED_KEY)
+    .map(([, entry]) => ({ ...entry.page, stamp: ZERO_STAMP }))
+    .sort((left, right) => (left.day < right.day ? -1 : 1));
+}
+
+// Emptied on a restore that landed, and on a discard — the two ends of the one question, both of
+// them a person's own answer.
+export function dropUnclaimedPages(storage = deviceStorage()) {
+  try { storage.removeItem(UNCLAIMED_KEY); } catch { /* no device tier — nothing was on it to drop */ }
+}
+
+// The claim, and the only thing that ever crosses a scope: words written while nobody was signed in
+// belong to the person who signs in here — the anonymous-first door's whole promise (auth canon:
+// "claiming, not gating"). Only OWED drafts travel, and they travel unstamped, because a stamp is a
+// claim to have written last about an account's page and no page written signed-out has ever read
+// one. pageStore joins them onto the arriving account's day; nothing races.
+export function anonymousDrafts(storage = deviceStorage()) {
+  if (!storage) return [];
+  return readEntries(storage, ANON_KEY)
+    .filter(([, entry]) => entry.needsPush)
+    .map(([, entry]) => ({ ...entry.page, stamp: ZERO_STAMP }))
+    .sort((a, b) => (a.day < b.day ? -1 : 1));
+}
+
+// Called only once the account's scope has TAKEN the drafts and flushed them — see
+// pageStore.claimAnonymousDrafts.
+// Deleting first and flushing second would lose the writing of anyone whose device refused the
+// bytes at exactly that moment.
+export function dropAnonymousScope(storage = deviceStorage()) {
+  try { storage.removeItem(ANON_KEY); } catch { /* no device tier — nothing was on it to drop */ }
+}
+
 export class PageCache {
-  constructor(storage = deviceStorage(), key = CACHE_KEY) {
+  constructor(account, storage = deviceStorage()) {
     this.storage = storage;
-    this.key = key;
-    this.entries = new Map(readEntries(storage, key));
+    this.key = keyForScope(account ?? null);
+    if (storage) retireLegacyStore(storage);
+    this.entries = new Map(readEntries(storage, this.key));
   }
 
   page(day) {
@@ -166,6 +267,12 @@ export class PageCache {
     // them onto the account's page and sends that. Settling the day here would drop them. The claim
     // always runs before the window read, so this is a guard rather than a path.
     if (held && held.needsPush && !held.read) return;
+    // The account answering "I hold nothing here" arrives as a blank page carrying ZERO_STAMP, and
+    // ZERO_STAMP loses every race — so a stamped entry already in this map survives an empty read.
+    // That is right BECAUSE of the scope: every entry in this map was read or written by the very
+    // account that just answered, so the survivor is its own newer local write, never a stranger's
+    // page. Under the one unscoped key this rule was JOURNAL-1's second half: the previous user's
+    // stamped pages beat the arriving account's own empty read and were drawn as theirs.
     const winner = winnerOf(page ?? blankPage(day), held?.page ?? null);
     this.entries.set(day, {
       page: winner,

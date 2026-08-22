@@ -25,7 +25,7 @@ Lives in `SkillTreeView.jsx`, in the effect keyed on `[reloadKey, treeId, demo]`
 
 ```
 const repo      = new HttpTreeRepository({ treeId });
-const seed      = await repo.loadTree();              // …or the local lattice blob, offline
+const seed      = await repo.loadTree();              // …or loadDeviceTree(id): the blob, if the row is ours
 const tree      = new SkillTree(seed);                // entity + DAG validation
 const progress  = await repo.loadProgress(seed);      // {completed, inProgress, cleared, server}
 const states    = UnlockRules.derive(tree, progress); // Map<id, NodeState>
@@ -58,7 +58,7 @@ Every directory, one line. The six marked **↓** have a section of their own be
 | `sync/` | The client half of the graph CRDT: lattice, gestures, socket, IndexedDB. **↓** |
 | `share/` | Everything that leaves the app: the link, the cards, the video, the offers. **↓** |
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
-| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (progress, workspaces, legend, last place, return/milestone/share baselines, view prefs). |
+| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (progress, workspaces, legend, last place, return/milestone/share baselines, view prefs). Every device-tree row carries the ACCOUNT it belongs to (`LocalTreeRegistry`), and reads are scoped to whoever the server CONFIRMED on this document load — a remembered identity may paint a face but never opens a device store, so a cold boot with no network sees only anonymous work until one `/v1/me` lands. |
 | `ui/` | The desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, the Next-up ranking and the honesty chrome. |
 | `ui/tree/` | The step's own components — kind legend, checklist, workspace body — and the two hooks that drive them (`useLegend` · `useWorkspace`, each over its pure model), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
 | `ui/mobile/` | The phone/tablet surfaces: bottom sheets, the editor sheet, aim + bulk bars, the action lane, the read-only chrome and the fork door. |
@@ -268,7 +268,9 @@ projection — what the render pipeline consumes.
 - `sync/fractionalIndex.js` — jitterless LexoRank-style order keys, so a reorder is one write
   rather than a sibling renumber.
 - `sync/localTrees.js` · `sync/claimLocalTrees.js` — the signed-out lifecycle of a device-born
-  tree, and the additive claim that adopts it into an account on sign-in.
+  tree, the additive claim that adopts it into an account on sign-in, `loadDeviceTree` (the blob
+  fallback, gated on this device holding a row for the caller's account) and `forgetDeviceTrees`
+  (the account hand-off the shell fires through `roadmapRoutes.forgetDevice`).
 - `sync/refusals.js` — what the editor does about a reject frame, decided by the frame's stable
   `code` (`not-yours` / `nobodys-tree` demote the editor; `sign-in-required` re-checks the session;
   anything else warns) — never by its sentence, which is prose the server may reword.

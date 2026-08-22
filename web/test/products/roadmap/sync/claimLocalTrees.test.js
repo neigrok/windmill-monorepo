@@ -17,6 +17,7 @@ import { claimLocalTrees } from '../../../../src/products/roadmap/sync/claimLoca
 
 const BASE = 'http://localhost:8088';
 const INDEX = 'windmill:device-trees';
+const ME = 'u_owner';
 
 // mintTreeId is crypto.getRandomValues + hex, so one fixed byte pattern names the remap's fresh id
 // exactly — and any tree wearing it is a tree the claim planted rather than adopted.
@@ -57,9 +58,13 @@ function browserWith(entries, { hash = '', blobs = {} } = {}) {
   };
 }
 
+// The claim asks who is arriving before it adopts anything (audit WEB-4), so every scenario has a
+// signed-in account behind it. That probe is answered here and deliberately kept out of `calls`:
+// the assertions below pin the CLAIM's wire — which trees were planted, and in what order.
 function serverThat(...answers) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
+    if (url === `${BASE}/v1/me`) return { ok: true, status: 200, json: async () => ({ user: { id: ME } }) };
     calls.push({
       url,
       method: init.method ?? 'GET',
@@ -135,7 +140,7 @@ test('an id another account owns still remaps — a fresh id, and everything loc
   assert.notEqual(FRESH_ID, 't_mine');
   assert.equal(plants(calls)[1].credentials, 'include');
   assert.deepEqual(result, { claimed: 1, pending: 1 });
-  assert.deepEqual(browser.index(), { [FRESH_ID]: { title: 'Learn to sail', updatedAt: 20, claimed: true } });
+  assert.deepEqual(browser.index(), { [FRESH_ID]: { title: 'Learn to sail', updatedAt: 20, claimed: true, owner: ME } });
   // the legend blob stands for everything moveLocalTree carries across: it left the old id and
   // arrived, byte-for-byte, under the new one.
   assert.equal(browser.blob('windmill:legend:t_mine'), null);
@@ -163,7 +168,7 @@ test('a retired tree ends its own entry and nothing else — the trees behind it
     { id: 't_live', title: 'Learn to cook' },
   ]);
   assert.deepEqual(result, { claimed: 1, pending: 2 });
-  assert.deepEqual(browser.index(), { t_live: { title: 'Learn to cook', updatedAt: 10, claimed: true } });
+  assert.deepEqual(browser.index(), { t_live: { title: 'Learn to cook', updatedAt: 10, claimed: true, owner: ME } });
   assert.deepEqual(browser.events, [
     { type: 'wm-claim-start', detail: null },
     { type: 'wm-claim-retired', detail: { treeId: 't_dead' } },
@@ -183,9 +188,11 @@ test('a dead network stops the pass — the rest is not asked, and nothing is gi
 
   assert.deepEqual(plants(calls).map((call) => call.body), [{ id: 't_one', title: 'Learn to sail' }]);
   assert.deepEqual(result, { claimed: 0, pending: 2 });
+  // The rows keep their claim state; the owner stamp is the first-contact attribution the identity
+  // probe makes on any row written before entries named an account.
   assert.deepEqual(browser.index(), {
-    t_one: { title: 'Learn to sail', updatedAt: 20, claimed: false },
-    t_two: { title: 'Learn to cook', updatedAt: 10, claimed: false },
+    t_one: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: ME },
+    t_two: { title: 'Learn to cook', updatedAt: 10, claimed: false, owner: ME },
   });
   assert.deepEqual(browser.events, [
     { type: 'wm-claim-start', detail: null },
@@ -204,9 +211,11 @@ test('a signed-out server stops the pass too — every tree stays pending for th
 
   assert.deepEqual(plants(calls).map((call) => call.body), [{ id: 't_one', title: 'Learn to sail' }]);
   assert.deepEqual(result, { claimed: 0, pending: 2 });
+  // The rows keep their claim state; the owner stamp is the first-contact attribution the identity
+  // probe makes on any row written before entries named an account.
   assert.deepEqual(browser.index(), {
-    t_one: { title: 'Learn to sail', updatedAt: 20, claimed: false },
-    t_two: { title: 'Learn to cook', updatedAt: 10, claimed: false },
+    t_one: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: ME },
+    t_two: { title: 'Learn to cook', updatedAt: 10, claimed: false, owner: ME },
   });
   assert.deepEqual(browser.events, [
     { type: 'wm-claim-start', detail: null },
@@ -225,5 +234,48 @@ test('a device with nothing unclaimed asks nothing and announces nothing', async
   assert.deepEqual(calls, []);
   assert.deepEqual(result, { claimed: 0 });
   assert.deepEqual(browser.events, []);
-  assert.deepEqual(browser.index(), { t_done: { title: 'Learn to sail', updatedAt: 20, claimed: true } });
+  assert.deepEqual(browser.index(), { t_done: { title: 'Learn to sail', updatedAt: 20, claimed: true, owner: ME } });
+});
+
+// The device-residue rule at the claim door (audit WEB-4): the anonymous work on this browser
+// follows whoever signs in next — that is the anonymous-first door — but a row another account
+// left unclaimed here is that account's, and signing in must not upload it into a stranger's.
+test('an unclaimed row stamped for another account is not adopted — only the anonymous one is', async () => {
+  const browser = browserWith({
+    t_theirs: { title: 'A private therapy plan', updatedAt: 30, claimed: false, owner: 'u_other' },
+    t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: null },
+  });
+  const calls = serverThat(planted('t_anon'));
+
+  const result = await claimLocalTrees({ openTreeId: 't_anon', openSession: () => openSessionFor('t_anon') });
+
+  assert.deepEqual(plants(calls).map((call) => call.body), [{ id: 't_anon', title: 'Learn to sail' }]);
+  assert.deepEqual(result, { claimed: 1, pending: 1 });
+  assert.deepEqual(browser.index(), {
+    t_theirs: { title: 'A private therapy plan', updatedAt: 30, claimed: false, owner: 'u_other' },
+    t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: true, owner: ME },
+  });
+  assert.deepEqual(browser.events, [
+    { type: 'wm-claim-start', detail: null },
+    { type: 'wm-tree-claimed', detail: { treeId: 't_anon' } },
+    { type: 'wm-claim-done', detail: { claimed: 1, pending: 1 } },
+  ]);
+});
+
+// A browser whose last account was killed rather than signed out still remembers them in the
+// marker. A ghost holding it now has no account to claim into, and the server says so.
+test('a ghost claims nothing — the marker is not an account, and no tree is planted', async () => {
+  const browser = browserWith({ t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: null } });
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return { ok: false, status: 401, json: async () => ({}) };
+  };
+
+  const result = await claimLocalTrees();
+
+  assert.deepEqual(calls, [`${BASE}/v1/me`]);
+  assert.deepEqual(result, { claimed: 0 });
+  assert.deepEqual(browser.events, []);
+  assert.deepEqual(browser.index(), { t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: null } });
 });

@@ -92,7 +92,10 @@ export function captureError(kind, message, stack, route) {
       environment: import.meta.env?.PROD ? 'production' : 'development',
       ...(RELEASE ? { release: RELEASE } : {}),
       tags: { kind: type },
-      request: { url: route || window.location?.href || '' },
+      // The route arrives already reduced to its family by reportError, the one caller — falling
+      // back to window.location.href here would put back exactly the magic-link and coach-share
+      // secrets that reduction exists to strip (audit WEB-2).
+      request: { url: route || '' },
       exception: { values: [{ type, value, stacktrace: { frames: framesFromStack(stack) } }] },
     };
     const envelope = `${JSON.stringify({ event_id: id, dsn: DSN })}\n${JSON.stringify({ type: 'event' })}\n${JSON.stringify(event)}`;

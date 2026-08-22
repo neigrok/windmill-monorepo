@@ -18,7 +18,7 @@
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
 import { materialize } from './materialize.js';
-import { isOwnershipRefusal, isSessionRefusal } from './refusals.js';
+import { isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
@@ -290,11 +290,16 @@ export class SyncSession {
 
   receiveReject(frame) {
     if (frame.frameId) this.inFlight.delete(frame.frameId);
-    const forbidden = isOwnershipRefusal(frame) || isSessionRefusal(frame);
-    if (!forbidden) { console.warn('[sync] frame rejected —', frame.code, frame.reason); return; }
-    // A refused subgraph frame (it carries a frameId) strands the edits banked behind it until
-    // the capability returns; a refused progress mark carries no frameId and strands nothing.
-    if (frame.frameId) this.durabilityAtRisk = true;
+    // A refused subgraph frame strands the edits banked behind it: nothing acked them, so every
+    // later flush re-derives the same doomed delta. That is true of a code this build has never
+    // heard of too — a capacity refusal (tree-too-large) used to fall through to a console.warn,
+    // and the person went on editing a tree that would never save again with nothing on screen
+    // saying so. Only a refusal that strands nothing AND names no known kind stays quiet.
+    if (strandsTheBank(frame)) this.durabilityAtRisk = true;
+    if (!strandsTheBank(frame) && !isOwnershipRefusal(frame) && !isSessionRefusal(frame)) {
+      console.warn('[sync] frame rejected —', frame.code, frame.reason);
+      return;
+    }
     window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: frame }));
   }
 

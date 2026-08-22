@@ -8,7 +8,7 @@
 
 import { API_BASE } from '../../../shell/apiBase.js';
 import { createTree } from '../persistence/TreeRegistry.js';
-import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
+import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree } from './localTrees.js';
@@ -30,8 +30,14 @@ class RetiredTree extends Error {
 // tree drains through a headless session. Never rejects — a tree whose claim fails just
 // stays unclaimed for the next pass.
 export async function claimLocalTrees({ openTreeId = null, openSession = null } = {}) {
+  // The claim adopts the ANONYMOUS work on this device plus whatever the arriving account itself
+  // left unclaimed here — never another account's rows (audit WEB-4: the next person to sign in
+  // used to upload the previous one's trees into their own account). Who is arriving comes from
+  // the server: the remembered marker survives a browser that was killed instead of signed out.
+  const owner = await resolveDeviceOwner();
+  if (!owner) return { claimed: 0 }; // nobody is signed in; there is no account to claim into
   const registry = new LocalTreeRegistry();
-  const pending = registry.list().filter((entry) => !entry.claimed);
+  const pending = registry.list(owner).filter((entry) => !entry.claimed);
   if (pending.length === 0) return { claimed: 0 };
 
   window.dispatchEvent(new CustomEvent('wm-claim-start'));
@@ -40,7 +46,7 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
     try {
       const treeId = await ensureServerTree(entry);
       await syncTreeUp(treeId, entry.title, { openTreeId, openSession });
-      registry.markClaimed(treeId);
+      registry.attribute([treeId], owner);
       window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId } }));
       claimed += 1;
     } catch (err) {

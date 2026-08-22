@@ -5,6 +5,7 @@
 
 import { lazy } from 'react';
 import { PlaceStore } from './persistence/PlaceStore.js';
+import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
@@ -94,6 +95,31 @@ function render({ hash, pathname, search }) {
   return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo } };
 }
 
+// The account hand-off (audit WEB-4). The shell calls this when the account holding this device
+// changes — a sign-out, or one account replacing another (shell/auth/accountChange.js). The
+// roadmap gives up everything on the device that is not anonymous: the device-index rows stamped
+// for an account, each one's workspace, progress, legend and ledgers, its lattice blob, and the
+// last place. Dropping a signed-in account's local copy costs that account nothing — the server
+// holds the tree and hands it back on their next sign-in — so nothing here is a leak to "restore"
+// later. Anonymous work stays: it belongs to this device and is meant to follow whoever signs in
+// next, which is the claim.
+//
+// The sweep is the second line, not the first: every device row also carries its owner, so the
+// arriving account can already read none of this even when the hook never runs (a crashed tab, a
+// killed browser). Loading it lazily keeps the whole sync stack out of the landing's first paint.
+async function forgetDevice({ next }) {
+  // The sweep runs BEFORE the arriving account is confirmed, and the order is load-bearing:
+  // confirming first would attribute anything still unstamped to the person arriving, handing
+  // them rows the departing account left. Swept first, those rows are gone instead.
+  const { forgetDeviceTrees } = await import('./sync/localTrees.js');
+  await forgetDeviceTrees();
+  // The shell settled this from an authoritative answer, so it counts as a confirmation.
+  confirmDeviceOwner(next ?? null);
+  // This tab may still be painting the tree that was just dropped. Bare #/app re-resolves under
+  // the arriving account and lands on the shelf when it owns nothing on this device.
+  if (typeof window !== 'undefined' && window.location.hash.startsWith('#/app/')) window.location.hash = '#/app';
+}
+
 export const roadmapRoutes = {
   id: 'roadmap',
   label: 'Roadmap',
@@ -101,6 +127,7 @@ export const roadmapRoutes = {
   home,
   landingAfterSignIn,
   render,
+  forgetDevice,
   preloadApp: importSkillTreeApp,
   // Plan only joins the list once there is something to be on — while paid plans are shut it is
   // never mounted, so it costs neither a chunk nor a subscription read (see billing/checkout.js).

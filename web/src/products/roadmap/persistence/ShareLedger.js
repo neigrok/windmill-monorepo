@@ -53,6 +53,16 @@ export class ShareLedger {
     }
   }
 
+  // Every tree this device holds a share baseline for. The account hand-off sweeps by tree id, and
+  // residue written for a tree the device index never knew is only reachable through the keys.
+  treeIds() {
+    try {
+      return Object.keys(this.storage).filter((key) => key.startsWith(KEY_PREFIX)).map((key) => key.slice(KEY_PREFIX.length));
+    } catch {
+      return [];
+    }
+  }
+
   clear(treeId) {
     try {
       this.storage.removeItem(KEY_PREFIX + treeId);

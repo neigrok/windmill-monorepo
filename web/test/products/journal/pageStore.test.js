@@ -23,7 +23,10 @@ import { PageCache } from '../../../src/products/journal/pageCache.js';
 import { BEGINNING, PageStore, corpus, joinBodies, joinCorpus, span } from '../../../src/products/journal/pageStore.js';
 
 const TODAY = '2026-08-07';
-const KEY = 'wm.journal.pages';
+// Who is signed in, as the store now takes it: a user id scopes the device tier (pageCache.js), and
+// `null` is the anonymous scope a signed-out writer's words live in.
+const A = 'user-a';
+const KEY = 'wm.journal.pages.anon';   // the scope a store with nobody signed in opens
 
 function memoryStorage() {
   const map = new Map();
@@ -72,7 +75,7 @@ function storeOn(storage, api, { today = TODAY } = {}) {
   const timers = fakeTimers();
   let minted = 0;
   const store = new PageStore({
-    cache: new PageCache(storage, KEY),
+    openCache: (account) => new PageCache(account, storage),
     api,
     today,
     mint: () => { minted += 1; return `${1000 + minted}:0:web`; },
@@ -94,7 +97,7 @@ test('a failed window read does NOT read as a first run', async (t) => {
   const { store, timers } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.equal(store.snapshot.readState, 'failed');
   assert.equal(store.snapshot.firstRun, false);
@@ -110,7 +113,7 @@ test('a failed window read followed by typing sends NOTHING', async (t) => {
   const { store, timers, mintCount } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   store.type('written on a plane');
   await timers.run();                     // the debounce fires
 
@@ -128,7 +131,7 @@ test('when the read finally lands, the held words are JOINED onto the account’
   const { store, timers } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   store.type('written on a plane');
   await timers.run();
   assert.deepEqual(api.calls.put, []);
@@ -153,7 +156,7 @@ test('when the read finally lands, the held words are JOINED onto the account’
 // plane, and a canvas that must still be their canvas.
 test('a failed read still draws what the device holds, and says the account could not be read', async (t) => {
   const storage = memoryStorage();
-  const warm = new PageCache(storage, KEY);
+  const warm = new PageCache(A, storage);   // pages this account read on this device, before the plane
   warm.markRead('2026-08-05', { day: '2026-08-05', body: 'a real page', mood: 3, energy: null, source: 'typed', stamp: '1:0:a' });
   warm.markRead('2026-08-06', null);
   warm.flush();
@@ -163,7 +166,7 @@ test('a failed read still draws what the device holds, and says the account coul
   const { store } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.equal(store.snapshot.readState, 'failed');
   assert.equal(store.snapshot.firstRun, false);
@@ -186,7 +189,7 @@ test('only the days that were written are drawn — the quiet ones between them 
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.deepEqual(store.snapshot.history.map((day) => day.date), ['2026-08-01', '2026-08-04', '2026-08-05']);
 });
@@ -200,7 +203,7 @@ test('typing while the join is in flight joins the newer words too, and saves th
   const { store, timers } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   store.type('plane words');
   await timers.run();
   assert.deepEqual(api.calls.put, []);
@@ -234,7 +237,7 @@ test('a read day is written normally: a stamp is minted and the page goes up', a
   const { store, timers } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   assert.equal(store.snapshot.readState, 'ready');
   assert.equal(store.snapshot.reach, 'end', 'an empty window is settled all the way back before anything is claimed');
   assert.equal(store.snapshot.firstRun, true, 'an account that read fine and holds nothing IS a first run');
@@ -258,7 +261,7 @@ test('a signed-out write reaches no network, and survives a reload', async (t) =
   const api = fakeApi();
   const first = storeOn(storage, api);
 
-  await first.store.connect(false);
+  await first.store.connect(null);
   assert.equal(first.store.snapshot.readState, 'device');
   first.store.type('nobody is signed in and this still works');
   await first.timers.run();
@@ -270,7 +273,7 @@ test('a signed-out write reaches no network, and survives a reload', async (t) =
 
   const reopened = storeOn(storage, api);
   t.after(() => reopened.store.dispose());
-  await reopened.store.connect(false);
+  await reopened.store.connect(null);
 
   assert.equal(reopened.store.snapshot.body, 'nobody is signed in and this still works');
   assert.equal(reopened.store.snapshot.firstRun, false);
@@ -283,7 +286,7 @@ test('a mood tap signed out is held too — the offline story covers both write 
   const { store, timers } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(false);
+  await store.connect(null);
   await store.tap('mood', 4);            // a tap writes immediately — there is nothing to debounce
 
   assert.deepEqual(api.calls.put, []);
@@ -300,7 +303,7 @@ test('a mood tap signed out is held too — the offline story covers both write 
 
 test('signing in claims what is owed, oldest first', async (t) => {
   const storage = memoryStorage();
-  const held = new PageCache(storage, KEY);
+  const held = new PageCache(null, storage);
   held.hold({ day: '2026-08-05', body: 'monday', mood: null, energy: null, source: 'typed' });
   held.hold({ day: '2026-08-06', body: 'tuesday', mood: null, energy: null, source: 'typed' });
   held.hold({ day: TODAY, body: 'today', mood: null, energy: null, source: 'typed' });
@@ -310,7 +313,7 @@ test('signing in claims what is owed, oldest first', async (t) => {
   const { store } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.deepEqual(api.calls.put.map((call) => call.day), ['2026-08-05', '2026-08-06', TODAY]);
   assert.deepEqual(api.calls.put.map((call) => call.body.body), ['monday', 'tuesday', 'today']);
@@ -321,7 +324,7 @@ test('signing in claims what is owed, oldest first', async (t) => {
 
 test('a claim onto an account that already holds that day joins rather than replaces', async (t) => {
   const storage = memoryStorage();
-  const held = new PageCache(storage, KEY);
+  const held = new PageCache(null, storage);
   held.hold({ day: TODAY, body: 'what I wrote here', mood: 2, energy: null, source: 'typed' });
   held.flush();
 
@@ -330,7 +333,7 @@ test('a claim onto an account that already holds that day joins rather than repl
   const { store } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.equal(api.calls.put.length, 1);
   assert.deepEqual(api.calls.put[0].body, {
@@ -344,7 +347,7 @@ test('a claim onto an account that already holds that day joins rather than repl
 
 test('a claim that cannot reach the network stops at the first failure and stays owed', async (t) => {
   const storage = memoryStorage();
-  const held = new PageCache(storage, KEY);
+  const held = new PageCache(null, storage);
   held.hold({ day: '2026-08-05', body: 'monday', mood: null, energy: null, source: 'typed' });
   held.hold({ day: '2026-08-06', body: 'tuesday', mood: null, energy: null, source: 'typed' });
   held.flush();
@@ -354,7 +357,7 @@ test('a claim that cannot reach the network stops at the first failure and stays
   const { store, timers } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.deepEqual(store.cache.owed().map((entry) => entry.page.day), ['2026-08-06']);
   assert.deepEqual(api.calls.range, [], 'the window read never runs over an undrained backlog');
@@ -369,7 +372,7 @@ test('a reply to an earlier write leaves a newer one still owed', async (t) => {
   api.onRange = () => [];
   const { store, timers } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
-  await store.connect(true);
+  await store.connect(A);
 
   // Both replies are held open, so the second write is banked while the first is still in the air.
   const gates = [];
@@ -408,7 +411,7 @@ test('a browser with no room, and no network either, says the words are not save
   const { store, timers } = storeOn(refusing, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   store.type('nowhere to put this');
   await timers.run();
 
@@ -422,14 +425,14 @@ test('a write that the account refused is still on the device, and owed', async 
   const { store, timers } = storeOn(storage, api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   api.onPut = () => { throw new Error('offline'); };
   store.type('typed while the wire was down');
   await timers.run();
 
   assert.equal(store.snapshot.saveState, 'offline');
   assert.deepEqual(store.cache.owed().map((entry) => entry.page.body), ['typed while the wire was down']);
-  assert.equal(new PageCache(storage, KEY).page(TODAY).body, 'typed while the wire was down');
+  assert.equal(new PageCache(A, storage).page(TODAY).body, 'typed while the wire was down');
 });
 
 // ── The timers this store schedules with ─────────────────────────────────────────────────────
@@ -453,9 +456,10 @@ test('the default timers survive being called as methods, the way a browser dema
 
   const api = fakeApi();
   api.onRange = () => { throw new Error('offline'); };   // a failed read schedules a retry
-  const store = new PageStore({ cache: new PageCache(memoryStorage(), KEY), api, today: TODAY });
+  const storage = memoryStorage();
+  const store = new PageStore({ openCache: (account) => new PageCache(account, storage), api, today: TODAY });
 
-  await store.connect(true);
+  await store.connect(A);
   store.type('and typing schedules a save');
   store.dispose();                                        // …and leaving clears both
 
@@ -480,7 +484,7 @@ test('the floor reaches one window deeper per press, and the walk stays open', a
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   assert.equal(store.snapshot.reach, 'more');
   assert.equal(store.snapshot.history[0].date, '2026-06-10');
 
@@ -508,7 +512,7 @@ test('a reach back that FAILED is never the start of the journal', async (t) => 
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   await store.reachBack();
 
   assert.equal(store.snapshot.reach, 'failed');
@@ -535,7 +539,7 @@ test('a settling read that failed is not the beginning either', async (t) => {
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   await store.reachBack();
 
   assert.deepEqual(api.calls.range, [
@@ -558,7 +562,7 @@ test('an empty stretch is settled in the same press, and the start is then said 
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
   await store.reachBack();
 
   assert.deepEqual(api.calls.range, [
@@ -582,7 +586,7 @@ test('a writer away longer than the window is not a first run', async (t) => {
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.deepEqual(api.calls.range, [
     { from: '2026-06-08', to: TODAY },
@@ -599,7 +603,7 @@ test('an empty window whose settling read failed says nothing about whether the 
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(true);
+  await store.connect(A);
 
   assert.equal(store.snapshot.readState, 'ready', 'the window itself read fine');
   assert.equal(store.snapshot.reach, 'failed');
@@ -611,7 +615,7 @@ test('signed out there is no account to reach into, and nothing is read', async 
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
 
-  await store.connect(false);
+  await store.connect(null);
   await store.reachBack();
 
   assert.deepEqual(api.calls.range, []);
@@ -627,7 +631,7 @@ test('signed out there is no account to reach into, and nothing is read', async 
 // writer's own pages were invisible to their own ⌘K.
 
 test('joinCorpus — the device’s pages are part of the journal, and an owed one wins outright', () => {
-  const cache = new PageCache(memoryStorage(), KEY);
+  const cache = new PageCache(null, memoryStorage());
   cache.markRead('2026-08-01', { day: '2026-08-01', body: 'read from the account', mood: null, energy: null, source: 'typed', stamp: '5:0:a' });
   cache.markRead('2026-08-02', null);                       // a day nobody wrote
   cache.store({ day: '2026-08-03', body: 'written offline', mood: null, energy: null, source: 'typed', stamp: '9:0:web' }, { needsPush: true, read: true });
@@ -647,7 +651,7 @@ test('joinCorpus — the device’s pages are part of the journal, and an owed o
 });
 
 test('corpus — signed out, this device IS the journal, and nothing is asked of the account', async () => {
-  const cache = new PageCache(memoryStorage(), KEY);
+  const cache = new PageCache(null, memoryStorage());
   cache.hold({ day: '2026-08-06', body: 'nobody is signed in and this is still mine', mood: null, energy: null, source: 'typed' });
   const api = fakeApi();
   api.onAll = () => { throw new Error('401'); };
@@ -660,7 +664,7 @@ test('corpus — signed out, this device IS the journal, and nothing is asked of
 });
 
 test('corpus — a corpus that could not be read is not an empty journal', async () => {
-  const cache = new PageCache(memoryStorage(), KEY);
+  const cache = new PageCache(null, memoryStorage());
   cache.markRead('2026-08-06', { day: '2026-08-06', body: 'on this device', mood: null, energy: null, source: 'typed', stamp: '2:0:a' });
   const api = fakeApi();
   api.onAll = () => { throw new Error('offline'); };
@@ -672,7 +676,7 @@ test('corpus — a corpus that could not be read is not an empty journal', async
 });
 
 test('corpus — the account answered, and this device’s unsent page is in it too', async () => {
-  const cache = new PageCache(memoryStorage(), KEY);
+  const cache = new PageCache(null, memoryStorage());
   cache.hold({ day: '2026-08-06', body: 'typed on a plane, still owed', mood: null, energy: null, source: 'typed' });
   const api = fakeApi();
   api.onAll = () => [wirePage('2026-07-01', 'an old page', '1:0:a')];
