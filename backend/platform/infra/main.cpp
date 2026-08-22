@@ -97,13 +97,26 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 
 int main() {
   using namespace wm;
 
+  // One IO thread per core, and never fewer than four. Four flat was a single number for every
+  // machine, and four slow requests froze the whole API for everyone including anonymous visitors
+  // (COMPUTE-3): a public page went unserved for over two minutes while a handful of roadmap
+  // analysis calls held the pool. Following the machine buys headroom proportional to the box and
+  // nothing more — it does NOT fix the finding, which is that super-linear analysis runs on the
+  // request thread at all; that work belongs on a bounded background worker with a time ceiling.
+  //
+  // Decided here, before anything is built, because it also sizes the database pool: every IO
+  // thread can be inside a handler holding a connection at once, and a pool ceiling below the
+  // thread count turns into 30-second waits and 500s rather than into queueing.
+  const unsigned int ioThreads = std::max(4u, std::thread::hardware_concurrency());
+
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
-  auto pool = std::make_shared<PgPool>(connString);
+  auto pool = std::make_shared<PgPool>(connString, ioThreads + PgPool::kReservedConnections);
   const Hlc genesis{1, 0, "genesis"};
 
   auto trees = std::make_shared<PgTreeRepository>(pool);
@@ -515,8 +528,11 @@ int main() {
   // body (it can carry internals); the stdout LOG_ERROR signal is kept too.
   app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
                                                  std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-    const std::string method = req->getMethodString();
-    const std::string path = req->getPath();
+    const std::string method = loggableField(req->getMethodString());
+    // The same hygiene the access line gets, and for sharper reasons: this path reaches stdout, a
+    // RETAINED server_errors column, and Sentry's transaction and request.url. A 500 on
+    // /v1/gym/shared/{token} would have filed the live coach credential in all three.
+    const std::string path = loggableField(redactedPath(req->getPath()));
     std::string message = e.what();
     if (message.size() > 500) {                            // bound the column, cutting on a UTF-8 boundary
       std::size_t cut = 500;
@@ -959,8 +975,8 @@ int main() {
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
   // And the delivery path: a page saved is a page derived, seconds later, on this object's own
-  // thread. It is the PageWatcher the write path announces to — never the request thread, which
-  // drogon has four of and a curator call is seconds long.
+  // thread. It is the PageWatcher the write path announces to — never the request thread, of which
+  // drogon has one per core and a curator call is seconds long.
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
@@ -1028,6 +1044,6 @@ int main() {
   app.setClientMaxBodySize(8 * 1024 * 1024);         // backstop cap; a full PUT document can be large
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
-  app.addListener("0.0.0.0", port).setThreadNum(4).run();
+  app.addListener("0.0.0.0", port).setThreadNum(ioThreads).run();
   return 0;
 }

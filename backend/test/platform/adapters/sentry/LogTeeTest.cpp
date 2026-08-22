@@ -79,3 +79,30 @@ TEST(log_tee_level_knob_defaults_to_info_and_is_case_insensitive) {
   CHECK(logLevelFromEnv("Error") == SentryClient::Level::error);
   CHECK(logLevelFromEnv("TRACE") == SentryClient::Level::trace);
 }
+
+// One trantor message is one physical line, or the record can be forged: whoever can make a log
+// grow an extra line can write that line to say anything, including a security event that never
+// happened. The seams that build lines escape their own fields; this is the floor under them.
+TEST(log_tee_flattens_a_message_that_tries_to_become_two_lines) {
+  const std::string split =
+      "20260802 09:12:33.123456 UTC 1234567 WARN  http DELETE /v1/sessions/abc\n"
+      "20260816 99:99:99.000000 UTC 1 ERROR auth: account closed user=INJECTED - AuthService.cpp:269"
+      " 401 0.0ms caller=anon - AccessLog.cpp:66\n";
+  const std::string flat = wm::oneLine(split.data(), split.size());
+
+  // Exactly one newline, and it is the last byte: the record is one line and one write.
+  CHECK_EQ(flat.find('\n'), flat.size() - 1);
+  CHECK_EQ(flat,
+           std::string("20260802 09:12:33.123456 UTC 1234567 WARN  http DELETE /v1/sessions/abc\\n"
+                       "20260816 99:99:99.000000 UTC 1 ERROR auth: account closed user=INJECTED - "
+                       "AuthService.cpp:269 401 0.0ms caller=anon - AccessLog.cpp:66\n"));
+}
+
+// The ordinary line goes out byte for byte as trantor wrote it, newline and all — so `docker logs`
+// reads exactly as it always did, and one message is still one write.
+TEST(log_tee_leaves_an_ordinary_line_alone) {
+  const std::string line = emitted("INFO", "http GET /v1/me 200 1.2ms caller=u_1", "AccessLog.cpp:66");
+
+  CHECK_EQ(wm::oneLine(line.data(), line.size()), line);
+  CHECK_EQ(wm::oneLine("", 0), std::string("\n"));
+}

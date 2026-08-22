@@ -16,7 +16,9 @@ namespace wm {
 //
 // What it deliberately does NOT carry: the query string. `code`, `state` and every token this
 // server accepts arrive there, and a log is retained, replicated to Sentry, and read by more people
-// than a database is. Paths carry ids, which are not secrets and are the whole point of the line.
+// than a database is. Paths carry ids, which are the whole point of the line — except where a route
+// puts a capability secret in a segment, which redactedPath() (LogFormat.h) cuts down to a prefix.
+// Nothing a caller can steer reaches the line unencoded either: see loggableField().
 //
 // The one class of request it misses, measured rather than assumed: a path that matches no route at
 // all. Drogon answers it 404 without running a handler, so the post-handling advice never fires and

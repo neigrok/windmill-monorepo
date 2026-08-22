@@ -1,8 +1,10 @@
 #pragma once
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "platform/adapters/postgres/PgSweepMutex.h"
 #include "products/journal/ports/NudgeRepository.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -18,8 +20,7 @@ class PgNudgeRepository : public NudgeRepository {
 public:
   explicit PgNudgeRepository(std::shared_ptr<PgPool> pool);
 
-  bool tryLockSweep() override;
-  void unlockSweep() override;
+  bool underSweepLock(const std::function<void()>& pass) override;
   std::vector<NudgeDueUser> dueNow(std::uint64_t nowMs, int limit) override;
   bool wroteToday(const UserId& user, const LocalDate& day) override;
   bool claimDay(const UserId& user, const LocalDate& slotDay, const NudgeDecision& decision) override;
@@ -35,6 +36,7 @@ public:
 
 private:
   std::shared_ptr<PgPool> pool_;
+  PgSweepMutex sweepLock_;
 };
 
 }

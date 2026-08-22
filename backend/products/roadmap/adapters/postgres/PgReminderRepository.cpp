@@ -19,7 +19,7 @@ namespace wm {
 namespace {
 
 // One fleet-wide lock for the sweep's WORK (not its correctness — the claimed week row is that).
-// Session-scoped, so it is held by the connection and released on the same thread's connection.
+// PgSweepMutex owns everything about how it is held; this names it.
 constexpr std::string_view kSweepLock = "hashtext('reminder_sweep')::bigint";
 
 // The next occurrence of a user's weekly slot, strictly in their future, expressed entirely in
@@ -91,21 +91,10 @@ NodeStateEntry nodeFromRow(const Row& row) {
 }
 
 PgReminderRepository::PgReminderRepository(std::shared_ptr<PgPool> pool)
-    : pool_(std::move(pool)) {}
+    : pool_(pool), sweepLock_(pool, std::string(kSweepLock), "reminders") {}
 
-bool PgReminderRepository::tryLockSweep() {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec("SELECT pg_try_advisory_lock(" + std::string(kSweepLock) + ") AS taken");
-  txn.commit();  // the lock is session-scoped, so it outlives this transaction by design
-  return rows[0]["taken"].as<bool>();
-}
-
-void PgReminderRepository::unlockSweep() {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec("SELECT pg_advisory_unlock(" + std::string(kSweepLock) + ")");
-  txn.commit();
+bool PgReminderRepository::underSweepLock(const std::function<void()>& pass) {
+  return sweepLock_.underSweepLock(pass);
 }
 
 std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit) {

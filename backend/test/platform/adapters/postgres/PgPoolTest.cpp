@@ -1,5 +1,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 
+#include "platform/adapters/postgres/PgSweepMutex.h"
+
 #include "test/PgTestPool.h"
 #include "test/testing.h"
 
@@ -12,6 +14,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unistd.h>
+
 #include <vector>
 
 // The pool is the answer to a machine-level outage, so what it must guarantee is asserted here
@@ -20,8 +24,13 @@
 // full pool waits for a return rather than opening one anyway, and a connection that comes back
 // broken is dropped instead of pooled.
 //
-// Every case but the last needs a live Postgres and skips without WM_PG_TEST, exactly like the
-// repository suites (RUNNING.md §7).
+// PgSweepMutex is asserted here too, and belongs here: it is the pool's other invariant — the one
+// borrower that must keep ONE connection for longer than a transaction, because a pg advisory lock
+// is session-scoped and the shape it replaced took the lock on one borrow and released it on
+// whatever the pool lent next (SWEEP-1).
+//
+// Every case but the one unreachable-database case needs a live Postgres and skips without
+// WM_PG_TEST, exactly like the repository suites (RUNNING.md §7).
 using namespace wm;
 
 namespace {
@@ -32,6 +41,21 @@ std::string testConnString() { return pgTestPool()->connString(); }
 int oneFromDatabase(PgLease& lease) {
   pqxx::work txn{*lease};
   return txn.exec1("SELECT 1")[0].as<int>();  // exec1, not query_value: CI pins libpqxx 7.x
+}
+
+// A lock key nobody else on this database is using. Advisory locks are database-global and a
+// developer box runs several windmill processes at once, so a fixed key would make these cases
+// assert on someone else's sweep. Positive, so pg_locks reports it as classid 0 / objid key.
+std::string testSweepKey() { return std::to_string(900'000'000 + static_cast<long>(getpid())); }
+
+// How many sessions hold that key, asked from a DIFFERENT connection — the only way to tell a lock
+// that was handed back from one that merely left the borrower's sight.
+int advisoryLocksOn(PgPool& pool, const std::string& key) {
+  PgLease lease{pool};
+  pqxx::work txn{*lease};
+  return txn.exec_params("SELECT count(*)::int FROM pg_locks WHERE locktype = 'advisory' "
+                         "AND classid = 0 AND objid::bigint = $1::bigint",
+                         key)[0][0].as<int>();
 }
 }
 
@@ -169,4 +193,102 @@ TEST(pg_pool_ceiling_is_twenty_by_default) {
   CHECK_EQ(PgPool::kDefaultMaxConnections, static_cast<std::size_t>(20));
   CHECK_EQ(pool.maxConnections(), static_cast<std::size_t>(20));
   CHECK_EQ(pool.openConnections(), static_cast<std::size_t>(0));  // and it connects lazily
+}
+
+TEST(pg_sweep_mutex_hands_the_lock_back_on_the_connection_that_took_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  auto pool = std::make_shared<PgPool>(testConnString(), 4);
+  const std::string key = testSweepKey();
+  PgSweepMutex mutex{pool, key, "test sweep"};
+
+  bool ran = false;
+  std::unique_ptr<PgLease> churn;
+  const bool held = mutex.underSweepLock([&] {
+    ran = true;
+    CHECK_EQ(advisoryLocksOn(*pool, key), 1);
+    // The pass borrows — an IO thread serving a request mid-sweep does exactly this — and KEEPS the
+    // borrow past the end of the pass, so the connection the pool would hand out next is provably
+    // not the one the lock is on. That is the deterministic form of the race that used to strand
+    // the fleet lock on an idle connection for the life of the process, after which every sweep in
+    // every process on this database answered ran=false and nobody was ever mailed again.
+    churn = std::make_unique<PgLease>(*pool);
+    CHECK_EQ(oneFromDatabase(*churn), 1);
+  });
+
+  CHECK(held);
+  CHECK(ran);
+  CHECK_EQ(advisoryLocksOn(*pool, key), 0);
+  churn.reset();
+}
+
+TEST(pg_sweep_mutex_answers_false_without_running_a_pass_someone_else_is_already_running) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  auto pool = std::make_shared<PgPool>(testConnString(), 4);
+  const std::string key = testSweepKey();
+  PgSweepMutex mine{pool, key, "test sweep"};
+  PgSweepMutex theirs{pool, key, "test sweep"};   // a second process, as far as Postgres can tell
+
+  bool theirsRan = false;
+  bool theirsHeld = true;
+  const bool mineHeld = mine.underSweepLock([&] {
+    theirsHeld = theirs.underSweepLock([&] { theirsRan = true; });
+  });
+
+  CHECK(mineHeld);
+  CHECK_FALSE(theirsHeld);
+  CHECK_FALSE(theirsRan);
+  CHECK_EQ(advisoryLocksOn(*pool, key), 0);
+}
+
+TEST(pg_sweep_mutex_hands_the_lock_back_when_the_pass_throws) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  auto pool = std::make_shared<PgPool>(testConnString(), 4);
+  const std::string key = testSweepKey();
+  PgSweepMutex mutex{pool, key, "test sweep"};
+
+  bool threw = false;
+  try {
+    mutex.underSweepLock([] { throw std::runtime_error("the batch blew up"); });
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+
+  // A pass that dies must not take the fleet's mail with it: the throw is the caller's to see, and
+  // the lock is gone by the time they see it.
+  CHECK(threw);
+  CHECK_EQ(advisoryLocksOn(*pool, key), 0);
+}
+
+TEST(pg_sweep_mutex_poisons_the_connection_when_the_unlock_itself_fails) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  auto pool = std::make_shared<PgPool>(testConnString(), 4);
+  const std::string key = testSweepKey();
+
+  // A key expression that stops resolving part-way through the pass, which is the deterministic
+  // stand-in for the third failure: not a dead connection and not an unlock that owned nothing, but
+  // a live connection whose unlock STATEMENT fails — a statement timeout, a recovery conflict, a
+  // transient error. Swallowing that would hand a still-locked connection back to the pool and
+  // strand the fleet lock for the life of the process, which is SWEEP-1 again through another door.
+  {
+    PgLease setup{*pool};
+    pqxx::work txn{*setup};
+    txn.exec("DROP TABLE IF EXISTS wm_sweep_key_probe");
+    txn.exec("CREATE TABLE wm_sweep_key_probe (k bigint)");
+    txn.exec("INSERT INTO wm_sweep_key_probe VALUES (" + key + ")");
+    txn.commit();
+  }
+  PgSweepMutex mutex{pool, "(SELECT k FROM wm_sweep_key_probe)", "test sweep"};
+
+  const bool held = mutex.underSweepLock([&] {
+    CHECK_EQ(advisoryLocksOn(*pool, key), 1);
+    PgLease saboteur{*pool};
+    pqxx::work txn{*saboteur};
+    txn.exec("DROP TABLE wm_sweep_key_probe");
+    txn.commit();
+  });
+
+  // The pass ran and the lock is gone anyway: the connection was closed rather than pooled, and
+  // Postgres releases a session-scoped lock with the session.
+  CHECK(held);
+  CHECK_EQ(advisoryLocksOn(*pool, key), 0);
 }

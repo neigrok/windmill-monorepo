@@ -15,7 +15,7 @@ namespace wm {
 namespace {
 
 // One fleet-wide lock for the sweep's WORK (not its correctness — the claimed day row is that).
-// Session-scoped, so it is held by the connection and released on the same thread's connection.
+// PgSweepMutex owns everything about how it is held; this names it.
 constexpr std::string_view kSweepLock = "hashtext('journal_nudge_sweep')::bigint";
 
 // The ledger's two free columns speak the same words the schema comment fixes. The decision is the
@@ -51,21 +51,11 @@ NudgeDueUser dueUserFrom(const Row& row) {
 
 }
 
-PgNudgeRepository::PgNudgeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
+PgNudgeRepository::PgNudgeRepository(std::shared_ptr<PgPool> pool)
+    : pool_(pool), sweepLock_(pool, std::string(kSweepLock), "journal nudge") {}
 
-bool PgNudgeRepository::tryLockSweep() {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec("SELECT pg_try_advisory_lock(" + std::string(kSweepLock) + ") AS taken");
-  txn.commit();  // the lock is session-scoped, so it outlives this transaction by design
-  return rows[0]["taken"].as<bool>();
-}
-
-void PgNudgeRepository::unlockSweep() {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec("SELECT pg_advisory_unlock(" + std::string(kSweepLock) + ")");
-  txn.commit();
+bool PgNudgeRepository::underSweepLock(const std::function<void()>& pass) {
+  return sweepLock_.underSweepLock(pass);
 }
 
 std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int limit) {

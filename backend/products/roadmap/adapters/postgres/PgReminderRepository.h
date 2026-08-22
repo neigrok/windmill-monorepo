@@ -1,8 +1,10 @@
 #pragma once
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "platform/adapters/postgres/PgSweepMutex.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 
+#include <functional>
 #include <memory>
 #include <cstdint>
 #include <optional>
@@ -27,8 +29,7 @@ class PgReminderRepository : public ReminderRepository {
 public:
   explicit PgReminderRepository(std::shared_ptr<PgPool> pool);
 
-  bool tryLockSweep() override;
-  void unlockSweep() override;
+  bool underSweepLock(const std::function<void()>& pass) override;
 
   std::vector<DueUser> dueNow(std::uint64_t nowMs, int limit) override;
   std::vector<TreeReadiness> readinessFor(const UserId& user) override;
@@ -50,6 +51,7 @@ public:
 
 private:
   std::shared_ptr<PgPool> pool_;
+  PgSweepMutex sweepLock_;
 };
 
 }

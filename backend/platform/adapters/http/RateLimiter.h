@@ -58,12 +58,17 @@ private:
 };
 
 // The real client IP. Behind Cloudflare that is CF-Connecting-IP: the edge sets it to the
-// original visitor and overwrites any client-sent copy, so we trust it first. This assumes the
-// origin only accepts ingress from Cloudflare (the VPS firewall should allow only CF ranges);
-// otherwise a direct hit could forge it — acceptable for a best-effort limiter. Absent that
-// header, fall back to the LAST X-Forwarded-For entry, the peer the proxy actually observed, so
-// a client-prepended forgery sits to its left and is ignored. Empty means no proxy header at all
-// — internal traffic (health checks, sibling services on the compose network), left unlimited.
+// original visitor and overwrites any client-sent copy, so we trust it first. That trust is
+// borrowed, not owned — it holds only while the origin refuses traffic that did not come through
+// Cloudflare, and it is enforced in exactly two places: the `(cloudflare_only)` gate in
+// deploy/Caddyfile (imported FIRST in every site block — see the warning there, it was dead code
+// until 2026-08-22 and this line said "should" while nothing did) and the CF-only firewall rules
+// in deploy/README.md §1. Break either one and every per-IP ceiling below becomes advisory.
+// Absent that header, fall back to the LAST X-Forwarded-For entry, the peer the proxy actually
+// observed, so a client-prepended forgery sits to its left and is ignored. Empty means no proxy
+// header at all — internal traffic (health checks, sibling services on the compose network), left
+// unlimited, which is sound for exactly as long as the gate above keeps the outside from looking
+// internal.
 inline std::string clientIp(const drogon::HttpRequestPtr& request) {
   const std::string& connecting = request->getHeader("cf-connecting-ip");
   if (!connecting.empty()) return connecting;

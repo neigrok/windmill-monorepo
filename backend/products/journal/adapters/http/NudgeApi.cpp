@@ -230,6 +230,21 @@ void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
       return;
     }
   }
+
+  // Time travel is a rehearsal tool: without it every iteration of a nightly feature costs a real
+  // evening. With the FEATURE armed it would let one request mail the allowlist early and consume
+  // the genuine knock it claimed on the way, so it is refused outright rather than quietly ignored.
+  // The same rule in the same words as roadmap's door (RemindersApi::sweep) — a rehearsal tool that
+  // is live fire on one product and a rehearsal on the other is worse than either.
+  if (asOfMs != 0 && sweep_->arming().enabled) {
+    cb(error(drogon::k409Conflict, "asOfMs is refused while nudges are enabled"));
+    return;
+  }
+  // And a time-travelling sweep is ALWAYS a rehearsal. decide() reads the slot against asOfMs while
+  // the claim clears next_due_at against real time, so a wet run at a future clock burns every
+  // enabled user's next slot — the far ones silently, since decide() calls a slot more than six
+  // hours old too late to mail.
+  if (asOfMs != 0) dryRun = true;
   if (asOfMs == 0) asOfMs = clock_->nowMs();
 
   cb(jsonResponse(toJson(sweep_->run(asOfMs, dryRun))));

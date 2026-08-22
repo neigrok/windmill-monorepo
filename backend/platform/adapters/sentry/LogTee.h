@@ -2,6 +2,7 @@
 
 #include "platform/adapters/sentry/SentryClient.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -24,6 +25,14 @@ struct TrantorLine {
 // here that a trantor upgrade can silently change, and a silent change means every log arrives at
 // one level with the timestamp glued to the front.
 TrantorLine parseTrantorLine(const char* msg, std::size_t len);
+
+// One trantor message as ONE physical line: any embedded CR/LF escaped, and exactly one trailing
+// newline, in ONE buffer so the whole record reaches stdout in a single write. (Body and newline as
+// two stdio calls take the FILE lock twice, and another thread's line lands in the gap.) A record that can be split is a record a stranger can forge: an anonymous request whose
+// path carried `%0a` — which drogon URL-decodes — once minted a byte-perfect second line reading
+// `auth: account closed user=…`. The seams that build lines escape their own caller-steered fields
+// (platform/adapters/http/LogFormat.h); this is the floor under all of them, ours and drogon's.
+std::string oneLine(const char* msg, std::size_t len);
 
 // Installs the output function. Lines below `minimum` are written to stdout and not forwarded, which
 // is the cost knob: SENTRY_LOG_LEVEL. Anything logged on the client's own loop thread is never

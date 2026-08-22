@@ -21,7 +21,9 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // unsubscribe are UNCREDENTIALED on purpose — their authority is the secret in the mail the user was
 // sent (looked up by its digest), so a tap from an email client with no session still works. The
 // admin sweep is an operator rehearsal gated by a shared token, able to time-travel (asOfMs) and run
-// dry, so the whole engine can be driven in a test without waiting for a real due instant.
+// dry, so the whole engine can be driven in a test without waiting for a real due instant — and,
+// like roadmap's, a time-travelling sweep is always a rehearsal and is refused outright once the
+// feature is armed, because otherwise one request mails the allowlist early and eats the real slot.
 class NudgeApi {
 public:
   NudgeApi(std::shared_ptr<NudgeRepository> nudges, std::shared_ptr<NudgeSweep> sweep,

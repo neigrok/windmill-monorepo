@@ -48,12 +48,20 @@ struct FakeReminders : ReminderRepository {
   std::set<std::string> unknownTimezones;      // names Postgres would refuse
   std::map<std::string, std::string> owners;   // address -> user id, the webhook's only way in
 
-  bool tryLockSweep() override {
+  // RAII, so a throwing pass still counts the hand-back — the port hands the lock back before the
+  // throw reaches the caller, and a fake that says otherwise hides the day it stops being true.
+  struct Handback {
+    ~Handback() { ++released; }
+    int& released;
+  };
+
+  bool underSweepLock(const std::function<void()>& pass) override {
     if (!lockFree) return false;
     ++locksTaken;
+    Handback handback{locksReleased};
+    pass();
     return true;
   }
-  void unlockSweep() override { ++locksReleased; }
 
   std::vector<DueUser> dueNow(std::uint64_t, int limit) override {
     askedLimit = limit;

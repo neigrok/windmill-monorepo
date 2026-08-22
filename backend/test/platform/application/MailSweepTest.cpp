@@ -29,12 +29,21 @@ struct FakeMutex : SweepMutex {
   int locksTaken = 0;
   int locksReleased = 0;
 
-  bool tryLockSweep() override {
+  // RAII, like the Postgres one: the port promises the lock is handed back BEFORE a throwing pass
+  // reaches its caller, and a fake that counted the release after pass() could not tell whether the
+  // real one keeps that promise.
+  struct Handback {
+    ~Handback() { ++released; }
+    int& released;
+  };
+
+  bool underSweepLock(const std::function<void()>& pass) override {
     if (!lockFree) return false;
     ++locksTaken;
+    Handback handback{locksReleased};
+    pass();
     return true;
   }
-  void unlockSweep() override { ++locksReleased; }
 };
 
 struct Slot {
@@ -65,6 +74,7 @@ public:
   std::set<std::string> sendable;         // users whose decision is a send
   std::set<std::string> unreadable;       // users whose decideFor answers "could not load"
   std::set<std::string> throwing;         // users whose decideFor throws outright
+  bool dueNowThrows = false;              // the batch itself cannot be read
   std::set<std::string> ownedElsewhere;   // users whose claim loses the race
   std::set<std::string> refused;          // users whose mailer says no
   std::vector<std::string> claims;
@@ -77,6 +87,7 @@ private:
   int batch() const override { return 7; }
   std::vector<Slot> dueNow(std::uint64_t, int limit) override {
     askedLimit = limit;
+    if (dueNowThrows) throw std::runtime_error("the due query is on fire");
     return due;
   }
   Call decideFor(const Slot& slot, std::uint64_t) override {
@@ -338,4 +349,25 @@ TEST(an_unreadable_decision_is_claimed_like_a_skip_and_counted_as_an_error) {
   CHECK_EQ(dry.wouldSend, 1);
   CHECK_EQ(dry.claimed, 0);
   CHECK_EQ(sweep.claims.size(), std::size_t{0});
+}
+
+TEST(a_pass_that_throws_hands_the_fleet_lock_back_before_the_caller_sees_the_throw) {
+  // The per-user guard covers a turn that blows up; nothing covers the batch read itself. A throw
+  // there escapes `run`, and if it took the fleet lock with it, every process on this database
+  // would stop mailing until a restart — which is precisely the outage SWEEP-1 was.
+  FakeMutex mutex;
+  FakeTokens tokens;
+  TinySweep sweep(mutex, tokens, MailArming(true, "u1"));
+  sweep.dueNowThrows = true;
+
+  bool threw = false;
+  try {
+    sweep.run(kNow, false);
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+
+  CHECK(threw);
+  CHECK_EQ(mutex.locksTaken, 1);
+  CHECK_EQ(mutex.locksReleased, 1);
 }

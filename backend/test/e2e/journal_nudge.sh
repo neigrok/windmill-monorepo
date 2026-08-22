@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # Journal Wave 2 — nudges, end-to-end against the LIVE local stack. It drives the whole heartbeat
-# through the admin time-travel sweep (no waiting for a real due instant, no real mail), and asserts
+# through the admin sweep at the REAL clock — the device pushes a knock time in the past, so nothing
+# waits for a real due instant — and asserts
 # the DECISION LEDGER per-user via psql (deterministic on a shared dev db, unlike the fleet-wide
 # report counts). The device's job — materialising next_due_at — is played by PATCHing a past instant.
 #
-# Prereqs: schema applied; server running with the admin token, e.g.:
-#   set -a && . ./.env && set +a && JOURNAL_NUDGE_ADMIN_TOKEN=e2e-admin ./build/windmill_server
+# Prereqs: schema applied; server running with the admin token AND armed for the e2e user — the
+# settings PATCH below is refused for anyone the arming gate does not name, so a dark server fails
+# the first check. Run it once to mint the user, then:
+#   U=$(psql windmill -tAc "select id from users where email='journal-nudge-e2e@example.com'")
+#   set -a && . ./.env && set +a && JOURNAL_NUDGE_ENABLED=true JOURNAL_NUDGE_ALLOWLIST=$U \
+#     JOURNAL_NUDGE_ADMIN_TOKEN=e2e-admin ./build/windmill_server
 # Run:  JOURNAL_NUDGE_ADMIN_TOKEN=e2e-admin bash test/e2e/journal_nudge.sh
 set -uo pipefail
 
@@ -39,14 +44,14 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/admin/journal/n
 check "$CODE" "403" "admin sweep without the token → 403"
 
 # ── the sweep decides + CLAIMS the day (arming is off locally, so it holds instead of mailing) ───
-sweep "{\"asOfMs\":$NOW_MS}" >/dev/null
+sweep '{}' >/dev/null
 LEDGER="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U' and slot_day='$TODAY'")"
 check "$LEDGER" "1" "sweep claims exactly one ledger row for the day"
 CLEARED="$(psql "$DB" -tAc "select next_due_at is null from journal_nudge where user_id='$U'")"
 check "$CLEARED" "t" "the served instant is cleared so it can't fire twice"
 
 # claim is a mutex: a second sweep at the same slot adds nothing
-sweep "{\"asOfMs\":$NOW_MS}" >/dev/null
+sweep '{}' >/dev/null
 LEDGER2="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U' and slot_day='$TODAY'")"
 check "$LEDGER2" "1" "a second sweep does not double-claim the day"
 
@@ -55,7 +60,7 @@ TOM="$(date -v+1d +%F 2>/dev/null || date -d tomorrow +%F)"
 psql "$DB" -q -c "insert into journal_page (user_id,day,body,stamp_ms) values ('$U','$TOM','wrote it',10) on conflict do nothing"
 j -X PATCH "$BASE/v1/journal/nudge" -H 'content-type: application/json' \
   -d "{\"nextDueAt\":$PAST_MS,\"slotDay\":\"$TOM\"}" >/dev/null
-sweep "{\"asOfMs\":$NOW_MS}" >/dev/null
+sweep '{}' >/dev/null
 REASON="$(psql "$DB" -tAc "select reason from journal_nudge_day where user_id='$U' and slot_day='$TOM'")"
 check "$REASON" "already-wrote" "a day already written skips with reason already-wrote"
 
@@ -63,8 +68,33 @@ check "$REASON" "already-wrote" "a day already written skips with reason already
 psql "$DB" -q -c "delete from journal_nudge_day where user_id='$U' and slot_day='$TODAY'"
 j -X PATCH "$BASE/v1/journal/nudge" -H 'content-type: application/json' \
   -d "{\"nextDueAt\":$PAST_MS,\"slotDay\":\"$TODAY\"}" >/dev/null
-sweep "{\"asOfMs\":$NOW_MS,\"dryRun\":true}" >/dev/null
+sweep '{"dryRun":true}' >/dev/null
 DRY="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U' and slot_day='$TODAY'")"
 check "$DRY" "0" "a dry run claims nothing"
+
+# ── a wet time-travelling sweep: refused while armed, forced dry while dark ──────────────────────
+# asOfMs used to run WET here, which against an armed deploy mails the allowlist early and eats the
+# genuine knock it claims on the way. TWO rules replaced that and which one answers depends on how
+# this server was started, so each is asserted by its own evidence — an unclaimed day is what both
+# look like, and checking only that proves neither. The prereq above arms the server, so a normal
+# run takes the 409 branch; the dry branch is what a dark server (with a seeded row) answers, and
+# is also pinned in NudgeApiTest.
+ARMED="$(j "$BASE/v1/journal/nudge" | field "['armed']")"
+TRAVEL_BODY="$(mktemp)"
+TRAVEL="$(curl -s -o "$TRAVEL_BODY" -w '%{http_code}' -H "X-Admin-Token: $ADMIN" -X POST \
+  "$BASE/v1/admin/journal/nudge/sweep" -H 'content-type: application/json' \
+  -d "{\"asOfMs\":$NOW_MS,\"dryRun\":false}")"
+if [ "$ARMED" = "True" ]; then
+  check "$TRAVEL" "409" "armed: a wet as-of sweep is refused outright"
+  check "$(field "['error']" < "$TRAVEL_BODY")" "asOfMs is refused while nudges are enabled" \
+    "armed: and the refusal names its reason"
+else
+  check "$TRAVEL" "200" "dark: a wet as-of sweep is answered"
+  check "$(field "['claimed']" < "$TRAVEL_BODY")" "0" "dark: forced to be a rehearsal"
+  check "$(field "['wouldSend']" < "$TRAVEL_BODY")" "1" "dark: and still says what would have gone out"
+fi
+rm -f "$TRAVEL_BODY"
+TRAVELLED="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U' and slot_day='$TODAY'")"
+check "$TRAVELLED" "0" "either way the day is never claimed"
 
 echo; echo "$pass passed, $fail failed"; rm -f "$JAR"; [ "$fail" = 0 ]

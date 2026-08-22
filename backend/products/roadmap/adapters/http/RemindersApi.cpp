@@ -213,7 +213,8 @@ void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callb
 
   // Never on this thread. A drogon IO thread serves every other request in flight; a full batch is
   // up to 200 users' worth of database round trips and provider calls, and parking one here would
-  // pin a quarter of the server's capacity for as long as that takes. The sweep answers from its
+  // hold one of the server's handful of IO threads — and the pooled database connection it is
+  // carrying — for as long as that takes. The sweep answers from its
   // own loop, which also serialises this run behind the heartbeat's rather than racing it.
   sweep_->runAsync(asOfMs != 0 ? asOfMs : clock_->nowMs(), dryRun,
                    [callback = std::move(callback)](MailSweepReport report) {

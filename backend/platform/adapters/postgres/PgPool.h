@@ -31,11 +31,18 @@ namespace wm {
 // Borrow through PgLease below, never through acquire/release by hand.
 class PgPool {
 public:
-  // A ceiling, not a target. The server's borrowers are four drogon IO threads and three heartbeat
-  // loops, so the steady state sits under eight and this number is never reached; it is here so
-  // that a leak or a burst of short-lived threads waits for a connection instead of opening a
-  // nine-thousandth one. Postgres itself allows 100 in total, which several local processes share.
+  // A ceiling, not a target — but it must sit ABOVE the number of borrowers that can be inside a
+  // handler at once, or the pool converts a busy moment into 30-second waits and 500s. The server's
+  // borrowers are one per drogon IO thread (one per core since COMPUTE-3, main.cpp) plus the
+  // heartbeat loops — the mail sweeps, the echo sweep — and the sweep that holds the fleet lock
+  // keeps its connection for a whole pass. So main.cpp sizes the pool as ioThreads + the reserve
+  // below rather than taking this default, and this default is what a tool with no listener uses.
+  // Postgres itself allows 100 in total, which several local processes share.
   static constexpr std::size_t kDefaultMaxConnections = 20;
+
+  // Headroom over the IO threads for the borrowers that are not request threads: three heartbeat
+  // loops today, plus the lease a sweep holds across its pass and room for one more of each.
+  static constexpr std::size_t kReservedConnections = 8;
 
   // How long a borrower waits for the pool to hand something back before giving up. A connection is
   // held for one transaction and every connection carries a 5s statement_timeout, so waiting this

@@ -22,12 +22,15 @@ bool isProbe(const std::string& path) {
 
 std::string accessLine(const std::string& method, const std::string& path, int status,
                        long long micros, const std::string& caller) {
-  std::string line =
-      "http " + method + " " + path + " " + std::to_string(status) + " " + tookMs(micros) + "ms";
+  // Every caller-steered field goes through the hygiene in LogFormat before it is concatenated —
+  // here, once, rather than at the one call site — so no route can put a credential or a newline
+  // into this line by being registered later.
+  std::string line = "http " + loggableField(method) + " " + loggableField(redactedPath(path)) +
+                     " " + std::to_string(status) + " " + tookMs(micros) + "ms";
   // Anonymous is a fact worth logging, not an absence to omit: "who did this write" with no answer
   // is the shape of a bug, and a missing field reads as a logger that forgot rather than a caller
   // that had no session.
-  line += " caller=" + (caller.empty() ? std::string("anon") : caller);
+  line += " caller=" + (caller.empty() ? std::string("anon") : loggableField(caller));
   return line;
 }
 

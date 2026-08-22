@@ -48,28 +48,6 @@ enum class SweepVerdict { send, skip, unreadable };
 // crash.
 enum class ClosedAs { held, delivered, refused };
 
-// The fleet-wide work lock as a scope. Correctness does not depend on it — the committed claim
-// does — so a lock that is already held simply means someone else is doing this work.
-struct SweepLock {
-  SweepLock(SweepMutex& mutex, std::string name)
-      : mutex(mutex), name(std::move(name)), held(mutex.tryLockSweep()) {}
-  ~SweepLock() {
-    if (!held) return;
-    // A destructor is noexcept, and handing the lock back reaches the database — which is exactly
-    // the thing most likely to have just died. Letting that throw would take the process with it;
-    // a lock left held is released by the server the moment the connection drops anyway.
-    try {
-      mutex.unlockSweep();
-    } catch (...) {
-      LOG_ERROR << name << ": the sweep lock could not be handed back";
-    }
-  }
-
-  SweepMutex& mutex;
-  std::string name;
-  bool held;
-};
-
 // The mail sweep: one pass of DECIDE → CLAIM → SEND over everyone whose slot has arrived, written
 // once for every product that mails on a schedule. Roadmap's weekly reminder and journal's nightly
 // nudge each wrote this skeleton out and the two had already drifted — one guarded a user's turn
@@ -97,69 +75,72 @@ public:
   // what makes a weekly feature iterable in an afternoon instead of seven days at a time. It is
   // a SLOW, blocking pipeline — up to a full batch of database round trips and provider calls —
   // so a request thread should reach it through the product's own loop (ReminderSweep::runAsync)
-  // rather than inline; journal's admin door still calls it inline and pays for that.
+  // rather than inline; journal's admin door still calls it inline and pays for that twice over,
+  // holding an IO thread AND the pooled connection the fleet lock rides on across every send.
   MailSweepReport run(std::uint64_t nowMs, bool dryRun) {
     MailSweepReport report;
-    SweepLock lock(mutex_, name());
-    if (!lock.held) return report;  // another process is already doing exactly this work
-    report.ran = true;
+    // The fleet lock is scoped by the port on purpose (platform/ports/SweepMutex.h): the pass runs
+    // inside it or does not run at all, and there is no unlock verb here to aim at the wrong
+    // connection. `ran` is false when someone else already holds it — nothing was looked at, which
+    // is not the same as nothing being due.
+    report.ran = mutex_.underSweepLock([&] {
+      for (const Due& due : dueNow(nowMs, batch())) {
+        ++report.due;
+        // One user's turn is one user's risk: an unreadable tree or a lost row costs that person
+        // this slot's mail and nothing more. The sweep carries on down the list.
+        try {
+          const Decision decision = decideFor(due, nowMs);
+          const SweepVerdict verdict = verdictOf(decision);
+          if (verdict == SweepVerdict::unreadable) ++report.errors;
 
-    for (const Due& due : dueNow(nowMs, batch())) {
-      ++report.due;
-      // One user's turn is one user's risk: an unreadable tree or a lost row costs that person
-      // this slot's mail and nothing more. The sweep carries on down the list.
-      try {
-        const Decision decision = decideFor(due, nowMs);
-        const SweepVerdict verdict = verdictOf(decision);
-        if (verdict == SweepVerdict::unreadable) ++report.errors;
+          // A rehearsal decides everything and commits nothing. It reports what WOULD have gone out
+          // separately from what the arming gate withholds on a real run — two different facts that
+          // once shared one counter and told the operator neither.
+          if (dryRun) {
+            if (verdict == SweepVerdict::send) ++report.wouldSend;
+            else ++report.skipped;
+            continue;
+          }
 
-        // A rehearsal decides everything and commits nothing. It reports what WOULD have gone out
-        // separately from what the arming gate withholds on a real run — two different facts that
-        // once shared one counter and told the operator neither.
-        if (dryRun) {
-          if (verdict == SweepVerdict::send) ++report.wouldSend;
-          else ++report.skipped;
-          continue;
+          // The permission slip. Losing this race means another sweep owns the slot; its pointer
+          // moved too, so falling silent here is the whole of the correct response.
+          if (!claim(due, decision)) continue;
+          ++report.claimed;
+          // Counted only once the slot is ours: a skip that lost the race belongs to another sweep's
+          // row, and reporting it here would name a decision the ledger never took.
+          if (verdict != SweepVerdict::send) {
+            ++report.skipped;
+            continue;
+          }
+
+          // Armed at SEND time, never at decide time — so a dark launch still leaves an honest slot
+          // in the ledger saying what we would have sent, and arming later cannot double-mail it. The
+          // slot is closed as `held` so that row can never be mistaken for a crash between claim and
+          // send, which is what every row would look like for the whole of a dark rollout.
+          if (!arming_.allows(due.user)) {
+            close(due, ClosedAs::held);
+            ++report.held;
+            continue;
+          }
+
+          // A fresh pause credential per mail, stored only once the mail carrying it actually left:
+          // rotating first would kill last time's still-in-an-inbox pause link on behalf of a
+          // replacement that never arrived.
+          const MintedToken pause = tokens_.mint();
+          const bool delivered = deliver(due, decision, pause.secret);
+          if (delivered) storePause(due.user, pause.digest);
+          close(due, delivered ? ClosedAs::delivered : ClosedAs::refused);
+          if (delivered) ++report.sent;
+          else ++report.failed;
+        } catch (const std::exception& error) {
+          ++report.errors;
+          LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot: " << error.what();
+        } catch (...) {
+          ++report.errors;
+          LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot";
         }
-
-        // The permission slip. Losing this race means another sweep owns the slot; its pointer
-        // moved too, so falling silent here is the whole of the correct response.
-        if (!claim(due, decision)) continue;
-        ++report.claimed;
-        // Counted only once the slot is ours: a skip that lost the race belongs to another sweep's
-        // row, and reporting it here would name a decision the ledger never took.
-        if (verdict != SweepVerdict::send) {
-          ++report.skipped;
-          continue;
-        }
-
-        // Armed at SEND time, never at decide time — so a dark launch still leaves an honest slot
-        // in the ledger saying what we would have sent, and arming later cannot double-mail it. The
-        // slot is closed as `held` so that row can never be mistaken for a crash between claim and
-        // send, which is what every row would look like for the whole of a dark rollout.
-        if (!arming_.allows(due.user)) {
-          close(due, ClosedAs::held);
-          ++report.held;
-          continue;
-        }
-
-        // A fresh pause credential per mail, stored only once the mail carrying it actually left:
-        // rotating first would kill last time's still-in-an-inbox pause link on behalf of a
-        // replacement that never arrived.
-        const MintedToken pause = tokens_.mint();
-        const bool delivered = deliver(due, decision, pause.secret);
-        if (delivered) storePause(due.user, pause.digest);
-        close(due, delivered ? ClosedAs::delivered : ClosedAs::refused);
-        if (delivered) ++report.sent;
-        else ++report.failed;
-      } catch (const std::exception& error) {
-        ++report.errors;
-        LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot: " << error.what();
-      } catch (...) {
-        ++report.errors;
-        LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot";
       }
-    }
+    });
     return report;
   }
 

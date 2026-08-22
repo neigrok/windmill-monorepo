@@ -285,6 +285,53 @@ TEST(admin_sweep_with_the_right_token_reports) {
                        R"("sent":0,"skipped":0,"wouldSend":0})"));
 }
 
+TEST(admin_sweep_refuses_a_time_travelling_pass_while_the_engine_is_armed) {
+  // The rehearsal door is not a live-fire door. Armed, a future asOfMs would mail the allowlist
+  // early AND consume the genuine evening knock it claimed on the way, which no apology walks back.
+  // Roadmap's door has always refused this; until 2026-08-22 journal's ran it wet.
+  Harness h(MailArming(true, "u1"), "the-secret");
+  UserId me = h.signIn("s-live");
+  h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
+  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/nudge/sweep",
+                                       R"({"asOfMs":1900000000000})");
+  req->addHeader("x-admin-token", "the-secret");
+
+  drogon::HttpResponsePtr response = adminSweep(h, req);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"error":"asOfMs is refused while nudges are enabled"})"));
+  CHECK_EQ(h.nudges->claims.size(), std::size_t{0});
+  CHECK_EQ(h.nudges->closes.size(), std::size_t{0});
+  CHECK_EQ(h.nudgeMail.sent.size(), std::size_t{0});
+}
+
+TEST(admin_sweep_makes_a_time_travelling_pass_a_rehearsal_even_when_asked_for_a_wet_one) {
+  // Dark, the door still travels — that is what makes a nightly feature iterable in an afternoon —
+  // but never wet: the claim clears next_due_at against real time, so a wet run at a future clock
+  // burns every enabled user's real slot for a mail that goes out at the wrong hour or not at all.
+  Harness h(MailArming(), "the-secret");
+  UserId me = h.signIn("s-live");
+  h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
+  drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/journal/nudge/sweep",
+                                       R"({"dryRun":false})");
+  req->addHeader("x-admin-token", "the-secret");
+  req->setParameter("asOfMs", std::to_string(h.clock->now + 60'000));
+
+  drogon::HttpResponsePtr response = adminSweep(h, req);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string(R"({"claimed":0,"due":1,"errors":0,"failed":0,"held":0,"ran":true,)"
+                       R"("sent":0,"skipped":0,"wouldSend":1})"));
+  CHECK_EQ(h.nudges->claims.size(), std::size_t{0});
+  CHECK_EQ(h.nudges->closes.size(), std::size_t{0});
+  CHECK_EQ(h.nudgeMail.sent.size(), std::size_t{0});
+  // And the user's real knock is still on the calendar.
+  REQUIRE(h.nudges->settingsFor(me).has_value());
+  CHECK_EQ(h.nudges->settingsFor(me)->nextDueAtMs.value_or(0), h.clock->now);
+}
+
 TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
   // The one fact on this surface the reader did not choose. Someone whose nudges silently stopped
   // is owed the reason: a settings page answering `enabled: true` while nothing ever arrives is

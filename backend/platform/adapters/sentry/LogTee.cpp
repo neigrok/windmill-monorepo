@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include <string_view>
 
 namespace wm {
@@ -79,6 +80,22 @@ SentryClient::Level logLevelFromEnv(const char* value) {
   return SentryClient::Level::info;
 }
 
+std::string oneLine(const char* msg, std::size_t len) {
+  const std::size_t body = (len > 0 && msg[len - 1] == '\n') ? len - 1 : len;
+  std::string flat;
+  flat.reserve(body + 1);
+  for (std::size_t at = 0; at < body; ++at) {
+    if (msg[at] == '\n') flat += "\\n";
+    else if (msg[at] == '\r') flat += "\\r";
+    else flat.push_back(msg[at]);
+  }
+  // The terminator is part of the buffer, not a second call. stdio takes the FILE lock per call, so
+  // a body and a newline written separately let another thread's line land between them: two
+  // records glued into one, and a blank line where the split happened. Measured, 24 threads deep.
+  flat.push_back('\n');
+  return flat;
+}
+
 void installLogTee(std::shared_ptr<SentryClient> sentry, SentryClient::Level minimum) {
   // Line-buffer stdout before anything writes to it. Redirected — which is what a container does —
   // stdio buffers in 4 KB blocks and drops whatever is still held when the process takes a signal.
@@ -88,11 +105,14 @@ void installLogTee(std::shared_ptr<SentryClient> sentry, SentryClient::Level min
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   trantor::Logger::setOutputFunction(
       [sentry, minimum](const char* msg, const std::uint64_t len) {
+        // Flattened before anything else, because everything after this treats it as one record.
+        const std::string text = oneLine(msg, static_cast<std::size_t>(len));
+
         // stdout first and unconditionally: the container's log is the record that must not depend
-        // on a network, a DSN, or anything this tee decides afterwards.
-        std::fwrite(msg, 1, len, stdout);
+        // on a network, a DSN, or anything this tee decides afterwards. ONE call, newline included.
+        std::fwrite(text.data(), 1, text.size(), stdout);
         if (sentry->onReportingThread()) return;
-        const TrantorLine line = parseTrantorLine(msg, static_cast<std::size_t>(len));
+        const TrantorLine line = parseTrantorLine(text.data(), text.size());
         if (line.level < minimum) return;
         sentry->log(line.level, line.body, line.source);
       },
