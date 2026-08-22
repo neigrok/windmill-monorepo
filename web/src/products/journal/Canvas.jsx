@@ -1,6 +1,7 @@
 // The canvas — one continuous scroll, oldest at the top, today at the bottom.
-// Opening restores to the bottom instantly (a restore, not an entrance; the
-// cursor waits for nothing); a dated position scrolls that day into view, and a
+// It OPENS on tonight, on the first frame, with the older days already above it —
+// a restore, not an entrance, and never a scroll the writer watches happen; a
+// dated position opens on that day the same way, and a
 // search result flies to the exact passage and lights it for a beat. Days present
 // at first paint never animate — only ones that arrive later fade in from below.
 // Today is the last block: writing happens inline in a growing textarea, the two
@@ -118,16 +119,46 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     ta.style.height = `${ta.scrollHeight}px`;
   }, [body]);
 
-  // Restore the position once the window has loaded: a dated hash lands on that
-  // day; otherwise the bottom, with the cursor placed in today. No animation.
+  // OPENING IS NOT A SCROLL — the canvas opens ON tonight, with the older days already above it.
+  // A layout effect runs before the browser paints, so the position is taken on the very first
+  // frame and there is nothing to see happening: the writer never watches the top of sixty days
+  // slide past on the way down to the cursor.
+  //
+  // Re-taken on every pass until the read SETTLES, because the canvas is written from the bottom
+  // twice — the device draws what it holds, and the account's window lands a moment later, ABOVE
+  // tonight. Holding the foot across both is what keeps the second arrival from moving the page
+  // under someone who is already reading it.
+  //
+  // Unless the writer has taken the scroll themselves (`restoredRef`, set on their first wheel or
+  // touch below): a canvas that yanked them back down to tonight mid-sentence would be a worse
+  // thing than the flash this replaces. A dated hash lands on its day by the same rule — every
+  // pass, as soon as that day is in the DOM, and the foot until it is.
   useLayoutEffect(() => {
-    if (loading || restoredRef.current) return;
+    if (restoredRef.current) return;
+    const landed = focusDate ? dayElement(focusDate) : null;
+    if (landed) landed.scrollIntoView({ block: 'start' });
+    else {
+      const scroller = scrollRef.current;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    }
+    if (loading) return;
     restoredRef.current = true;
-    if (focusDate) { scrollToDay(focusDate); return; }
+    if (!focusDate) textareaRef.current?.focus({ preventScroll: true });
+  });
+
+  // The writer taking the scroll ends the opening: from here the position is theirs, not ours.
+  // Wheel and touch only — typing is done at the foot, where the canvas already is.
+  useEffect(() => {
     const scroller = scrollRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    textareaRef.current?.focus({ preventScroll: true });
-  }, [loading, focusDate]);
+    if (!scroller) return undefined;
+    const taken = () => { restoredRef.current = true; };
+    scroller.addEventListener('wheel', taken, { passive: true });
+    scroller.addEventListener('touchstart', taken, { passive: true });
+    return () => {
+      scroller.removeEventListener('wheel', taken);
+      scroller.removeEventListener('touchstart', taken);
+    };
+  }, []);
 
   // A dated hash that changes after mount (navigating to another day) re-scrolls.
   useEffect(() => {
