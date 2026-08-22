@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { compareStamps, mintStamp, localDay, daysBefore } from '../../../src/products/journal/hlc.js';
+import { compareStamps, mintStamp, localDay, daysBefore, msUntilNextDay, watchLocalDay } from '../../../src/products/journal/hlc.js';
 
 test('compareStamps — milliseconds, then counter, then actor, in that order', () => {
   assert.equal(compareStamps('1700:0:a', '1699:9:z'), 1);
@@ -43,4 +43,68 @@ test('localDay and daysBefore — the writer’s own calendar, never UTC', () =>
   assert.equal(localDay(new Date(2026, 7, 7, 23, 59)), '2026-08-07');
   assert.equal(daysBefore('2026-08-07', 7), '2026-07-31');
   assert.equal(daysBefore('2026-01-01', 1), '2025-12-31');
+});
+
+// A canvas left open overnight waits on this, so it must be the writer's own midnight — and it may
+// never be zero or negative, which would spin a rescheduling timer.
+test('msUntilNextDay — local midnight, and never a zero wait', () => {
+  assert.equal(msUntilNextDay(new Date(2026, 7, 7, 23, 0, 0)), 60 * 60 * 1000);
+  assert.equal(msUntilNextDay(new Date(2026, 7, 7, 0, 0, 0)), 24 * 60 * 60 * 1000);
+  assert.equal(msUntilNextDay(new Date(2026, 7, 7, 23, 59, 59, 500)), 1000);
+});
+
+// The canvas's clock, driven with fake timers and a fake wake — no DOM, because neither rule is
+// about one. A tab left open overnight is turned over by the timer; a laptop that slept through
+// midnight is caught by the wake, which is the half a timer cannot do.
+function fakeClock() {
+  const timers = new Map();
+  let next = 1;
+  let woken = null;
+  const said = [];
+  const stop = watchLocalDay((day) => said.push(day), {
+    setTimer: (run, delay) => { const id = next; next += 1; timers.set(id, { run, delay }); return id; },
+    clearTimer: (id) => timers.delete(id),
+    wake: (settle) => { woken = settle; return () => { woken = null; }; },
+  });
+  return {
+    said,
+    stop,
+    pending: () => [...timers.values()],
+    fire: () => { const [{ run }] = timers.values(); timers.clear(); run(); },
+    wake: () => woken(),
+    bound: () => woken !== null,
+  };
+}
+
+test('watchLocalDay — the timer turns the canvas over at midnight and keeps waiting', () => {
+  const clock = fakeClock();
+
+  assert.deepEqual(clock.said, []);
+  assert.equal(clock.pending().length, 1);
+
+  clock.fire();
+
+  assert.deepEqual(clock.said, [localDay()]);
+  assert.equal(clock.pending().length, 1, 'the next midnight is already being waited on');
+  assert.equal(clock.pending()[0].delay, msUntilNextDay());
+  clock.stop();
+});
+
+test('watchLocalDay — a wake re-reads the day, because a slept-through timer is no clock', () => {
+  const clock = fakeClock();
+
+  clock.wake();
+
+  assert.deepEqual(clock.said, [localDay()]);
+  assert.equal(clock.pending().length, 1, 'the stale timer was replaced, never left to fire twice');
+  clock.stop();
+});
+
+test('watchLocalDay — stopping leaves nothing bound and nothing waiting', () => {
+  const clock = fakeClock();
+
+  clock.stop();
+
+  assert.deepEqual(clock.pending(), []);
+  assert.equal(clock.bound(), false);
 });

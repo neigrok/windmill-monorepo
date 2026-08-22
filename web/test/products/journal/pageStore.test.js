@@ -763,3 +763,81 @@ test('a refused day is stepped over: the rest of the backlog still goes, and the
   assert.equal(store.snapshot.readState, 'ready');
   assert.equal(store.snapshot.saveState, 'refused');
 });
+
+// ── Midnight, on a canvas nobody closed ─────────────────────────────────────────────────────────
+//
+// `today` was fixed when the store opened, so a tab left open overnight kept writing into a day
+// that had already ended — the discomfort the writer reported, and a page landing on the wrong key.
+
+const TOMORROW = '2026-08-08';
+
+test('midnight turns the canvas over: yesterday drops into the history, tonight opens blank', async (t) => {
+  const api = fakeApi();
+  const { store, timers } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  store.type('written before midnight');
+  await timers.run();
+
+  await store.rollOver(TOMORROW);
+
+  assert.equal(store.snapshot.today, TOMORROW);
+  assert.equal(store.snapshot.body, '');
+  assert.equal(store.snapshot.mood, null);
+  assert.equal(store.snapshot.energy, null);
+  assert.deepEqual(
+    store.snapshot.history.map((day) => [day.date, day.body]),
+    [[TODAY, 'written before midnight']],
+  );
+});
+
+// The beat of typing that was still in the debounce belongs to the day it was typed on — the same
+// rule a sign-out follows. Carried into the new day, it would land on a page nobody wrote.
+test('the unsaved beat is settled under the day it was typed on, never the new one', async (t) => {
+  const api = fakeApi();
+  const { store, timers } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  store.type('the last sentence of the night');
+
+  await store.rollOver(TOMORROW);
+
+  assert.deepEqual(
+    api.calls.put.map((call) => [call.day, call.body.body]),
+    [[TODAY, 'the last sentence of the night']],
+  );
+  assert.equal(timers.pending.size, 0, 'the queued save fired here rather than into the new day');
+  assert.equal(store.snapshot.body, '');
+});
+
+// Tonight's first sentence has to be stamped over a page this device has read, so the turn-over is
+// a read of the account's window around the NEW today — not merely a change of key.
+test('the turn-over reads the account’s window around the new today', async (t) => {
+  const api = fakeApi();
+  api.onRange = (from, to) => (to === TOMORROW ? [wirePage(TOMORROW, 'already written on the phone', '9:0:ios')] : []);
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  await store.rollOver(TOMORROW);
+
+  assert.equal(api.calls.range.some((call) => call.to === TOMORROW), true);
+  assert.equal(store.snapshot.body, 'already written on the phone');
+});
+
+// The clock re-asks on every wake and every focus, so the same day arrives over and over.
+test('the same day again is nothing at all', async (t) => {
+  const api = fakeApi();
+  const { store } = storeOn(memoryStorage(), api);
+  t.after(() => store.dispose());
+
+  await store.connect(A);
+  const reads = api.calls.range.length;
+
+  await store.rollOver(TODAY);
+
+  assert.equal(api.calls.range.length, reads);
+  assert.equal(store.snapshot.today, TODAY);
+});

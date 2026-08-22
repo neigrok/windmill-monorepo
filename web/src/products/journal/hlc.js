@@ -65,3 +65,49 @@ export function daysBefore(iso, n) {
   const date = new Date(y, m - 1, d - n);
   return localDay(date);
 }
+
+// How long until this device's calendar turns over — what a canvas left open overnight waits for.
+// Local midnight, never UTC's, by the same rule localDay follows: the writer's day is the device's.
+// Floored at a second so a timer that fires a hair early cannot spin.
+export function msUntilNextDay(now = new Date()) {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return Math.max(midnight.getTime() - now.getTime(), 1000);
+}
+
+// The tab was looked at again — the only signal that catches a midnight a timer slept through.
+function browserWake(settle) {
+  window.addEventListener('focus', settle);
+  document.addEventListener('visibilitychange', settle);
+  return () => {
+    window.removeEventListener('focus', settle);
+    document.removeEventListener('visibilitychange', settle);
+  };
+}
+
+// THE CANVAS'S CLOCK. Says the local day, now and every time it changes, until the returned stop is
+// called. A journal is written at night and the tab is still open in the morning, so a day read once
+// at mount stops being today while the writer is still typing into it.
+//
+// A TIMER IS NOT A CLOCK, and this is why there are two halves. The timer is what turns a canvas
+// over for somebody watching it happen at midnight; the wake is what catches every way a timer
+// cannot be trusted — a laptop that slept through midnight, a background tab whose timers were
+// throttled, a clock the writer moved by hand. Both say the same thing (the day, re-read from the
+// device), so hearing it twice is harmless and hearing it once is enough.
+export function watchLocalDay(onDay, {
+  setTimer = (run, delay) => setTimeout(run, delay),
+  clearTimer = (timer) => clearTimeout(timer),
+  wake = browserWake,
+} = {}) {
+  let timer = null;
+  const settle = () => {
+    onDay(localDay());
+    clearTimer(timer);
+    timer = setTimer(settle, msUntilNextDay());
+  };
+  timer = setTimer(settle, msUntilNextDay());
+  const stopWake = wake(settle);
+  return () => {
+    clearTimer(timer);
+    stopWake();
+  };
+}

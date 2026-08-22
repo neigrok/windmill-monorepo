@@ -19,6 +19,7 @@ import { InkFooter } from './echoes/Ink.jsx';
 import { EchoTrail, BackToTonight } from './echoes/EchoTrail.jsx';
 import { OneSheet } from './echoes/OneSheet.jsx';
 import { useEchoes } from './echoes/useEchoes.js';
+import { useToday } from './usePages.js';
 import { useNudge } from './useNudge.js';
 import './journal.css';
 
@@ -52,7 +53,10 @@ export function JournalApp({ hash }) {
   const account = confirmed?.id ?? null;
   // Walking an echo is a position change, so the hook hands the canvas the same flight a search hit
   // gets: load the day if it is older than the window, centre it, and light the passage for a beat.
-  const echoes = useEchoes({ account, onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
+  // The one clock the canvas turns over on (usePages.js), so a tab left open across midnight does
+  // not leave the echoes reading yesterday while the canvas has already opened tonight's page.
+  const today = useToday();
+  const echoes = useEchoes({ today, account, onFly: (target) => setFlyTo({ ...target, at: Date.now() }) });
   const nudge = useNudge(account);
   // Talk is a tool and sits in the rail with the others, but what it produces is today's writing —
   // so the canvas lends the rail the one write into today and keeps the store to itself.

@@ -11,7 +11,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { corpus } from '../pageStore.js';
-import { localDay } from '../hlc.js';
+import { useToday } from '../usePages.js';
 import { buildYear } from './yearGrid.js';
 import { weekReadout } from './weekReadout.js';
 
@@ -31,7 +31,7 @@ function dow(iso) {
 export function ZoomView({ onClose, onPick, account = null }) {
   const [read, setRead] = useState(null);
   const pages = read?.pages ?? null;
-  const today = localDay();
+  const today = useToday();
 
   useEffect(() => {
     let cancelled = false;

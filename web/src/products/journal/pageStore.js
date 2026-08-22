@@ -396,6 +396,33 @@ export class PageStore {
     this.emit();
   }
 
+  // MIDNIGHT, ON A CANVAS NOBODY CLOSED. `today` is fixed when the store opens, so a tab left open
+  // across midnight kept writing into yesterday — the words landing on a day that had already ended.
+  // The clock (usePages.js) hands the new local day down here and the canvas turns over: what was
+  // being written is settled under the day it was written on FIRST, then the calendar moves,
+  // yesterday drops into the history the canvas draws, and the window is read again around the new
+  // today so tonight's first sentence is stamped over a page this device has read.
+  //
+  // Idempotent by design — the same day twice is nothing at all — because the clock also re-asks on
+  // every wake and every focus, where a sleeping laptop's timer is no kind of clock.
+  //
+  // The phone has no counterpart yet: PageStore.swift's `today` is still fixed at init, so an app
+  // held in the foreground across midnight lags the same way. Logged as its own step.
+  rollOver(day) {
+    if (!day || day === this.today) return;
+    // The last beat of typing belongs to the day it was typed on. Sent (or kept owed) under the OLD
+    // key before anything moves, exactly as a sign-out settles it — never carried into the new day.
+    const settling = this.savePending ? this.persist() : null;
+    this.clearTimer(this.saveTimer);
+    this.saveTimer = null;
+
+    this.today = day;
+    this.draft = { body: '', mood: null, energy: null };
+    this.touched = false;
+    this.drawFromCache();
+    return Promise.resolve(settling).then(() => this.sync());
+  }
+
   async loadWindow() {
     const scope = this.scope;
     const from = daysBefore(this.today, WINDOW_DAYS);
@@ -558,7 +585,9 @@ export class PageStore {
       if (!this.holds(scope)) return;
       this.cache.markPushed(day, winner);
       this.cache.flush();
-      this.adoptFields(page, winner);
+      // Only onto the draft this write was made from: midnight can move the calendar out from under
+      // a reply in flight, and yesterday's settled page must not be adopted into tonight's canvas.
+      if (day === this.today) this.adoptFields(page, winner);
       this.settle('saved');
     } catch (failure) {
       // A write that did not land is not a lost write — it is on the device, marked owed, and the

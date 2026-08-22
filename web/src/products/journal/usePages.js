@@ -1,7 +1,8 @@
 // The canvas's data, bound to React. Everything that decides anything lives in pageStore.js — the
 // device cache, the window read, the write ordering, the stamp rule — so this file is only the
-// three things React actually owns: one store per mounted canvas, a subscription to its snapshot,
-// and the auth status that tells it whether there is an account to sync with.
+// four things React actually owns: one store per mounted canvas, a subscription to its snapshot,
+// the auth status that tells it whether there is an account to sync with, and the clock that tells
+// it when the day underneath it turned over.
 //
 // The store is connected on every settled change of WHO is signed in — the account id, not merely
 // the fact of a session — because that id is what the device tier is scoped by (pageCache.js) and a
@@ -16,12 +17,23 @@
 // 'loading' is deliberately not a connect — a status nobody has resolved yet is not a signed-out
 // writer, and treating it as one would say "saved on this device" about a page bound for an account.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
+import { localDay, watchLocalDay } from './hlc.js';
 import { PageStore, holdStore } from './pageStore.js';
+
+// The device's calendar, bound to React — one clock for the whole room, so the canvas, the echoes
+// and the year grid can never stand on different days. Everything that decides when the day turns
+// over lives in hlc.js with the rest of the calendar; this is only the binding.
+export function useToday() {
+  const [today, setToday] = useState(localDay);
+  useEffect(() => watchLocalDay(setToday), []);
+  return today;
+}
 
 export function usePages() {
   const { status, account: confirmed } = useAuth();
+  const today = useToday();
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = new PageStore();
   const store = storeRef.current;
@@ -33,6 +45,13 @@ export function usePages() {
     if (status === 'loading') return;
     store.connect(account);
   }, [store, status, account]);
+
+  // Midnight, on a canvas nobody closed: the clock moves and the store turns the day over. Ordered
+  // after connect deliberately — a rollover is a read of the account's window around the new today,
+  // and there is nothing to read from until the store knows whose journal it is open for.
+  useEffect(() => {
+    store.rollOver(today);
+  }, [store, today]);
 
   // The shell's forgetDevice reaches the canvas through here (routes.js): a store is only
   // forgettable while a canvas is holding it.
