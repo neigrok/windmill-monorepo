@@ -2,6 +2,10 @@
 # and a macOS/arm generator, and would poison the in-image Linux configure.
 build/
 cmake-build-*/
+# The build stage does `COPY . .`, so a developer's .env would be baked into that layer — the
+# runtime stage copies only binaries, but the layer is still an image on their disk.
+.env
+.env.*
 .git/
 .github/
 .idea/

@@ -1748,8 +1748,13 @@ query, ordered by pattern then name. Identity rules, stated once:
   rpe is an empty cell rather than a zero a reader would take for a real one. That leaves
   `adapters/csv/TrainingCsv` with exactly one thing to decide — framing — and it decides it by RFC
   4180: CRLF between records, a field quoted only where it holds a comma, a quote or a line break,
-  and a quote inside a quoted field doubled. Nothing is edited on the way through; a note is the
-  lifter's own words and travels byte for byte. This read settles **nothing**, alone among the reads
+  and a quote inside a quoted field doubled. A note is the lifter's own words and travels byte for
+  byte, with one exception the file states out loud: a cell that a spreadsheet would RUN rather
+  than show — one opening `=`, `@`, or a sign in front of something that is not a number — carries a
+  leading apostrophe, because the author of a cell is not always the reader of the file (a movement
+  name and a note are both writable by any MCP client the lifter granted `gym:write`, and an Ask
+  turn is composed by a model). A negative load is untouched: `-20.00` is a number, not a formula,
+  and band-assisted work is logged that way. This read settles **nothing**, alone among the reads
   of the log: it hands back every set unconditionally, so no session can be missing from it whatever
   `finished_at` says, and a door whose whole promise is "here is your data, untouched" has no
   business writing to the log on the way out.

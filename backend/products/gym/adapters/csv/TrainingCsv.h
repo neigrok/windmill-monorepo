@@ -15,9 +15,12 @@ namespace wm::gym {
 // this file decides.
 //
 // RFC 4180: CRLF between records, a field quoted only where it holds a comma, a quote or a line
-// break, and a quote inside a quoted field doubled. Nothing is edited on the way through — a note
-// is the lifter's own words and travels byte for byte, because an export that rewrote the data it
-// exports would not be one.
+// break, and a quote inside a quoted field doubled. A note is the lifter's own words and travels
+// byte for byte, because an export that rewrote the data it exports would not be one — with one
+// stated exception: a cell a spreadsheet would RUN as a formula rather than show is prefixed with
+// an apostrophe (see runsAsFormula in the .cpp for which cells those are, and why a negative load
+// is not one of them). The exception exists because the author of a cell is not always the reader
+// of the file.
 std::string toCsv(const std::vector<ExportedSet>& sets);
 
 // The second file, and it is the same file's rule applied to a conversation: one row per TURN, the

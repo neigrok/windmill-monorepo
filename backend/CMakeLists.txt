@@ -400,6 +400,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/http/PreferencesApiTest.cpp
     test/products/gym/adapters/http/ThreadsApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
+    test/products/gym/adapters/csv/TrainingCsvTest.cpp
     test/products/gym/application/AskServiceTest.cpp
     test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp

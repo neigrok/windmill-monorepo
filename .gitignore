@@ -12,6 +12,9 @@
 
 # Personal, per-machine Claude settings (skills/ stay tracked)
 .claude/settings.local.json
+# Working ledgers and audit artifacts. They are notes to ourselves, often quoting unfixed defects
+# in a PUBLIC repo, so they stay on the machine that wrote them.
+.claude/scratch/
 
 # Build outputs / dependencies (sub-.gitignores also cover these; belt and braces)
 node_modules/
@@ -32,7 +35,20 @@ apps/android/local.properties
 # binary was run from, which is usually the checkout.
 uploads/
 
-# Secrets — never commit
+# Secrets — never commit. This repo is public, so the rules cover the SHAPES a key arrives in, not
+# just the one filename we happen to use today: Vite reads .env.production/.env.development too,
+# Apple sign-in hands you an AuthKey_*.p8, and the Android release keystore is a file the CI
+# workflow base64s out of a checkout. Every example file stays tracked — those carry placeholders.
 .env
+.env.*
+!.env.example
+!.env.*.example
 *.local
+*.pem
+*.p8
+*.p12
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
 build-*/

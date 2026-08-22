@@ -132,8 +132,10 @@ public:
   }
   void markWrote(const UserId& user, const LocalDate& day) { wrote.insert(dayKey(user, day)); }
 
-  bool tryLockSweep() override { return true; }
-  void unlockSweep() override {}
+  bool underSweepLock(const std::function<void()>& pass) override {
+    pass();
+    return true;
+  }
 
   std::vector<NudgeDueUser> dueNow(std::uint64_t nowMs, int limit) override {
     std::vector<NudgeDueUser> out;

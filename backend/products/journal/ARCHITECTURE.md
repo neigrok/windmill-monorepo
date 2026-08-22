@@ -350,8 +350,8 @@ the two-device case proves real.
 The weekly readout (§8 of the canon) and the year view are **read models the client assembles**
 from pages it already has — mood/energy series, recurring words (a pure count), the zoomed dot
 grid. The backend does not compute them. The *one* thing the client cannot do is the "resurfaced
-entry from a year ago": the device caches only the last 60 days offline, so the year-ago page must
-come from the server. That is served by the ordinary page read:
+entry from a year ago": the device reads a 60-day window and keeps at most 120 days of it (plus
+anything still unsent), so the year-ago page must come from the server. That is served by the ordinary page read:
 
 ```
 GET /v1/journal/page/2025-07-20   →  the page for that date (owner only), for the resurface slot
