@@ -4,7 +4,9 @@
 // and reads back grouped or per-node slices. An event snapshots its object's
 // label + kind at emit time, so a row still renders (struck through) after the
 // node is deleted; while the node lives, surfaces resolve its current label from
-// the tree instead of trusting the snapshot. The verbs themselves are enumerated
+// the tree instead of trusting the snapshot. An event's `at` is a real instant or
+// null — a deed we hold no stamp for is undated ("Earlier", no relative time)
+// rather than given a plausible-looking made-up one. The verbs themselves are enumerated
 // once, in activity/grammar.jsx's VERB_STYLE — the one place that has to know them,
 // because it is the one place that renders them.
 
@@ -16,17 +18,25 @@ export class ActivityEvent {
     this.nodeId = nodeId ?? null;
     this.label = label ?? ''; // snapshot at emit — survives a later rename/delete
     this.kind = kind ?? null; // snapshot kind hue
-    this.at = at; // epoch ms
+    this.at = at ?? null; // epoch ms, or null when we hold no stamp for this deed
     this.summary = summary ?? null; // server-composed sentence for structural verbs
   }
 }
 
 const DAY_MS = 86400000;
-const SEED_GAP_MS = 2.6 * 60 * 60 * 1000; // spacing between historical completions
+
+// The one order every surface reads the log in: undated deeds are the oldest (we know
+// they happened before anything we can date), then real instants ascending.
+function chronological(a, b) {
+  if (a.at == null && b.at == null) return 0;
+  if (a.at == null) return -1;
+  if (b.at == null) return 1;
+  return a.at - b.at;
+}
 
 export class ActivityLog {
   constructor(events = []) {
-    this.events = [...events]; // chronological, oldest first
+    this.events = [...events].sort(chronological); // chronological, oldest first
   }
 
   record(event) {
@@ -61,29 +71,29 @@ export class ActivityLog {
     return groups;
   }
 
-  // Seed the resting feed from the roadmap's real build history: one `completed`
-  // event per already-complete node, in dependency order, spaced back from `now`
-  // so the newest sit under Today and older ones fall to earlier days.
-  static fromTree(tree, states, now) {
+  // Seed the resting feed from the roadmap's real build history: one `completed` event
+  // per already-complete node, in dependency order, each carrying the instant this device
+  // actually recorded the completion. A node completed before we kept stamps (or on another
+  // device) has none, and stays undated — the feed says "Earlier", never a guess.
+  static fromTree(tree, states, completedAt = {}) {
     const completed = tree.topoOrder().filter((id) => states.get(id) === 'complete');
-    const log = new ActivityLog();
-    completed.forEach((id, index) => {
+    return new ActivityLog(completed.map((id) => {
       const node = tree.nodesById.get(id);
-      log.record(new ActivityEvent({
+      return new ActivityEvent({
         id: `seed-${id}`,
         actor: 'You',
         verb: 'completed',
         nodeId: id,
         label: node.label,
         kind: node.color,
-        at: now - (completed.length - 1 - index) * SEED_GAP_MS,
-      }));
-    });
-    return log;
+        at: completedAt[id] ?? null,
+      });
+    }));
   }
 }
 
 function dayLabel(at, now) {
+  if (at == null) return 'Earlier';
   const startOfDay = (ms) => {
     const date = new Date(ms);
     date.setHours(0, 0, 0, 0);

@@ -1306,7 +1306,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       progressRef.current = progress;
       completedRef.current = new Set(progress.completed);
       inProgressRef.current = new Set(progress.inProgress);
-      seedActivity({ tree: nextTree, states, serverActivity }); // this tree's own history, and a feed closed on it
+      seedActivity({ tree: nextTree, states, completedAt: completedAtMap, serverActivity }); // this tree's own history, and a feed closed on it
       setTree(nextTree);
       setRenderModel(model);
       setTreeVisibility(seed.visibility ?? null); // the server's stance rides the seed; the blob fallback carries none

@@ -24,6 +24,7 @@ export const VERB_STYLE = {
 };
 
 export function relativeTime(at, now) {
+  if (at == null) return ''; // a deed we hold no stamp for wears no time, rather than a guessed one
   const seconds = Math.max(0, Math.round((now - at) / 1000));
   if (seconds < 45) return 'now';
   const minutes = Math.round(seconds / 60);

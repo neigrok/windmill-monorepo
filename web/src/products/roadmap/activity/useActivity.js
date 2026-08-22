@@ -78,14 +78,15 @@ export function useActivity({ sceneRef, selectedIdRef, selectedId, cancelNextUpS
     return event;
   }, [sceneRef, selectedIdRef]);
 
-  // A freshly-loaded tree brings its own history: the roadmap's build story (the completed deeds)
-  // folded together with the server's structural op log, oldest-first. Everything the feed was
+  // A freshly-loaded tree brings its own history: the roadmap's build story (the completed deeds,
+  // dated from this device's own completion stamps) folded together with the server's structural
+  // op log, oldest-first — the log itself keeps that order. Everything the feed was
   // showing about the tree being left behind goes with it — including the unread badge, which
   // belongs to that tree's arrivals and not to this one's.
-  const seedActivity = useCallback(({ tree, states, serverActivity }) => {
-    const built = ActivityLog.fromTree(tree, states, Date.now()).events;
+  const seedActivity = useCallback(({ tree, states, completedAt, serverActivity }) => {
+    const built = ActivityLog.fromTree(tree, states, completedAt).events;
     const fromServer = serverActivity.map((event) => new ActivityEvent({ ...event, actor: event.actor || null }));
-    logRef.current = new ActivityLog([...built, ...fromServer].sort((a, b) => a.at - b.at));
+    logRef.current = new ActivityLog([...built, ...fromServer]);
     unseenIdsRef.current = new Set();
     feedSummonedRef.current = false;
     setLogVersion((version) => version + 1);
