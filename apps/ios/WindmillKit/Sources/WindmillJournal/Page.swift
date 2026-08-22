@@ -35,6 +35,13 @@ public struct LocalDay: Hashable, Comparable, Codable, Sendable, CustomStringCon
         return LocalDay(date, calendar: calendar)
     }
 
+    // How long until this device's calendar turns over — what a canvas nobody closed waits for.
+    // Floored at a second so a sleep that wakes a hair early cannot spin.
+    public static func untilTomorrow(now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
+        let midnight = LocalDay(now, calendar: calendar).advanced(by: 1, calendar: calendar).startOfDay(calendar)
+        return max(midnight.timeIntervalSince(now), 1)
+    }
+
     func startOfDay(_ calendar: Calendar = .current) -> Date {
         var parts = DateComponents()
         let pieces = iso.split(separator: "-")

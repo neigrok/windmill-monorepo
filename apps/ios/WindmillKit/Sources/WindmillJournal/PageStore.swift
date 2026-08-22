@@ -21,7 +21,10 @@ public final class PageStore: ObservableObject {
     @Published public private(set) var saveTick = 0                // bumps once per write, so the note re-fades
     @Published public private(set) var isLoading = true
 
-    public let today: LocalDay
+    // NOT A `let` ANY MORE. A canvas nobody closed used to keep writing into the day it opened on:
+    // the phone was held past midnight and tonight's sentence landed on yesterday's page. It is
+    // published because the day is what the whole canvas is drawn around.
+    @Published public private(set) var today: LocalDay
 
     private let open: (String?) -> PageCache
     private let clock: HlcClock
@@ -32,6 +35,7 @@ public final class PageStore: ObservableObject {
     private var touched = false            // the writer typed before the window landed
     private var saveTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    private var dayTask: Task<Void, Never>?
     // Bumped on every seat change. Everything that awaits reads it first and gives up if it moved:
     // a PUT sent under the departing person's bearer must not come back and mark a page pushed —
     // or adopt its words into the draft — in the arriving person's file.
@@ -119,6 +123,7 @@ public final class PageStore: ObservableObject {
         let arriving = Seat(account)
         if arriving != seat { take(arriving) }
         journal = sync(account)
+        watchTheCalendar()
 
         // WHAT AN UNCONFIRMED SEAT MAY AND MAY NOT DO. `verified` is false while the seat stands on
         // the user this device wrote beside its Keychain secret and THIS launch has not heard the
@@ -133,6 +138,47 @@ public final class PageStore: ObservableObject {
 
         guard journal != nil else {
             saveState = cache.pending.isEmpty ? .idle : .onThisDevice
+            return
+        }
+        await claimWhatIsOwed()
+        await loadWindow()
+    }
+
+    // MIDNIGHT, ON A CANVAS NOBODY CLOSED — the native statement of the web's PageStore.rollOver
+    // (web/src/products/journal/pageStore.js). The day the writer is standing on is the device's,
+    // and an app held past midnight was still writing into the day it launched on.
+    //
+    // Two halves, because A TIMER IS NOT A CLOCK: this sleep turns the canvas over for someone
+    // watching it happen, and the room re-asks on every return to .active (JournalRoom), which is
+    // the only thing that catches a midnight the app slept through — a suspended app's sleep does
+    // not fire on time, and most nights the phone is in a pocket rather than on the canvas.
+    private func watchTheCalendar() {
+        guard dayTask == nil else { return }
+        dayTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(LocalDay.untilTomorrow()))
+                guard !Task.isCancelled else { return }
+                await self?.rollOver(to: .today())
+            }
+        }
+    }
+
+    // Idempotent — the same day again is nothing at all — because the room says it on every wake.
+    //
+    // The beat still in the debounce belongs to the day it was TYPED on, so it is written into that
+    // day's page before the calendar moves, exactly as a departing seat's is. Then yesterday drops
+    // into the history, tonight opens blank, and the window is read again around the new today.
+    public func rollOver(to day: LocalDay) async {
+        guard day != today else { return }
+        keepDraftOnDevice()
+        today = day
+        body = ""
+        mood = .none
+        energy = .none
+        touched = false
+        drawFromCache()
+        guard journal != nil else {
+            saveState = cache.pending.isEmpty ? saveState : .onThisDevice
             return
         }
         await claimWhatIsOwed()

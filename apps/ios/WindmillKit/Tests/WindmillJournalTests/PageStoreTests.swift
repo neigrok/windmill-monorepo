@@ -529,6 +529,85 @@ final class PageCacheTests: XCTestCase {
 
 // A server that is entirely under the test's control: it can be offline, it can already hold pages,
 // and it can hand back a different winner than it was sent.
+// ── Midnight, on a canvas nobody closed ─────────────────────────────────────────────────────────
+//
+// The day was fixed when the canvas opened, so a phone held past midnight kept writing into
+// yesterday — the web had the same bug and the same fix.
+
+extension PageStoreTests {
+    func testMidnightDropsYesterdayIntoTheHistoryAndOpensTonightBlank() async {
+        let server = FakeSync()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        store.type("written before midnight")
+        await store.flushPendingWrite()
+
+        await store.rollOver(to: LocalDay(iso: "2026-07-21")!)
+
+        XCTAssertEqual(store.today, LocalDay(iso: "2026-07-21")!)
+        XCTAssertEqual(store.body, "")
+        XCTAssertEqual(store.mood, .none)
+        XCTAssertEqual(store.energy, .none)
+        XCTAssertEqual(store.days.map(\.day.iso), ["2026-07-20"])
+        XCTAssertEqual(store.days.map(\.body), ["written before midnight"])
+    }
+
+    // The beat still in the debounce belongs to the day it was typed on — carried into the new day
+    // it would land on a page nobody wrote.
+    func testTheUnsavedBeatIsKeptUnderTheDayItWasTypedOn() async {
+        let server = FakeSync()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        store.type("the last sentence of the night")
+
+        await store.rollOver(to: LocalDay(iso: "2026-07-21")!)
+
+        XCTAssertEqual(server.stored["2026-07-20"]?.body, "the last sentence of the night")
+        XCTAssertNil(server.stored["2026-07-21"])
+        XCTAssertEqual(store.body, "")
+    }
+
+    // Tonight's page may already exist — written on the laptop before the phone was picked up — so
+    // the turn-over reads the account's window around the NEW day rather than only changing a key.
+    func testTheTurnOverReadsTheWindowAroundTheNewToday() async {
+        let server = FakeSync()
+        server.seed(day: "2026-07-21", body: "already written on the laptop")
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+
+        await store.rollOver(to: LocalDay(iso: "2026-07-21")!)
+
+        XCTAssertEqual(store.body, "already written on the laptop")
+    }
+
+    // The room says it on every return to .active, so the same day arrives over and over.
+    func testTheSameDayAgainIsNothingAtAll() async {
+        let server = FakeSync()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        store.type("still today")
+        await store.flushPendingWrite()
+
+        await store.rollOver(to: LocalDay(iso: "2026-07-20")!)
+
+        XCTAssertEqual(store.today, LocalDay(iso: "2026-07-20")!)
+        XCTAssertEqual(store.body, "still today")
+        XCTAssertTrue(store.days.isEmpty)
+    }
+
+    // What the canvas waits on: the writer's own midnight, and never a zero wait.
+    func testUntilTomorrowIsTheWritersOwnMidnight() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Lisbon")!
+        let elevenPM = calendar.date(from: DateComponents(year: 2026, month: 7, day: 20, hour: 23))!
+
+        XCTAssertEqual(LocalDay.untilTomorrow(now: elevenPM, calendar: calendar), 3_600, accuracy: 0.5)
+        XCTAssertEqual(LocalDay.untilTomorrow(now: elevenPM.addingTimeInterval(3_600), calendar: calendar),
+                       86_400, accuracy: 0.5)
+    }
+}
+
+
 final class FakeSync: PageSyncing, @unchecked Sendable {
     var online = true
     var stored: [String: Page] = [:]

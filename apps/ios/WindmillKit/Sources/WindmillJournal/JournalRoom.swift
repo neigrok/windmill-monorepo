@@ -67,8 +67,12 @@ public struct JournalRoom: View {
         // device before there was an account, then loads the window. And once more when an
         // unverified seat is verified — that is when a window the launch could not read can land.
         .task(id: account.seat) { await store.connect(to: account) }
+        // Leaving settles what was typed; COMING BACK asks what day it is. A phone spends the night
+        // in a pocket, so the store's own midnight timer is asleep with it — this is the half that
+        // catches the writer opening the canvas in the morning on a page that ended hours ago.
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { Task { await store.flushPendingWrite() } }
+            if phase == .active { Task { await store.rollOver(to: .today()) } }
+            else { Task { await store.flushPendingWrite() } }
         }
     }
 

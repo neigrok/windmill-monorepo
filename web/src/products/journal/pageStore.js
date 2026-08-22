@@ -406,8 +406,9 @@ export class PageStore {
   // Idempotent by design — the same day twice is nothing at all — because the clock also re-asks on
   // every wake and every focus, where a sleeping laptop's timer is no kind of clock.
   //
-  // The phone has no counterpart yet: PageStore.swift's `today` is still fixed at init, so an app
-  // held in the foreground across midnight lags the same way. Logged as its own step.
+  // The phone turns over by the same two rules (PageStore.swift's rollOver): a sleep to midnight
+  // for someone watching, and a re-ask on every return to .active for the night it spent in a
+  // pocket — which is what a browser tab's focus event is.
   rollOver(day) {
     if (!day || day === this.today) return;
     // The last beat of typing belongs to the day it was typed on. Sent (or kept owed) under the OLD
