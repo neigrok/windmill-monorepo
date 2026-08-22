@@ -23,6 +23,7 @@
 #include <drogon/HttpAppFramework.h>
 
 #include <memory>
+#include <set>
 #include <string>
 
 namespace wm {
@@ -53,6 +54,9 @@ struct RoadmapDeps {
   std::shared_ptr<Clock> clock;
   std::string remindersAdminToken;
   std::shared_ptr<PlanComposer> composer;
+  // The origins allowed to drive this server from a browser — main.cpp composes the set once, for
+  // CORS, and the collab socket gates its upgrade on the same one. Two lists would drift.
+  std::set<std::string> allowedOrigins;
 };
 
 // Mounts the roadmap product on the shared app: the collab socket, its presence flush, and every

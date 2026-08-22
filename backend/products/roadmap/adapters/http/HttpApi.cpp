@@ -35,8 +35,14 @@ bool HttpApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
                        const std::function<void(TreeRoom&)>& read) {
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
+    // Authorize on the stored row BEFORE materializing a room: open() drags the whole lattice off
+    // disk and pins it in memory, so a caller who is about to be told the tree does not exist must
+    // never be the reason it is loaded — thirty denied reads used to cost ten megabytes that never
+    // came back.
+    const std::optional<TreeAccess> access = registry_->accessOf(TreeId{treeId});
+    if (!access || !canRead(caller, access->owner, access->visibility)) return false;
     TreeRoom* room = registry_->open(TreeId{treeId});
-    if (!room || !canRead(caller, room->owner(), room->visibility())) return false;
+    if (!room) return false;
     read(*room);
     return true;
   } catch (const std::exception&) {

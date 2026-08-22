@@ -63,11 +63,60 @@ void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
 Collab* collab() { return g_collab.get(); }
 
 Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
-               ProgressService& progress, AuthService& auth, PresenceHub& presence, Clock& clock)
+               ProgressService& progress, AuthService& auth, PresenceHub& presence, Clock& clock,
+               std::set<std::string> allowedOrigins)
     : registry_(registry), ops_(ops), bus_(bus), progress_(progress),
-      auth_(auth), presence_(presence), clock_(clock) {}
+      auth_(auth), presence_(presence), clock_(clock), allowedOrigins_(std::move(allowedOrigins)),
+      reprove_("ws-readers") {
+  // Read authorization is not a grant made once. Two things can take it away while a socket sits
+  // open — the owner re-privating the tree, and the session being revoked — and both must reach a
+  // subscription that already exists. The bus asks before every fan-out; the registry announces a
+  // visibility change so the revocation lands at once rather than at the tree's next edit.
+  bus_.setReadGate([this](const TreeId& tree, const drogon::WebSocketConnectionPtr& conn) {
+    if (mayRead(conn, tree)) return true;
+    // A no is the whole revocation, not just a skipped frame: leave the roster (or the peer's
+    // cursor would sit there forever) and say so in the same words a fresh subscribe would hear,
+    // so a refused reader learns nothing from the difference.
+    presence_.leave(conn, tree);
+    send(conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
+    return false;
+  });
+  registry_.whenAccessChanges([this](const TreeId& tree) { bus_.resweep(tree); });
+  // And a clock, for the two revocations no edit and no share flip can carry: an idle tree, and
+  // presence, which never rides the bus at all.
+  reprove_.start(kReproveEverySeconds, kReproveEverySeconds, [this] { reproveReaders(); });
+}
+
+void Collab::reproveReaders() {
+  // Re-prove first, decide second. stillAuthorized is the step that can block — one database
+  // lookup per authenticated connection per minute — and it runs here, on the sweeper's own
+  // thread, holding no strand; the gate that follows is then a pure verdict.
+  for (const auto& conn : bus_.connections()) stillAuthorized(conn);
+  bus_.resweepAll();
+}
 
 void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
+  // A WebSocket upgrade is outside the CORS policy that guards every other cookie-bearing door:
+  // the browser sends no preflight and reads no Access-Control header, so a hostile page's socket
+  // connects and rides whatever cookie the browser attaches. What stops that today is SameSite=Lax
+  // — a cookie attribute this code does not own, one loosening (an embed, a cross-subdomain
+  // surface) away from cross-site hijacking of every private tree. A stated origin must be one we
+  // allow. A client that states none — a script, a device, curl — is untouched: only a browser
+  // sends Origin, and only a browser can be aimed at us by someone else's page.
+  const std::string origin = req->getHeader("origin");
+  if (!origin.empty() && !allowedOrigins_.count(origin)) {
+    LOG_WARN << "ws upgrade refused: origin " << origin << " is not allow-listed";
+    // Drogon hands us the connection only after it has answered 101, so the refusal is a close on
+    // an accepted socket rather than a rejected handshake. Identical to the client and to the
+    // attacker — no frame is ever read or served — but a packet capture shows the 101, so this is
+    // not the 403 a reader might go looking for.
+    // A context first, then the close: drogon may still deliver a frame queued on this connection,
+    // and every handler reads the Principal without checking that one exists.
+    conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
+    conn->forceClose();
+    return;
+  }
+
   // Resolve the session at the upgrade (frames carry no cookie): an authenticated user may
   // write; anyone else joins as a read-only guest.
   std::string secret = req->getCookie("wm_session");
@@ -77,11 +126,15 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
   }
   std::optional<User> user = auth_.authenticate(secret);
   // Keep the session's digest — never the secret — so each write can re-prove the session is still
-  // live, and a revocation reaches a connection that was opened before it.
-  Principal principal =
-      user ? Principal{user->id, true, sharableName(*user), auth_.digestOf(secret), clock_.nowMs()}
-           : Principal{UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0};
-  conn->setContext(std::make_shared<Principal>(std::move(principal)));
+  // live, and a revocation reaches a connection that was opened before it. Built in place: a
+  // Principal holds two atomics now (PresenceHub.h) and so cannot be copied into the context.
+  if (user) {
+    conn->setContext(std::make_shared<Principal>(user->id, true, sharableName(*user),
+                                                 auth_.digestOf(secret), clock_.nowMs()));
+  } else {
+    conn->setContext(
+        std::make_shared<Principal>(UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0));
+  }
 
   std::lock_guard<std::mutex> lock(wsMutex_);
   wsRate_[conn.get()] = WsRate{kWsBurst, std::chrono::steady_clock::now()};
@@ -134,22 +187,37 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
 // Two-way anti-entropy: the client flushes its own delta back (§6), and both frontiers meet.
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& request) {
   const Principal& principal = principalOf(conn);
-  // An anonymous connection (a synthetic guest) reads as no caller — never as its guest id;
-  // canRead then denies every private tree, and admits unlisted/public by id.
-  std::optional<UserId> caller =
-      principal.authenticated ? std::optional<UserId>(principal.user) : std::nullopt;
 
-  VersionVector clientVector = versionVectorFromJson(request["vector"]);
+  // Decoding a client's vector is the one step here that can throw on CONTENT rather than on
+  // shape — an HLC counter past what 64 bits hold. That throw used to escape to onMessage, which
+  // logged it and answered nothing, and a subscribe that never answers is a client that waits
+  // forever. A frame we cannot read is refused, in the same words as any other unreadable frame.
+  VersionVector clientVector;
+  try {
+    clientVector = versionVectorFromJson(request["vector"]);
+  } catch (const std::exception&) {
+    send(conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
+    return;
+  }
+
   Json::Value frame;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
+      // Gate the read BEFORE the room is materialized and before joining the bus or presence.
+      // Before: an unreadable caller loaded the whole lattice into memory on its way to being
+      // refused, and it stayed there. mayRead reads the stored access row instead, re-proves the
+      // session, and answers an absent tree and a private-denied one identically — "no such tree",
+      // no existence leak. Only an infrastructure failure falls to the catch, which answers
+      // generically and logs its detail. The session is re-proved first, on this frame's own
+      // thread, where the lookup costs nobody else — mayRead itself never goes to the database.
+      stillAuthorized(conn);
+      if (!mayRead(conn, TreeId{treeId})) {
+        send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        return;
+      }
       TreeRoom* room = registry_.open(TreeId{treeId});
-      // Gate the read BEFORE joining the bus or presence: an unreadable caller must never be
-      // subscribed, or it would receive every later live broadcast. An absent tree (null) and a
-      // private-denied one are rejected with the same "no such tree" — no existence leak. Only an
-      // infrastructure failure falls to the catch, which answers generically and logs its detail.
-      if (!room || !canRead(caller, room->owner(), room->visibility())) {
+      if (!room) {
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
@@ -203,6 +271,23 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   return true;
 }
 
+// The read half of the same rule, and the answer to two questions asked together: is this
+// connection still who it said it was, and may that person still see this tree? Both change under
+// an open socket — "sign out everywhere" revokes the first, the owner re-privating revokes the
+// second — and neither used to be asked again after the subscribe.
+bool Collab::mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
+  const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
+  if (!principal) return false;
+  // A principal stillAuthorized has narrowed is a guest from here on, so a revoked reader falls
+  // back to what any stranger may see — public and unlisted, never private.
+  const std::optional<UserId> caller =
+      principal->authenticated ? std::optional<UserId>(principal->user) : std::nullopt;
+  // The stored access row, not a materialized room: two facts off one row, so refusing a reader
+  // never costs the whole lattice.
+  const std::optional<TreeAccess> access = registry_.accessOf(tree);
+  return access && canRead(caller, access->owner, access->visibility);
+}
+
 void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
   std::string frameId = frame.get("frameId", "").asString();
@@ -213,7 +298,19 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     return;
   }
 
-  Subgraph incoming = subgraphFromJson(frame);
+  // A frame we cannot decode — an id past every cap, an HLC counter past 64 bits — used to throw
+  // clean out of here into onMessage's catch, which logged and answered nothing: the client's
+  // in-flight entry for this frameId then leaked forever and its banked edits were stranded
+  // silently. Refused by code instead, like every other unreadable frame.
+  Subgraph incoming;
+  try {
+    incoming = subgraphFromJson(frame);
+  } catch (const std::exception&) {
+    Json::Value reject = rejectFrame(treeId, kBadFrame, "this frame could not be read");
+    reject["frameId"] = frameId;
+    send(conn, reject);
+    return;
+  }
   incoming.treeId = TreeId{treeId};
 
   // Skew clamp: a frame stamped past now + 5min is refused whole and non-lossily — the client
@@ -238,25 +335,31 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
-    TreeRoom* room = registry_.open(TreeId{treeId});
     // stillAuthorized proved a real signed-in caller above, so principal.user is that user.
+    // Both gates decide off the stored access row, BEFORE the room is materialized: a write that
+    // is going to be refused must not be a way to load and pin a tree the caller cannot even read.
     // The read gate comes FIRST, exactly as applyEdit's does: a private tree the caller cannot
     // read is answered "no such tree" — byte-identical to an absent one — so a rejected write
     // never confirms the id names something. Only a readable tree reaches canWrite, which admits
     // its owner and nobody else: an UNOWNED tree — the seeded demo, a crash-orphaned row — is
     // nobody's to write, and no longer anybody's to seize by writing to it. writeRefusalFor is
     // that gate and its verdict in one: which of the two truths (Access.h) this refusal states.
-    if (!room || !canRead(principal.user, room->owner(), room->visibility())) {
+    const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
+    std::optional<WriteRefusal> refusal =
+        access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
+    if (!access || !canRead(principal.user, access->owner, access->visibility)) {
       reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // rejected, not a throw that closes the socket
-    } else if (std::optional<WriteRefusal> refusal = writeRefusalFor(principal.user, room->owner())) {
+    } else if (refusal) {
       reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
-    } else if (std::optional<Admission> refusal = room->admit(incoming)) {
+    } else if (TreeRoom* room = registry_.open(TreeId{treeId}); !room) {
+      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // deleted between the row and the load
+    } else if (std::optional<Admission> admission = room->admit(incoming)) {
       // joinSubgraph never refuses, so every payload a frame carries — graph, legend, title —
       // could once be seated here past the very ceilings the command path enforces on every other
       // write. The whole-tree rule (domain/Command.h) decides all four, under this strand, beside
       // the skew clamp and the authz gates.
-      reject = rejectFrame(treeId, refusal->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
-                           refusal->reason);
+      reject = rejectFrame(treeId, admission->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
+                           admission->reason);
     } else {
       seq = room->joinSubgraph(incoming, principal.user);
       if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability
@@ -300,10 +403,14 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
+      // An absent or private-denied tree: nothing to record against, and the socket must be no
+      // existence oracle — return silently either way. Decided off the stored row first, so a mark
+      // against a tree the caller cannot read never materializes it. Only an infra failure falls
+      // to the catch.
+      const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
+      if (!access || !canRead(principal.user, access->owner, access->visibility)) return;
       TreeRoom* room = registry_.open(TreeId{treeId});
-      // An absent (null) or private-denied tree: nothing to record against, and the socket must be
-      // no existence oracle — return silently either way. Only an infra failure falls to the catch.
-      if (!room || !canRead(principal.user, room->owner(), room->visibility())) return;
+      if (!room) return;
       prerequisites = room->prerequisitesOf(node);
       hlc = room->nextStamp(clock_.nowMs());  // progress shares the tree's clock so its LWW stays comparable
     } catch (const std::exception&) {

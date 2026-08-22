@@ -428,3 +428,36 @@ TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
   CHECK(s.trees.byId["t"].title == newer);                 // the newer rename survived
   CHECK_EQ(s.trees.byId["t"].head, static_cast<Seq>(1));   // the rest of the save still landed
 }
+
+// Deleting a tree must reach the LIVE room, not only the row: while a room is resident, every read
+// path decides off it, so a delete that leaves it standing revokes nothing — the socket keeps
+// serving it and open() answers a fresh reader from the cache without ever consulting the row.
+TEST(registry_remove_retires_the_live_room_and_announces_the_change) {
+  Setup s;
+  seed(s.trees, "t", uid("alice"), 100, {});
+  std::vector<std::string> announced;
+  s.rooms.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+
+  s.rooms.open(tid());
+  REQUIRE(s.rooms.isOpen(tid()));
+
+  CHECK(s.registry.remove(tid(), uid("alice")) == TreeRegistry::Removal::deleted);
+  CHECK_FALSE(s.rooms.isOpen(tid()));
+  CHECK_EQ(announced.size(), 1u);
+  CHECK_EQ(announced.front(), std::string("t"));
+  CHECK_FALSE(s.rooms.accessOf(tid()).has_value());  // no longer speaks for a deleted tree
+}
+
+// A refused delete leaves everything alone — the room included. Only an accepted one retires it.
+TEST(registry_remove_refused_leaves_the_live_room_standing) {
+  Setup s;
+  seed(s.trees, "t", uid("alice"), 100, {});
+  std::vector<std::string> announced;
+  s.rooms.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+
+  s.rooms.open(tid());
+  // A stranger is answered "absent" on a private tree, and answering costs the room nothing.
+  CHECK(s.registry.remove(tid(), uid("mallory")) == TreeRegistry::Removal::notFound);
+  CHECK(s.rooms.isOpen(tid()));
+  CHECK(announced.empty());
+}

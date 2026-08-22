@@ -95,12 +95,19 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
     try {
-      TreeRoom* room = registry_->open(TreeId{id});
-      if (room && canRead(caller, room->owner(), room->visibility())) {
-        readable = true;
-        title = room->title().value;
-        steps = room->snapshot().nodes.size();
-        visibility = room->visibility();
+      // Authorize on the stored row BEFORE opening, exactly as HttpApi::readRoom does. This door is
+      // the anonymous one — anybody may name any id here — so opening first let a stranger drag the
+      // whole lattice of a tree they cannot read off disk and into memory, one room per id they
+      // cared to guess.
+      const std::optional<TreeAccess> access = registry_->accessOf(TreeId{id});
+      if (access && canRead(caller, access->owner, access->visibility)) {
+        TreeRoom* room = registry_->open(TreeId{id});
+        if (room) {
+          readable = true;
+          title = room->title().value;
+          steps = room->snapshot().nodes.size();
+          visibility = room->visibility();
+        }
       }
     } catch (const std::exception&) {
       // An infrastructure failure — leave it unreadable, so the shell is served verbatim (== private).

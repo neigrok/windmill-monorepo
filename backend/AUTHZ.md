@@ -104,20 +104,57 @@ the authz decision reads loaded facts instead of issuing a second query.
 
 ### WebSocket (`/v1/socket`)
 
-The **upgrade** is authenticated, not each frame. `Collab::onOpen`
-(`products/roadmap/adapters/ws/Collab.cpp:53`) reads the `wm_session` cookie, falls back to a
-bearer, and stores a `Principal` (`products/roadmap/adapters/ws/PresenceHub.h:23`) in the
-connection context. Two departures from the original plan, both deliberate:
+The **upgrade** is authenticated, not each frame. `Collab::onOpen` reads the `wm_session` cookie,
+falls back to a bearer, and stores a `Principal`
+(`products/roadmap/adapters/ws/PresenceHub.h:23`) in the connection context. Three departures from
+the original plan, all deliberate:
 
 - A failed authentication does **not** reject the upgrade. The connection joins as a **read-only
   guest** (`u<N>`, `authenticated = false`). The anonymous id survived — but as an identity rather
   than as the hole it was, because a public tree has to be watchable by a stranger.
+- A **stated `Origin` must be allow-listed** or the upgrade is closed before a frame is read — the
+  same set `main.cpp` composes for CORS, handed to `Collab` through `RoadmapDeps` rather than parsed
+  twice. A client that sends no `Origin` (a script, a device, the MCP tooling) is untouched: only a
+  browser sends one, and only a browser can be pointed at this server by someone else's page. Until
+  2026-08-22 the socket had no gate at all and `SameSite=Lax` was the whole defence.
 - The `Principal` keeps the session's **digest**, never the secret, plus `checkedAtMs`. A socket
-  outlives the request that opened it, so a writer re-proves its session (throttled to one lookup
-  a minute) and a revocation reaches a connection opened before it.
+  outlives the request that opened it, so both a writer and a **reader** re-prove the session
+  (throttled to one lookup a minute), and a revocation reaches a connection opened before it.
 
-The real `UserId` is then the op `actor`, the `undoKey` and `progressUser_`, so undo and progress
-are per-user, and `PresenceHub` shows real identity.
+**Read authorization is re-decided, not granted once.** `Collab::mayRead` is the single verdict —
+`canRead` against the tree's *current* access facts, for the principal as the last re-proof left it
+— and four things run it. `subscribe`. Every fan-out on `WsPresenceBus`: a refused connection is
+dropped from that tree and told "no such tree", exactly as a fresh subscribe would be.
+`RoomRegistry::setVisibility` and `RoomRegistry::retire`, which announce a share flip and a
+deletion so revocation lands on the event rather than at the tree's next edit. And
+`Collab::reproveReaders`, a 15 s pass over every open subscription, which is the only road for the
+two revocations no event carries: a session revoked on a tree **nobody is editing**, and
+**presence** — `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and
+never touches the bus, so a revoked reader went on watching a peer's live cursor and the node ids
+they selected long after the bus would have dropped them.
+
+`mayRead` itself never goes to the database: a fan-out runs it under the tree's strand, and
+re-proving N subscribers' sessions there meant one serial lookup per subscriber per minute with the
+strand held — a measured 16× spike on the first edit after each minute boundary, linear in readers.
+The re-proof (`stillAuthorized`, still throttled to one lookup a minute per connection) therefore
+runs in exactly two places, both off every strand: on `subscribe`'s own thread, and on the sweeper's.
+`Principal::authenticated` and `checkedAtMs` are `std::atomic` because of that sweeper — they are no
+longer written only by the connection's own IO thread.
+
+The socket's read paths — `subscribe`, the write frame, the progress mark — plus `HttpApi::readRoom`
+and both `ForkService` entries (`fork`, and `describe`, which is the **unauthenticated** magic-link
+invite) decide on `RoomRegistry::accessOf`, the stored `owner` + `visibility` row, **before**
+`open()` builds a room: a caller about to be refused must not be the reason a whole lattice is
+loaded, since with a bounded room table that load evicts a room somebody is using.
+**`RoadmapTools::withRoom` (`products/roadmap/adapters/mcp/RoadmapTools.cpp:247`) still opens first
+and checks after** — threading the caller through its call sites is its own change, and until that
+lands the MCP read tools keep the old ordering.
+
+The real `UserId` is still the op `actor`, the `undoKey` and `progressUser_`, so undo and progress
+are per-user. It no longer goes **on the wire**: presence frames carry a per-room seat id
+(`p<N>`, `PresenceHub::Member::seat`) instead of `users.id`, because presence fans out to every
+co-viewer — anonymous strangers included — on any public or unlisted tree. The display name is
+still shown; that half was always intended.
 
 ### MCP-HTTP (`/mcp`)
 
@@ -148,10 +185,6 @@ really is rate-limit → authenticate → authorize → handler.
   or `embedder` gains a `ports:` mapping or `network_mode: host` — the one change that would expose
   these processes directly instead of only via Caddy. Today `caddy` is the only service that
   publishes ports (`deploy/docker-compose.yml:174`), and only convention keeps it that way.
-- **The WebSocket upgrade does not check `Origin`.** `Collab::onOpen` reads the cookie and nothing
-  else. The allowlist built in `platform/infra/main.cpp:350` shapes CORS response headers, and
-  `McpHttpEndpoint::handlePost` enforces its own — but no equivalent gate sits on the socket
-  handshake.
 - **The tenancy model.** Per-user only, or orgs + roles? `orgs`, `org_members` and `trees.org_id`
   exist in `db/schema.sql` as a Phase-3 reservation and no code reads or writes any of them. The
   answer decides whether the check stays `caller == owner_id` or becomes a membership lookup —

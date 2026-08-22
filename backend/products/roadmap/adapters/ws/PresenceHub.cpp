@@ -82,7 +82,8 @@ std::string PresenceHub::guestName(const UserId& actor, const std::map<drogon::W
 
 void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto& members = byTree_[tree.str()];
+  auto& room = byTree_[tree.str()];
+  auto& members = room.members;
 
   // A resubscribe is how a client re-baselines after a gap, so the same connection arrives here
   // more than once. It is already in the room: announcing it again would burn a second name it
@@ -98,7 +99,8 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   // An account wears the name it chose even if a peer shares it — only a stranger we are naming
   // ourselves gets rotated off a collision.
   std::string name = principal.name.empty() ? guestName(actor, members) : principal.name;
-  Member self{actor, std::move(name), colorOf(actor), std::nullopt, std::nullopt, false};
+  Member self{actor, "p" + std::to_string(++room.seats), std::move(name), colorOf(actor),
+              std::nullopt, std::nullopt, false};
 
   // Tell the newcomer who is already here (roster + any live cursor), and tell everyone
   // else the newcomer arrived. The arrival frame is one broadcast, so serialize it once
@@ -116,8 +118,8 @@ void PresenceHub::update(const drogon::WebSocketConnectionPtr& conn, const TreeI
   std::lock_guard<std::mutex> lock(mutex_);
   auto tree_it = byTree_.find(tree.str());
   if (tree_it == byTree_.end()) return;
-  auto member_it = tree_it->second.find(conn);
-  if (member_it == tree_it->second.end()) return;  // presence requires an active subscription
+  auto member_it = tree_it->second.members.find(conn);
+  if (member_it == tree_it->second.members.end()) return;  // presence requires an active subscription
 
   Member& member = member_it->second;
   if (frame.isMember("cursor") && frame["cursor"].isObject()) {
@@ -130,28 +132,44 @@ void PresenceHub::update(const drogon::WebSocketConnectionPtr& conn, const TreeI
   member.moved = true;
 }
 
+void PresenceHub::depart(const std::string& tree, const drogon::WebSocketConnectionPtr& conn) {
+  auto room_it = byTree_.find(tree);
+  if (room_it == byTree_.end()) return;
+  auto& members = room_it->second.members;
+  auto it = members.find(conn);
+  if (it == members.end()) return;
+  std::string gone = dump(peerFrame(tree, it->second, "leave"));
+  members.erase(it);
+  for (const auto& [other, _] : members) sendTo(other, gone);
+  // An empty room is erased rather than kept: byTree_ is keyed by tree id, so a roster left
+  // standing for every tree anyone ever watched is one more thing that only grows.
+  if (members.empty()) byTree_.erase(room_it);
+}
+
 void PresenceHub::leave(const drogon::WebSocketConnectionPtr& conn) {
   std::lock_guard<std::mutex> lock(mutex_);
-  for (auto& [tree, members] : byTree_) {
-    auto it = members.find(conn);
-    if (it == members.end()) continue;
-    std::string gone = dump(peerFrame(tree, it->second, "leave"));
-    members.erase(it);
-    for (const auto& [other, _] : members) sendTo(other, gone);
-  }
+  std::vector<std::string> trees;
+  for (const auto& [tree, room] : byTree_)
+    if (room.members.count(conn)) trees.push_back(tree);
+  for (const std::string& tree : trees) depart(tree, conn);
+}
+
+void PresenceHub::leave(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  depart(tree.str(), conn);
 }
 
 void PresenceHub::flush() {
   std::vector<std::pair<drogon::WebSocketConnectionPtr, std::shared_ptr<std::string>>> outbox;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& [tree, members] : byTree_) {
-      for (auto& [conn, member] : members) {
+    for (auto& [tree, room] : byTree_) {
+      for (auto& [conn, member] : room.members) {
         if (!member.moved) continue;
         member.moved = false;
         // Serialize the moved actor's frame once, then hand the same buffer to every peer.
         auto frame = std::make_shared<std::string>(dump(presenceFrame(tree, member)));
-        for (const auto& [other, _] : members)
+        for (const auto& [other, _] : room.members)
           if (other != conn) outbox.emplace_back(other, frame);
       }
     }
@@ -163,7 +181,7 @@ Json::Value PresenceHub::presenceFrame(const std::string& tree, const Member& me
   Json::Value frame(Json::objectValue);
   frame["t"] = "presence";
   frame["treeId"] = tree;
-  frame["actor"] = member.actor.str();
+  frame["actor"] = member.seat;  // the room's seat number, never the account id (Member::seat)
   Json::Value profile(Json::objectValue);
   profile["name"] = member.name;
   profile["color"] = member.color;
@@ -183,7 +201,7 @@ Json::Value PresenceHub::peerFrame(const std::string& tree, const Member& member
   frame["t"] = "peer";
   frame["treeId"] = tree;
   frame["event"] = event;
-  frame["actor"] = member.actor.str();
+  frame["actor"] = member.seat;
   Json::Value profile(Json::objectValue);
   profile["name"] = member.name;
   profile["color"] = member.color;

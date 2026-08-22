@@ -6,6 +6,7 @@
 #include "platform/application/OAuthService.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/application/TreeRegistry.h"
 #include "platform/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Subgraph.h"
@@ -15,6 +16,7 @@
 
 #include <trantor/net/InetAddress.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -68,7 +70,11 @@ struct Harness {
   FakeAccountFootprint footprint;
   AuthService auth{authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
   PresenceHub presence;
-  Collab collab{rooms, ops, bus, progress, auth, presence, clock};
+  // The real delete door, so a retirement in these tests is the one the API calls.
+  TreeRegistry trees_registry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, rooms, clock};
+  // The app's own origin is the whole allowlist here, as it is in production when
+  // WINDMILL_ALLOWED_ORIGINS names nothing extra.
+  Collab collab{rooms, ops, bus, progress, auth, presence, clock, {"https://windmill.works"}};
 
   UserId signIn(const std::string& secret, const std::string& emailAddr) {
     User user = authRepo.createUser(Email{emailAddr}, "sam");
@@ -76,13 +82,18 @@ struct Harness {
     return user.id;
   }
 
+  void addSession(const std::string& secret, const UserId& user) {
+    authRepo.insertSession(tokens.digestOf(secret), user, clock.now + 1'000'000, "", "", clock.now);
+  }
+
   void seed(const char* id, const UserId& owner, Visibility visibility) {
     trees.byId[id] = StoredTree{GraphState{}, LegendState{}, {"Tree", {}}, 0, owner, visibility};
   }
 
-  drogon::HttpRequestPtr upgrade(const std::string& session) {
+  drogon::HttpRequestPtr upgrade(const std::string& session, const std::string& origin = "") {
     auto req = drogon::HttpRequest::newHttpRequest();
     if (!session.empty()) req->addCookie("wm_session", session);
+    if (!origin.empty()) req->addHeader("Origin", origin);
     return req;
   }
 };
@@ -117,6 +128,17 @@ void broadcastTo(WsPresenceBus& bus, const char* tree) {
 }
 
 std::string frameType(const std::string& text) { return parse(text).get("t", "").asString(); }
+
+// The actor id carried by the last "peer join" frame a connection received — what a co-viewer,
+// including a total stranger, learns about the person who just arrived.
+std::string announcedActor(const FakeSocket& conn) {
+  for (auto it = conn.sent.rbegin(); it != conn.sent.rend(); ++it) {
+    Json::Value frame = parse(*it);
+    if (frame.get("t", "").asString() == "peer" && frame.get("event", "").asString() == "join")
+      return frame.get("actor", "").asString();
+  }
+  return "";
+}
 
 // The profile name carried by the last "peer join" frame a connection received — how a peer
 // is announced to everyone already in the tree.
@@ -611,4 +633,336 @@ TEST(ws_a_malformed_field_is_rejected_as_bad_frame_not_as_a_full_tree) {
   REQUIRE_EQ(conn->sent.size(), 1u);
   CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
   CHECK_EQ(rejectReason(conn->sent[0]), std::string("a node id is 129 characters, max 128"));
+}
+
+// Re-privating a tree is the owner's ONLY revocation control, and it used to revoke nothing that
+// was already open: read authorization was decided once, at subscribe, and the connection then sat
+// on the bus receiving every later edit. A fresh subscribe was correctly refused while the socket
+// beside it kept streaming the same tree's private edits, indefinitely.
+TEST(ws_a_visibility_flip_drops_the_reader_it_locks_out) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto reader = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), reader);
+  h.collab.onMessage(reader, subscribeFrame("t_pub"));
+  REQUIRE_EQ(reader->sent.size(), 1u);
+  broadcastTo(h.bus, "t_pub");
+  CHECK_EQ(reader->sent.size(), 2u);  // subscribed while public: the edit reached it
+
+  {
+    std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_pub"}));
+    h.rooms.setVisibility(TreeId{"t_pub"}, Visibility::private_);
+  }
+  // The revocation lands on the flip itself, not at the tree's next edit — a tree nobody edits
+  // again would otherwise never re-check — and it says exactly what a fresh subscribe would say.
+  REQUIRE_EQ(reader->sent.size(), 3u);
+  CHECK_EQ(frameType(reader->sent[2]), std::string("reject"));
+  CHECK_EQ(rejectCode(reader->sent[2]), std::string("no-such-tree"));
+  CHECK_EQ(rejectReason(reader->sent[2]), std::string("no such tree \"t_pub\""));
+
+  broadcastTo(h.bus, "t_pub");
+  CHECK_EQ(reader->sent.size(), 3u);  // off the bus: the private edit did not reach it
+}
+
+// The gate did not over-broaden: the owner's own subscription survives their own share flip.
+TEST(ws_a_visibility_flip_keeps_the_owner_reading) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_pub"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+
+  {
+    std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_pub"}));
+    h.rooms.setVisibility(TreeId{"t_pub"}, Visibility::private_);
+  }
+  CHECK_EQ(conn->sent.size(), 1u);  // nothing refused
+
+  broadcastTo(h.bus, "t_pub");
+  CHECK_EQ(conn->sent.size(), 2u);  // still reading their own tree
+}
+
+// "Sign out everywhere" and closing an account reached only writes: the read path proved nothing
+// after the upgrade, so a revoked session kept receiving a private tree over its open socket.
+TEST(ws_a_revoked_session_stops_receiving_the_tree_it_was_reading) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  broadcastTo(h.bus, "t_priv");
+  CHECK_EQ(conn->sent.size(), 2u);
+
+  h.authRepo.deleteSession(h.tokens.digestOf("s-owner"));  // signed out everywhere
+  h.collab.reproveReaders();
+  broadcastTo(h.bus, "t_priv");
+  CHECK_EQ(conn->sent.size(), 3u);  // still inside the throttle window: one more frame, at most
+
+  h.clock.now += 61'000;  // past the one-minute re-proof, the same throttle a writer pays
+  // The pass is what re-proves, on its own thread — a fan-out is a pure verdict and never a
+  // database lookup, so no edit is needed here and none would help.
+  h.collab.reproveReaders();
+  REQUIRE_EQ(conn->sent.size(), 4u);
+  CHECK_EQ(frameType(conn->sent[3]), std::string("reject"));  // the refusal, and no edit ever ran
+  CHECK_EQ(rejectCode(conn->sent[3]), std::string("no-such-tree"));
+
+  broadcastTo(h.bus, "t_priv");
+  CHECK_EQ(conn->sent.size(), 4u);  // dropped for good
+}
+
+// Presence fans out to every co-viewer, anonymous strangers included, on any public or unlisted
+// tree — and it used to carry the signed-in viewer's users.id, the system-wide primary key, to all
+// of them. The name is meant to be shown; the account id never was.
+TEST(ws_presence_never_puts_the_account_id_on_the_wire) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");  // signIn names the account "sam"
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto stranger = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), stranger);  // no cookie at all
+  h.collab.onMessage(stranger, subscribeFrame("t_pub"));
+
+  auto member = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), member);
+  h.collab.onMessage(member, subscribeFrame("t_pub"));
+
+  const std::string actor = announcedActor(*stranger);
+  CHECK_FALSE(actor == owner.str());                        // the leak itself
+  CHECK_EQ(actor, std::string("p2"));                       // a seat in this room, nothing more
+  CHECK_EQ(announcedName(*stranger), std::string("sam"));   // the intended half is untouched
+
+  // And the same seat rides the cursor frames, which is the channel that actually repeats.
+  Json::Value cursor(Json::objectValue);
+  cursor["t"] = "presence";
+  cursor["treeId"] = "t_pub";
+  cursor["cursor"] = Json::Value(Json::objectValue);
+  cursor["cursor"]["x"] = 4.0;
+  cursor["cursor"]["y"] = 2.0;
+  h.collab.onMessage(member, dump(cursor));
+  h.presence.flush();
+
+  bool sawCursor = false;
+  for (const std::string& text : stranger->sent) {
+    Json::Value frame = parse(text);
+    if (frame.get("t", "").asString() != "presence") continue;
+    sawCursor = true;
+    CHECK_EQ(frame.get("actor", "").asString(), std::string("p2"));
+  }
+  CHECK(sawCursor);
+}
+
+// A room is the whole CRDT graph in memory, and every read path used to build one BEFORE asking
+// whether the caller may read: a stranger's denied read materialized and pinned the private tree
+// it was about to be told does not exist.
+TEST(ws_a_denied_subscribe_materializes_no_room) {
+  Harness h;
+  h.seed("t_priv", UserId{"owner"}, Visibility::private_);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("no-such-tree"));
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_priv"}));  // nothing was loaded on the way to the refusal
+  CHECK_EQ(h.rooms.openRooms(), std::size_t{0});
+}
+
+// The same rule on the write path: a frame nobody is allowed to write must not load the tree
+// either, or an authenticated stranger could pin every id they can name.
+TEST(ws_a_refused_write_materializes_no_room) {
+  Harness h;
+  h.signIn("s-other", "other@example.com");
+  h.seed("t_priv", UserId{"owner"}, Visibility::private_);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-other"), conn);
+  h.collab.onMessage(conn, writeFrame("t_priv"));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("no-such-tree"));
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_priv"}));
+}
+
+// The upgrade is where a cookie is spent, and it is outside the CORS policy that guards every
+// other cookie-bearing door: a cross-site page's socket rode the victim's cookie and was served
+// the full private delta, stopped only by SameSite=Lax — an attribute this server does not own.
+TEST(ws_an_upgrade_from_an_unlisted_origin_is_refused) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  auto evil = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner", "http://evil.example.com"), evil);
+  CHECK_FALSE(evil->connected());  // closed at the handshake, before a frame is ever read
+
+  h.collab.onMessage(evil, subscribeFrame("t_priv"));
+  CHECK_EQ(evil->sent.size(), 0u);  // and it is served nothing even if a frame arrives anyway
+}
+
+// The two clients that must keep working: the app itself, and everything that is not a browser.
+// Only a browser sends Origin, and only a browser can be aimed at this server by someone else.
+TEST(ws_an_upgrade_from_the_app_or_from_no_origin_at_all_is_served) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  auto browser = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner", "https://windmill.works"), browser);
+  h.collab.onMessage(browser, subscribeFrame("t_priv"));
+  REQUIRE_EQ(browser->sent.size(), 1u);
+  CHECK_FALSE(frameType(browser->sent[0]) == "reject");
+
+  auto script = std::make_shared<FakeSocket>();  // curl, a device, the MCP tooling: no Origin
+  h.collab.onOpen(h.upgrade("s-owner"), script);
+  h.collab.onMessage(script, subscribeFrame("t_priv"));
+  // Its own delta, plus the roster of whoever is already in the room — never a refusal.
+  REQUIRE(script->sent.size() >= 1u);
+  for (const std::string& text : script->sent) CHECK_FALSE(frameType(text) == "reject");
+  CHECK(std::any_of(script->sent.begin(), script->sent.end(),
+                    [](const std::string& text) { return frameType(text) == "subgraph"; }));
+}
+
+// An HLC counter past what 64 bits hold threw out of the frame decoder, into onMessage's catch,
+// which logged it and answered nothing at all — so the client's in-flight entry for that frameId
+// leaked forever and its banked edits were stranded with nothing on screen saying so.
+TEST(ws_a_frame_with_an_unreadable_stamp_is_refused_rather_than_dropped) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  Json::Value node(Json::objectValue);
+  node["id"] = "n1";
+  node["createdAt"] = "9999999999999999999999:0:a";
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-huge";
+  frame["nodes"] = Json::Value(Json::arrayValue);
+  frame["nodes"].append(node);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("this frame could not be read"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-huge"));
+}
+
+// The same stamp in a subscribe's version vector: a subscribe that never answers is a client that
+// waits forever on a socket it believes is healthy.
+TEST(ws_a_subscribe_with_an_unreadable_vector_is_refused_rather_than_dropped) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subscribe";
+  frame["treeId"] = "t_priv";
+  frame["vector"] = Json::Value(Json::objectValue);
+  frame["vector"]["a"] = "9999999999999999999999:0:a";
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("this frame could not be read"));
+}
+
+// The gate was total over the BUS and blind to the channel that actually carries a person's live
+// activity: PresenceHub::flush fans cursors and selections straight to its own roster at 20 Hz,
+// never through WsPresenceBus. So on a tree nobody was editing — no broadcast to gate, no share
+// flip to resweep — a reader whose session had been revoked went on watching a peer's cursor and
+// the node ids they selected, indefinitely. Nothing in this test edits anything.
+TEST(ws_presence_stops_reaching_a_revoked_reader_on_a_tree_nobody_is_editing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.addSession("s-owner-2", owner);  // the same account, a second device
+  h.seed("t_priv", owner, Visibility::private_);
+
+  auto tab1 = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), tab1);
+  h.collab.onMessage(tab1, subscribeFrame("t_priv"));
+  auto tab2 = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner-2"), tab2);
+  h.collab.onMessage(tab2, subscribeFrame("t_priv"));
+
+  Json::Value cursor(Json::objectValue);
+  cursor["t"] = "presence";
+  cursor["treeId"] = "t_priv";
+  cursor["cursor"] = Json::Value(Json::objectValue);
+  cursor["cursor"]["x"] = 1.0;
+  cursor["cursor"]["y"] = 2.0;
+  cursor["selection"] = "a-private-node-id";
+  h.collab.onMessage(tab1, dump(cursor));
+  h.presence.flush();
+  const auto presenceFrames = [](const FakeSocket& conn) {
+    std::size_t seen = 0;
+    for (const std::string& text : conn.sent) if (frameType(text) == "presence") ++seen;
+    return seen;
+  };
+  REQUIRE_EQ(presenceFrames(*tab2), std::size_t{1});  // it is a legitimate reader, for now
+
+  h.authRepo.deleteSession(h.tokens.digestOf("s-owner-2"));
+  h.clock.now += 61'000;
+  h.collab.reproveReaders();  // the clock, not an edit: there is no edit anywhere in this test
+
+  const std::size_t before = presenceFrames(*tab2);
+  h.collab.onMessage(tab1, dump(cursor));
+  h.presence.flush();
+  CHECK_EQ(presenceFrames(*tab2), before);  // the cursor and the selection stop at the roster
+  CHECK(std::any_of(tab2->sent.begin(), tab2->sent.end(),
+                    [](const std::string& text) { return frameType(text) == "reject"; }));
+  // And the peer it was watching is told it left, so no stale cursor is left painted.
+  CHECK(std::any_of(tab1->sent.begin(), tab1->sent.end(), [](const std::string& text) {
+    return frameType(text) == "peer" && parse(text).get("event", "").asString() == "leave";
+  }));
+}
+
+// Deleting a tree is the strongest revocation the product has, and the gate was structurally
+// unable to see it: accessOf answers from the live room, and remove() retired the row without
+// touching it. So a soft-deleted tree whose room was still resident kept reading as its old self —
+// and open() answers a resident room without ever consulting the row, so a brand-new anonymous
+// socket was served the whole lattice of a tree its owner had deleted.
+TEST(ws_deleting_a_tree_drops_its_readers_and_refuses_a_fresh_one) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_pub", owner, Visibility::public_);
+
+  auto reader = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), reader);
+  h.collab.onMessage(reader, subscribeFrame("t_pub"));
+  REQUIRE_EQ(reader->sent.size(), 1u);
+  CHECK_FALSE(frameType(reader->sent[0]) == "reject");
+  CHECK(h.rooms.isOpen(TreeId{"t_pub"}));  // resident, which is the whole hazard
+
+  CHECK(h.trees_registry.remove(TreeId{"t_pub"}, owner) == TreeRegistry::Removal::deleted);
+
+  REQUIRE_EQ(reader->sent.size(), 2u);
+  CHECK_EQ(rejectCode(reader->sent[1]), std::string("no-such-tree"));  // dropped on the delete
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_pub"}));                        // and the room is gone
+
+  auto fresh = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), fresh);
+  h.collab.onMessage(fresh, subscribeFrame("t_pub"));
+  REQUIRE_EQ(fresh->sent.size(), 1u);
+  CHECK_EQ(frameType(fresh->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectCode(fresh->sent[0]), std::string("no-such-tree"));
+
+  broadcastTo(h.bus, "t_pub");
+  CHECK_EQ(reader->sent.size(), 2u);
+  CHECK_EQ(fresh->sent.size(), 1u);
 }

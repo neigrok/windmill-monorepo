@@ -29,7 +29,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   // The socket authenticates each connection at its upgrade and writes progress as that
   // user; anonymous connections may view but not edit.
   setCollab(std::make_shared<Collab>(*deps.registry, *deps.oplog, *deps.bus, *deps.progressService,
-                                     *deps.authService, *deps.presence, *deps.clock));
+                                     *deps.authService, *deps.presence, *deps.clock,
+                                     deps.allowedOrigins));
   linkTreeSocket();
 
   auto api = std::make_shared<HttpApi>(deps.registry, deps.trees, deps.progress, deps.oplog,

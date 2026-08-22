@@ -73,6 +73,10 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
 }
 
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
+  // The strand serializes the retirement against the tree's socket frames, exactly as rename and
+  // the reshare do: the owner check, the row's retirement and the room's form one uninterrupted
+  // step, so no concurrent open() can reload the tree between the delete and the drop.
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return Removal::notFound;
   // A tree the caller cannot even read is answered as absent, never as "someone else's": the
@@ -80,7 +84,11 @@ TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& cal
   if (!canRead(caller, stored->owner, stored->visibility)) return Removal::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Removal::nobodysTree : Removal::notYours;
+  // The row first, then the live room — in that order, because retire announces the change and
+  // whoever listens re-decides the access question against the repository. Announcing while the
+  // row still stood would hand every reader the old verdict.
   trees_.softDelete(tree);
+  rooms_.retire(tree);
   return Removal::deleted;
 }
 

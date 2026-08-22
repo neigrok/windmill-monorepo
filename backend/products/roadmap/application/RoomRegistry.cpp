@@ -1,19 +1,29 @@
 #include "products/roadmap/application/RoomRegistry.h"
 
+#include <trantor/utils/Logger.h>
+
+#include <algorithm>
 #include <functional>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 namespace wm {
 
 RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
-    : repo_(repo), ops_(ops), bus_(bus) {}
+    : repo_(repo), ops_(ops), bus_(bus), heartbeat_("rooms") {
+  heartbeat_.start(kSweepSeconds, kSweepSeconds, [this] { sweep(kIdleFor); });
+}
 
 TreeRoom* RoomRegistry::open(const TreeId& id) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto existing = rooms_.find(id);
-    if (existing != rooms_.end()) return existing->second.get();
+    if (existing != rooms_.end()) {
+      existing->second.touched = std::chrono::steady_clock::now();  // still in use: not idle
+      return existing->second.room.get();
+    }
   }
 
   // Load + replay outside the registry lock so one cold/large tree's open can't freeze
@@ -33,19 +43,67 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
 
   std::lock_guard<std::mutex> lock(mutex_);
   auto existing = rooms_.find(id);
-  if (existing != rooms_.end()) return existing->second.get();  // another thread won the race
+  if (existing != rooms_.end()) return existing->second.room.get();  // another thread won the race
   TreeRoom* ptr = room.get();
-  rooms_.emplace(id, std::move(room));
+  rooms_.emplace(id, Live{std::move(room), std::chrono::steady_clock::now()});
   return ptr;
+}
+
+std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = rooms_.find(id);
+    // The live room first: setVisibility flips it and the row together, and a room that was never
+    // saved after a flip would otherwise answer from a stale column.
+    if (it != rooms_.end()) return TreeAccess{it->second.room->owner(), it->second.room->visibility()};
+  }
+  return repo_.loadAccess(id);  // one row, no lattice — absence answers nullopt, exactly like load
 }
 
 void RoomRegistry::evict(const TreeId& id) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
-  auto [state, legend] = it->second->dirtyState();
-  repo_.save(id, state, legend, it->second->title(), it->second->head());
+  auto [state, legend] = it->second.room->dirtyState();
+  repo_.save(id, state, legend, it->second.room->title(), it->second.room->head());
   rooms_.erase(it);
+}
+
+void RoomRegistry::retire(const TreeId& id) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    rooms_.erase(id);
+  }
+  if (accessChanged_) accessChanged_(id);
+}
+
+void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
+  const auto now = std::chrono::steady_clock::now();
+  std::vector<TreeId> closing;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::pair<std::chrono::steady_clock::time_point, TreeId>> keeping;
+    for (const auto& [id, live] : rooms_) {
+      if (now - live.touched >= idleFor) closing.push_back(id);
+      else keeping.emplace_back(live.touched, id);
+    }
+    // The cap is what makes this a bound rather than a habit: a caller opening trees faster than
+    // they go idle would otherwise grow rooms_ without limit between two sweeps.
+    if (keeping.size() > kMaxRooms) {
+      std::sort(keeping.begin(), keeping.end());
+      for (std::size_t i = 0; i + kMaxRooms < keeping.size(); ++i) closing.push_back(keeping[i].second);
+    }
+  }
+  // Never under the map lock. evict persists (repository I/O) and every caller that touches a room
+  // holds its strand first, so the sweep takes the strand and only then the map — the one order
+  // this class ever uses, and the reason a sweep can't deadlock against an editor mid-write.
+  for (const TreeId& id : closing) {
+    std::lock_guard<std::mutex> strand(strandFor(id));
+    evict(id);
+  }
+  // Said out loud, because a sweep that quietly does nothing is exactly how the eviction this
+  // header promised went missing for so long: an operator can see it happening.
+  if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
 }
 
 void RoomRegistry::persist(const TreeId& id) {
@@ -58,7 +116,7 @@ void RoomRegistry::persist(const TreeId& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
     if (it == rooms_.end()) return;
-    room = it->second.get();
+    room = it->second.room.get();
     std::tie(state, legend) = room->dirtyState();  // only what changed since the last save
     title = room->title();
     head = room->head();
@@ -75,7 +133,7 @@ void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
-    if (it != rooms_.end()) room = it->second.get();
+    if (it != rooms_.end()) room = it->second.room.get();
   }
   if (!room) {
     HlcClock clock{std::string{TreeRoom::kServerActor}};
@@ -89,16 +147,31 @@ void RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
 
 void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
   repo_.setVisibility(id, visibility);  // durable
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = rooms_.find(id);
-  // A just-shared live room's read gate flips immediately, so the freshly-shared tree stops
-  // 404-ing at once — not only after eviction and reload.
-  if (it != rooms_.end()) it->second->setVisibility(visibility);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = rooms_.find(id);
+    // A just-shared live room's read gate flips immediately, so the freshly-shared tree stops
+    // 404-ing at once — not only after eviction and reload.
+    if (it != rooms_.end()) it->second.room->setVisibility(visibility);
+  }
+  // Announced outside the lock, because whoever listens re-decides an access question and may go
+  // back to the repository to do it. Re-privating a tree is the owner's only revocation control,
+  // and until this line it revoked nothing already open.
+  if (accessChanged_) accessChanged_(id);
+}
+
+void RoomRegistry::whenAccessChanges(std::function<void(const TreeId&)> hook) {
+  accessChanged_ = std::move(hook);
 }
 
 bool RoomRegistry::isOpen(const TreeId& id) const {
   std::lock_guard<std::mutex> lock(mutex_);
   return rooms_.count(id) > 0;
+}
+
+std::size_t RoomRegistry::openRooms() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return rooms_.size();
 }
 
 std::mutex& RoomRegistry::strandFor(const TreeId& id) {
