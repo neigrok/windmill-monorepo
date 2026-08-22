@@ -52,7 +52,10 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const textareaRef = useRef(null);
   const bodyRef = useRef(body);
   bodyRef.current = body;
-  const restoredRef = useRef(false);
+  const columnRef = useRef(null);
+  const openingRef = useRef(true);   // the canvas is still opening — the position is ours to take
+  const placedRef = useRef(0);       // where we last put it, so a scroll that is NOT ours is visible
+  const focusedRef = useRef(false);
   const bornSet = useRef(null); // the dates present at first paint — these never animate
   const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
   const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
@@ -119,52 +122,62 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     ta.style.height = `${ta.scrollHeight}px`;
   }, [body]);
 
-  // OPENING IS NOT A SCROLL — the canvas opens ON tonight, with the older days already above it.
-  // A layout effect runs before the browser paints, so the position is taken on the very first
-  // frame and there is nothing to see happening: the writer never watches the top of sixty days
-  // slide past on the way down to the cursor.
+  // OPENING IS NOT A SCROLL — the canvas opens ON tonight, with the older days already above it,
+  // and a dated hash opens on its day the same way. Taken in a layout effect, so it is done before
+  // the browser paints and there is nothing for the writer to watch happen.
   //
-  // Re-taken on every pass until the read SETTLES, because the canvas is written from the bottom
-  // twice — the device draws what it holds, and the account's window lands a moment later, ABOVE
-  // tonight. Holding the foot across both is what keeps the second arrival from moving the page
-  // under someone who is already reading it.
+  // AND IT IS TAKEN AGAIN EVERY TIME THE CANVAS CHANGES SIZE UNDER IT, because a cold load is laid
+  // out three times before it is finished: the room's own height settles, the account's window
+  // lands ABOVE tonight, and then the webfonts swap and re-flow every line of prose. A position
+  // taken once, in the middle of that, ends up wherever the last reflow left it — and one taken
+  // while the scroller had no overflow yet does NOTHING AT ALL, silently, which is how a canvas
+  // that had already "opened" was still sitting at the top of July.
   //
-  // Unless the writer has taken the scroll themselves (`restoredRef`, set on their first wheel or
-  // touch below): a canvas that yanked them back down to tonight mid-sentence would be a worse
-  // thing than the flash this replaces. A dated hash lands on its day by the same rule — every
-  // pass, as soon as that day is in the DOM, and the foot until it is.
-  useLayoutEffect(() => {
-    if (restoredRef.current) return;
+  // It ends when the writer takes the scroll — a wheel, a drag, a key, any scroll that did not put
+  // the canvas where we last placed it. From then on the position is theirs, and nothing here
+  // moves it again; a canvas that pulled someone back down to tonight mid-paragraph would be a
+  // worse thing than the one this replaces.
+  const takePosition = () => {
+    const scroller = scrollRef.current;
+    if (!openingRef.current || !scroller) return;
     const landed = focusDate ? dayElement(focusDate) : null;
     if (landed) landed.scrollIntoView({ block: 'start' });
-    else {
-      const scroller = scrollRef.current;
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    }
-    if (loading) return;
-    restoredRef.current = true;
-    if (!focusDate) textareaRef.current?.focus({ preventScroll: true });
+    else scroller.scrollTop = scroller.scrollHeight;
+    placedRef.current = scroller.scrollTop;
+  };
+  const takeRef = useRef(takePosition);
+  takeRef.current = takePosition;
+
+  // A new position asked for by the URL re-opens the canvas on it, even if the writer had scrolled.
+  useLayoutEffect(() => { openingRef.current = true; }, [focusDate]);
+
+  useLayoutEffect(() => {
+    takePosition();
+    if (loading || focusDate || focusedRef.current) return;
+    focusedRef.current = true;
+    textareaRef.current?.focus({ preventScroll: true });
   });
 
-  // The writer taking the scroll ends the opening: from here the position is theirs, not ours.
-  // Wheel and touch only — typing is done at the foot, where the canvas already is.
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
-    const taken = () => { restoredRef.current = true; };
-    scroller.addEventListener('wheel', taken, { passive: true });
-    scroller.addEventListener('touchstart', taken, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => takeRef.current());
+    observer?.observe(scroller);
+    if (columnRef.current) observer?.observe(columnRef.current);
+    // The scroll that is not ours ends the opening. Ours always lands where `placedRef` says, so
+    // this can tell the writer's wheel from the canvas taking its own position — no flags, no
+    // guessing at which event came from where.
+    const onScroll = () => {
+      if (openingRef.current && Math.abs(scroller.scrollTop - placedRef.current) > 8) {
+        openingRef.current = false;
+      }
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => {
-      scroller.removeEventListener('wheel', taken);
-      scroller.removeEventListener('touchstart', taken);
+      observer?.disconnect();
+      scroller.removeEventListener('scroll', onScroll);
     };
   }, []);
-
-  // A dated hash that changes after mount (navigating to another day) re-scrolls.
-  useEffect(() => {
-    if (loading || !restoredRef.current || !focusDate) return;
-    scrollToDay(focusDate);
-  }, [focusDate, loading]);
 
   // Reaching back PREPENDS months above the viewport, which would otherwise shove the page the
   // writer is reading down the screen by however much history arrived. So the press records how far
@@ -172,6 +185,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   // pass that follows the read puts it back. Measured before the read and restored after it
   // SETTLES, so a reach that failed or found nothing simply restores the same position it took.
   const startReachBack = () => {
+    openingRef.current = false;   // they went looking — the canvas stops taking its own position
     const scroller = scrollRef.current;
     anchorRef.current = scroller ? scroller.scrollHeight - scroller.scrollTop : null;
     reachBack();
@@ -195,6 +209,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   // landing at the bottom of the canvas roughly half the time.
   useEffect(() => {
     if (!flyTo || loading) return;
+    openingRef.current = false;   // a flight is a position the writer asked for
     let cancelled = false;
     const hasSpan = flyTo.lo != null;   // a search hit or an echo lights a span; a picked day just lands
     if (hasSpan) setHighlight(flyTo);
@@ -257,7 +272,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
 
   return (
     <div className="journal-scroll" ref={scrollRef}>
-      <div className="journal-column">
+      <div className="journal-column" ref={columnRef}>
         {showFloor && <CanvasFloor reach={reach} onReach={startReachBack} />}
         {rendered}
 
