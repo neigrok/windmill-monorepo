@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { advanceProgress, milestoneAnnouncement, stampsFor } from '../../../../src/products/roadmap/model/progress.js';
+import { advanceProgress, milestoneAnnouncement, reconcileOverlay, stampsFor } from '../../../../src/products/roadmap/model/progress.js';
 
 function progress() {
   return {
@@ -172,4 +172,87 @@ test('stampsFor answers only for the ids asked about, whatever else the maps car
   const stamps = stampsFor(new Set(['a']), { a: 900, z: 1 }, { a: 100, y: 2 });
 
   assert.deepEqual(stamps, { a: 900 });
+});
+
+// reconcileOverlay settles the two accounts a tree opens holding. The cases below are the reasons
+// the local copy cannot simply be dropped once the server has answered: it is still carrying marks
+// the server has never heard of (the reconcile's pending pushes), it is the only home for a
+// completed step's startedAt, and it is the whole account for a tree the server does not know.
+
+const serverOverlay = (fields) => ({ completed: [], inProgress: [], cleared: [], markedAt: {}, server: true, ...fields });
+
+function overlaySnapshot(overlay) {
+  return {
+    completed: [...overlay.completed].sort(),
+    inProgress: [...overlay.inProgress].sort(),
+    startedAt: overlay.startedAt,
+    completedAt: overlay.completedAt,
+  };
+}
+
+test('reconcileOverlay keeps a local mark the server has never heard of — it is a pending push', () => {
+  const overlay = reconcileOverlay(
+    serverOverlay({ completed: ['a'], markedAt: { a: 900 } }),
+    { completed: ['a', 'offline'], inProgress: [], startedAt: {}, completedAt: { a: 100, offline: 200 } },
+  );
+
+  assert.deepEqual(overlaySnapshot(overlay), {
+    completed: ['a', 'offline'],
+    inProgress: [],
+    startedAt: {},
+    completedAt: { a: 900, offline: 200 },  // the server dates what it knows; the device dates the rest
+  });
+});
+
+test('reconcileOverlay lets a tombstone kill a stale local mark instead of resurrecting it', () => {
+  const overlay = reconcileOverlay(
+    serverOverlay({ completed: ['a'], cleared: ['b'], markedAt: { a: 900, b: 950 } }),
+    { completed: ['a', 'b'], inProgress: [], startedAt: {}, completedAt: { a: 100, b: 200 } },
+  );
+
+  assert.deepEqual(overlaySnapshot(overlay), {
+    completed: ['a'],  // 'b' was cleared on another device and stays cleared
+    inProgress: [],
+    startedAt: {},
+    completedAt: { a: 900 },
+  });
+});
+
+test('reconcileOverlay hands a completed step the local startedAt the server cannot hold', () => {
+  const overlay = reconcileOverlay(
+    serverOverlay({ completed: ['a'], inProgress: ['b'], markedAt: { a: 900, b: 950 } }),
+    { completed: ['a'], inProgress: ['b'], startedAt: { a: 10, b: 20 }, completedAt: { a: 100 } },
+  );
+
+  assert.deepEqual(overlaySnapshot(overlay), {
+    completed: ['a'],
+    inProgress: ['b'],
+    startedAt: { b: 950 },       // the server's row for an in-progress step IS when it started
+    completedAt: { a: 900 },     // 'a' has no startedAt: one row per node, and completing overwrote it
+  });
+});
+
+test('reconcileOverlay stands on the saved copy alone when the server holds no overlay', () => {
+  const overlay = reconcileOverlay(
+    { completed: ['seeded'], inProgress: [], markedAt: {}, server: false },
+    { completed: ['mine'], inProgress: ['wip'], startedAt: { wip: 20 }, completedAt: { mine: 100 } },
+  );
+
+  assert.deepEqual(overlaySnapshot(overlay), {
+    completed: ['mine'],
+    inProgress: ['wip'],
+    startedAt: { wip: 20 },
+    completedAt: { mine: 100 },
+  });
+});
+
+test('reconcileOverlay is the server overlay verbatim when this device has saved nothing', () => {
+  const overlay = reconcileOverlay(serverOverlay({ completed: ['a'], inProgress: ['b'], markedAt: { a: 900 } }), null);
+
+  assert.deepEqual(overlaySnapshot(overlay), {
+    completed: ['a'],
+    inProgress: ['b'],
+    startedAt: {},               // 'b' is in progress but the server dated nothing — undated, not guessed
+    completedAt: { a: 900 },
+  });
 });

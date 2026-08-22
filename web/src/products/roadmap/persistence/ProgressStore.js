@@ -1,8 +1,15 @@
-// Local persistence for a user's progress (F1 — Durable progress). The repository's
-// authored/seed statuses are the baseline; this overlays the user's own completions,
-// in-progress steps, and the timestamps of those actions on top, so starting or
-// completing a step sticks across reloads. Keyed by tree id — node ids that no longer
-// exist simply don't apply. Best-effort like TreeStore: storage errors are never fatal.
+// Local persistence for a user's progress (F1 — Durable progress). Keyed by tree id — node ids
+// that no longer exist simply don't apply. Best-effort like TreeStore: storage errors are never
+// fatal.
+//
+// Once an account overlay exists this is NOT the truth, and `reconcileOverlay` (model/progress.js)
+// is what settles the two. It is not redundant either, which is why signing in does not empty it —
+// it holds three things the server's answer does not: marks the server has never heard of (made
+// offline or before sign-in, waiting for the reconcile to push them), `startedAt` for a completed
+// step (the server keeps one row per node, so the completion overwrote when it began), and the
+// whole overlay for a tree the server has never seen — a local-born or anonymous one. It doubles
+// as the offline read. The load path writes the reconciled overlay straight back here, so it
+// tracks the server between edits rather than lagging it.
 
 const KEY_PREFIX = 'windmill:progress:';
 

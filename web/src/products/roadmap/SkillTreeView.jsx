@@ -77,7 +77,7 @@ import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewP
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, milestoneAnnouncement, stampsFor } from './model/progress.js';
+import { advanceProgress, milestoneAnnouncement, reconcileOverlay } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -145,7 +145,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
   const readOnlyRef = useRef(readOnly); // the scene is built once; it reads the fresh mode without a rebuild
-  const progressRef = useRef({ completed: new Set(), inProgress: new Set() });
   const editorRef = useRef(null);
   const treeRef = useRef(null); // the current projected SkillTree — the angular-reorder gesture reads its trunk for a node's siblings
   const layoutCacheRef = useRef({ signature: '', raw: new Map() });
@@ -1247,28 +1246,14 @@ export function SkillTreeView({ treeId, demo = false }) {
       // The authoritative structural history from the op log — merged into the resting
       // feed below so a collaborator's edits show up, not just this browser's.
       const serverActivity = await repo.loadActivity({ limit: 200 });
-      // Durable progress overlays the repo/seed baseline. When the server sent a real
-      // account overlay, IT is the base truth: local marks it has no row for ride on top
-      // (they're the reconcile's pending pushes), but server rows — including cleared
-      // tombstones — win, so a mark cleared on another device dies here instead of being
-      // resurrected. Without a server overlay (ghosts, fresh accounts), saved local
-      // progress wins wholesale, exactly as before. The demo reads no saved progress.
+      // The two accounts of this work — the server's overlay and this browser's — settled in one
+      // pure place (model/progress.js), stamps and all: the server's rows and instants win, local
+      // marks it has never heard of ride on top as the reconcile's pending pushes, and a completed
+      // step keeps its LOCAL startedAt, since the server holds one row per node and the completion
+      // overwrote when it began. The demo plays against neither.
       const savedProgress = demo ? null : progressStore.load(seed.id);
-      if (savedProgress && progress.server) {
-        const known = new Set([...progress.completed, ...progress.inProgress, ...(progress.cleared ?? [])]);
-        for (const id of savedProgress.completed) if (!known.has(id)) progress.completed.add(id);
-        for (const id of savedProgress.inProgress) if (!known.has(id)) progress.inProgress.add(id);
-      } else if (savedProgress) {
-        progress.completed = new Set(savedProgress.completed);
-        progress.inProgress = new Set(savedProgress.inProgress);
-      }
-      // When each mark happened, ranked across the two clocks that can say (model/progress.js):
-      // the server's row wins where it exists — it is the only one that survives the device the
-      // mark was made on — and this browser's own stamps fill the rest. A completed step keeps its
-      // LOCAL startedAt: the server holds one row per node, so a completion overwrote when it began.
-      const startedAtMap = stampsFor(progress.inProgress, progress.markedAt, savedProgress?.startedAt);
-      const completedAtMap = stampsFor(progress.completed, progress.markedAt, savedProgress?.completedAt);
-      const states = UnlockRules.derive(nextTree, progress);
+      const overlay = reconcileOverlay(progress, savedProgress);
+      const states = UnlockRules.derive(nextTree, overlay);
       const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);
       if (cancelled) return;
@@ -1280,7 +1265,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       // user can't edit (shared, mobile, or a non-owner demotion — readOnlyRef, not just
       // viewReadOnly) get neither a recap nor a ledger write: only the owner's editable tree.
       const priorLedger = demo || readOnlyRef.current ? null : returnLedger.load(seed.id);
-      const sinceIds = ReturnLedger.since(progress.completed, priorLedger, states);
+      const sinceIds = ReturnLedger.since(overlay.completed, priorLedger, states);
       if (sinceIds.length) {
         scene.armReturnRecap(sinceIds, `Welcome back · ${sinceIds.length} step${sinceIds.length > 1 ? 's' : ''} done since your last visit`);
       }
@@ -1307,18 +1292,17 @@ export function SkillTreeView({ treeId, demo = false }) {
       // server rows against another tree's local marks.
       repoRef.current = repo;
       openPeriod(seed.createdAt ?? 0); // the period clock: week N counts from here, never the calendar
-      progressRef.current = progress;
-      completedRef.current = new Set(progress.completed);
-      inProgressRef.current = new Set(progress.inProgress);
-      seedActivity({ tree: nextTree, states, completedAt: completedAtMap, serverActivity }); // this tree's own history, and a feed closed on it
+      completedRef.current = new Set(overlay.completed);
+      inProgressRef.current = new Set(overlay.inProgress);
+      seedActivity({ tree: nextTree, states, completedAt: overlay.completedAt, serverActivity }); // this tree's own history, and a feed closed on it
       setTree(nextTree);
       setRenderModel(model);
       setTreeVisibility(seed.visibility ?? null); // the server's stance rides the seed; the blob fallback carries none
       setTreeMine(seed.mine ?? false);
-      setCompleted(new Set(progress.completed));
-      setInProgress(new Set(progress.inProgress));
-      setStartedAt(startedAtMap);
-      setCompletedAt(completedAtMap);
+      setCompleted(new Set(overlay.completed));
+      setInProgress(new Set(overlay.inProgress));
+      setStartedAt(overlay.startedAt);
+      setCompletedAt(overlay.completedAt);
       hydrateWorkspaces(seed.id); // saved sub-tasks/notes/links for THIS tree; the arc feed reads them below
       hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null); // the key for THIS tree, spotlight cleared
       pushArcs(); // seed the gauges from the hydrated workspaces (model is already applied)
@@ -1328,7 +1312,17 @@ export function SkillTreeView({ treeId, demo = false }) {
       // Stamp this visit's completed set as the baseline the NEXT open diffs against (return-recap),
       // so the away-work just replayed is shown once, not on every later open. Demo and any
       // non-editable view never write — a visited tree isn't a returned-to one.
-      if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...progress.completed], at: Date.now() });
+      if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
+      // Write the RECONCILED overlay back down. Without this the local copy keeps the picture it
+      // had before the server answered — including marks another device has since cleared — until
+      // the next edit happens to rewrite it, and an offline reload in that window shows the stale
+      // one. The store still earns its keep after the write (marks the server has never heard of
+      // stay in the set as the reconcile's pending pushes, startedAt lives nowhere else, and an
+      // offline open reads it), so this keeps it honest rather than emptying it. Read-only views
+      // never write: a visitor on someone's share page would be saving the OWNER's progress here.
+      if (!demo && !readOnlyRef.current) {
+        progressStore.save(seed.id, overlay);
+      }
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
@@ -1353,7 +1347,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       // The week's offer rides this open, if the period earned one: armed here, fired by whatever
       // ceremony closes the open, dropped outright if a milestone takes the lane (share/useWeekOffer.js).
-      considerWeekOffer(seed, { completed: progress.completed, states, completedAt: completedAtMap });
+      considerWeekOffer(seed, { completed: overlay.completed, states, completedAt: overlay.completedAt });
 
       // Every edit runs through a SyncSession: the lattice is truth, TreeData its projection.
       // The roadmap goes live over the socket (a joined frame reaches every peer). Read-only
