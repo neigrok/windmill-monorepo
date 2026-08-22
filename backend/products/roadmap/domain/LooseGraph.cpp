@@ -197,6 +197,18 @@ std::vector<Edge> LooseGraph::presentEdges() const {
   return live;
 }
 
+std::size_t LooseGraph::presentNodeCount() const {
+  std::size_t count = 0;
+  for (const auto& [id, record] : nodes_) if (record.life.present()) ++count;
+  return count;
+}
+
+std::size_t LooseGraph::presentEdgeCount() const {
+  std::size_t count = 0;
+  for (const auto& [edge, element] : edges_) if (element.present()) ++count;
+  return count;
+}
+
 std::vector<Edge> LooseGraph::liveEdges() const {
   std::vector<Edge> live;
   for (const auto& [edge, element] : edges_) {
@@ -216,11 +228,30 @@ std::vector<Edge> LooseGraph::danglingEdges() const {
   return dangling;
 }
 
+// Measured end to end on the local stack, hunting the worst shape each pass has rather than a
+// convenient one — the two passes are worst at different shapes, so both were built. tidy peaks
+// on concentrated IN-degree over a deep chain (500 nodes / 6000 edges: a 488-long chain plus 12
+// sinks requiring all of it) at 507-511ms across three fresh trees; get_health peaks on
+// concentrated OUT-degree (500 nodes / 5856 edges: 12 hubs parenting 488 sinks) at 230ms. Both
+// against the 32s that one get_health cost on the 1500-node / 500000-edge tree the node-only
+// guard admitted. At the largest tree the caps now allow (10000 nodes / ~20000 edges) the pass is
+// over budget and skipped, so what is left is the O(V+E) rebuild: 84ms on a two-hub star, 99ms on
+// a 10000-deep chain. The product term is what holds a wide tree and a deep one to one budget.
+// Half a second of a handler thread is 60x better than 32s but is not free — COMPUTE-3 (moving
+// this work off the request thread) is the remaining half of the fix, and is not in this file.
+bool withinReachabilityBudget(std::size_t nodes, std::size_t edges) {
+  constexpr std::size_t kBudgetNodes = 1500;
+  constexpr std::size_t kBudgetEdges = 6000;
+  constexpr std::size_t kBudgetWork = 3000000;  // nodes x edges — the shape of the closure's cost
+  return nodes <= kBudgetNodes && edges <= kBudgetEdges && nodes * edges <= kBudgetWork;
+}
+
 std::vector<Edge> LooseGraph::redundantEdges() const {
-  if (presentNodeIds().size() > kMaxReductionNodes) return {};  // bound the superlinear reachability
+  const std::vector<Edge> live = liveEdges();
+  if (!withinReachabilityBudget(presentNodeCount(), live.size())) return {};
 
   std::map<NodeId, std::vector<NodeId>> parents;
-  for (const auto& edge : liveEdges()) parents[edge.to].push_back(edge.from);
+  for (const auto& edge : live) parents[edge.to].push_back(edge.from);
 
   std::map<NodeId, std::set<NodeId>> memo;
   auto ancestorsOf = [&](const NodeId& start) -> const std::set<NodeId>& {
@@ -283,6 +314,18 @@ GraphState LooseGraph::exportState() const {
     state.edges.push_back(EdgeStateEntry{edge, element.addedAt, element.removedAt});
   }
   return state;
+}
+
+std::optional<ElementSet> LooseGraph::lifeOf(const NodeId& id) const {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return std::nullopt;
+  return it->second.life;
+}
+
+std::optional<ElementSet> LooseGraph::lifeOf(const Edge& edge) const {
+  auto it = edges_.find(edge);
+  if (it == edges_.end()) return std::nullopt;
+  return it->second;
 }
 
 std::optional<NodeStateEntry> LooseGraph::exportNode(const NodeId& id) const {

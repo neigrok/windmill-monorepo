@@ -2,6 +2,7 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/domain/Command.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
@@ -300,4 +301,90 @@ TEST(patch_visibility_of_an_absent_tree_is_404) {
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_ghost");
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
+}
+
+// Create seeded whatever document it was handed — no node count, no field size, nothing. It is
+// the one route that plants a tree, and it was the one route with no ceiling at all.
+TEST(create_over_the_node_ceiling_is_413_and_plants_nothing) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = titled("Too big");
+  body["nodes"] = Json::Value(Json::arrayValue);
+  for (std::size_t i = 0; i <= kMaxNodes; ++i) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "n" + std::to_string(i);
+    body["nodes"].append(node);
+  }
+
+  drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
+  CHECK_EQ((*response->getJsonObject())["error"].asString(),
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+}
+
+TEST(create_with_an_oversized_field_is_400_naming_the_node_and_plants_nothing) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = titled("Learn to sail");
+  body["nodes"] = Json::Value(Json::arrayValue);
+  Json::Value node(Json::objectValue);
+  node["id"] = "hull";
+  node["description"] = std::string(kMaxNodeDescriptionLength + 1, 'x');
+  body["nodes"].append(node);
+
+  drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ((*response->getJsonObject())["error"].asString(),
+           std::string("node \"hull\": description is 4001 characters, max 4000"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+}
+
+TEST(create_with_a_wrong_typed_field_is_400_not_a_thrown_500) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = titled("x");
+  body["nodes"] = Json::Value(Json::arrayValue);
+  body["nodes"].append("not an object");
+
+  drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(*response->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+}
+
+// createTree read `id` straight off the root, and patchTree read `title`: a keyed read of an
+// array or a scalar throws inside jsoncpp, and the throw escaped as a 500 with a server_errors
+// row and a Sentry event, for a body that is plainly a 400.
+TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  CHECK_EQ(create(h.api, post(titled("Real"), "s-me"))->getStatusCode(), drogon::k200OK);
+
+  for (const char* body : {"[]", "\"hello\"", "5"}) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->setBody(body);
+    request->addCookie("wm_session", "s-me");
+    drogon::HttpResponsePtr created;
+    h.api.createTree(request, [&](const drogon::HttpResponsePtr& r) { created = r; });
+    CHECK_EQ(created->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(*created->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
+
+    auto patch = drogon::HttpRequest::newHttpRequest();
+    patch->setMethod(drogon::Patch);
+    patch->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    patch->setBody(body);
+    patch->addCookie("wm_session", "s-me");
+    drogon::HttpResponsePtr patched;
+    h.api.patchTree(patch, [&](const drogon::HttpResponsePtr& r) { patched = r; }, "t_whatever");
+    CHECK_EQ(patched->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(*patched->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
+  }
+  CHECK_EQ(h.trees.byId.size(), std::size_t{1});  // only the real one
 }

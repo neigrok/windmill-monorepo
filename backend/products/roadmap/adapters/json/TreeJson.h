@@ -12,6 +12,7 @@
 
 #include <json/json.h>
 
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -27,7 +28,11 @@ Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/g
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document
 
-TreeData treeFromJson(const Json::Value& root, const TreeId& id);
+// nullopt when the root is not an object, or when a field is present but the wrong type. jsoncpp
+// THROWS on a keyed read of an array or a scalar and on a bad conversion, and an escaped throw
+// reached the global handler as a 500, a server_errors row and a Sentry event for what is plainly
+// a 400 — so the decoder answers the mismatch instead of raising it.
+std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id);
 GraphState graphStateFromJson(const Json::Value& root);
 LegendState legendStateFromJson(const Json::Value& kinds);
 

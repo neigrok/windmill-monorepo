@@ -89,19 +89,27 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
+  // A root that parsed but is not an object — `[]`, `"hello"`, `5` — is refused HERE, before any
+  // reader indexes it: jsoncpp throws on a keyed read of an array or a scalar, and that throw
+  // escaped the handler as a 500, a server_errors row and a Sentry event per request.
+  if (!json || !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
-  TreeData data = treeFromJson(*json, TreeId{treeId});
-  // The same ceiling the command path enforces (domain/Command.h). Without it this route admits
-  // whatever fits in the body limit — tens of thousands of nodes — and every later read of that
-  // tree pays for it.
-  if (data.nodes.size() > kMaxNodes) {
-    callback(error(drogon::k413RequestEntityTooLarge, "that tree has too many steps"));
+  std::optional<TreeData> data = treeFromJson(*json, TreeId{treeId});
+  if (!data) {
+    callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
-  GraphState state = LooseGraph(data, genesis_).exportState();  // seed full state from the posted tree
+  // What the posted document can be judged on before the tree it lands on is even loaded: the
+  // title, the legend, every per-node field, and the caps for the tree this document would be on
+  // its own. What it would leave BEHIND is judged under the strand below, against the graph.
+  if (std::optional<Admission> refusal = admit(*data)) {
+    const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
+    callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
+    return;
+  }
+  GraphState state = LooseGraph(*data, genesis_).exportState();  // seed full state from the posted tree
 
   // The whole decision runs under the tree's strand and hands back the reply it earned, so it
   // reads top to bottom as one fail-fast pipeline — and the callback fires outside the lock.
@@ -125,6 +133,13 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
     }
 
+    // A PUT to an id no row holds CREATES the tree, so it mints an id exactly as fork and create
+    // do and must obey the same shape. An EXISTING tree keeps whatever id it has: slug ids like
+    // `windmill-roadmap` predate the mint and are the documented contract (db/schema.sql), so
+    // gating them here would have locked their owners out of their own roadmaps.
+    if (!access && !wellFormedTreeId(treeId))
+      return error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id");
+
     // Authorized — so now flush and close any live room, and read the row that flush just wrote.
     // Reading it any earlier would take a row the room has already run past, and lose twice over:
     // head_seq rewinds under the op log, whose tail then replays straight back over this PUT, and
@@ -133,10 +148,21 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     registry_->evict(TreeId{treeId});
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
 
+    // A save GROWS the stored lattice — it upserts the entries the document names and deletes
+    // nothing — so the ceiling has to be read off what the tree would HOLD, not off this one
+    // request's payload. Judged on the document alone, five individually-legal PUTs of 10000
+    // fresh ids each left 45000 nodes standing on a 10000 cap.
+    if (existing) {
+      if (std::optional<Admission> refusal = admit(LooseGraph(existing->state), *data)) {
+        const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
+        return error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason);
+      }
+    }
+
     // The legend is part of the document: honour a posted one; otherwise seed the three
     // defaults for a brand-new tree, or keep the existing legend on an overwrite.
     LegendState legend;
-    if (!data.kinds.empty()) legend = Legend(data.kinds, genesis_).exportState();
+    if (!data->kinds.empty()) legend = Legend(data->kinds, genesis_).exportState();
     else if (existing) legend = existing->legend;
     else legend = Legend::seededDefaults(genesis_).exportState();
 
@@ -145,7 +171,7 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       // owner, so no window in which another account could reach it — the create-then-claim
       // pair this replaced left exactly that window open on every PUT.
       try {
-        trees_->create(TreeId{treeId}, state, legend, data.title, *caller);
+        trees_->create(TreeId{treeId}, state, legend, data->title, *caller);
       } catch (const DuplicateTree&) {
         // Lost an insert race, or the id names a soft-deleted row that still holds it (the
         // standalone MCP binary shares this DB). Either way the id is taken, and not by this PUT.
@@ -156,14 +182,14 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       // register so it clears the repository's LWW guard — an overwrite means what it says.
       HlcClock mint{std::string{TreeRoom::kServerActor}};
       mint.observe(existing->title.stamp);
-      trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data.title, mint.tick(0)},
+      trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
                    existing->head);
     }
 
-    data.kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
+    data->kinds = Legend(legend).kinds();  // reflect the authoritative legend back to the client
     Json::Value body(Json::objectValue);
     body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
-    body["data"] = toJson(data);
+    body["data"] = toJson(*data);
     return jsonResponse(body);
   }();
   callback(reply);
@@ -176,6 +202,12 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
+  // A non-object root is refused before it is indexed — see putTree: a keyed read of an array
+  // throws out of the handler and lands as a 500 with a server_errors row.
+  if (json && !json->isObject()) {
+    callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
   std::string newId = json ? json->get("id", "").asString() : "";      // optional — minted when absent
   std::string title = json ? json->get("title", "").asString() : "";   // optional — inherited when absent
   if (!newId.empty() && !wellFormedTreeId(newId)) {

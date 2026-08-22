@@ -439,6 +439,57 @@ TEST(mcp_import_subgraph_applies_carried_progress_order_safe) {
 // The batch contract (mcp-batch-contract): atomic against MALFORMED input — a repeated id changes
 // nothing and names both the offender and the row it repeats — while a merely untidy result (a
 // dangling progress reference) is surfaced, never refused.
+// The graft mints no Command, so validate() never saw it and the tree caps every other authoring
+// tool obeys simply did not apply here: a 30000-node tree was built through this door, and the
+// room that held it was never freed.
+TEST(mcp_import_subgraph_past_the_node_ceiling_is_refused_and_writes_nothing) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  for (std::size_t i = 0; i <= kMaxNodes; ++i) nodes.append(node(("n" + std::to_string(i)).c_str(), "N"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK(result.isError);
+  CHECK_EQ(message(result),
+           std::string("import_subgraph: this tree would hold 10001 nodes, max 10000 — split it "
+                       "across roadmaps, or delete what it has outgrown"));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
+}
+
+// A dry run promises the answer the real call would give, refusals included — a preview that
+// reported a clean graft and then failed for real would be worse than no preview.
+TEST(mcp_import_subgraph_dry_run_refuses_an_over_ceiling_graft_the_same_way) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  for (std::size_t i = 0; i <= kMaxNodes; ++i) nodes.append(node(("n" + std::to_string(i)).c_str(), "N"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  args["dryRun"] = true;
+
+  ToolResult result = h.call("import_subgraph", args);
+  CHECK(result.isError);
+  CHECK_EQ(message(result),
+           std::string("import_subgraph: this tree would hold 10001 nodes, max 10000 — split it "
+                       "across roadmaps, or delete what it has outgrown"));
+}
+
+// The caps are read off what the tree would HOLD, not what the batch carries: a graft that
+// re-sends every node already present is an upsert and costs the tree nothing.
+TEST(mcp_import_subgraph_counts_the_resulting_tree_so_an_upsert_still_lands) {
+  Harness h;
+  Json::Value nodes(Json::arrayValue);
+  for (int i = 0; i < 40; ++i) nodes.append(node(("n" + std::to_string(i)).c_str(), "N"));
+  Json::Value args(Json::objectValue);
+  args["nodes"] = nodes;
+  CHECK_FALSE(h.call("import_subgraph", args).isError);
+
+  ToolResult again = h.call("import_subgraph", args);  // the same 40 ids, a second time
+  CHECK_FALSE(again.isError);
+  CHECK_EQ(body(again)["newNodes"].asInt(), 0);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 40u);
+}
+
 TEST(mcp_import_subgraph_refuses_a_repeated_node_id_and_writes_nothing) {
   Harness h;
   Json::Value nodes(Json::arrayValue);

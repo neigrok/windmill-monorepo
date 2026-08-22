@@ -314,3 +314,272 @@ TEST(headline_reads_an_annotation_frame) {
   CHECK_EQ(*c->description, std::string("hello"));
   CHECK_FALSE(c->links.has_value());
 }
+
+TEST(admit_refuses_a_document_past_the_node_ceiling) {
+  TreeData data;
+  data.title = "Too big";
+  for (std::size_t i = 0; i <= kMaxNodes; ++i) {
+    NodeSpec node;
+    node.id = nid(("n" + std::to_string(i)).c_str());
+    data.nodes.push_back(std::move(node));
+  }
+
+  std::optional<Admission> refusal = admit(data);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::tooLarge);
+  CHECK_EQ(refusal->reason,
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+}
+
+TEST(admit_names_the_node_whose_field_is_over_its_cap) {
+  TreeData data;
+  NodeSpec node;
+  node.id = nid("hull");
+  node.description = std::string(kMaxNodeDescriptionLength + 1, 'x');
+  data.nodes.push_back(std::move(node));
+
+  std::optional<Admission> refusal = admit(data);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(refusal->reason, std::string("node \"hull\": description is 4001 characters, max 4000"));
+}
+
+// A title is counted in codepoints, exactly as the rename path truncates it — a byte cap would
+// refuse a hundred perfectly legal CJK characters that a rename keeps.
+TEST(admit_counts_a_title_in_codepoints_not_bytes) {
+  TreeData wide;
+  for (std::size_t i = 0; i < kMaxTitleChars; ++i) wide.title += "学";  // 200 characters, 600 bytes
+  CHECK_FALSE(admit(wide).has_value());
+
+  TreeData over = wide;
+  over.title += "学";
+  std::optional<Admission> refusal = admit(over);
+  REQUIRE(refusal.has_value());
+  CHECK_EQ(refusal->reason, std::string("the title is 201 characters, max 200"));
+}
+
+// A graft is judged on what the tree would HOLD: an id already present is an upsert and costs
+// nothing, so a re-import of the whole tree is admitted while one new node over the top is not.
+TEST(admit_of_a_graft_counts_the_resulting_tree_not_the_batch) {
+  LooseGraph graph;
+  TreeData batch;
+  for (std::size_t i = 0; i < kMaxNodes; ++i) {
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+    NodeSpec node;
+    node.id = nid(("n" + std::to_string(i)).c_str());
+    batch.nodes.push_back(std::move(node));
+  }
+  CHECK_FALSE(admit(graph, batch).has_value());  // a full-tree upsert adds nothing
+
+  NodeSpec extra;
+  extra.id = nid("one-more");
+  batch.nodes.push_back(std::move(extra));
+  std::optional<Admission> refusal = admit(graph, batch);
+  REQUIRE(refusal.has_value());
+  CHECK_EQ(refusal->reason,
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+}
+
+// The lattice arrival: a frame's own tombstone lowers the count it is judged against, so an
+// account at the ceiling can still trade a node for a node.
+TEST(admit_of_a_frame_lets_a_tombstone_pay_for_a_new_node) {
+  LooseGraph graph;
+  for (std::size_t i = 0; i < kMaxNodes; ++i)
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+
+  GraphState frame;
+  NodeStateEntry born;
+  born.id = nid("fresh");
+  born.createdAt = at(9);
+  frame.nodes.push_back(born);
+  std::optional<Admission> refusal = admit(graph, frame);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::tooLarge);
+
+  NodeStateEntry buried;
+  buried.id = nid("n0");
+  buried.createdAt = at(1);
+  buried.deletedAt = at(9);
+  frame.nodes.push_back(buried);
+  CHECK_FALSE(admit(graph, frame).has_value());
+}
+
+TEST(admit_of_a_frame_refuses_a_node_field_over_its_cap) {
+  LooseGraph graph;
+  GraphState frame;
+  NodeStateEntry entry;
+  entry.id = nid("hull");
+  entry.createdAt = at(1);
+  entry.label = std::string(kMaxNodeLabelLength + 1, 'x');
+  frame.nodes.push_back(std::move(entry));
+
+  std::optional<Admission> refusal = admit(graph, frame);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(refusal->reason, std::string("node \"hull\": label is 201 characters, max 200"));
+}
+
+// A 20KB id is the thing being refused; echoing it back would make the refusal as expensive as
+// the request that earned it.
+TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
+  TreeData data;
+  NodeSpec node;
+  node.id = nid(std::string(20000, 'x').c_str());
+  data.nodes.push_back(std::move(node));
+
+  std::optional<Admission> refusal = admit(data);
+  REQUIRE(refusal.has_value());
+  CHECK_EQ(refusal->reason, std::string("a node id is 20000 characters, max 128"));
+}
+
+// A ceiling refuses growth, not size. Trees already past the caps exist — this very gap built
+// them — and a rule that froze one would leave its owner unable to rename, retire or thin it.
+TEST(admit_still_lets_an_over_cap_tree_be_edited_and_thinned) {
+  LooseGraph graph;
+  for (std::size_t i = 0; i <= kMaxNodes; ++i)  // 10001 present nodes: already past the ceiling
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+
+  GraphState rename;
+  NodeStateEntry renamed;
+  renamed.id = nid("n0");
+  renamed.createdAt = at(1);
+  renamed.label = "Renamed";
+  renamed.labelAt = at(9);
+  rename.nodes.push_back(renamed);
+  CHECK_FALSE(admit(graph, rename).has_value());  // adds nothing: still admissible
+
+  GraphState grow;
+  NodeStateEntry born;
+  born.id = nid("one-more");
+  born.createdAt = at(9);
+  grow.nodes.push_back(born);
+  REQUIRE(admit(graph, grow).has_value());  // one more node is growth, and growth is refused
+  CHECK_EQ(admit(graph, grow)->reason,
+           std::string("this tree would hold 10002 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+}
+
+// The join is PERFORMED, not estimated. A frame whose entry looks like a tombstone on its own
+// face — deletedAt beating createdAt WITHIN the entry — still loses to the stamp the graph holds,
+// so it lowers nothing. Read as an estimate, each such entry bought one node of headroom, and a
+// tree at the ceiling walked from 10000 to 13600 over 45 acked frames.
+TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
+  LooseGraph graph;
+  for (std::size_t i = 0; i < kMaxNodes; ++i)
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt,
+                     Hlc{1, 0, "genesis"});
+
+  GraphState frame;
+  NodeStateEntry forged;  // the reviewer's shape: 1:0:A created, 1:0:a deleted, graph holds 1:0:genesis
+  forged.id = nid("n0");
+  forged.createdAt = Hlc{1, 0, "A"};
+  forged.deletedAt = Hlc{1, 0, "a"};
+  frame.nodes.push_back(forged);
+  NodeStateEntry born;
+  born.id = nid("fresh");
+  born.createdAt = Hlc{9, 0, "client"};
+  frame.nodes.push_back(born);
+
+  std::optional<Admission> refusal = admit(graph, frame);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::tooLarge);
+  CHECK_EQ(refusal->reason,
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+}
+
+// One key moves the count by at most one, however many times the frame names it — so repeating an
+// id cannot drive the estimate down a step per repetition.
+TEST(admit_counts_a_repeated_id_once_however_often_a_frame_names_it) {
+  LooseGraph graph;
+  for (std::size_t i = 0; i < kMaxNodes; ++i)
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+
+  GraphState frame;
+  for (int repeat = 0; repeat < 500; ++repeat) {  // the same real deletion, 500 times over
+    NodeStateEntry buried;
+    buried.id = nid("n0");
+    buried.createdAt = at(1);
+    buried.deletedAt = at(9);
+    frame.nodes.push_back(buried);
+  }
+  for (int i = 0; i < 2; ++i) {  // one node paid for by the deletion, one over the top
+    NodeStateEntry born;
+    born.id = nid(("fresh" + std::to_string(i)).c_str());
+    born.createdAt = at(9);
+    frame.nodes.push_back(born);
+  }
+
+  std::optional<Admission> refusal = admit(graph, frame);
+  REQUIRE(refusal.has_value());
+  CHECK_EQ(refusal->reason,
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+}
+
+// An edge is one edge however often the batch asks for it: counting the repetitions refused legal
+// documents, with a sentence stating a number the tree would never have held.
+TEST(admit_counts_a_repeated_prerequisite_once) {
+  LooseGraph graph;
+  TreeData batch;
+  NodeSpec hub;
+  hub.id = nid("hub");
+  batch.nodes.push_back(hub);
+  NodeSpec child;
+  child.id = nid("child");
+  for (std::size_t i = 0; i <= kMaxEdges + 10000; ++i) child.prerequisites.push_back(nid("hub"));
+  batch.nodes.push_back(child);
+
+  CHECK_FALSE(admit(graph, batch).has_value());  // 30001 prerequisites, one edge
+}
+
+// The legend rides the same frame the graph does. Its ceiling is the growth rule too, so a full
+// legend can still be edited and a kind traded for a kind.
+TEST(admit_bounds_the_legend_a_frame_would_leave_behind) {
+  Legend legend = Legend::seededDefaults(at(1));
+  LegendState arriving;
+  for (int i = 0; i < 200; ++i) {
+    KindStateEntry kind;
+    kind.id = kid(("k" + std::to_string(i)).c_str());
+    kind.createdAt = at(9);
+    arriving.kinds.push_back(std::move(kind));
+  }
+
+  std::optional<Admission> refusal = admit(legend, arriving);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::tooLarge);
+  CHECK_EQ(refusal->reason,
+           std::string("this legend would hold 203 kinds, max 6 — remove a kind before adding another"));
+
+  LegendState oneMore;
+  KindStateEntry kind;
+  kind.id = kid("craft");
+  kind.createdAt = at(9);
+  kind.label = "Craft";
+  oneMore.kinds.push_back(kind);
+  CHECK_FALSE(admit(legend, oneMore).has_value());  // 3 seeded + 1 is still under six
+}
+
+TEST(admit_names_the_kind_whose_field_is_over_its_cap) {
+  LegendState arriving;
+  KindStateEntry kind;
+  kind.id = kid("craft");
+  kind.createdAt = at(9);
+  kind.label = std::string(kMaxKindLabelLength + 1, 'x');
+  arriving.kinds.push_back(std::move(kind));
+
+  std::optional<Admission> refusal = admit(Legend{}, arriving);
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(refusal->reason, std::string("kind \"craft\": label is 25 characters, max 24"));
+}
+
+TEST(admit_title_bounds_the_register_a_frame_would_set) {
+  CHECK_FALSE(admitTitle("Learn to sail").has_value());
+  std::optional<Admission> refusal = admitTitle(std::string(40000, 'x'));
+  REQUIRE(refusal.has_value());
+  CHECK(refusal->verdict == Admission::Verdict::malformed);
+  CHECK_EQ(refusal->reason, std::string("the title is 40000 characters, max 200"));
+}

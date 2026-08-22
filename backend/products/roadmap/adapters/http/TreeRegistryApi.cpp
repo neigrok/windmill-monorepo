@@ -3,6 +3,7 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/domain/Command.h"
 #include "platform/domain/Access.h"
 
 #include <optional>
@@ -30,6 +31,13 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
+  // A root that parsed but is not an object — `[]`, `"hello"`, `5` — is refused before anything
+  // reads a key off it: jsoncpp throws on a keyed read of an array or a scalar, and that throw
+  // escaped as a 500 with a server_errors row and a Sentry event, for what is plainly a 400.
+  if (json && !json->isObject()) {
+    callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
   // An optional client-minted id (the anon-first claim seam) rides the body; it must match
   // the server's own mint shape exactly, or the claim is refused before any work happens.
   const std::string requestedId = json ? json->get("id", "").asString() : "";
@@ -39,7 +47,20 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
   }
   // The body carries the starting document — title, and any initial nodes + legend kinds (the same
   // TreeData wire shape a PUT takes). A bare `{title}`/`{blank:true}` has no nodes, so it's empty.
-  TreeData initial = json ? treeFromJson(*json, TreeId{}) : TreeData{};
+  std::optional<TreeData> parsed = json ? treeFromJson(*json, TreeId{}) : TreeData{};
+  if (!parsed) {
+    callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
+  TreeData initial = *std::move(parsed);
+  // Create used to check nothing at all about the document it seeded — not a node count, not one
+  // field size — so the caps the command path enforces (domain/Command.h) were simply absent from
+  // the one route that plants a tree. Same rule, same voice, before a byte is persisted.
+  if (std::optional<Admission> refusal = admit(initial)) {
+    const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
+    callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
+    return;
+  }
 
   if (requestedId.empty()) {
     Json::Value body(Json::objectValue);
@@ -88,6 +109,10 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if (json && !json->isObject()) {  // same reason as createTree: a keyed read of an array throws
+    callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
 
   // The share seam rides the same PATCH as rename: a {visibility} body reshares the tree,
   // a {title} body renames it. One authenticated, owner-gated edit either way.

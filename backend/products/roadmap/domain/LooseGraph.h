@@ -25,6 +25,15 @@ struct NodeRecord {
   Lww<std::vector<Link>> links;            // external references, the list as one register
 };
 
+// The redundant-edge pass — LooseGraph::redundantEdges behind tidy, and TreeHealth's health
+// report — walks a transitive closure whose cost grows with edges far faster than with nodes:
+// its inner loop is a sum of squared degrees. Guarded by node count alone, a 1500-node tree
+// carrying 500000 edges cost 32 seconds of one handler thread per call, repeatably, and four
+// such calls froze the whole API. So the budget counts the WORK: a node ceiling, an edge
+// ceiling, and their product. Over budget the pass is skipped and reports nothing — tidy finds
+// no edge to drop, health reports 0 redundant — exactly as the node ceiling always behaved.
+bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
+
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;
 // nothing is ever rejected. Validity is a separate read model (TreeDiagnostics).
 class LooseGraph {
@@ -67,11 +76,22 @@ public:
 
   std::vector<NodeId> presentNodeIds() const;
   std::vector<Edge> presentEdges() const;
+  // The same two counts without materializing the lists — what the capacity checks actually
+  // want, and they run on every admitted write, once per node of an arriving frame.
+  std::size_t presentNodeCount() const;
+  std::size_t presentEdgeCount() const;
   std::vector<Edge> liveEdges() const;
   std::vector<Edge> redundantEdges() const;
   // Present edges no valid DAG keeps: a self-edge, or one whose endpoint is absent (never
   // created, or tombstoned). The prune set — removing them leaves the live graph unchanged.
   std::vector<Edge> danglingEdges() const;
+
+  // One entry's element-set life — the add/remove stamps alone, without the fields exportNode
+  // copies. An admission check needs exactly this: the life a graph already holds, to merge an
+  // arriving entry against, so a join can be COUNTED instead of estimated. nullopt for a
+  // never-seen key.
+  std::optional<ElementSet> lifeOf(const NodeId& id) const;
+  std::optional<ElementSet> lifeOf(const Edge& edge) const;
 
   TreeData toTreeData(const TreeId& id, const std::string& title) const;
   GraphState exportState() const;
@@ -81,8 +101,6 @@ public:
   std::optional<EdgeStateEntry> exportEdge(const Edge& edge) const;
 
 private:
-  static constexpr std::size_t kMaxReductionNodes = 1500;  // reduction is optional cleanup; skip above this
-
   std::map<NodeId, NodeRecord> nodes_;
   std::map<Edge, ElementSet> edges_;
 };

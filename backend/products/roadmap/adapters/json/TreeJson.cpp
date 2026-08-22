@@ -34,8 +34,14 @@ std::vector<Link> linksFromJson(const Json::Value& array) {
   std::vector<Link> links;
   if (!array.isArray()) return links;
   for (const Json::Value& value : array) {
-    if (value.isString()) links.push_back(Link{"", value.asString()});
-    else if (value.isObject()) links.push_back(Link{value.get("label", "").asString(), value.get("url", "").asString()});
+    if (value.isString()) { links.push_back(Link{"", value.asString()}); continue; }
+    if (!value.isObject()) continue;
+    // Each leaf read only once it IS a string: asString() on a number throws, and that throw used
+    // to escape the handler as a 500 rather than being answered as the malformed input it is.
+    Link link;
+    if (value["label"].isString()) link.label = value["label"].asString();
+    if (value["url"].isString()) link.url = value["url"].asString();
+    links.push_back(std::move(link));
   }
   return links;
 }
@@ -169,37 +175,85 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   return root;
 }
 
-TreeData treeFromJson(const Json::Value& root, const TreeId& id) {
+std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) {
+  // Every read below goes through these: a field that is absent or null takes its default, a
+  // field of the wrong type refuses the whole document. Reading it any other way is what turned
+  // {"nodes":[1]} into an uncaught Json::LogicError and a 500.
+  auto text = [](const Json::Value& value, std::string& out) {
+    if (value.isNull()) return true;
+    if (!value.isString()) return false;
+    out = value.asString();
+    return true;
+  };
+  auto number = [](const Json::Value& value, double& out) {
+    if (value.isNull()) return true;
+    if (!value.isNumeric()) return false;
+    out = value.asDouble();
+    return true;
+  };
+  auto list = [](const Json::Value& value) { return value.isNull() || value.isArray(); };
+  // linksFromJson is deliberately lenient (it is shared with the command decoder and must never
+  // throw), so the document path states the strictness itself rather than letting a numeric url
+  // land as an empty one.
+  auto links = [](const Json::Value& value) {
+    if (!value.isArray()) return false;
+    for (const Json::Value& link : value) {
+      if (link.isString()) continue;
+      if (!link.isObject()) return false;
+      if (!link["url"].isNull() && !link["url"].isString()) return false;
+      if (!link["label"].isNull() && !link["label"].isString()) return false;
+    }
+    return true;
+  };
+
+  if (!root.isObject()) return std::nullopt;  // a keyed read of an array or a scalar throws
+
   TreeData data;
   data.id = id;
-  data.title = root.get("title", "").asString();
+  if (!text(root["title"], data.title)) return std::nullopt;
 
+  if (!list(root["nodes"])) return std::nullopt;
   for (const Json::Value& n : root["nodes"]) {
+    if (!n.isObject()) return std::nullopt;
     NodeSpec node;
-    node.id = NodeId{n["id"].asString()};
-    node.label = n.get("label", "").asString();
-    node.icon = n.get("icon", "").asString();
-    node.color = parseColor(n.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
-    node.order = n.get("order", "").asString();
-    for (const Json::Value& prereq : n["prerequisites"]) node.prerequisites.push_back(NodeId{prereq.asString()});
-    if (n.isMember("position") && n["position"].isObject()) {
+    std::string nodeId, color = "terracotta", status;
+    if (!text(n["id"], nodeId) || !text(n["label"], node.label) || !text(n["icon"], node.icon) ||
+        !text(n["color"], color) || !text(n["order"], node.order) ||
+        !text(n["description"], node.description))
+      return std::nullopt;
+    node.id = NodeId{nodeId};
+    node.color = parseColor(color).value_or(NodeColor::terracotta);
+    if (!list(n["prerequisites"])) return std::nullopt;
+    for (const Json::Value& prereq : n["prerequisites"]) {
+      std::string prereqId;
+      if (!text(prereq, prereqId)) return std::nullopt;
+      node.prerequisites.push_back(NodeId{prereqId});
+    }
+    if (n.isMember("position") && !n["position"].isNull()) {
+      if (!n["position"].isObject()) return std::nullopt;
       Vec2 position;
-      position.x = n["position"].get("x", 0.0).asDouble();
-      position.y = n["position"].get("y", 0.0).asDouble();
+      if (!number(n["position"]["x"], position.x) || !number(n["position"]["y"], position.y))
+        return std::nullopt;
       node.position = position;
     }
     if (n.isMember("status") && n["status"].isString()) node.status = n["status"].asString();
-    node.description = n.get("description", "").asString();
-    if (n.isMember("links")) node.links = linksFromJson(n["links"]);
+    if (n.isMember("links") && !n["links"].isNull()) {
+      if (!links(n["links"])) return std::nullopt;
+      node.links = linksFromJson(n["links"]);
+    }
     data.nodes.push_back(std::move(node));
   }
 
+  if (!list(root["kinds"])) return std::nullopt;
   for (const Json::Value& k : root["kinds"]) {
+    if (!k.isObject()) return std::nullopt;
     Kind kind;
-    kind.id = KindId{k["id"].asString()};
-    kind.hue = parseColor(k.get("hue", "terracotta").asString()).value_or(NodeColor::terracotta);
-    kind.label = k.get("label", "").asString();
-    kind.description = k.get("description", "").asString();
+    std::string kindId, hue = "terracotta";
+    if (!text(k["id"], kindId) || !text(k["hue"], hue) || !text(k["label"], kind.label) ||
+        !text(k["description"], kind.description))
+      return std::nullopt;
+    kind.id = KindId{kindId};
+    kind.hue = parseColor(hue).value_or(NodeColor::terracotta);
     data.kinds.push_back(std::move(kind));
   }
   return data;

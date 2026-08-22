@@ -251,7 +251,10 @@ text.
   `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. The receipt counts
   `nodes`, `edges` and `kinds` as carried, so a batch whose prerequisites were put in the wrong
   place reads as `edges: 0` rather than as a tree that quietly has none. Pass `dryRun: true`
-  to preview the collisions and change nothing. This collapses hundreds of `create_node` +
+  to preview the collisions and change nothing — including the refusals, so a preview never
+  promises a graft the real call would turn away. The graft is held to the per-tree capacity
+  (10000 nodes, 20000 edges) like every other write, counted on what the tree would hold
+  AFTER the upsert, so re-sending nodes already present costs nothing. This collapses hundreds of `create_node` +
   `connect` + `set_progress` calls into a single call.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
   against the **committed batch**, so completing a subtree out of dependency order no longer

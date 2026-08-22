@@ -40,8 +40,17 @@ public:
   // into the lattice, assign the next seq, log its headline deed for the activity feed under
   // `actor`, and broadcast it verbatim. Returns the assigned seq, or nullopt if the frame was
   // a duplicate. No inverse is computed — undo is client-owned in the subgraph model. The
-  // server never re-stamps the client's writes; it joins them as they are.
+  // server never re-stamps the client's writes; it joins them as they are. It admits nothing on
+  // its own: the graph caps are decided by admit() below, which every door that can refuse asks
+  // first, because a socket, an import and a document each refuse in their own idiom.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
+
+  // Why joining this arrival would breach the tree's caps, or nullopt. The whole-graph rule
+  // (domain/Command.h) asked against THIS room's live state, because what a join costs is what
+  // the tree would hold once it lands — not what the arrival carries. A frame joins four
+  // payloads at once, so the frame overload asks all of them: graph, legend and title alike.
+  std::optional<Admission> admit(const Subgraph& incoming) const;
+  std::optional<Admission> admit(const TreeData& incoming) const { return wm::admit(graph_, incoming); }
 
   // Server-origin rename: stamp a title register write from the room clock and join it as
   // one title-only frame — so it broadcasts to every live subscriber and LWW-merges against

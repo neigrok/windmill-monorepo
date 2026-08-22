@@ -1,5 +1,7 @@
 #include "products/roadmap/domain/TreeHealth.h"
 
+#include "products/roadmap/domain/LooseGraph.h"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -41,7 +43,10 @@ Health TreeHealth::assess(const SkillTree& tree) {
   for (const Edge& edge : tree.edges()) {
     if (tree.trunk().edgeKind(edge.from, edge.to) == EdgeKind::cross_branch) ++health.crossBranch;
   }
-  health.redundant = health.nodeCount > redundancyNodeLimit ? 0 : countRedundantEdges(tree);
+  // Bounded by the work, never by nodes alone: the pass that fills this in is a transitive
+  // closure, and a tree wide in edges is the expensive one (domain/LooseGraph.h).
+  health.redundant =
+      withinReachabilityBudget(tree.nodes().size(), tree.edges().size()) ? countRedundantEdges(tree) : 0;
   health.avgInDegree = std::round((static_cast<double>(health.edgeCount) / std::max(1, health.nodeCount)) * 100) / 100;
 
   double crossFrac = health.edgeCount ? static_cast<double>(health.crossBranch) / health.edgeCount : 0;

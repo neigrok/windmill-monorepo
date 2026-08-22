@@ -3,6 +3,7 @@
 #include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/TreeRoom.h"
+#include "products/roadmap/domain/Command.h"
 #include "platform/domain/Access.h"
 #include "platform/domain/Auth.h"
 
@@ -26,6 +27,15 @@ constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now
 constexpr char kNoSuchTree[] = "no-such-tree";
 constexpr char kServerError[] = "server-error";
 constexpr char kSignInRequired[] = "sign-in-required";
+// The graph caps, refused by code so a client can say WHY the edit will not land instead of
+// parsing the sentence — and so a client that has never met this code still degrades to a warning
+// with the edit left banked, not to a silent loss.
+constexpr char kTreeTooLarge[] = "tree-too-large";
+// A frame refused for its CONTENT, not its size — an over-long id, a field past its cap. Told
+// apart from the capacity refusal because they ask different things of a client: one is "this
+// tree is full", the other "this frame is malformed", and reporting the second as the first
+// sends the reader looking for room they already have.
+constexpr char kBadFrame[] = "bad-frame";
 
 const Principal& principalOf(const drogon::WebSocketConnectionPtr& conn) {
   return conn->getContextRef<Principal>();
@@ -240,6 +250,13 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // rejected, not a throw that closes the socket
     } else if (std::optional<WriteRefusal> refusal = writeRefusalFor(principal.user, room->owner())) {
       reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
+    } else if (std::optional<Admission> refusal = room->admit(incoming)) {
+      // joinSubgraph never refuses, so every payload a frame carries — graph, legend, title —
+      // could once be seated here past the very ceilings the command path enforces on every other
+      // write. The whole-tree rule (domain/Command.h) decides all four, under this strand, beside
+      // the skew clamp and the authz gates.
+      reject = rejectFrame(treeId, refusal->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
+                           refusal->reason);
     } else {
       seq = room->joinSubgraph(incoming, principal.user);
       if (seq) registry_.persist(TreeId{treeId});  // persist before the ack, so the ack attests durability

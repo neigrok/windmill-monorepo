@@ -91,6 +91,13 @@ Seq TreeRoom::importTree(const TreeData& incoming, std::uint64_t nowMs, const Us
   return joinSubgraph(frame, actor).value_or(head_);
 }
 
+std::optional<Admission> TreeRoom::admit(const Subgraph& incoming) const {
+  if (std::optional<Admission> refusal = wm::admit(graph_, incoming.graph)) return refusal;
+  if (std::optional<Admission> refusal = wm::admit(legend_, incoming.legend)) return refusal;
+  if (!incoming.title) return std::nullopt;
+  return admitTitle(incoming.title->value);
+}
+
 std::optional<std::string> TreeRoom::validate(const Command& command) const {
   return wm::validate(graph_, legend_, command);
 }

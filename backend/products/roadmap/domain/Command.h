@@ -13,8 +13,9 @@
 
 namespace wm {
 
-// Admission bounds, enforced by validate() at the edge — and published as `maxLength` by the
-// surfaces that take them (adapters/mcp), which is why they are stated once, here.
+// Admission bounds, enforced at the edge — by validate() for a single command, and by admit()
+// for a graph that arrives whole — and published as `maxLength` by the surfaces that take them
+// (adapters/mcp), which is why they are stated once, here.
 constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
 constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
 constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
@@ -82,6 +83,30 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
 // their invariants — hue uniqueness, ≤6 kinds, no in-use removal, length caps — are
 // locally decidable on the authoritative state. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
+
+// The same bounds, for the arrivals that mint no Command and so were never seen by validate():
+// a whole posted document (POST/PUT /v1/trees), a graft into a live graph (the MCP import), and
+// a client-authored lattice frame (the collab socket). Each of those joins state directly, which
+// is how 15000-node documents and 500000-edge imports once landed on a tree capped at 10000/20000.
+// A refusal names the id, the value and the limit, exactly as validate()'s do — and says which
+// KIND of refusal it is, because an HTTP door owes 413 to a document that is merely too big and
+// 400 to one whose field is malformed, and only the rule knows which bound it hit.
+struct Admission {
+  enum class Verdict { tooLarge, malformed };
+  Verdict verdict;
+  std::string reason;
+};
+std::optional<Admission> admit(const TreeData& document);
+// A join: the caps are read off what the graph would HOLD once the arrival lands. The join is
+// performed — the graph's own element-set life for each key, merged with every entry the frame
+// carries for it — never estimated from the arriving stamps alone, which a crafted frame could
+// walk away from the truth one entry at a time.
+std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming);
+std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming);
+// The other two payloads a frame carries, which for a while nobody judged at all: 200 kinds and
+// a 40000-character title both rode a socket write straight into the lattice.
+std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);
+std::optional<Admission> admitTitle(const std::string& title);
 
 // The single feed-worthy deed a subgraph delta represents — the coarse inverse of merge(),
 // read off which lattice fields the frame sets. A client authors in subgraphs, not commands

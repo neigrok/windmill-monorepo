@@ -7,6 +7,7 @@
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "platform/domain/Access.h"
+#include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Subgraph.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
@@ -16,6 +17,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
@@ -456,4 +458,157 @@ TEST(presence_gives_a_guest_a_travellers_name_not_a_row_number) {
   CHECK_FALSE(announced.rfind("Guest", 0) == 0);
   CHECK(announced.find(' ') != std::string::npos);
   CHECK(announced.find_first_of("0123456789") == std::string::npos);  // no id bleeding through
+}
+
+// A frame carrying more nodes than a tree may hold is the last unbounded door: joinSubgraph
+// never refuses, so before this the browser path could seat any number of nodes past the very
+// ceiling every command-shaped write obeys.
+TEST(ws_a_frame_past_the_node_ceiling_is_rejected_by_code_and_joins_nothing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-big";
+  GraphState state;
+  for (std::size_t i = 0; i <= kMaxNodes; ++i) {
+    NodeStateEntry node;
+    node.id = NodeId{"n" + std::to_string(i)};
+    node.createdAt = Hlc{100, static_cast<std::uint32_t>(i), "client"};
+    state.nodes.push_back(std::move(node));
+  }
+  frame["nodes"] = toJson(state)["nodes"];  // the wire carries nodes/edges at the top level
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("reject"));
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("tree-too-large"));
+  CHECK_EQ(rejectReason(conn->sent[0]),
+           std::string("this tree would hold 10001 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+  CHECK_EQ(parse(conn->sent[0])["frameId"].asString(), std::string("f-big"));
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+  CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->exportState().nodes.size(), std::size_t{0});
+}
+
+// The other half of the same gate: an ordinary browser edit — one node — still lands and acks.
+TEST(ws_an_ordinary_frame_still_joins_and_acks_with_its_seq) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-one";
+  GraphState state;
+  NodeStateEntry node;
+  node.id = NodeId{"hull"};
+  node.label = "Hull";
+  node.createdAt = Hlc{100, 0, "client"};
+  node.labelAt = Hlc{100, 0, "client"};
+  state.nodes.push_back(std::move(node));
+  frame["nodes"] = toJson(state)["nodes"];  // the wire carries nodes/edges at the top level
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
+  CHECK_EQ(parse(conn->sent[0])["seq"].asInt64(), 1);
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+  CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->snapshot().nodes.size(), std::size_t{1});
+}
+
+// A frame carries four payloads and for a while only the graph was judged: 200 kinds landed on a
+// legend capped at six and stayed there, frame after frame.
+TEST(ws_a_frame_past_the_legend_ceiling_is_rejected_and_joins_nothing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  LegendState legend;
+  for (int i = 0; i < 200; ++i) {
+    KindStateEntry kind;
+    kind.id = KindId{"k" + std::to_string(i)};
+    kind.createdAt = Hlc{100, static_cast<std::uint32_t>(i), "client"};
+    legend.kinds.push_back(std::move(kind));
+  }
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-kinds";
+  frame["kinds"] = toJson(legend);
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("tree-too-large"));
+  CHECK_EQ(rejectReason(conn->sent[0]),
+           std::string("this legend would hold 200 kinds, max 6 — remove a kind before adding another"));
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+  CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->exportLegend().kinds.size(), std::size_t{0});
+}
+
+// The title register rides the same frame and was equally unjudged — a 40000-character name was
+// acked and then paid for by every broadcast, save and listing after it.
+TEST(ws_a_frame_with_an_oversized_title_is_rejected_and_joins_nothing) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  Json::Value title(Json::objectValue);
+  title["v"] = std::string(40000, 'x');
+  title["at"] = "100:0:client";
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-title";
+  frame["title"] = title;
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("the title is 40000 characters, max 200"));
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+  CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->title().value, std::string("Tree"));
+}
+
+// Two refusals, two codes: "this tree is full" and "this frame is malformed" ask different things
+// of a client, and reporting a 200-character node id as a capacity problem sends the reader
+// looking for room they already have.
+TEST(ws_a_malformed_field_is_rejected_as_bad_frame_not_as_a_full_tree) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+
+  GraphState state;
+  NodeStateEntry node;
+  node.id = NodeId{std::string(kMaxIdLength + 1, 'x')};
+  node.createdAt = Hlc{100, 0, "client"};
+  state.nodes.push_back(std::move(node));
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-bad";
+  frame["nodes"] = toJson(state)["nodes"];
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(rejectCode(conn->sent[0]), std::string("bad-frame"));
+  CHECK_EQ(rejectReason(conn->sent[0]), std::string("a node id is 129 characters, max 128"));
 }

@@ -290,3 +290,24 @@ TEST(merge_is_order_independent) {
   CHECK_EQ(forward.nodeView(nid("b"))->label, reversed.nodeView(nid("b"))->label);
   CHECK_EQ(forward.nodeView(nid("b"))->label, std::string("B2"));
 }
+
+// The transitive-closure pass is bounded by the WORK, not by nodes: guarded on node count alone,
+// a small-but-dense tree cost 32 seconds of one handler thread per call. Over budget it reports
+// nothing, which is exactly how the old node ceiling behaved.
+TEST(redundant_edges_skips_a_tree_whose_edges_blow_the_work_budget) {
+  CHECK(withinReachabilityBudget(1500, 2000));
+  CHECK(withinReachabilityBudget(500, 6000));          // the shape tidy is slowest on: ~510ms
+  CHECK_FALSE(withinReachabilityBudget(1500, 2001));   // the product, not either count alone
+  CHECK_FALSE(withinReachabilityBudget(1500, 500000));  // the shape that cost 32 seconds
+  CHECK_FALSE(withinReachabilityBudget(1501, 1));       // the node ceiling still stands
+  CHECK_FALSE(withinReachabilityBudget(2, 6001));       // and so does the edge one
+
+  LooseGraph dense;
+  for (int i = 0; i < 200; ++i)
+    dense.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+  for (int from = 0; from < 200; ++from)
+    for (int to = from + 1; to < 200; ++to)  // 19900 edges over 200 nodes — past the edge ceiling
+      dense.addEdge(nid(("n" + std::to_string(from)).c_str()), nid(("n" + std::to_string(to)).c_str()), at(2));
+  CHECK_EQ(dense.liveEdges().size(), std::size_t{19900});
+  CHECK_EQ(dense.redundantEdges().size(), std::size_t{0});  // skipped, not computed
+}

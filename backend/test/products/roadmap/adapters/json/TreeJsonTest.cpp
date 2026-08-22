@@ -18,7 +18,7 @@ TEST(node_description_and_links_survive_the_document_codec) {
   node.links = {Link{"Doc", "https://d"}, Link{"", "https://e"}};
   data.nodes.push_back(node);
 
-  TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"});
+  TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"}).value();
   REQUIRE_EQ(back.nodes.size(), 1u);
   CHECK_EQ(back.nodes[0].description, std::string("notes"));
   REQUIRE_EQ(back.nodes[0].links.size(), 2u);
@@ -65,7 +65,16 @@ TEST(tree_document_round_trips_the_order_key) {
   node.order = "a7";
   data.nodes.push_back(node);
 
-  TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"});
+  TreeData back = treeFromJson(parse(dump(toJson(data))), TreeId{"t"}).value();
   REQUIRE_EQ(back.nodes.size(), 1u);
   CHECK_EQ(back.nodes[0].order, std::string("a7"));
+}
+
+// A root that parsed but is not an object throws on every keyed read jsoncpp does — the decoder
+// answers the mismatch rather than raising it past the handler as a 500.
+TEST(tree_from_json_refuses_a_non_object_root) {
+  CHECK_FALSE(treeFromJson(parse("[]"), TreeId{"t"}).has_value());
+  CHECK_FALSE(treeFromJson(parse("\"hello\""), TreeId{"t"}).has_value());
+  CHECK_FALSE(treeFromJson(parse("5"), TreeId{"t"}).has_value());
+  CHECK(treeFromJson(parse("{}"), TreeId{"t"}).has_value());
 }

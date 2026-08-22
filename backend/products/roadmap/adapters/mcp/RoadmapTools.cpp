@@ -648,7 +648,9 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
                           const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& actor) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
 
-  TreeData incoming = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
+  std::optional<TreeData> parsed = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
+  if (!parsed) return ToolResult::failure("this import's nodes or kinds carry a field of the wrong type");
+  TreeData incoming = *std::move(parsed);
   // `seedStatus` is this surface's name for the document's authored baseline — the codec still
   // reads the older `status`, so the published spelling is folded over it here, by id.
   std::map<std::string, std::string> seeds;
@@ -668,6 +670,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
+
+    // The graph the graft would LEAVE BEHIND, against the tree caps (domain/Command.h). checkImport
+    // above judged the request's shape; this judges the result — and it is the only thing standing
+    // between a write grant and a 30000-node tree, because a graft never mints a Command and so was
+    // never seen by validate(). Asked before the dry-run branch, so a preview refuses what the real
+    // call would refuse.
+    if (std::optional<Admission> refusal = room.admit(incoming))
+      return ToolResult::failure(refusal->reason);
 
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))

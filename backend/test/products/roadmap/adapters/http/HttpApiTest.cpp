@@ -394,21 +394,21 @@ TEST(fork_of_your_own_private_source_succeeds) {
 TEST(put_by_an_anonymous_caller_is_401_and_writes_nothing) {
   Harness h;
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "", "t_new", document("Mine", "a"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "", "t_00000000000000e0", document("Mine", "a"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to edit"})"));
-  CHECK_EQ(h.trees->byId.count("t_new"), std::size_t{0});
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e0"), std::size_t{0});
 }
 
 TEST(put_to_an_unowned_tree_is_403_and_leaves_it_unowned_and_unmodified) {
   Harness h;
   h.signIn("s-visitor", "visitor@example.com");
-  h.seed("t_demo", "Learn to sail", UserId{"placeholder"}, Visibility::public_);
-  h.trees->byId["t_demo"].owner = std::nullopt;  // the demo row: owner NULL, visibility public
-  const StoredTree before = h.trees->byId["t_demo"];
+  h.seed("t_00000000000000de", "Learn to sail", UserId{"placeholder"}, Visibility::public_);
+  h.trees->byId["t_00000000000000de"].owner = std::nullopt;  // the demo row: owner NULL, visibility public
+  const StoredTree before = h.trees->byId["t_00000000000000de"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-visitor", "t_demo", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-visitor", "t_00000000000000de", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   // Not "belongs to another account" — that sends the reader looking for an account that does not
@@ -416,23 +416,23 @@ TEST(put_to_an_unowned_tree_is_403_and_leaves_it_unowned_and_unmodified) {
   CHECK_EQ(bodyOf(response)["code"].asString(), std::string("nobodys-tree"));
   CHECK_EQ(bodyOf(response)["error"].asString(),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));
-  CHECK_FALSE(h.trees->byId["t_demo"].owner.has_value());   // nobody took it
-  CHECK(h.trees->byId["t_demo"] == before);                 // and nothing was written over it
-  CHECK_EQ(storedNodeIds(*h.trees, "t_demo"), std::vector<std::string>{"root"});
+  CHECK_FALSE(h.trees->byId["t_00000000000000de"].owner.has_value());   // nobody took it
+  CHECK(h.trees->byId["t_00000000000000de"] == before);                 // and nothing was written over it
+  CHECK_EQ(storedNodeIds(*h.trees, "t_00000000000000de"), std::vector<std::string>{"root"});
 }
 
 TEST(put_to_someone_elses_readable_tree_is_403_and_writes_nothing) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_theirs", "Theirs", UserId{"owner"}, Visibility::unlisted);
-  const StoredTree before = h.trees->byId["t_theirs"];
+  h.seed("t_000000000000ffee", "Theirs", UserId{"owner"}, Visibility::unlisted);
+  const StoredTree before = h.trees->byId["t_000000000000ffee"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-other", "t_theirs", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-other", "t_000000000000ffee", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
-  CHECK(h.trees->byId["t_theirs"] == before);
-  CHECK(h.trees->byId["t_theirs"].owner == std::optional<UserId>(UserId{"owner"}));
+  CHECK(h.trees->byId["t_000000000000ffee"] == before);
+  CHECK(h.trees->byId["t_000000000000ffee"].owner == std::optional<UserId>(UserId{"owner"}));
 }
 
 // The read gate this route never had: a private tree the caller cannot read answers "no such
@@ -441,14 +441,14 @@ TEST(put_to_someone_elses_readable_tree_is_403_and_writes_nothing) {
 TEST(put_to_a_private_tree_you_cannot_read_is_404_and_writes_nothing) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
-  const StoredTree before = h.trees->byId["t_priv"];
+  h.seed("t_00000000000000aa", "Secret", UserId{"owner"}, Visibility::private_);
+  const StoredTree before = h.trees->byId["t_00000000000000aa"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-other", "t_priv", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-other", "t_00000000000000aa", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such tree"})"));
-  CHECK(h.trees->byId["t_priv"] == before);
+  CHECK(h.trees->byId["t_00000000000000aa"] == before);
 }
 
 // An unowned PRIVATE row — a legacy orphan — fails the read gate before the write gate, so it
@@ -456,15 +456,15 @@ TEST(put_to_a_private_tree_you_cannot_read_is_404_and_writes_nothing) {
 TEST(put_to_an_unowned_private_tree_is_404_and_writes_nothing) {
   Harness h;
   h.signIn("s-me");
-  h.seed("t_orphan", "Orphan", UserId{"placeholder"}, Visibility::private_);
-  h.trees->byId["t_orphan"].owner = std::nullopt;
-  const StoredTree before = h.trees->byId["t_orphan"];
+  h.seed("t_0000000000000bbb", "Orphan", UserId{"placeholder"}, Visibility::private_);
+  h.trees->byId["t_0000000000000bbb"].owner = std::nullopt;
+  const StoredTree before = h.trees->byId["t_0000000000000bbb"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_orphan", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_0000000000000bbb", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
-  CHECK(h.trees->byId["t_orphan"] == before);
-  CHECK_FALSE(h.trees->byId["t_orphan"].owner.has_value());
+  CHECK(h.trees->byId["t_0000000000000bbb"] == before);
+  CHECK_FALSE(h.trees->byId["t_0000000000000bbb"].owner.has_value());
 }
 
 // Create-if-absent: the row is born OWNED, in the one insert that creates it. There is no
@@ -473,39 +473,119 @@ TEST(put_to_an_absent_id_creates_a_tree_owned_by_the_caller) {
   Harness h;
   UserId me = h.signIn("s-me");
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_new", document("Learn to sail", "hull"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000e0", document("Learn to sail", "hull"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   Json::Value body = bodyOf(response);
   CHECK_EQ(body["seq"].asInt64(), 0);
-  CHECK_EQ(body["data"]["id"].asString(), std::string("t_new"));
+  CHECK_EQ(body["data"]["id"].asString(), std::string("t_00000000000000e0"));
   CHECK_EQ(body["data"]["title"].asString(), std::string("Learn to sail"));
   CHECK_EQ(body["data"]["kinds"].size(), 3u);  // a brand-new tree gets the three seeded defaults
 
-  REQUIRE_EQ(h.trees->byId.count("t_new"), std::size_t{1});
-  CHECK(h.trees->byId["t_new"].owner == std::optional<UserId>(me));
-  CHECK(h.trees->byId["t_new"].visibility == Visibility::private_);  // born private, like every tree
-  CHECK_EQ(h.trees->byId["t_new"].title.value, std::string("Learn to sail"));
-  CHECK_EQ(storedNodeIds(*h.trees, "t_new"), std::vector<std::string>{"hull"});
+  REQUIRE_EQ(h.trees->byId.count("t_00000000000000e0"), std::size_t{1});
+  CHECK(h.trees->byId["t_00000000000000e0"].owner == std::optional<UserId>(me));
+  CHECK(h.trees->byId["t_00000000000000e0"].visibility == Visibility::private_);  // born private, like every tree
+  CHECK_EQ(h.trees->byId["t_00000000000000e0"].title.value, std::string("Learn to sail"));
+  CHECK_EQ(storedNodeIds(*h.trees, "t_00000000000000e0"), std::vector<std::string>{"hull"});
 }
 
 TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", "Old name", me, Visibility::unlisted);
+  h.seed("t_00000000000000cc", "Old name", me, Visibility::unlisted);
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_mine", document("New name", "mast"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cc", document("New name", "mast"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string("New name"));
-  CHECK(h.trees->byId["t_mine"].owner == std::optional<UserId>(me));
-  CHECK(h.trees->byId["t_mine"].visibility == Visibility::unlisted);  // an overwrite never reshares
-  CHECK_EQ(h.trees->byId["t_mine"].title.value, std::string("New name"));
+  CHECK(h.trees->byId["t_00000000000000cc"].owner == std::optional<UserId>(me));
+  CHECK(h.trees->byId["t_00000000000000cc"].visibility == Visibility::unlisted);  // an overwrite never reshares
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("New name"));
   // The posted document is the new baseline: its node lands beside the seeded one (the lattice
   // is entry-grow-only — a save adds and overwrites entries, it never deletes rows).
-  std::vector<std::string> ids = storedNodeIds(*h.trees, "t_mine");
+  std::vector<std::string> ids = storedNodeIds(*h.trees, "t_00000000000000cc");
   std::sort(ids.begin(), ids.end());
   CHECK_EQ(ids, (std::vector<std::string>{"mast", "root"}));
+}
+
+// PUT creates a tree at whatever id the path names, so the id must be the shape fork and create
+// already demand. Without this the route planted trees at any string at all — a 20KB primary key
+// copied into every child row after it.
+TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {
+  Harness h;
+  h.signIn("s-me");
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "audit-weird-id", document("Mine", "a"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"code":"bad-id","error":"id must be t_ followed by 16 lowercase hex characters"})"));
+  CHECK_EQ(h.trees->byId.count("audit-weird-id"), std::size_t{0});
+}
+
+// A wrong-typed field used to throw jsoncpp's LogicError out of the handler: a 500, a
+// server_errors row and a Sentry event, per request, for what is plainly a bad body.
+TEST(put_with_a_wrong_typed_field_is_400_not_500_and_creates_nothing) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value body(Json::objectValue);
+  body["title"] = "x";
+  body["nodes"] = Json::Value(Json::arrayValue);
+  body["nodes"].append(1);
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000e1", body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"invalid json body"})"));
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e1"), std::size_t{0});
+}
+
+// The per-field caps the command path enforces, on the document path too — a 200KB label was
+// persisted here for as long as this route checked only the node count.
+TEST(put_with_an_oversized_field_is_400_naming_the_node_and_creates_nothing) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value body = document("Mine", "hull");
+  body["nodes"][0]["label"] = std::string(kMaxNodeLabelLength + 1, 'x');
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000e2", body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"error":"node \"hull\": label is 201 characters, max 200"})"));
+  CHECK_EQ(h.trees->byId.count("t_00000000000000e2"), std::size_t{0});
+}
+
+// Edges were never counted on this route at all: 10000 legal nodes could carry half a million
+// prerequisites, and every later read — and every health pass — paid for them.
+TEST(put_over_the_edge_ceiling_is_413_and_creates_nothing) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value body(Json::objectValue);
+  body["title"] = "Too tangled";
+  body["nodes"] = Json::Value(Json::arrayValue);
+  // Five hubs, and 4001 steps that each require all five: 20005 edges over 4006 nodes, so the
+  // document is under the node ceiling and over the edge one.
+  for (int hub = 0; hub < 5; ++hub) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "hub" + std::to_string(hub);
+    body["nodes"].append(node);
+  }
+  for (std::size_t i = 0; i <= kMaxEdges / 5; ++i) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "n" + std::to_string(i);
+    node["prerequisites"] = Json::Value(Json::arrayValue);
+    for (int hub = 0; hub < 5; ++hub) node["prerequisites"].append("hub" + std::to_string(hub));
+    body["nodes"].append(node);
+  }
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_0000000000000b17", body);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
+  CHECK_EQ(bodyOf(response)["error"].asString(),
+           std::string("this tree would hold 20005 edges, max 20000 — call tidy to drop the edges "
+                       "a longer path already implies"));
+  CHECK_EQ(h.trees->byId.count("t_0000000000000b17"), std::size_t{0});
 }
 
 TEST(put_over_the_node_ceiling_is_413_and_creates_nothing) {
@@ -520,10 +600,10 @@ TEST(put_over_the_node_ceiling_is_413_and_creates_nothing) {
     body["nodes"].append(node);
   }
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_big", body);
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_0000000000000b16", body);
 
   CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
-  CHECK_EQ(h.trees->byId.count("t_big"), std::size_t{0});
+  CHECK_EQ(h.trees->byId.count("t_0000000000000b16"), std::size_t{0});
 }
 
 // ---- PUT and the live room: gate first, evict second ---------------------------------------
@@ -538,32 +618,32 @@ TEST(a_refused_put_leaves_the_owners_live_room_open_and_untouched) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner-acct@example.com");
   h.signIn("s-stranger", "stranger@example.com");
-  h.seed("t_theirs", "Theirs", owner, Visibility::unlisted);
-  editInTheLiveRoom(h, "t_theirs", "owner-step", owner);
-  const StoredTree before = h.trees->byId["t_theirs"];
+  h.seed("t_000000000000ffee", "Theirs", owner, Visibility::unlisted);
+  editInTheLiveRoom(h, "t_000000000000ffee", "owner-step", owner);
+  const StoredTree before = h.trees->byId["t_000000000000ffee"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-stranger", "t_theirs", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-stranger", "t_000000000000ffee", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  CHECK(h.rooms->isOpen(TreeId{"t_theirs"}));  // the victim's room was never flushed and closed
+  CHECK(h.rooms->isOpen(TreeId{"t_000000000000ffee"}));  // the victim's room was never flushed and closed
   CHECK(h.trees->savedNodeCounts.empty());     // and a refusal writes nothing, not even a flush
-  CHECK(h.trees->byId["t_theirs"] == before);
+  CHECK(h.trees->byId["t_000000000000ffee"] == before);
 }
 
 TEST(a_put_to_a_private_tree_you_cannot_read_leaves_its_live_room_open_and_untouched) {
   Harness h;
   h.signIn("s-stranger", "stranger@example.com");
-  h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
-  editInTheLiveRoom(h, "t_priv", "private-step", UserId{"owner"});
-  const StoredTree before = h.trees->byId["t_priv"];
+  h.seed("t_00000000000000aa", "Secret", UserId{"owner"}, Visibility::private_);
+  editInTheLiveRoom(h, "t_00000000000000aa", "private-step", UserId{"owner"});
+  const StoredTree before = h.trees->byId["t_00000000000000aa"];
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-stranger", "t_priv", document("Mine now", "seized"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-stranger", "t_00000000000000aa", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such tree"})"));
-  CHECK(h.rooms->isOpen(TreeId{"t_priv"}));  // an unreadable id is no lever on its owner's room
+  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000aa"}));  // an unreadable id is no lever on its owner's room
   CHECK(h.trees->savedNodeCounts.empty());
-  CHECK(h.trees->byId["t_priv"] == before);
+  CHECK(h.trees->byId["t_00000000000000aa"] == before);
 }
 
 // The other half of the ordering: once authorized, the write must read the row the eviction just
@@ -573,17 +653,17 @@ TEST(a_put_to_a_private_tree_you_cannot_read_leaves_its_live_room_open_and_untou
 TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", "Old name", me, Visibility::unlisted);
-  editInTheLiveRoom(h, "t_mine", "socket-step", me);
-  CHECK_EQ(h.trees->byId["t_mine"].head, Seq{0});  // the row is behind the room by one op
-  CHECK_EQ(h.ops->byTree["t_mine"].size(), 1u);
+  h.seed("t_00000000000000cc", "Old name", me, Visibility::unlisted);
+  editInTheLiveRoom(h, "t_00000000000000cc", "socket-step", me);
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].head, Seq{0});  // the row is behind the room by one op
+  CHECK_EQ(h.ops->byTree["t_00000000000000cc"].size(), 1u);
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_mine", document("New name", "mast"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cc", document("New name", "mast"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(h.trees->byId["t_mine"].head, Seq{1});
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].head, Seq{1});
   CHECK_EQ(bodyOf(response)["seq"].asInt64(), 1);
-  CHECK(h.ops->since(TreeId{"t_mine"}, h.trees->byId["t_mine"].head).empty());  // nothing left to replay
+  CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());  // nothing left to replay
 }
 
 // The same staleness, one field over, and this one loses data silently: the room was renamed at
@@ -593,17 +673,111 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it)
 TEST(put_over_a_live_room_mints_its_title_past_the_rooms_rename_not_the_stale_row) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", "Old name", me, Visibility::unlisted);
+  h.seed("t_00000000000000cc", "Old name", me, Visibility::unlisted);
   {
-    std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{"t_mine"}));
-    h.rooms->open(TreeId{"t_mine"})->rename("Renamed over the socket", 5'000);
+    std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{"t_00000000000000cc"}));
+    h.rooms->open(TreeId{"t_00000000000000cc"})->rename("Renamed over the socket", 5'000);
   }
-  CHECK_EQ(h.trees->byId["t_mine"].title.value, std::string("Old name"));  // not flushed yet
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Old name"));  // not flushed yet
 
-  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_mine", document("Posted name", "mast"));
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cc", document("Posted name", "mast"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string("Posted name"));
-  CHECK_EQ(h.trees->byId["t_mine"].title.value, std::string("Posted name"));  // the row says what the reply did
-  CHECK(h.trees->byId["t_mine"].title.stamp == (Hlc{5'000, 1, "srv"}));       // minted one past the rename
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Posted name"));  // the row says what the reply did
+  CHECK(h.trees->byId["t_00000000000000cc"].title.stamp == (Hlc{5'000, 1, "srv"}));       // minted one past the rename
+}
+
+// A document of N nodes is a JOIN into whatever the row already holds — save upserts the entries
+// the document names and deletes nothing — so a per-request ceiling is no ceiling at all: five
+// individually-legal PUTs of fresh ids each left 45000 nodes standing on a 10000 cap.
+TEST(repeated_puts_of_fresh_ids_cannot_walk_a_tree_past_the_node_ceiling) {
+  Harness h;
+  h.signIn("s-me");
+  const std::string id = "t_0000000000000c01";
+  auto batch = [](std::size_t from, std::size_t count) {
+    Json::Value body(Json::objectValue);
+    body["title"] = "Growing";
+    body["nodes"] = Json::Value(Json::arrayValue);
+    for (std::size_t i = from; i < from + count; ++i) {
+      Json::Value node(Json::objectValue);
+      node["id"] = "n" + std::to_string(i);
+      body["nodes"].append(node);
+    }
+    return body;
+  };
+
+  CHECK_EQ(sendPut(h.api, "s-me", id, batch(0, 6000))->getStatusCode(), drogon::k200OK);
+  drogon::HttpResponsePtr second = sendPut(h.api, "s-me", id, batch(6000, 6000));
+
+  CHECK_EQ(second->getStatusCode(), drogon::k413RequestEntityTooLarge);
+  CHECK_EQ(bodyOf(second)["error"].asString(),
+           std::string("this tree would hold 12000 nodes, max 10000 — split it across roadmaps, "
+                       "or delete what it has outgrown"));
+  CHECK_EQ(storedNodeIds(*h.trees, id).size(), std::size_t{6000});  // the refused batch wrote nothing
+}
+
+// The same document twice is an upsert, not growth — the tree it would leave behind is the
+// measure, so re-PUTting what is already there stays admissible at any size.
+TEST(a_put_that_re_sends_the_nodes_already_stored_is_still_admitted) {
+  Harness h;
+  h.signIn("s-me");
+  const std::string id = "t_0000000000000c02";
+  Json::Value body(Json::objectValue);
+  body["title"] = "Steady";
+  body["nodes"] = Json::Value(Json::arrayValue);
+  for (std::size_t i = 0; i < kMaxNodes; ++i) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "n" + std::to_string(i);
+    body["nodes"].append(node);
+  }
+
+  CHECK_EQ(sendPut(h.api, "s-me", id, body)->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendPut(h.api, "s-me", id, body)->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(storedNodeIds(*h.trees, id).size(), kMaxNodes);
+}
+
+// The id shape is a MINT rule, so it binds the PUT that creates and nothing else. Slug ids
+// (`windmill-roadmap`, `demo`) predate the mint and are the documented contract in db/schema.sql;
+// gating every PUT locked 12 of 68 trees on a real database out of their own owners' writes.
+TEST(put_to_an_existing_slug_id_tree_is_still_the_owners_to_write) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("windmill-roadmap", "The roadmap", me, Visibility::unlisted);
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "windmill-roadmap", document("Renamed", "mast"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.trees->byId["windmill-roadmap"].title.value, std::string("Renamed"));
+}
+
+// A root that parsed but is not an object throws out of every keyed read jsoncpp does — which
+// reached the global handler as a 500, a server_errors row and a Sentry event, per request.
+TEST(put_and_fork_refuse_a_non_object_json_root_with_400) {
+  Harness h;
+  h.signIn("s-me");
+  h.seedSource("t_src", "Learn to sail");
+
+  for (const char* body : {"[]", "\"hello\"", "5"}) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Put);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->setBody(body);
+    request->addCookie("wm_session", "s-me");
+    drogon::HttpResponsePtr captured;
+    h.api.putTree(request, [&](const drogon::HttpResponsePtr& r) { captured = r; }, "t_0000000000000c03");
+    CHECK_EQ(captured->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(captured)), std::string(R"({"error":"invalid json body"})"));
+
+    auto fork = drogon::HttpRequest::newHttpRequest();
+    fork->setMethod(drogon::Post);
+    fork->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    fork->setBody(body);
+    fork->addCookie("wm_session", "s-me");
+    drogon::HttpResponsePtr forked;
+    h.api.forkTree(fork, [&](const drogon::HttpResponsePtr& r) { forked = r; }, "t_src");
+    CHECK_EQ(forked->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(forked)), std::string(R"({"error":"invalid json body"})"));
+  }
+  CHECK_EQ(h.trees->byId.count("t_0000000000000c03"), std::size_t{0});
 }
