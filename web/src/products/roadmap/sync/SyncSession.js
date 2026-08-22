@@ -23,6 +23,7 @@ import { materialize } from './materialize.js';
 import { isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
+import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
 
 const DEFAULT_URL = socketUrl();
@@ -143,6 +144,13 @@ export class SyncSession {
     if (saved?.progress) {
       try { this.progress.join(saved.progress); }
       catch { this.progress = new ProgressLattice(); }
+    }
+    // Then whatever the PRE-LANE store still holds for this tree, folded in once and cleared. Most
+    // of it the server already knows and it merges to a no-op; what it does not know — a mark made
+    // offline, or before signing in — was only ever in that key, and the lane is the only place it
+    // can still reach the server from. Uncovered by construction, so the first graft flushes it.
+    if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress);
+    if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
       this.progressHandler?.(this.progress.overlay());
     }

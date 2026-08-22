@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import { ProgressLattice } from '../../../../src/products/roadmap/sync/progressLattice.js';
 import { HlcClock, VersionVector, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
+import { ProgressStore } from '../../../../src/products/roadmap/persistence/ProgressStore.js';
 
 const stamp = (ms, actor = 'r_a') => ({ ms, counter: 0, actor });
 const frame = (...rows) => ({ marks: rows });
@@ -196,4 +197,52 @@ test('an equal-stamp frame with no instant leaves the one already held alone', (
   lattice.join(frame(row('a', 'complete', '900:0:r_a')));
 
   assert.deepEqual(lattice.overlay().completedAt, { a: 4321 });
+});
+
+// The pre-lane localStorage store is not simply redundant. Marks the server already knows merge to
+// a no-op, but a mark made offline or before signing in reached nothing else — dropping the reader
+// without draining it first would have discarded exactly those.
+test('draining the pre-lane store lands its marks in the lane and clears the key', () => {
+  const storage = new Map();
+  storage.set('windmill:progress:t_1', JSON.stringify({
+    completed: ['done', 'undated'],
+    inProgress: ['running'],
+    completedAt: { done: 5000 },
+    startedAt: { running: 6000 },
+  }));
+  const store = new ProgressStore({
+    getItem: (k) => storage.get(k) ?? null,
+    removeItem: (k) => storage.delete(k),
+  });
+  const lattice = new ProgressLattice();
+
+  assert.equal(store.drainInto('t_1', lattice), 3);
+
+  assert.deepEqual(lattice.overlay(), {
+    completed: new Set(['done', 'undated']),
+    inProgress: new Set(['running']),
+    startedAt: {},     // a drained mark has no SERVER receipt yet, so it is undated, not guessed
+    completedAt: {},
+  });
+  assert.equal(storage.has('windmill:progress:t_1'), false);
+  assert.equal(store.drainInto('t_1', lattice), 0); // …and draining twice is not a second import
+});
+
+test('a drained mark loses to a newer server mark and wins where nothing contests it', () => {
+  const storage = new Map();
+  storage.set('windmill:progress:t_1', JSON.stringify({
+    completed: ['superseded', 'only-here'],
+    inProgress: [],
+    completedAt: { superseded: 5000, 'only-here': 5000 },
+  }));
+  const store = new ProgressStore({
+    getItem: (k) => storage.get(k) ?? null,
+    removeItem: (k) => storage.delete(k),
+  });
+  const lattice = new ProgressLattice();
+  lattice.join(frame(row('superseded', 'none', '9000:0:r_phone', 9000))); // cleared later, elsewhere
+
+  store.drainInto('t_1', lattice);
+
+  assert.deepEqual(lattice.overlay().completed, new Set(['only-here']));
 });
