@@ -1,4 +1,5 @@
 import Foundation
+import WindmillPlatform
 
 // THE LOG AS THIS DEVICE HOLDS IT — everything gym made before anybody signed in: finished sessions
 // with their sets, routines, movements minted from the picker, and the settings the room is set up
@@ -41,10 +42,31 @@ public final class LocalLog {
 
     // Every shelf optional, deliberately: a file written by a build with fewer shelves must not
     // decode to empty — the same backward-decodability rule the queue's Held obeys.
-    private struct Held: Codable {
+    private struct Shelf: Codable {
         var sessions: [LocalSession]?
         var routines: [Routine]?
         var exercises: [ExerciseWrite]?
+    }
+
+    // ONE SHELF PER SEAT, AND THE SEAT IS THE KEY. A training session is one account's, and a phone
+    // lent to the next lifter must not replay the first one's workout into the second one's log —
+    // which is exactly what it did until 2026-08-22: a session composed on the device while A was
+    // signed in but unreachable was claimed by whichever account signed in next, and A's owed sets
+    // were re-sent under B's bearer, refused as vanished, and dropped (audit MOBILE-3).
+    //
+    // The seat is the KEY rather than a column, and `open(under:)` is the only place that names it,
+    // so no read below can forget the filter — the same shape the journal's per-seat cache file has
+    // and the same one Android's shelves took. `anon` is the shelf everything made before anybody
+    // signed in lives on, and it is the one the claim carries.
+    private struct Held: Codable {
+        // The pre-seat shelves, written at the top level by every build before 2026-08-22. Read once
+        // on the first open under this code and moved to whoever the device was HOLDING a session
+        // for — see retireThePreSeatShelves. Never dropped: this device is the only copy of a
+        // session and a program, and a lifter mid-workout on the upgrade must not find them gone.
+        var sessions: [LocalSession]?
+        var routines: [Routine]?
+        var exercises: [ExerciseWrite]?
+        var shelves: [String: Shelf]?
         var preferences: GymPreferences?
         var preferencesOwed: Bool?
         var preferencesSeat: String?
@@ -57,11 +79,48 @@ public final class LocalLog {
 
     private let url: URL
     private var held: Held
+    private var key = LocalLog.anonymousShelf
 
-    public init(url: URL = LocalLog.defaultURL()) {
+    static let anonymousShelf = "anon"
+    // The one key `open(under:)` can never name — a seat is `anon` or `u.<id>`, and nothing else.
+    // What lands here is reachable by nobody until a person says otherwise.
+    static let quarantinedShelf = "quarantine"
+
+    // `deviceHolds` answers the one question the migration below turns on: WHOSE SESSION IS THIS
+    // DEVICE HOLDING. It is the Keychain's answer, asked lazily, because on every launch after the
+    // upgrade there is nothing to migrate and the Keychain is never touched.
+    public init(url: URL = LocalLog.defaultURL(),
+                deviceHolds: @escaping @autoclosure () -> String? = KeychainSessions().readUser()?.id) {
         self.url = url
         let data = (try? Data(contentsOf: url)) ?? Data()
         held = (try? JSONDecoder().decode(Held.self, from: data)) ?? Held()
+        retireThePreSeatShelves(heldBy: deviceHolds)
+    }
+
+    // THE ONE MIGRATION, RUN ONCE, and the question it has to answer is whose these rows are. There
+    // is one honest source for that and it is not the shelf: it is WHOSE SESSION THIS DEVICE HOLDS.
+    // A phone still holding a session was being used by that lifter when it upgraded — the sessions,
+    // the program and the movements on it are theirs, and they land on their shelf, still owed, so
+    // the claim sends them and nobody is asked anything.
+    //
+    // A phone holding NO session cannot say. "Nobody is signed in now" is not "nobody trained here":
+    // it is just as likely to be the last account's work after a sign-out, and adopting it as
+    // anonymous would replay one lifter's workout into the next account that signs in — MOBILE-3
+    // itself, with the migration doing the leaking. So it goes to a key no seat opens.
+    private func retireThePreSeatShelves(heldBy deviceHolds: () -> String?) {
+        guard held.sessions != nil || held.routines != nil || held.exercises != nil else { return }
+        let landing = deviceHolds().map { "u.\($0)" } ?? Self.quarantinedShelf
+        var shelves = held.shelves ?? [:]
+        var theirs = shelves[landing] ?? Shelf()
+        theirs.sessions = (theirs.sessions ?? []) + (held.sessions ?? [])
+        theirs.routines = (theirs.routines ?? []) + (held.routines ?? [])
+        theirs.exercises = (theirs.exercises ?? []) + (held.exercises ?? [])
+        shelves[landing] = theirs
+        held.shelves = shelves
+        held.sessions = nil
+        held.routines = nil
+        held.exercises = nil
+        flush()
     }
 
     public static func defaultURL() -> URL {
@@ -71,12 +130,46 @@ public final class LocalLog {
         return base.appendingPathComponent("windmill-gym-local.json")
     }
 
-    public var sessions: [LocalSession] {
-        (held.sessions ?? []).sorted { $0.session.startedAtMs < $1.session.startedAtMs }
+    // OPENED UNDER WHOEVER IS SIGNED IN — the only place a seat is named, and the first thing every
+    // connect does. Everything below reads and writes THIS shelf and cannot reach another: a phone
+    // that was lent out still holds the last lifter's sessions, undrawn and unsent, until they come
+    // back to it.
+    public func open(under seat: String?) {
+        key = seat.map { "u.\($0)" } ?? Self.anonymousShelf
     }
 
-    public var routines: [Routine] { held.routines ?? [] }
-    public var exercises: [ExerciseWrite] { held.exercises ?? [] }
+    // THE CLAIM'S FIRST MOVE, and the one thing that ever crosses a shelf: everything made before
+    // anybody signed in follows the person who signs in (auth canon §2, "claiming, not gating"). It
+    // MOVES rather than copies — the anonymous shelf is emptied in the same breath — so no second
+    // account can be given the same work, and it runs whenever a confirmed seat finds an anonymous
+    // shelf rather than only on a change of seat, because a launch that could not reach the log
+    // leaves the shelf sitting there waiting for the next one that can.
+    public func adoptTheAnonymousShelf() {
+        guard key != Self.anonymousShelf, let anonymous = held.shelves?[Self.anonymousShelf] else { return }
+        var mine = shelf
+        mine.sessions = (mine.sessions ?? []) + (anonymous.sessions ?? [])
+        mine.routines = (mine.routines ?? []) + (anonymous.routines ?? [])
+        mine.exercises = (mine.exercises ?? []) + (anonymous.exercises ?? [])
+        shelf = mine
+        held.shelves?[Self.anonymousShelf] = nil
+        flush()
+    }
+
+    private var shelf: Shelf {
+        get { held.shelves?[key] ?? Shelf() }
+        set {
+            var shelves = held.shelves ?? [:]
+            shelves[key] = newValue
+            held.shelves = shelves
+        }
+    }
+
+    public var sessions: [LocalSession] {
+        (shelf.sessions ?? []).sorted { $0.session.startedAtMs < $1.session.startedAtMs }
+    }
+
+    public var routines: [Routine] { shelf.routines ?? [] }
+    public var exercises: [ExerciseWrite] { shelf.exercises ?? [] }
     public var isEmpty: Bool { sessions.isEmpty && routines.isEmpty && exercises.isEmpty }
 
     // SETTINGS ARE NOT AN ARTIFACT, which is why they are not in `isEmpty` and not in the account
@@ -131,13 +224,13 @@ public final class LocalLog {
     // ── the sessions shelf ─────────────────────────────────────────────────────────────────────
 
     public func keep(_ session: Session, sets: [TrainingSet]) {
-        var kept = (held.sessions ?? []).filter { $0.session.id != session.id }
+        var kept = (shelf.sessions ?? []).filter { $0.session.id != session.id }
         kept.append(LocalSession(session: session, sets: sets.sorted { $0.completedAtMs < $1.completedAtMs }))
-        held.sessions = kept
+        shelf.sessions = kept
     }
 
     public func session(_ id: String) -> LocalSession? {
-        held.sessions?.first { $0.session.id == id }
+        shelf.sessions?.first { $0.session.id == id }
     }
 
     public func holds(session id: String) -> Bool {
@@ -147,11 +240,11 @@ public final class LocalLog {
     // Claimed and discarded end the same way: the log — the account's or nobody's — no longer owes
     // this row to anyone, so the device lets go of it.
     public func claimed(session id: String) {
-        held.sessions = (held.sessions ?? []).filter { $0.session.id != id }
+        shelf.sessions = (shelf.sessions ?? []).filter { $0.session.id != id }
     }
 
     public func remint(session old: String, as fresh: String) {
-        held.sessions = (held.sessions ?? []).map { local in
+        shelf.sessions = (shelf.sessions ?? []).map { local in
             guard local.session.id == old else { return local }
             let moved = Session(id: fresh, startedAtMs: local.session.startedAtMs,
                                 finishedAtMs: local.session.finishedAtMs,
@@ -161,7 +254,7 @@ public final class LocalLog {
     }
 
     public func remint(set id: String, in sessionId: String, as fresh: String) {
-        held.sessions = (held.sessions ?? []).map { local in
+        shelf.sessions = (shelf.sessions ?? []).map { local in
             guard local.session.id == sessionId else { return local }
             return LocalSession(session: local.session,
                                 sets: local.sets.map { $0.id == id ? $0.reminted(as: fresh) : $0 })
@@ -173,7 +266,7 @@ public final class LocalLog {
     // fixed signed-out survives signing in — the claim replays what is on this shelf, so it replays
     // the corrected set and never the original.
     public func fix(set id: String, in sessionId: String, by correction: SetFix) {
-        held.sessions = (held.sessions ?? []).map { local in
+        shelf.sessions = (shelf.sessions ?? []).map { local in
             guard local.session.id == sessionId else { return local }
             return LocalSession(session: local.session,
                                 sets: local.sets.map { $0.id == id ? $0.corrected(by: correction) : $0 })
@@ -184,7 +277,7 @@ public final class LocalLog {
     // delete. Both mean the same thing here — this device stops holding the row, so nothing replays
     // it and no local read counts it.
     public func drop(set id: String, in sessionId: String) {
-        held.sessions = (held.sessions ?? []).map { local in
+        shelf.sessions = (shelf.sessions ?? []).map { local in
             guard local.session.id == sessionId else { return local }
             return LocalSession(session: local.session, sets: local.sets.filter { $0.id != id })
         }
@@ -197,27 +290,27 @@ public final class LocalLog {
     }
 
     public func replace(_ routine: Routine) {
-        var kept = held.routines ?? []
+        var kept = shelf.routines ?? []
         if let index = kept.firstIndex(where: { $0.id == routine.id }) {
             kept[index] = routine
         } else {
             kept.append(routine)
         }
-        held.routines = kept
+        shelf.routines = kept
     }
 
     public func routine(_ id: String) -> Routine? {
-        held.routines?.first { $0.id == id }
+        shelf.routines?.first { $0.id == id }
     }
 
     public func claimed(routine id: String) {
-        held.routines = (held.routines ?? []).filter { $0.id != id }
+        shelf.routines = (shelf.routines ?? []).filter { $0.id != id }
     }
 
     // The routine landed under a fresh id — every session started from it follows, or the claim
     // would replay them naming a routine the log has never heard of.
     public func remint(routine old: String, as fresh: String) {
-        held.routines = (held.routines ?? []).map { routine in
+        shelf.routines = (shelf.routines ?? []).map { routine in
             guard routine.id == old else { return routine }
             return Routine(id: fresh, name: routine.name, position: routine.position,
                            lastTrainedAtMs: routine.lastTrainedAtMs, entries: routine.entries)
@@ -241,7 +334,7 @@ public final class LocalLog {
     }
 
     private func rewriteSessions(_ rewrite: (Session) -> Session) {
-        held.sessions = (held.sessions ?? []).map {
+        shelf.sessions = (shelf.sessions ?? []).map {
             LocalSession(session: rewrite($0.session), sets: $0.sets)
         }
     }
@@ -250,7 +343,7 @@ public final class LocalLog {
     // device is the server, so it keeps the same fact the same way.
     public func trained(routine id: String?, atMs instant: Int64) {
         guard let id else { return }
-        held.routines = (held.routines ?? []).map { routine in
+        shelf.routines = (shelf.routines ?? []).map { routine in
             guard routine.id == id else { return routine }
             return Routine(id: routine.id, name: routine.name, position: routine.position,
                            lastTrainedAtMs: instant, entries: routine.entries)
@@ -260,11 +353,11 @@ public final class LocalLog {
     // ── the movements shelf ────────────────────────────────────────────────────────────────────
 
     public func keep(exercise write: ExerciseWrite) {
-        held.exercises = (held.exercises ?? []).filter { $0.id != write.id } + [write]
+        shelf.exercises = (shelf.exercises ?? []).filter { $0.id != write.id } + [write]
     }
 
     public func claimed(exercise id: String) {
-        held.exercises = (held.exercises ?? []).filter { $0.id != id }
+        shelf.exercises = (shelf.exercises ?? []).filter { $0.id != id }
     }
 
     // Renaming a movement this device minted and has not claimed yet: the shelf entry IS the pending
@@ -272,7 +365,7 @@ public final class LocalLog {
     // the same promise the account's own rename makes — every set and routine entry naming it stays
     // pointed at the same movement.
     public func rename(exercise id: String, to name: String) {
-        held.exercises = (held.exercises ?? []).map { write in
+        shelf.exercises = (shelf.exercises ?? []).map { write in
             guard write.id == id else { return write }
             return ExerciseWrite(id: write.id, name: name, pattern: write.pattern,
                                  equipment: write.equipment, stepKg: write.stepKg)
@@ -280,12 +373,12 @@ public final class LocalLog {
     }
 
     public func remint(exercise old: String, as fresh: String) {
-        held.exercises = (held.exercises ?? []).map { write in
+        shelf.exercises = (shelf.exercises ?? []).map { write in
             guard write.id == old else { return write }
             return ExerciseWrite(id: fresh, name: write.name, pattern: write.pattern,
                                  equipment: write.equipment, stepKg: write.stepKg)
         }
-        held.routines = (held.routines ?? []).map { routine in
+        shelf.routines = (shelf.routines ?? []).map { routine in
             Routine(id: routine.id, name: routine.name, position: routine.position,
                     lastTrainedAtMs: routine.lastTrainedAtMs,
                     entries: routine.entries.map { entry in
@@ -296,7 +389,7 @@ public final class LocalLog {
                                             restSeconds: entry.restSeconds)
                     })
         }
-        held.sessions = (held.sessions ?? []).map { local in
+        shelf.sessions = (shelf.sessions ?? []).map { local in
             LocalSession(session: local.session,
                          sets: local.sets.map { set in
                              guard set.exerciseId == old else { return set }

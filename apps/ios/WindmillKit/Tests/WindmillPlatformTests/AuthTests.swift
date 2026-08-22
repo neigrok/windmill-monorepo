@@ -348,6 +348,32 @@ final class SessionCookieTests: XCTestCase {
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!
         XCTAssertNil(WindmillApi.sessionCookie(in: response, for: url))
     }
+
+    // …and the OTHER half of that rule: the app must not also let the system keep the cookie. It
+    // did, through URLSession.shared's disk-backed jar, and the server resolves a caller cookie
+    // FIRST — so a sign-out whose logout never reached the log left a live 90-day session on the
+    // phone that the app could no longer revoke, and every later request carried two credentials
+    // that could name two different accounts (audit MOBILE-2).
+    func testTheAppsOwnSessionKeepsNoCookieJar() {
+        let configuration = WindmillApi.cookieless.configuration
+        XCTAssertNil(configuration.httpCookieStorage, "no jar means no second credential on the disk")
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
+    }
+
+    // And what an older build already left there ends with the sign-out that ended the session.
+    func testSigningOutClearsAnyCookieAnOlderBuildLeftOnTheDisk() {
+        let residue = HTTPCookie(properties: [
+            .name: "wm_session", .value: "left-by-an-older-build", .domain: "windmill.works",
+            .path: "/", .expires: Date().addingTimeInterval(7_776_000),
+        ])!
+        HTTPCookieStorage.shared.setCookie(residue)
+        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: url)?.map(\.name), ["wm_session"])
+
+        WindmillApi.forgetCookieJar(for: url)
+
+        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: url) ?? [], [])
+    }
 }
 
 final class RefusalTests: XCTestCase {

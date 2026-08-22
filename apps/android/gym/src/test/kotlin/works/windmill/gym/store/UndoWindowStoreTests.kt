@@ -42,6 +42,10 @@ class UndoWindowStoreTests {
         preferencesFile = File(tmp.root, "gym-undo-prefs-${System.nanoTime()}.json")
     }
 
+    // The queue read back as the seat these tests sign in as would see it: the seat lives in memory
+    // now, so a bare construction is the ANONYMOUS queue and answers nothing for a signed-in lifter.
+    private fun onDisk() = SetQueue(queueFile, "u1")
+
     private fun TestScope.makeStore(server: FakeTraining) = TrainingStore(
         queue = SetQueue(queueFile) { clockMs },
         deviceCopy = DeviceCopy(catalogFile),
@@ -76,7 +80,7 @@ class UndoWindowStoreTests {
         assertEquals(listOf(82.5), store.sets.map { it.weightKg })
         assertEquals("nothing goes out while it can still be taken back", 0, server.appended.size)
         assertEquals(82.5, store.undoable?.weightKg)
-        assertEquals("and it is on disk, not in memory", 1, SetQueue(queueFile).pending.size)
+        assertEquals("and it is on disk, not in memory", 1, onDisk().pending.size)
     }
 
     // "Offline" would be the wrong word for a send nobody has attempted. Silence is the honest
@@ -104,7 +108,7 @@ class UndoWindowStoreTests {
 
         assertEquals(emptyList<TrainingSet>(), store.sets)
         assertEquals(0, server.appended.size)
-        assertEquals("and the disk agrees", 0, SetQueue(queueFile).pending.size)
+        assertEquals("and the disk agrees", 0, onDisk().pending.size)
         assertNull(store.undoable)
     }
 

@@ -36,7 +36,7 @@ public struct GymModule: ProductModule {
     // log on this device, the meta says where that log is — the hub's half of home's quiet claim
     // offer, and never a wall.
     public func hubLine(_ account: Account) -> HubLine {
-        let device = GymDevice.summary()
+        let device = GymDevice.summary(seat: account.user?.id)
         if let running = device.routine {
             return HubLine(eyebrow: "Session running",
                            headline: running,
@@ -54,7 +54,7 @@ public struct GymModule: ProductModule {
     // yet claimed — the local shelf is a real home now, and signed-out You counts it. The noun is
     // the product's own — a gym counts sessions, never workouts and never entries.
     public func holdings(_ account: Account) -> Holdings {
-        Holdings(count: GymDevice.summary().sessions, noun: "session")
+        Holdings(count: GymDevice.summary(seat: account.user?.id).sessions, noun: "session")
     }
 }
 
@@ -66,6 +66,11 @@ public struct GymModule: ProductModule {
 // Two files because the device now holds two shelves: the queue (`windmill-gym-sets.json`, the live
 // session — its name and shape are load-bearing, this read depends on them) and the local log
 // (`windmill-gym-local.json`, finished sessions nobody has claimed yet).
+//
+// It answers for ONE SEAT — the shelves are opened under whoever is signed in, exactly as the room
+// opens them, so a signed-out hub never counts the previous lifter's sessions or names the workout
+// they left running (audit MOBILE-3). The seat is part of what the cache is keyed on, because two
+// adjacent renders can be two different people.
 //
 // Main-actor by construction, because ProductModule is: the cache needs no lock and cannot be raced.
 @MainActor
@@ -80,8 +85,10 @@ enum GymDevice {
 
     private static var stamps: [Date?] = [nil, nil]
     private static var summarised = Summary.none
+    private static var summarisedFor: String??
 
-    static func summary(url: URL = SetQueue.defaultURL(),
+    static func summary(seat: String? = nil,
+                        url: URL = SetQueue.defaultURL(),
                         localURL: URL = LocalLog.defaultURL()) -> Summary {
         let written = [stamp(of: url), stamp(of: localURL)]
         // No files is no gym on this device, and it is also the state the cache must not answer
@@ -89,13 +96,19 @@ enum GymDevice {
         // naming a workout that was deleted.
         guard written.contains(where: { $0 != nil }) else {
             stamps = [nil, nil]
+            summarisedFor = nil
             summarised = .none
             return summarised
         }
-        if written == stamps { return summarised }
+        if written == stamps, summarisedFor == seat { return summarised }
 
         stamps = written
-        summarised = read(SetQueue(url: url), LocalLog(url: localURL))
+        summarisedFor = seat
+        let queue = SetQueue(url: url)
+        queue.open(under: seat)
+        let localLog = LocalLog(url: localURL)
+        localLog.open(under: seat)
+        summarised = read(queue, localLog)
         return summarised
     }
 

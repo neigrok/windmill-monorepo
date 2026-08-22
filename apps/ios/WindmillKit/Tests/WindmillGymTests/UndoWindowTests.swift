@@ -30,12 +30,20 @@ final class UndoWindowTests: XCTestCase {
         try? FileManager.default.removeItem(at: catalogURL)
     }
 
+    // An inspection read names a seat like every other read: the queue holds one live workout per
+    // account, so "what is on this device" is only ever answerable for somebody.
+    private func queueOnDisk(of seat: String? = "u1") -> SetQueue {
+        let held = SetQueue(url: queueURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
+
     private func liveStore(_ server: FakeTraining) async -> TrainingStore {
         server.open(Session(id: "ses_1", startedAtMs: 1_000))
-        let store = TrainingStore(queue: SetQueue(url: queueURL),
+        let store = TrainingStore(queue: SetQueue(url: queueURL, deviceHolds: nil),
                                   deviceCatalog: DeviceCatalog(url: catalogURL),
                                   accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
-                                  localLog: LocalLog(url: catalogURL.appendingPathExtension("local")),
+                                  localLog: LocalLog(url: catalogURL.appendingPathExtension("local"), deviceHolds: nil),
                                   now: { self.clockMs },
                                   mintSession: { "ses_1" },
                                   mintSet: { "set_\(self.clockMs)" },
@@ -59,7 +67,7 @@ final class UndoWindowTests: XCTestCase {
         XCTAssertEqual(store.sets.map(\.weightKg), [82.5])
         XCTAssertEqual(server.appended.count, 0, "nothing goes out while it can still be taken back")
         XCTAssertEqual(store.undoable?.weightKg, 82.5)
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1, "and it is on disk, not in memory")
+        XCTAssertEqual(queueOnDisk().pending.count, 1, "and it is on disk, not in memory")
     }
 
     // "Offline" would be the wrong word for a send nobody has attempted. Silence is the honest state
@@ -85,7 +93,7 @@ final class UndoWindowTests: XCTestCase {
 
         XCTAssertEqual(store.sets, [])
         XCTAssertEqual(server.appended.count, 0)
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 0, "and the disk agrees")
+        XCTAssertEqual(queueOnDisk().pending.count, 0, "and the disk agrees")
         XCTAssertNil(store.undoable)
     }
 
@@ -169,10 +177,10 @@ final class UndoWindowTests: XCTestCase {
         let store = await liveStore(server)
         await store.logSet(weightKg: 82.5, reps: 5)
 
-        let relaunched = TrainingStore(queue: SetQueue(url: queueURL),
+        let relaunched = TrainingStore(queue: SetQueue(url: queueURL, deviceHolds: nil),
                                        deviceCatalog: DeviceCatalog(url: catalogURL),
                                        accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
-                                       localLog: LocalLog(url: catalogURL.appendingPathExtension("local")),
+                                       localLog: LocalLog(url: catalogURL.appendingPathExtension("local"), deviceHolds: nil),
                                        now: { self.clockMs },
                                        mintSession: { "ses_1" },
                                        mintSet: { "set_x" },

@@ -55,10 +55,15 @@ public final class AuthStore: ObservableObject {
     // may create one anywhere (a default argument, a preview) while every mutation stays on main.
     public nonisolated init(baseURL: URL = WindmillApi.resolvedBaseURL(),
                             sessions: any SessionStore = KeychainSessions(),
-                            urlSession: URLSession = .shared) {
+                            urlSession: URLSession = WindmillApi.cookieless) {
         self.sessions = sessions
         self.api = WindmillApi(baseURL: baseURL, credential: { [sessions] in sessions.read() },
                                session: urlSession)
+        // What an older build let the system keep. This app sends no cookies now, so nothing here
+        // reaches the wire — but a 90-day session secret sitting outside the Keychain is the other
+        // half of the same finding, and the sign-out that would have ended it is one somebody who
+        // simply upgraded never performs (audit MOBILE-2).
+        WindmillApi.forgetCookieJar(for: baseURL)
     }
 
     // The seat on launch, and again on every return to the foreground while it is unverified. A
@@ -169,6 +174,10 @@ public final class AuthStore: ObservableObject {
     public func signOut() async {
         _ = try? await api.send("POST", "/v1/auth/logout")
         sessions.clear()
+        // And whatever an older build let the system keep beside it. This app sends no cookies, so
+        // nothing here is on the wire — but a session secret that outlives the sign-out that ended
+        // it has no business on the disk either (audit MOBILE-2).
+        WindmillApi.forgetCookieJar(for: api.baseURL)
         linkSentTo = nil
         status = .signedOut
     }

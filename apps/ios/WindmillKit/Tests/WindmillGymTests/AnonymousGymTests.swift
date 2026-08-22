@@ -46,10 +46,10 @@ final class AnonymousGymTests: XCTestCase {
                            mintSession: @escaping () -> String = Ids.session,
                            retryAfter: Duration = .seconds(4)) -> TrainingStore {
         TrainingStore(
-            queue: SetQueue(url: queueURL),
+            queue: SetQueue(url: queueURL, deviceHolds: nil),
             deviceCatalog: DeviceCatalog(url: catalogURL),
             accountCopy: AccountCopy(url: accountURL),
-            localLog: LocalLog(url: localURL),
+            localLog: LocalLog(url: localURL, deviceHolds: nil),
             now: { self.clockMs += 1; return self.clockMs },
             mintSession: mintSession,
             mintSet: Ids.set,
@@ -60,13 +60,29 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     private func account(signedIn: Bool) -> Account {
+        account(userId: signedIn ? "u1" : nil)
+    }
+
+    private func account(userId: String?) -> Account {
         Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
-            user: signedIn ? User(id: "u1", email: "sam@example.com", name: "Sam") : nil
+            user: userId.map { User(id: $0, email: "\($0)@example.com", name: $0) }
         )
     }
 
-    private func shelf() -> LocalLog { LocalLog(url: localURL) }
+    // An inspection read names a seat like every other read: the shelf and the queue hold one set of
+    // rows per account, so "what is on this device" is only ever answerable for somebody.
+    private func shelf(of seat: String? = nil) -> LocalLog {
+        let held = LocalLog(url: localURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
+
+    private func waiting(of seat: String? = nil) -> SetQueue {
+        let held = SetQueue(url: queueURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
 
     // A routine already on the device, the way "Keep this as a routine" leaves one there.
     private func seedRoutine() {
@@ -210,7 +226,7 @@ final class AnonymousGymTests: XCTestCase {
         let reopened = shelf()
         XCTAssertEqual(reopened.sessions.map { $0.session.id }, [closed.id])
         XCTAssertEqual(reopened.sessions.first?.sets.map(\.weightKg), [82.5, 85])
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty,
+        XCTAssertTrue(waiting(of: nil).pending.isEmpty,
                       "the finished session's sets moved shelves — the queue owes nothing")
     }
 
@@ -551,7 +567,7 @@ final class AnonymousGymTests: XCTestCase {
                        "dependency order, one session at a time")
         XCTAssertEqual(walk.last, "sessions", "no log read interleaves the claim")
 
-        XCTAssertTrue(shelf().isEmpty, "everything owed was answered for and let go")
+        XCTAssertTrue(shelf(of: "u1").isEmpty, "everything owed was answered for and let go")
         XCTAssertEqual(claimed.recent.map(\.id).sorted(), [first.id, second.id].sorted(),
                        "the server log is the truth now")
     }
@@ -575,7 +591,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.joinOpenSession), [false])
         XCTAssertNil(server.sets[closed.id], "not one set went out against a start that waited")
         XCTAssertNil(server.finishes[closed.id])
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [closed.id], "nothing was dropped")
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [closed.id], "nothing was dropped")
         XCTAssertTrue(claimed.refusals.isEmpty, "waiting is not a refusal")
         XCTAssertTrue(claimed.recent.map(\.id).contains(closed.id),
                       "the unclaimed session still reads in the merged log")
@@ -603,7 +619,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.id), [closed.id, "ses_fresh"])
         XCTAssertEqual(server.sets["ses_fresh"]?.map(\.weightKg), [82.5])
         XCTAssertNotNil(server.finishes["ses_fresh"])
-        XCTAssertTrue(shelf().isEmpty)
+        XCTAssertTrue(shelf(of: "u1").isEmpty)
     }
 
     // 409 session-finished mid-claim is the one refusal that costs a set, and it is SAID — the
@@ -625,7 +641,7 @@ final class AnonymousGymTests: XCTestCase {
                        ["the session closed before this set reached it"])
         XCTAssertEqual(claimed.refusals.compactMap(\.set).map(\.weightKg), [82.5])
         XCTAssertNotNil(server.finishes[closed.id], "the close still lands — the loss is said, not hidden")
-        XCTAssertTrue(shelf().isEmpty)
+        XCTAssertTrue(shelf(of: "u1").isEmpty)
     }
 
     // Offline, the claim retries later and drops nothing — 401/404/5xx/offline are all the same
@@ -643,7 +659,7 @@ final class AnonymousGymTests: XCTestCase {
         let claimed = makeStore(sync: server)
         await claimed.connect(to: account(signedIn: true))
 
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [closed.id])
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [closed.id])
         XCTAssertTrue(claimed.refusals.isEmpty)
         XCTAssertEqual(claimed.recent.map(\.id), [closed.id],
                        "the room still stands on local state while the wire is down")
@@ -663,7 +679,7 @@ final class AnonymousGymTests: XCTestCase {
         server.online = false
         let claimed = makeStore(sync: server, retryAfter: .milliseconds(40))
         await claimed.connect(to: account(signedIn: true))
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [closed.id],
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [closed.id],
                        "offline, the shelf keeps everything for the retry")
 
         server.online = true
@@ -676,7 +692,7 @@ final class AnonymousGymTests: XCTestCase {
                        "the cadence claimed the session on its own once the network returned")
         XCTAssertEqual(server.started.last?.joinOpenSession, false)
         XCTAssertTrue(claimed.refusals.isEmpty)
-        XCTAssertTrue(shelf().isEmpty, "everything owed was answered for and let go — no remount, no tap")
+        XCTAssertTrue(shelf(of: "u1").isEmpty, "everything owed was answered for and let go — no remount, no tap")
     }
 
     // The live session claims minus finish, and the ordinary queue owns it from there — the next
@@ -732,7 +748,7 @@ final class AnonymousGymTests: XCTestCase {
         let claimed = makeStore(sync: server)
         await claimed.connect(to: account(signedIn: true))
 
-        XCTAssertTrue(shelf().exercises.isEmpty, "the refused movement is let go, never a jam on the shelf")
+        XCTAssertTrue(shelf(of: "u1").exercises.isEmpty, "the refused movement is let go, never a jam on the shelf")
         XCTAssertEqual(claimed.refusals.first,
                        .claim(RefusedClaim(id: made.id, name: "Zercher Squat",
                                            reason: "the log wouldn’t take that movement")),
@@ -744,7 +760,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets[closed.id]?.map(\.weightKg), [82.5],
                        "the rest of the session still lands")
         XCTAssertNotNil(server.finishes[closed.id])
-        XCTAssertTrue(shelf().sessions.isEmpty, "the session claimed whole once the loss was said")
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "the session claimed whole once the loss was said")
     }
 
     // Wave 2 §B: a loss said during a BOOT claim has no logger to carry it — no session is open, so
@@ -767,7 +783,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(claimed.refusals.map { RefusalRows.headline(of: $0, in: claimed.catalog) },
                        ["“Push A” couldn’t be claimed"],
                        "said by NAME — the convergence pin with Android's RefusedClaim row")
-        XCTAssertTrue(shelf().routines.isEmpty,
+        XCTAssertTrue(shelf(of: "u1").routines.isEmpty,
                       "said and let go — the terminal write is not re-sent on every connect")
 
         claimed.clearRefusals()
@@ -872,7 +888,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets[todays.id]?.map(\.weightKg), [999])
         XCTAssertEqual(server.finishes[todays.id], closedToday.finishedAtMs)
         XCTAssertEqual(store.session?.id, third.id, "the lifter's live workout survived the whole claim")
-        XCTAssertTrue(shelf().sessions.isEmpty)
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty)
         XCTAssertEqual(store.refusals, [])
     }
 
@@ -914,7 +930,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.joinOpenSession), [false])
         XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5])
         XCTAssertEqual(server.finishes[past.id], past.finishedAtMs)
-        XCTAssertTrue(shelf().isEmpty)
+        XCTAssertTrue(shelf(of: "u1").isEmpty)
         XCTAssertEqual(store.recent.map(\.id), [past.id], "the claimed session still reached the log")
         XCTAssertEqual(store.refusals, [])
     }
@@ -950,7 +966,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.joinOpenSession), [false])
         XCTAssertEqual(server.sets[closed.id]?.map(\.weightKg), [82.5])
         XCTAssertNotNil(server.finishes[closed.id])
-        XCTAssertTrue(shelf().sessions.isEmpty)
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty)
     }
 
     // A signed-in local finish whose claim meets 409 session-id-taken remints the id — and the
@@ -982,7 +998,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_fresh"]?.map(\.weightKg), [82.5])
         XCTAssertNotNil(server.finishes["ses_fresh"])
         XCTAssertNil(server.sets[live.id])
-        XCTAssertTrue(shelf().isEmpty)
+        XCTAssertTrue(shelf(of: "u1").isEmpty)
 
         let review = await store.review(of: closed.id)
         XCTAssertEqual(review?.stats.workingSets, 1,
@@ -997,7 +1013,7 @@ final class AnonymousGymTests: XCTestCase {
                                  completedAtMs: 1_500)
         let benchB = TrainingSet(id: "set_b", exerciseId: "bench-press", weightKg: 85, reps: 3,
                                  completedAtMs: 1_800)
-        let crashed = SetQueue(url: queueURL)
+        let crashed = waiting(of: nil)
         crashed.hold(Session(id: "ses_1", startedAtMs: 1_000), unclaimed: true)
         crashed.store(benchA, in: "ses_1", needsPush: true)
         crashed.store(benchB, in: "ses_1", needsPush: true)
@@ -1016,8 +1032,8 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5, 85],
                        "the set only the queue still held rode with the finished copy")
         XCTAssertEqual(server.finishes["ses_1"], 2_000)
-        XCTAssertTrue(shelf().isEmpty)
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "the queue let go of the stale half")
+        XCTAssertTrue(shelf(of: "u1").isEmpty)
+        XCTAssertTrue(waiting(of: "u1").pending.isEmpty, "the queue let go of the stale half")
         XCTAssertEqual(store.recent.map(\.id), ["ses_1"], "Today lists the workout once")
         XCTAssertEqual(store.recent.map(\.setCount), [2])
     }
@@ -1059,12 +1075,14 @@ final class AnonymousGymTests: XCTestCase {
     }
 
     // A queue file from before the claim flag existed still opens with its session — and reads as
-    // CLAIMED, because every session before the flag was opened by the server.
+    // CLAIMED, because every session before the flag was opened by the server. It opens under the
+    // seat the device was holding when it upgraded, which is the lifter whose workout it is.
     func testAnOlderQueueFileStillOpensAndReadsAsClaimed() throws {
         let older = #"{"session":{"id":"ses_old","startedAt":1000},"entries":{}}"#
         try Data(older.utf8).write(to: queueURL)
 
-        let queue = SetQueue(url: queueURL)
+        let queue = SetQueue(url: queueURL, deviceHolds: "u1")
+        queue.open(under: "u1")
         XCTAssertEqual(queue.session?.id, "ses_old")
         XCTAssertFalse(queue.sessionIsUnclaimed)
     }
@@ -1136,9 +1154,9 @@ final class AnonymousGymTests: XCTestCase {
         clockMs = 1_000 + Session.autoCloseMs
         server.online = false
         for reps in [5, 5, 4, 3] { await evening.logSet(weightKg: 82.5, reps: reps) }
-        XCTAssertEqual(SetQueue(url: queueURL).owed(in: "ses_live").count, 4)
+        XCTAssertEqual(waiting(of: "u1").owed(in: "ses_live").count, 4)
         // And a finished session waiting on the shelf, made signed out on another day.
-        let shelved = shelf()
+        let shelved = shelf(of: "u1")
         shelved.keep(Session(id: "ses_shelf", startedAtMs: 500, finishedAtMs: 600),
                      sets: [TrainingSet(id: "set_shelf", exerciseId: "deadlift", weightKg: 140, reps: 3,
                                         completedAtMs: 550)])
@@ -1160,8 +1178,8 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_live"]?.map(\.reps), [5, 5, 5, 4, 3], "all four landed")
         XCTAssertEqual(morning.session?.id, "ses_live", "and the room stands in it")
         XCTAssertEqual(morning.refusals, [], "nothing was dropped, nothing said")
-        XCTAssertEqual(SetQueue(url: queueURL).owed(in: "ses_live").count, 0)
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, ["ses_shelf"],
+        XCTAssertEqual(waiting(of: "u1").owed(in: "ses_live").count, 0)
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, ["ses_shelf"],
                        "the shelf session skipped the phone's own open workout and waits for its finish")
         XCTAssertNil(server.stored["ses_shelf"])
     }
@@ -1182,7 +1200,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(opened.id, "ses_a", "the id the attempt wore — never a fresh one")
         XCTAssertEqual(server.stored["ses_a"]?.isOpen, true, "the log holds A open")
         XCTAssertEqual(opened.startedAtMs, server.started[0].startedAtMs, "and the instant it wore — the same body")
-        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed, "held unclaimed until the claim replays it")
+        XCTAssertTrue(waiting(of: "u1").sessionIsUnclaimed, "held unclaimed until the claim replays it")
 
         await store.choose("bench-press")
         await store.logSet(weightKg: 82.5, reps: 5)
@@ -1192,9 +1210,142 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.startedAtMs), [opened.startedAtMs, opened.startedAtMs])
         XCTAssertEqual(Array(server.stored.keys), ["ses_a"], "one workout on the log — there is no B")
         XCTAssertEqual(server.sets["ses_a"]?.map(\.weightKg), [82.5], "and the owed set landed into it")
-        XCTAssertFalse(SetQueue(url: queueURL).sessionIsUnclaimed)
+        XCTAssertFalse(waiting(of: "u1").sessionIsUnclaimed)
         XCTAssertEqual(store.session?.id, "ses_a")
         XCTAssertEqual(store.refusals, [])
+    }
+
+
+    // ── the seat every device row carries (audit MOBILE-3) ─────────────────────────────────────
+
+    // A workout composed on the device while A was SIGNED IN and the log could not be reached. It
+    // used to be claimed by whichever account signed in next — B's log listed A's training as B's
+    // own, and A never got it back.
+    func testAWorkoutComposedOfflineUnderOneAccountIsNotReplayedIntoTheNext() async {
+        let logOfA = FakeTraining()
+        logOfA.online = false
+        let asA = makeStore(sync: logOfA)
+        await asA.connect(to: account(userId: "u-a"))
+        guard case .success = await asA.start() else { return XCTFail("no signal is not a wall") }
+        await asA.choose("back-squat")
+        await asA.logSet(weightKg: 100, reps: 5)
+        _ = await asA.finish()
+        XCTAssertEqual(shelf(of: "u-a").sessions.count, 1, "composed on the device, under A's name")
+
+        let logOfB = FakeTraining()
+        let asB = makeStore(sync: logOfB)
+        await asB.connect(to: account(userId: "u-b"))
+
+        XCTAssertEqual(logOfB.started, [], "B's log is told about no workout of A's")
+        XCTAssertEqual(logOfB.appended, [])
+        XCTAssertEqual(asB.recent, [], "and B's log page draws none of it")
+        XCTAssertEqual(shelf(of: "u-a").sessions.count, 1, "A's workout is still A's, still on the device")
+
+        logOfA.online = true
+        let asAAgain = makeStore(sync: logOfA)
+        await asAAgain.connect(to: account(userId: "u-a"))
+        XCTAssertEqual(logOfA.sets.values.map(\.count), [1], "and it lands when A comes back")
+        XCTAssertTrue(shelf(of: "u-a").sessions.isEmpty)
+    }
+
+    // The live half: A's owed set for a session the LOG already holds. Re-sent under B's bearer the
+    // log answered a plain 404, the queue read it as "the workout vanished", and the set was dropped.
+    func testAnOwedSetIsNeitherDrawnNorDeliveredUnderTheNextAccount() async {
+        let logOfA = FakeTraining()
+        let asA = makeStore(sync: logOfA)
+        await asA.connect(to: account(userId: "u-a"))
+        guard case .success(let live) = await asA.start() else { return XCTFail("A's start") }
+        await asA.choose("bench-press")
+        logOfA.online = false
+        await asA.logSet(weightKg: 82.5, reps: 5)
+        XCTAssertEqual(waiting(of: "u-a").pending.count, 1)
+
+        let logOfB = FakeTraining()
+        let asB = makeStore(sync: logOfB)
+        await asB.connect(to: account(userId: "u-b"))
+
+        XCTAssertNil(asB.session, "B does not draw A's live workout")
+        XCTAssertEqual(logOfB.appended, [], "and B's bearer never carried A's set")
+        XCTAssertEqual(waiting(of: "u-a").pending.count, 1, "which is why it is still owed, not dropped")
+
+        logOfA.online = true
+        let asAAgain = makeStore(sync: logOfA)
+        await asAAgain.connect(to: account(userId: "u-a"))
+        XCTAssertEqual(logOfA.sets[live.id]?.map(\.weightKg), [82.5])
+        XCTAssertTrue(waiting(of: "u-a").pending.isEmpty)
+    }
+
+    // A signed-out screen is nobody's: it draws the anonymous shelf and nothing else. The previous
+    // account's live workout used to be on it, with its sets.
+    func testASignedOutScreenDrawsNoAccountsWorkout() async {
+        let logOfA = FakeTraining()
+        let asA = makeStore(sync: logOfA)
+        await asA.connect(to: account(userId: "u-a"))
+        guard case .success = await asA.start() else { return XCTFail("A's start") }
+        await asA.choose("bench-press")
+        await asA.logSet(weightKg: 82.5, reps: 5)
+
+        let signedOut = makeStore(sync: nil)
+        await signedOut.connect(to: account(userId: nil))
+
+        XCTAssertNil(signedOut.session)
+        XCTAssertEqual(signedOut.sets, [])
+        XCTAssertEqual(signedOut.recent, [])
+    }
+
+    // And the door the seat must never close: work made before anybody signed in is still claimed by
+    // the account that arrives — the anonymous shelf is one shelf and it belongs to whoever signs in.
+    func testTheAnonymousShelfIsStillClaimedByWhoeverSignsIn() async {
+        let anonymous = makeStore(sync: nil)
+        await anonymous.connect(to: account(signedIn: false))
+        guard case .success = await anonymous.start() else { return XCTFail("the tapped start") }
+        await anonymous.choose("back-squat")
+        await anonymous.logSet(weightKg: 60, reps: 5)
+        _ = await anonymous.finish()
+
+        let server = FakeTraining()
+        let signedIn = makeStore(sync: server)
+        await signedIn.connect(to: account(userId: "u-a"))
+
+        XCTAssertEqual(server.started.count, 1, "the claim replayed the anonymous session")
+        XCTAssertEqual(server.appended.map(\.weightKg), [60])
+        XCTAssertTrue(shelf(of: "u1").isEmpty, "and the anonymous shelf is empty once the log has it")
+    }
+
+    // The shelf an older build wrote has no seat in it, and the device answers whose it is: a phone
+    // still HOLDING a session was being used by that lifter when it upgraded, so their workout
+    // carries on under their own seat — the mid-workout upgrade is whole and nobody is asked
+    // anything.
+    func testAPreSeatShelfGoesToTheAccountTheDeviceIsHolding() throws {
+        let older = #"{"sessions":[{"session":{"id":"ses_old","startedAt":500,"finishedAt":600},"sets":[]}]}"#
+        try Data(older.utf8).write(to: localURL)
+
+        let migrated = LocalLog(url: localURL, deviceHolds: "u1")
+
+        migrated.open(under: "u1")
+        XCTAssertEqual(migrated.sessions.map { $0.session.id }, ["ses_old"])
+        migrated.open(under: nil)
+        XCTAssertTrue(migrated.sessions.isEmpty, "and it is not anonymous work — it has an owner")
+    }
+
+    // A phone holding NOBODY cannot say whose that workout is. "Nobody is signed in now" is not
+    // "nobody trained here" — it is just as likely the last account's after a sign-out — so it goes
+    // to the one key no seat can open, and the next person to sign in is given none of it.
+    func testAPreSeatShelfIsQuarantinedWhenTheDeviceHoldsNobody() async throws {
+        let older = #"{"sessions":[{"session":{"id":"ses_old","startedAt":500,"finishedAt":600},"sets":[]}]}"#
+        try Data(older.utf8).write(to: localURL)
+
+        let migrated = LocalLog(url: localURL, deviceHolds: nil)
+
+        for seat in [nil, "u1", "u-b"] {
+            migrated.open(under: seat)
+            XCTAssertTrue(migrated.sessions.isEmpty, "unreachable from every seat, including anonymous")
+        }
+
+        let server = FakeTraining()
+        let store = makeStore(sync: server)
+        await store.connect(to: account(signedIn: true))
+        XCTAssertEqual(server.started, [], "and no account is given it by a claim")
     }
 
     // R5, ON THE SHELF. Once a shelf session's start has answered, the log holds it — so a 404 on
@@ -1228,7 +1379,7 @@ final class AnonymousGymTests: XCTestCase {
             .claim(RefusedClaim(id: "ses_gone_b", name: "\(Readout.noRoutine) · \(Readout.dateWithYear(700))",
                                 reason: "that workout is no longer on the log")),
         ])
-        XCTAssertTrue(shelf().sessions.isEmpty, "both let go — never re-sent")
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "both let go — never re-sent")
         XCTAssertEqual(server.started.map(\.id), ["ses_gone_a", "ses_gone_b"], "A's loss did not halt B")
         XCTAssertEqual(server.sets["ses_gone_b"]?.map(\.weightKg), [140], "B's sets went out before its finish met the 404")
 
@@ -1250,7 +1401,7 @@ final class AnonymousGymTests: XCTestCase {
         await offline.choose("bench-press")
         await offline.logSet(weightKg: 82.5, reps: 5)
         guard case .closed = await offline.finish() else { return XCTFail("no local close") }
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [past.id])
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [past.id])
 
         server.online = true
         guard case .success(let live) = await offline.start() else { return XCTFail("no server start") }
@@ -1262,7 +1413,7 @@ final class AnonymousGymTests: XCTestCase {
         let relaunched = makeStore(sync: server)
         await relaunched.connect(to: account(signedIn: true))
         XCTAssertEqual(relaunched.session?.id, live.id, "the live workout is still the room's")
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [past.id], "the shelf session waits")
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [past.id], "the shelf session waits")
         XCTAssertNil(server.finishes[past.id])
         XCTAssertEqual(relaunched.refusals, [], "a skip is not a loss and nothing is said")
 
@@ -1274,7 +1425,7 @@ final class AnonymousGymTests: XCTestCase {
         XCTAssertEqual(closed.id, live.id)
         XCTAssertEqual(server.sets[past.id]?.map(\.weightKg), [82.5], "the finish claimed the shelf session")
         XCTAssertNotNil(server.finishes[past.id])
-        XCTAssertTrue(shelf().sessions.isEmpty)
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty)
         XCTAssertEqual(Set(relaunched.recent.map(\.id)), [past.id, live.id])
     }
 
@@ -1294,7 +1445,7 @@ final class AnonymousGymTests: XCTestCase {
                                      message: "this device's clock is 9 minutes ahead of the log")
         let store = makeStore(sync: server, retryAfter: .milliseconds(40))
         await store.connect(to: account(signedIn: true))
-        XCTAssertEqual(shelf().sessions.map { $0.session.id }, [ahead.id], "kept for the cadence")
+        XCTAssertEqual(shelf(of: "u1").sessions.map { $0.session.id }, [ahead.id], "kept for the cadence")
         XCTAssertEqual(store.refusals, [], "transient by construction — nothing is said")
 
         server.refuseStart = nil
@@ -1302,7 +1453,7 @@ final class AnonymousGymTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertEqual(server.sets[ahead.id]?.map(\.weightKg), [82.5], "the cadence landed it on its own")
-        XCTAssertTrue(shelf().sessions.isEmpty)
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty)
 
         // The other 400: unreadable as written, said by name, and gone from the shelf for good.
         let again = makeStore(sync: nil)
@@ -1319,7 +1470,7 @@ final class AnonymousGymTests: XCTestCase {
             id: broken.id,
             name: "\(Readout.noRoutine) · \(Readout.dateWithYear(broken.startedAtMs))",
             reason: "could not read that start"))])
-        XCTAssertTrue(shelf().sessions.isEmpty, "let go — not resent on every connect")
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "let go — not resent on every connect")
 
         server.refuseStart = nil
         let later = makeStore(sync: server)

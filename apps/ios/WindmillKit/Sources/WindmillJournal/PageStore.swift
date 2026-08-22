@@ -23,26 +23,57 @@ public final class PageStore: ObservableObject {
 
     public let today: LocalDay
 
-    private let cache: PageCache
+    private let open: (String?) -> PageCache
     private let clock: HlcClock
     private let sync: (Account) -> (any PageSyncing)?
+    private var cache: PageCache
     private var journal: (any PageSyncing)?
+    private var seat: Seat = .nobody       // whose file this store has open
     private var touched = false            // the writer typed before the window landed
     private var saveTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
+    // Bumped on every seat change. Everything that awaits reads it first and gives up if it moved:
+    // a PUT sent under the departing person's bearer must not come back and mark a page pushed —
+    // or adopt its words into the draft — in the arriving person's file.
+    private var generation = 0
 
     private static let windowDays = 60
     private static let saveDebounce = Duration.milliseconds(800)
     private static let retryDelay = Duration.seconds(4)
 
-    public init(cache: PageCache = PageCache(),
+    public init(open: @escaping (String?) -> PageCache = { PageCache(seat: $0) },
                 clock: HlcClock = HlcClock(actor: HlcClock.deviceActor()),
                 today: LocalDay = .today(),
                 sync: @escaping (Account) -> (any PageSyncing)? = { $0.isSignedIn ? JournalApi(api: $0.api) : nil }) {
-        self.cache = cache
+        self.open = open
         self.clock = clock
         self.today = today
         self.sync = sync
+        // Opened for nobody until a seat arrives. Nothing is ever drawn from it: `connect` opens the
+        // arriving seat's own file first, and this one exists only so the property is never nil.
+        self.cache = open(nil)
+    }
+
+    // WHOSE FILE THIS STORE HAS OPEN — and `nobody` is a third state, not a spelling of anonymous:
+    // a store that has never been connected has drawn nothing and owes nothing, and the first seat
+    // to arrive must open its own file even when that seat is the anonymous one.
+    private enum Seat: Equatable {
+        case nobody
+        case anonymous
+        case account(String)
+
+        init(_ account: Account) {
+            guard let user = account.user else {
+                self = .anonymous
+                return
+            }
+            self = .account(user.id)
+        }
+
+        var userId: String? {
+            guard case .account(let id) = self else { return nil }
+            return id
+        }
     }
 
     // A day the canvas draws — and only days that were actually written. A day nobody wrote is not
@@ -85,7 +116,18 @@ public final class PageStore: ObservableObject {
     // Called on launch and on every change of who is signed in. Draws from the device first and
     // always — a canvas that waited for a network round trip would be a cursor that waits.
     public func connect(to account: Account) async {
+        let arriving = Seat(account)
+        if arriving != seat { take(arriving) }
         journal = sync(account)
+
+        // WHAT AN UNCONFIRMED SEAT MAY AND MAY NOT DO. `verified` is false while the seat stands on
+        // the user this device wrote beside its Keychain secret and THIS launch has not heard the
+        // log confirm it (AuthStatus.unverified). It may READ ITS OWN FILE — a basement is not a
+        // sign-out, the phone is one person's behind an OS lock, and a signed-in writer opening the
+        // canvas on a plane to a blank page would be this product breaking its own promise. What it
+        // may not do is ADOPT: taking the anonymous pages is irreversible and it takes ownership of
+        // work nobody has claimed, so it waits for the log to say who this is.
+        if account.isSignedIn, account.verified { carryTheAnonymousClaim() }
         drawFromCache()
         isLoading = false
 
@@ -95,6 +137,58 @@ public final class PageStore: ObservableObject {
         }
         await claimWhatIsOwed()
         await loadWindow()
+    }
+
+    // A NEW SEAT, AND THE OLD ONE'S WORDS GO WITH IT. What the departing person had typed but not
+    // yet saved is written into THEIR file, unsent, before this store lets go of it — a fix that
+    // loses somebody's writing is a worse bug than the leak it closes. Then everything held in
+    // memory is dropped: the canvas, the draft, the two scales and the save note all belong to the
+    // seat that just left, and the arriving one opens its own file with none of it on screen.
+    private func take(_ arriving: Seat) {
+        keepDraftOnDevice()
+        seat = arriving
+        generation += 1
+        cache = open(arriving.userId)
+        days = []
+        body = ""
+        mood = .none
+        energy = .none
+        touched = false
+        saveState = .idle
+        saveTick = 0
+        isLoading = true
+    }
+
+    private func keepDraftOnDevice() {
+        saveTask?.cancel()
+        saveTask = nil
+        retryTask?.cancel()
+        retryTask = nil
+        guard seat != .nobody, touched else { return }
+        let held = cache.page(on: today)
+        guard held?.body != body || held?.mood != mood || held?.energy != energy else { return }
+        cache.store(Page(day: today, body: body, mood: mood, energy: energy,
+                         source: .typed, stamp: clock.mint()), needsPush: true)
+        cache.flush()
+    }
+
+    // THE ONE THING THAT CROSSES A SEAT: pages written while nobody was signed in belong to the
+    // person who signs in here — the anonymous-first door's whole promise (auth canon §2, "claiming,
+    // not gating"). Only the OWED pages travel, because a page already sent belongs to the account
+    // that took it.
+    //
+    // THE ORDER IS THE WHOLE OF THE SAFETY. The anonymous file is emptied only once this seat's file
+    // has TAKEN the pages and said so — a full disk, a file the OS refused, and the device is still
+    // holding them under the anonymous name for the next attempt. Discarding on a flush nobody
+    // checked destroyed the only copy of somebody's writing, which is a worse bug than the leak this
+    // seam exists to close.
+    private func carryTheAnonymousClaim() {
+        let anonymous = open(nil)
+        let drafts = anonymous.pending
+        guard !drafts.isEmpty else { return }
+        for page in drafts { cache.store(page, needsPush: true) }
+        guard cache.flush() else { return }
+        anonymous.discard()
     }
 
     public func type(_ text: String) {
@@ -146,8 +240,14 @@ public final class PageStore: ObservableObject {
             settle(.onThisDevice)
             return
         }
+        let seated = generation
         do {
             let winner = try await journal.put(sent)
+            // The seat changed while this write was in the air: the reply is the departing person's
+            // and everything it would touch — the file, the draft, the save note — is now the
+            // arriving person's. Their file already holds the words (keepDraftOnDevice), so there
+            // is nothing here to settle and nothing to draw.
+            guard seated == generation else { return }
             cache.markPushed(today, winner: winner)
             cache.flush()
             adopt(winner, unmovedFrom: sent)
@@ -155,6 +255,7 @@ public final class PageStore: ObservableObject {
         } catch {
             // A write that did not land is not a lost write — it is on the device, marked owed,
             // and the retry will carry it. The UI says so and never throws.
+            guard seated == generation else { return }
             settle(.offline)
             scheduleRetry()
         }
@@ -189,8 +290,13 @@ public final class PageStore: ObservableObject {
     // with, so the server resolves it against anything already there by the ordinary rule.
     private func claimWhatIsOwed() async {
         guard let journal else { return }
+        let seated = generation
         for page in cache.pending {
-            guard let winner = try? await journal.put(page) else {
+            let winner = try? await journal.put(page)
+            // A walk that outlived its seat settles nothing: the file it would write to belongs to
+            // whoever is here now, and this claim is that seat's connect to make again.
+            guard seated == generation else { return }
+            guard let winner else {
                 saveState = .offline
                 return
             }
@@ -202,7 +308,12 @@ public final class PageStore: ObservableObject {
 
     private func loadWindow() async {
         guard let journal else { return }
-        guard let pages = try? await journal.range(from: today.advanced(by: -Self.windowDays), to: today) else {
+        let seated = generation
+        let read = try? await journal.range(from: today.advanced(by: -Self.windowDays), to: today)
+        // The window belongs to the seat that asked for it. Storing it now would file one account's
+        // sixty days into whoever's file is open — which is the leak this whole seam exists to stop.
+        guard seated == generation else { return }
+        guard let pages = read else {
             saveState = cache.pending.isEmpty ? saveState : .offline
             return
         }

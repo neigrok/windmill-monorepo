@@ -192,29 +192,93 @@ interface SessionStore {
     fun clear()
 }
 
-// The Android home for the secret: an app-private SharedPreferences file. MODE_PRIVATE is the
-// whole of the protection — hardware-backed storage (the Keychain's true analog) would cost a
-// dependency this app does not carry yet, and the file is unreadable to other apps either way.
-class PrefsSessions(context: Context) : SessionStore {
-    private val prefs = context.getSharedPreferences("works.windmill.session", Context.MODE_PRIVATE)
+// The Android home for the secret: an app-private SharedPreferences file, and every value in it
+// SEALED (`SecretVault`) rather than written as itself. MODE_PRIVATE keeps other apps out and it
+// was once described here as the whole of the protection, which was wrong in the one direction
+// that mattered: it keeps nothing out of a BACKUP, and until the manifest turned backup
+// participation off this file rode Android's cloud backup, device-to-device transfer and `adb
+// backup` off the phone with a live 90-day bearer and an email address in the clear. The manifest
+// closed the transport; this closes the bytes, so a copy taken before either change — or by
+// anything nobody has thought of yet — decrypts nowhere but here.
+//
+// A SECRET THIS BUILD CANNOT SEAL IS NOT WRITTEN AT ALL. Falling back to plaintext on a phone
+// whose Keystore refused would be the defect, quietly, on exactly the devices least able to afford
+// it; the cost of refusing is a sign-in that does not survive a relaunch, which is visible and
+// says what it is.
+class PrefsSessions(
+    private val prefs: KeptValues,
+    private val vault: SecretVault = SecretVault.onThisDevice(),
+) : SessionStore {
+    constructor(context: Context, vault: SecretVault = SecretVault.onThisDevice()) :
+        this(SharedPrefsValues(context), vault)
 
-    override fun read(): String? = prefs.getString("wm_session", null)
+    override fun read(): String? = kept(secretKey)
 
     override fun write(secret: String) {
-        prefs.edit().putString("wm_session", secret).apply()
+        seal(secretKey, secret)
     }
 
     // A user this build cannot read is no user: the seat reads signed out for now and the next
     // answered restore rewrites it.
-    override fun user(): User? = prefs.getString("wm_user", null)
+    override fun user(): User? = kept(userKey)
         ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
 
     override fun remember(user: User) {
-        prefs.edit().putString("wm_user", WindmillJson.encodeToString(User.serializer(), user)).apply()
+        seal(userKey, WindmillJson.encodeToString(User.serializer(), user))
     }
 
     override fun clear() {
-        prefs.edit().remove("wm_session").remove("wm_user").apply()
+        prefs.write(mapOf(
+            secretKey to null, secretKey + sealed to null,
+            userKey to null, userKey + sealed to null))
+    }
+
+    // Sealed on the way in, and the plaintext key removed in the same edit — an install upgrading
+    // into this build carries its secret across on the first read below rather than being signed
+    // out, and after that pass no cleartext copy of either value is left in the file.
+    private fun seal(key: String, plain: String) {
+        val wrapped = vault.seal(plain) ?: return
+        prefs.write(mapOf(key + sealed to wrapped, key to null))
+    }
+
+    private fun kept(key: String): String? {
+        prefs.read(key)?.let { fromBefore ->
+            seal(key, fromBefore)
+            return fromBefore
+        }
+        return prefs.read(key + sealed)?.let { vault.open(it) }
+    }
+
+    private companion object {
+        const val secretKey = "wm_session"
+        const val userKey = "wm_user"
+        const val sealed = ".sealed"
+    }
+}
+
+// The key-value file under `PrefsSessions`, as an interface for one reason: SharedPreferences
+// cannot be stood up without a device, and what MOBILE-4 actually turns on — that the bytes written
+// are never the secret, that a phone whose Keystore refuses writes NOTHING rather than falling back
+// to plaintext, and that an older build's cleartext is carried across and removed — is provable on
+// the JVM the moment the file is a seam. `write` takes the whole edit at once, nulls removing, so
+// putting the sealed value and dropping the plaintext beside it stay one atomic commit.
+interface KeptValues {
+    fun read(key: String): String?
+    fun write(values: Map<String, String?>)
+}
+
+// The Android side of that seam, and the only line in this file that knows what a Context is.
+private class SharedPrefsValues(context: Context) : KeptValues {
+    private val prefs = context.getSharedPreferences("works.windmill.session", Context.MODE_PRIVATE)
+
+    override fun read(key: String): String? = prefs.getString(key, null)
+
+    override fun write(values: Map<String, String?>) {
+        val edit = prefs.edit()
+        for ((key, value) in values) {
+            if (value == null) edit.remove(key) else edit.putString(key, value)
+        }
+        edit.apply()
     }
 }
 

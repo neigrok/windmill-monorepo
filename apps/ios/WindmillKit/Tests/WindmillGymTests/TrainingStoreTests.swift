@@ -53,10 +53,10 @@ final class TrainingStoreTests: XCTestCase {
                            retryAfter: Duration = .seconds(4)) -> TrainingStore {
         var ms: Int64 = 1_000
         return TrainingStore(
-            queue: SetQueue(url: queueURL),
+            queue: SetQueue(url: queueURL, deviceHolds: nil),
             deviceCatalog: DeviceCatalog(url: catalogURL),
             accountCopy: AccountCopy(url: accountURL),
-            localLog: LocalLog(url: localURL),
+            localLog: LocalLog(url: localURL, deviceHolds: nil),
             now: { ms += 1; return ms },
             mintSession: { "ses_minted" },
             mintSet: mintSet,
@@ -64,6 +64,21 @@ final class TrainingStoreTests: XCTestCase {
             retryAfter: retryAfter,
             sync: { _ in sync }
         )
+    }
+
+
+    // An inspection read names a seat like every other read: the queue and the shelf hold one set of
+    // rows per account, so "what is on this device" is only ever answerable for somebody.
+    private func queueOnDisk(of seat: String? = "u1") -> SetQueue {
+        let held = SetQueue(url: queueURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
+
+    private func shelfOnDisk(of seat: String? = "u1") -> LocalLog {
+        let held = LocalLog(url: localURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
     }
 
     private func account(signedIn: Bool, id: String = "u1") -> Account {
@@ -99,7 +114,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.saveState, .blocked(.offline))
         XCTAssertEqual(store.saveState.line, "offline · saved here")
         XCTAssertEqual(store.sets.map(\.weightKg), [82.5], "the row is on screen — the device is holding it")
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 1)
 
         server.online = true
         let relaunched = makeStore(sync: server)
@@ -107,7 +122,7 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5])
         XCTAssertEqual(relaunched.sets.map(\.setNumber), [1], "the log numbered it, so it is the log's now")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // 409 `set-id-taken` means that id names a row outside this session. A new id lands the same set;
@@ -146,7 +161,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.refusals.compactMap(\.set).map(\.exerciseId), ["bench-press"])
         XCTAssertEqual(store.refusals.compactMap(\.set).map(\.weightKg), [60])
         XCTAssertEqual(store.saveState.line, "the session closed before this set reached it")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // The queue's whole premise: send in any order, any number of times, and converge on one row per
@@ -159,7 +174,7 @@ final class TrainingStoreTests: XCTestCase {
         server.swallowReplies = 1
         await store.logSet(weightKg: 82.5, reps: 5)
         XCTAssertEqual(store.saveState, .blocked(.offline))
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 1)
 
         await store.flushPendingSets()
 
@@ -221,7 +236,7 @@ final class TrainingStoreTests: XCTestCase {
 
         guard case .closed = outcome else { return XCTFail("the session did not close: \(outcome)") }
         XCTAssertNil(server.sets["ses_1"], "nothing was filed into a session that was closing")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "and nothing was left owed against it")
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "and nothing was left owed against it")
     }
 
     // A 500 is the STORE failing, not the set being refused. Keeping it queued is the difference
@@ -233,7 +248,7 @@ final class TrainingStoreTests: XCTestCase {
         server.refuse = { _ in storageFailure }
         await store.logSet(weightKg: 90, reps: 5)
 
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 1)
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 1)
         XCTAssertTrue(store.refusals.isEmpty, "the server failing is not the set being refused")
         // R10: a log that ANSWERED is not a phone with no signal — the note and the strip are read
         // off the failure KIND, and "offline" is kept for the transport. Never the server's own
@@ -283,7 +298,7 @@ final class TrainingStoreTests: XCTestCase {
         await store.logSet(weightKg: 100, reps: 5)
 
         XCTAssertEqual(server.sets["ses_1"]?.map(\.exerciseId), ["back-squat"])
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.set.exerciseId), ["bench-press"])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.set.exerciseId), ["bench-press"])
         XCTAssertEqual(store.sets.map(\.exerciseId), ["bench-press", "back-squat"],
                        "both are on screen — one is on the log and one is on the device")
     }
@@ -387,7 +402,7 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(store.refusals.compactMap(\.set).map(\.exerciseId), ["zercher-squat"])
         XCTAssertEqual(store.saveState, .refused("that movement is not in the catalog"))
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.set.exerciseId), ["bench-press"])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.set.exerciseId), ["bench-press"])
         XCTAssertEqual(store.strandedCount, 1,
                        "the strip says the bench set is on this device, whatever the other lane answered")
 
@@ -441,7 +456,7 @@ final class TrainingStoreTests: XCTestCase {
             PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5),
         ]), "the plan froze off the routine the store holds")
         XCTAssertEqual(basement.session?.id, opened.id)
-        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed, "held unclaimed until the claim lands it")
+        XCTAssertTrue(queueOnDisk(of: "u1").sessionIsUnclaimed, "held unclaimed until the claim lands it")
 
         await basement.choose("bench-press")
         XCTAssertEqual(basement.prefill, Prefill(weightKg: 82.5, reps: 5), "and the dial is the plan's")
@@ -456,7 +471,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.started.map(\.routineId), ["rt_push_a", "rt_push_a"])
         XCTAssertEqual(server.started.map(\.joinOpenSession), [false, false])
         XCTAssertEqual(server.sets[opened.id]?.map(\.weightKg), [82.5], "the cadence claimed it and the set went out")
-        XCTAssertFalse(SetQueue(url: queueURL).sessionIsUnclaimed)
+        XCTAssertFalse(queueOnDisk(of: "u1").sessionIsUnclaimed)
         XCTAssertEqual(basement.session?.id, opened.id, "the same workout, on the log now")
     }
 
@@ -467,12 +482,12 @@ final class TrainingStoreTests: XCTestCase {
         await store.connect(to: account(signedIn: true))
 
         guard case .success(let fallen) = await store.start() else { return XCTFail("a 500 is not a wall") }
-        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed)
+        XCTAssertTrue(queueOnDisk(of: "u1").sessionIsUnclaimed)
         _ = await store.discard(fallen.id)
 
         server.refuseStart = refusal(400, code: "clock-ahead", message: "this device's clock is 9 minutes ahead")
         guard case .success = await store.start() else { return XCTFail("clock-ahead ages into the past by itself") }
-        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed)
+        XCTAssertTrue(queueOnDisk(of: "u1").sessionIsUnclaimed)
         _ = await store.discard(store.session!.id)
 
         server.refuseStart = refusal(401, message: "sign in to open your training log")
@@ -500,7 +515,7 @@ final class TrainingStoreTests: XCTestCase {
             reason: "that workout is no longer on the log"))])
         XCTAssertEqual(store.saveState, .refused("that workout is no longer on the log"))
         XCTAssertNil(store.session, "the workout is forgotten — the room has nothing running")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "nothing is left retrying")
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "nothing is left retrying")
         XCTAssertEqual(store.strandedCount, 0)
         XCTAssertNil(store.strandedBy)
         XCTAssertEqual(store.recent, [], "and the log was re-read: the discarded workout is not a row")
@@ -533,7 +548,7 @@ final class TrainingStoreTests: XCTestCase {
         let gone = await store.finish()
         XCTAssertEqual(gone, .failed(.refused("that workout is no longer on the log")))
         XCTAssertNil(store.session, "there is nothing left to close")
-        XCTAssertTrue(SetQueue(url: queueURL).session == nil)
+        XCTAssertTrue(queueOnDisk(of: "u1").session == nil)
         XCTAssertEqual(store.recent, [], "the log was re-read")
     }
 
@@ -566,7 +581,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(basement.catalog.first { $0.id == "bench-press" }?.name, "Bench (renamed)",
                        "the account's names, off the copy")
         XCTAssertEqual(basement.preferences.units, .lb, "the settings, off the shelf")
-        XCTAssertEqual(LocalLog(url: localURL).preferences?.units, .lb,
+        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).preferences?.units, .lb,
                        "and the account's document was not let go of")
         XCTAssertEqual(basement.logFoot, .failed, "the log page is the one thing that honestly failed")
 
@@ -705,7 +720,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.sets.map { "\($0.exerciseId) \(Readout.effort(weightKg: $0.weightKg, reps: $0.reps))" },
                        ["bench-press 82.5 × 5", "cable-fly 22.5 × 12"],
                        "every set is where it was, under the movement that owns it")
-        XCTAssertEqual(SetQueue(url: queueURL).order, ["face-pull", "bench-press", "cable-fly"],
+        XCTAssertEqual(queueOnDisk(of: "u1").order, ["face-pull", "bench-press", "cable-fly"],
                        "and it is on disk, so the app dying does not undo it")
 
         let relaunched = makeStore(sync: server)
@@ -736,7 +751,7 @@ final class TrainingStoreTests: XCTestCase {
 
         await store.drop("face-pull")
         XCTAssertEqual(store.order, ["bench-press", "cable-fly"])
-        XCTAssertEqual(SetQueue(url: queueURL).order, ["bench-press", "cable-fly"])
+        XCTAssertEqual(queueOnDisk(of: "u1").order, ["bench-press", "cable-fly"])
     }
 
     // Dropping the movement IN HAND moves the hand — standing on a movement the lifter just took off
@@ -787,7 +802,7 @@ final class TrainingStoreTests: XCTestCase {
     // The claim is offline here because that is the only way a session stays unclaimed — a shelf the
     // claim can reach is a shelf it empties, which is the case that needs no fold at all.
     func testThePickerMetaFoldsThisDevicesOwnSessionsOverTheAccounts() async {
-        let shelf = LocalLog(url: localURL)
+        let shelf = shelfOnDisk(of: "u1")
         shelf.keep(Session(id: "ses_local", startedAtMs: 5_000, finishedAtMs: 6_000),
                    sets: [TrainingSet(id: "set_l", exerciseId: "bench-press", weightKg: 90, reps: 3,
                                       completedAtMs: 5_500)])
@@ -930,7 +945,7 @@ final class TrainingStoreTests: XCTestCase {
     // instead would call the half-loaded week above that row whole and caption it with a total that
     // grows on the next tap of `Load older`.
     func testTheServedFloorIsTheOldestRowTheSERVERAnsweredWith() async {
-        let shelf = LocalLog(url: localURL)
+        let shelf = shelfOnDisk(of: "u1")
         shelf.keep(Session(id: "ses_local", startedAtMs: 1_000, finishedAtMs: 2_000), sets: [])
         shelf.flush()
 
@@ -1060,8 +1075,8 @@ final class TrainingStoreTests: XCTestCase {
         let renamed = await store.rename(minted.id, to: "Bench Press")
         XCTAssertNil(renamed)
         XCTAssertEqual(store.catalog.last?.name, "Bench Press")
-        XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.name), ["Bench Press"])
-        XCTAssertEqual(LocalLog(url: localURL).exercises.map(\.id), [minted.id],
+        XCTAssertEqual(shelfOnDisk(of: nil).exercises.map(\.name), ["Bench Press"])
+        XCTAssertEqual(shelfOnDisk(of: nil).exercises.map(\.id), [minted.id],
                        "the id the sets already name does not move")
 
         // Signed out, a movement the ACCOUNT owns is the account's to name: the catalog is global
@@ -1175,7 +1190,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.preferences.restSeconds, 90)
         XCTAssertEqual(store.preferences.units, .lb)
         XCTAssertTrue(server.settingsWrites.isEmpty, "a read is not a write")
-        XCTAssertEqual(LocalLog(url: localURL).preferences?.units, .lb)
+        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).preferences?.units, .lb)
     }
 
     // A setting the log did not take is still the lifter's: it is on the device, it is what the room
@@ -1192,13 +1207,13 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(why?.line("that setting is on this device, not on the log"),
                        "the log didn’t answer — that setting is on this device, not on the log")
         XCTAssertEqual(store.preferences.restSeconds, 120)
-        XCTAssertTrue(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertTrue(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
 
         server.online = true
         let relaunched = makeStore(sync: server)
         await relaunched.connect(to: account(signedIn: true))
         XCTAssertEqual(server.settings?.restSeconds, 120, "the claim sends what is still owed")
-        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
     // TWO ROWS TOUCHED IN A SECOND ARE TWO WHOLE DOCUMENTS, and two in flight at once could reach the
@@ -1220,7 +1235,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.settings?.restSeconds, 180,
                        "the log's last word is the lifter's last tap")
         XCTAssertEqual(store.preferences.restSeconds, 180)
-        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
     // A document the log refuses outright can never land as written, so it is LET GO of rather than
@@ -1233,7 +1248,7 @@ final class TrainingStoreTests: XCTestCase {
 
         _ = await store.save(GymPreferences.defaults.resting(120))
         XCTAssertEqual(store.preferences.restSeconds, 120)
-        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
 
         let relaunched = makeStore(sync: server)
         await relaunched.connect(to: account(signedIn: true))
@@ -1255,7 +1270,7 @@ final class TrainingStoreTests: XCTestCase {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.preferences, .defaults)
-        XCTAssertNil(LocalLog(url: localURL).preferences, "and the shelf let go of it on disk too")
+        XCTAssertNil(LocalLog(url: localURL, deviceHolds: nil).preferences, "and the shelf let go of it on disk too")
 
         // And the next account in, with the log unreachable, draws its own nothing rather than hers —
         // then sends the defaults it drew, never the pounds and the 180 s rest she set.
@@ -1311,7 +1326,7 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.settingsWrites.map(\.restSeconds), [120, 180])
         XCTAssertEqual(server.settings?.restSeconds, 180, "the log's last word is the lifter's last tap")
         XCTAssertEqual(store.preferences.restSeconds, 180)
-        XCTAssertFalse(LocalLog(url: localURL).preferencesOwed)
+        XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
     // Settings walk LAST, behind every lift, and the order is load-bearing in one direction: nothing
@@ -1333,8 +1348,8 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(server.sets.values.flatMap { $0 }.map(\.weightKg), [80],
                        "the lift is on the log even though the settings write failed")
-        XCTAssertTrue(LocalLog(url: localURL).preferencesOwed)
-        XCTAssertTrue(LocalLog(url: localURL).sessions.isEmpty, "and the session was claimed")
+        XCTAssertTrue(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
+        XCTAssertTrue(shelfOnDisk(of: "u1").sessions.isEmpty, "and the session was claimed")
     }
 }
 
@@ -1392,7 +1407,7 @@ final class SetQueueTests: XCTestCase {
     private func makeQueue() -> (SetQueue, URL) {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("gym-\(UUID().uuidString).json")
-        return (SetQueue(url: url), url)
+        return (SetQueue(url: url, deviceHolds: nil), url)
     }
 
     private func aSet(_ id: String, _ exerciseId: String = "bench-press", at completedAtMs: Int64) -> TrainingSet {
@@ -1407,7 +1422,7 @@ final class SetQueueTests: XCTestCase {
         queue.store(aSet("set_a", at: 1_100), in: "ses_1", needsPush: true)
         queue.flush()
 
-        let reopened = SetQueue(url: url)
+        let reopened = SetQueue(url: url, deviceHolds: nil)
         XCTAssertEqual(reopened.session?.id, "ses_1")
         XCTAssertEqual(reopened.sets.map(\.id), ["set_a"])
         XCTAssertEqual(reopened.pending.count, 1, "an unsent set is still owed after a relaunch")
@@ -1419,7 +1434,7 @@ final class SetQueueTests: XCTestCase {
         try? Data("not json at all".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let queue = SetQueue(url: url)
+        let queue = SetQueue(url: url, deviceHolds: nil)
         XCTAssertNil(queue.session)
         XCTAssertTrue(queue.pending.isEmpty)
     }

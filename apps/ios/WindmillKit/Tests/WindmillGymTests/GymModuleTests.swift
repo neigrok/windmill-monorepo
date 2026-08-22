@@ -23,7 +23,7 @@ final class GymDeviceTests: XCTestCase {
         try? FileManager.default.removeItem(at: localURL)
     }
 
-    private func queue() -> SetQueue { SetQueue(url: queueURL) }
+    private func queue() -> SetQueue { SetQueue(url: queueURL, deviceHolds: nil) }
 
     private func summary() -> GymDevice.Summary {
         GymDevice.summary(url: queueURL, localURL: localURL)
@@ -66,7 +66,7 @@ final class GymDeviceTests: XCTestCase {
     // The local shelf is a real home now: a finished session nobody has claimed counts toward what
     // gym is holding here, which is what signed-out You states and the house trigger waits on.
     func testUnclaimedFinishedSessionsCountTowardWhatIsOnThisDevice() {
-        let kept = LocalLog(url: localURL)
+        let kept = LocalLog(url: localURL, deviceHolds: nil)
         kept.keep(Session(id: "ses_done", startedAtMs: 1_000, finishedAtMs: 2_000),
                   sets: [aSet("set_1", at: 1_500)])
         kept.flush()

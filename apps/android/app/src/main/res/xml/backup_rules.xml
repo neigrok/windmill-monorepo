@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The same refusal, spelled the way API 30 and below reads it. `allowBackup="false"` already stops
+  every backup on those releases; this stands behind it so the answer does not depend on one
+  attribute surviving an edit.
+-->
+<full-backup-content>
+    <exclude domain="root" />
+    <exclude domain="file" />
+    <exclude domain="database" />
+    <exclude domain="sharedpref" />
+    <exclude domain="external" />
+</full-backup-content>

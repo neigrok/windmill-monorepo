@@ -170,10 +170,10 @@ final class CoachShareStoreTests: XCTestCase {
     // for a signed-out account: there is no log to reach, and that is a state rather than a failure.
     private func store(_ server: FakeTraining?) -> TrainingStore {
         var ms: Int64 = 1_000
-        return TrainingStore(queue: SetQueue(url: queueURL),
+        return TrainingStore(queue: SetQueue(url: queueURL, deviceHolds: nil),
                              deviceCatalog: DeviceCatalog(url: queueURL.appendingPathExtension("cat")),
                              accountCopy: AccountCopy(url: queueURL.appendingPathExtension("account")),
-                             localLog: LocalLog(url: queueURL.appendingPathExtension("local")),
+                             localLog: LocalLog(url: queueURL.appendingPathExtension("local"), deviceHolds: nil),
                              now: { ms += 1; return ms },
                              undoWindowMs: 0,
                              sync: { _ in server })

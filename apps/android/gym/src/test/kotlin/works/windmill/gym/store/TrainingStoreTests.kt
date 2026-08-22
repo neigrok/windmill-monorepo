@@ -115,10 +115,11 @@ class TrainingStoreTests {
         mintSession: () -> String = { "ses_minted" },
         retryAfterMs: Long = 4_000,
         undoWindowMs: Long = 0,
+        deviceOwner: String? = null,
     ) = TrainingStore(
-        queue = SetQueue(queueFile) { clockMs },
+        queue = SetQueue(queueFile, deviceOwner) { clockMs },
         deviceCopy = DeviceCopy(catalogFile),
-        localLog = LocalLog(localFile),
+        localLog = LocalLog(localFile, deviceOwner),
         localPreferences = LocalPreferences(preferencesFile),
         scope = backgroundScope,
         now = { clockMs += 1; clockMs },
@@ -128,6 +129,38 @@ class TrainingStoreTests {
         retryAfterMs = retryAfterMs,
         sync = { if (it.isSignedIn) sync else null },
     )
+
+    // A room where each account has its own log, which is the only way to prove that a workout
+    // composed under one seat never lands on another's. Everything else here shares one fake,
+    // because everything else is about one lifter.
+    private fun TestScope.makeStore(
+        logs: Map<String, TrainingSyncing>,
+        deviceOwner: String? = null,
+    ) = TrainingStore(
+        queue = SetQueue(queueFile, deviceOwner) { clockMs },
+        deviceCopy = DeviceCopy(catalogFile),
+        localLog = LocalLog(localFile, deviceOwner),
+        localPreferences = LocalPreferences(preferencesFile),
+        scope = backgroundScope,
+        now = { clockMs += 1; clockMs },
+        mintSession = { "ses_minted" },
+        undoWindowMs = 0,
+        sync = { seat -> seat.user?.id?.let { logs[it] } },
+    )
+
+    // One finished workout as a build from before the seats wrote it: the whole shelf at the top
+    // level, with no seat anywhere on it.
+    private val legacyShelf =
+        """{"finished":[{"session":{"id":"ses_before","startedAt":1000,"finishedAt":2000},""" +
+            """"sets":[{"id":"set_before","exerciseId":"bench-press","weightKg":90.0,""" +
+            """"reps":5,"completedAt":1100}]}]}"""
+
+    // THE FILES READ BACK AS A GIVEN SEAT WOULD SEE THEM. The seat lives in memory now, so a bare
+    // construction is the ANONYMOUS shelf — and every assertion below about a signed-in lifter's
+    // rows would quietly answer "none" against it. `u1` is what `account(signedIn = true)` is.
+    private fun queueOnDisk(owner: String? = "u1") = SetQueue(queueFile, owner)
+
+    private fun shelfOnDisk(owner: String? = "u1") = LocalLog(localFile, owner)
 
     private fun account(signedIn: Boolean, id: String = "u1") = Account(
         api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
@@ -166,7 +199,7 @@ class TrainingStoreTests {
         assertEquals("offline · saved here", store.saveState.line)
         assertEquals("the row is on screen — the device is holding it",
             listOf(82.5), store.sets.map { it.weightKg })
-        assertEquals(1, SetQueue(queueFile).pending.size)
+        assertEquals(1, queueOnDisk().pending.size)
 
         server.online = true
         val relaunched = makeStore(sync = server)
@@ -175,7 +208,7 @@ class TrainingStoreTests {
         assertEquals(listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
         assertEquals("the log numbered it, so it is the log's now",
             listOf(1), relaunched.sets.map { it.setNumber })
-        assertTrue(SetQueue(queueFile).pending.isEmpty())
+        assertTrue(queueOnDisk().pending.isEmpty())
     }
 
     // 409 `set-id-taken` means that id names a row outside this session. A new id lands the same
@@ -220,7 +253,7 @@ class TrainingStoreTests {
         assertEquals(listOf("bench-press"), store.refusals.map { (it as RefusedSet).exerciseId })
         assertEquals(listOf(60.0), store.refusals.map { (it as RefusedSet).weightKg })
         assertEquals("the session closed before this set reached it", store.saveState.line)
-        assertTrue(SetQueue(queueFile).pending.isEmpty())
+        assertTrue(queueOnDisk().pending.isEmpty())
     }
 
     // The queue's whole premise: send in any order, any number of times, and converge on one row
@@ -234,7 +267,7 @@ class TrainingStoreTests {
         server.swallowReplies = 1
         store.logSet(weightKg = 82.5, reps = 5)
         assertEquals(SaveState.Blocked(Blocker.Offline), store.saveState)
-        assertEquals(1, SetQueue(queueFile).pending.size)
+        assertEquals(1, queueOnDisk().pending.size)
 
         store.flushPendingSets()
 
@@ -300,7 +333,7 @@ class TrainingStoreTests {
 
         assertTrue("the session did not close: $outcome", outcome is FinishOutcome.Closed)
         assertNull("nothing was filed into a session that was closing", server.sets["ses_1"])
-        assertTrue("and nothing was left owed against it", SetQueue(queueFile).pending.isEmpty())
+        assertTrue("and nothing was left owed against it", queueOnDisk().pending.isEmpty())
     }
 
     // A 500 is the STORE failing, not the set being refused. Keeping it queued is the difference
@@ -313,7 +346,7 @@ class TrainingStoreTests {
         server.refuse = { storageFailure }
         store.logSet(weightKg = 90.0, reps = 5)
 
-        assertEquals(1, SetQueue(queueFile).pending.size)
+        assertEquals(1, queueOnDisk().pending.size)
         assertTrue("the server failing is not the set being refused", store.refusals.isEmpty())
         assertEquals("and a log that answered 500 is not a missing signal — the note names the log",
             SaveState.Blocked(Blocker.LogFailed), store.saveState)
@@ -335,7 +368,7 @@ class TrainingStoreTests {
         store.logSet(weightKg = 100.0, reps = 5)
 
         assertEquals(listOf("back-squat"), server.sets.getValue("ses_1").map { it.exerciseId })
-        assertEquals(listOf("bench-press"), SetQueue(queueFile).pending.map { it.set.exerciseId })
+        assertEquals(listOf("bench-press"), queueOnDisk().pending.map { it.set.exerciseId })
         assertEquals("both are on screen — one is on the log and one is on the device",
             listOf("bench-press", "back-squat"), store.sets.map { it.exerciseId })
     }
@@ -428,8 +461,8 @@ class TrainingStoreTests {
         relaunched.connect(account(signedIn = false))
         assertEquals(listOf("ses_minted"), relaunched.recent.map { it.id })
         assertEquals("the queue let go — the shelf is the one owner of a finished local session",
-            0, SetQueue(queueFile).pending.size)
-        assertEquals(listOf(82.5), LocalLog(localFile).details().single().sets.map { it.weightKg })
+            0, queueOnDisk(null).pending.size)
+        assertEquals(listOf(82.5), shelfOnDisk(null).details().single().sets.map { it.weightKg })
     }
 
     // The signed-out program: a routine kept from a session, listed on Today, started from — with
@@ -456,7 +489,7 @@ class TrainingStoreTests {
         assertEquals(105.0,
             store.routines.first { it.id == kept.id }.entries.first().targetWeightKg)
         assertEquals("and the shelf holds the retargeted document for the claim",
-            105.0, LocalLog(localFile).routine(kept.id)?.entries?.first()?.targetWeightKg)
+            105.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
     }
 
     // "What did I do last time" answered off the device's own history: a finished local session is
@@ -696,7 +729,7 @@ class TrainingStoreTests {
         assertEquals("the room stands in the claimed live workout", "ses_b", store.session?.id)
 
         assertTrue("the shelf let go of everything the server confirmed",
-            LocalLog(localFile).finished.isEmpty() && LocalLog(localFile).routines.isEmpty())
+            shelfOnDisk().finished.isEmpty() && shelfOnDisk().routines.isEmpty())
         assertEquals("and the log lists what the shelf held",
             setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
     }
@@ -726,7 +759,7 @@ class TrainingStoreTests {
         assertNull("nothing landed under the spent id", server.stored["ses_spent"])
         assertEquals(listOf(82.5), server.sets.getValue("ses_fresh").map { it.weightKg })
         assertFalse(server.stored.getValue("ses_fresh").isOpen)
-        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
     // `session-already-open` is the WAIT. Another device holds the account's live workout, so the
@@ -748,7 +781,7 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
 
         assertNull("nothing was filed into the other device's workout", server.sets["ses_phone2"])
-        assertEquals(1, LocalLog(localFile).finished.size)
+        assertEquals(1, shelfOnDisk().finished.size)
         assertTrue("the boot read still ran", server.calls.contains("sessions"))
         assertEquals("the reader sees the log and the shelf together",
             setOf("ses_phone2", "ses_minted"), store.recent.map { it.id }.toSet())
@@ -770,13 +803,13 @@ class TrainingStoreTests {
 
         server.online = false
         store.connect(account(signedIn = true))
-        assertEquals(1, LocalLog(localFile).finished.size)
+        assertEquals(1, shelfOnDisk().finished.size)
         assertTrue(store.refusals.isEmpty())
 
         server.online = true
         store.connect(account(signedIn = true))
         assertEquals(listOf(82.5), server.sets.getValue("ses_minted").map { it.weightKg })
-        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
     // ...and the next connect is no longer the only carrier: a claim that stopped on a retryable
@@ -797,7 +830,7 @@ class TrainingStoreTests {
         server.online = false
         store.connect(account(signedIn = true))
         assertEquals("the boot claim stopped offline — nothing lost, nothing said",
-            1, LocalLog(localFile).finished.size)
+            1, shelfOnDisk().finished.size)
         assertTrue(store.refusals.isEmpty())
         val attempted = server.started.size
 
@@ -805,7 +838,7 @@ class TrainingStoreTests {
         runCurrent()
         assertTrue("the cadence retried the claim on its own, with nobody tapping anything",
             server.started.size > attempted)
-        assertEquals("still offline — the shelf keeps everything", 1, LocalLog(localFile).finished.size)
+        assertEquals("still offline — the shelf keeps everything", 1, shelfOnDisk().finished.size)
 
         server.online = true
         val gate = CompletableDeferred<Unit>()
@@ -825,7 +858,7 @@ class TrainingStoreTests {
 
         assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
         assertFalse(server.stored.getValue("ses_a").isOpen)
-        assertTrue("the shelf let go once the log confirmed", LocalLog(localFile).finished.isEmpty())
+        assertTrue("the shelf let go once the log confirmed", shelfOnDisk().finished.isEmpty())
         assertEquals("the re-claim landed the device-composed workout too, without any remount",
             listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
         assertTrue(server.stored.getValue("ses_b").isOpen)
@@ -897,7 +930,7 @@ class TrainingStoreTests {
         assertFalse(server.stored.getValue("ses_b").isOpen)
         assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
         assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertTrue("the shelf let go of both", LocalLog(localFile).finished.isEmpty())
+        assertTrue("the shelf let go of both", shelfOnDisk().finished.isEmpty())
         assertEquals("and the eventual log read lands clean — both workouts listed, neither open",
             setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
         assertTrue(store.recent.none { it.session.isOpen })
@@ -947,7 +980,7 @@ class TrainingStoreTests {
         assertFalse(server.stored.getValue("ses_a").isOpen)
         assertFalse(server.stored.getValue("ses_b").isOpen)
         assertEquals(listOf(999.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertTrue(shelfOnDisk().finished.isEmpty())
         assertNull(store.session)
         assertTrue(store.refusals.isEmpty())
     }
@@ -971,7 +1004,7 @@ class TrainingStoreTests {
             store.refusals)
         assertNull("no logger is mounted — Today is the standing screen", store.session)
         assertTrue("said once and let go, not re-said on the next connect",
-            LocalLog(localFile).routines.isEmpty())
+            shelfOnDisk().routines.isEmpty())
 
         store.clearRefusals()
         assertEquals("dismissing clears what was shown", emptyList<RefusedWrite>(), store.refusals)
@@ -1002,7 +1035,7 @@ class TrainingStoreTests {
             store.refusals.map { it.reason })
         assertEquals(listOf(82.5), store.refusals.map { (it as RefusedSet).weightKg })
         assertTrue("the shelf let go — a loss said once is not re-said every connect",
-            LocalLog(localFile).finished.isEmpty())
+            shelfOnDisk().finished.isEmpty())
     }
 
     // A WARMUP IS A KIND THE LOGGER CAN WRITE, and it counts toward nothing. Before the toggle
@@ -1054,7 +1087,7 @@ class TrainingStoreTests {
 
         assertEquals(listOf("zercher-squat"), store.refusals.map { (it as RefusedSet).exerciseId })
         assertEquals(SaveState.Refused("that movement is not in the catalog"), store.saveState)
-        assertEquals(listOf("bench-press"), SetQueue(queueFile).pending.map { it.set.exerciseId })
+        assertEquals(listOf("bench-press"), queueOnDisk().pending.map { it.set.exerciseId })
         assertEquals("the strip says the bench set is on this device, whatever the other lane answered",
             1, store.strandedCount)
 
@@ -1108,7 +1141,7 @@ class TrainingStoreTests {
                     PlanEntry(exerciseId = "bench-press", sets = 3, reps = 5, weightKg = 100.0))),
                 opened.plan)
             assertEquals("ses_minted", store.session?.id)
-            assertTrue("held on the device, not the log's yet", SetQueue(queueFile).sessionIsUnclaimed)
+            assertTrue("held on the device, not the log's yet", queueOnDisk().sessionIsUnclaimed)
             store.choose("bench-press")
             store.logSet(weightKg = 100.0, reps = 5)
             assertEquals("its set is parked with it, never counted stranded", 0, store.strandedCount)
@@ -1124,7 +1157,7 @@ class TrainingStoreTests {
                 listOf("ses_minted", "rt_push", false),
                 listOf(claimed.id, claimed.routineId, claimed.joinOpenSession))
             assertEquals(listOf(100.0), server.sets.getValue("ses_minted").map { it.weightKg })
-            assertFalse("and it is the log's now", SetQueue(queueFile).sessionIsUnclaimed)
+            assertFalse("and it is the log's now", queueOnDisk().sessionIsUnclaimed)
             assertEquals("ses_minted", store.session?.id)
             assertTrue(store.refusals.isEmpty())
         }
@@ -1149,7 +1182,7 @@ class TrainingStoreTests {
         assertEquals("the log holds the start whose reply was lost", listOf("ses_a"), server.stored.keys.toList())
         assertEquals("and the device composed under that same id", "ses_a", opened.id)
         assertEquals("ses_a", store.session?.id)
-        assertTrue("held unclaimed until the log answers for it", SetQueue(queueFile).sessionIsUnclaimed)
+        assertTrue("held unclaimed until the log answers for it", queueOnDisk().sessionIsUnclaimed)
         store.choose("bench-press")
         store.logSet(weightKg = 100.0, reps = 5)
         assertNull("parked with its session", server.sets["ses_a"])
@@ -1163,8 +1196,8 @@ class TrainingStoreTests {
         assertEquals("one session on the log, never a second one waiting on it",
             listOf("ses_a"), server.stored.keys.toList())
         assertEquals(listOf(100.0), server.sets.getValue("ses_a").map { it.weightKg })
-        assertFalse(SetQueue(queueFile).sessionIsUnclaimed)
-        assertTrue(SetQueue(queueFile).pending.isEmpty())
+        assertFalse(queueOnDisk().sessionIsUnclaimed)
+        assertTrue(queueOnDisk().pending.isEmpty())
         assertEquals(SaveState.OnTheLog, store.saveState)
         assertEquals("ses_a", store.session?.id)
         assertTrue(store.refusals.isEmpty())
@@ -1181,15 +1214,15 @@ class TrainingStoreTests {
         val store = liveStore(server)
         server.online = false
         store.logSet(weightKg = 82.5, reps = 5)
-        assertEquals("owed, against a session the log holds", 1, SetQueue(queueFile).pending.size)
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        assertEquals("owed, against a session the log holds", 1, queueOnDisk().pending.size)
+        shelfOnDisk().hold(LocalLog.FinishedSession(
             Session(id = "ses_early", startedAtMs = 500, finishedAtMs = 900),
             listOf(TrainingSet(id = "set_early", exerciseId = "bench-press", weightKg = 60.0,
                 reps = 5, completedAtMs = 600))))
         val written = queueFile.readText()
         assertTrue(written.contains(""","unclaimed":false"""))
         queueFile.writeText(written.replace(""","unclaimed":false""", ""))
-        assertTrue("the older file reads as unclaimed", SetQueue(queueFile).sessionIsUnclaimed)
+        assertTrue("the older file reads as unclaimed", queueOnDisk().sessionIsUnclaimed)
 
         server.online = true
         val relaunched = makeStore(sync = server)
@@ -1198,13 +1231,13 @@ class TrainingStoreTests {
         assertEquals("the shelf start waited on the phone's own open workout — no live start went out",
             listOf("ses_early"), server.started.map { it.id })
         assertEquals("ses_1", relaunched.session?.id)
-        assertFalse("the read adopted it: the log has answered for it", SetQueue(queueFile).sessionIsUnclaimed)
+        assertFalse("the read adopted it: the log has answered for it", queueOnDisk().sessionIsUnclaimed)
         assertEquals("and its parked set walked on that read, not on the next tap",
             listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertTrue(SetQueue(queueFile).pending.isEmpty())
+        assertTrue(queueOnDisk().pending.isEmpty())
         assertEquals(SaveState.OnTheLog, relaunched.saveState)
         assertEquals("the shelf session still waits — the finish's claim walks it",
-            listOf("ses_early"), LocalLog(localFile).finished.map { it.session.id })
+            listOf("ses_early"), shelfOnDisk().finished.map { it.session.id })
     }
 
     // A live start the log refuses outright is said again on every pass — the workout cannot be
@@ -1288,7 +1321,7 @@ class TrainingStoreTests {
         assertEquals(WriteFailure.Refused("Push Day has changed since this session started"),
             signedOut.save(105.0, toRoutine = kept.id, atPosition = 2, forExercise = "bench-press"))
         assertEquals("the shelf's document stood still",
-            100.0, LocalLog(localFile).routine(kept.id)?.entries?.first()?.targetWeightKg)
+            100.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
     }
 
     // The picker closed on a movement that was never minted, and absolutely nothing was said.
@@ -1446,7 +1479,7 @@ class TrainingStoreTests {
         crashed.store(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
             reps = 5, completedAtMs = 1_100), "ses_1", needsPush = true)
         crashed.flush()
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        shelfOnDisk(null).hold(LocalLog.FinishedSession(
             live.copy(finishedAtMs = 2_000),
             listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
                 reps = 5, completedAtMs = 1_100))))
@@ -1456,11 +1489,11 @@ class TrainingStoreTests {
 
         assertNull("the finish already happened — the workout is not resumed", store.session)
         assertEquals("listed once, not twice", listOf("ses_1"), store.recent.map { it.id })
-        assertTrue("the queue let go", SetQueue(queueFile).pending.isEmpty())
+        assertTrue("the queue let go", queueOnDisk(null).pending.isEmpty())
         assertEquals("and the shelf holds every set exactly once",
-            listOf("set_a"), LocalLog(localFile).details().single().sets.map { it.id })
+            listOf("set_a"), shelfOnDisk(null).details().single().sets.map { it.id })
         assertEquals("under the finish that actually happened",
-            2_000L, LocalLog(localFile).details().single().session.finishedAtMs)
+            2_000L, shelfOnDisk(null).details().single().session.finishedAtMs)
     }
 
     // THE FOOT OF THE LOG IS PAGING ARITHMETIC AND NOTHING ELSE. A full page means there may be
@@ -1508,7 +1541,7 @@ class TrainingStoreTests {
         // A session on the shelf the log will not take yet, so the boot claim stops RETRYABLY and
         // arms the cadence. Reads are healthy throughout — this is a claim that failed, not a phone
         // that is offline.
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        shelfOnDisk().hold(LocalLog.FinishedSession(
             Session(id = "ses_shelf", startedAtMs = 9_000, finishedAtMs = 9_500),
             listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
                 reps = 5, completedAtMs = 9_100))))
@@ -1542,7 +1575,7 @@ class TrainingStoreTests {
     // nobody could answer.
     @Test
     fun testSignedOutTheShelfIsTheWholeLogAndThereIsNothingOlder() = runTest {
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        shelfOnDisk(null).hold(LocalLog.FinishedSession(
             Session(id = "ses_shelf", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
                 reps = 5, completedAtMs = 1_100))))
@@ -1621,7 +1654,7 @@ class TrainingStoreTests {
             listOf(90.0), server.appended.map { it.weightKg })
         assertTrue("and neither did the deleted set", server.appended.none { it.id == sets.last().id })
         assertTrue("the shelf is empty — the account holds the workout as the lifter left it",
-            LocalLog(localFile).finished.isEmpty())
+            shelfOnDisk().finished.isEmpty())
     }
 
     // ...AND THE SAME CORRECTION MADE WHILE THE CLAIM IS ALREADY WALKING, through the whole room.
@@ -1657,7 +1690,7 @@ class TrainingStoreTests {
         assertEquals("and the account holds it — not the numbers they fixed away from",
             listOf(90.0, 60.0), server.sets.getValue(ended.id).map { it.weightKg })
         assertTrue("the shelf is empty, and it emptied only once it agreed with the account",
-            LocalLog(localFile).finished.isEmpty())
+            shelfOnDisk().finished.isEmpty())
     }
 
     // ...and a session the ACCOUNT holds goes over the wire. THE LOG MOVES AND THE ROUTINE DOES
@@ -2056,7 +2089,7 @@ class TrainingStoreTests {
         arriving.logSet(weightKg = 80.0, reps = 8)
 
         assertEquals("the whole workout is on this device's disk and nowhere else",
-            4, SetQueue(queueFile).sets(arriving.session!!.id).size)
+            4, queueOnDisk(null).sets(arriving.session!!.id).size)
 
         // The process dies here. Nothing was flushed on the way out, nobody signed in, and no
         // network was ever reachable.
@@ -2140,7 +2173,7 @@ class TrainingStoreTests {
         assertEquals("every set is exactly where it was — sets are keyed by movement, never position",
             listOf(100.0, 80.0), store.sets.map { it.weightKg })
         assertEquals("and the walk is on disk before the finger has left the screen",
-            listOf("romanian-deadlift", "back-squat", "bench-press"), SetQueue(queueFile).order)
+            listOf("romanian-deadlift", "back-squat", "bench-press"), queueOnDisk(null).order)
 
         assertFalse("a movement holding a set does not leave on a swipe", store.drop("back-squat"))
         assertEquals(listOf("romanian-deadlift", "back-squat", "bench-press"), store.order)
@@ -2151,7 +2184,7 @@ class TrainingStoreTests {
             store.exerciseId)
         assertEquals("and nothing logged went with it",
             listOf(100.0, 80.0), store.sets.map { it.weightKg })
-        assertEquals(listOf("back-squat", "bench-press"), SetQueue(queueFile).order)
+        assertEquals(listOf("back-squat", "bench-press"), queueOnDisk(null).order)
     }
 
     // THE PICKER'S META, and the absence it is built on. A movement the lifter has never trained
@@ -2937,8 +2970,8 @@ class TrainingStoreTests {
         assertNull("the drop is a success, and nothing needed the wire", store.dropRoutine(kept.id))
 
         assertEquals(emptyList<Routine>(), store.routines)
-        assertEquals("the shelf let go of the document", emptyList<Routine>(), LocalLog(localFile).routines)
-        val past = LocalLog(localFile).finished.single()
+        assertEquals("the shelf let go of the document", emptyList<Routine>(), shelfOnDisk(null).routines)
+        val past = shelfOnDisk(null).finished.single()
         assertEquals("the session run under it keeps every set", listOf(100.0), past.sets.map { it.weightKg })
         assertNull("only the dead id goes — the claim replays this session ad-hoc", past.session.routineId)
         assertEquals("the frozen plan is a copy, not a reference, and it stays",
@@ -3085,8 +3118,8 @@ class TrainingStoreTests {
         val store = liveStore(server)
         server.online = false
         store.logSet(weightKg = 82.5, reps = 5)
-        val loggedAt = SetQueue(queueFile).pending.single().set.completedAtMs
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        val loggedAt = queueOnDisk().pending.single().set.completedAtMs
+        shelfOnDisk().hold(LocalLog.FinishedSession(
             Session(id = "ses_past", startedAtMs = 500, finishedAtMs = 600),
             listOf(TrainingSet(id = "set_past", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
                 completedAtMs = 550))))
@@ -3107,7 +3140,7 @@ class TrainingStoreTests {
         assertEquals("the shelf session claimed behind it", listOf(100.0), server.sets.getValue("ses_past").map { it.weightKg })
         assertTrue(morning.refusals.isEmpty())
         assertNull("the room stands over no session — the log closed it", morning.session)
-        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
     // R1 — A SETTLING READ WAITS FOR A CLAIM MID-REPLAY. The record read settles on the server, so
@@ -3150,7 +3183,7 @@ class TrainingStoreTests {
     fun testAClaimedLiveSessionIsNotReStartedOnConnectAndItsSetsWalk() = runTest {
         val server = FakeTraining()
         val store = liveStore(server)
-        assertFalse("adopted from the log: the log's", SetQueue(queueFile).sessionIsUnclaimed)
+        assertFalse("adopted from the log: the log's", queueOnDisk().sessionIsUnclaimed)
 
         val relaunched = makeStore(sync = server)
         relaunched.connect(account(signedIn = true))
@@ -3168,7 +3201,7 @@ class TrainingStoreTests {
     @Test
     fun testAShelfSessionBehindThePhonesOwnLiveWorkoutWaitsForItsFinishRatherThanParkingIt() = runTest {
         val server = FakeTraining()
-        LocalLog(localFile).hold(LocalLog.FinishedSession(
+        shelfOnDisk().hold(LocalLog.FinishedSession(
             Session(id = "ses_past", startedAtMs = 500, finishedAtMs = 600),
             listOf(TrainingSet(id = "set_past", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
                 completedAtMs = 550))))
@@ -3176,8 +3209,8 @@ class TrainingStoreTests {
 
         assertEquals("the shelf start was refused and nothing waited behind it",
             listOf("start"), server.calls.filter { it == "start" })
-        assertEquals("the shelf keeps its session", 1, LocalLog(localFile).finished.size)
-        assertFalse("the phone's live workout is still the log's", SetQueue(queueFile).sessionIsUnclaimed)
+        assertEquals("the shelf keeps its session", 1, shelfOnDisk().finished.size)
+        assertFalse("the phone's live workout is still the log's", queueOnDisk().sessionIsUnclaimed)
         store.logSet(weightKg = 82.5, reps = 5)
         assertEquals("its set walked to the log rather than parking", listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
         assertEquals(0, store.strandedCount)
@@ -3188,7 +3221,7 @@ class TrainingStoreTests {
         assertFalse(server.stored.getValue("ses_1").isOpen)
         assertEquals("and the shelf session claimed the moment the road opened",
             listOf(100.0), server.sets.getValue("ses_past").map { it.weightKg })
-        assertTrue(LocalLog(localFile).finished.isEmpty())
+        assertTrue(shelfOnDisk().finished.isEmpty())
         assertEquals(setOf("ses_1", "ses_past"), store.recent.map { it.id }.toSet())
     }
 
@@ -3208,7 +3241,7 @@ class TrainingStoreTests {
         assertEquals(listOf(82.5), store.refusals.map { (it as RefusedSet).weightKg })
         assertEquals(SaveState.Refused("that workout is no longer on the log"), store.saveState)
         assertNull("the session is forgotten", store.session)
-        assertNull(SetQueue(queueFile).session)
+        assertNull(queueOnDisk().session)
         assertEquals("nothing owed, nothing stranded", 0, store.strandedCount)
         assertTrue("and the log was re-read", server.calls.lastIndexOf("sessions") > server.calls.lastIndexOf("append"))
         val sent = server.appended.size
@@ -3234,7 +3267,7 @@ class TrainingStoreTests {
         server.sets.remove("ses_1")
         assertEquals(FinishOutcome.Failed(WriteFailure.Refused("that workout is no longer on the log")), store.finish())
         assertNull("nothing left to stand over", store.session)
-        assertNull(SetQueue(queueFile).session)
+        assertNull(queueOnDisk().session)
         assertTrue(server.calls.lastIndexOf("sessions") > server.calls.lastIndexOf("finish"))
     }
 
@@ -3297,8 +3330,8 @@ class TrainingStoreTests {
         later.connect(account(signedIn = false))
         assertNull("five hours after the last set it is over", later.session)
         assertEquals("finished at the last set, on the shelf",
-            listOf(lastSetAt), LocalLog(localFile).finished.map { it.session.finishedAtMs })
-        assertEquals(listOf(82.5), later.recent.single().let { LocalLog(localFile).detail(it.id)!!.sets.map { s -> s.weightKg } })
+            listOf(lastSetAt), shelfOnDisk(null).finished.map { it.session.finishedAtMs })
+        assertEquals(listOf(82.5), later.recent.single().let { shelfOnDisk(null).detail(it.id)!!.sets.map { s -> s.weightKg } })
 
         val second = makeStore(sync = null, mintSession = { minted.removeAt(0) })
         second.connect(account(signedIn = false))
@@ -3309,7 +3342,7 @@ class TrainingStoreTests {
         empty.connect(account(signedIn = false))
         assertNull(empty.session)
         assertEquals("a session with no sets ended when it began",
-            startedAt, LocalLog(localFile).row("ses_second")!!.session.finishedAtMs)
+            startedAt, shelfOnDisk(null).row("ses_second")!!.session.finishedAtMs)
     }
 
     // R9, THE CLAIMED SESSION. A workout the log already holds, abandoned thirty hours, is not the
@@ -3325,7 +3358,7 @@ class TrainingStoreTests {
         server.online = false
         store.logSet(weightKg = 82.5, reps = 5)
         val lastSetAt = store.sets.single().completedAtMs
-        assertFalse(SetQueue(queueFile).sessionIsUnclaimed)
+        assertFalse(queueOnDisk().sessionIsUnclaimed)
 
         clockMs += 30 * 60 * 60 * 1000
         val relaunched = makeStore(sync = server)
@@ -3333,8 +3366,8 @@ class TrainingStoreTests {
 
         assertNull("the room let the workout go", relaunched.session)
         assertEquals("its owed set is still queued, under that session",
-            listOf("ses_1" to 82.5), SetQueue(queueFile).pending.map { it.sessionId to it.set.weightKg })
-        assertTrue("nothing was shelved", LocalLog(localFile).finished.isEmpty())
+            listOf("ses_1" to 82.5), queueOnDisk().pending.map { it.sessionId to it.set.weightKg })
+        assertTrue("nothing was shelved", shelfOnDisk().finished.isEmpty())
         assertTrue("no finish was sent", server.finished.isEmpty())
         assertTrue("and the log still holds it open — the read is what will end it",
             server.stored.getValue("ses_1").isOpen)
@@ -3347,7 +3380,7 @@ class TrainingStoreTests {
             listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
         assertEquals("and the read ended the workout at that set",
             lastSetAt, server.stored.getValue("ses_1").finishedAtMs)
-        assertTrue(SetQueue(queueFile).pending.isEmpty())
+        assertTrue(queueOnDisk().pending.isEmpty())
         assertTrue(server.finished.isEmpty())
     }
 
@@ -3366,4 +3399,273 @@ class TrainingStoreTests {
         assertEquals(1, store.strandedCount)
         assertTrue("still owed, never dropped", store.refusals.isEmpty())
     }
+
+    // MOBILE-3, THE REPLAY HALF, END TO END. A signed in A trains in a basement: the start is
+    // refused for want of a signal, the workout composes on the device, the finish moves it to the
+    // shelf. A signs out and B signs in. Nothing of A's may reach B's log — and nothing of A's may
+    // be thrown away to make that true.
+    @Test
+    fun testAWorkoutComposedOfflineUnderOneSeatIsNeverReplayedIntoTheNextAccount() = runTest {
+        val alicesLog = FakeTraining()
+        val bobsLog = FakeTraining()
+        val store = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
+
+        store.connect(account(signedIn = true, id = "alice"))
+        alicesLog.online = false
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+        store.finish()
+        assertEquals("composed on the device, waiting for a signal",
+            1, shelfOnDisk().let { it.adopt("alice"); it.finished.size })
+
+        // Sign out, then the next person signs in — on the same phone, still with no signal for A.
+        store.connect(account(signedIn = false))
+        store.connect(account(signedIn = true, id = "bob"))
+
+        assertEquals("B's log was never told about A's workout",
+            emptyList<String>(), bobsLog.stored.keys.toList())
+        assertTrue("not even attempted under B's bearer", bobsLog.started.isEmpty())
+        assertTrue("nor its sets", bobsLog.appended.isEmpty())
+        assertEquals("and B's room draws none of it", emptyList<String>(), store.recent.map { it.id })
+
+        // And A's own workout is still A's — not dropped to close the leak.
+        alicesLog.online = true
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
+        assertEquals("A's owed set landed on A's log, in full",
+            listOf(82.5), alicesLog.sets.getValue("ses_minted").map { it.weightKg })
+        assertTrue("and the shelf let go once A's log confirmed",
+            shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
+    }
+
+    // MOBILE-3, THE LIVE HALF. A's live workout and its owed sets may not be drawn for the next
+    // seat — which is what sent A's numbers out under B's Bearer, met the server's per-user 404 and
+    // dropped the set as "vanished".
+    @Test
+    fun testThePreviousSeatsLiveWorkoutIsNotDrawnForTheNextOne() = runTest {
+        val alicesLog = FakeTraining()
+        val bobsLog = FakeTraining()
+        val store = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
+
+        store.connect(account(signedIn = true, id = "alice"))
+        alicesLog.online = false
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 100.0, reps = 3)
+        assertEquals("ses_minted", store.session?.id)
+
+        store.connect(account(signedIn = false))
+        assertNull("signing out takes the workout off the screen with the seat", store.session)
+        assertEquals(emptyList<Double>(), store.sets.map { it.weightKg })
+
+        store.connect(account(signedIn = true, id = "bob"))
+        assertNull("and B is not standing in A's workout", store.session)
+        assertTrue("so nothing of A's is owed under B's bearer", bobsLog.appended.isEmpty())
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals("A comes back to their own bar", "ses_minted", store.session?.id)
+        assertEquals(listOf(100.0), store.sets.map { it.weightKg })
+    }
+
+    // THE ANONYMOUS-FIRST DOOR, and it must not regress: work made before anybody signed in is
+    // claimed by the account that arrives, exactly as it always was.
+    @Test
+    fun testWorkMadeSignedOutStillClaimsOntoTheFirstAccountThatSignsIn() = runTest {
+        val alicesLog = FakeTraining()
+        val store = makeStore(logs = mapOf("alice" to alicesLog))
+
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 60.0, reps = 8)
+        store.finish()
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
+        assertEquals(listOf(60.0), alicesLog.sets.getValue("ses_minted").map { it.weightKg })
+        assertTrue(shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
+    }
+
+    // A SEAT THIS PROCESS COULD NOT CONFIRM DRAWS ITS OWN ROOM AND CLAIMS NOTHING. The basement
+    // survives — the room opens, the workout logs — but a remembered identity does not take
+    // ownership of work nobody has claimed yet until the server has answered for it.
+    @Test
+    fun testAnUnverifiedSeatDoesNotClaimTheAnonymousShelf() = runTest {
+        val alicesLog = FakeTraining()
+        val store = makeStore(logs = mapOf("alice" to alicesLog))
+
+        store.connect(account(signedIn = false))
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 60.0, reps = 8)
+        store.finish()
+
+        val remembered = Account(
+            api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+            user = User(id = "alice", email = "sam@example.com", name = "Sam"),
+            verified = false)
+        store.connect(remembered)
+        assertEquals("nothing of nobody's was claimed onto a seat nobody answered for",
+            emptyList<String>(), alicesLog.stored.keys.toList())
+        assertEquals("and the room draws none of it either", emptyList<String>(),
+            store.recent.map { it.id })
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals("the first verified connect claims it", listOf("ses_minted"),
+            alicesLog.stored.keys.toList())
+    }
+
+    // THE UPGRADE, BRANCH ONE — THROUGH THE ORDERING THE APP ACTUALLY PERFORMS. The room mounts
+    // before /v1/me resolves, so `connect` is handed NOBODY first and the real account only after
+    // the restore lands; a migration that read the arriving account would therefore quarantine
+    // every signed-in lifter on earth. The decision is made off the session the DEVICE holds, at
+    // construction, which is why the store is built with a `deviceOwner` here and the connects
+    // below are exactly MainActivity's order.
+    @Test
+    fun testAShelfFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHoldingAtTheUpgrade() = runTest {
+        val alicesLog = FakeTraining()
+        localFile.writeText(legacyShelf)
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = "alice")
+        store.connect(account(signedIn = false))
+        assertNull("no door is needed and none is offered, not even on the nobody pass",
+            store.unattributed)
+        store.connect(account(signedIn = true, id = "alice"))
+
+        assertNull(store.unattributed)
+        assertEquals("it is A's own history and it claims like any other shelf row",
+            listOf("ses_before"), alicesLog.stored.keys.toList())
+        assertEquals(listOf(90.0), alicesLog.sets.getValue("ses_before").map { it.weightKg })
+
+        // And it went to A ALONE: the next account to hold the phone inherits none of it, on this
+        // launch or on a relaunch that reads the file fresh.
+        val bobsLog = FakeTraining()
+        val shared = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
+        shared.connect(account(signedIn = false))
+        shared.connect(account(signedIn = true, id = "bob"))
+        assertEquals(emptyList<String>(), bobsLog.stored.keys.toList())
+        assertNull(shared.unattributed)
+    }
+
+    // THE UPGRADE, BRANCH TWO: the phone held NO session. "Nobody is signed in now" is not "nobody
+    // wrote this" — it may be exactly the last account's training after they signed out, which is
+    // the leak itself. So it is nobody's until a human with an account says otherwise, and the
+    // decision is WRITTEN DOWN: the legacy file is gone from the disk, so no later launch — not
+    // even one that does hold a session — can read it back and hand it to somebody.
+    @Test
+    fun testAShelfFromBeforeTheSeatsOnASignedOutPhoneIsQuarantinedAndReleasedByHand() = runTest {
+        val alicesLog = FakeTraining()
+        localFile.writeText(legacyShelf)
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
+        store.connect(account(signedIn = false))
+        assertEquals("nobody's, so nobody's log draws it", emptyList<String>(),
+            store.recent.map { it.id })
+        assertEquals(1, store.unattributed?.sessions)
+        assertEquals(listOf(1_000L), store.unattributed?.days)
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals("no account walks in and inherits it", emptyList<String>(),
+            alicesLog.stored.keys.toList())
+        assertEquals(emptyList<String>(), store.recent.map { it.id })
+        assertEquals("the door is still the only way out", 1, store.unattributed?.sessions)
+
+        // The relaunch, and the half that was only in memory before: a phone that now DOES hold a
+        // session re-reads this file and must still find a quarantine, not a shelf to hand over.
+        val bobsLog = FakeTraining()
+        val relaunched = makeStore(logs = mapOf("bob" to bobsLog), deviceOwner = "bob")
+        relaunched.connect(account(signedIn = false))
+        relaunched.connect(account(signedIn = true, id = "bob"))
+        assertEquals("BOB'S LOG RECEIVED A STRANGER'S WORKOUT", emptyList<String>(),
+            bobsLog.stored.keys.toList())
+        assertEquals(1, relaunched.unattributed?.sessions)
+
+        assertNull("the human with an account says it is theirs",
+            relaunched.releaseUnattributed())
+        assertEquals("and only then does it claim", listOf("ses_before"),
+            bobsLog.stored.keys.toList())
+        assertEquals(listOf(90.0), bobsLog.sets.getValue("ses_before").map { it.weightKg })
+        assertNull(relaunched.unattributed)
+    }
+
+    // NOBODY SIGNED IN CANNOT SAY WHOSE THIS IS. Releasing onto the anonymous seat would hand the
+    // training to the next account to sign in, which is the leak the quarantine exists to refuse —
+    // so the tap is answered with the door rather than taken.
+    @Test
+    fun testTheQuarantineCannotBeClaimedBySomebodyWhoIsSignedOut() = runTest {
+        val alicesLog = FakeTraining()
+        localFile.writeText(legacyShelf)
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog))
+        store.connect(account(signedIn = false))
+        assertEquals(TrainingStore.quarantineWantsAnAccount, store.releaseUnattributed())
+        assertEquals("and nothing moved", 1, store.unattributed?.sessions)
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertNull(store.releaseUnattributed())
+        assertEquals(listOf("ses_before"), alicesLog.stored.keys.toList())
+    }
+
+    // A HALF-WORKING TAP IS A LOST WORKOUT. The queue can refuse where the shelf cannot — a seat
+    // already holding a workout has nowhere to put a second one — so it is asked FIRST, and a
+    // refusal leaves BOTH halves where they were rather than landing the shelf and dropping the
+    // rest in silence.
+    @Test
+    fun testAQuarantineTheQueueCannotTakeMovesNeitherHalfAndSaysSo() = runTest {
+        val alicesLog = FakeTraining()
+        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
+        localFile.writeText(legacyShelf)
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
+        store.connect(account(signedIn = false))
+        store.connect(account(signedIn = true, id = "alice"))
+        assertEquals(1, store.unattributed?.sessions)
+
+        // And now A is under a bar of their own.
+        alicesLog.online = false
+        store.start()
+        store.choose("bench-press")
+        store.logSet(weightKg = 82.5, reps = 5)
+
+        assertEquals(TrainingStore.liveSlotTaken, store.releaseUnattributed())
+        assertEquals("the shelf's half did not land on its own", 1, store.unattributed?.sessions)
+        assertTrue("and the queue's half is still quarantined too", store.unattributedIsLive)
+        assertEquals("nor did A lose the bar they were under", "ses_minted", store.session?.id)
+    }
+
+    @Test
+    fun testALiveWorkoutFromBeforeTheSeatsIsQuarantinedAndStillOffered() = runTest {
+        val alicesLog = FakeTraining()
+        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
+        store.connect(account(signedIn = false))
+        assertNull("nobody is standing in somebody else's workout", store.session)
+        assertTrue("and the row is offered even with an empty shelf behind it",
+            store.unattributedIsLive)
+        assertEquals(0, store.unattributed?.sessions)
+
+        store.connect(account(signedIn = true, id = "alice"))
+        assertNull(store.releaseUnattributed())
+        assertEquals("ses_before", store.session?.id)
+    }
+
+
+    // The mid-workout upgrade on a phone that WAS signed in: the lifter is put back under their own
+    // bar, not asked to find a settings row for it.
+    @Test
+    fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHolding() = runTest {
+        val alicesLog = FakeTraining()
+        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
+
+        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = "alice")
+        store.connect(account(signedIn = false))
+        store.connect(account(signedIn = true, id = "alice"))
+
+        assertEquals("ses_before", store.session?.id)
+        assertNull("no door is needed and none is offered", store.unattributed)
+        assertFalse(store.unattributedIsLive)
+    }
+
 }

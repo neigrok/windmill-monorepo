@@ -295,6 +295,24 @@ public final class TrainingStore: ObservableObject {
     public func connect(to account: Account) async {
         seat += 1
         gym = sync(account)
+        // WHOSE DEVICE STATE THIS IS, DECIDED BEFORE ANYTHING READS IT. The shelf and the queue are
+        // opened under the arriving seat first — ahead of the repair below, the draw, the walk and
+        // the claim — because every one of those would otherwise be working on the previous
+        // lifter's workout: drawing it, re-sending its owed sets under a bearer that does not own
+        // them, or replaying it into this account as this lifter's own training (audit MOBILE-3).
+        // Another seat's rows stay on the disk and out of every answer until that seat returns.
+        localLog.open(under: account.user?.id)
+        queue.open(under: account.user?.id)
+        // AND THE CLAIM'S FIRST MOVE: what this device made before anybody signed in follows the
+        // person who signs in — the anonymous shelf and the anonymous workout move onto this seat,
+        // which is what the replay below then walks. Only under a seat the log CONFIRMED this
+        // launch: adopting is irreversible and it takes ownership of work nobody has claimed yet,
+        // so a seat standing on the copy this device holds (AuthStatus.unverified) trains on its own
+        // shelf and leaves the anonymous one where it is until the log says who is holding the phone.
+        if account.isSignedIn, account.verified {
+            localLog.adoptTheAnonymousShelf()
+            queue.adoptTheAnonymousQueue()
+        }
         // THE NAMES BEFORE THE FIRST FRAME, and they are read here rather than at init because a
         // name is what ONE ACCOUNT calls a movement: a seed renamed on the record page is a
         // per-account override, and a movement somebody created is theirs. The device's own

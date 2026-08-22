@@ -3,7 +3,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- THE SESSION SECRET DOES NOT RIDE A BACKUP. A 90-day bearer of somebody's whole account,
+         their email, and every gym file under files/ were copied into Google's cloud backup and
+         into device-to-device transfer by Android's DEFAULT — and on API 26-30 `adb backup` pulls
+         the same bytes off any phone with USB debugging on, no root. A restored secret is a
+         signed-in seat on a device the account never approved. `allowBackup` closes cloud backup
+         and adb on every release this app runs on; `dataExtractionRules` closes the device
+         transfer that Android 12 stopped letting `allowBackup` speak for, and `fullBackupContent`
+         says the same thing to the releases below 31. The secret is sealed on disk as well
+         (SecretVault) — the transport and the bytes are closed independently on purpose. -->
     <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:label="Windmill"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Windmill"

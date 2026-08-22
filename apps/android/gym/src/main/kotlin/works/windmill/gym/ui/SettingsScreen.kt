@@ -43,6 +43,7 @@ import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Units
+import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -118,6 +119,7 @@ fun SettingsScreen(
             onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
         )
         ConnectedLogRow(isSignedIn, origin)
+        UnattributedRow(store, isSignedIn, say)
         ClosingNote()
     }
 }
@@ -326,6 +328,106 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
         Caption(ConnectedLog.notNamedHere)
     }
 }
+
+// THE ROW THAT IS USUALLY NOT THERE — what this phone is holding for nobody. A build from before
+// gym filed its shelf under a seat wrote one shelf with no name on it, and nothing on disk says
+// whether it was this phone's owner or the person who held it before them. So it is not handed to
+// whoever opens the app, and it is not deleted behind their back either: it waits here for a human
+// to answer the only question that can settle it.
+//
+// IT NAMES NOTHING IT HOLDS. The count and the days, and no movement, no routine and no numbers —
+// whoever is reading this screen may not be who lifted them, and a row that listed `Front Squat
+// 102.5` would be the leak it exists to close.
+@Composable
+private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val held = store.unattributed ?: return
+    val live = store.unattributedIsLive
+    if (held.sessions == 0 && held.routines == 0 && held.movements == 0 && !live) return
+    var confirmingDiscard by remember { mutableStateOf(false) }
+
+    SettingCard {
+        Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
+            color = GymSkin.ink)
+        Caption("This phone was holding training that was never signed in to any account, from " +
+            "before this version. It is nobody's until you say it is yours — it has not been " +
+            "added to any log and it will not be, on its own.")
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(heldLine(held, live), style = GymType.numeral(13), color = GymSkin.inkDim)
+            held.days.take(4).forEach {
+                Text(Readout.date(it), style = GymType.numeral(12), color = GymSkin.inkFaint)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = GymTap.minimum)
+                    .clip(RoundedCornerShape(WindmillRadius.md))
+                    .background(if (isSignedIn) GymSkin.accent else GymSkin.canvas)
+                    .clickable {
+                        scope.launch {
+                            say(null)
+                            confirmingDiscard = false
+                            store.releaseUnattributed()?.let { say(it) }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("These are mine", style = GymType.numeral(13, FontWeight.Bold),
+                    color = if (isSignedIn) GymSkin.onAccent else GymSkin.inkFaint)
+            }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = GymTap.minimum)
+                    .clip(RoundedCornerShape(WindmillRadius.md))
+                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                    .clickable {
+                        // Two taps, because nothing here has landed on any log: this is the last
+                        // copy of somebody's training, and one mistap would be the whole of it.
+                        if (!confirmingDiscard) {
+                            confirmingDiscard = true
+                            return@clickable
+                        }
+                        scope.launch {
+                            say(null)
+                            confirmingDiscard = false
+                            store.discardUnattributed()
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (confirmingDiscard) "Delete for good?" else "Not mine",
+                    style = GymType.numeral(13, FontWeight.Bold),
+                    color = if (confirmingDiscard) GymSkin.alarmInk else GymSkin.inkDim,
+                )
+            }
+        }
+        Caption(
+            if (isSignedIn) "Claiming adds it to the account you are signed in as."
+            // Not a hurdle for its own sake: only the person whose account it is can say this is
+            // theirs, and letting a signed-out phone say it would hand the training to whoever
+            // signs in next — which is exactly what quarantining it refuses to do.
+            else "Sign in first to claim it. Nobody signed in can say whose training this is, " +
+                "and it will not be handed to the next account on its own.")
+    }
+}
+
+// Counts, in the product's own words and never a bare number with a noun after it: a phone holding
+// one workout and nothing else must not read "1 workouts · 0 routines · 0 movements".
+private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
+    val parts = buildList {
+        if (live) add("a workout that was still open")
+        if (held.sessions > 0) add(count(held.sessions, "finished workout"))
+        if (held.routines > 0) add(count(held.routines, "routine"))
+        if (held.movements > 0) add(count(held.movements, "movement"))
+    }
+    return parts.joinToString(" · ")
+}
+
+private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 // WHERE THE THINGS THIS SECTION DOES NOT HOLD ACTUALLY ARE — two facts of wayfinding, and no longer
 // the paragraph around them. That gym does not restate the account screens and owns no theme switch

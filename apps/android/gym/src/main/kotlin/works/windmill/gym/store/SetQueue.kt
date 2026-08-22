@@ -37,8 +37,14 @@ import works.windmill.gym.domain.TrainingSet
 // is finished. So the queue flushes BEFORE finish, before the boot read and before the claim's
 // starts — an append settles nothing and every one of those does — and a refusal is reported rather
 // than counted as delivered.
+// `deviceOwner` is the account whose SESSION THIS DEVICE IS HOLDING when the file is opened, and it
+// exists for exactly one decision: where a file from before the seats lands (see `open`). It cannot
+// come from the room's `Account` — the room mounts before /v1/me resolves (MainActivity), so the
+// first account through that door is always nobody — so the edge reads it out of the session store
+// and hands it in here.
 class SetQueue(
     private val file: File,
+    deviceOwner: String? = null,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     // The key the server numbers sets under. A value type rather than an interpolated string because
@@ -83,8 +89,10 @@ class SetQueue(
         const val fileName = "windmill-gym-sets.json"
     }
 
+    // ONE SEAT'S QUEUE. Named for what it holds rather than for the file, because the file now
+    // holds one of these per seat and only the seat in hand is reachable (`Seat`).
     @Serializable
-    private data class Held(
+    private data class Queued(
         val session: Session? = null,
         val entries: Map<String, Entry> = emptyMap(),
         // The movements this session holds, in the order it will walk them — the plan's lines
@@ -113,31 +121,131 @@ class SetQueue(
         // never a tap late, and only for a file this build did not write. (iOS reads absent as
         // claimed — its file carried the bit from the day its claim existed.)
         val unclaimed: Boolean? = null,
-    )
+    ) {
+        val isEmpty: Boolean get() = session == null && entries.isEmpty()
+    }
 
-    private var held: Held = runCatching {
-        diskJson.decodeFromString(Held.serializer(), file.readText())
-    }.getOrElse { Held() }
+    // THE SEAT IS NOT IN HERE — it lives in memory and starts at whoever the device holds a session
+    // for. See LocalLog.Held for why a seat read back off disk is a loaded gun.
+    @Serializable
+    private data class Held(val queues: Map<String, Queued> = emptyMap())
 
-    val order: List<String> get() = held.order ?: emptyList()
+    private var seat: String = Seat.of(deviceOwner)
+    // Set by `open` when it had to decide where a file from before the seats lands. The decision is
+    // written back at once (`init`) so it is made ONCE and no later launch can make it differently
+    // — a quarantine left only in memory is a legacy file still on disk, which the next launch
+    // would re-read and could hand to somebody else.
+    private var migrated = false
+    private var held: Held = open(deviceOwner)
+
+    init {
+        if (migrated) flush()
+    }
+
+    // A FILE FROM BEFORE THE SEATS is one queue with nobody's name on it, and it decodes cleanly as
+    // that queue — so it is read that way FIRST, and WHO IT BELONGS TO IS DECIDED HERE, off the
+    // session this device is holding. Signed in at the upgrade, the workout is that account's and
+    // the lifter is put back under their own bar; holding no session, it goes to quarantine, which
+    // no seat can reach and no arriving account ever adopts. LocalLog.open carries the argument in
+    // full, and both phones state the rule the same way.
+    private fun open(deviceOwner: String?): Held {
+        val text = runCatching { file.readText() }.getOrNull() ?: return Held()
+        val before = runCatching { diskJson.decodeFromString(Queued.serializer(), text) }.getOrNull()
+        if (before != null && !before.isEmpty) {
+            migrated = true
+            return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
+        }
+        return runCatching { diskJson.decodeFromString(Held.serializer(), text) }.getOrElse { Held() }
+    }
+
+    // The seat in hand, and the one every verb below reads and writes. Absent is EMPTY: a seat that
+    // has never logged anything on this phone opens on a clean queue rather than on the last one's.
+    private val mine: Queued get() = held.queues[seat] ?: Queued()
+
+    private fun keep(next: Queued) {
+        held = Held(held.queues + (seat to next))
+    }
+
+    // THE SEAT CHANGING HANDS, and the one place it does. The departing seat's live session and
+    // owed sets stay on disk under their own key — untouched, unreachable, and theirs again the
+    // moment they sign back in — so no arriving account is drawn the last lifter's workout and
+    // nobody's sets are re-sent under somebody else's bearer.
+    //
+    // The one carry is the ANONYMOUS one, and it is the anonymous-first door: a workout composed
+    // with nobody signed in belongs to whoever claims it. It rides only onto a seat with nothing
+    // live of its own, because a live workout is one slot and the arriving lifter's own unclaimed
+    // session — parked here when they last signed out — is theirs and wins. The anonymous one is
+    // not dropped for that: it stays under its own key and rides on the first connect that finds
+    // this seat's queue settled.
+    //
+    // `confirmed` is the server having answered for this seat in THIS PROCESS. A seat standing on
+    // the device's last-known user may draw its own room — the basement is what this app is built
+    // for — but taking ownership of work nobody has claimed yet is irreversible, and a phone that
+    // could not ask does not know whether that identity is still live. The next verified connect
+    // makes the move.
+    fun adopt(owner: String?, confirmed: Boolean = true) {
+        val next = Seat.of(owner)
+        val arriving = held.queues[next] ?: Queued()
+        val anonymous = held.queues[Seat.anonymous] ?: Queued()
+        // The carry is not a property of the seat CHANGING (see LocalLog.adopt): a confirmed
+        // account seat sweeps the anonymous queue whenever it finds one and has the slot free.
+        val carrying = owner != null && confirmed && !anonymous.isEmpty && arriving.isEmpty
+        if (next == seat && !carrying) return
+        val parked = if (carrying) held.queues - Seat.anonymous else held.queues
+        val landed = if (carrying) anonymous else arriving
+        seat = next
+        held = Held((parked + (next to landed)).filterValues { !it.isEmpty })
+        flush()
+    }
+
+    // WHAT THE PHONE IS HOLDING FOR NOBODY — the live workout a build before the seats left behind.
+    // It names no movement and no numbers: whoever is reading the settings row it feeds may not be
+    // who lifted them.
+    val unattributedSession: Session? get() = held.queues[Seat.quarantine]?.session
+
+    // Whether anything at all is quarantined here — which is NOT the same question as the one
+    // above: a phone upgraded between two sets has owed sets and no live session, and a caller
+    // that asked only about the session would drop them without a word.
+    val hasUnattributed: Boolean get() = Seat.quarantine in held.queues
+
+    // The human saying it is theirs, and only a human with an account may (LocalLog.release). It
+    // lands on the seat in hand only when that seat holds nothing of its own — one live workout and
+    // one set of owed lanes is all this product has room for — and answers false when it cannot, so
+    // the screen says why instead of swallowing the tap.
+    fun release(): Boolean {
+        if (seat == Seat.anonymous) return false
+        val quarantined = held.queues[Seat.quarantine] ?: return false
+        if (!mine.isEmpty) return false
+        held = Held(held.queues - Seat.quarantine + (seat to quarantined))
+        flush()
+        return true
+    }
+
+    fun discardUnattributed() {
+        if (Seat.quarantine !in held.queues) return
+        held = Held(held.queues - Seat.quarantine)
+        flush()
+    }
+
+    val order: List<String> get() = mine.order ?: emptyList()
 
     // Appending is a rest-time action, not a setup task: the movement joins the session the moment
     // it is chosen, before it has a set to its name.
     fun append(exerciseId: String) {
         if (exerciseId in order) return
-        held = held.copy(order = order + exerciseId)
+        keep(mine.copy(order = order + exerciseId))
     }
 
     fun hold(order: List<String>) {
-        held = held.copy(order = order)
+        keep(mine.copy(order = order))
     }
 
-    val session: Session? get() = held.session
+    val session: Session? get() = mine.session
 
     // The live session was composed here and the log has not answered for it. Nothing walks its
     // sets while this holds — the claim's start opens their road — and no read may trade it for the
     // account's other open workout.
-    val sessionIsUnclaimed: Boolean get() = held.session != null && (held.unclaimed ?: true)
+    val sessionIsUnclaimed: Boolean get() = mine.session != null && (mine.unclaimed ?: true)
 
     // A different session is a different workout, so the movement order goes with the old one. It
     // is cleared rather than merged: the two lists share nothing, and carrying yesterday's
@@ -147,25 +255,25 @@ class SetQueue(
     // the SERVER answered with; only the on-device start passes true, and `claimed` turns it back
     // for the same id once the log has the row.
     fun hold(session: Session?, unclaimed: Boolean = false) {
-        val kept = if (held.session?.id == session?.id) held.order else null
-        held = held.copy(session = session, order = kept, unclaimed = if (session == null) null else unclaimed)
+        val kept = if (mine.session?.id == session?.id) mine.order else null
+        keep(mine.copy(session = session, order = kept, unclaimed = if (session == null) null else unclaimed))
     }
 
     // The claim's start landed: the log holds this session now, and its sets may walk.
     fun claimed(sessionId: String) {
-        if (held.session?.id != sessionId) return
-        held = held.copy(unclaimed = false)
+        if (mine.session?.id != sessionId) return
+        keep(mine.copy(unclaimed = false))
     }
 
     // The open session's sets in the order they were performed — queued and delivered together,
     // because a row on this device is a set that happened whether or not the log has heard of it.
     val sets: List<TrainingSet>
         get() {
-            val live = held.session ?: return emptyList()
+            val live = mine.session ?: return emptyList()
             return sets(live.id)
         }
 
-    fun sets(sessionId: String): List<TrainingSet> = held.entries.values
+    fun sets(sessionId: String): List<TrainingSet> = mine.entries.values
         .filter { it.sessionId == sessionId }
         .map { it.set }
         .sortedBy { it.completedAtMs }
@@ -173,7 +281,7 @@ class SetQueue(
     // Everything this device owes the log, oldest first — the queue a flush drains. Sorting by the
     // instant the set was performed is what makes the per-lane walk the server's own order.
     val pending: List<Entry>
-        get() = held.entries.values
+        get() = mine.entries.values
             .filter { it.needsPush }
             .sortedBy { it.set.completedAtMs }
 
@@ -198,9 +306,9 @@ class SetQueue(
     // §G18's delete on a past session — a deliberate repair with its own sheet — never a button that
     // quietly reaches through the logger.
     fun withdraw(id: String): Boolean {
-        val entry = held.entries[id] ?: return false
+        val entry = mine.entries[id] ?: return false
         if (!entry.needsPush) return false
-        held = held.copy(entries = held.entries - id)
+        keep(mine.copy(entries = mine.entries - id))
         return true
     }
 
@@ -208,54 +316,54 @@ class SetQueue(
     // back on a read (not owed). A server row arriving for a set this device owes SETTLES it — the
     // log holding the row IS delivery, however the news arrived.
     fun store(set: TrainingSet, sessionId: String, needsPush: Boolean, heldUntilMs: Long? = null) {
-        val remints = held.entries[set.id]?.remints ?: 0
-        held = held.copy(
-            entries = held.entries + (set.id to Entry(set, sessionId, needsPush, remints, heldUntilMs)))
+        val remints = mine.entries[set.id]?.remints ?: 0
+        keep(mine.copy(
+            entries = mine.entries + (set.id to Entry(set, sessionId, needsPush, remints, heldUntilMs))))
     }
 
     // The reply to a send. The row comes back under the id that went out — always, because that id
     // is the idempotency key — and clearing the SENT key anyway is what stops a reply that ever
     // disagreed from leaving an entry owed, resent, and owed again forever.
     fun delivered(stored: TrainingSet, id: String, sessionId: String) {
-        held = held.copy(entries = held.entries - id +
-            (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0, heldUntilMs = null)))
+        keep(mine.copy(entries = mine.entries - id +
+            (stored.id to Entry(stored, sessionId, needsPush = false, remints = 0, heldUntilMs = null))))
     }
 
     // The one repair a spent id allows: the same set under a new key, still owed, with the budget
     // counted down. Everything the lifter did travels unchanged.
     fun remint(id: String, fresh: String) {
-        val entry = held.entries[id] ?: return
+        val entry = mine.entries[id] ?: return
         // The fresh id carries no hold: the window was spent waiting for the send that collided,
         // and a set the lifter stopped watching nine seconds ago must not wait another nine to land.
-        held = held.copy(entries = held.entries - id +
+        keep(mine.copy(entries = mine.entries - id +
             (fresh to Entry(entry.set.copy(id = fresh), entry.sessionId, needsPush = true,
-                remints = entry.remints + 1, heldUntilMs = null)))
+                remints = entry.remints + 1, heldUntilMs = null))))
     }
 
     fun drop(id: String) {
-        held = held.copy(entries = held.entries - id)
+        keep(mine.copy(entries = mine.entries - id))
     }
 
     // The claim's repair for a live session whose id another account already spent: the same
     // workout under a fresh session id, every owed set re-pointed at it. Set ids do not move —
     // they are keys of their own and each has its own remint budget.
     fun remapSession(old: String, fresh: String) {
-        val entries = held.entries.mapValues { (_, entry) ->
+        val entries = mine.entries.mapValues { (_, entry) ->
             if (entry.sessionId == old) entry.copy(sessionId = fresh) else entry
         }
-        val session = held.session?.let { if (it.id == old) it.copy(id = fresh) else it }
-        held = held.copy(session = session, entries = entries)
+        val session = mine.session?.let { if (it.id == old) it.copy(id = fresh) else it }
+        keep(mine.copy(session = session, entries = entries))
     }
 
     // The claim's repair for a locally minted movement whose id another account already spent:
     // the id changes everywhere this queue wrote it — the sets, the walk order, and the live
     // plan's own lines — because a movement is a stable id everywhere except on screen.
     fun remapExercise(old: String, fresh: String) {
-        val entries = held.entries.mapValues { (_, entry) ->
+        val entries = mine.entries.mapValues { (_, entry) ->
             if (entry.set.exerciseId == old) entry.copy(set = entry.set.copy(exerciseId = fresh)) else entry
         }
-        val order = held.order?.map { if (it == old) fresh else it }
-        val session = held.session?.let { live ->
+        val order = mine.order?.map { if (it == old) fresh else it }
+        val session = mine.session?.let { live ->
             val plan = live.plan?.let { plan ->
                 plan.copy(entries = plan.entries.map {
                     if (it.exerciseId == old) it.copy(exerciseId = fresh) else it
@@ -263,29 +371,29 @@ class SetQueue(
             }
             live.copy(plan = plan)
         }
-        held = held.copy(session = session, entries = entries, order = order)
+        keep(mine.copy(session = session, entries = entries, order = order))
     }
 
     // A session that is over. Its delivered sets live on the log now, so this device stops holding
     // them — but an owed set is dropped by nobody quietly: it stays queued until the log answers
     // for it, and a `session-finished` refusal is what tells the lifter it never landed.
     fun close(sessionId: String) {
-        held = held.copy(entries = held.entries.filterValues { it.sessionId != sessionId || it.needsPush })
-        if (held.session?.id == sessionId) letGo()
+        keep(mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId || it.needsPush }))
+        if (mine.session?.id == sessionId) letGo()
     }
 
     // A session that no longer exists. Discard deletes the row out from under whatever this device
     // still held, and that is the one case where an owed set has nowhere left to go — keeping it
     // would re-send it against a session id the log no longer knows, forever.
     fun forget(sessionId: String) {
-        held = held.copy(entries = held.entries.filterValues { it.sessionId != sessionId })
-        if (held.session?.id == sessionId) letGo()
+        keep(mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId }))
+        if (mine.session?.id == sessionId) letGo()
     }
 
     // The session row and its movement order are one fact and end together — an order left standing
     // over no session is a list of movements belonging to a workout that is over.
     private fun letGo() {
-        held = held.copy(session = null, order = null, unclaimed = null)
+        keep(mine.copy(session = null, order = null, unclaimed = null))
     }
 
     fun flush() {
@@ -548,6 +656,30 @@ sealed class SaveState {
             }
             is Refused -> reason
         }
+}
+
+// WHOSE ROWS THESE ARE — the key every device store files them under, and the whole of gym's seat
+// scoping. The account id is IN THE KEY rather than in a field a reader filters on, because a
+// filter is a rule every read has to remember and a key is one a read cannot get wrong: a shelf
+// opened for one seat can never resolve another seat's rows, not after a crash, not on a build
+// that predates any sign-out hook, not because somebody added a read and forgot the `where`.
+//
+// It is the same rule `DeviceCopy` and `LocalPreferences` already keep with their `owner` field,
+// carried to the two stores that could not use it as written. Those hold ONE seat's copies and
+// WIPE on a change of hands, which is honest for a cache — the log is the truth and a copy is its
+// shadow. A shelf and a queue hold workouts nobody may wipe, so every seat's rows stay on disk
+// under their own key and only the seat in hand is reachable: the departing lifter's owed sets are
+// exactly where they left them when they sign back in.
+object Seat {
+    const val anonymous = "anon"
+
+    // Rows written before this file had seats at all. They may be the phone's owner's and they may
+    // be the person who held it before them, and nothing on disk says which — so they are parked
+    // under a key `of` can never return, and no arriving account adopts them by walking in. The
+    // settings screen is the one door out of here, and it takes a human saying they are theirs.
+    const val quarantine = "unattributed"
+
+    fun of(owner: String?): String = if (owner == null) anonymous else "u.$owner"
 }
 
 // One Json for the files on disk, shared with the catalog beside the queue's: unknown keys are

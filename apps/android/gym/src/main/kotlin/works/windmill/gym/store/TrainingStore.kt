@@ -217,6 +217,8 @@ class TrainingStore(
         private set
 
     private var gym: TrainingSyncing? = null
+    // The account the room is connected for, kept only so the quarantine's two verbs can redraw.
+    private var seated: Account? = null
     // Who the names on this device belong to — the account id, or none for the anonymous seat. The
     // device catalog is keyed on it, so every hold has to say whose copy it is writing.
     private var owner: String? = null
@@ -275,7 +277,9 @@ class TrainingStore(
     // that woke to find that out would be a battery cost with no write behind it.
     private val cadenceOwed: Boolean get() = gym != null && (claimOwed || localPreferences.owed)
 
-    private companion object {
+    // Internal rather than private so the tests can name the sentences they assert on: a refusal
+    // this room states in one place must be one string, not one string and a copy of it.
+    internal companion object {
         // At or under the server's own ceiling: the handler clamps `limit` to 200, and a larger
         // page here would come back short of what was asked for and read as the bottom of the log.
         const val logPage = 50
@@ -296,6 +300,16 @@ class TrainingStore(
         // Absent, another account's, and deleted are ONE sentence on purpose: three answers a
         // stranger could tell apart would say whether a conversation exists on somebody else's log.
         const val noSuchThread = "that conversation is no longer on the log"
+
+        // A live workout is one slot, on the log and on this device alike, so the quarantined one
+        // waits rather than displacing the one somebody is standing under.
+        const val liveSlotTaken =
+            "finish the workout you're in first — the one this phone kept needs the slot"
+
+        // And an affirmation is worth what the person making it can know. Nobody signed in cannot
+        // say whose training this is, so the answer is the door rather than a refusal about them.
+        const val quarantineWantsAnAccount =
+            "sign in first — this can only be added to an account, and only you can say it is yours"
     }
 
     // This movement's sets in this session, performed order, warmups included — the whole record of
@@ -373,6 +387,10 @@ class TrainingStore(
     // always — a room that waited for a round trip would be a workout that waits.
     suspend fun connect(account: Account) {
         gym = sync(account)
+        // Kept so the room can be redrawn without the shell handing the account down again — the
+        // quarantine's two verbs below both end by re-running this, and a second parameter for the
+        // seat they are already sitting in would be a way to pass the wrong one.
+        seated = account
         // THE NAMES GO WITH THE SEAT, and this is where they change hands. A rename is a per-account
         // override, so the copy on this device belongs to the account it was read for: drawing it
         // for the next lifter to hold the phone would put one person's private name on another
@@ -386,6 +404,21 @@ class TrainingStore(
         // lift. Held straight back, which wipes the last seat's names off the disk as well as off
         // the screen — for the same seat it is the no-op it looks like.
         owner = account.user?.id
+        // AND SO DO THE SHELF AND THE QUEUE, which is the whole of gym's seat scoping and the one
+        // line that spends it. A workout composed on this device is filed under the seat that
+        // composed it (`Seat`), so the next person to hold this phone opens their own shelf and
+        // their own live session rather than inheriting the last one's — and `ClaimReplay`, which
+        // walks whatever the shelf holds, can no longer replay one lifter's training into the
+        // account that signed in after them. What the departing seat still owed stays on disk under
+        // their key, unsent and whole, and is theirs again the moment they sign back in.
+        //
+        // `account.verified` is the confirmation the anonymous carry waits on. A seat standing on
+        // the device's last-known user, whose secret the server could not be asked about, still
+        // draws its OWN room — that basement is what this app is built for — but it may not take
+        // ownership of work nobody has claimed yet: that move is irreversible, and this process
+        // does not know whether that identity is still live. The next verified connect makes it.
+        queue.adopt(owner, confirmed = account.verified)
+        localLog.adopt(owner, confirmed = account.verified)
         // The settings change hands here for the reason the names do, and with the one carry the
         // claim exists for: an anonymous document that has landed nowhere rides onto the account
         // that just signed in. Drawn straight back, so the first frame after a seat change is this
@@ -537,6 +570,55 @@ class TrainingStore(
         }
         resume()
         if (lastSetsWanted) loadLastSets()
+    }
+
+    // WHAT THIS PHONE IS HOLDING FOR NOBODY, and the two taps that end it. A build from before the
+    // shelf had seats wrote one shelf with no name on it, and nothing on disk says whether it was
+    // this phone's owner or the person who held it before them — so it is parked where no seat can
+    // reach it and no arriving account adopts it by signing in. It is not deleted either: those are
+    // somebody's workouts, and throwing them away to close a leak would be a worse bug than the
+    // leak. It waits for a human to say which it is.
+    // Answered whenever EITHER half is holding something, which is why it is composed here rather
+    // than read off the shelf: a phone upgraded mid-workout has a quarantined live session and an
+    // empty shelf, and a row that drew off the shelf's counts alone would leave that workout on
+    // disk with no door and nothing said.
+    val unattributed: LocalLog.Unattributed?
+        get() {
+            localLog.unattributed?.let { return it }
+            // The queue's half is asked as "is anything quarantined", never "is a session
+            // quarantined": a phone upgraded between two sets has owed lanes and no live row.
+            if (!queue.hasUnattributed) return null
+            return LocalLog.Unattributed(sessions = 0, routines = 0, movements = 0, days = emptyList())
+        }
+
+    // The live workout half of it, which the shelf's counts cannot say: a session that was open
+    // when the app was upgraded.
+    val unattributedIsLive: Boolean get() = queue.unattributedSession != null
+
+    // "These are mine." Everything quarantined lands on the seat in hand — and from there the claim
+    // carries it onto the account exactly as it carries anything else the shelf holds. Answers the
+    // one sentence that can refuse it: a live workout is one slot, and the one the lifter is in wins.
+    suspend fun releaseUnattributed(): String? {
+        // Nobody in the seat, nobody to claim it. The quarantine exists because this device cannot
+        // tell whose that work is, and a signed-out stranger holding the phone cannot tell it
+        // either — releasing onto the anonymous seat would hand it to the next account to sign in,
+        // which is the leak wearing a door.
+        if (owner == null) return quarantineWantsAnAccount
+        // THE QUEUE ANSWERS FIRST, because it is the half that can refuse. Landing the shelf's half
+        // and then finding the queue would not take its own is a tap that half-worked with nothing
+        // said — and the value it drops is a workout somebody is standing in.
+        if (!queue.release() && queue.hasUnattributed) return liveSlotTaken
+        localLog.release()
+        seated?.let { connect(it) }
+        return null
+    }
+
+    // "These are not mine." The only door in this room that deletes training, and it is behind a
+    // confirmation for that reason — nothing here has landed on any log, so this is the last copy.
+    suspend fun discardUnattributed() {
+        localLog.discardUnattributed()
+        queue.discardUnattributed()
+        seated?.let { connect(it) }
     }
 
     // Start. Signed in the session opens on the log — the plan snapshot is FROZEN BY THE SERVER

@@ -13,10 +13,40 @@ public struct WindmillApi: Sendable {
     private let credential: @Sendable () -> String?
     private let session: URLSession
 
-    public init(baseURL: URL, credential: @escaping @Sendable () -> String?, session: URLSession = .shared) {
+    public init(baseURL: URL, credential: @escaping @Sendable () -> String?,
+                session: URLSession = WindmillApi.cookieless) {
         self.baseURL = baseURL
         self.credential = credential
         self.session = session
+    }
+
+    // THE BEARER IS THE WHOLE CREDENTIAL, AND THIS IS WHAT MAKES THAT TRUE. Every door the backend
+    // opens also answers `Set-Cookie: wm_session=…; Max-Age=7776000`, because the web needs it —
+    // and `URLSession.shared` took it, wrote it to disk for ninety days, and re-attached it to every
+    // later request beside the Keychain's header. Two credentials, and the server resolves the
+    // COOKIE first (Caller.cpp), so whenever they disagreed the jar won: a sign-out whose logout
+    // never reached the log left a live session on the phone that the app could no longer revoke,
+    // and with the Apple door armed the next person's Apple ID would have been attached to the
+    // previous account (audit MOBILE-2, reproduced against a live server).
+    //
+    // So the app carries no jar at all: an ephemeral configuration with cookie storage off never
+    // stores one and never sends one, which leaves exactly one place a session secret lives on this
+    // phone — the Keychain. `sendCapturingSession` still lifts the session out of the response
+    // header, because that is a header this code reads rather than a cookie the system keeps.
+    public static let cookieless: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: configuration)
+    }()
+
+    // What builds before that fix left on the disk. Nothing sends it now, but a 90-day session
+    // secret sitting in a file outside the Keychain is the other half of the same finding, so
+    // signing out ends it here as well (AuthStore.signOut).
+    public static func forgetCookieJar(for baseURL: URL) {
+        let jar = HTTPCookieStorage.shared
+        for cookie in jar.cookies(for: baseURL) ?? [] { jar.deleteCookie(cookie) }
     }
 
     public static func resolvedBaseURL(bundle: Bundle = .main) -> URL {

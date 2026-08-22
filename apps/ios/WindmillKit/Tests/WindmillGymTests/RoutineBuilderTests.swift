@@ -476,7 +476,8 @@ final class RoutineWritingTests: XCTestCase {
     // never saw the stamp.
     private func store(on shelf: LocalLog) -> TrainingStore {
         TrainingStore(queue: SetQueue(url: FileManager.default.temporaryDirectory
-                                          .appendingPathComponent("q-\(UUID().uuidString).json")),
+                                          .appendingPathComponent("q-\(UUID().uuidString).json"),
+                                      deviceHolds: nil),
                       deviceCatalog: DeviceCatalog(url: FileManager.default.temporaryDirectory
                                                        .appendingPathComponent("c-\(UUID().uuidString).json")),
                       accountCopy: AccountCopy(url: FileManager.default.temporaryDirectory
@@ -488,7 +489,7 @@ final class RoutineWritingTests: XCTestCase {
     // Signed out the routine lands on this device, open rows and all, and the claim replays it when
     // an account arrives — there is nothing special about a day nobody has trained yet.
     func testARoutineBuiltAtHomeLandsOnTheDeviceWithItsOpenRows() async {
-        let store = store(on: LocalLog(url: localURL))
+        let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let squat = draft.add("back-squat")
         draft.add("barbell-row")
@@ -502,7 +503,7 @@ final class RoutineWritingTests: XCTestCase {
         XCTAssertEqual(made.entries.map(\.targetSets), [5, nil])
         XCTAssertTrue(made.isUntested)
         XCTAssertEqual(store.routines.map(\.id), [made.id])
-        XCTAssertEqual(LocalLog(url: localURL).routine(made.id)?.entries.map(\.targetSets), [5, nil],
+        XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).routine(made.id)?.entries.map(\.targetSets), [5, nil],
                        "the absence survives the disk as well as the wire")
     }
 
@@ -510,7 +511,7 @@ final class RoutineWritingTests: XCTestCase {
     // last-trained itself, and a document composed from the draft alone carries no such stamp — so
     // an edit would put `untested` back over a workout that had already tested it.
     func testEditingATrainedRoutineDoesNotSendItBackToUntested() async {
-        let shelf = LocalLog(url: localURL)
+        let shelf = LocalLog(url: localURL, deviceHolds: nil)
         let store = store(on: shelf)
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         draft.add("back-squat")
@@ -533,7 +534,7 @@ final class RoutineWritingTests: XCTestCase {
     // no rename route, because a name change has to move the revision and supersede what is
     // pending, and a second door onto that write would be a second place the rule could drift.
     func testRenamingARoutineRewritesTheDocumentAndKeepsEveryLine() async {
-        let store = store(on: LocalLog(url: localURL))
+        let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let squat = draft.add("back-squat")
         draft.add("barbell-row")
@@ -550,7 +551,7 @@ final class RoutineWritingTests: XCTestCase {
 
     // The single-routine read is where history rides, and the shelf's own routine has none to have.
     func testTheDeviceAnswersForItsOwnRoutineAndCarriesNoHistoryForIt() async {
-        let store = store(on: LocalLog(url: localURL))
+        let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         draft.add("back-squat")
         guard case .success(let made) = await store.create(draft) else { return XCTFail("no routine") }
@@ -570,7 +571,7 @@ final class RoutineWritingTests: XCTestCase {
     // DELETE, FROM THE EDITOR'S FOOT (R3). A routine still on this device's shelf is the device's
     // alone to let go of — the claim simply never replays it — and nothing else on the shelf moves.
     func testDeletingAShelfRoutineLetsGoOfItAndNothingElse() async {
-        let shelf = LocalLog(url: localURL)
+        let shelf = LocalLog(url: localURL, deviceHolds: nil)
         let store = store(on: shelf)
         var one = RoutineDraft(name: "Heavy Thursday", position: 0)
         one.add("back-squat")

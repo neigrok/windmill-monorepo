@@ -86,6 +86,7 @@ import works.windmill.gym.ui.ThreadsScreen
 import works.windmill.gym.ui.askThreadSaver
 import works.windmill.gym.ui.routineDraftSaver
 import works.windmill.platform.Account
+import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
 import works.windmill.platform.design.WindmillFont
@@ -206,10 +207,17 @@ fun GymRoom(account: Account) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember {
+        // WHOSE ROWS A FILE FROM BEFORE THE SEATS HOLDS is decided when that file is opened, off
+        // the session this device is holding — and `account` cannot answer it. This room mounts
+        // IMMEDIATELY, before /v1/me resolves (MainActivity says so in as many words), so the first
+        // Account through this door is nobody on every single launch; a migration reading it would
+        // quarantine every signed-in lifter's shelf and take the bar out from under anyone who
+        // upgraded mid-workout. The session store is what knows, so it is asked here.
+        val deviceOwner = PrefsSessions(context).user()?.id
         TrainingStore(
-            SetQueue(File(context.filesDir, SetQueue.fileName)),
+            SetQueue(File(context.filesDir, SetQueue.fileName), deviceOwner),
             DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
-            LocalLog(File(context.filesDir, LocalLog.fileName)),
+            LocalLog(File(context.filesDir, LocalLog.fileName), deviceOwner),
             LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
             scope,
         )

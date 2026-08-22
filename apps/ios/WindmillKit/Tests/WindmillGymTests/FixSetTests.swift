@@ -48,10 +48,10 @@ final class FixSetTests: XCTestCase {
     private func makeStore(sync: FakeTraining?, undoWindowMs: Int64 = 0,
                            retryAfter: Duration = .seconds(4)) -> TrainingStore {
         TrainingStore(
-            queue: SetQueue(url: queueURL),
+            queue: SetQueue(url: queueURL, deviceHolds: nil),
             deviceCatalog: DeviceCatalog(url: catalogURL),
             accountCopy: AccountCopy(url: catalogURL.appendingPathExtension("account")),
-            localLog: LocalLog(url: localURL),
+            localLog: LocalLog(url: localURL, deviceHolds: nil),
             now: { self.clockMs += 1; return self.clockMs },
             mintSession: Ids.session,
             mintSet: Ids.set,
@@ -61,6 +61,21 @@ final class FixSetTests: XCTestCase {
         )
     }
 
+
+    // An inspection read names a seat like every other read: the queue and the shelf hold one set of
+    // rows per account, so "what is on this device" is only ever answerable for somebody.
+    private func queueOnDisk(of seat: String? = "u1") -> SetQueue {
+        let held = SetQueue(url: queueURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
+
+    private func shelfOnDisk(of seat: String? = "u1") -> LocalLog {
+        let held = LocalLog(url: localURL, deviceHolds: nil)
+        held.open(under: seat)
+        return held
+    }
+
     private func account(signedIn: Bool) -> Account {
         Account(
             api: WindmillApi(baseURL: URL(string: "https://windmill.works")!, credential: { nil }),
@@ -68,7 +83,7 @@ final class FixSetTests: XCTestCase {
         )
     }
 
-    private func shelf() -> LocalLog { LocalLog(url: localURL) }
+    private func shelf(of seat: String? = nil) -> LocalLog { shelfOnDisk(of: seat) }
 
     // THE ROOM'S DEFAULT STATE since it opened anonymous-first: a session composed on this DEVICE
     // with sets logged into it, an account signed in, and a claim that has not managed to file any
@@ -162,7 +177,7 @@ final class FixSetTests: XCTestCase {
                        "one row per set, and the correction is not a second one")
         XCTAssertEqual(server.sets["ses_local"]?.map(\.weightKg), [82.5, 10],
                        "the account receives the corrected number, never the one that was typed")
-        XCTAssertTrue(shelf().sessions.isEmpty, "the shelf lets go once the log has it")
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "the shelf lets go once the log has it")
         XCTAssertTrue(signedIn.refusals.isEmpty)
     }
 
@@ -220,8 +235,8 @@ final class FixSetTests: XCTestCase {
 
         XCTAssertTrue(server.corrected.isEmpty)
         XCTAssertTrue(server.deleted.isEmpty)
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "no wire write was ever enqueued")
-        XCTAssertEqual(shelf().session("ses_local")?.sets.map(\.weightKg), [85])
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "no wire write was ever enqueued")
+        XCTAssertEqual(shelf(of: "u1").session("ses_local")?.sets.map(\.weightKg), [85])
 
         server.online = true
         await store.connect(to: account(signedIn: true))
@@ -239,7 +254,7 @@ final class FixSetTests: XCTestCase {
     func testACorrectionOfALiveSetTheLogHasNeverSeenRewritesTheAppend() async {
         let server = FakeTraining()
         let store = await liveUnclaimedStore(server)
-        XCTAssertTrue(SetQueue(url: queueURL).sessionIsUnclaimed, "signed in, and still this device's")
+        XCTAssertTrue(queueOnDisk(of: "u1").sessionIsUnclaimed, "signed in, and still this device's")
         guard let live = store.session, let typo = store.sets.last else {
             return XCTFail("the device composed a session and holds both sets")
         }
@@ -247,7 +262,7 @@ final class FixSetTests: XCTestCase {
         await store.fix(typo, in: live.id, by: SetFix(weightKg: 100, reps: 6, kind: .working))
 
         XCTAssertEqual(store.sets.map(\.reps), [5, 6], "the corrected row is on screen at once")
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.append, .append],
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.append, .append],
                        "two sets still to append, and no change filed over either")
         XCTAssertTrue(server.corrected.isEmpty)
 
@@ -273,7 +288,7 @@ final class FixSetTests: XCTestCase {
         await store.delete(mistake, in: live.id)
 
         XCTAssertEqual(store.sets.map(\.reps), [5])
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.append])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.append])
 
         server.online = true
         await store.connect(to: account(signedIn: true))
@@ -323,7 +338,7 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_1"]?.map(\.reps), [5, 5])
         XCTAssertEqual(server.sets["ses_1"]?.map(\.setNumber), [1, 2], "a correction never renumbers")
         XCTAssertEqual(corrected.setNumber, 2)
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
         XCTAssertTrue(store.refusals.isEmpty)
     }
 
@@ -338,7 +353,7 @@ final class FixSetTests: XCTestCase {
         await store.fix(set("set_2", 82.5, 4, at: 3_000, number: 2), in: "ses_1",
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.fix])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.fix])
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5, 82.5], "nothing reached the log")
 
         server.online = true
@@ -346,7 +361,7 @@ final class FixSetTests: XCTestCase {
         await relaunched.connect(to: account(signedIn: true))
 
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5, 85])
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // The same, read back before the queue drains: the merge is what makes the room local-first
@@ -422,7 +437,7 @@ final class FixSetTests: XCTestCase {
         await store.fix(set("set_2", 82.5, 4, at: 3_000, number: 2), in: "ses_1",
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
-        let reopened = SetQueue(url: queueURL)
+        let reopened = queueOnDisk(of: "u1")
         XCTAssertTrue(reopened.pending.isEmpty)
         XCTAssertTrue(reopened.sets(in: "ses_1").isEmpty,
                       "a file rewritten on every tap keeps no row per correction ever made")
@@ -443,7 +458,7 @@ final class FixSetTests: XCTestCase {
         await store.fix(set("set_2", 82.5, 4, at: 3_000, number: 2), in: "ses_1",
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.fix], "the change is still owed")
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.fix], "the change is still owed")
         XCTAssertEqual(store.saveState, .onTheLog, "and the set the lifter logged is still on the log")
         XCTAssertEqual(store.strandedCount, 0)
     }
@@ -465,7 +480,7 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.refusals.map(\.id), ["change-set_2"])
         XCTAssertEqual(RefusalRows.headline(of: store.refusals[0], in: []),
                        "bench-press 85 × 5 — that change didn’t land")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty, "a terminal write is not retried forever")
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "a terminal write is not retried forever")
     }
 
     // A body the log cannot read never becomes readable, so it is terminal too — and it is SAID, for
@@ -479,7 +494,7 @@ final class FixSetTests: XCTestCase {
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
         XCTAssertEqual(store.refusals.map(\.reason), ["reworded on a Tuesday"])
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // A 500 is the server's and heals on its own. The correction stays owed — dropping it would lose
@@ -493,7 +508,7 @@ final class FixSetTests: XCTestCase {
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
         XCTAssertTrue(store.refusals.isEmpty, "a 500 is not a refusal, it is a wait")
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.fix])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.fix])
 
         server.refuseFix = nil
         await store.flushPendingSets(force: true)
@@ -544,7 +559,7 @@ final class FixSetTests: XCTestCase {
         await store.logSet(weightKg: 82.5, reps: 5)
 
         XCTAssertTrue(store.refusals.isEmpty, "the set was not dropped")
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.append], "it is still owed")
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.append], "it is still owed")
         XCTAssertEqual(store.stalled.count, 1)
     }
 
@@ -564,14 +579,14 @@ final class FixSetTests: XCTestCase {
 
         XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1", "set_2"],
                        "inside its window the log still holds the row")
-        XCTAssertEqual(SetQueue(url: queueURL).pending.map(\.owes), [.delete])
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.map(\.owes), [.delete])
         XCTAssertEqual(store.restorable?.set.id, "set_2")
 
         await store.flushPendingSets(force: true)
 
         XCTAssertEqual(server.deleted, ["set_2"])
         XCTAssertEqual(server.sets["ses_1"]?.map(\.id), ["set_1"])
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // Undo inside the window: the DELETE never goes at all, and what comes back is owed as a
@@ -644,7 +659,7 @@ final class FixSetTests: XCTestCase {
 
         server.online = true
         await store.connect(to: account(signedIn: true))
-        XCTAssertTrue(shelf().sessions.isEmpty, "the claim took the shelf while the window was open")
+        XCTAssertTrue(shelf(of: "u1").sessions.isEmpty, "the claim took the shelf while the window was open")
         XCTAssertEqual(server.sets["ses_local"]?.map(\.id), ["set_1"], "and the deleted row never went")
         XCTAssertNotNil(server.finishes["ses_local"], "the claim finished the session on the log")
         XCTAssertEqual(store.restorable?.set.id, "set_2", "the offer is still on screen")
@@ -658,7 +673,7 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.refusals.map(\.reason), ["the session closed before this set reached it"])
         XCTAssertEqual(RefusalRows.headline(of: store.refusals[0], in: []),
                        "bench-press 100 × 4 never reached the log")
-        XCTAssertTrue(SetQueue(url: queueURL).pending.isEmpty)
+        XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
     // ── what must not move ─────────────────────────────────────────────────────────────────────
@@ -696,7 +711,7 @@ final class FixSetTests: XCTestCase {
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
         await store.delete(set("set_1", 82.5, 5, at: 2_000, number: 1), in: "ses_1")
 
-        XCTAssertEqual(SetQueue(url: queueURL).pending.count, 2)
+        XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 2)
         XCTAssertEqual(store.strandedCount, 0)
         XCTAssertTrue(store.stalled.isEmpty)
         XCTAssertNil(store.undoable, "the logger's Undo answers a set that was just LOGGED")
@@ -712,7 +727,10 @@ final class FixSetTests: XCTestCase {
         """
         try Data(legacy.utf8).write(to: queueURL)
 
-        let queue = SetQueue(url: queueURL)
+        // …and it has no SEAT on it either, so whose it is comes from the device: this phone was
+        // holding u1's session when it upgraded, so the owed row is u1's.
+        let queue = SetQueue(url: queueURL, deviceHolds: "u1")
+        queue.open(under: "u1")
 
         XCTAssertEqual(queue.pending.map(\.set.id), ["set_1"])
         XCTAssertEqual(queue.pending.map(\.owes), [.append])

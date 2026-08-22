@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NOTHING THIS APP HOLDS LEAVES THE PHONE THROUGH A BACKUP. `android:allowBackup="false"` in the
+  manifest turns off cloud backup and `adb backup` on every API this app runs on; from Android 12
+  it does NOT govern device-to-device transfer, which is what this file is for. Both sections
+  exclude every domain rather than naming the two files that matter today, because a rule that
+  lists files is one somebody has to remember to extend the next time a store is added.
+
+  What was riding out: the session secret and the account's email (works.windmill.session), and
+  everything under files/ — the training shelf, the set queue, the device copies and the rack.
+  A restored session secret is a signed-in seat on a device the account never approved, for up to
+  ninety days.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

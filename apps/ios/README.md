@@ -65,6 +65,19 @@ lands on the device first and is marked owed; the network is what happens next, 
 sign-in. Signing in *claims* what is already there (additive, per page, by HLC stamp). Offline says
 `offline · saved here`; signed out says `saved on this device`.
 
+**What the device holds, it holds per account.** Journal's page cache is one file per seat
+(`windmill-journal-pages-<userId>.json`, `-anon.json` for the writing done signed out), and gym's
+shelf and queue are one set of rows per seat inside their two files. A store is opened for one seat
+and cannot read another's, which is what keeps a handed-over phone from showing — and re-uploading —
+the last person's journal or replaying their workout into the next account (audit MOBILE-1,
+MOBILE-3, fixed 2026-08-22). One thing crosses: anonymous work follows the person who signs in,
+which is the claim. What the files held before that date belongs to **the seat the device was
+holding when it upgraded** — a phone with a session in the Keychain was being used by that person,
+so their pages and their workout carry on under their own name and a mid-workout upgrade is whole.
+A phone holding no session cannot say whose that work is (signed out now is not "nobody wrote
+this"), so it is quarantined instead: journal's in `windmill-journal-pages-unclaimed.json`, gym's
+under a shelf key no seat can name. Nothing reaches either, and no screen yet offers them back.
+
 **All three products are shipping as rooms in this app.** Journal and gym are built. Roadmap is
 mounted and renders one honest line about where it works today plus a door to it — not a mock
 screen, and not a "coming soon" that counts nobody's interest. When its native room lands it
@@ -294,3 +307,15 @@ the connect page instead, because what the agent still needs then is the grant a
   because each app hides the navigation bar to own its chrome, which is exactly what disables the
   system's interactive pop. Synthetic touches are not available here, so it has been built but not
   driven; the capsule's switcher carries a Home row regardless.
+- **The quarantined pages and workouts have no door.** What a pre-2026-08-22 device file held is
+  attributed to the session the device was still holding at the upgrade; on a phone holding none, it
+  is quarantined (journal: `windmill-journal-pages-unclaimed.json`; gym: a shelf and queue key no
+  seat can name). Nobody may be handed it without saying so out loud in front of a list of days and
+  word counts — the web asks in settings · Your journal — and this app has no journal settings
+  surface to ask from, so for now it is kept and unreachable. Quarantined beats delivered to a
+  stranger; the door is the follow-up.
+- **The device's files are not excluded from backup.** They carry the default data protection class
+  (complete-until-first-user-authentication — the same accessibility the Keychain session uses), so
+  at rest they are no weaker than the credential. They do ride an iCloud or iTunes backup, which an
+  unencrypted local backup would put on a laptop in the clear. Excluding them would cost the one copy
+  of anonymous and unsent work on a device restore, so it is an owner's call rather than a silent one.

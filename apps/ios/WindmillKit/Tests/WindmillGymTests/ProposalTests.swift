@@ -322,10 +322,10 @@ final class ProposalStoreTests: XCTestCase {
     // nobody — because half of what these tests pin is what the signed-out room does NOT ask for.
     private func store(_ server: FakeTraining) -> TrainingStore {
         var ms: Int64 = 1_000
-        return TrainingStore(queue: SetQueue(url: queueURL),
+        return TrainingStore(queue: SetQueue(url: queueURL, deviceHolds: nil),
                              deviceCatalog: DeviceCatalog(url: queueURL.appendingPathExtension("cat")),
                              accountCopy: AccountCopy(url: queueURL.appendingPathExtension("account")),
-                             localLog: LocalLog(url: queueURL.appendingPathExtension("local")),
+                             localLog: LocalLog(url: queueURL.appendingPathExtension("local"), deviceHolds: nil),
                              now: { ms += 1; return ms },
                              undoWindowMs: 0,
                              sync: { $0.isSignedIn ? server : nil })

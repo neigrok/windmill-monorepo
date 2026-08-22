@@ -56,6 +56,15 @@ user — the gym room connects for the account, off the copies the device holds 
 names, routines, the picker's meta) — and `reverify` asks again on every resume until `/v1/me`
 answers. Only a definitive 401 spends the secret and signs the seat out.
 
+The secret and the remembered user are **sealed on disk** (`SecretVault`: AES-GCM under a key
+minted in the Android Keystore, which cannot be read out of the phone) and the app opts out of
+backup entirely — `allowBackup="false"` plus `dataExtractionRules`/`fullBackupContent` that exclude
+every domain. Both halves are deliberate: before them a 90-day bearer and an email address rode
+Android's default cloud backup, device-to-device transfer and `adb backup` off the device in the
+clear, and a restore stood the account up on a phone it never approved. An install upgrading into
+this build re-seals what it already held on the first read; a phone whose Keystore refuses keeps
+nothing rather than falling back to plaintext.
+
 Nothing needs an account first, and **nothing starts by itself**: home is the routine list
 (Routines · The log · Ask), a fresh install's empty state points at *Build a routine* with *Just
 start logging* as the second path, and a session begins only when the lifter taps a start. The old
@@ -106,6 +115,35 @@ which would re-send a live start the log has already refused. A phone whose sett
 never opened claims nothing rather than overwriting the account's own rack with untouched defaults,
 and what this device still owes rides through a change of seat, because it has landed nowhere and
 this is its only copy.
+
+**Every one of those device stores is filed under a seat** (`Seat`: `u.<userId>`, or `anon` for
+nobody), and the account id is in the KEY rather than in a field a read filters on — a shelf opened
+for one seat can never resolve another's rows. So a workout composed offline while signed in as one
+account is not replayed onto the next account to hold the phone, that account is never drawn the
+previous lifter's live session, and the first lifter's owed sets are waiting under their own key
+when they sign back in rather than being dropped to close the leak. The one carry is the anonymous
+one — that is the anonymous-first door: work made with nobody signed in MOVES onto the first
+account seat the server has confirmed **in this process** (`Account.verified`), because taking
+ownership of unclaimed work is irreversible and a phone that could not be asked does not know
+whether that remembered identity is still live. An unverified seat still draws its own room and
+logs into it; it simply claims nothing.
+
+A shelf or a queue written by a build from *before* the seats carries no name, so who it belongs to
+is decided **when that file is opened, off the session the device is holding** — `PrefsSessions`,
+read at the room's edge (`GymRoom`) and handed to `LocalLog`/`SetQueue` as `deviceOwner`. It is
+emphatically **not** the arriving `Account`: the room mounts before `/v1/me` resolves, so the first
+account it connects for is nobody on every launch, and a rule reading it would quarantine every
+signed-in lifter's shelf and take the bar out from under anyone who upgraded mid-workout. A phone
+that was **signed in** at the upgrade wrote those rows as that account: they are seated to it and
+claim like any other shelf row, with no door to find. A phone holding **no session** says nothing of
+the kind — *nobody is signed in now* is not *nobody wrote this*, and it may be exactly the last
+account's work after they signed out, which is the original leak — so those rows are
+**quarantined**: reachable by no seat, replayed to no account, and deleted by nothing. Either way
+the decision is **written back at once**, so no later launch re-reads a legacy file and decides it
+differently. Gym's settings section is the one door out of the quarantine, it takes a human, and it
+takes a human **with an account** — nobody signed in can say whose that training is, and releasing
+onto the anonymous seat would hand it to whoever signs in next. apps/ios decides the same branch off
+its Keychain session.
 
 Gym's settings — units, the rest dial and how a logged set confirms itself
 (`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of the

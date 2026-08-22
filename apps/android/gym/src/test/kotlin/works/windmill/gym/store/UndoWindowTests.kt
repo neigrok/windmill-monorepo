@@ -168,7 +168,9 @@ class UndoWindowTests {
                 """{"id":"set_a","exerciseId":"bench-press","weightKg":82.5,"reps":5,""" +
                 """"completedAt":1100},"sessionId":"ses_1","needsPush":true,"remints":0}}}""")
 
-        val opened = SetQueue(old) { clockMs }
+        // From before the seats as well as from before the window: the phone was holding this
+        // lifter's session at the upgrade, so the workout is theirs and opens as itself.
+        val opened = SetQueue(old, "u1") { clockMs }
         assertEquals("ses_1", opened.session?.id)
         assertEquals(listOf("set_a"), opened.pending.map { it.set.id })
         assertFalse("no key, no hold", opened.pending.single().isHeld(at = 0))

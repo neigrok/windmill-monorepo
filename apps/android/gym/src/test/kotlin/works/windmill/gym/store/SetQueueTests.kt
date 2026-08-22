@@ -241,6 +241,161 @@ class SetQueueTests {
         assertFalse("no session, nothing unclaimed", queue.sessionIsUnclaimed)
 
         file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
-        assertTrue("a file written before the bit existed reads as unclaimed", SetQueue(file).sessionIsUnclaimed)
+        val fromBefore = SetQueue(file, deviceOwner = null)
+        assertNull("a file from before the seats, on a phone holding no session, belongs to " +
+            "nobody until a human says so", fromBefore.session)
+        assertEquals("ses_old", fromBefore.unattributedSession?.id)
+        assertFalse("and nobody signed in may claim it", fromBefore.release())
+        fromBefore.adopt("alice")
+        assertTrue(fromBefore.release())
+        assertTrue("and once released it reads as unclaimed — that build's file says nothing " +
+            "about whether the log ever answered", fromBefore.sessionIsUnclaimed)
+    }
+
+    // THE SEAT IS THE KEY — the whole of MOBILE-3's queue half. A live workout and its owed sets
+    // belong to the seat that composed them: the next account to hold this phone is never drawn
+    // that workout and never re-sends those sets under its own bearer, and the first lifter finds
+    // both exactly where they left them.
+    @Test
+    fun testALiveSessionIsNeverDrawnForTheNextSeatAndItsOwedSetsAreNotLost() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.adopt("alice")
+        queue.hold(Session(id = "ses_alice", startedAtMs = 1_000), unclaimed = true)
+        queue.store(aSet("set_a", at = 1_100), "ses_alice", needsPush = true)
+        queue.flush()
+
+        queue.adopt(null)
+        assertNull("signing out draws no workout", queue.session)
+        assertTrue(queue.pending.isEmpty())
+
+        queue.adopt("bob")
+        assertNull("and the next account is drawn none of it", queue.session)
+        assertEquals("nothing of A's is owed under B's bearer", emptyList<String>(),
+            queue.pending.map { it.set.id })
+
+        val relaunched = SetQueue(file)
+        relaunched.adopt("alice")
+        assertEquals("ses_alice", relaunched.session?.id)
+        assertEquals("A's owed set was parked, never dropped",
+            listOf("set_a"), relaunched.pending.map { it.set.id })
+    }
+
+    // The anonymous-first door on the queue: a workout begun with nobody signed in rides onto the
+    // account that claims it — but only onto a seat with nothing live of its own, because a live
+    // workout is one slot and the arriving lifter's own unclaimed session wins. Nothing is dropped
+    // for that: it waits under its own key.
+    @Test
+    fun testAnAnonymousWorkoutRidesOntoAFreeSeatAndWaitsForATakenOne() {
+        val file = queueFile()
+        val queue = SetQueue(file)
+        queue.adopt("alice")
+        queue.hold(Session(id = "ses_alice", startedAtMs = 1_000), unclaimed = true)
+        queue.flush()
+
+        queue.adopt(null)
+        queue.hold(Session(id = "ses_anon", startedAtMs = 2_000), unclaimed = true)
+        queue.store(aSet("set_anon", at = 2_100), "ses_anon", needsPush = true)
+        queue.flush()
+
+        queue.adopt("alice")
+        assertEquals("A's own live workout holds the slot", "ses_alice", queue.session?.id)
+        queue.adopt(null)
+        assertEquals("and the anonymous one is still here, whole",
+            "ses_anon", queue.session?.id)
+        assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
+
+        queue.adopt("bob")
+        assertEquals("a free seat claims it", "ses_anon", queue.session?.id)
+        assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
+    }
+
+    // WHO A QUEUE FROM BEFORE THE SEATS BELONGS TO — branch one: the phone was SIGNED IN when it
+    // upgraded, so the workout it was holding is that account's and the lifter is put back under
+    // their own bar rather than sent hunting for a settings row.
+    @Test
+    fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatTheDeviceWasHolding() {
+        val file = queueFile()
+        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
+
+        // The device was holding A's session when this file was opened — that, and never the
+        // account the room is later connected for, is what names the owner.
+        val queue = SetQueue(file, deviceOwner = "alice")
+        assertEquals("ses_old", queue.session?.id)
+        assertNull("no door is needed and none is offered", queue.unattributedSession)
+
+        queue.adopt(null)
+        queue.adopt("alice")
+        assertEquals("through the app's own null-first connect ordering",
+            "ses_old", queue.session?.id)
+
+        queue.adopt("bob")
+        assertNull("and it went to A alone", queue.session)
+        queue.adopt("alice")
+        assertEquals("ses_old", queue.session?.id)
+    }
+
+    // Branch two, and the decision is spent on the FIRST seat this room opens for: a phone holding
+    // no session at the upgrade quarantines, and signing in afterwards does not undo that.
+    @Test
+    fun testAQueueFromBeforeTheSeatsOnASignedOutDeviceStaysQuarantined() {
+        val file = queueFile()
+        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
+
+        val queue = SetQueue(file, deviceOwner = null)
+        queue.adopt(null)
+        queue.adopt("alice")
+        assertNull("not even the first account to sign in afterwards", queue.session)
+        assertEquals("ses_old", queue.unattributedSession?.id)
+        assertNull("and the decision is on DISK — a relaunch that does hold a session must still " +
+            "find a quarantine", SetQueue(file, deviceOwner = "bob").session)
+        assertTrue(queue.release())
+        assertEquals("ses_old", queue.session?.id)
+    }
+
+    // The queue's half of the same rule: the decision is written before anything else happens, or
+    // the legacy file is still on disk for the next launch to hand to somebody.
+    @Test
+    fun testASignedOutMigrationIsWrittenDownAtOnce() {
+        val file = queueFile()
+        file.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
+
+        SetQueue(file, deviceOwner = null)
+
+        val later = SetQueue(file, deviceOwner = "bob")
+        assertNull("B WAS HANDED A STRANGER'S WORKOUT", later.session)
+        assertEquals("ses_before", later.unattributedSession?.id)
+    }
+
+    // The other half of the same refusal, and the one a live session cannot state: a seat that
+    // still OWES SETS with no workout standing over them is not an empty slot either, and a release
+    // that landed the shelf's half and quietly dropped this one would lose a workout.
+    @Test
+    fun testAQuarantineIsNotReleasedOntoASeatThatStillOwesSets() {
+        val file = queueFile()
+        file.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
+
+        val queue = SetQueue(file, deviceOwner = null)
+        queue.adopt("alice")
+        queue.store(aSet("set_a", at = 1_100), "ses_alice", needsPush = true)
+
+        assertNull("no workout stands over them", queue.session)
+        assertEquals(1, queue.pending.size)
+        assertFalse("owed lanes are a queue too", queue.release())
+        assertTrue("and nothing was taken out of quarantine", queue.hasUnattributed)
+    }
+
+    // A remembered identity may paint; it may not adopt. The carry waits for the answer.
+    @Test
+    fun testAnUnconfirmedSeatDoesNotClaimTheAnonymousWorkout() {
+        val queue = SetQueue(queueFile())
+        queue.hold(Session(id = "ses_anon", startedAtMs = 1_000), unclaimed = true)
+        queue.flush()
+
+        queue.adopt("alice", confirmed = false)
+        assertNull(queue.session)
+        queue.adopt(null)
+        queue.adopt("alice", confirmed = true)
+        assertEquals("ses_anon", queue.session?.id)
     }
 }

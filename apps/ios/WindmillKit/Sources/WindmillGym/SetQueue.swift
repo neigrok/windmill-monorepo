@@ -89,7 +89,7 @@ public final class SetQueue {
     // other.
     public static let undoWindowMs: Int64 = 9_000
 
-    private struct Held: Codable {
+    private struct Queue: Codable {
         var session: Session?
         var entries: [String: Entry]
         // The movements this session holds, in the order it will walk them — the plan's lines first,
@@ -101,29 +101,115 @@ public final class SetQueue {
         // Whether the live session was composed on this DEVICE with no account asked — the claim
         // replay is what turns it false. Optional so an older file still opens, and nil honestly
         // reads as claimed: every session before this flag existed was opened by the server.
+        // (Android's SetQueue.kt reads an absent bit the other way, deliberately; the two are
+        // documented as differing and nothing in this wave turns on it.)
         var unclaimed: Bool?
+    }
+
+    // ONE QUEUE PER SEAT, AND THE SEAT IS THE KEY — the shape the shelf next door has, for the same
+    // reason. A live workout and its owed sets are one account's: before 2026-08-22 this file had no
+    // seat in it, so the next person to open gym on a lent phone was shown the previous lifter's
+    // workout, and their own sets went out against that session id under their own bearer, where the
+    // log's 404 read as "the workout vanished" and the sets were dropped (audit MOBILE-3). The key
+    // is named in `open(under:)` and nowhere else, so no read below can forget it — and A's workout
+    // survives B's whole visit, because B's queue is a different key rather than the same slot.
+    private struct Held: Codable {
+        // The pre-seat queue, at the top level, from every build before 2026-08-22 — moved on the
+        // first open under this code to whoever the device was HOLDING a session for, which is the
+        // lifter whose workout it is (retireThePreSeatQueue). The one thing that must not happen to
+        // somebody mid-workout on an upgrade is their session disappearing.
+        var session: Session?
+        var entries: [String: Entry]?
+        var order: [String]?
+        var unclaimed: Bool?
+        var queues: [String: Queue]?
     }
 
     private let url: URL
     private var held: Held
+    private var key = SetQueue.anonymousQueue
 
-    public init(url: URL = SetQueue.defaultURL()) {
+    static let anonymousQueue = "anon"
+    // The one key `open(under:)` can never name — see LocalLog.quarantinedShelf.
+    static let quarantinedQueue = "quarantine"
+
+    public init(url: URL = SetQueue.defaultURL(),
+                deviceHolds: @escaping @autoclosure () -> String? = KeychainSessions().readUser()?.id) {
         self.url = url
         let data = (try? Data(contentsOf: url)) ?? Data()
-        held = (try? JSONDecoder().decode(Held.self, from: data)) ?? Held(session: nil, entries: [:])
+        held = (try? JSONDecoder().decode(Held.self, from: data)) ?? Held()
+        retireThePreSeatQueue(heldBy: deviceHolds)
     }
 
-    public var order: [String] { held.order ?? [] }
+    // The shelf's rule, applied to the live workout: a phone still holding a session was being used
+    // by that lifter when it upgraded, so the workout is theirs and carries on under their seat — the
+    // mid-workout upgrade is whole and nobody is asked anything. A phone holding no session cannot
+    // say whose workout this is, and a workout handed to the next account is the finding itself, so
+    // it goes to the key no seat opens.
+    private func retireThePreSeatQueue(heldBy deviceHolds: () -> String?) {
+        guard held.session != nil || held.entries != nil || held.order != nil else { return }
+        let landing = deviceHolds().map { "u.\($0)" } ?? Self.quarantinedQueue
+        var queues = held.queues ?? [:]
+        var theirs = queues[landing] ?? Queue(session: nil, entries: [:])
+        theirs.session = theirs.session ?? held.session
+        theirs.entries.merge(held.entries ?? [:]) { alreadyHeld, _ in alreadyHeld }
+        theirs.order = theirs.order ?? held.order
+        theirs.unclaimed = theirs.unclaimed ?? held.unclaimed
+        queues[landing] = theirs
+        held.queues = queues
+        held.session = nil
+        held.entries = nil
+        held.order = nil
+        held.unclaimed = nil
+        flush()
+    }
+
+    // Opened under whoever is signed in — the first thing every connect does, before anything is
+    // drawn, delivered or claimed.
+    public func open(under seat: String?) {
+        key = seat.map { "u.\($0)" } ?? Self.anonymousQueue
+    }
+
+    // The claim's half of the live session: a workout composed before anybody signed in follows the
+    // person who signs in, whole — the session, its owed sets and its movement order together,
+    // because they are one workout and half of it is not claimable.
+    //
+    // It waits if this seat is already mid-workout. Two live sessions cannot be drawn at once, and
+    // the anonymous one is not lost by waiting: this seat's own workout ends, and the next connect
+    // finds the anonymous queue exactly where it was.
+    public func adoptTheAnonymousQueue() {
+        guard key != Self.anonymousQueue, queue.session == nil,
+              let anonymous = held.queues?[Self.anonymousQueue], anonymous.session != nil else { return }
+        var mine = queue
+        mine.session = anonymous.session
+        mine.unclaimed = anonymous.unclaimed
+        mine.order = anonymous.order
+        mine.entries.merge(anonymous.entries) { alreadyHeld, _ in alreadyHeld }
+        queue = mine
+        held.queues?[Self.anonymousQueue] = nil
+        flush()
+    }
+
+    private var queue: Queue {
+        get { held.queues?[key] ?? Queue(session: nil, entries: [:]) }
+        set {
+            var queues = held.queues ?? [:]
+            queues[key] = newValue
+            held.queues = queues
+        }
+    }
+
+    public var order: [String] { queue.order ?? [] }
 
     // Appending is a rest-time action, not a setup task: the movement joins the session the moment
     // it is chosen, before it has a set to its name.
     public func append(_ exerciseId: String) {
         guard !order.contains(exerciseId) else { return }
-        held.order = order + [exerciseId]
+        queue.order = order + [exerciseId]
     }
 
     public func hold(order: [String]) {
-        held.order = order
+        queue.order = order
     }
 
     public static func defaultURL() -> URL {
@@ -133,9 +219,9 @@ public final class SetQueue {
         return base.appendingPathComponent("windmill-gym-sets.json")
     }
 
-    public var session: Session? { held.session }
+    public var session: Session? { queue.session }
 
-    public var sessionIsUnclaimed: Bool { held.session != nil && (held.unclaimed ?? false) }
+    public var sessionIsUnclaimed: Bool { queue.session != nil && (queue.unclaimed ?? false) }
 
     // A different session is a different workout, so the movement order goes with the old one. It is
     // cleared rather than merged: the two lists share nothing, and carrying yesterday's movements
@@ -145,23 +231,23 @@ public final class SetQueue {
     // answered with; only the anonymous local start passes true, and the claim's success passes
     // false again for the same id.
     public func hold(_ session: Session?, unclaimed: Bool = false) {
-        if held.session?.id != session?.id { held.order = nil }
-        held.session = session
-        held.unclaimed = session == nil ? nil : unclaimed
+        if queue.session?.id != session?.id { queue.order = nil }
+        queue.session = session
+        queue.unclaimed = session == nil ? nil : unclaimed
     }
 
     // The claim reminted the live session's id (409 session-id-taken): the session row and every
     // entry pinned to the old id follow it, or the sets would be owed against an id the log will
     // never know.
     public func remapSession(_ old: String, to fresh: String) {
-        held.entries = held.entries.mapValues { entry in
+        queue.entries = queue.entries.mapValues { entry in
             guard entry.sessionId == old else { return entry }
             return Entry(set: entry.set, sessionId: fresh, needsPush: entry.needsPush,
                          remints: entry.remints, heldUntilMs: entry.heldUntilMs,
                          owedWrite: entry.owedWrite)
         }
-        guard let live = held.session, live.id == old else { return }
-        held.session = Session(id: fresh, startedAtMs: live.startedAtMs,
+        guard let live = queue.session, live.id == old else { return }
+        queue.session = Session(id: fresh, startedAtMs: live.startedAtMs,
                                finishedAtMs: live.finishedAtMs, routineId: live.routineId,
                                plan: live.plan)
     }
@@ -170,13 +256,13 @@ public final class SetQueue {
     // its sets, its walk order and its frozen plan's own lines. Every repair moves the key and
     // nothing else, exactly as `remint` does for a set's own id.
     public func remapRoutine(_ old: String, to fresh: String) {
-        guard let live = held.session, live.routineId == old else { return }
-        held.session = Session(id: live.id, startedAtMs: live.startedAtMs,
+        guard let live = queue.session, live.routineId == old else { return }
+        queue.session = Session(id: live.id, startedAtMs: live.startedAtMs,
                                finishedAtMs: live.finishedAtMs, routineId: fresh, plan: live.plan)
     }
 
     public func remapExercise(_ old: String, to fresh: String) {
-        held.entries = held.entries.mapValues { entry in
+        queue.entries = queue.entries.mapValues { entry in
             guard entry.set.exerciseId == old else { return entry }
             let moved = TrainingSet(id: entry.set.id, exerciseId: fresh, setNumber: entry.set.setNumber,
                                     weightKg: entry.set.weightKg, reps: entry.set.reps,
@@ -186,15 +272,15 @@ public final class SetQueue {
                          remints: entry.remints, heldUntilMs: entry.heldUntilMs,
                          owedWrite: entry.owedWrite)
         }
-        held.order = held.order.map { $0.map { $0 == old ? fresh : $0 } }
-        guard let live = held.session, let plan = live.plan,
+        queue.order = queue.order.map { $0.map { $0 == old ? fresh : $0 } }
+        guard let live = queue.session, let plan = live.plan,
               plan.entries.contains(where: { $0.exerciseId == old }) else { return }
         let entries = plan.entries.map { entry in
             guard entry.exerciseId == old else { return entry }
             return PlanEntry(exerciseId: fresh, sets: entry.sets, reps: entry.reps,
                              weightKg: entry.weightKg, restSeconds: entry.restSeconds)
         }
-        held.session = Session(id: live.id, startedAtMs: live.startedAtMs,
+        queue.session = Session(id: live.id, startedAtMs: live.startedAtMs,
                                finishedAtMs: live.finishedAtMs, routineId: live.routineId,
                                plan: PlanSnapshot(routine: plan.routine, entries: entries))
     }
@@ -202,7 +288,7 @@ public final class SetQueue {
     // The open session's sets in the order they were performed — queued and delivered together,
     // because a row on this device is a set that happened whether or not the log has heard of it.
     public var sets: [TrainingSet] {
-        guard let live = held.session else { return [] }
+        guard let live = queue.session else { return [] }
         return sets(in: live.id)
     }
 
@@ -210,7 +296,7 @@ public final class SetQueue {
     // survives only to carry the DELETE, and drawing it would be the screen disagreeing with the
     // move the lifter just made.
     public func sets(in sessionId: String) -> [TrainingSet] {
-        held.entries.values
+        queue.entries.values
             .filter { $0.sessionId == sessionId && $0.owes != .delete }
             .map(\.set)
             .sorted { $0.completedAtMs < $1.completedAtMs }
@@ -219,7 +305,7 @@ public final class SetQueue {
     // Everything this device owes the log, oldest first — the queue a flush drains. Sorting by the
     // instant the set was performed is what makes the per-lane walk the server's own order.
     public var pending: [Entry] {
-        held.entries.values
+        queue.entries.values
             .filter(\.needsPush)
             .sorted { $0.set.completedAtMs < $1.set.completedAtMs }
     }
@@ -233,7 +319,7 @@ public final class SetQueue {
     // ride beside: a row still owed as an append is a row the log has never been told about, and a
     // PATCH or a DELETE naming it would be a write about nothing.
     public func owes(_ id: String) -> Owed? {
-        held.entries[id]?.owes
+        queue.entries[id]?.owes
     }
 
     // `readyAt` is the instant the walk is standing at, and an entry still inside its undo window is
@@ -261,8 +347,8 @@ public final class SetQueue {
     // the row this returns false and says so, rather than deleting a set from the screen that the
     // account keeps.
     public func withdraw(_ id: String) -> Bool {
-        guard let entry = held.entries[id], entry.owes == .append else { return false }
-        held.entries[id] = nil
+        guard let entry = queue.entries[id], entry.owes == .append else { return false }
+        queue.entries[id] = nil
         return true
     }
 
@@ -272,8 +358,8 @@ public final class SetQueue {
     // settlements; a correction and a deletion have their own, because each carries a different
     // repair and a shared door would take the verb as a parameter nobody could read at the call site.
     public func store(_ set: TrainingSet, in sessionId: String, needsPush: Bool, heldUntilMs: Int64? = nil) {
-        let remints = held.entries[set.id]?.remints ?? 0
-        held.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: needsPush,
+        let remints = queue.entries[set.id]?.remints ?? 0
+        queue.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: needsPush,
                                      remints: remints, heldUntilMs: heldUntilMs, owedWrite: .append)
     }
 
@@ -286,7 +372,7 @@ public final class SetQueue {
     // in this queue. The correction brings the whole row with it, which is also what lets a refusal
     // say the numbers out loud.
     public func fix(_ corrected: TrainingSet, in sessionId: String) {
-        held.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
+        queue.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
                                            remints: 0, heldUntilMs: nil, owedWrite: .fix)
     }
 
@@ -298,8 +384,8 @@ public final class SetQueue {
     // belongs to the tap that logged the set, and a correction is not a second chance to spend an
     // id's collisions.
     public func rewrite(_ corrected: TrainingSet, in sessionId: String) {
-        let owed = held.entries[corrected.id]
-        held.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
+        let owed = queue.entries[corrected.id]
+        queue.entries[corrected.id] = Entry(set: corrected, sessionId: sessionId, needsPush: true,
                                            remints: owed?.remints ?? 0,
                                            heldUntilMs: owed?.heldUntilMs, owedWrite: .append)
     }
@@ -308,7 +394,7 @@ public final class SetQueue {
     // way a freshly logged set waits out its own — a delete that went immediately could not be taken
     // back by anything this device has, because the wire has no route that un-deletes a set.
     public func delete(_ set: TrainingSet, in sessionId: String, heldUntilMs: Int64) {
-        held.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: true,
+        queue.entries[set.id] = Entry(set: set, sessionId: sessionId, needsPush: true,
                                      remints: 0, heldUntilMs: heldUntilMs, owedWrite: .delete)
     }
 
@@ -317,8 +403,8 @@ public final class SetQueue {
     // before it landed — and a PATCH that changes nothing answers the stored row anyway, where a
     // settle that guessed wrong would drop a correction silently.
     public func restore(_ id: String) -> Bool {
-        guard let entry = held.entries[id], entry.owes == .delete else { return false }
-        held.entries[id] = Entry(set: entry.set, sessionId: entry.sessionId, needsPush: true,
+        guard let entry = queue.entries[id], entry.owes == .delete else { return false }
+        queue.entries[id] = Entry(set: entry.set, sessionId: entry.sessionId, needsPush: true,
                                  remints: entry.remints, heldUntilMs: nil, owedWrite: .fix)
         return true
     }
@@ -327,54 +413,55 @@ public final class SetQueue {
     // is the idempotency key — and clearing the SENT key anyway is what stops a reply that ever
     // disagreed from leaving an entry owed, resent, and owed again forever.
     public func delivered(_ stored: TrainingSet, for id: String, in sessionId: String) {
-        held.entries[id] = nil
+        queue.entries[id] = nil
         // A SETTLED ROW IS KEPT FOR THE LIVE SESSION AND NOTHING ELSE, because that is the session
         // this queue draws. A correction to a session that is already history has nothing left to
         // say once it lands — and nobody would ever collect it: `close` and `forget` run for the
         // live session alone, so a settled row filed here for a past one would sit in the file
         // forever, one more on every correction ever made, in a file rewritten on every tap.
-        guard held.session?.id == sessionId else { return }
-        held.entries[stored.id] = Entry(set: stored, sessionId: sessionId, needsPush: false,
+        guard queue.session?.id == sessionId else { return }
+        queue.entries[stored.id] = Entry(set: stored, sessionId: sessionId, needsPush: false,
                                         remints: 0, heldUntilMs: nil, owedWrite: nil)
     }
 
     // The one repair a spent id allows: the same set under a new key, still owed, with the budget
     // counted down. Everything the lifter did travels unchanged.
     public func remint(_ id: String, as fresh: String) {
-        guard let entry = held.entries.removeValue(forKey: id) else { return }
+        guard let entry = queue.entries.removeValue(forKey: id) else { return }
         // The fresh id carries no hold: the window was spent waiting for the send that collided, and
         // a set the lifter stopped watching nine seconds ago must not wait another nine to land.
-        held.entries[fresh] = Entry(set: entry.set.reminted(as: fresh), sessionId: entry.sessionId,
+        queue.entries[fresh] = Entry(set: entry.set.reminted(as: fresh), sessionId: entry.sessionId,
                                     needsPush: true, remints: entry.remints + 1, heldUntilMs: nil,
                                     owedWrite: entry.owedWrite)
     }
 
     public func drop(_ id: String) {
-        held.entries[id] = nil
+        queue.entries[id] = nil
     }
 
     // A session that is over. Its delivered sets live on the log now, so this device stops holding
     // them — but an owed set is dropped by nobody quietly: it stays queued until the log answers for
     // it, and a `session-finished` refusal is what tells the lifter it never landed.
     public func close(_ sessionId: String) {
-        held.entries = held.entries.filter { $0.value.sessionId != sessionId || $0.value.needsPush }
-        if held.session?.id == sessionId { letGo() }
+        queue.entries = queue.entries.filter { $0.value.sessionId != sessionId || $0.value.needsPush }
+        if queue.session?.id == sessionId { letGo() }
     }
 
     // A session that no longer exists. Discard deletes the row out from under whatever this device
     // still held, and that is the one case where an owed set has nowhere left to go — keeping it
     // would re-send it against a session id the log no longer knows, forever.
     public func forget(_ sessionId: String) {
-        held.entries = held.entries.filter { $0.value.sessionId != sessionId }
-        if held.session?.id == sessionId { letGo() }
+        queue.entries = queue.entries.filter { $0.value.sessionId != sessionId }
+        if queue.session?.id == sessionId { letGo() }
     }
 
-    // The session row, its movement order and its claim state are one fact and end together — an
-    // order left standing over no session is a list of movements belonging to a workout that is over.
+    // The session row, its movement order, its claim state and its seat are one fact and end
+    // together — an order left standing over no session is a list of movements belonging to a
+    // workout that is over.
     private func letGo() {
-        held.session = nil
-        held.order = nil
-        held.unclaimed = nil
+        queue.session = nil
+        queue.order = nil
+        queue.unclaimed = nil
     }
 
     public func flush() {
