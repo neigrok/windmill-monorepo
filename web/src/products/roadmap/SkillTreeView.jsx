@@ -77,7 +77,7 @@ import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewP
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
+import { advanceProgress, milestoneAnnouncement, stampsFor } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -1262,8 +1262,12 @@ export function SkillTreeView({ treeId, demo = false }) {
         progress.completed = new Set(savedProgress.completed);
         progress.inProgress = new Set(savedProgress.inProgress);
       }
-      const startedAtMap = savedProgress?.startedAt ?? {};
-      const completedAtMap = savedProgress?.completedAt ?? {};
+      // When each mark happened, ranked across the two clocks that can say (model/progress.js):
+      // the server's row wins where it exists — it is the only one that survives the device the
+      // mark was made on — and this browser's own stamps fill the rest. A completed step keeps its
+      // LOCAL startedAt: the server holds one row per node, so a completion overwrote when it began.
+      const startedAtMap = stampsFor(progress.inProgress, progress.markedAt, savedProgress?.startedAt);
+      const completedAtMap = stampsFor(progress.completed, progress.markedAt, savedProgress?.completedAt);
       const states = UnlockRules.derive(nextTree, progress);
       const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);

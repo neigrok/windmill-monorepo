@@ -78,3 +78,41 @@ TEST(tree_from_json_refuses_a_non_object_root) {
   CHECK_FALSE(treeFromJson(parse("5"), TreeId{"t"}).has_value());
   CHECK(treeFromJson(parse("{}"), TreeId{"t"}).has_value());
 }
+
+// The overlay used to answer with three id arrays and nothing else, so a reader learned WHICH
+// steps were marked and never WHEN — and the web's activity feed, having only its own browser's
+// stamps, filed every step finished on another device under "Earlier". `markedAt` is the server's
+// own clock, the one instant that survives the device the mark was made on.
+TEST(the_progress_overlay_carries_the_instant_the_server_recorded_each_mark) {
+  Progress progress;
+  progress.completed = {nid("a")};
+  progress.inProgress = {nid("b")};
+  progress.cleared = {nid("c")};
+  progress.markedAt = {{nid("a"), 1700000000000ull}, {nid("b"), 1700000600000ull}};
+
+  Json::Value root = toJson(progress);
+
+  REQUIRE_EQ(root["completed"].size(), 1u);
+  CHECK_EQ(root["completed"][0].asString(), std::string("a"));
+  REQUIRE_EQ(root["inProgress"].size(), 1u);
+  CHECK_EQ(root["inProgress"][0].asString(), std::string("b"));
+  REQUIRE_EQ(root["cleared"].size(), 1u);
+  CHECK_EQ(root["cleared"][0].asString(), std::string("c"));
+  CHECK_EQ(root["markedAt"]["a"].asUInt64(), 1700000000000ull);
+  CHECK_EQ(root["markedAt"]["b"].asUInt64(), 1700000600000ull);
+  CHECK_EQ(root["markedAt"].isMember("c"), false);  // a tombstone we hold no instant for stays absent
+}
+
+// An overlay from somewhere that keeps no times — an authored document's seed statuses, a fake in
+// a test — answers with the key present and empty, never absent: a reader must not have to tell
+// "this server is too old to say" apart from "nothing here was ever marked".
+TEST(an_overlay_with_no_instants_still_carries_the_markedAt_object) {
+  Progress progress;
+  progress.completed = {nid("a")};
+
+  Json::Value root = toJson(progress);
+
+  CHECK_EQ(root.isMember("markedAt"), true);
+  CHECK_EQ(root["markedAt"].isObject(), true);
+  CHECK_EQ(root["markedAt"].empty(), true);
+}

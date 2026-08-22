@@ -26,11 +26,12 @@ export class HttpTreeRepository extends TreeRepository {
     return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
-  // The account's own overlay, exactly as the server holds it — three id arrays, or null
-  // when the server did not answer (unreachable, or a status that isn't 200). Credentialed
-  // so it is *this* signed-in user's overlay. Two callers: loadProgress below seeds from
-  // the document when this comes back empty, and the collab reconcile needs it unseeded,
-  // because "the server has no row for this mark" is the only thing that makes a push safe.
+  // The account's own overlay, exactly as the server holds it — three id arrays and the
+  // instant the server recorded each mark, or null when the server did not answer
+  // (unreachable, or a status that isn't 200). Credentialed so it is *this* signed-in
+  // user's overlay. Two callers: loadProgress below seeds from the document when this comes
+  // back empty, and the collab reconcile needs it unseeded, because "the server has no row
+  // for this mark" is the only thing that makes a push safe.
   async loadServerProgress() {
     try {
       const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
@@ -40,6 +41,7 @@ export class HttpTreeRepository extends TreeRepository {
         completed: body.completed ?? [],
         inProgress: body.inProgress ?? [],
         cleared: body.cleared ?? [],
+        markedAt: body.markedAt ?? {},
       };
     } catch {
       return null;
@@ -47,7 +49,7 @@ export class HttpTreeRepository extends TreeRepository {
   }
 
   async loadProgress(treeData) {
-    const server = (await this.loadServerProgress()) ?? { completed: [], inProgress: [], cleared: [] };
+    const server = (await this.loadServerProgress()) ?? { completed: [], inProgress: [], cleared: [], markedAt: {} };
     if (server.completed.length > 0 || server.inProgress.length > 0 || server.cleared.length > 0) {
       // `server: true` marks this as the account's real overlay — the load pipeline lets
       // it win over stale localStorage. `cleared` carries the tombstones so a cleared
@@ -56,6 +58,7 @@ export class HttpTreeRepository extends TreeRepository {
         completed: new Set(server.completed),
         inProgress: new Set(server.inProgress),
         cleared: new Set(server.cleared),
+        markedAt: server.markedAt,
         server: true,
       };
     }
@@ -66,6 +69,7 @@ export class HttpTreeRepository extends TreeRepository {
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
+      markedAt: {},  // an authored seed status is not a mark anyone made at a time we know
       server: false,
     };
   }

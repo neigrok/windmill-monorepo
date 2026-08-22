@@ -473,11 +473,15 @@ completion/edit leaves an actor–verb–object trace.
   through) after the node is deleted, while live rows resolve the object from the current
   tree by id; `ActivityLog` answers `record` / `recent` / `forNode` / `groupedByDay`, and a
   static `fromTree(tree, states, completedAt)` seeds the resting feed from the roadmap's
-  build history, dating each seeded completion from this device's own completion stamp —
+  build history, dating each seeded completion from `stampsFor` (model/progress.js), which
+  ranks the two clocks that can date a mark: the server's `markedAt` row wins, this device's
+  own `completedAt` fills the gaps —
   a deed we hold no stamp for is undated (`at: null` → "Earlier", no relative time) rather
   than given a plausible-looking made-up instant, which is what the seed used to do (one
   synthetic completion every 2.6h back from load: order right, dates invented and re-invented
-  on every reload). `grammar.jsx` is the one presentation grammar every surface speaks (VERB_STYLE,
+  on every reload). The server half matters as much as the seed half: a browser stamps only
+  the marks IT made, so before `/v1/trees/:id/progress` carried `markedAt`, every step finished
+  on a phone or by an agent came back undated and the feed filed days-old work under "Earlier". `grammar.jsx` is the one presentation grammar every surface speaks (VERB_STYLE,
   `relativeTime`, `ActorAvatar`, `ObjectLabel`, `EventSentence`) — the feed rows, the step
   panel's History, and the ticker all compose from it, so a verb reads the same everywhere.
 - **The dock has two tenants now (A′).** `SkillTreeView` renders `ActivityFeed` at rest and

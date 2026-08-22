@@ -4,6 +4,14 @@
 // Nothing here reads a store, a socket or the clock; `now` is handed in so a caller stamps a whole
 // bulk mark with one moment.
 //
+// stampsFor answers the third question a loaded tree asks — WHEN each of those transitions
+// happened — and it is the one place that ranks the two clocks that can answer. A browser stamps
+// only the marks it made itself, so a step finished on a phone or by an agent has no local stamp
+// at all; the server holds one for every mark that ever reached it, on its own clock. So the
+// server's instant wins wherever it exists, the device's fills the gaps (a mark still pending its
+// push, a local-born tree the server has never seen), and a step neither can date stays undated
+// rather than guessed at.
+//
 // milestoneAnnouncement is the other half of a completion: which of the milestones that just landed
 // is the one worth showing, and the sentence it earns. Pure for the same reason detectMilestones is
 // — the conduct around it (owner-only, the once-ever ledger) needs a device, and this does not.
@@ -35,6 +43,15 @@ export function advanceProgress(progress, ids, target, now) {
   }
 
   return { completed, inProgress, startedAt, completedAt };
+}
+
+export function stampsFor(ids, serverMarkedAt = {}, localStamps = {}) {
+  const stamps = {};
+  for (const id of ids) {
+    const at = serverMarkedAt[id] ?? localStamps[id];
+    if (at != null) stamps[id] = at;
+  }
+  return stamps;
 }
 
 // The crown wins whenever it landed — completing the last step also completes its branch, and the

@@ -134,9 +134,12 @@ Json::Value toJson(const Progress& progress) {
   for (const NodeId& id : progress.inProgress) inProgress.append(id.str());
   Json::Value cleared(Json::arrayValue);
   for (const NodeId& id : progress.cleared) cleared.append(id.str());
+  Json::Value markedAt(Json::objectValue);
+  for (const auto& [id, at] : progress.markedAt) markedAt[id.str()] = Json::UInt64{at};
   root["completed"] = completed;
   root["inProgress"] = inProgress;
   root["cleared"] = cleared;
+  root["markedAt"] = markedAt;  // node → epoch ms the server recorded the mark; the only cross-device instant
   return root;
 }
 

@@ -59,10 +59,12 @@ test('loadTree throws on a status, so the caller can fall back to the local blob
   });
 });
 
-test('loadServerProgress is the account overlay verbatim — three arrays, credentialed', async () => {
-  await withFetch(() => ok({ completed: ['a'], inProgress: ['b'], cleared: ['c'] }), async (calls) => {
+test('loadServerProgress is the account overlay verbatim — three arrays and the mark instants, credentialed', async () => {
+  await withFetch(() => ok({ completed: ['a'], inProgress: ['b'], cleared: ['c'], markedAt: { a: 900, b: 800 } }), async (calls) => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
-    assert.deepEqual(await repo.loadServerProgress(), { completed: ['a'], inProgress: ['b'], cleared: ['c'] });
+    assert.deepEqual(await repo.loadServerProgress(), {
+      completed: ['a'], inProgress: ['b'], cleared: ['c'], markedAt: { a: 900, b: 800 },
+    });
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1/progress', init: { credentials: 'include' } }]);
   });
 });
@@ -70,7 +72,7 @@ test('loadServerProgress is the account overlay verbatim — three arrays, crede
 test('loadServerProgress reads a missing key as an empty set of marks, never undefined', async () => {
   await withFetch(() => ok({ completed: ['a'] }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
-    assert.deepEqual(await repo.loadServerProgress(), { completed: ['a'], inProgress: [], cleared: [] });
+    assert.deepEqual(await repo.loadServerProgress(), { completed: ['a'], inProgress: [], cleared: [], markedAt: {} });
   });
 });
 
@@ -86,13 +88,14 @@ test('loadServerProgress answers null — not an empty overlay — when the serv
 });
 
 test('loadProgress hands back the account overlay, tombstones and all, marked server-true', async () => {
-  await withFetch(() => ok({ completed: ['a'], inProgress: ['b'], cleared: ['c'] }), async () => {
+  await withFetch(() => ok({ completed: ['a'], inProgress: ['b'], cleared: ['c'], markedAt: { a: 900 } }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const progress = await repo.loadProgress(SEEDED);
     assert.deepEqual(progress, {
       completed: new Set(['a']),
       inProgress: new Set(['b']),
       cleared: new Set(['c']),
+      markedAt: { a: 900 },
       server: true,
     });
   });
@@ -104,6 +107,7 @@ test('loadProgress falls back to the document seeds when the server holds no ove
     assert.deepEqual(await repo.loadProgress(SEEDED), {
       completed: new Set(['a']),
       inProgress: new Set(['b']),
+      markedAt: {},  // an authored seed status is nobody's mark, at no instant we know
       server: false,
     });
   });
@@ -115,6 +119,7 @@ test('loadProgress falls back to the seeds when the server never answered at all
     assert.deepEqual(await repo.loadProgress(SEEDED), {
       completed: new Set(['a']),
       inProgress: new Set(['b']),
+      markedAt: {},
       server: false,
     });
   });
@@ -127,6 +132,7 @@ test('a lone cleared tombstone is still an overlay — it must not read as "the 
       completed: new Set(),
       inProgress: new Set(),
       cleared: new Set(['a']),
+      markedAt: {},
       server: true,
     });
   });

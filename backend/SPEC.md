@@ -95,7 +95,7 @@ declares `loadServerProgress` and `loadActivity`, which are not listed below.
 | Frontend port | Method | Backend responsibility |
 | --- | --- | --- |
 | `TreeRepository` | `loadTree() → TreeData` | Serve authored tree: `{ id, title, nodes[] }` |
-| `TreeRepository` | `loadProgress(treeData) → Progress` | Serve **this user's** `{ completed, inProgress, cleared, server }` |
+| `TreeRepository` | `loadProgress(treeData) → Progress` | Serve **this user's** `{ completed, inProgress, cleared, markedAt, server }` |
 | `LayoutEngine` | `layout(tree) → Map<id,Vec2>` | **Stays client-side.** Not a backend concern |
 
 `TreeData` / `NodeSpec` (the wire shape the server persists and emits):
@@ -184,6 +184,10 @@ clean):**
 **Progress (per user, per tree) — private LWW overlay:**
 
 - `active` (in-progress) and `complete` are mutually exclusive (one status per node).
+- The overlay carries `markedAt` — node → epoch ms, the SERVER's clock at the moment it
+  recorded the mark. It is the only instant that survives the device a mark was made on
+  (a client stamps only its own marks), so it is what a reader dates a step by. The client
+  HLC stored beside it orders writes and is never served back as a time.
 - "complete only if all prerequisites are complete" is an **advisory** rule the client
   guards and the server records; it is not a hard reject (a cyclic region can make it
   unsatisfiable — exactly the kind of thing the user resolves via D3). Progress never

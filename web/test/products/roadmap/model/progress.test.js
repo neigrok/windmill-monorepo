@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { advanceProgress, milestoneAnnouncement } from '../../../../src/products/roadmap/model/progress.js';
+import { advanceProgress, milestoneAnnouncement, stampsFor } from '../../../../src/products/roadmap/model/progress.js';
 
 function progress() {
   return {
@@ -144,4 +144,32 @@ test('with no crown the biggest limb is the picture, ties keeping the first', ()
     summary: 'Branch complete: Hull · 7/7 steps',
     label: 'Share the moment',
   });
+});
+
+// stampsFor ranks the two clocks that can date a mark. The feed used to read only the local one,
+// which is written exclusively by completions made in THIS browser — so a step finished on a phone
+// or by an agent came back undated and the feed filed it under "Earlier", days after the fact.
+
+test('stampsFor takes the server instant wherever the server holds one', () => {
+  const stamps = stampsFor(['a', 'b'], { a: 900, b: 800 }, { a: 100, b: 200 });
+
+  assert.deepEqual(stamps, { a: 900, b: 800 });
+});
+
+test('stampsFor falls back to this device for a mark the server has never heard of', () => {
+  const stamps = stampsFor(['a', 'b'], { a: 900 }, { b: 200 });
+
+  assert.deepEqual(stamps, { a: 900, b: 200 });
+});
+
+test('stampsFor leaves a step neither clock can date undated, rather than guessing', () => {
+  const stamps = stampsFor(['a', 'b', 'c'], { a: 900 }, {});
+
+  assert.deepEqual(stamps, { a: 900 });
+});
+
+test('stampsFor answers only for the ids asked about, whatever else the maps carry', () => {
+  const stamps = stampsFor(new Set(['a']), { a: 900, z: 1 }, { a: 100, y: 2 });
+
+  assert.deepEqual(stamps, { a: 900 });
 });

@@ -2,6 +2,8 @@
 
 #include "products/roadmap/domain/Ids.h"
 
+#include <cstdint>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -158,11 +160,15 @@ struct TreeData {
 
 // A user's progress over one tree: the two id sets the client already tracks, plus the
 // cleared tombstones — visible so a client's reconcile can tell "cleared" from "never
-// marked" and never resurrects a clear with a stale local mark.
+// marked" and never resurrects a clear with a stale local mark. `markedAt` is when the
+// SERVER recorded each mark: the only instant that holds across devices, since a client's
+// own stamps only cover marks it made itself. Empty where the overlay came from somewhere
+// that keeps no times (an authored document's seed statuses, a test).
 struct Progress {
   std::set<NodeId> completed;
   std::set<NodeId> inProgress;
   std::set<NodeId> cleared;
+  std::map<NodeId, std::uint64_t> markedAt;  // node → epoch ms the server recorded the mark
 };
 
 }

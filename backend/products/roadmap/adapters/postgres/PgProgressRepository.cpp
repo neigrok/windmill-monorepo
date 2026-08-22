@@ -18,7 +18,8 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT node_id, status FROM node_progress WHERE tree_id = $1 AND user_id = $2",
+      "SELECT node_id, status, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+      "FROM node_progress WHERE tree_id = $1 AND user_id = $2",
       tree.str(), user.str());
 
   Progress progress;
@@ -28,6 +29,9 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
     if (status == "complete") progress.completed.insert(node);
     else if (status == "active") progress.inProgress.insert(node);
     else if (status == "none") progress.cleared.insert(node);
+    // The server's own clock, not the marking device's: `stamp_ms` beside it is the client
+    // HLC, which orders writes but cannot be asserted back to a reader as a time.
+    progress.markedAt.emplace(node, static_cast<std::uint64_t>(row["updated_ms"].as<long long>()));
   }
   return progress;
 }
