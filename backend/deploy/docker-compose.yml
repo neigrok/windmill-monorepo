@@ -178,9 +178,18 @@ services:
       DOMAIN_API: ${DOMAIN_API}
       DOMAIN_APP: ${DOMAIN_APP:-app.localhost}
       ACME_EMAIL: ${ACME_EMAIL}
-      # Cloudflare edge ranges, rendered into .env by the deploy workflow. Allow-all default so a
-      # missing value fails open (Caddy refuses to start on an empty remote_ip matcher otherwise).
-      CF_IPS: "${CF_IPS:-0.0.0.0/0 ::/0}"
+      # Cloudflare's edge ranges — the allow-list for the Caddyfile's (cloudflare_only) gate, which
+      # is the only thing making CF-Connecting-IP trustworthy. The deploy workflow fetches the live
+      # list and renders it into .env; this default is what an unset variable falls back to, and it
+      # is the real list rather than the allow-all it used to be — an allow-all default meant any
+      # deploy that missed the variable shipped an open origin and said nothing (2026-08-16 audit,
+      # INFRA-1). Failing closed onto a slightly stale edge list is the better failure: worst case a
+      # newly-added Cloudflare range gets 403s until this line is refreshed, which is visible and
+      # recoverable, whereas an open origin is neither. NEVER write an empty value here: Caddy
+      # starts fine on an empty remote_ip matcher and then 403s every request, Cloudflare's included
+      # (measured) — a full outage. `:-` rather than `-` is what keeps an empty .env line off it.
+      # Source: https://api.cloudflare.com/client/v4/ips — fetched 2026-08-22, etag 38f79d050aa027e3be3865e495dcc9bc
+      CF_IPS: "${CF_IPS:-173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/windmill-web:ro

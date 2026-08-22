@@ -343,6 +343,26 @@ New bets with no old number: `truth-pass`, `event-spine`, `funnel-baseline`,
 
 ## Risks carried
 
+- **A device remembers whoever used it last** — the 2026-08-16 audit's largest class, and the one
+  no server-side test could have caught: every surface kept a device store that was not keyed by an
+  account and was not given up when the account changed, so a shared or handed-over device drew the
+  previous person's journal, trees and training log for the next one — and, on the first keystroke,
+  wrote them into that account on the server. Web is fixed (the account is in the storage key, or
+  stamped on the row that gates every read); **iOS and Android still carry it**, and the shape they
+  must mirror is written down in the wave's report. The lesson generalises past this bug: anything
+  the device holds needs a seat, and sign-out is not the only moment an account changes.
+- **The origin trusted a header nothing protected** — the rate limiter keyed every per-IP ceiling on
+  `CF-Connecting-IP`, which is only trustworthy while the origin refuses non-Cloudflare traffic. The
+  Caddy rule meant to enforce that had been dead code since it was written (a bare `respond` sorts
+  after the terminal `handle` blocks), and the firewall was open to the internet. Both are closed
+  now — but the pattern is worth carrying: a control nobody has ever seen FIRE is a control nobody
+  has. `caddy adapt` is how that one is checked; every future edge rule needs an equivalent.
+- **Unbounded compute on one shared process** — two doors wrote graphs without the caps the command
+  path enforced, and two O(V·E) passes were guarded by a node count that ignored edges, so one free
+  account could freeze the whole API for every product. The bounds are back and the passes are paid
+  for by the work; what is still open is the shape underneath — analysis runs synchronously on the
+  request thread with no queue, timeout or per-account quota, so the next expensive read invents the
+  problem again.
 - **Email deliverability is an activation risk, not just a reminder risk** — magic link
   is the only sign-in and now carries fork/claim tokens. SPF/DKIM/DMARC + stream
   separation before any recurring send (`email-deliverability`).

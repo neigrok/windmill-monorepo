@@ -4,7 +4,8 @@ name: Deploy to VPS
 # deploy README/.env.example describe — then ships the current compose + Caddyfile, pulls the published
 # image, and brings the stack up. Each value comes from exactly one source:
 #   secrets  → POSTGRES_PASSWORD, the service API keys, the admin bearers, WINDMILL_MCP_TOKEN
-#   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, CF_IPS, PADDLE_ENV, PADDLE_PRICE_ID, …
+#   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, PADDLE_ENV, PADDLE_PRICE_ID, …
+#   fetched  → CF_IPS, live from api.cloudflare.com at render time (see the render step)
 #
 # ADDING A KEY IS TWO EDITS, and skipping either one fails quietly in a different way. The `env:` block
 # below carries the value into the job; the hand-maintained key list in the render loop decides what
@@ -113,7 +114,6 @@ jobs:
           JOURNAL_NUDGE_ADMIN_TOKEN: ${{ secrets.JOURNAL_NUDGE_ADMIN_TOKEN }}
           JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
           # Config (variables; safe compose defaults when unset):
-          CF_IPS: ${{ vars.CF_IPS }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -138,6 +138,28 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Cloudflare's edge ranges, fetched live so the origin gate is current at the moment it is
+          # shipped — until 2026-08-22 this was a static GitHub variable while the Caddyfile claimed it
+          # was fetched here, and the variable was in fact unset, so the gate ran on compose's allow-all
+          # default. The fallback is READ OUT OF the committed compose default rather than retyped,
+          # because two copies of an IP list is two chances to leave a stale one standing. Either branch
+          # yields a non-empty list, and the guard below treats an empty one like a missing domain: an
+          # empty remote_ip matcher does not stop Caddy, it makes Caddy 403 every request including
+          # Cloudflare's, which is a whole-site outage rather than a visible misconfiguration.
+          cf_default=$(sed -n 's/^ *CF_IPS: "\${CF_IPS:-\(.*\)}"$/\1/p' backend/deploy/docker-compose.yml)
+          if [ -z "$cf_default" ]; then
+            echo "Refusing to render — cannot read the committed CF_IPS default out of backend/deploy/docker-compose.yml"
+            exit 1
+          fi
+          CF_IPS=$(curl -sf --max-time 20 https://api.cloudflare.com/client/v4/ips \
+            | jq -r 'if .success then ((.result.ipv4_cidrs + .result.ipv6_cidrs) | join(" ")) else "" end' || true)
+          if [ -n "$CF_IPS" ]; then
+            echo "CF_IPS: fetched live from api.cloudflare.com"
+          else
+            CF_IPS="$cf_default"
+            echo "CF_IPS: fetch failed — falling back to the committed list in docker-compose.yml"
+          fi
+
           # Guard: refuse before touching the host if anything whose emptiness would break prod is unset.
           # (WINDMILL_MCP_TOKEN is NOT here on purpose: /mcp is still gated by OAuth + per-user MCP keys,
           # so an empty shared token disables only the static-token shortcut, it does not open the endpoint.)
@@ -150,12 +172,13 @@ jobs:
           # once: it overwrites ~/windmill/.env wholesale (only POSTGRES_PASSWORD is preserved), so an
           # unset variable silently reverted a working sender and no one but the owner could sign up.
           missing=
-          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD RESEND_FROM; do
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD RESEND_FROM CF_IPS; do
             [ -n "${!key}" ] || missing="$missing $key"
           done
           if [ -n "$missing" ]; then
             echo "Refusing to render — these required values are unset:$missing"
             echo "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD secret) and re-run."
+            echo "(CF_IPS is not configured anywhere — if it is listed, both the live fetch and the compose fallback came back empty.)"
             exit 1
           fi
 

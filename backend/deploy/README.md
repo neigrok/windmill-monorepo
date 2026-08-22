@@ -25,7 +25,7 @@ rollback is done: dispatch with the older commit's sha.
  │       │              migrate (one-shot: applies db/schema.sql)            │
  │       │              db     :5432   postgres 16  (volume: pgdata)         │
  └───────┴──────────────────────────────────────────────────────────────────┘
-   only :80/:443 are exposed to the internet
+   only :80/:443 are exposed, and only to Cloudflare's ranges
 ```
 
 ## What lives where
@@ -46,7 +46,33 @@ rollback is done: dispatch with the older commit's sha.
    curl -fsSL https://get.docker.com | sh
    sudo usermod -aG docker "$USER"   # log out/in so the deploy user can run docker
    ```
-2. **Open the firewall**: inbound `22`, `80`, `443`.
+2. **Open the firewall**: inbound `22` from anywhere, and `80`/`443` **from Cloudflare only** —
+   the site is served through Cloudflare, so nothing else has any business reaching the origin.
+   ```sh
+   sudo ufw allow 22/tcp
+   for cidr in $(curl -sf https://api.cloudflare.com/client/v4/ips \
+                 | jq -r '(.result.ipv4_cidrs + .result.ipv6_cidrs)[]'); do
+     sudo ufw allow proto tcp from "$cidr" to any port 80,443
+   done
+   sudo ufw --force enable && sudo ufw status numbered
+   ```
+   Caddy refuses non-Cloudflare traffic with a 403 as well (the `(cloudflare_only)` gate — see
+   `deploy/Caddyfile`), so this is defence in depth: the firewall is what stops a packet reaching
+   the box at all, and it is the layer that survives a Caddyfile mistake.
+
+   **When the ranges go stale.** Cloudflare adds ranges occasionally. A visitor arriving from a
+   range you have not added gets a connection timeout at the firewall (or a 403 from Caddy if only
+   `CF_IPS` is behind) — the site is up for most people and dead for some, which is the confusing
+   failure this note exists to make identifiable. Re-run the loop above whenever a deploy logs a
+   changed list, and prune the old rules with `sudo ufw status numbered` / `sudo ufw delete <n>`.
+
+   **If it locks you out.** Port 22 is deliberately NOT restricted above, so SSH still works and
+   the recovery is `sudo ufw allow 80,443/tcp` (re-open to everyone), then fix the list and
+   re-tighten. If you also lose SSH, use the provider's serial/VNC console and run the same
+   command, or `sudo ufw disable`. One thing that genuinely needs the wide-open port: certificate
+   issuance direct to the origin. With DNS proxied (orange cloud) the ACME challenge arrives
+   through Cloudflare like everything else and this is a non-issue — but if you ever grey-cloud a
+   record, re-open 80 to everyone until the cert issues.
 3. **DNS**: point `DOMAIN_APP` (and the transitional `DOMAIN_API`, if still used) A records
    at the VPS IP. Certs won't issue until this resolves.
 4. **Authorize the CI key**: append the deploy public key to
@@ -87,11 +113,14 @@ no extra token needed.
 
 ## Day-to-day
 
-- **Deploy**: Actions → Deploy to VPS → Run workflow (optionally pinning `image_tag`). It is
-  `workflow_dispatch` only, so the first run of a change is always watched. It rewrites
-  `~/windmill/.env` wholesale from GitHub secrets + variables — only `POSTGRES_PASSWORD` is
-  preserved from the host — and refuses before touching the box if `DOMAIN_APP`, `DOMAIN_API`,
-  `ACME_EMAIL`, `POSTGRES_PASSWORD` or `RESEND_FROM` is unset.
+- **Deploy**: automatic on every green Backend CI/CD run on `main` (since 2026-08-11); Actions →
+  Deploy to VPS → Run workflow is the by-hand path, for pinning an `image_tag` or rolling back.
+  It rewrites `~/windmill/.env` wholesale from GitHub secrets + variables — only
+  `POSTGRES_PASSWORD` is preserved from the host — and refuses before touching the box if
+  `DOMAIN_APP`, `DOMAIN_API`, `ACME_EMAIL`, `POSTGRES_PASSWORD` or `RESEND_FROM` is unset.
+  `CF_IPS` is not configured anywhere: the job fetches Cloudflare's live edge list, falls back to
+  the committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come
+  back empty — an empty allow-list would make Caddy 403 the whole site.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
 - **Status**: `docker compose ps`.
 - **Rollback**: the image is tagged per commit — set `IMAGE_TAG=<old-sha>` in `~/windmill/.env`

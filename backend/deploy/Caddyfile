@@ -9,12 +9,47 @@
 }
 
 # Refuse origin traffic that didn't arrive through Cloudflare, so the rate limiter's trust in
-# CF-Connecting-IP can't be forged by hitting the VPS directly. CF_IPS is Cloudflare's current
-# edge list, fetched from api.cloudflare.com at deploy time and injected as an env var (never
-# hardcoded). It defaults to allow-all, so a failed fetch fails open rather than locking us out.
+# CF-Connecting-IP can't be forged by hitting the VPS directly.
+#
+# IMPORT THIS FIRST IN EVERY SITE BLOCK, AND KEEP IT A `handle`. Until 2026-08-22 the check was a
+# bare `respond @not_cloudflare 403`, and a bare respond is placed by Caddy's fixed directive order
+# — which put it AFTER the terminal `handle @backend { reverse_proxy }` and `handle { file_server }`
+# below. Every request was therefore answered before the IP check ran and the 403 never once fired:
+# the gate was dead code for its whole life (2026-08-16 security audit, INFRA-1). `handle` blocks
+# are mutually exclusive and evaluated in the order they appear in the source, so the block that
+# imports first is the one that terminates ahead of routing. `caddy adapt` is how you check: on both
+# hosts the 403 subroute must come before the `reverse_proxy` and `file_server` subroutes. It is not
+# index [0] — [0] is the `header` directive, which is non-terminal and matches everything — so read
+# the order, not the number, or you will conclude a working gate is broken.
+#
+# CF_IPS is Cloudflare's published edge list, fetched from api.cloudflare.com by the deploy workflow
+# (.github/workflows/deploy.yml) and injected as an env var. docker-compose.yml carries the same
+# list as its committed default, so an unset variable fails CLOSED onto the real edge ranges rather
+# than open to the internet. What it must never be is EMPTY: Caddy starts happily on an empty
+# remote_ip matcher and then 403s EVERY request, from Cloudflare included (measured) — a total
+# outage. Both the fetch and the compose default are guarded so an empty value cannot get here.
+#
+# The ACME challenge path is carved out on purpose. Certificates are what keeps this site
+# reachable at all, and an HTTP-01 challenge is answered by Let's Encrypt reaching the origin —
+# through Cloudflare while a host is proxied, but DIRECTLY the moment one is set to DNS-only, or
+# during any window where the proxy is off. A 403 there does not fail loudly; it fails in sixty
+# days, when the certificate expires. On the app host the path carries no data and no session — it
+# serves a token Caddy itself just minted, and anything else under it falls to the file server,
+# which has no such directory and 404s. On the API host, whose only terminal block is the proxy, an
+# exempted request does reach windmill_server, where drogon has no route under that prefix and 404s
+# it; nothing behind it is reachable, and a traversal cannot escape the carve-out because Caddy
+# cleans the path before matching (`/.well-known/acme-challenge/../../v1/me` is refused, measured).
+# Caddy's path matcher is case-insensitive, so the exemption is wider than it reads — `/.WELL-KNOWN/…`
+# passes the gate too, and lands on the same 404. Both are stated because a carve-out in a security
+# gate should say exactly how wide it is.
 (cloudflare_only) {
-	@not_cloudflare not remote_ip {$CF_IPS}
-	respond @not_cloudflare 403
+	@not_cloudflare {
+		not remote_ip {$CF_IPS}
+		not path /.well-known/acme-challenge/*
+	}
+	handle @not_cloudflare {
+		respond 403
+	}
 }
 
 # The single origin: static SPA + same-origin backend (so there is no CORS between them). The
@@ -37,17 +72,6 @@
 	# a net). NOTE /gallery is exact, never /gallery* — the server reads the template off disk
 	# (GalleryApi.cpp, readWebFile) and a wider matcher would send /gallery.html here too, where
 	# nothing answers it. Its own 301 back to /gallery lives with the other aliases below.
-	# The product landings moved from /products/<name> to /<name> (2026-08-01). 301 so old
-	# links, bookmarks and search results follow; the static dirs moved with them. The /*
-	# arms catch old deep links (/products/journal/index.html was live); {query} keeps UTM
-	# params (Caddy emits a bare trailing ? when the query is empty — harmless).
-	@oldRoadmap path /products/roadmap /products/roadmap/*
-	redir @oldRoadmap /roadmap?{query} permanent
-	@oldJournal path /products/journal /products/journal/*
-	redir @oldJournal /journal?{query} permanent
-	@oldGym path /products/gym /products/gym/*
-	redir @oldGym /gym?{query} permanent
-
 	@backend path /v1/* /t/* /og/* /gallery /mcp /mcp/* /oauth/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/openid-configuration /.well-known/openid-configuration/*
 	handle @backend {
 		reverse_proxy server:8080
@@ -55,6 +79,21 @@
 	handle {
 		encode gzip zstd
 		root * /srv/windmill-web
+
+		# The product landings moved from /products/<name> to /<name> (2026-08-01). 301 so old
+		# links, bookmarks and search results follow; the static dirs moved with them. The /*
+		# arms catch old deep links (/products/journal/index.html was live); {query} keeps UTM
+		# params (Caddy emits a bare trailing ? when the query is empty — harmless). These live
+		# INSIDE this handle, not beside it: `redir` is sorted ahead of `handle` by Caddy's
+		# directive order, so at the site level they would answer a non-Cloudflare client with a
+		# 301 before the origin gate above ever ran. Nothing routes /products/* to the backend,
+		# so this is where they always effectively belonged.
+		@oldRoadmap path /products/roadmap /products/roadmap/*
+		redir @oldRoadmap /roadmap?{query} permanent
+		@oldJournal path /products/journal /products/journal/*
+		redir @oldJournal /journal?{query} permanent
+		@oldGym path /products/gym /products/gym/*
+		redir @oldGym /gym?{query} permanent
 
 		# The extensionless twin of every shelf page. /pricing is what people type and paste, and
 		# it used to answer 200 with the brand root — a second URL for a page that already has one.
