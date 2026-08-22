@@ -41,6 +41,15 @@ robots meta says `noindex`. There is no `sitemap.xml` in `public/` to edit; the 
 the source. The head each static page must carry to qualify is asserted at build time by
 `scripts/staticPageAssets.js`.
 
+`scripts/appBoot.js` is the other plugin, and it runs in dev as well as build: it puts one
+`<style>` and one inline script into `<head>` that paint an app room's own ground before the
+bundle arrives, so refreshing `/app/journal` at night no longer flashes the brand root's cream
+hero and a light wordmark on the way to the dark canvas. It reads the room table off
+`src/shell/products.js` and the ground colours out of `src/styles/tokens/palettes.css` — it
+retypes neither — and throws at build time if a palette changes shape or a product names a room
+module that is not there. `test/boot.test.mjs` drives the emitted script against a fake document;
+`test/shell-boundaries.test.mjs` checks the module each room names really exists.
+
 `vite.config.js` carries a build-time tripwire: the roadmap's `DEFAULT_KINDS` /
 `GENESIS_STAMP` must stay byte-equal to `packages/api-contract/genesis.js`, or a
 locally-born tree silently diverges from the server's empty tree on claim. It throws at

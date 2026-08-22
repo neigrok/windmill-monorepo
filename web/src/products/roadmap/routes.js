@@ -147,6 +147,10 @@ export const roadmapRoutes = {
   },
   shell: {
     room: '/app/roadmap',
+    // The module the boot preloads this room from, so the chunk goes out in the first flight
+    // rather than two round trips later (scripts/appBoot.js). Stated beside the room it belongs
+    // to, the same way a landing names its own, and checked by test/shell-boundaries.
+    module: 'src/products/roadmap/index.js',
     // Its own brand rather than the bare family default: clay is what every surface belonging to
     // no product stands on (the brand root, marketing, the /app home), and it must not move when
     // this room does. Roadmap's day IS the family cream; its night is the embers after it
@@ -155,5 +159,10 @@ export const roadmapRoutes = {
     status: 'open',
     landingHref: '/roadmap',
     HomeCard,
+    // NO `Ghost`, deliberately — this room waits on its ground and nothing else. Two reasons, and
+    // either alone would be enough: a dashed node or a stack of bars would promise a layout the
+    // radial engine then contradicts on the first frame, and this product already owns a ghost
+    // vocabulary — paste/GhostSkeleton.jsx, which means "this is the tree we parsed out of what you
+    // pasted". Borrowing that language for "we are still loading" would corrupt the one it has.
   },
 };

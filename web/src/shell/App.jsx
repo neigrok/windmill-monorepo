@@ -148,15 +148,31 @@ function useOwnNavigation() {
   }, []);
 }
 
-// A wait short enough to feel like nothing should look like nothing. The wordmark waits out a beat
-// before it paints, so a chunk that arrives quickly never flashes a screen the eye has to read;
-// the canvas underneath is the same cream either way, so the delay shows as stillness, not a gap.
-function RouteFallback() {
+// A wait short enough to feel like nothing should look like nothing — so this is the ground and
+// nothing else. The boot script in index.html has already painted that exact colour on <html>, so
+// a route arriving here changes not one pixel: the wait reads as stillness rather than as a screen.
+//
+// THE WORDMARK IS GONE FROM THE APP, and only from the app — `mark={false}` is passed at exactly
+// one call site, the /app shell. A centred 800-weight mark on a fixed inset-0 layer is a splash
+// screen, and inside a room it was the second full-viewport repaint of every cold start, standing
+// over the ground the boot script had just painted.
+//
+// Everywhere else it stays, because everywhere else it is not a splash screen but a page saying
+// whose door this is: the two auth routes a magic link lands on, the landings, and — the one that
+// matters most — a cold /t/:id share page, which is a stranger's first contact with Windmill.
+function RouteFallback({ mark = true }) {
   const [waited, setWaited] = React.useState(false);
   React.useEffect(() => {
+    if (!mark) return undefined;
     const beat = setTimeout(() => setWaited(true), 160);
     return () => clearTimeout(beat);
-  }, []);
+  }, [mark]);
+
+  // Without a mark this is a ground and nothing else, so it is furniture rather than content and
+  // says so — the same thing the room's own fallback says (chrome/Shell.jsx).
+  if (!mark) {
+    return <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'var(--surface-canvas)' }} />;
+  }
 
   return (
     <div
@@ -241,7 +257,7 @@ function AppRoutes() {
         ? { Component: ConnectPage, props: { inShell: true } }
         : null;
     return (
-      <Suspense fallback={<RouteFallback />}>
+      <Suspense fallback={<RouteFallback mark={false} />}>
         <Shell
           location={{ pathname, hash: route, search: window.location.search }}
           neutral={neutral}

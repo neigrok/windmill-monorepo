@@ -193,6 +193,18 @@ test('every product names a landing module that exists', () => {
   assert.deepEqual(modulesMissing, []);
 });
 
+// And the room's own module, which the boot preloads so a product's chunk goes out in the first
+// flight instead of being discovered two round trips later (scripts/appBoot.js). Same fact as the
+// landing above — a registry field naming a source path — so it is checked in the same place.
+const roomModulesMissing = PRODUCTS
+  .filter((product) => product.shell.status === 'open')
+  .filter((product) => !product.shell.module || !fs.existsSync(path.resolve(SRC, '..', product.shell.module)))
+  .map((p) => `product "${p.id}" names the room module ${p.shell.module}, which does not exist — the build would throw on the bundle lookup`);
+
+test('every open product names a room module that exists', () => {
+  assert.deepEqual(roomModulesMissing, []);
+});
+
 // The brand root's hero is one fact — the front door — and it used to be written out by hand in
 // landingHeads.js, in web/index.html and derived a third time in BrandLanding. They agreed only
 // because someone kept them agreeing. The static shell now derives from the same registry the

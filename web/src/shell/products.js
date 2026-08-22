@@ -1,6 +1,10 @@
 // The product registry — the one place the shell learns which products exist. Each product
 // exports a uniform route table (id · label · switchHash · home · render, plus the `shell`
-// manifest the /app chrome reads: room · scope · status · landingHref · HomeCard, the
+// manifest the /app chrome reads: room · scope · status · landingHref · HomeCard · `module`, the
+// room's own source path, which the boot preloads so the chunk goes out in the first flight rather
+// than two round trips later (scripts/appBoot.js) · and the optional `Ghost` the chrome draws on
+// the room's ground while that chunk is still arriving — lazy like every other component here, and
+// a product that would rather show its ground and nothing at all declares none. Then the
 // `landing` the brand root builds its door from: href · Component · tagline · summary, the
 // optional `settingsSections: { main, data }` the neutral settings page composes — `main` in the
 // product zone under the account identity, `data` last beside the account's own close, and a

@@ -11,6 +11,11 @@ import { forgetOpenStores } from './pageStore.js';
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
+// The bars the shell stands on the canvas's ground while JournalApp is still arriving. Lazy like
+// everything else on the registry — a top-level .jsx import here would stop plain Node from reading
+// the registry at all (shell/marketing/landingHeads.js says why) — and the chrome renders it behind
+// its own Suspense boundary, because a fallback may not itself suspend.
+const CanvasGhost = lazy(() => import('./CanvasGhost.jsx').then((m) => ({ default: m.CanvasGhost })));
 
 // The journal's own landing at /journal — React now, not a static page, because a visitor who is
 // already signed in has to be recognised on the first frame, and no static file can do that.
@@ -85,6 +90,10 @@ export const journalRoutes = {
   },
   shell: {
     room: '/app/journal',
+    // The module the boot preloads this room from, so the chunk goes out in the first flight
+    // rather than two round trips later (scripts/appBoot.js). Stated beside the room it belongs
+    // to, the same way a landing names its own, and checked by test/shell-boundaries.
+    module: 'src/products/journal/JournalApp.jsx',
     // No pinned theme: journal follows the app's appearance and maps it onto its own two skins —
     // paper in north light, or dusk with one candle (styles/tokens/palettes.css). Gym still pins
     // its skin; journal does not pin.
@@ -92,5 +101,6 @@ export const journalRoutes = {
     status: 'open',
     landingHref: '/journal',
     HomeCard,
+    Ghost: CanvasGhost,
   },
 };

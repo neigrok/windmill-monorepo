@@ -14,6 +14,8 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { LANDING_HEADS, SITE_ORIGIN, SITE_SCHEMA } from '../src/shell/marketing/landingHeads.js';
+import { LEGAL_LINKS, SURFACE_LINKS } from '../src/shell/marketing/siteIdentity.js';
+import { PRODUCTS } from '../src/shell/products.js';
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const built = readFileSync(join(dist, 'index.html'), 'utf8');
@@ -23,21 +25,13 @@ if (!root) throw new Error('build-landing-shells: landingHeads.js declares no "/
 
 // The shelf the React footer renders, written out for the crawler that never runs it — so the
 // gallery, the MCP listing and the policies stay reachable from every landing without JavaScript.
-// It mirrors LandingChrome's LEGAL_LINKS and the product registry; the registry itself imports
-// React, which a plain Node build script cannot.
-const LEGAL_SHELF = [
-  ['/pricing.html', 'Pricing'],
-  ['/privacy.html', 'Privacy'],
-  ['/terms.html', 'Terms'],
-  ['/refunds.html', 'Refunds'],
-  ['/changelog.html', 'Changelog'],
-];
+// Both rows come from the modules LandingChrome renders them from. Safe from plain Node: every
+// route table keeps its components behind lazy(() => import(...)), so nothing .jsx is touched
+// resolving the registry — the same property landingHeads.js warns about at the top of that file.
+const LEGAL_SHELF = LEGAL_LINKS.map((link) => [link.href, link.label]);
 const PRODUCT_SHELF = [
-  ['/roadmap', 'Roadmap'],
-  ['/journal', 'Journal'],
-  ['/gym', 'Gym'],
-  ['/gallery', 'Gallery'],
-  ['/connect.html', 'Connect'],
+  ...PRODUCTS.map((product) => [product.landing.href, product.label]),
+  ...SURFACE_LINKS.map((link) => [link.href, link.label]),
 ];
 
 function swapOnce(text, from, to, where) {

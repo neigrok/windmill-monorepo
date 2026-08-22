@@ -145,14 +145,14 @@ export function browserWith({ queue = null, live = null } = {}) {
 }
 
 
-// A SCREEN, IMPORTED FOR REAL. `node --test` speaks no JSX, so the loader beside this file (jsxLoader.mjs)
+// A SCREEN, IMPORTED FOR REAL. `node --test` speaks no JSX, so the shared loader (test/jsxLoader.mjs)
 // is registered once, on first use, and compiles a `.jsx` module through esbuild on the way in —
 // resolving the extension-less directory imports the design system uses, and answering a `.css`
 // import with nothing. Registered lazily so the pure-module tests pay nothing for it.
 let loaderRegistered = false;
 export async function loadScreen(relativeToSrc) {
   if (!loaderRegistered) {
-    register('./jsxLoader.mjs', import.meta.url);
+    register('../../jsxLoader.mjs', import.meta.url);
     loaderRegistered = true;
   }
   const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src');

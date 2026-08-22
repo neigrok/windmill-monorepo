@@ -6,7 +6,10 @@
 // warm cream by canon and a dark landing would be a different promise. A room may still PIN its own
 // theme — gym's instrument skin is basalt whatever this says — and a room that pins nothing follows.
 
-const KEY = 'windmill:appearance';
+// Exported because the boot script in <head> reads this same key before any module runs
+// (scripts/appBoot.js interpolates it). Renamed in one place only, a cold boot into an unpinned
+// room would paint the wrong theme on the first frame with the whole suite still green.
+export const KEY = 'windmill:appearance';
 const CHOICES = ['light', 'dark', 'system'];
 
 export const APPEARANCE_CHOICES = CHOICES;

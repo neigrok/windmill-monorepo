@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { staticPageAssets } from './scripts/staticPageAssets.js';
+import { appBoot } from './scripts/appBoot.js';
 import { DEFAULT_KINDS, GENESIS_STAMP } from './src/products/roadmap/model/Legend.js';
 import { GENESIS_GOLDEN } from '../packages/api-contract/genesis.js';
 
@@ -23,7 +24,9 @@ if (JSON.stringify({ stamp: GENESIS_STAMP, kinds: DEFAULT_KINDS }) !== GENESIS_G
 export default defineConfig({
   // staticPageAssets serves/emits /fonts.css and /chrome.css for the plain-HTML pages in public/,
   // which never enter the module graph the SPA entry gets its faces and its chrome from.
-  plugins: [react(), staticPageAssets()],
+  // appBoot puts the room's ground into <head> before the bundle lands, so refreshing an app room
+  // stops flashing the brand root's cream hero on the way to a dark canvas (scripts/appBoot.js).
+  plugins: [react(), staticPageAssets(), appBoot()],
   server: {
     port: 5173,
     open: false,

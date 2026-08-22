@@ -1,8 +1,10 @@
-// The module loader `harness.mjs` registers so a screen can be imported for real under `node --test`:
+// The module loader a test registers so a real component can be imported under `node --test`:
 // a `.jsx` module is compiled through esbuild (the same compiler vite builds with) on the way in, an
 // extension-less relative import — the design system's `'../../../design-system'` — is resolved the
 // way vite resolves it, and a `.css` import is answered with nothing, since no test reads a style.
-// Not a test file: named `.mjs` so the runner leaves it alone.
+// Not a test file: named `.mjs` so the runner leaves it alone. It sat under products/gym/ until a
+// second zone needed it (the shell's ghost test); nothing about compiling JSX is gym's, so it moved
+// up to test/ rather than being reached into sideways.
 
 import fs from 'node:fs';
 import path from 'node:path';

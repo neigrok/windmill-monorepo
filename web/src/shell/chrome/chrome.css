@@ -118,16 +118,15 @@ a.wm-switch-btn:hover {
   min-height: 0;
 }
 
+/* A room that has not arrived is its own ground and nothing else. There was a centred 800-weight
+   wordmark here until 2026-08-23: a splash screen, and the second full-viewport repaint of every
+   cold start — the ground the boot script had just painted, covered by a brand mark nobody asked
+   to read. The mark still belongs on the public auth routes, where a visitor really has left the
+   app; inside the app it only said "still here" more loudly than the wait deserved. */
 .wm-room-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40vh;
-  color: var(--text-tertiary);
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-xl);
-  letter-spacing: var(--tracking-wide);
+  position: absolute;
+  inset: 0;
+  background: var(--surface-canvas);
 }
 
 /* ---- Home room — one centred column. The room owns its width, the shell owns the centring;

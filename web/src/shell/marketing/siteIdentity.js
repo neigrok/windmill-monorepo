@@ -37,3 +37,23 @@ export const SITE_SCHEMA = [
     'image': { '@id': `${SITE_ORIGIN}/#logo` },
   },
 ];
+
+// The two shelves every page in the family ends on. They live here, in the one marketing module
+// that holds no React, because both readers need them and only one of them can run a component:
+// LandingChrome renders them for the visitor, and scripts/build-landing-shells.mjs writes them
+// into the static shell for the crawler that never runs it.
+export const LEGAL_LINKS = [
+  { href: '/pricing.html', label: 'Pricing' },
+  { href: '/privacy.html', label: 'Privacy' },
+  { href: '/terms.html', label: 'Terms' },
+  { href: '/refunds.html', label: 'Refunds' },
+  { href: '/changelog.html', label: 'Changelog' },
+];
+
+// The shelf's second row is the products off the registry, then the two crawlable surfaces that
+// are pages rather than products. Connect is the only door left to /connect.html, which is why it
+// may never go missing.
+export const SURFACE_LINKS = [
+  { href: '/gallery', label: 'Gallery' },
+  { href: '/connect.html', label: 'Connect' },
+];

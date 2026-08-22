@@ -8,14 +8,16 @@
 // data-theme is the app's one appearance choice (shell/appearance.js) unless the room PINS its own.
 // Both are stamped on the shell root together, which is exactly what lets styles/tokens/palettes.css
 // hand the room its ground — the ground blocks are keyed on the PAIR, so a landing (brand alone)
-// keeps the family cream while a room gets its place. The shell itself runs zero infinite
-// animations — the calm ceiling is the room's budget.
+// keeps the family cream while a room gets its place. The same pair is echoed onto <html>, where
+// the boot script put it before React existed, so the ground BEHIND the shell stays the room's own
+// through a switch too. The shell itself runs zero infinite animations — the calm ceiling is the
+// room's budget.
 //
 // The room's own tabs would ride at the foot, one per canon; no product asks the shell for tabs
 // today (each draws its own navigation inside its room), and the shell never paints a tab a room
 // did not ask for — so there is no footer here rather than an empty one.
 
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect } from 'react';
 import { PRODUCTS } from '../products.js';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { AccountSeat } from '../auth/AccountSeat.jsx';
@@ -68,8 +70,19 @@ function resolveRoom(pathname, neutral) {
   return { kind: 'home', scope: HOME_SCOPE, redirect: { href: '/app', external: false } };
 }
 
-function RoomFallback() {
-  return <div className="wm-room-fallback">Windmill</div>;
+// The wait between the room being asked for and the room arriving. It is the room's own ground and
+// nothing else — the same ground the boot script already painted, so there is no second full-screen
+// repaint and nothing to read. A product may hand the chrome a Ghost to stand on that ground after
+// a beat; one that hands nothing gets the ground alone, which is the honest answer for a room whose
+// layout cannot be guessed. The chrome still names no product: the ghost arrives off the registry.
+// A fallback may not itself suspend, and every component on the registry is a lazy handle — so the
+// ghost gets its OWN boundary here, with the bare ground under it. That is not a workaround, it is
+// the same rule one layer down: until the ghost's own chunk lands there is ground and nothing else,
+// which is what a room this fast to arrive should have shown anyway.
+function RoomFallback({ Ghost = null }) {
+  const ground = <div className="wm-room-fallback" aria-hidden="true" />;
+  if (!Ghost) return ground;
+  return <Suspense fallback={ground}><Ghost /></Suspense>;
 }
 
 function RoomContent({ room, location }) {
@@ -85,7 +98,7 @@ function RoomContent({ room, location }) {
   const match = product.render(spot) ?? product.render({ ...spot, hash: product.home() });
   if (!match) return null;
   const { Component, props } = match;
-  return <Suspense fallback={<RoomFallback />}><Component {...props} /></Suspense>;
+  return <Suspense fallback={<RoomFallback Ghost={product.shell.Ghost} />}><Component {...props} /></Suspense>;
 }
 
 export function Shell({ location, neutral = null }) {
@@ -98,6 +111,41 @@ export function Shell({ location, neutral = null }) {
   const room = resolveRoom(location.pathname, neutral);
   const redirect = room.redirect ?? null;
   const theme = room.scope.theme ?? appearance;
+
+  // THE GROUND BEHIND THE ROOM. The boot script in index.html stamped this exact pair on <html>
+  // before the first paint — that is what makes the page the room's own colour while the bundle is
+  // still downloading. Here we AGREE with it rather than re-decide it: on a first mount these are
+  // the values already there, so nothing repaints, and on an in-app room switch or a change of
+  // appearance the ground follows the room instead of being frozen at whatever booted.
+  //
+  // Only the attributes: the ground itself is painted by the rule the boot emits alongside the
+  // script (scripts/appBoot.js), which keys on this very data-wm-boot and reads --surface-canvas.
+  // Setting a background here as well would be a second mechanism for one colour.
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    html.setAttribute('data-wm-boot', 'app');
+    html.setAttribute('data-brand', room.scope.brand);
+    html.setAttribute('data-theme', theme);
+  }, [room.scope.brand, theme]);
+
+  // And handed back on the way out, because leaving /app is NOT always a document load: the mark in
+  // the head is an ordinary link to `/`, and App.jsx answers it with a pushState. Left stamped, the
+  // brand root would paint its cream hero on the room's night. Only on unmount — a room SWITCH must
+  // not pass through an unstamped frame, which is the repaint this whole wave exists to remove.
+  useLayoutEffect(() => () => {
+    const html = document.documentElement;
+    html.removeAttribute('data-wm-boot');
+    html.removeAttribute('data-brand');
+    html.removeAttribute('data-theme');
+    html.style.removeProperty('--wm-boot-ground');
+    // And the browser's own chrome, back to whatever the document shipped with. The boot parked
+    // that in `data-was` on each meta rather than telling the shell a colour, which is not the
+    // shell's to know (scripts/appBoot.js).
+    for (const name of ['theme-color', 'color-scheme']) {
+      const meta = document.querySelector(`meta[name="${name}"]`);
+      if (meta?.dataset.was) meta.setAttribute('content', meta.dataset.was);
+    }
+  }, []);
 
   useEffect(() => {
     if (!redirect) return;

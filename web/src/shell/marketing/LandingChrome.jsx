@@ -21,24 +21,8 @@ import { pendingMagicLink } from '../auth/AuthClient.js';
 import { FeedbackDialog } from '../feedback/FeedbackDialog.jsx';
 import { PRODUCTS } from '../products.js';
 import { LANDING_HEADS, SITE_ORIGIN } from './landingHeads.js';
+import { LEGAL_LINKS, SURFACE_LINKS } from './siteIdentity.js';
 import './landing.css';
-
-// The legal shelf — fixed for the whole family, and static pages, so it never drifts per landing.
-const LEGAL_LINKS = [
-  { href: '/pricing.html', label: 'Pricing' },
-  { href: '/privacy.html', label: 'Privacy' },
-  { href: '/terms.html', label: 'Terms' },
-  { href: '/refunds.html', label: 'Refunds' },
-  { href: '/changelog.html', label: 'Changelog' },
-];
-
-// The shelf's second row is the products off the registry, then the two crawlable surfaces that
-// are pages rather than products. Every static page ships exactly these five — one shelf, one
-// answer — and Connect is the only door left to /connect.html, which is why it may never go missing.
-const SURFACE_LINKS = [
-  { href: '/gallery', label: 'Gallery' },
-  { href: '/connect.html', label: 'Connect' },
-];
 
 export function LandingPage({ brand = null, product = null, links = [], cta = null, resume = null, resolving = false, seat = null, children }) {
   const lendDoorSkin = useSignInDoorHost();

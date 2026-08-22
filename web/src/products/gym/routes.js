@@ -17,6 +17,12 @@ import { sharedTokenOf } from './log.js';
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
 
+// The cards the shell stands on the room's basalt while GymApp is still arriving. Lazy like
+// everything else on the registry — a top-level .jsx import here would stop plain Node from reading
+// the registry at all (shell/marketing/landingHeads.js says why) — and the chrome renders it behind
+// its own Suspense boundary, because a fallback may not itself suspend.
+const RoutinesGhost = lazy(() => import('./RoutinesGhost.jsx').then((m) => ({ default: m.RoutinesGhost })));
+
 // The gym's cell on the /app home grid. Lazy, like every other HomeCard, and for the sharpest
 // version of the reason: the grid is the first frame after sign-in, and this cell is three lines
 // of text with no fetch behind them.
@@ -91,6 +97,10 @@ export const gymRoutes = {
   },
   shell: {
     room: '/app/gym',
+    // The module the boot preloads this room from, so the chunk goes out in the first flight
+    // rather than two round trips later (scripts/appBoot.js). Stated beside the room it belongs
+    // to, the same way a landing names its own, and checked by test/shell-boundaries.
+    module: 'src/products/gym/GymApp.jsx',
     scope: { theme: 'dark', brand: 'gym' },
     // THE ONE LINE THAT OPENS THE GYM, and it is a launch decision rather than a build one — the
     // phase-1 dogfood gate has never run, and that gate is what says whether this product is good.
@@ -134,5 +144,6 @@ export const gymRoutes = {
     status: 'open',
     landingHref: '/gym',
     HomeCard,
+    Ghost: RoutinesGhost,
   },
 };
