@@ -243,12 +243,14 @@ struct FakeProgressRepository : ProgressRepository {
     return progress;
   }
 
-  void setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
+  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                  ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) override {
     (void)receivedAtMs;
     std::string k = key(tree, user, node);
     auto it = byKey.find(k);
-    if (it == byKey.end() || at > it->second.at) byKey[k] = Entry{status, at};
+    if (it != byKey.end() && !(at > it->second.at)) return false;
+    byKey[k] = Entry{status, at};
+    return true;
   }
 
   std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {

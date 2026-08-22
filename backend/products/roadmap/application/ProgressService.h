@@ -14,6 +14,7 @@ namespace wm {
 struct ProgressOutcome {
   ProgressStatus status;
   bool prerequisitesMet;
+  bool applied = true;  // false when a strictly-later stamp already stood and this write lost
 };
 
 // One requested write plus the prerequisites its advisory is judged against, carrying the stamp

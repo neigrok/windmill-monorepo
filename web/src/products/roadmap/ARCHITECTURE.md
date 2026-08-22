@@ -27,7 +27,7 @@ Lives in `SkillTreeView.jsx`, in the effect keyed on `[reloadKey, treeId, demo]`
 const repo      = new HttpTreeRepository({ treeId });
 const seed      = await repo.loadTree();              // …or loadDeviceTree(id): the blob, if the row is ours
 const tree      = new SkillTree(seed);                // entity + DAG validation
-const progress  = await repo.loadProgress(seed);      // {completed, inProgress, cleared, server}
+const progress  = await repo.loadProgress(seed);      // {completed, inProgress, startedAt, completedAt, server}
 const states    = UnlockRules.derive(tree, progress); // Map<id, NodeState>
 const positions = layoutPositions(tree);              // Map<id, Vec2> — synchronous, memoized
 const model     = tree.toRenderModel(positions, states);
@@ -55,10 +55,10 @@ Every directory, one line. The six marked **↓** have a section of their own be
 | `model/` | Pure domain: the tree entity, unlock rules, the legend, spatial index. **↓** |
 | `layout/` | The one layout engine — radial, synchronous, deterministic. **↓** |
 | `scene/` | The WebGL2 renderer, its DOM overlays and pointer tools. **↓** |
-| `sync/` | The client half of the graph CRDT: lattice, gestures, socket, IndexedDB. **↓** |
+| `sync/` | The client half of the graph CRDT — both lanes: the shared structure lattice, the private progress lattice, gestures, socket, IndexedDB. **↓** |
 | `share/` | Everything that leaves the app: the link, the cards, the video, the offers. **↓** |
 | `editing/` | `TreeEditor` — the holder for the current projection. Undo lives in `sync/`. **↓** |
-| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (progress, workspaces, legend, last place, return/milestone/share baselines, view prefs). Every device-tree row carries the ACCOUNT it belongs to (`LocalTreeRegistry`), and reads are scoped to whoever the server CONFIRMED on this document load — a remembered identity may paint a face but never opens a device store, so a cold boot with no network sees only anonymous work until one `/v1/me` lands. |
+| `persistence/` | The `TreeRepository` over HTTP, the account tree registry, and the per-tree localStorage ledgers (workspaces, legend, last place, return/milestone/share baselines, view prefs — progress moved to the private sync lane; `ProgressStore` is now only the sweeper for what it left behind). Every device-tree row carries the ACCOUNT it belongs to (`LocalTreeRegistry`), and reads are scoped to whoever the server CONFIRMED on this document load — a remembered identity may paint a face but never opens a device store, so a cold boot with no network sees only anonymous work until one `/v1/me` lands. |
 | `ui/` | The desktop overlay chrome above the canvas: control bar, step panel, minimap, tree switcher, birth canvas, the Next-up ranking and the honesty chrome. |
 | `ui/tree/` | The step's own components — kind legend, checklist, workspace body — and the two hooks that drive them (`useLegend` · `useWorkspace`, each over its pure model), plus `SkillNode`/`SkillConnector`/`ProgressBar`, the canon's DOM reference implementation of the tree metaphor, whose consumer is the `#/showcase` gallery. |
 | `ui/mobile/` | The phone/tablet surfaces: bottom sheets, the editor sheet, aim + bulk bars, the action lane, the read-only chrome and the fork door. |
@@ -85,7 +85,7 @@ tree before the heavy view mounts), `SkillTreeView.jsx`, `HomeCard.jsx` (the `/a
 
 - `model/ports.js` — the data shapes (`NodeSpec`, `Kind`, `TreeData`, `Progress`, `RenderNode`,
   `RenderEdge`, `RenderModel`, `Bounds`, `Vec2`, `NodeState`) plus the two base ports
-  `TreeRepository` (`loadTree` / `loadProgress` / `loadServerProgress` / `loadActivity`) and
+  `TreeRepository` (`loadTree` / `loadProgress` / `loadActivity`) and
   `LayoutEngine` (`layout` is synchronous). The C++ server answers these same shapes, so this
   file is the contract both sides are held to — when a field moves, it moves in both.
 - `theme.js` — the resolved hex palette, because WebGL cannot read CSS custom properties. A
@@ -249,6 +249,16 @@ linear.
 The tree's durable state is a CRDT lattice, not a `TreeData`. `TreeData` is only its present-time
 projection — what the render pipeline consumes.
 
+**Two lanes, one socket, one clock, one blob.** The SHARED lane is the structure, joined by
+everyone who can read the tree. The PRIVATE lane is this account's progress. They never share a
+frame: a progress register inside a subgraph would publish one user's overlay to every
+collaborator on the tree, which is why the overlay is a separate resource in the first place.
+
+- `sync/progressLattice.js` — the private lane's replica: one last-writer-wins register per node
+  over `complete | active | none`, where `none` is a VALUE and not a deletion, so a clear
+  converges like any other write and no tombstone list is needed beside the data. Two clocks ride
+  each register and they are not interchangeable — `at` decides what wins, `markedAt` is the
+  SERVER's receipt instant and the only one any surface may show. See docs/GRAPH_SYNC_DESIGN.md §12.
 - `sync/lattice.js` — the client's half of the graph CRDT: the mirror of the backend's `Crdt.h`
   + `LooseGraph.h` + `Subgraph.h`. Stamped registers, add-biased life, last-writer-wins fields.
   The convergence laws are exercised on this side by `test/…/sync/materialize.test.js` and
@@ -318,8 +328,9 @@ one feature package rather than split across layers because it is a self-contain
   the RETURN, not a completion — the first open after a period closes, once per period, never on the
   first period, never twice, never without a card already posted. Two declines in a row retire it for
   that tree, permanently and silently. Its baseline is `persistence/ShareLedger.js`, written **only
-  when a share happens** — the only honest way to say "since you last shared" while the server's
-  progress API returns no timestamps.
+  when a share happens** — the only honest way to say "since you last shared", and still the right
+  one now that the overlay DOES carry instants: a receipt says when a step was marked, never when
+  its owner last told anybody about it.
 - `share/shareVideoFrame.js` · `share/captureShareVideo.js` — the motion companion (#19): the
   animated loop's frames as SVG, encoded to a short seamless mp4 in the owner's browser. Best-effort
   by contract — WebCodecs is not everywhere, so every path returns null and the still stays the
@@ -369,10 +380,11 @@ to announce are pure functions in `model/progress.js`, and four controllers are 
 model or feature package each drives — `ui/tree/useLegend.js`, `ui/tree/useWorkspace.js`,
 `share/useWeekOffer.js` and `activity/useActivity.js`.
 
-What is still here, deliberately, is the remote-frame idempotency and the anti-clobber
-reconciliation around the progress push, with the `startedAt`/`completedAt` stamping that rides
-with them. That pair is the one thing in this file whose failure mode is silent data loss — a
-stale local mark overwriting a server row, or a remote frame applied twice — and every extraction
+What is still here, deliberately, is the remote-frame idempotency. The anti-clobber reconciliation
+that used to sit beside it is GONE, along with the local stamp maps it reconciled: progress is a
+lattice lane now (`sync/progressLattice.js`, GRAPH_SYNC_DESIGN.md §12), so a stale mark cannot
+overwrite a newer one by construction rather than by a diff. Remote-frame idempotency is what is
+left of that pair, and its failure mode is still silent data loss — a frame applied twice — so every extraction
 so far has left it whole rather than split the guarantee across a seam. See Wave 17 in the audit
 ledger and `NOTES.md`.
 

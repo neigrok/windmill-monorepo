@@ -70,14 +70,13 @@ import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank
 import { claimLocalTrees } from './sync/claimLocalTrees.js';
 import { renameLocalTree, deleteLocalTree, loadDeviceTree } from './sync/localTrees.js';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
-import { ProgressStore } from './persistence/ProgressStore.js';
 import { LocalTreeRegistry, resolveDeviceOwner, confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { ViewPrefs, initialView, peekBorn, clearBorn } from './persistence/ViewPrefs.js';
 import { ReturnLedger } from './persistence/ReturnLedger.js';
 import { MilestoneLedger } from './persistence/MilestoneLedger.js';
 import { detectMilestones } from './model/milestones.js';
-import { advanceProgress, milestoneAnnouncement, reconcileOverlay } from './model/progress.js';
+import { advanceProgress, milestoneAnnouncement } from './model/progress.js';
 import { emptyWorkspace } from './model/NodeWorkspace.js';
 import { withCounts, inUseCount } from './model/Legend.js';
 import { KindLegend } from './ui/tree/KindLegend.jsx';
@@ -96,7 +95,6 @@ import { CoachChip } from './demo/CoachChip.jsx';
 import { DEMO_TREE_ID, DEMO_STAGED_COMPLETED, COACHED_NODE_ID, COACH_DONE_KEY, FORKED_FROM_DEMO_KEY, DEMO_COPY, coachEligible } from './demo/demoStage.js';
 
 const layoutEngine = new RadialLayoutEngine();
-const progressStore = new ProgressStore();
 const deviceTrees = new LocalTreeRegistry();
 const placeStore = new PlaceStore();
 const viewPrefs = new ViewPrefs();
@@ -157,7 +155,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const onTreeChangedRef = useRef(null); // always points at the latest onTreeChanged
   const maskedShownRef = useRef(''); // the masked-work set last surfaced, so we prompt once per change
   const applyRemoteProgressRef = useRef(null); // latest applyRemoteProgress (this account's own overlay)
-  const reconcileProgressRef = useRef(null); // latest reconcileProgress — runs after each subscribe graft
   const prevAuthRef = useRef(status);
   const suspectRef = useRef(false); // a rejected write cast doubt on the session; refresh() is verifying
   const demotedRef = useRef(false); // the demotion fires once per session, ever
@@ -200,7 +197,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       setLapsed(false); // re-auth: the chip clears; the reconnect flushes the bank
     }
     if (prev === 'loading' && status === 'signed-in') {
-      reconcileProgressRef.current?.();
       kickClaim(); // silent resume of unfinished claims (anon-first-tree F4 boot trigger)
       return;
     }
@@ -474,17 +470,16 @@ export function SkillTreeView({ treeId, demo = false }) {
   // this no longer writes to TreeStore; kept as the seam syncStructure calls after a re-render.
   const persistEdits = useCallback(() => {}, []);
 
-  // Durable progress: save the user's completions, in-progress steps, and the
-  // timestamps of those actions so they survive a reload. Same dataset guard as
-  // persistEdits — callers pass the freshly-computed next values, since state setters are async.
-  const persistProgress = useCallback((next) => {
-    if (demoRef.current) return; // the demo plays against an in-memory overlay — never localStorage (F4 invariant)
-    if (!seedRef.current) return;
-    progressStore.save(seedRef.current.id, next);
-    // Advance the return-recap baseline as work lands: this device has now witnessed these
-    // completions, so a same-session reload replays nothing — only steps finished elsewhere while
-    // the tab was closed (a collaborator, or this account's MCP agent) are "new" on the next open.
-    if (!readOnlyRef.current) returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
+  // Durability is the private lane's now (sync/progressLattice.js) — a mark is stamped, joined and
+  // persisted the moment it is made, so nothing here has to save it. What is left is the one thing
+  // the lane does not know: that THIS DEVICE has now witnessed these completions, so a same-session
+  // reload replays nothing and only steps finished elsewhere while the tab was closed (a
+  // collaborator, this account's agent) are "new" on the next open. Callers pass the freshly
+  // computed next values, since state setters are async.
+  const witnessProgress = useCallback((next) => {
+    if (demoRef.current) return; // the demo plays against an in-memory overlay, and never a ledger (F4)
+    if (!seedRef.current || readOnlyRef.current) return;
+    returnLedger.save(seedRef.current.id, { completed: [...next.completed], at: Date.now() });
   }, []);
 
   // The single status beat (canonical §2): a toast enters fade+rise, holds, then
@@ -614,8 +609,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   // including the user's durable progress and its timestamps for this tree.
   const handleResetEdits = useCallback(() => {
     if (seedRef.current) {
-      collabRef.current?.clearDurable?.();  // drop the durable lattice for this tree
-      progressStore.clear(seedRef.current.id);
+      collabRef.current?.clearDurable?.();  // drop the durable blob — BOTH lanes, structure and marks
       clearWorkspaceStore(seedRef.current.id);
       clearLegendStore(seedRef.current.id);
       returnLedger.clear(seedRef.current.id); // the reset reload re-baselines the recap from the cleared progress
@@ -1241,18 +1235,16 @@ export function SkillTreeView({ treeId, demo = false }) {
       // saved localStorage progress. Every visitor gets the same staged state; a reload
       // resets it, so the coached step is always ready.
       const progress = demo
-        ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), server: false }
+        ? { completed: new Set(DEMO_STAGED_COMPLETED), inProgress: new Set(), startedAt: {}, completedAt: {}, server: false }
         : await repo.loadProgress(treeData);
       // The authoritative structural history from the op log — merged into the resting
       // feed below so a collaborator's edits show up, not just this browser's.
       const serverActivity = await repo.loadActivity({ limit: 200 });
-      // The two accounts of this work — the server's overlay and this browser's — settled in one
-      // pure place (model/progress.js), stamps and all: the server's rows and instants win, local
-      // marks it has never heard of ride on top as the reconcile's pending pushes, and a completed
-      // step keeps its LOCAL startedAt, since the server holds one row per node and the completion
-      // overwrote when it began. The demo plays against neither.
-      const savedProgress = demo ? null : progressStore.load(seed.id);
-      const overlay = reconcileOverlay(progress, savedProgress);
+      // The overlay to OPEN at — the server's bootstrap read, or the document's seeds when it
+      // holds no marks. There is no second account of this work to settle it against any more:
+      // the private lane (sync/progressLattice.js) is the durable copy, it grafts moments later,
+      // and its own overlay replaces this one the instant it does.
+      const overlay = progress;
       const states = UnlockRules.derive(nextTree, overlay);
       const positions = layoutPositions(nextTree);
       const model = nextTree.toRenderModel(positions, states);
@@ -1313,16 +1305,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       // so the away-work just replayed is shown once, not on every later open. Demo and any
       // non-editable view never write — a visited tree isn't a returned-to one.
       if (!demo && !readOnlyRef.current) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
-      // Write the RECONCILED overlay back down. Without this the local copy keeps the picture it
-      // had before the server answered — including marks another device has since cleared — until
-      // the next edit happens to rewrite it, and an offline reload in that window shows the stale
-      // one. The store still earns its keep after the write (marks the server has never heard of
-      // stay in the set as the reconcile's pending pushes, startedAt lives nowhere else, and an
-      // offline open reads it), so this keeps it honest rather than emptying it. Read-only views
-      // never write: a visitor on someone's share page would be saving the OWNER's progress here.
-      if (!demo && !readOnlyRef.current) {
-        progressStore.save(seed.id, overlay);
-      }
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
@@ -1367,8 +1349,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             peersRef.current.set(frame.actor, { name: frame.profile?.name, color: frame.profile?.color, cursor: null, selection: null });
           }
         })
-        .onProgress((frame) => applyRemoteProgressRef.current?.(frame))
-        .onLive(() => reconcileProgressRef.current?.());
+        .onProgress((overlay) => applyRemoteProgressRef.current?.(overlay));
       collabRef.current = session;
       session.start();  // load durable lattice from IndexedDB, then connect
     }
@@ -1759,13 +1740,16 @@ export function SkillTreeView({ treeId, demo = false }) {
     return () => scene.clearFaded();
   }, [scene, aim, tree, nodesById]);
 
-  // The wire half of a mark (progress-wire): signed-in sessions mirror each local mark to
-  // the server over the socket; ghosts stay localStorage-only. Offline sends no-op — the
-  // reconciliation below carries those marks up on the next graft.
+  // A mark, recorded once (§12). It lands in the session's private lane — stamped, joined and
+  // persisted — and the lane decides on its own whether the wire is reachable: offline it is
+  // simply uncovered, and the next graft flushes it. There is nothing here to retry, mirror or
+  // reconcile, which is the entire point of the lane.
+  //
+  // A ghost marks too: the lattice is the same blob their tree lives in, and their marks flush
+  // when the claim signs them in. The demo never writes — its overlay is session-local (F4).
   function pushProgress(nodeId, wireStatus) {
-    if (demoRef.current) return; // BEFORE the signed-in gate: a signed-in visitor never writes the demo tree's progress (F4 invariant)
-    if (status !== 'signed-in') return;
-    collabRef.current?.sendProgress(nodeId, wireStatus);
+    if (demoRef.current) return;
+    collabRef.current?.markProgress(nodeId, wireStatus);
   }
 
   // Begin work on a step: mark it in-progress and stamp its start (once). The kindle
@@ -1778,7 +1762,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     const nextStartedAt = startedAt[selectedId] ? startedAt : { ...startedAt, [selectedId]: Date.now() };
     setInProgress(nextInProgress);
     setStartedAt(nextStartedAt);
-    persistProgress({ completed, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt });
+    witnessProgress({ completed, inProgress: nextInProgress, startedAt: nextStartedAt, completedAt });
     pushProgress(selectedId, 'active');
     emit({ verb: 'started', nodeId: selectedId, label: node?.label, kind: node?.color }, { silent: true });
   }
@@ -1815,7 +1799,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompleted(next.completed);
     setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
-    persistProgress(next);
+    witnessProgress(next);
     if (!fromRemote) pushProgress(id, 'complete');
     // Record every beat in the log (the feed still tells the full story), but keep
     // them off the ticker — one summary toast closes the ceremony instead.
@@ -1876,7 +1860,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     setCompleted(next.completed);
     setInProgress(next.inProgress);
     setCompletedAt(next.completedAt);
-    persistProgress(next);
+    witnessProgress(next);
     for (const id of targets) {
       pushProgress(id, 'complete');
       const node = nodesById.get(id);
@@ -1912,45 +1896,40 @@ export function SkillTreeView({ treeId, demo = false }) {
     setInProgress(next.inProgress);
     setStartedAt(next.startedAt);
     setCompletedAt(next.completedAt);
-    persistProgress(next);
+    witnessProgress(next);
     if (!fromRemote) pushProgress(id, target === 'notstarted' ? 'none' : 'active');
   }
 
   // A remote progress frame — this account's own change from another session or an MCP edit —
   // reflected live through the same apply path a local mark takes. Idempotent: skip when the node
   // already holds that state so an echo doesn't replay the completion ceremony.
-  applyRemoteProgressRef.current = (frame) => {
-    if (demoRef.current) return; // the demo overlay is session-local, sealed inbound too — no wire frame touches it
-    const id = frame?.nodeId;
-    if (!id || !nodesById.has(id)) return;
-    const target = frame.status === 'complete' ? 'complete'
-      : frame.status === 'active' ? 'inprogress'
-      : frame.status === 'none' ? 'notstarted' : null;
-    if (!target) return;
-    if (target === 'complete' && completed.has(id)) return;
-    if (target === 'inprogress' && inProgress.has(id)) return;
-    if (target === 'notstarted' && !completed.has(id) && !inProgress.has(id)) return;
-    handleSetState(id, target, { fromRemote: true }); // the server already knows — don't echo it back
-  };
-
-  // Reconciliation (progress-wire, anti-clobber): after each subscribe graft, read the server's
-  // own overlay and push only the local marks it holds no row for — absent from all three sets
-  // (completed, in-progress and the cleared tombstones) means the server never heard of the mark
-  // at all (made offline or before sign-in), so it is safe to send. A mark the server knows
-  // anything about is never re-pushed; the LWW row there stands.
-  reconcileProgressRef.current = async () => {
-    // Read-only views never write: a signed-in visitor on someone's share page would
-    // otherwise push the tree's authored seed marks into their own overlay just by looking.
-    if (status !== 'signed-in' || readOnly || !seedRef.current || !repoRef.current) return;
-    const server = await repoRef.current.loadServerProgress();
-    if (!server) return; // the socket outlived the read or vice versa — the next graft reconciles
-    const known = new Set([...server.completed, ...server.inProgress, ...server.cleared]);
-    for (const id of completedRef.current) {
-      if (!known.has(id)) collabRef.current?.sendProgress(id, 'complete');
+  // The private lane changed: this account's other tab, an agent's MCP mark, our own write coming
+  // back with the server's receipt instant, or a graft after a reconnect. The lane is truth, so
+  // this adopts its overlay — but a step that newly finished still earns the ceremony it would
+  // have earned locally, which is why this diffs and replays rather than assigning wholesale.
+  //
+  // Read-only views never adopt it. On a share, `loadProgress` answered with the tree OWNER's
+  // journey — the lit picture the share promised — and this reader's own (probably empty) overlay
+  // must not overwrite it.
+  applyRemoteProgressRef.current = (overlay) => {
+    if (demoRef.current) return; // the demo overlay is session-local, sealed inbound too
+    if (readOnlyRef.current) return;
+    for (const id of overlay.completed) {
+      if (!nodesById.has(id) || completedRef.current.has(id)) continue;
+      handleSetState(id, 'complete', { fromRemote: true }); // the lane already holds it — never echoed back
     }
-    for (const id of inProgressRef.current) {
-      if (!known.has(id)) collabRef.current?.sendProgress(id, 'active');
+    for (const id of overlay.inProgress) {
+      if (!nodesById.has(id) || inProgressRef.current.has(id)) continue;
+      handleSetState(id, 'inprogress', { fromRemote: true });
     }
+    for (const id of [...completedRef.current, ...inProgressRef.current]) {
+      if (!nodesById.has(id) || overlay.completed.has(id) || overlay.inProgress.has(id)) continue;
+      handleSetState(id, 'notstarted', { fromRemote: true }); // cleared elsewhere, and the clear converges
+    }
+    // The stamps ride along: a mark this device made carries its own instant until the echo
+    // returns the server's, and a mark made elsewhere has only ever had the server's.
+    setStartedAt(overlay.startedAt);
+    setCompletedAt(overlay.completedAt);
   };
 
   function handleZoomIn() {

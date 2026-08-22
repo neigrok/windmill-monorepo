@@ -1,5 +1,6 @@
 // Durable local store for one tree's lattice — the offline half of "the lattice is the
-// outbox". One IndexedDB record per tree holds { frame, lastSeq }, written together so a
+// outbox". One IndexedDB record per tree holds { frame, progress, lastSeq } — both lanes and the
+// seq, written together so a
 // crash never tears them. The coverage vector is deliberately NOT persisted (it is rebuilt
 // from the next server graft — a fresher, truer statement of coverage than any saved vector,
 // and keeping it off disk means no stale claim can outlive its content).
@@ -14,6 +15,7 @@
 // transactions, reopening the clobber window).
 
 import { TreeLattice } from './lattice.js';
+import { ProgressLattice } from './progressLattice.js';
 
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
@@ -73,7 +75,7 @@ export class SyncStore {
     });
   }
 
-  // Read-join-put in one transaction. `value` = { frame, ackedServerVector (JSON), lastSeq };
+  // Read-join-put in one transaction. `value` = { frame, progress, lastSeq };
   // the caller must have snapshotted it synchronously (no awaits between lattice state and here).
   save(treeId, value) {
     this.chain = this.chain.then(() => this.saveOnce(treeId, value)).catch(() => {});
@@ -98,12 +100,21 @@ export class SyncStore {
   }
 }
 
-// Join two stored values so a racy sibling tab can only add information: the frames merge by
-// the CRDT lattice join, the seq by max. max(lastSeq) is safe precisely because the frames are
-// joined in the same value — the union frame covers whatever either lastSeq claims seen.
+// Join two stored values so a racy sibling tab can only add information: both lanes merge by their
+// own lattice join, the seq by max. max(lastSeq) is safe precisely because the frames are joined in
+// the same value — the union frame covers whatever either lastSeq claims seen. The private lane
+// merges here for exactly the same reason the structure does: two tabs marking different steps
+// offline must not have one tab's write erased by the other's save.
 function mergeValues(a, b) {
   const lattice = new TreeLattice();
   lattice.join(a.frame);
   lattice.join(b.frame);
-  return { frame: lattice.toFrame(), lastSeq: Math.max(a.lastSeq ?? 0, b.lastSeq ?? 0) };
+  const progress = new ProgressLattice();
+  if (a.progress) progress.join(a.progress);
+  if (b.progress) progress.join(b.progress);
+  return {
+    frame: lattice.toFrame(),
+    progress: progress.toFrame(),
+    lastSeq: Math.max(a.lastSeq ?? 0, b.lastSeq ?? 0),
+  };
 }

@@ -6,10 +6,8 @@
 // durable before any wire traffic, so the whole sequence is resumable: a reload
 // mid-claim loses nothing — the boot trigger simply runs it again.
 
-import { API_BASE } from '../../../shell/apiBase.js';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeRegistry.js';
-import { ProgressStore } from '../persistence/ProgressStore.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree } from './localTrees.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -124,20 +122,11 @@ async function syncTreeUp(treeId, title, { openTreeId, openSession }) {
     } finally {
       clearInterval(nudge);
     }
-    await pushUnknownProgress(session, treeId);
+    // The marks made before this account existed need no push of their own: they are registers in
+    // the same session's private lane, uncovered until the server acks them, so the drain above IS
+    // their flush. `onDrained` waits on both lanes for exactly this reason.
   } finally {
     session.onDrained(null);
     if (!live) session.close();
   }
-}
-
-async function pushUnknownProgress(session, treeId) {
-  const saved = new ProgressStore().load(treeId);
-  if (!saved) return;
-  const response = await fetch(`${API_BASE}/v1/trees/${treeId}/progress`, { credentials: 'include' });
-  if (!response.ok) throw new Error(`claim progress fetch for ${treeId}: HTTP ${response.status}`);
-  const server = await response.json();
-  const known = new Set([...(server.completed ?? []), ...(server.inProgress ?? []), ...(server.cleared ?? [])]);
-  for (const nodeId of saved.completed ?? []) if (!known.has(nodeId)) session.sendProgress(nodeId, 'complete');
-  for (const nodeId of saved.inProgress ?? []) if (!known.has(nodeId)) session.sendProgress(nodeId, 'active');
 }

@@ -487,7 +487,8 @@ std::optional<std::string> applyProgressBatch(
   // One echo for the whole batch — an agent marking a subtree lights the caller's open web
   // sessions in a single frame instead of one per node.
   Progress recorded;
-  for (const ProgressWrite& write : marks) recorded.record(write.node, ProgressMark{write.status, write.at, receivedAtMs});
+  for (std::size_t i = 0; i < marks.size(); ++i)
+    if (outcomes[i].applied) recorded.record(marks[i].node, ProgressMark{marks[i].status, marks[i].at, receivedAtMs});
   bus.broadcastProgress(tree, user, recorded);
   for (std::size_t i = 0; i < marks.size(); ++i) {
     Json::Value row(Json::objectValue);

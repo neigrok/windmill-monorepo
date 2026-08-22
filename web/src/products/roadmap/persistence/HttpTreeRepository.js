@@ -1,9 +1,13 @@
-// The TreeRepository: loads the authored tree and this user's progress from the
-// windmill-backend server, per treeId. Implements the `TreeRepository` port
-// (loadTree / loadProgress / loadServerProgress / loadActivity) that the load
-// pipeline drives.
+// The TreeRepository: loads the authored tree and the progress overlay from the windmill-backend
+// server, per treeId. Implements the `TreeRepository` port (loadTree / loadProgress /
+// loadActivity) that the load pipeline drives.
+//
+// This is the BOOTSTRAP read only. Once a SyncSession is live the private lane owns the overlay
+// for an editable view (sync/progressLattice.js) — this door exists because a share view has no
+// lane of its own to graft, and because a first paint should not wait on a socket.
 
 import { TreeRepository } from '../model/ports.js';
+import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 
 export class HttpTreeRepository extends TreeRepository {
@@ -26,50 +30,29 @@ export class HttpTreeRepository extends TreeRepository {
     return { ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0 };
   }
 
-  // The account's own overlay, exactly as the server holds it — three id arrays and the
-  // instant the server recorded each mark, or null when the server did not answer
-  // (unreachable, or a status that isn't 200). Credentialed so it is *this* signed-in
-  // user's overlay. Two callers: loadProgress below seeds from the document when this comes
-  // back empty, and the collab reconcile needs it unseeded, because "the server has no row
-  // for this mark" is the only thing that makes a push safe.
-  async loadServerProgress() {
+  // The overlay this reader should see, as a lattice frame of stamped registers, folded through
+  // the same ProgressLattice the socket lane uses — one codec for both doors. For an owner these
+  // are their own marks; on a share the server answers with the OWNER's journey, which is the
+  // whole point of the picture. Falls back to the document's authoring seeds when the server holds
+  // no marks at all, so a quest still opens at the state its author staged.
+  async loadProgress(treeData) {
+    let body = null;
     try {
       const response = await fetch(`${this.baseUrl}/v1/trees/${this.treeId}/progress`, { credentials: 'include' });
-      if (!response.ok) return null;
-      const body = await response.json();
-      return {
-        completed: body.completed ?? [],
-        inProgress: body.inProgress ?? [],
-        cleared: body.cleared ?? [],
-        markedAt: body.markedAt ?? {},
-      };
+      if (response.ok) body = await response.json();
     } catch {
-      return null;
+      body = null;  // unreachable — the seeds below still open the tree at a sane state
     }
-  }
-
-  async loadProgress(treeData) {
-    const server = (await this.loadServerProgress()) ?? { completed: [], inProgress: [], cleared: [], markedAt: {} };
-    if (server.completed.length > 0 || server.inProgress.length > 0 || server.cleared.length > 0) {
-      // `server: true` marks this as the account's real overlay — the load pipeline lets
-      // it win over stale localStorage. `cleared` carries the tombstones so a cleared
-      // node is never mistaken for a never-marked one.
-      return {
-        completed: new Set(server.completed),
-        inProgress: new Set(server.inProgress),
-        cleared: new Set(server.cleared),
-        markedAt: server.markedAt,
-        server: true,
-      };
+    if (body?.marks?.length) {
+      const lattice = new ProgressLattice();
+      lattice.join(body);
+      return { ...lattice.overlay(), server: true };
     }
-
-    // The server holds no overlay for this caller on this tree — an anonymous reader, a
-    // fresh account, or a local-born tree it has never seen. Fall back to the document's
-    // own authoring seeds so a quest still opens at the state its author staged.
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       inProgress: new Set(treeData.nodes.filter((node) => node.status === 'active').map((node) => node.id)),
-      markedAt: {},  // an authored seed status is not a mark anyone made at a time we know
+      startedAt: {},
+      completedAt: {},  // an authored seed status is nobody's mark, at no instant we know
       server: false,
     };
   }

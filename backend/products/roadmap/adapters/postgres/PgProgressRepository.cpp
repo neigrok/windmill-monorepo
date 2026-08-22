@@ -56,7 +56,7 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
   return overlays;
 }
 
-void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
+bool PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                                      ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -64,7 +64,7 @@ void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, con
   // A clear ('none') is a stamped value, not a row delete — so it converges like any status and
   // a stale mark can never resurrect the node. The upsert is true last-writer-wins: it only
   // takes effect when the incoming stamp strictly beats the stored one.
-  txn.exec_params(
+  pqxx::result result = txn.exec_params(
       "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter, updated_at) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8 / 1000.0)) "
       "ON CONFLICT (tree_id, user_id, node_id) DO UPDATE SET status = EXCLUDED.status, hlc = EXCLUDED.hlc, "
@@ -74,6 +74,8 @@ void PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, con
       static_cast<long long>(at.physicalMs), static_cast<long long>(at.counter),
       static_cast<long long>(receivedAtMs));
   txn.commit();
+  // The WHERE clause is the merge: no row touched means a strictly-later stamp already stood.
+  return result.affected_rows() == 1;
 }
 
 }

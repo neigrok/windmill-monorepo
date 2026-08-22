@@ -84,19 +84,12 @@ export class TreeRepository {
     throw new Error('TreeRepository.loadTree not implemented');
   }
 
-  // The account's overlay, falling back to the document's authoring seeds when the
-  // server holds nothing for this user — hence the whole TreeData, not just an id.
-  // `markedAt` ({ nodeId: epoch ms }) is when the SERVER recorded each mark, which is the
-  // only instant that survives a device: a browser stamps only the marks it made itself.
+  // The overlay to open at — { completed, inProgress, startedAt, completedAt, server } — falling
+  // back to the document's authoring seeds when the server holds no marks, hence the whole
+  // TreeData rather than just an id. A bootstrap read: once the SyncSession's private lane grafts,
+  // IT owns the overlay for an editable view, and this answer is only what a share view keeps.
   async loadProgress(treeData) {
     throw new Error('TreeRepository.loadProgress not implemented');
-  }
-
-  // The account's overlay ALONE — three id arrays plus `markedAt`, unmerged and unseeded,
-  // or null when the server did not answer. The reconcile needs to know which marks the server has
-  // never heard of, and a seeded fallback would answer that question wrongly.
-  async loadServerProgress() {
-    throw new Error('TreeRepository.loadServerProgress not implemented');
   }
 
   // The op log's structural history — added/renamed/removed and the edge deeds, each

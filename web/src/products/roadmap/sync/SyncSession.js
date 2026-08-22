@@ -6,7 +6,8 @@
 // pending flush is derived as lattice.deltaSince(ackedServerVector).
 //
 // Coverage discipline (the hard-won part; see GRAPH_SYNC_DESIGN.md §6 and the Step-4 red-team):
-//  - ackedServerVector is in-memory only, never persisted; the persisted value is {frame,lastSeq}.
+//  - ackedServerVector is in-memory only, never persisted; the persisted value is
+//    {frame, progress, lastSeq} — both lanes in one record, so one device wipe clears both.
 //  - it is REPLACED by the graft frontier on every subscribe (so anything the server no longer
 //    holds becomes uncovered and re-flushes — this heals a server restart), and advanced only by
 //    a subgraphAck for one of our own frames. Live third-party frames never touch it.
@@ -17,6 +18,7 @@
 
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
+import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
@@ -52,10 +54,16 @@ export class SyncSession {
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
     this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
+    // The private lane (§12): this account's own marks, on the same clock and in the same blob as
+    // the structure, but never in the same frame — a progress register in a subgraph would publish
+    // one user's overlay to every collaborator on the tree.
+    this.progress = new ProgressLattice();
     this.store = new SyncStore();
     this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
     this.ackedServerVector = new VersionVector();  // in-memory; what the server is known to hold
+    this.ackedProgressVector = new VersionVector(); // …and the same, for the private lane
     this.inFlight = new Map();                      // frameId -> VersionVector of that sent frame
+    this.progressInFlight = new Map();              // frameId -> VersionVector of that sent progress frame
     this.ws = null;
     this.phase = 'offline';                         // offline | syncing | live
     this.ready = false;
@@ -71,7 +79,6 @@ export class SyncSession {
     this.presenceHandler = null;
     this.peerHandler = null;
     this.progressHandler = null;
-    this.liveHandler = null;
     this.drainedHandler = null;
     this.presence = null;
     this.presenceTimer = null;
@@ -88,7 +95,6 @@ export class SyncSession {
   onPresence(handler) { this.presenceHandler = handler; return this; }
   onPeer(handler) { this.peerHandler = handler; return this; }
   onProgress(handler) { this.progressHandler = handler; return this; }
-  onLive(handler) { this.liveHandler = handler; return this; }
   onDrained(handler) { this.drainedHandler = handler; return this; }
 
   // Seed a local-only lattice from projected TreeData (the perf tree): every field takes a
@@ -129,6 +135,16 @@ export class SyncSession {
       this.lattice.seedClock(this.clock);
       this.ready = true;
       this.emitTree();
+    }
+    // The private lane comes back from the same record. Its marks are read offline AND they are
+    // the outbox: a mark made with no network, in a tab that was then closed, is still here and
+    // still uncovered, so the next graft flushes it. A corrupt lane starts empty rather than
+    // taking the structure down with it — the two are independent replicas in one blob.
+    if (saved?.progress) {
+      try { this.progress.join(saved.progress); }
+      catch { this.progress = new ProgressLattice(); }
+      this.progress.seedClock(this.clock);
+      this.progressHandler?.(this.progress.overlay());
     }
     this.store.requestPersistent().then((granted) => { if (!granted) this.durabilityAtRisk = true; });
     if (typeof window !== 'undefined') {
@@ -221,7 +237,11 @@ export class SyncSession {
     if (frame.t === 'skew') return this.receiveSkew(frame);
     if (frame.t === 'presence') return void this.presenceHandler?.(frame);
     if (frame.t === 'peer') return void this.peerHandler?.(frame);
-    if (frame.t === 'progress') return void this.progressHandler?.(frame);
+    // The private lane's two frames. A graft re-baselines its coverage the way a subgraph delta
+    // does; an echo only folds in. Telling them apart matters: re-baselining on an echo would
+    // uncover every other mark and re-flush it forever.
+    if (frame.t === 'progress') return frame.intent === 'graft' ? this.receiveProgressGraft(frame) : this.receiveProgress(frame);
+    if (frame.t === 'progressAck') return this.receiveProgressAck(frame);
     if (frame.t === 'reject') return this.receiveReject(frame);
   }
 
@@ -243,7 +263,6 @@ export class SyncSession {
     this.flush();
     this.phase = 'live';
     this.backoffMs = 500;
-    this.liveHandler?.();  // each graft is a fresh baseline — the view reconciles progress off it
     this.noteDrained();    // an empty flush means the server already covers everything
   }
 
@@ -271,9 +290,61 @@ export class SyncSession {
   // The claim sequence (anon-first-tree F4) waits on this: fired whenever the wire goes
   // idle with full coverage — live, nothing pending, nothing in flight.
   noteDrained() {
-    if (this.phase !== 'live' || this.inFlight.size > 0) return;
+    if (this.phase !== 'live' || this.inFlight.size > 0 || this.progressInFlight.size > 0) return;
     if (this.pendingEditCount() > 0) return;
+    if (this.progress.deltaSince(this.ackedProgressVector).marks.length > 0) return;
     this.drainedHandler?.();
+  }
+
+  // The subscribe graft for the private lane: the server's whole overlay for this account. It
+  // REPLACES coverage, so a mark the server no longer holds becomes uncovered and re-flushes —
+  // the same self-healing the structure gets, and the reason an empty graft still has to arrive.
+  receiveProgressGraft(frame) {
+    let frontier;
+    try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
+    for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
+    this.ackedProgressVector = frontier;
+    this.persistNow();
+    this.progressHandler?.(this.progress.overlay());
+    this.flushProgress();
+  }
+
+  // A live echo: this account's other tab, an MCP agent's mark, or our own write coming back with
+  // the server's receipt instant attached. Folded in, never a coverage input.
+  receiveProgress(frame) {
+    let frontier;
+    try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
+    for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
+    this.persistNow();
+    this.progressHandler?.(this.progress.overlay());
+  }
+
+  receiveProgressAck(frame) {
+    const vector = this.progressInFlight.get(frame.frameId);
+    if (!vector) return;
+    this.ackedProgressVector.join(vector);
+    this.progressInFlight.delete(frame.frameId);
+    this.noteDrained();
+  }
+
+  // A mark made here. It is stamped, folded and PERSISTED before anything is sent — the lattice is
+  // the outbox, so a mark that never reaches the socket is not lost, it is merely uncovered, and
+  // the next flush carries it. Returns the overlay the view should render.
+  markProgress(nodeId, status) {
+    const now = Date.now();
+    if (!this.progress.mark(nodeId, status, this.clock.tick(now), now)) return this.progress.overlay();
+    this.persistNow();
+    this.flushProgress();
+    return this.progress.overlay();
+  }
+
+  flushProgress() {
+    if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
+    const pending = this.progress.deltaSince(this.ackedProgressVector);
+    if (!pending.marks.length) return;
+    const frameId = crypto.randomUUID?.() ?? `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+    this.progressInFlight.set(frameId, new ProgressLattice().join(pending));
+    this.ws.send(JSON.stringify({ t: 'progress', treeId: this.treeId, frameId, marks: pending.marks }));
   }
 
   receiveSkew(frame) {
@@ -382,7 +453,7 @@ export class SyncSession {
     if (this.closed) return Promise.resolve();
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    const value = { frame: this.lattice.toFrame(), lastSeq: this.lastSeq };
+    const value = { frame: this.lattice.toFrame(), progress: this.progress.toFrame(), lastSeq: this.lastSeq };
     this.registry?.touch(this.treeId, this.lattice.title);
     return this.store.save(this.treeId, value).catch(() => { this.durabilityAtRisk = true; });
   }
@@ -455,13 +526,6 @@ export class SyncSession {
       return e;
     });
     return { nodes, edges, kinds };
-  }
-
-  // Progress rides the socket but not the lattice: no outbox, no ack — an offline mark
-  // reaches the server via the view's reconciliation on the next graft.
-  sendProgress(nodeId, status) {
-    if (this.phase !== 'live' || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({ t: 'progress', treeId: this.treeId, nodeId, status }));
   }
 
   sendPresence(cursor, selection) {

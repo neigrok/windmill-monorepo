@@ -27,7 +27,9 @@ struct ProgressDigest {
 struct ProgressRepository {
   virtual ~ProgressRepository() = default;
   virtual Progress load(const TreeId& tree, const UserId& user) = 0;
-  virtual void setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
+  // Answers whether the write LANDED — false when a strictly-later stamp was already stored and
+  // this one lost. Callers need it to avoid announcing a mark the overlay does not hold.
+  virtual bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
                          ProgressStatus status, const Hlc& at, std::uint64_t receivedAtMs) = 0;
   // Every tree this user has touched, keyed by tree id — one read behind the registry list.
   virtual std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) = 0;

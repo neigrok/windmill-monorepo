@@ -10,7 +10,7 @@
 
 import { listAllTrees } from '../persistence/TreeRegistry.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
-import { ProgressStore } from '../persistence/ProgressStore.js';
+import { ProgressLattice } from '../sync/progressLattice.js';
 import { SyncStore } from '../sync/SyncStore.js';
 import { TreeLattice } from '../sync/lattice.js';
 import { serializePlan } from '../paste/planGrammar.js';
@@ -49,17 +49,18 @@ async function loadServerTree(treeId) {
   return { treeData, progress: { completed: overlay.completed, inProgress: overlay.inProgress } };
 }
 
-// A device tree materialises by replaying its local lattice blob into the same TreeData
-// projection every render path consumes; its progress lives in the local ProgressStore,
-// falling back to the document's own seed statuses when this device never marked a step.
+// A device tree materialises by replaying its local blob — BOTH lanes of it, since one record
+// holds the structure and this account's marks. Falls back to the document's own seed statuses
+// when this device never marked a step.
 async function loadDeviceTree(treeId) {
   const saved = await new SyncStore().load(treeId).catch(() => null);
   if (!saved?.frame) return null;
   const lattice = new TreeLattice(treeId);
   lattice.join(saved.frame);
   const treeData = lattice.toTreeData();
-  const overlay = new ProgressStore().load(treeId);
-  return { treeData, progress: progressFrom(treeData, overlay) };
+  const progress = new ProgressLattice();
+  if (saved.progress) progress.join(saved.progress);
+  return { treeData, progress: progressFrom(treeData, progress.marks.size ? progress.overlay() : null) };
 }
 
 function progressFrom(treeData, overlay) {

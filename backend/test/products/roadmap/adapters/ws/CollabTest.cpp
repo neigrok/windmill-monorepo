@@ -156,6 +156,15 @@ std::string frameType(const std::string& text) { return parse(text).get("t", "")
 
 // The last frame of a given type this socket was sent — a write answers with an ack AND an echo,
 // so "the last thing sent" is not specific enough to assert on.
+// How many frames of a kind this socket was sent. A subscribe now answers with BOTH lanes — the
+// structure delta and this account's progress graft — so "how many frames arrived" no longer
+// identifies what arrived, and counting the kind under test says what these cases actually mean.
+std::size_t countOfType(const FakeSocket& conn, const std::string& type) {
+  std::size_t seen = 0;
+  for (const std::string& text : conn.sent) if (frameType(text) == type) ++seen;
+  return seen;
+}
+
 Json::Value lastFrameOfType(const FakeSocket& conn, const std::string& type) {
   for (auto it = conn.sent.rbegin(); it != conn.sent.rend(); ++it)
     if (frameType(*it) == type) return parse(*it);
@@ -195,11 +204,12 @@ TEST(ws_owner_of_a_private_tree_subscribes_and_receives_the_delta) {
   h.collab.onOpen(h.upgrade("s-owner"), conn);
   h.collab.onMessage(conn, subscribeFrame("t_priv"));
 
-  REQUIRE_EQ(conn->sent.size(), 1u);
-  CHECK_FALSE(frameType(conn->sent[0]) == "reject");  // the delta, not a rejection
+  REQUIRE_EQ(countOfType(*conn, "subgraph"), 1u);
+  CHECK_EQ(countOfType(*conn, "reject"), 0u);   // the delta, not a rejection
+  CHECK_EQ(countOfType(*conn, "progress"), 1u); // …and this account's own overlay beside it
 
   broadcastTo(h.bus, "t_priv");
-  CHECK_EQ(conn->sent.size(), 2u);  // subscribed: the live broadcast reached it
+  CHECK_EQ(countOfType(*conn, "subgraph"), 2u);  // subscribed: the live broadcast reached it
 }
 
 TEST(ws_anon_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
@@ -570,6 +580,46 @@ TEST(ws_subscribe_grafts_no_overlay_to_an_anonymous_visitor) {
   for (const std::string& text : visitor->sent) CHECK(frameType(text) != std::string("progress"));
 }
 
+// A write that loses to a later stamp must not be ANNOUNCED as though it landed. Convergence
+// survives either way — every replica applies the same merge — but the row and the echo announcing
+// it must not be able to disagree, which is the property the receipt instant exists to hold.
+// The frame is still acked: it was applied, and it lost.
+TEST(ws_progress_does_not_echo_a_mark_that_lost_to_a_later_stamp) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));  // the bus only reaches a SUBSCRIBED socket
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"root", "complete", "900:0:r_desk"}}));
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f2", {{"root", "none", "500:0:r_stale"}}));
+
+  CHECK_EQ(countOfType(*conn, "progress"), 0u);  // nothing landed, so nothing is announced
+  CHECK_EQ(lastFrameOfType(*conn, "progressAck")["frameId"].asString(), std::string("f2"));
+  CHECK(h.progressRepo.load(TreeId{"t_priv"}, owner).marks.at(NodeId{"root"}).status == ProgressStatus::complete);
+}
+
+// …and a batch where only part of it lost announces only the part that landed.
+TEST(ws_progress_echoes_the_landed_half_of_a_mixed_batch) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, subscribeFrame("t_priv"));  // the bus only reaches a SUBSCRIBED socket
+  h.collab.onMessage(conn, progressFrame("t_priv", "f1", {{"kept", "complete", "900:0:r_desk"}}));
+  conn->sent.clear();
+
+  h.collab.onMessage(conn, progressFrame("t_priv", "f2",
+                                         {{"kept", "none", "500:0:r_stale"}, {"fresh", "active", "950:0:r_stale"}}));
+
+  Json::Value echo = lastFrameOfType(*conn, "progress");
+  REQUIRE_EQ(echo["marks"].size(), 1u);
+  CHECK_EQ(echo["marks"][0]["node"].asString(), std::string("fresh"));
+}
+
 // A batch is bounded like every other write on this process — four handler threads must not be
 // handed an arbitrarily long list to parse, stamp and upsert one row at a time.
 TEST(ws_progress_refuses_a_batch_past_the_frame_ceiling) {
@@ -896,16 +946,16 @@ TEST(ws_a_visibility_flip_keeps_the_owner_reading) {
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner"), conn);
   h.collab.onMessage(conn, subscribeFrame("t_pub"));
-  REQUIRE_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(countOfType(*conn, "subgraph"), 1u);
 
   {
     std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_pub"}));
     h.rooms.setVisibility(TreeId{"t_pub"}, Visibility::private_);
   }
-  CHECK_EQ(conn->sent.size(), 1u);  // nothing refused
+  CHECK_EQ(countOfType(*conn, "reject"), 0u);  // nothing refused
 
   broadcastTo(h.bus, "t_pub");
-  CHECK_EQ(conn->sent.size(), 2u);  // still reading their own tree
+  CHECK_EQ(countOfType(*conn, "subgraph"), 2u);  // still reading their own tree
 }
 
 // "Sign out everywhere" and closing an account reached only writes: the read path proved nothing
@@ -918,25 +968,25 @@ TEST(ws_a_revoked_session_stops_receiving_the_tree_it_was_reading) {
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner"), conn);
   h.collab.onMessage(conn, subscribeFrame("t_priv"));
-  REQUIRE_EQ(conn->sent.size(), 1u);
+  REQUIRE_EQ(countOfType(*conn, "subgraph"), 1u);
   broadcastTo(h.bus, "t_priv");
-  CHECK_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(countOfType(*conn, "subgraph"), 2u);
 
   h.authRepo.deleteSession(h.tokens.digestOf("s-owner"));  // signed out everywhere
   h.collab.reproveReaders();
   broadcastTo(h.bus, "t_priv");
-  CHECK_EQ(conn->sent.size(), 3u);  // still inside the throttle window: one more frame, at most
+  CHECK_EQ(countOfType(*conn, "subgraph"), 3u);  // still inside the throttle window: one more frame, at most
 
   h.clock.now += 61'000;  // past the one-minute re-proof, the same throttle a writer pays
   // The pass is what re-proves, on its own thread — a fan-out is a pure verdict and never a
   // database lookup, so no edit is needed here and none would help.
   h.collab.reproveReaders();
-  REQUIRE_EQ(conn->sent.size(), 4u);
-  CHECK_EQ(frameType(conn->sent[3]), std::string("reject"));  // the refusal, and no edit ever ran
-  CHECK_EQ(rejectCode(conn->sent[3]), std::string("no-such-tree"));
+  REQUIRE_EQ(countOfType(*conn, "reject"), 1u);  // the refusal, and no edit ever ran
+  CHECK_EQ(rejectCode(conn->sent.back()), std::string("no-such-tree"));
 
+  const std::size_t afterRefusal = conn->sent.size();
   broadcastTo(h.bus, "t_priv");
-  CHECK_EQ(conn->sent.size(), 4u);  // dropped for good
+  CHECK_EQ(conn->sent.size(), afterRefusal);  // dropped for good: the broadcast reached nothing
 }
 
 // Presence fans out to every co-viewer, anonymous strangers included, on any public or unlisted
@@ -1039,8 +1089,8 @@ TEST(ws_an_upgrade_from_the_app_or_from_no_origin_at_all_is_served) {
   auto browser = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner", "https://windmill.works"), browser);
   h.collab.onMessage(browser, subscribeFrame("t_priv"));
-  REQUIRE_EQ(browser->sent.size(), 1u);
-  CHECK_FALSE(frameType(browser->sent[0]) == "reject");
+  REQUIRE_EQ(countOfType(*browser, "subgraph"), 1u);
+  CHECK_EQ(countOfType(*browser, "reject"), 0u);
 
   auto script = std::make_shared<FakeSocket>();  // curl, a device, the MCP tooling: no Origin
   h.collab.onOpen(h.upgrade("s-owner"), script);

@@ -482,14 +482,15 @@ completion/edit leaves an actor–verb–object trace.
   on every reload). The server half matters as much as the seed half: a browser stamps only
   the marks IT made, so before `/v1/trees/:id/progress` carried `markedAt`, every step finished
   on a phone or by an agent came back undated and the feed filed days-old work under "Earlier".
-  The load-time settlement of the server's overlay against this browser's is one pure function,
-  `reconcileOverlay` — lifted out of the load pipeline because it had no test seam inside a 2500-line
-  component, and it is exactly the decision worth pinning: the server's rows and `cleared`
-  tombstones win, a mark the server has never heard of rides on top as the reconcile's pending push,
-  and with no account overlay at all the saved copy stands whole. Signing in does NOT flush the
-  local store — it still holds those pending marks, the `startedAt` the server cannot keep (one row
-  per node; the completion overwrote it) and the offline read — but the load now writes the
-  reconciled overlay back down, so it tracks the server between edits instead of lagging it. `grammar.jsx` is the one presentation grammar every surface speaks (VERB_STYLE,
+  Both of those fixes were then made unnecessary by the wave that followed, which is the honest
+  way to read them: they were correct patches to a shape that should not have existed. **Progress
+  is a lattice lane now** (`sync/progressLattice.js`, docs/GRAPH_SYNC_DESIGN.md §12) — one stamped
+  LWW register per node, on the session's clock, in the session's blob, flushed by the same
+  derived-outbox law the structure uses. A mark carries its own instant, so there is no second copy
+  to rank against a first: `reconcileOverlay`, `stampsFor`, the known-set diff, the claim-time push
+  and `ProgressStore`'s reader are all deleted. What survives from those two days is the RULE they
+  taught — an HLC orders writes and may never date anything a human reads, so the server's receipt
+  instant rides beside the stamp and is the only one any surface shows. `grammar.jsx` is the one presentation grammar every surface speaks (VERB_STYLE,
   `relativeTime`, `ActorAvatar`, `ObjectLabel`, `EventSentence`) — the feed rows, the step
   panel's History, and the ticker all compose from it, so a verb reads the same everywhere.
 - **The dock has two tenants now (A′).** `SkillTreeView` renders `ActivityFeed` at rest and

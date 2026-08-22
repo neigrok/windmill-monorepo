@@ -4,14 +4,10 @@
 // Nothing here reads a store, a socket or the clock; `now` is handed in so a caller stamps a whole
 // bulk mark with one moment.
 //
-// reconcileOverlay is what a tree opening does with the two accounts of progress it is handed, and
-// stampsFor answers the third question a loaded tree asks — WHEN each of those transitions
-// happened — and it is the one place that ranks the two clocks that can answer. A browser stamps
-// only the marks it made itself, so a step finished on a phone or by an agent has no local stamp
-// at all; the server holds one for every mark that ever reached it, on its own clock. So the
-// server's instant wins wherever it exists, the device's fills the gaps (a mark still pending its
-// push, a local-born tree the server has never seen), and a step neither can date stays undated
-// rather than guessed at.
+// WHEN each transition happened is deliberately not answered here any more. It used to be — by two
+// functions that ranked a server map against a local one — and both are gone with the second copy
+// they existed to reconcile: a mark is one stamped register in the private lane now, and it
+// carries its own instant (sync/progressLattice.js).
 //
 // milestoneAnnouncement is the other half of a completion: which of the milestones that just landed
 // is the one worth showing, and the sentence it earns. Pure for the same reason detectMilestones is
@@ -44,42 +40,6 @@ export function advanceProgress(progress, ids, target, now) {
   }
 
   return { completed, inProgress, startedAt, completedAt };
-}
-
-export function stampsFor(ids, serverMarkedAt = {}, localStamps = {}) {
-  const stamps = {};
-  for (const id of ids) {
-    const at = serverMarkedAt[id] ?? localStamps[id];
-    if (at != null) stamps[id] = at;
-  }
-  return stamps;
-}
-
-// A tree opens holding two accounts of the same work — the overlay the server sent and whatever
-// this browser saved — and neither is simply right, so this is the one place that settles them.
-// The server's rows stand, its `cleared` tombstones included: that is how a step cleared on a phone
-// stays cleared instead of being resurrected by a stale local copy. A mark the server has never
-// heard of is not stale, though — it is work done offline or before signing in, still queued for
-// the reconcile to push — so it rides on top. And where there is no account overlay to defer to at
-// all (an anonymous tree, a local-born one, an unreachable server), the saved copy is the only
-// account of this work there is and stands whole.
-export function reconcileOverlay(overlay, saved) {
-  const base = saved && !overlay.server ? saved : overlay;
-  const completed = new Set(base.completed);
-  const inProgress = new Set(base.inProgress);
-
-  if (saved && overlay.server) {
-    const known = new Set([...overlay.completed, ...overlay.inProgress, ...(overlay.cleared ?? [])]);
-    for (const id of saved.completed) if (!known.has(id)) completed.add(id);
-    for (const id of saved.inProgress) if (!known.has(id)) inProgress.add(id);
-  }
-
-  return {
-    completed,
-    inProgress,
-    startedAt: stampsFor(inProgress, overlay.markedAt, saved?.startedAt),
-    completedAt: stampsFor(completed, overlay.markedAt, saved?.completedAt),
-  };
 }
 
 // The crown wins whenever it landed — completing the last step also completes its branch, and the

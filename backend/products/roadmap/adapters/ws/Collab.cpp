@@ -270,11 +270,14 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   // unauthenticated caller whatever overlay happens to sit under that id. This lane serves one
   // account its own private marks or it serves nothing.
   if (!principal.authenticated) return;
-  Progress overlay = progress_.progressOf(TreeId{treeId}, principal.user);
-  if (overlay.marks.empty()) return;
-  Json::Value graft = toJson(overlay);
+  Json::Value graft = toJson(progress_.progressOf(TreeId{treeId}, principal.user));
   graft["t"] = "progress";
   graft["treeId"] = treeId;
+  // `graft`, not an echo — the difference is whether the receiver may re-baseline its coverage on
+  // it. An EMPTY graft is sent for the same reason a full one is: it states that the server holds
+  // nothing, which uncovers whatever this replica thought was safely delivered and re-flushes it.
+  // Staying silent here would leave a client's coverage claiming a delivery that never happened.
+  graft["intent"] = "graft";
   send(conn, graft);
 }
 
@@ -486,15 +489,22 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     }
   }
 
-  progress_.setStatuses(TreeId{treeId}, principal.user, writes, nowMs);
+  const std::vector<ProgressOutcome> outcomes =
+      progress_.setStatuses(TreeId{treeId}, principal.user, writes, nowMs);
 
   // The echo carries the registers back exactly as they were recorded — stamps and the server's
   // receipt instant — in the same frame shape the graft serves, so a replica joins both with one
   // codec. It reaches the sender too: that is how the marking device learns the receipt instant
   // for its own mark without asking again, and the join is a no-op since the stamp is its own.
+  //
+  // Only what LANDED is announced. A write that lost to a later stamp changes nothing, and
+  // echoing it anyway would state a mark the overlay does not hold — harmless to convergence,
+  // since every replica applies the same merge, but a row and the echo announcing it must not be
+  // able to disagree, which is the whole reason the receipt instant is passed in rather than
+  // taken twice. A frame where nothing landed is still ACKED: it was applied, and it lost.
   Progress recorded;
-  for (const ProgressWrite& write : writes)
-    recorded.record(write.node, ProgressMark{write.status, write.at, nowMs});
+  for (std::size_t i = 0; i < writes.size(); ++i)
+    if (outcomes[i].applied) recorded.record(writes[i].node, ProgressMark{writes[i].status, writes[i].at, nowMs});
   bus_.broadcastProgress(TreeId{treeId}, principal.user, recorded);
 
   Json::Value ack(Json::objectValue);

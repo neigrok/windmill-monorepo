@@ -157,7 +157,7 @@ export async function renameLocalTree(treeId, title) {
 // (its pagehide flush would resurrect the blob).
 export async function deleteLocalTree(treeId) {
   await new SyncStore().clear(treeId).catch(() => {});
-  new ProgressStore().clear(treeId);
+  new ProgressStore().clear(treeId);  // pre-lane residue; the marks themselves went with the blob
   new WorkspaceStore().clear(treeId);
   new LegendStore().clear(treeId);
   // The three per-tree ledgers are this device's memory of the tree too — the completed set the
@@ -207,10 +207,11 @@ export async function moveLocalTree(fromId, toId) {
   const store = new SyncStore();
   const saved = await store.load(fromId).catch(() => null);
   if (saved?.frame) {
-    await store.save(toId, { frame: saved.frame, lastSeq: 0 });
+    // Both lanes move with the blob — the marks are in it, so they need no separate carry.
+    await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0 });
     await store.clear(fromId).catch(() => {});
   }
-  for (const PerTreeStore of [ProgressStore, WorkspaceStore, LegendStore]) {
+  for (const PerTreeStore of [WorkspaceStore, LegendStore]) {
     const perTree = new PerTreeStore();
     const value = perTree.load(fromId);
     if (value != null) {

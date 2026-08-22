@@ -256,7 +256,7 @@ test('forgetDevice drops the departing account and every trace of its trees, and
   assert.deepEqual(device.keys(), ['windmill:device-trees', 'windmill:workspace:t_anon']);
   assert.equal(deviceOwner(), null);
   assert.equal(new WorkspaceStore().load('t_a'), null);
-  assert.equal(new ProgressStore().load('t_a'), null);
+  assert.deepEqual(new ProgressStore().treeIds(), [], 'pre-lane progress residue is swept too');
   assert.equal(globalThis.window.location.hash, '#/app', 'the tab must stop painting the tree it just dropped');
   assert.equal(new LocalTreeRegistry().get('t_anon')?.title, 'Learn to sail', 'anonymous work is still here to be claimed');
 });
