@@ -342,16 +342,33 @@ struct FakeOAuthRepository : OAuthRepository {
   std::map<std::string, OAuthClient> clients;
   std::map<std::string, StoredCode> codes;
   std::map<std::string, StoredToken> access;
-  struct Refresh { StoredToken grant; UnixMs expiresAt; };
+  struct Refresh { StoredToken grant; UnixMs expiresAt; std::string accessDigest; UnixMs spentMs = 0; bool spent = false; };
   std::map<std::string, Refresh> refresh;
   struct GrantRow { UnixMs grantedMs = 0; UnixMs lastUsedMs = 0; std::string scope; };
   std::map<std::pair<std::string, std::string>, GrantRow> grants;  // (userId, clientId) -> row
 
-  void registerClient(const OAuthClient& client) override { clients[client.clientId] = client; }
+  UnixMs registeredAt = 0;  // the instant the next registerClient is stamped with, for the window
+  std::map<std::string, UnixMs> registeredMs;
+
+  void registerClient(const OAuthClient& client) override {
+    clients[client.clientId] = client;
+    registeredMs[client.clientId] = registeredAt;
+  }
   std::optional<OAuthClient> findClient(const std::string& id) override {
     auto it = clients.find(id);
     if (it == clients.end()) return std::nullopt;
     return it->second;
+  }
+  int unattachedClientsSince(UnixMs sinceMs) override {
+    int count = 0;
+    for (const auto& [id, client] : clients) {
+      if (registeredMs.count(id) && registeredMs.at(id) <= sinceMs) continue;
+      bool attached = false;
+      for (const auto& [key, row] : grants)
+        if (key.second == id) attached = true;
+      if (!attached) ++count;
+    }
+    return count;
   }
   void insertCode(const std::string& digest, const StoredCode& code) override { codes[digest] = code; }
   std::optional<StoredCode> takeCode(const std::string& digest) override {
@@ -364,19 +381,25 @@ struct FakeOAuthRepository : OAuthRepository {
   void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
                    const StoredToken& token, UnixMs refreshExpiresAt) override {
     access[accessDigest] = token;
-    refresh[refreshDigest] = Refresh{token, refreshExpiresAt};
+    refresh[refreshDigest] = Refresh{token, refreshExpiresAt, accessDigest, 0, false};
   }
   std::optional<StoredToken> findAccessToken(const std::string& digest) override {
     auto it = access.find(digest);
     if (it == access.end()) return std::nullopt;
     return it->second;
   }
-  std::optional<StoredToken> takeRefreshToken(const std::string& digest, UnixMs now) override {
+  // Spending a refresh token leaves the row behind, marked — exactly as the table does, so a
+  // second presentation is recognisable as reuse rather than as a string nobody has seen.
+  RefreshRotation rotateRefreshToken(const std::string& digest, UnixMs now) override {
     auto it = refresh.find(digest);
-    if (it == refresh.end() || it->second.expiresAt <= now) return std::nullopt;
-    StoredToken grant = it->second.grant;
-    refresh.erase(it);
-    return grant;
+    if (it == refresh.end()) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
+    if (it->second.spent)
+      return RefreshRotation{RefreshOutcome::reused, it->second.grant, it->second.spentMs};
+    if (it->second.expiresAt <= now) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
+    it->second.spent = true;
+    it->second.spentMs = now;
+    access.erase(it->second.accessDigest);  // the pair dies together, as the row does
+    return RefreshRotation{RefreshOutcome::rotated, it->second.grant, now};
   }
 
   void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,

@@ -18,6 +18,12 @@ constexpr std::size_t kMaxEventsPerCall = 50;
 constexpr std::size_t kMaxNameChars = 64;
 constexpr std::size_t kMaxSessionKeyChars = 64;
 constexpr std::size_t kMaxPropsBytes = 1024;
+// What one browser session may write in a day. A long, busy day of real use is a few hundred
+// events; twenty times that is room nobody honest will ever need and a hard stop for the beacon
+// loop that wrote a thousand rows in 0.09s (PLATFORM-EDGE-4). It bounds a session, not an
+// attacker — a script can mint a fresh session key per call, which is what the retention window
+// and the per-IP limiter are for.
+constexpr int kMaxEventsPerSessionDay = 2000;
 
 bool isSnakeName(const std::string& name) {
   if (name.empty() || name.size() > kMaxNameChars) return false;
@@ -101,6 +107,10 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   }
   if (!accepted.empty()) {
     try {
+      if (events_->countInLastDay(sessionKey.asString()) >= kMaxEventsPerSessionDay) {
+        callback(error(drogon::k429TooManyRequests, "this session has beaconed enough for today"));
+        return;
+      }
       events_->append(sessionKey.asString(), caller, accepted);
     } catch (const std::exception& e) {
       LOG_ERROR << "event batch dropped at storage: " << e.what();

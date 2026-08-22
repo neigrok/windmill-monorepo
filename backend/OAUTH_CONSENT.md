@@ -55,7 +55,10 @@ Treat `code_challenge`, `resource`, `scope`, `state` as **opaque strings you ech
    text: `GET {API_URL}/v1/oauth/client?client_id=<client_id>` (`credentials: 'include'`).
    - `200` → `{ "client_id", "client_name", "redirect_uris": [...] }`. Display `client_name` and the
      host of `redirect_uri`. **Sanity-check** that `redirect_uri` is one of `redirect_uris`; if not,
-     show an error and do not offer Approve.
+     show an error and do not offer Approve. This check is a courtesy to the person reading the
+     screen, never the gate: since 2026-08-22 the authorization server parses and matches the
+     redirect itself (userinfo refused, loopback host exact, only the port free to vary), and
+     `/v1/oauth/decision` re-runs that check before it mints anything.
    - `404` → unknown application; show an error, no Approve.
    Copy suggestion: *"‹client_name› wants to access your Windmill roadmaps as you."* Buttons: **Authorize** / **Deny**.
 
@@ -85,6 +88,10 @@ the metadata endpoints — those are the MCP client's and the backend's.
 
 ## Rules of thumb
 
+- **The server is the boundary, not this screen.** Nothing here is load-bearing for security: an
+  unregistered or crafted `redirect_uri` is refused by `/oauth/authorize` and again by
+  `/v1/oauth/decision`. Render the verified values anyway — a person who can see the host they will
+  be sent back to is the last honest signal in the flow.
 - **Show verified info, never raw params.** Client name + redirect host come from `/v1/oauth/client`,
   not from the URL. This is what stops a crafted consent link from spoofing a trusted app.
 - **Echo the opaque params back byte-for-byte** in the decision (`code_challenge`, `resource`,

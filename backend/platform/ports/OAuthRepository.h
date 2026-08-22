@@ -40,6 +40,16 @@ struct StoredToken {
   UnixMs expiresAt = 0;
 };
 
+// What presenting a refresh token turned out to mean. `unknown` is a string that was never a
+// refresh token here, or one whose window has closed; `reused` is one that WAS one and has already
+// been spent, and the grant it names is the one to revoke.
+enum class RefreshOutcome { rotated, unknown, reused };
+struct RefreshRotation {
+  RefreshOutcome outcome = RefreshOutcome::unknown;
+  std::optional<StoredToken> grant;  // present for rotated and reused alike
+  UnixMs spentMs = 0;                // when the tombstone was stamped; only meaningful for reused
+};
+
 // One row of the settings §2 "Connected tools" list: a client the user has authorized, its
 // display name (from the registered client), when the grant was first made, when its
 // tokens last acted, and the scope that was approved. granted/last-used/scope live on
@@ -60,6 +70,11 @@ struct OAuthRepository {
 
   virtual void registerClient(const OAuthClient& client) = 0;
   virtual std::optional<OAuthClient> findClient(const std::string& clientId) = 0;
+  // How many clients registered since `sinceMs` never completed an authorization — the shape of an
+  // abuser's burst, and so what the open registration door is capped on
+  // (OAuthPolicy::maxUnattachedClients over OAuthPolicy::unattachedClientWindowMs). Counting the
+  // whole table instead would let one burst close registration for everyone until the TTL drained.
+  virtual int unattachedClientsSince(UnixMs sinceMs) = 0;
 
   virtual void insertCode(const std::string& codeDigest, const StoredCode& code) = 0;
   // Redeem a code atomically: delete it and return its grant only to the caller that
@@ -69,9 +84,16 @@ struct OAuthRepository {
   virtual void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
                            const StoredToken& token, UnixMs refreshExpiresAt) = 0;
   virtual std::optional<StoredToken> findAccessToken(const std::string& accessDigest) = 0;
-  // Rotate a refresh token: atomically consume the presented one (if unexpired) and return
-  // its grant so a fresh access+refresh pair can be minted (OAuth 2.1 §4.3.1 rotation).
-  virtual std::optional<StoredToken> takeRefreshToken(const std::string& refreshDigest, UnixMs now) = 0;
+  // Rotate a refresh token: atomically spend the presented one (if unexpired and unspent) and
+  // return its grant so a fresh access+refresh pair can be minted (OAuth 2.1 §4.3.1 rotation).
+  //
+  // A spent refresh token leaves a TOMBSTONE behind rather than vanishing, and that is the whole
+  // of OAUTH-2's fix: presenting one again is the classic signal that a token leaked and two
+  // parties hold copies, and it is only distinguishable from a merely-invalid string if the row
+  // that was spent is still there to recognise. `reused` carries the grant it belonged to, so the
+  // caller can revoke it (OAuth 2.1 §4.14.2). The tombstone lives exactly as long as the refresh
+  // token would have — past that, nobody could have spent it anyway and the sweep collects it.
+  virtual RefreshRotation rotateRefreshToken(const std::string& refreshDigest, UnixMs now) = 0;
 
   // The settings §2 grant record, kept apart from the rotation-prone token rows. recordGrant
   // upserts on first token issue: granted_ms is set once and kept as the earliest, last_used

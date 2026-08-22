@@ -368,8 +368,11 @@ pass; the full project (server + mcp) builds green.
   strict exact match, but native/MCP clients (Claude included) bind a fresh ephemeral
   `http://localhost:<port>/callback` each flow — so a client registered once and then reused with a new
   port got `400 invalid client_id or redirect_uri` at `/oauth/authorize`. Relax the match for loopback
-  http only: compare scheme+host+path, port-agnostic (`withoutLoopbackPort`); https stays exact — the
-  open-redirect defense is untouched. Surfaced when the MCP endpoint moved to `windmill.works` and the
+  http only: compare scheme+host+path, port-agnostic; https stays exact — the open-redirect defense is
+  untouched. (The mechanism changed on 2026-08-22 and the name `withoutLoopbackPort` is gone: the
+  string scan it did read `http://127.0.0.1:80@evil.com/callback` as loopback, so redirect URIs are
+  PARSED now — `parseRedirect` in `platform/domain/OAuth.cpp` — and the port-agnostic rule applies
+  only when both sides are genuinely loopback. The RFC 8252 behaviour described here is unchanged.) Surfaced when the MCP endpoint moved to `windmill.works` and the
   MCP client's cached client (registered against an old ephemeral port) no longer matched.
 - **Progress now broadcasts live to the author's own sessions (WS).** A progress change was recorded
   but never pushed over the socket — a browser only saw an MCP (or other-tab) progress change on

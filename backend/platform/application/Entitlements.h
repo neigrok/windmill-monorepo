@@ -40,9 +40,11 @@ public:
   // per-user budget made exactly that possible.
   //
   // It is keyed on the PRODUCT, so what it actually meters is all of journal's model spend, not the
-  // sweep alone — true today because the curator is journal's only vendor call, and a line that will
-  // stop being true the moment journal buys a second one. Say it that way rather than promising a
-  // precision the key cannot deliver.
+  // sweep alone. That moment arrived on 2026-08-22: voice (OpenAI transcription) became journal's
+  // second vendor call and is metered under the same product key, so a member who uses Talk heavily
+  // spends this ceiling and their echoes then stop deriving — quietly, because derivePage simply
+  // reports the budget and writes nothing. Whether Talk belongs in the sweep's bucket at all is a
+  // product decision nobody has made yet; until it is made, this is what the key does.
   AiAllowance sweepAllowanceFor(const UserId& user) const;
 
 private:

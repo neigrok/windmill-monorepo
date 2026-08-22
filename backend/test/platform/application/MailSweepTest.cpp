@@ -1,5 +1,7 @@
 #include "platform/application/MailSweep.h"
 
+#include "platform/application/RetentionSweep.h"
+
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
 
@@ -370,4 +372,69 @@ TEST(a_pass_that_throws_hands_the_fleet_lock_back_before_the_caller_sees_the_thr
   CHECK(threw);
   CHECK_EQ(mutex.locksTaken, 1);
   CHECK_EQ(mutex.locksReleased, 1);
+}
+
+// The other sweep on this seam, and the only one that deletes rather than sends. It lives here
+// beside MailSweep because what is asserted is the same skeleton — the fleet lock, and a pass that
+// reports what it did — and because the windows themselves are the operator's to choose, not ours
+// to test. What must hold: a pass that could not take the lock removed nothing and says so, and a
+// window an operator zeroed is a table the sweep does not touch at all.
+namespace {
+struct FakeRetentionStore : RetentionStore {
+  RetentionWindows sawWindows;
+  UnixMs sawNow = 0;
+  int passes = 0;
+  RetentionReport answer;
+
+  RetentionReport purge(const RetentionWindows& windows, UnixMs now) override {
+    ++passes;
+    sawWindows = windows;
+    sawNow = now;
+    return answer;
+  }
+};
+}
+
+TEST(retention_sweep_runs_one_pass_under_the_fleet_lock_and_reports_what_it_removed) {
+  FakeRetentionStore store;
+  FakeMutex mutex;
+  FakeClock clock;
+  RetentionWindows windows;
+  windows.eventDays = 30;
+  windows.feedbackDays = 0;  // an operator saying "keep it all"
+  store.answer = RetentionReport{true, 7, 0, 3, 2, 5, 1};
+  RetentionSweep sweep{store, mutex, clock, windows};
+
+  const RetentionReport report = sweep.run();
+
+  CHECK(report.ran);
+  CHECK_EQ(store.passes, 1);
+  CHECK_EQ(mutex.locksTaken, 1);
+  CHECK_EQ(mutex.locksReleased, 1);
+  CHECK_EQ(store.sawNow, clock.now);
+  CHECK_EQ(store.sawWindows.eventDays, 30);
+  CHECK_EQ(store.sawWindows.feedbackDays, 0);
+  CHECK_EQ(report.events, 7);
+  CHECK_EQ(report.feedback, 0);
+  CHECK_EQ(report.serverErrors, 3);
+  CHECK_EQ(report.oauthCodes, 2);
+  CHECK_EQ(report.oauthTokens, 5);
+  CHECK_EQ(report.oauthClients, 1);
+  CHECK_EQ(report.rows(), 18);
+}
+
+TEST(retention_sweep_deletes_nothing_when_another_process_holds_the_lock) {
+  FakeRetentionStore store;
+  FakeMutex mutex;
+  mutex.lockFree = false;
+  FakeClock clock;
+  RetentionSweep sweep{store, mutex, clock, RetentionWindows{}};
+
+  const RetentionReport report = sweep.run();
+
+  // ran=false is "nothing was looked at", which is not the same as "nothing was due" — and no
+  // DELETE was reached at all.
+  CHECK_FALSE(report.ran);
+  CHECK_EQ(report.rows(), 0);
+  CHECK_EQ(store.passes, 0);
 }

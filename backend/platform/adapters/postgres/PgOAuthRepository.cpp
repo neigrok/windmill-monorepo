@@ -59,6 +59,19 @@ void PgOAuthRepository::registerClient(const OAuthClient& client) {
   txn.commit();
 }
 
+int PgOAuthRepository::unattachedClientsSince(UnixMs sinceMs) {
+  // One hour of registrations, by the created_at index — not the whole table. It runs on the
+  // anonymous registration path, so the window is what keeps it an index range scan.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  return txn
+      .exec_params("SELECT count(*)::int FROM oauth_clients c "
+                   "WHERE c.created_at > to_timestamp($1::bigint / 1000.0) AND NOT EXISTS "
+                   "(SELECT 1 FROM oauth_grants g WHERE g.client_id = c.client_id)",
+                   static_cast<long long>(sinceMs))[0][0]
+      .as<int>();
+}
+
 std::optional<OAuthClient> PgOAuthRepository::findClient(const std::string& clientId) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -121,19 +134,46 @@ std::optional<StoredToken> PgOAuthRepository::findAccessToken(const std::string&
                      static_cast<UnixMs>(row["expires_ms"].as<long long>())};
 }
 
-std::optional<StoredToken> PgOAuthRepository::takeRefreshToken(const std::string& refreshDigest, UnixMs now) {
+RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refreshDigest, UnixMs now) {
+  // The row is SPENT, not deleted: one UPDATE stamps rotated_ms and expires the access token that
+  // shared the row, so the pair still dies together and the exactly-once guarantee is still the
+  // single row the update touched. What is new is what stays behind — a tombstone that makes a
+  // second presentation of the same refresh token recognisable as reuse rather than as noise.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "DELETE FROM oauth_tokens WHERE refresh_hash = $1 AND refresh_expires_ms > $2 "
-      "RETURNING client_id, user_id::text, resource, scope, expires_ms",
+  pqxx::result rotated = txn.exec_params(
+      "UPDATE oauth_tokens SET rotated_ms = $2, expires_ms = 0 "
+      "WHERE refresh_hash = $1 AND rotated_ms IS NULL AND refresh_expires_ms > $2 "
+      "RETURNING client_id, user_id::text, resource, scope",
       refreshDigest, static_cast<long long>(now));
+  if (!rotated.empty()) {
+    txn.commit();
+    // Expiry is not among the columns: this row is freshly spent, so its access-token lifetime is
+    // gone by the same statement that answered.
+    const auto& row = rotated[0];
+    return RefreshRotation{RefreshOutcome::rotated,
+                           StoredToken{row["client_id"].as<std::string>(),
+                                       UserId{row["user_id"].as<std::string>()},
+                                       row["resource"].as<std::string>(),
+                                       row["scope"].as<std::string>(), 0}};
+  }
+  // Nothing to rotate. Either this was never a refresh token here, or it was one and is spent —
+  // and only the second is a breach signal, so the tombstone is what the two are told apart by.
+  pqxx::result spent = txn.exec_params(
+      "SELECT client_id, user_id::text, resource, scope, rotated_ms FROM oauth_tokens "
+      "WHERE refresh_hash = $1 AND rotated_ms IS NOT NULL",
+      refreshDigest);
   txn.commit();
-  if (rows.empty()) return std::nullopt;
-  const auto& row = rows[0];
-  return StoredToken{row["client_id"].as<std::string>(), UserId{row["user_id"].as<std::string>()},
-                     row["resource"].as<std::string>(), row["scope"].as<std::string>(),
-                     static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+  if (spent.empty()) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
+  const auto& row = spent[0];
+  // The stamp rides along: whether a second presentation is a thief or the same client's retry is
+  // a question about HOW LONG AGO the first one landed, and only the caller holds the policy.
+  return RefreshRotation{RefreshOutcome::reused,
+                         StoredToken{row["client_id"].as<std::string>(),
+                                     UserId{row["user_id"].as<std::string>()},
+                                     row["resource"].as<std::string>(),
+                                     row["scope"].as<std::string>(), 0},
+                         static_cast<UnixMs>(row["rotated_ms"].as<long long>())};
 }
 
 void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now,

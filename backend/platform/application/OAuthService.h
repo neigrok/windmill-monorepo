@@ -21,9 +21,18 @@ class OAuthService {
 public:
   OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock& clock);
 
-  // Dynamic Client Registration (RFC 7591). Rejects (nullopt) an empty redirect list or any
-  // redirect that is not HTTPS/loopback.
-  std::optional<OAuthClient> registerClient(std::vector<std::string> redirectUris, std::string name);
+  // Dynamic Client Registration (RFC 7591). The two refusals are DIFFERENT facts and say so: bad
+  // metadata is the caller's to fix (an empty redirect list, a redirect that is not HTTPS/loopback,
+  // more redirects or longer ones than OAuthPolicy allows), while `atCapacity` is ours — the door
+  // is briefly shut on everyone because someone is bursting through it. An operator debugging a
+  // dead connect flow must never be sent to look at a redirect URI that was fine.
+  enum class RegisterError { ok, invalidMetadata, atCapacity };
+  struct Registration {
+    RegisterError error = RegisterError::ok;
+    std::optional<OAuthClient> client;
+    int unattachedInWindow = 0;  // what the ceiling saw, for the log line at the edge
+  };
+  Registration registerClient(std::vector<std::string> redirectUris, std::string name);
 
   // The verdict on an /authorize request, evaluated before the consent screen is shown.
   enum class AuthorizeError { ok, unknownClient, badRedirect, unsupportedChallenge };
@@ -57,6 +66,8 @@ public:
   TokenResult exchangeCode(const std::string& code, const std::string& clientId,
                            const std::string& redirectUri, const std::string& codeVerifier,
                            const std::string& resource);
+  // Rotation, and the breach signal that rides with it: presenting a refresh token that has
+  // already been spent revokes the whole (user, client) grant before answering invalid_grant.
   TokenResult refresh(const std::string& refreshToken, const std::string& clientId);
 
   // Resource-server validation: the account a valid, unexpired, audience-matching access token acts

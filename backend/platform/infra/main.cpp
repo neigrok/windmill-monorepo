@@ -38,7 +38,9 @@
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/email/ResendReminderSender.h"
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
+#include "platform/adapters/postgres/PgRetentionStore.h"
 #include "platform/adapters/postgres/PgServerErrorRepository.h"
+#include "platform/adapters/postgres/PgSweepMutex.h"
 #include "platform/adapters/postgres/PgSubscriptionRepository.h"
 #include "products/roadmap/adapters/postgres/PgTendRunRepository.h"
 #include "platform/adapters/postgres/PgPool.h"
@@ -56,6 +58,7 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TendingService.h"
 #include "products/roadmap/application/TreeRegistry.h"
+#include "platform/application/RetentionSweep.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
 #include "products/journal/adapters/email/ResendNudgeSender.h"
@@ -98,6 +101,21 @@
 #include <set>
 #include <string>
 #include <thread>
+
+namespace {
+// A retention window from the environment, in days. An unset or unreadable value keeps the built-in
+// default rather than inventing one, and a value of 0 or less is an operator saying "keep it all" —
+// which the sweep honours by skipping that table whole.
+int envDays(const char* name, int fallback) {
+  const char* value = std::getenv(name);
+  if (!value || !*value) return fallback;
+  try {
+    return std::stoi(value);
+  } catch (const std::exception&) {
+    return fallback;
+  }
+}
+}
 
 int main() {
   using namespace wm;
@@ -357,6 +375,23 @@ int main() {
   // composition is already on the wire rather than only in a stdout nobody tails. stdout is
   // untouched either way; SENTRY_LOG_LEVEL (default info) is the volume knob.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
+
+  // The one sweep that DELETES. Telemetry, feedback and uncaught errors are written by anyone who
+  // can reach this server and grew forever (PLATFORM-EDGE-4); expired OAuth codes and tokens kept
+  // their digests at rest long past the moment anything could be done with them (OAUTH-4). Windows
+  // are read here so an operator can change one without a deploy, and 0 (or less) on any of them
+  // means KEEP FOREVER — the escape hatch for the first run, which is the run that deletes a
+  // backlog. RetentionSweep::start() logs what it read. No product table is reachable from it.
+  RetentionWindows retention;
+  retention.eventDays = envDays("WINDMILL_EVENTS_RETENTION_DAYS", retention.eventDays);
+  retention.feedbackDays = envDays("WINDMILL_FEEDBACK_RETENTION_DAYS", retention.feedbackDays);
+  retention.serverErrorDays = envDays("WINDMILL_SERVER_ERROR_RETENTION_DAYS", retention.serverErrorDays);
+  auto retentionStore = std::make_shared<PgRetentionStore>(pool);
+  auto retentionLock = std::make_shared<PgSweepMutex>(pool, "hashtext('retention_sweep')::bigint",
+                                                       "retention");
+  auto retentionSweep =
+      std::make_shared<RetentionSweep>(*retentionStore, *retentionLock, *systemClock, retention);
+  retentionSweep->start();
 
   // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
   // and the client re-parses it deterministically — text in, text out, never a door into the
@@ -909,7 +944,8 @@ int main() {
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "",
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
-      .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer};
+      .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
+      .allowedOrigins = allowedOrigins};
   registerRoutes(app, roadmapDeps);
 
   // The journal product — the second room — mounted behind its own seam (products/journal/routes.h),
@@ -986,7 +1022,12 @@ int main() {
   // way it gates through the same Windmill One entitlement seam as echoes and tending.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
-  if (openaiKeyEnv && *openaiKeyEnv) journalTranscriber = std::make_shared<OpenAiTranscriber>(openaiKeyEnv);
+  // The fuse and the spend sink are handed over exactly as the curator's are, twelve lines up: a
+  // vendor call this process cannot see the cost of is one it cannot stop. Until 2026-08-22 voice
+  // was the one paid seam that asked neither, so an entitled account's uploads were unmetered.
+  if (openaiKeyEnv && *openaiKeyEnv)
+    journalTranscriber =
+        std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink);
   else journalTranscriber = std::make_shared<NullTranscriber>();
   journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,

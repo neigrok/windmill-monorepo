@@ -105,6 +105,13 @@ services:
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
       AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
+      # How long the three telemetry tables keep a row (days). Empty ⇒ the binary's defaults —
+      # events 180, feedback 365, server errors 180 — and a value of 0 or less keeps that table
+      # forever, skipping it whole. Nothing here reaches user content: trees, journal pages, gym
+      # rows and users are unreachable from the retention store by construction.
+      WINDMILL_EVENTS_RETENTION_DAYS: ${WINDMILL_EVENTS_RETENTION_DAYS:-}
+      WINDMILL_FEEDBACK_RETENTION_DAYS: ${WINDMILL_FEEDBACK_RETENTION_DAYS:-}
+      WINDMILL_SERVER_ERROR_RETENTION_DAYS: ${WINDMILL_SERVER_ERROR_RETENTION_DAYS:-}
       # Google sign-in (second door onto wm_session). Empty → the /auth/google routes stay dark.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

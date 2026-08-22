@@ -118,6 +118,13 @@ jobs:
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
+          # Retention windows for the telemetry tables (days; <=0 keeps a table forever and skips it).
+          # Unset here would not be silent — the binary's own defaults stand — but the operator could
+          # not CHANGE one without editing this file, which is the omission the reminder/nudge pairs
+          # already taught us to stop repeating.
+          WINDMILL_EVENTS_RETENTION_DAYS: ${{ vars.WINDMILL_EVENTS_RETENTION_DAYS }}
+          WINDMILL_FEEDBACK_RETENTION_DAYS: ${{ vars.WINDMILL_FEEDBACK_RETENTION_DAYS }}
+          WINDMILL_SERVER_ERROR_RETENTION_DAYS: ${{ vars.WINDMILL_SERVER_ERROR_RETENTION_DAYS }}
           TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
           # The reminder engine's arming pair. It has shipped dark since wave 1 and until now could
           # not be armed AT ALL from here — neither name reached the container, so the allowlist was
@@ -191,6 +198,8 @@ jobs:
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
                        TENDING_ENABLED SENTRY_DSN SENTRY_ENVIRONMENT SENTRY_LOG_LEVEL \
                        SENTRY_RELEASE AMPLITUDE_API_KEY AMPLITUDE_HOST \
+                       WINDMILL_EVENTS_RETENTION_DAYS WINDMILL_FEEDBACK_RETENTION_DAYS \
+                       WINDMILL_SERVER_ERROR_RETENTION_DAYS \
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                        PADDLE_WEBHOOK_SECRET PADDLE_API_KEY PADDLE_ENV PADDLE_PRICE_ID \
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \

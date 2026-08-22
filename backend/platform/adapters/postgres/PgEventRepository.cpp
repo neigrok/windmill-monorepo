@@ -36,4 +36,14 @@ void PgEventRepository::append(const std::string& sessionKey, const std::optiona
   txn.commit();
 }
 
+int PgEventRepository::countInLastDay(const std::string& sessionKey) {
+  // An index range scan over one session (events_session_ts), never a scan of the stream: this
+  // runs on the anonymous intake path, once per batch.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  return txn.exec_params("SELECT count(*)::int FROM events WHERE session_key = $1 "
+                         "AND ts > now() - interval '1 day'",
+                         sessionKey)[0][0].as<int>();
+}
+
 }

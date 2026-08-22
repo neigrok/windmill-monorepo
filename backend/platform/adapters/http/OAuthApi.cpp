@@ -1,6 +1,7 @@
 #include "platform/adapters/http/OAuthApi.h"
 
 #include <drogon/utils/Utilities.h>
+#include <trantor/utils/Logger.h>
 
 namespace wm {
 
@@ -24,6 +25,27 @@ drogon::HttpResponsePtr oauthError(const std::string& error, const std::string& 
 // writes a space as '+', but leaves '&' and '=' alone — and every caller below is building a query
 // string, so an '&' inside state, scope or resource appended a parameter of its own to the URL.
 std::string enc(const std::string& value) { return drogon::utils::urlEncodeComponent(value); }
+
+// The second line of defence under an error redirect, where a registered redirect_uri becomes the
+// BASE of a Location header rather than a parameter in one (so enc() would break the URL rather
+// than protect it). Only the bytes that can end a header or a response are escaped: a registered
+// CR/LF used to splice headers and a body of the attacker's choosing onto the API origin. The
+// domain refuses to register such a uri at all now — this is what makes that regression harmless.
+std::string headerSafe(const std::string& value) {
+  static const char* kHex = "0123456789ABCDEF";
+  std::string out;
+  for (char c : value) {
+    const unsigned char byte = static_cast<unsigned char>(c);
+    if (byte > 0x20 && byte != 0x7f) {
+      out.push_back(c);
+      continue;
+    }
+    out.push_back('%');
+    out.push_back(kHex[byte >> 4]);
+    out.push_back(kHex[byte & 0x0F]);
+  }
+  return out;
+}
 
 Json::Value strArray(const std::vector<std::string>& items) {
   Json::Value out(Json::arrayValue);
@@ -81,13 +103,28 @@ void OAuthApi::registerClient(const drogon::HttpRequestPtr& req, HttpCallback&& 
   for (const Json::Value& uri : (*body)["redirect_uris"])
     if (uri.isString()) redirectUris.push_back(uri.asString());
 
-  std::optional<OAuthClient> client =
+  const OAuthService::Registration registration =
       oauth_->registerClient(std::move(redirectUris), body->get("client_name", "").asString());
-  if (!client) {
-    cb(oauthError("invalid_redirect_uri", "redirect_uris must be non-empty and https or loopback",
+  // Two refusals, two answers. A registration that is over the burst ceiling is OUR door being
+  // briefly shut, not the caller's metadata being wrong — so it says so, and says it loudly here,
+  // because the only symptom anyone else sees is that no new MCP client can connect.
+  if (registration.error == OAuthService::RegisterError::atCapacity) {
+    LOG_ERROR << "oauth registration refused: " << registration.unattachedInWindow
+              << " clients registered in the last hour have never completed an authorization — "
+                 "the door is shut to new clients until that burst ages out";
+    cb(oauthError("temporarily_unavailable",
+                  "too many clients have registered here recently; try again shortly",
+                  drogon::k503ServiceUnavailable));
+    return;
+  }
+  if (registration.error != OAuthService::RegisterError::ok || !registration.client) {
+    cb(oauthError("invalid_redirect_uri",
+                  "redirect_uris must be non-empty, https or loopback, at most 5, and at most 512 "
+                  "characters each",
                   drogon::k400BadRequest));
     return;
   }
+  const std::optional<OAuthClient>& client = registration.client;
 
   Json::Value out(Json::objectValue);
   out["client_id"] = client->clientId;
@@ -136,11 +173,11 @@ void OAuthApi::authorize(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
   if (responseType != "code") {
-    cb(redirect(redirectUri + "?error=unsupported_response_type&state=" + enc(state)));
+    cb(redirect(headerSafe(redirectUri) + "?error=unsupported_response_type&state=" + enc(state)));
     return;
   }
   if (check.error == OAuthService::AuthorizeError::unsupportedChallenge) {
-    cb(redirect(redirectUri + "?error=invalid_request&error_description=" +
+    cb(redirect(headerSafe(redirectUri) + "?error=invalid_request&error_description=" +
                 enc("PKCE S256 required") + "&state=" + enc(state)));
     return;
   }
@@ -181,10 +218,10 @@ void OAuthApi::decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
   Json::Value out(Json::objectValue);
   if (!approve) {
-    out["redirect"] = redirectUri + "?error=access_denied&state=" + enc(state);
+    out["redirect"] = headerSafe(redirectUri) + "?error=access_denied&state=" + enc(state);
   } else {
     const std::string code = oauth_->issueCode(clientId, redirectUri, codeChallenge, resource, scope, *caller);
-    out["redirect"] = redirectUri + "?code=" + enc(code) + "&state=" + enc(state);
+    out["redirect"] = headerSafe(redirectUri) + "?code=" + enc(code) + "&state=" + enc(state);
   }
   cb(jsonResponse(out));
 }

@@ -54,7 +54,7 @@ struct Harness {
   }
 
   std::string registerClient() {
-    return oauth->registerClient({kRedirect}, "Claude")->clientId;
+    return oauth->registerClient({kRedirect}, "Claude").client->clientId;
   }
 };
 
@@ -255,7 +255,7 @@ TEST(oauth_an_unregistered_redirect_is_answered_here_and_never_bounced_to) {
 TEST(oauth_a_loopback_client_may_come_back_on_a_different_port_each_flow) {
   Harness h;
   const std::string clientId =
-      h.oauth->registerClient({"http://127.0.0.1:1234/cb"}, "Local")->clientId;
+      h.oauth->registerClient({"http://127.0.0.1:1234/cb"}, "Local").client->clientId;
   const std::string challenge = h.tokens.s256Challenge("v");
 
   const drogon::HttpResponsePtr moved =
@@ -553,4 +553,28 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 0u);
   CHECK_EQ(disconnect("s-mine", clientId)->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ(disconnect("s-mine", "cli_never_existed")->getStatusCode(), drogon::k204NoContent);
+}
+
+// The two refusals are different facts and the door says which. A registration refused because the
+// burst ceiling is full is OUR door being shut, not the caller's metadata being wrong: answering
+// "invalid_redirect_uri" there sends whoever is debugging a dead connect flow to look at a redirect
+// URI that was never the problem, while nothing anywhere says the door is shut.
+TEST(oauth_a_registration_over_the_burst_ceiling_is_a_503_and_says_so) {
+  Harness h;
+  for (int i = 0; i < OAuthPolicy::maxUnattachedClients; ++i) {
+    const std::string id = "burst" + std::to_string(i);
+    h.oauthRepo.clients[id] = OAuthClient{id, {kRedirect}, ""};
+  }
+
+  drogon::HttpResponsePtr captured;
+  h.api.registerClient(postJson("/oauth/register",
+                                R"({"redirect_uris":["https://client.example/cb"],"client_name":"Claude"})"),
+                       [&](const drogon::HttpResponsePtr& r) { captured = r; });
+
+  CHECK_EQ(captured->getStatusCode(), drogon::k503ServiceUnavailable);
+  const Json::Value body = *captured->getJsonObject();
+  CHECK_EQ(body["error"].asString(), std::string("temporarily_unavailable"));
+  CHECK_EQ(body["error_description"].asString(),
+           std::string("too many clients have registered here recently; try again shortly"));
+  CHECK(!body.isMember("client_id"));
 }

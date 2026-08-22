@@ -74,9 +74,10 @@ public:
   // One pass, top to bottom. `dryRun` rehearses the whole decision and claims nothing, which is
   // what makes a weekly feature iterable in an afternoon instead of seven days at a time. It is
   // a SLOW, blocking pipeline — up to a full batch of database round trips and provider calls —
-  // so a request thread should reach it through the product's own loop (ReminderSweep::runAsync)
-  // rather than inline; journal's admin door still calls it inline and pays for that twice over,
-  // holding an IO thread AND the pooled connection the fleet lock rides on across every send.
+  // so a request thread reaches it through the product's own loop — ReminderSweep::runAsync and,
+  // since 2026-08-22, NudgeSweep::runAsync — rather than inline. Journal's admin door used to call
+  // it inline and paid for that twice over, holding an IO thread AND the pooled connection the
+  // fleet lock rides on across every send, for the whole batch.
   MailSweepReport run(std::uint64_t nowMs, bool dryRun) {
     MailSweepReport report;
     // The fleet lock is scoped by the port on purpose (platform/ports/SweepMutex.h): the pass runs

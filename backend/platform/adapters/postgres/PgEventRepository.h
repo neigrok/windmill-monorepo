@@ -14,6 +14,7 @@ public:
 
   void append(const std::string& sessionKey, const std::optional<UserId>& user,
               const std::vector<FunnelEvent>& events) override;
+  int countInLastDay(const std::string& sessionKey) override;
 
 private:
   std::shared_ptr<PgPool> pool_;
