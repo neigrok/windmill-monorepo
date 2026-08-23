@@ -128,3 +128,33 @@ TEST(both_ceilings_are_measured_over_the_trailing_thirty_days) {
   }
   CHECK_EQ(kAiWindowMs, 2'592'000'000LL);  // thirty days, and not a calendar month
 }
+
+// THE OWNER LIST. Nothing can be bought — checkout is hardcoded shut and BillingApi 503s — so
+// without this every account on earth is unentitled, the accounts of the people shipping the paid
+// surfaces included. It grants what a subscription grants and not one level more.
+TEST(an_owner_address_holds_windmill_one_without_a_subscription) {
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage, "Sam@Example.com, other@windmill.works"};
+
+  // Case and stray spaces are a person typing into a deploy variable, not a claim about identity.
+  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u1"}, "sam@example.com"), true);
+  CHECK_EQ(entitlements.isOwner("other@windmill.works"), true);
+  CHECK_EQ(entitlements.isOwner("OTHER@WINDMILL.WORKS"), true);
+  // Everybody else is exactly as unentitled as they were.
+  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u2"}, "stranger@example.com"), false);
+  CHECK_EQ(entitlements.isOwner("stranger@example.com"), false);
+  CHECK_EQ(entitlements.isOwner(""), false);
+  // A prefix of an owner address is not that address.
+  CHECK_EQ(entitlements.isOwner("sam@example.co"), false);
+  CHECK_EQ(entitlements.isOwner("am@example.com"), false);
+}
+
+TEST(with_no_owner_list_every_gate_behaves_exactly_as_before) {
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
+
+  CHECK_EQ(entitlements.isOwner("sam@example.com"), false);
+  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u1"}, "sam@example.com"), false);
+}

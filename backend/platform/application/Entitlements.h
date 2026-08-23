@@ -27,9 +27,23 @@ constexpr long long kAiWindowMs = 30LL * 24 * 60 * 60 * 1000;
 // pricing page can state, and the dollar ceilings below are OUR fuse, never shown to anybody.
 class Entitlements {
 public:
-  Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage);
+  // `owners` is a comma-separated list of addresses read from WINDMILL_OWNER_EMAILS — the people
+  // building this, and nobody else. It exists because THE PAID LINE CANNOT BE BOUGHT: checkout is
+  // hardcoded shut and BillingApi 503s, so `hasWindmillOne` is false for every account on earth,
+  // including the accounts of the people shipping the features it gates. A team that cannot use
+  // its own paid surface cannot honestly claim the surface works.
+  //
+  // It grants exactly what a subscription grants and nothing more — no second tier, no hidden
+  // level. Empty by default, so a deploy that sets nothing behaves precisely as before.
+  Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage,
+               std::string owners = {});
 
   bool hasWindmillOne(const UserId& user, const std::string& email) const;
+
+  // Is this address on the owner list? Asked apart from the plan because it answers a different
+  // question — "is this one of us, dogfooding" — and one surface (the journal's corpus floor)
+  // needs that answer without inheriting anything about payment.
+  bool isOwner(const std::string& email) const;
 
   // Everything this account has spent across every product in the trailing window, against the
   // ceiling its plan grants.
@@ -50,6 +64,7 @@ public:
 private:
   SubscriptionRepository& subscriptions_;
   AiUsageRepository& usage_;
+  std::string owners_;   // comma-separated addresses, matched case-insensitively
 };
 
 }

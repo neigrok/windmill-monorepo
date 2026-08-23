@@ -68,6 +68,11 @@ services:
       JOURNAL_EMBEDDER_URL: ${JOURNAL_EMBEDDER_URL:-http://embedder:8081}
       # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.
       JOURNAL_ECHO_ADMIN_TOKEN: ${JOURNAL_ECHO_ADMIN_TOKEN:-}
+      # The people building this, comma-separated. They hold Windmill One (nothing can be BOUGHT —
+      # checkout is shut and BillingApi 503s, so without this the team is the one group guaranteed
+      # never to see the surfaces it ships) and the journal's 20-page corpus floor is waived for
+      # them. Empty → nobody is an owner and every gate behaves exactly as it did before.
+      WINDMILL_OWNER_EMAILS: ${WINDMILL_OWNER_EMAILS:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}

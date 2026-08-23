@@ -2,8 +2,12 @@
 
 #include "platform/domain/Billing.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <optional>
+#include <string>
+#include <utility>
 
 namespace wm {
 
@@ -17,13 +21,45 @@ long long windowFloorMs() {
 }
 }
 
-Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage)
-    : subscriptions_(subscriptions), usage_(usage) {}
+Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage,
+                           std::string owners)
+    : subscriptions_(subscriptions), usage_(usage), owners_(std::move(owners)) {}
 
 // The repository resolves WHICH subscription decides this account (either binding, preferring any
 // live row — see the port); here we only apply the access rule to whatever it returns. No mirrored
 // subscription at all is simply no access.
+bool Entitlements::isOwner(const std::string& email) const {
+  if (owners_.empty() || email.empty()) return false;
+
+  // Addresses are compared lowercased and trimmed, because a list typed into a deploy variable is
+  // typed by a person: "Sam@Example.com, other@example.com" must match the address the auth table
+  // holds. Split on commas only — no address contains one.
+  const auto folded = [](std::string text) {
+    std::string out;
+    for (const char c : text) {
+      if (c == ' ' || c == '\t') continue;
+      out.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c);
+    }
+    return out;
+  };
+  const std::string wanted = folded(email);
+  if (wanted.empty()) return false;
+
+  std::size_t at = 0;
+  while (at <= owners_.size()) {
+    const std::size_t end = std::min(owners_.find(',', at), owners_.size());
+    if (folded(owners_.substr(at, end - at)) == wanted) return true;
+    at = end + 1;
+  }
+  return false;
+}
+
 bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) const {
+  // The owner list first, and it is the only thing here that is not a subscription. Nothing can be
+  // bought today — checkout is shut and BillingApi 503s — so without this the people building the
+  // paid surfaces are the one group guaranteed never to see them.
+  if (isOwner(email)) return true;
+
   const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(user, email);
   return subscription && grantsAccess(subscription->status);
 }

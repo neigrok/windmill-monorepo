@@ -13,7 +13,8 @@
 //   TEXT and an occurrence index — never an offset — so an edit to an old page can't silently
 //   re-point a quote at the wrong sentence, and the two sides never disagree about an encoding.
 //
-//   Under ~20 pages, nothing at all. No tabs, no offer. There is nothing true to sell yet.
+//   Under ~20 pages, nothing at all. No tabs, no offer — unless the server says `floorWaived`,
+//   which it does for owner accounts so the people building this can see their own echoes. There is nothing true to sell yet.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
@@ -86,7 +87,11 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     journalApi.echoes('0001-01-01', today)
       .then((reply) => {
         if (cancelled) return;
-        if (typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
+        // The floor is a rule about whether there is anything true to sell yet, and the server
+        // waives it for the accounts building this — below it nothing renders at all, so a working
+        // echo and a broken pipeline look identical on the one journal that has to be watched.
+        if (!reply.floorWaived
+            && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
           setFloored(true);
           return;
         }

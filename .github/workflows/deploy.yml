@@ -113,6 +113,7 @@ jobs:
           # JOURNAL_ECHO_ADMIN_TOKEN was settable in compose and unsettable from here.
           JOURNAL_NUDGE_ADMIN_TOKEN: ${{ secrets.JOURNAL_NUDGE_ADMIN_TOKEN }}
           JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
+          WINDMILL_OWNER_EMAILS: ${{ vars.WINDMILL_OWNER_EMAILS }}
           # Config (variables; safe compose defaults when unset):
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
@@ -205,6 +206,7 @@ jobs:
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
+                       WINDMILL_OWNER_EMAILS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

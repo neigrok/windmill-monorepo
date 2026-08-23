@@ -669,7 +669,7 @@ reverses.
 
 **Canon drift this ruling closes:** `journal.md` §6 still read "Without One, echo marks are *absent,
 not locked* … no blurred text, no fake preview, no count of what you're missing." The first clause is
-now wrong and the rest is still binding. The design project is updated in the same wave.
+now wrong and the rest is still binding. `docs/design/journal/journal.md` is updated in the same wave.
 
 ## The surface
 

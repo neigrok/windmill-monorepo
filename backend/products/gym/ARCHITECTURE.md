@@ -548,8 +548,9 @@ is preserved where it belongs — **nothing a lifter logged is ever destroyed.**
 **Nothing shows this table to a lifter, and that is deliberate rather than unfinished.** There is no
 trash, no recovery route, and no copy anywhere in this repo that promises a set back — §G18 draws
 none, and the wave that built this swept the tree for the older `Trash — recoverable for 30 days`
-line and found no copy of it here. **That line is still drawn in the Design project's G3 canon, and
-it is the owner's to correct** — this repo cannot, and W3 did not. Until it is, the canon promises a
+line and found no copy of it here. **That line is still drawn in the G3 brief, which moved into this
+repo on 2026-08-23 as `docs/design/gym/briefs/04-G3-the-log.md`** — so correcting it is no longer
+blocked on anyone else, and it has not been corrected yet. Until it is, the canon promises a
 door this product does not have. The table exists so the sentence above is true, not so a screen can
 offer an undo it would then have to keep honest.
 

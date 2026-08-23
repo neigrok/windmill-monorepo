@@ -1,8 +1,9 @@
 # Windmill Journal — backend architecture
 
 The second room in the superapp. Trees are how you plan what to do; Journal is how you notice
-what happened. This document designs the **backend** for it. The product canon lives in the
-claude.ai Design project (`Windmill Journal — System.dc.html`, `guidelines/journal.md`); this
+what happened. This document designs the **backend** for it. The product canon lives in
+`docs/design/journal/journal.md` and the Windmill · Journal Figma file
+(`pC6ciOUnfLmI42oMihd7l3`); this
 file is what a developer needs that isn't visible in a screen.
 
 Read `STRUCTURE.md` for the one rule (platform is product-neutral; products depend on platform,

@@ -316,7 +316,14 @@ int main() {
   // plan — gates through this one seam instead of re-deriving the rule over the Paddle mirror, so
   // "what grants access" lives in exactly one place (platform/application/Entitlements). It now
   // also answers the AI ceiling, which its own header promised would land here rather than beside.
-  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo);
+  // The people building this, from WINDMILL_OWNER_EMAILS — a variable that had existed since
+  // 2026-08-09 and that nothing in the repo read. They hold Windmill One, because nothing can be
+  // bought (paidPlansOpen() is hardcoded false and BillingApi 503s), which otherwise makes the
+  // team the one group guaranteed never to see the surfaces it ships. Unset → nobody is an owner
+  // and every gate behaves exactly as it did before.
+  const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
+  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
+                                                     ownerEmailsEnv ? ownerEmailsEnv : "");
 
   // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
   // general per-IP apiLimiter below covers this route like every other. Accepted events also

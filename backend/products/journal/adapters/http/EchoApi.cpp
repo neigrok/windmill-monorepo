@@ -336,6 +336,13 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   Json::Value body(Json::objectValue);
   body["pages"] = pages;
   body["pagesWritten"] = echoes_->pagesWritten(caller->id);
+  // The ~20-page corpus floor is a rule about whether this feature has anything true to sell yet,
+  // and it is right for a stranger's first fortnight. It is wrong for the people building it: an
+  // owner's account is where the surface has to be looked at, and below the floor the client draws
+  // NOTHING — no mark, no tab, not even the honest cut — so a working echo is indistinguishable
+  // from a broken pipeline. Measured on the owner's own journal: twelve pages, real echoes stored
+  // and served, and a blank canvas. The floor still applies to everybody else.
+  body["floorWaived"] = entitlements_->isOwner(caller->email.value);
   cb(jsonResponse(body));
 }
 
