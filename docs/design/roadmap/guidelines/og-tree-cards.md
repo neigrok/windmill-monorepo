@@ -1,0 +1,60 @@
+# Windmill Per-tree unfurl card (og-tree-cards)
+
+Each shared tree at `windmill.works/t/<id>` unfurls as **itself** — its own
+1200×630 card, not the generic `og-image.png`. Extends **X2 share identity**
+(`explorations/share-identity.html`, S4·1) and the TreePortrait to a real
+per-tree generator. Live specimens: `explorations/og-tree-cards.html`.
+
+> **Light only.** Scrapers rasterize the meta image with no theme, so there is
+> one asset per tree; the warm mat keeps it clean on dark feeds anyway.
+
+## TreePortrait — the fit (the whole per-tree mechanism)
+- Take the tree's **own** node positions, compute their bounding box **including
+  glow radius**, pad **8%**, and render into an SVG whose `viewBox` is that
+  padded box with `preserveAspectRatio="xMidYMid meet"`.
+- Any tree — wide, tall, sparse — centers and scales to fill the panel with **no
+  per-tree tuning** and no layout-mode branch: radial small trees and dagre big
+  trees use the identical path, because the portrait reads the tree's own
+  positions (the X2 rule — mode follows the tree, not the surface).
+- **Clamp the fit scale** so a 3-node tree sits centered at a sane size rather
+  than filling the frame with two dinner plates.
+- Node treatments are the in-app ones: crowned root, kind hues, glowing **done**
+  halos, white **available** rings, sunken **locked**.
+
+## Layout — everything off `k = w/1200`
+```
+MAT     28·k  warm-white postcard border (sides + top)       — the X2 silhouette
+RULE     6·k  dominant-kind bar, full width, top
+PANEL   inset by mat; radius 18·k; 1.5·k border in kind-soft; holds the portrait
+STRIP   96·k tall (min 84px) · padding 46·k · bottom edge · contents centred
+SAFE     4%   (48px @1200) — the PANEL rule: the portrait, the root and where the
+              strip's type starts must sit inside it on the sides and top
+FLOOR   16·k  nothing in the strip may come closer to the card's BOTTOM edge
+CROP    1:1   center square (Reddit thumb) must hold root + most lit nodes
+```
+- **`4%` is not a bottom-edge rule.** The mat is sides + top, so the card's bottom
+  belongs to the strip and the strip's own centring sets the clearance there — as
+  built, the readout row sits `17·k` off the edge and the watermark `32·k`. The
+  `FLOOR` is the checkable rule instead: the tightest ratio any client crops a
+  1200×630 asset to is 2:1, which takes `15·k` off each long edge, so `16·k` is
+  the number that must hold. Re-measure it whenever a strip changes.
+- **The 1:1 crop cuts the *sides*.** It keeps full height and drops the strip's
+  outer ends — on a Reddit thumb the watermark is gone by construction. That is
+  why the crop requirement is scoped to the portrait, not the strip.
+
+## Type & identity
+- **Title** — Baloo 2 bold, `30·k`, sentence case, one line, `text-overflow:
+  ellipsis`, led by a kind dot. (Resolves the X2 open question: the strip is
+  **title only**; the readout is separate.)
+- **Readout** — `n/m` in JetBrains Mono `15·k` + the one terracotta→gold gradient
+  bar. The "score" that makes a share worth posting.
+- **Watermark** — "Made with **Windmill** →", `20·k`, wordmark **always
+  terracotta** regardless of the kind rule.
+- **Dominant kind** = most common kind among **done** nodes (tie → terracotta).
+  Tints only the rule, the title dot and the panel edge.
+
+## Shipping
+- Render at **@2x** (2400×1260). One recipe serves X `summary_large_image`,
+  LinkedIn, Slack, Discord, Reddit link previews.
+- `<meta property="og:image">` per tree id; the card is generated from the tree's
+  stored positions + progress at share time.

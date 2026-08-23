@@ -753,9 +753,9 @@ activates on **coming back**. One logged session is a trial, not a habit.
   lifter would score near zero and a stalled one would score 100%. What we are measuring is "the
   number was right, or one tap away."
 
-  > **CLOSED 2026-08-11 by the decided design** — board `templates/gym-app/GymApp.dc.html` §K in the
-  > claude.ai Design project, which also owns consistency ledger entry 0d. Neither lives in this
-  > repo; the ledger entry is the owner's to close there. The conflict was real
+  > **CLOSED 2026-08-11 by the decided design** — the GymApp board §K, rebuilt 2026-08-23 in the
+  > Windmill · Gym Figma file (`vdmdiKWrmZoS1FtcvJRf6O`). Consistency ledger entry 0d is now
+  > `docs/design/consistency.md`, in this repo and no longer someone else's to close. The conflict was real
   > and it was a deadlock: the ladder inherited from Lift offered no ±2.5 step at any load — at
   > 100 kg it gave ±5/±10 — while the named user's program step *is* +2.5 kg. So a healthy lifter's
   > most common action was not one ladder step, and this metric could not be measured at the loads

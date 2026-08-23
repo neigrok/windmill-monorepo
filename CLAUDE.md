@@ -44,8 +44,8 @@ So: **when you make a line false, you fix it in the same wave that made it false
 without being asked, as part of the change rather than as follow-up. Correct it or delete it —
 never leave it standing with a correction pinned beside it, and never let "that's just the old copy"
 be a reason to keep it. If a fix is genuinely not yours to make (someone else's canon, an open
-product decision), record it where that owner will see it — the design project's `consistency.md`
-ledger for design/canon drift, a node in the dogfood tree for build work — and say so plainly in
+product decision), record it where that owner will see it — `docs/design/consistency.md`
+for design/canon drift, a node in the dogfood tree for build work — and say so plainly in
 your summary. Silence is not a handoff.
 
 This cuts both ways: do not write a claim you have not verified. "Tested", "fixed" and "works" mean
@@ -108,8 +108,9 @@ halves, disjoint file territories, contracts pinned in both prompts). Every wave
 through the gauntlet before it ships: adversarial review of the diff → one fix pass →
 e2e on the local stack (see .claude/skills/verify) → push. The dogfood tree is the bet
 ledger (bet id == node id; annotate outcomes + follow-ups on nodes); PRODUCT_LOG.md is the
-strategy narrative; the design canon lives in the claude.ai Design project (DesignSync —
-session-scoped, so distill specs to scratchpad files before handing to subagents). Build
+strategy narrative; the design canon is in two halves — `docs/design/` holds the WRITTEN
+half (guidelines, briefs, the consistency ledger) and five Figma files hold the DRAWN half.
+Figma records what IS; the docs record what should be and why. Build
 from design specs where canon exists; file descriptive tasks to designers where it doesn't.
 
 Keep the running log of product progress in the Windmill dogfood tree (id t_9362d9bc883e0a1e) via the windmill MCP — create/connect nodes for new work and set_progress as it lands; inspect with get_tree/get_diagnostics. Every node you plant carries a description — a sentence or two on what the work is and why — passed inline to create_node, or backfilled with annotate_node. (Replaces the old src/skilltree/mock/roadmapTree.js log, now dumped into the tree.)

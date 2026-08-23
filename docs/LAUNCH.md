@@ -27,7 +27,7 @@ fork in and out · all nine quests · export · mobile · the playable demo and 
 
 ### Pro — superseded
 The paid line is **tending**: one flat plan for a larger monthly allowance of the in-app AI.
-The canonical spec is the Design project's `marketing/guidelines/pricing.md`; this section's
+The canonical spec is `docs/design/marketing/guidelines/pricing.md`; this section's
 original 2026-07-19 packaging is withdrawn and deliberately not restated here.
 
 ### The three calls worth arguing with

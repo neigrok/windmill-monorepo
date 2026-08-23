@@ -67,7 +67,8 @@ tools/       one-shot scripts kept for the record, never a product surface
                         Resend delivery webhook is armed in prod (dark and forgeable both 401)
 
 docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS (the design-facing
-             half of the plan; the canon itself lives in the claude.ai Design project) · LAUNCH
+             half of the plan) · design/ (the WRITTEN canon — guidelines, briefs and the
+             consistency ledger; the drawings live in five Figma files) · LAUNCH
              · per-topic design/exploration notes
 .github/     root workflows: backend.yml (context backend/ — test, build, push the image) ·
              web.yml (workdir web/ — test, build, rsync dist/ to the VPS) · ios.yml (workdir

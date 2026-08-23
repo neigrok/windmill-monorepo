@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Windmill — Brand & Identity Brief</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* The <doc-page> custom element and its doc-page.js belonged to the retired
+   claude.ai Design project. The visibility:hidden guard and the script tag were
+   removed on 2026-08-23 so this renders as plain HTML in the repo. */
+doc-page{display:block;max-width:56rem;margin:0 auto;padding:2rem}
+:root{
+--cream:#F9F5EB;--card:#FFFFFF;--sand:#F1EADA;--border:#E5D9C0;--border2:#D3C2A0;
+--ink:#211B13;--ink2:#514431;--muted:#6F5F45;--faint:#92805F;
+--terra:#BC6C42;--terra-deep:#7C3F23;--terra-soft:#EAC6B0;--terra-50:#F9EFE9;
+--olive:#7D8C43;--gold:#C4972F;--brick:#A84E35;--sky:#5F8494;--plum:#8D4F83;--bark:#9C6B44;
+--disp:'Baloo 2',ui-rounded,system-ui,sans-serif;--body:'Nunito',ui-rounded,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+}
+doc-page{color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--disp);color:var(--ink);letter-spacing:-0.02em;margin:0}
+p{margin:0 0 12px;text-wrap:pretty}
+a{color:var(--terra-deep)}
+strong{font-weight:700;color:var(--ink)}
+em{font-style:normal;color:var(--muted)}
+.eyebrow{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:var(--terra)}
+.lede{font-size:17px;line-height:1.6;color:var(--ink2)}
+hr{border:0;border-top:1px solid var(--border);margin:26px 0}
+/* ---- cover ---- */
+.cover{padding-top:8px}
+.wordmark{font-family:var(--disp);font-weight:800;font-size:78px;line-height:1;color:var(--terra);letter-spacing:-0.03em}
+.tagline{font-family:var(--disp);font-weight:600;font-size:26px;color:var(--ink);margin-top:6px;letter-spacing:-0.02em}
+.dotrow{display:flex;gap:12px;margin:30px 0 4px}
+.dotrow span{width:20px;height:20px;border-radius:999px}
+.metaline{display:flex;gap:40px;margin-top:34px;font-size:13.5px;color:var(--muted)}
+.metaline b{display:block;font-family:var(--disp);font-weight:700;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+/* ---- section heads ---- */
+.sec{break-before:page}
+.sec-num{font-family:var(--mono);font-size:13px;color:var(--terra);font-weight:600}
+h2{font-size:30px;margin:4px 0 6px}
+.sec-sub{color:var(--muted);font-size:15px;margin-bottom:22px}
+h3{font-size:18px;margin:24px 0 8px}
+/* ---- generic cards ---- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 20px;break-inside:avoid}
+.panel h4{font-size:15px;margin-bottom:6px}
+.panel p{font-size:13.5px;line-height:1.55;margin:0;color:var(--ink2)}
+.soft{background:var(--terra-50);border-color:var(--terra-soft)}
+/* do/dont */
+.dd{border-radius:14px;padding:16px 18px;break-inside:avoid}
+.dd h4{font-size:13px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;font-family:var(--disp)}
+.dd ul{margin:0;padding-left:18px}
+.dd li{font-size:13.5px;line-height:1.5;margin-bottom:5px;color:var(--ink2)}
+.do{background:#F3F4E4;border:1px solid #D2DAA5}.do h4{color:#616E33}
+.dont{background:#F7E9E5;border:1px solid #E4B6A8}.dont h4{color:#8A3A26}
+/* deliverables table */
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+thead th{text-align:left;font-family:var(--disp);font-weight:700;font-size:11.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--faint);border-bottom:1.5px solid var(--border2);padding:8px 10px}
+tbody td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--ink2)}
+tbody tr:nth-child(odd){background:#FDFBF6}
+td b{color:var(--ink)}
+.tag{font-family:var(--mono);font-size:12px;background:var(--sand);border:1px solid var(--border);border-radius:6px;padding:1px 7px;color:var(--muted)}
+/* swatches */
+.swgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:4px}
+.sw{break-inside:avoid;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card)}
+.sw .chip{height:74px}
+.sw figcaption{padding:10px 12px}
+.sw .nm{font-family:var(--disp);font-weight:700;font-size:14px;color:var(--ink)}
+.sw .hex{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.sw .use{display:block;font-size:12px;color:var(--faint);margin-top:3px;line-height:1.4}
+.neut{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+/* specimens */
+.specimen{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:14px;break-inside:avoid}
+.spec-label{font-family:var(--mono);font-size:12px;color:var(--terra);margin-bottom:12px}
+.spec-meta{font-size:12.5px;color:var(--faint);margin-top:12px}
+/* asset showcase */
+.assets{display:grid;grid-template-columns:100px 1fr;gap:18px;align-items:center;break-inside:avoid;margin-bottom:14px}
+.assets img{width:100px;height:100px;border-radius:22px;border:1px solid var(--border);display:block}
+.assets .og{width:100%;height:auto;border-radius:12px}
+.assets p{font-size:13.5px;margin:0;color:var(--ink2)}
+.wide-asset{break-inside:avoid;margin-bottom:14px}
+.wide-asset img{width:100%;height:auto;border-radius:12px;border:1px solid var(--border);display:block}
+.cap{font-size:12px;color:var(--faint);margin-top:8px}
+/* footer */
+.foot{display:flex;justify-content:space-between;align-items:center;font-family:var(--body);font-size:11px;color:var(--faint);border-top:1px solid var(--border);padding-top:8px}
+.foot b{font-family:var(--disp);font-weight:700;color:var(--terra);letter-spacing:-0.01em}
+.callout{background:var(--ink);color:#F4EEDF;border-radius:16px;padding:20px 24px;break-inside:avoid;margin:8px 0}
+.callout h4{color:#F4EEDF;font-size:16px;margin-bottom:6px}
+.callout p{color:#CDBC97;font-size:13.5px;margin:0}
+.callout .hi{color:#E7A87B}
+</style>
+</head>
+<body>
+<doc-page size="letter" margin="0.7in">
+
+<div slot="footer" class="foot"><span><b>Windmill</b> · Brand &amp; Identity Brief</span><span>windmill.works</span></div>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+<div class="eyebrow">Brand &amp; Identity Brief</div>
+<div class="wordmark">Windmill</div>
+<div class="tagline">Any goal, as a skill tree.</div>
+<div class="dotrow"><span style="background:var(--terra)"></span><span style="background:var(--olive)"></span><span style="background:var(--gold)"></span><span style="background:var(--brick)"></span><span style="background:var(--sky)"></span><span style="background:var(--plum)"></span></div>
+<hr>
+<p class="lede">Windmill is a browser-based roadmap tracker that renders <strong>any</strong> roadmap as an <strong>RPG skill tree</strong>: steps are nodes, dependencies are branching paths, and finishing one step "unlocks" whatever comes next. A roadmap can be a product launch, a fitness goal, learning a language, or a room makeover — it is not just for software teams.</p>
+<p class="lede">This document systematizes everything decided about Windmill's identity so far, so you can design a <strong>logo, app-icon set, and any supporting brand marks</strong> that fit the world the product already lives in. There is <strong>no logo today</strong> — the sections that follow tell you exactly what to make, the feeling to hit, and the palette and type it must sit beside.</p>
+<div class="metaline">
+<div><b>Prepared for</b>Logo &amp; identity design</div>
+<div><b>Product</b>Windmill · roadmap-as-skill-tree</div>
+<div><b>Status</b>No mark exists — greenfield</div>
+</div>
+</section>
+
+<!-- ============ 1 · THE PRODUCT ============ -->
+<section class="sec">
+<div class="sec-num">01</div>
+<h2>The product &amp; the world it lives in</h2>
+<p class="sec-sub">What you're branding, in one read.</p>
+
+<p><strong>The core metaphor is a living skill tree.</strong> Every roadmap becomes a branching tree: each step is a circular <em>node</em> ("fruit"), dependencies are curved <em>branches</em>, and completing a step lights up and unlocks the next one. Progress feels like a tree coming into bloom — calm and organic, not a checklist.</p>
+
+<div class="grid3" style="margin:18px 0">
+<div class="panel"><h4>Nodes are steps</h4><p>Flat, uniform circular discs. Locked → available → in-progress → complete, shown by glow and ring — never by shape.</p></div>
+<div class="panel"><h4>Branches are dependencies</h4><p>Soft curved connectors. A branch lights up in its parent's colour once that step is done.</p></div>
+<div class="panel"><h4>Colour is category</h4><p>A node's hue marks its <em>kind</em> (six earth tones), independent of how far along it is.</p></div>
+</div>
+
+<h3>Who it's for</h3>
+<p>Anyone with a goal that has steps and an order. The copy and visuals stay <strong>domain-neutral</strong> — the same tree works for a marathon plan, a language, a startup roadmap, or decorating a room. The brand should read <strong>warm, capable, and human</strong> — a calm tool first, a game second. Lean on the game metaphor lightly; never make it childish.</p>
+
+<div class="callout">
+<h4>The one-line concept you gave</h4>
+<p>You described the name as evoking <span class="hi">"spinning millstones"</span> — grinding raw goals into something you can actually work through. That association is the seed for a mark, but nothing has been drawn. You are free to interpret it, combine it with the tree/branch metaphor, or propose something better.</p>
+</div>
+</section>
+
+<!-- ============ 2 · BRAND DIRECTION ============ -->
+<section class="sec">
+<div class="sec-num">02</div>
+<h2>Brand direction — the feeling</h2>
+<p class="sec-sub">The adjectives the whole system is built to hit. A mark has to belong here.</p>
+
+<div class="grid2">
+<div class="panel"><h4>Warm Tuscan earth</h4><p>Sun-baked clay, olive, ochre, cream. Every hue is muted <em>toward earth</em> — nothing vivid or "chemical". The signature surface is a warm cream, never cold gray or white.</p></div>
+<div class="panel"><h4>Organic, growing</h4><p>Vines, branches, fruit ripening. Rounded and natural rather than geometric or techy. Growth over machinery.</p></div>
+<div class="panel"><h4>Warm &amp; rounded</h4><p>Friendly, bold, high-personality type; generously rounded corners; nothing sharp or corporate.</p></div>
+<div class="panel"><h4>Minimal &amp; airy</h4><p>Lots of space, flat colour, no gradients-as-backgrounds, no clutter. One idea at a time.</p></div>
+<div class="panel"><h4>Soft &amp; glowy motion</h4><p>Things breathe, pulse, and fade — gentle light, never mechanical, bouncy, or flashy. A mark that animates should ease and glow, not spin hard or snap.</p></div>
+<div class="panel"><h4>Calm confidence</h4><p>Encouraging and a little playful, but not jokey. Understated. The product rewards you quietly.</p></div>
+</div>
+
+<div class="grid2" style="margin-top:16px">
+<div class="dd do"><h4>Lean into</h4><ul><li>Circular / organic forms that echo the fruit nodes</li><li>The cream + terracotta pairing as the hero combo</li><li>A single-weight, confident silhouette that survives at 16px</li><li>Something that could softly glow or pulse if animated</li></ul></div>
+<div class="dd dont"><h4>Avoid</h4><ul><li>Cold blues/grays, neon, or high-tech gradients</li><li>Literal cartoon windmills or fussy illustration</li><li>Sharp, angular, "enterprise SaaS" geometry</li><li>Anything that needs colour to be legible (must work 1-colour)</li></ul></div>
+</div>
+</section>
+
+<!-- ============ 3 · THE ASK ============ -->
+<section class="sec">
+<div class="sec-num">03</div>
+<h2>What we need from you</h2>
+<p class="sec-sub">The deliverables, the sizes, and the rules a Windmill mark must obey.</p>
+
+<h3>A logo system, not just one image</h3>
+<p>We need a <strong>primary mark</strong> that can stand alone (in an app icon, a favicon, a loading state) <strong>and</strong> a <strong>horizontal lockup</strong> that pairs the mark with the "Windmill" wordmark. The wordmark today is simply the word set in a rounded display type (see §5) — you may keep that relationship, refine it, or draw a custom wordmark.</p>
+
+<div class="callout">
+<h4>Non-negotiable constraints</h4>
+<p>1 · Must read on the <span class="hi">warm cream canvas (#F9F5EB)</span> <em>and</em> reversed on <span class="hi">terracotta (#BC6C42)</span> and on the warm-soil dark theme (#17110A). 2 · A <span class="hi">single-colour / monochrome version</span> is required (email with images off, embossing, small favicons). 3 · Must stay legible and recognizable down to <span class="hi">16×16px</span>. 4 · Delivered as a clean <span class="hi">vector master (SVG)</span> that we can re-export at any size.</p>
+</div>
+
+<h3>Files &amp; sizes to deliver</h3>
+<table>
+<thead><tr><th>Asset</th><th>Size / format</th><th>Where it's used</th></tr></thead>
+<tbody>
+<tr><td><b>Master mark</b></td><td><span class="tag">SVG</span> vector, full-colour + 1-colour</td><td>Source of truth; everything re-exports from this</td></tr>
+<tr><td><b>Wordmark lockup</b></td><td><span class="tag">SVG</span> horizontal</td><td>Site header, marketing, email, docs</td></tr>
+<tr><td><b>App icon — requested</b></td><td><span class="tag">100×100 PNG</span></td><td>The size you asked about — general app / listing use</td></tr>
+<tr><td><b>App icon — large</b></td><td><span class="tag">512×512 PNG</span></td><td>PWA install, store listings, high-DPI</td></tr>
+<tr><td><b>App icon — medium</b></td><td><span class="tag">192×192 PNG</span></td><td>Android / PWA manifest</td></tr>
+<tr><td><b>Apple touch icon</b></td><td><span class="tag">180×180 PNG</span></td><td>iOS home screen</td></tr>
+<tr><td><b>Favicon</b></td><td><span class="tag">32×32 PNG</span> + <span class="tag">.ico</span></td><td>Browser tab</td></tr>
+<tr><td><b>Social preview</b></td><td><span class="tag">1200×630 PNG</span></td><td>Open Graph / link unfurl (og-image)</td></tr>
+</tbody>
+</table>
+<p class="cap">All raster sizes should export cleanly from the SVG master. Deliver full-colour and single-colour variants of each where it makes sense.</p>
+
+<h3 style="break-before:page">What already exists — your starting point</h3>
+<p>As a stopgap, the identity currently leans on the wordmark plus a Baloo "W" letterform and a six-dot "kinds" motif. Feel free to replace all of it — it's shown so you know the current visual baseline and the exact assets a new mark would slot into.</p>
+
+<div class="assets">
+<img src="../../web/public/icon-512.png" alt="Current W app icon">
+<div><p><strong>Current app icon (placeholder).</strong> A cream "W" in the rounded display type on terracotta. This is a letterform stand-in, <em>not</em> a designed mark — this is the slot your logo fills.</p></div>
+</div>
+
+<div class="wide-asset">
+<img class="og" src="../../web/public/og-image.png" alt="Current social preview">
+<p class="cap">Current social preview (og-image, 1200×630): wordmark + a live-coloured skill-tree fragment on cream. Note the six-dot kind palette and the soft node glows — that's the world your mark joins.</p>
+</div>
+</section>
+
+<!-- ============ 4 · COLOUR ============ -->
+<section class="sec">
+<div class="sec-num">04</div>
+<h2>Colour palette</h2>
+<p class="sec-sub">Warm Tuscan earth. Colour carries meaning: each accent is also a node <em>kind</em>. Use these exact values.</p>
+
+<h3>The six kinds — brand &amp; accent hues</h3>
+<div class="swgrid">
+<figure class="sw"><div class="chip" style="background:#BC6C42"></div><figcaption><span class="nm">Terracotta</span> <span class="hex">#BC6C42</span><span class="use">Primary. CTAs, ripe / complete states. The hero brand colour.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#7D8C43"></div><figcaption><span class="nm">Olive</span> <span class="hex">#7D8C43</span><span class="use">Growth, available, success.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#C4972F"></div><figcaption><span class="nm">Gold / ochre</span> <span class="hex">#C4972F</span><span class="use">Ripening, warnings, small flourishes.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#A84E35"></div><figcaption><span class="nm">Brick</span> <span class="hex">#A84E35</span><span class="use">Danger / destructive only.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#5F8494"></div><figcaption><span class="nm">Sky</span> <span class="hex">#5F8494</span><span class="use">Muted Tuscan sky — info only.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#8D4F83"></div><figcaption><span class="nm">Plum / fig</span> <span class="hex">#8D4F83</span><span class="use">A sixth node kind; decorative purple.</span></figcaption></figure>
+</div>
+
+<h3>Canvas, ink &amp; branches</h3>
+<div class="neut">
+<figure class="sw"><div class="chip" style="background:#F9F5EB;border-bottom:1px solid var(--border)"></div><figcaption><span class="nm">Cream canvas</span> <span class="hex">#F9F5EB</span><span class="use">Signature surface — never white/gray.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#FFFFFF;border-bottom:1px solid var(--border)"></div><figcaption><span class="nm">Card white</span> <span class="hex">#FFFFFF</span><span class="use">Raised surfaces.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#9C6B44"></div><figcaption><span class="nm">Bark</span> <span class="hex">#9C6B44</span><span class="use">Branches / connectors.</span></figcaption></figure>
+<figure class="sw"><div class="chip" style="background:#211B13"></div><figcaption><span class="nm">Ink</span> <span class="hex">#211B13</span><span class="use">Primary text.</span></figcaption></figure>
+</div>
+
+<div class="panel soft" style="margin-top:18px"><h4>How colour behaves</h4><p>Terracotta is the primary brand colour — if the mark is one colour, it's this on cream (or cream on this). Every hue is muted toward earth; there are no pure/neon colours anywhere. Backgrounds are flat — the only gradient in the whole system is a single terracotta→gold progress fill. A full <strong>dark "night sky" theme</strong> also exists (near-black #0D0B07 canvas, brighter glowing accents), so the mark must survive on dark too.</p></div>
+</section>
+
+<!-- ============ 5 · TYPE ============ -->
+<section class="sec">
+<div class="sec-num">05</div>
+<h2>Typography</h2>
+<p class="sec-sub">Two rounded families + a mono. These are the type the mark and wordmark live beside.</p>
+
+<div class="specimen">
+<div class="spec-label">Display — Baloo 2</div>
+<div style="font-family:var(--disp);font-weight:800;font-size:46px;line-height:1.05;color:var(--terra);letter-spacing:-0.03em">Windmill</div>
+<div style="font-family:var(--disp);font-weight:600;font-size:26px;color:var(--ink);margin-top:8px">Any goal, as a skill tree.</div>
+<div class="spec-meta">Rounded, bold, high personality. Weights 500–800. Used for page headers, node labels, big numbers — and for the current wordmark.</div>
+</div>
+
+<div class="specimen">
+<div class="spec-label">Body / UI — Nunito</div>
+<div style="font-family:var(--body);font-weight:400;font-size:19px;line-height:1.5;color:var(--ink)">Finish a step and the next one lights up. Plant your roadmap, watch the tree grow, and always know what to do next.</div>
+<div style="font-family:var(--body);font-weight:700;font-size:19px;color:var(--ink);margin-top:6px">Semibold &amp; bold for emphasis and buttons.</div>
+<div class="spec-meta">Rounded, highly readable. Weights 400–800. All body copy and interface text.</div>
+</div>
+
+<div class="specimen">
+<div class="spec-label">Mono — JetBrains Mono</div>
+<div style="font-family:var(--mono);font-weight:500;font-size:20px;color:var(--ink)">6 / 17 done &nbsp;·&nbsp; node #a8e3 &nbsp;·&nbsp; +2 unlocked</div>
+<div class="spec-meta">Step-count readouts and IDs only — never prose.</div>
+</div>
+
+<div class="panel" style="margin-top:6px"><h4>Note on fonts</h4><p>Baloo 2, Nunito, and JetBrains Mono are <strong>Google Fonts substitutes</strong> chosen for a "warm rounded sans" feel — they are not licensed brand fonts. If a custom or licensed typeface is part of the identity you propose, we can adopt it. A custom-drawn wordmark is welcome.</p></div>
+</section>
+
+<!-- ============ 6 · SUPPORTING ============ -->
+<section class="sec">
+<div class="sec-num">06</div>
+<h2>Voice, motion &amp; iconography</h2>
+<p class="sec-sub">Context so anything you make — especially an animated mark — matches how Windmill already behaves.</p>
+
+<div class="grid2">
+<div class="panel"><h4>Voice &amp; tone</h4><p>Encouraging, a little playful, never jokey — a calm, capable tool first. Sentence case everywhere (no ALL-CAPS shouting). Second person ("your roadmap", "you unlock"). Light game metaphor: "step", "unlock", "plant". No emoji, anywhere.</p></div>
+<div class="panel"><h4>Motion feel</h4><p>Soft and glowy — pulses, fades, gentle breathing light. Never mechanical, bouncy, or flashy. Exactly one thing loops at a time (a "calm ceiling"). If the mark animates, it should ease and glow, not hard-spin or snap.</p></div>
+</div>
+
+<div class="grid2" style="margin-top:16px">
+<div class="panel"><h4>Iconography</h4><p>Simple 2px-stroke line icons (Lucide) throughout the product. A logo mark can be more crafted than these, but the two should feel like the same family — clean, rounded, unfussy.</p></div>
+<div class="panel"><h4>Shape language</h4><p>Perfect circles for nodes; generously rounded corners elsewhere (8–32px). Soft, warm-tinted shadows; a gentle coloured glow rings "complete" fruit. Round, organic, never sharp.</p></div>
+</div>
+
+<hr>
+<h3>In short</h3>
+<p class="lede">Make Windmill a mark that feels like a warm thing quietly coming into bloom — earthy, rounded, confident, and calm — that works as a one-colour glyph at 16px and as a glowing icon on a near-black screen. Start from "spinning millstones" and the living skill tree, and take it somewhere we haven't thought of.</p>
+<p style="margin-top:18px;color:var(--muted);font-size:13.5px">Deliverables land in the project's <span class="tag">assets/</span> folder (SVG master + the PNG/ICO exports above) and are swapped in everywhere the wordmark currently stands. Questions or WIP — send them over any time; this is a living system.</p>
+</section>
+
+</doc-page>
+</body>
+</html>

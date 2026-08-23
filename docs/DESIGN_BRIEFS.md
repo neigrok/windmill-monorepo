@@ -1,8 +1,8 @@
 # Windmill — Design briefs · grounded against the Windmill Design System
 
-> **Gym's briefs are in the one Design project, under `gym/briefs/`.** Written 2026-07-29 into
+> **Gym's briefs are at `docs/design/gym/briefs/`.** Written 2026-07-29 into
 > their own "Gym workout plan" project (`7f9591c1…`), which the 2026-07-31 merge tombstoned —
-> everything now lives in `a8e8995c…` beside roadmap's, journal's and marketing's. The set is
+> everything now lives in `docs/design/` beside roadmap's, journal's and marketing's. The set is
 > `00-README` plus context and G1–G8: the set logger (G1), the scoped palette (G2), the log (G3),
 > routines and the plan snapshot (G4), the PR moment (G5), the connected log / MCP wedge (G6),
 > the strength tree (G7), and the web as mirror (G8, added after the 2026-08-02 two-surface
@@ -15,8 +15,11 @@
 > proposals, Ask, the backfill door and seventeen MCP tools all ship. (Statistics as a surface was
 > RETIRED on 2026-08-12 — the engine stays, the tab does not — and the coach panel became Ask.) Read the repo for what exists; read the briefs for what was designed.
 
-The design system lives at claude.ai/design (project `a8e8995c…`, "Windmill Design
-System") — a full token/component/guideline canon with spec codes (X1–X7, F1–F17). This
+The design canon has been in two halves since 2026-08-23: the **written** half — guidelines,
+briefs and the consistency ledger — is at `docs/design/`, and the **drawn** half is five Figma
+files (Design System `qoOwNbWOYE1GFi0yR5uGY2` · Roadmap `HM4d8YWzJZg5clVRJKNuDr` · Journal
+`pC6ciOUnfLmI42oMihd7l3` · Gym `vdmdiKWrmZoS1FtcvJRf6O` · Marketing `uWLMdVmzTcobOh8hbeem81`).
+The spec codes (X1–X7, F1–F17) still name the same things. This
 doc reconciles the growth plan (dogfood tree `t_9362d9bc883e0a1e`) against that canon:
 **most of what engineering needs next is already designed** — the real design queue is
 short. Node annotations in the tree carry the engineering side; this doc is the

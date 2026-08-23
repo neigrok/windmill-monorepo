@@ -186,8 +186,8 @@ on the domain and a signed build.
 
 ## The shell — hub + capsule
 
-Built to the resolved design in the Design project (`templates/superapp-shell/SuperappShell.dc.html`,
-"S1 hub + S3 capsule"). The contract, which is why `Shell.swift` stays small:
+Built to the resolved design now on the Shell page of the Windmill · Design System Figma file
+(`qoOwNbWOYE1GFi0yR5uGY2`) — formerly `SuperappShell.dc.html`, "S1 hub + S3 capsule". The contract, which is why `Shell.swift` stays small:
 
 - **The shell owns** the hub and the order its cards take · the capsule (38pt, top-left, one lane
   every app reserves) · tap = switcher, edge-swipe right = home, nothing else · the You seat, last
