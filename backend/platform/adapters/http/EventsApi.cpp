@@ -18,11 +18,8 @@ constexpr std::size_t kMaxEventsPerCall = 50;
 constexpr std::size_t kMaxNameChars = 64;
 constexpr std::size_t kMaxSessionKeyChars = 64;
 constexpr std::size_t kMaxPropsBytes = 1024;
-// What one browser session may write in a day. A long, busy day of real use is a few hundred
-// events; twenty times that is room nobody honest will ever need and a hard stop for the beacon
-// loop that wrote a thousand rows in 0.09s (PLATFORM-EDGE-4). It bounds a session, not an
-// attacker — a script can mint a fresh session key per call, which is what the retention window
-// and the per-IP limiter are for.
+// What one browser session may write in a day. It bounds a session, not an attacker — a script can
+// mint a fresh session key per call, which is what the retention window and per-IP limiter are for.
 constexpr int kMaxEventsPerSessionDay = 2000;
 
 bool isSnakeName(const std::string& name) {
@@ -41,9 +38,8 @@ bool isFlatProps(const Json::Value& props) {
   return true;
 }
 
-// A key safe to hand libpq as a C string and index by: the beacon mints UUIDs, so the
-// alphabet is strict — anything else (embedded NULs, invalid UTF-8) truncates or throws
-// at the Postgres edge.
+// A key safe to hand libpq as a C string and index by: the beacon mints UUIDs, so the alphabet is
+// strict — anything else (embedded NULs, invalid UTF-8) truncates or throws at the Postgres edge.
 bool isSessionKey(const std::string& key) {
   if (key.empty() || key.size() > kMaxSessionKeyChars) return false;
   for (char c : key) {
@@ -52,8 +48,8 @@ bool isSessionKey(const std::string& key) {
   return true;
 }
 
-// One beacon entry, or nullopt for a malformed one — a bad entry drops alone, never its
-// siblings. Props must stay a flat object within the 1KB budget.
+// One beacon entry, or nullopt for a malformed one — a bad entry drops alone, never its siblings.
+// Props must stay a flat object within the 1KB budget.
 std::optional<FunnelEvent> eventOf(const Json::Value& entry) {
   if (!entry.isObject()) return std::nullopt;
   const Json::Value& name = entry["name"];
@@ -70,8 +66,8 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry) {
   event.clientMs = static_cast<std::int64_t>(ms);
   event.props = props.isNull() ? "{}" : dump(props);
   if (event.props.size() > kMaxPropsBytes) return std::nullopt;
-  // Postgres jsonb rejects the one escape JSON allows but it can't store — a NUL inside a
-  // string value. It would poison the whole single-txn batch, so the entry drops alone here.
+  // Postgres jsonb rejects a NUL inside a string value. It would poison the whole single-txn batch,
+  // so the entry drops alone here.
   if (event.props.find("\\u0000") != std::string::npos) return std::nullopt;
   return event;
 }
@@ -82,8 +78,7 @@ EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<Au
     : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)) {}
 
 void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Parse the envelope, drop bad entries one by one, resolve the caller, append. The user
-  // is only ever the session's verdict — a body-supplied identity is never read.
+  // The user is only ever the session's verdict — a body-supplied identity is never read.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   if (!json || !json->isObject()) {
     callback(error(drogon::k400BadRequest, "a beacon batch is {sessionKey, events: [...]}"));
@@ -117,8 +112,7 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
-    // The analytics forward is the most insulated step: the batch is already persisted, so a throw
-    // here (realistically bad_alloc) must not turn a stored 202 into a 500. Swallow and move on.
+    // The batch is already persisted, so a throw here must not turn a stored 202 into a 500.
     if (amplitude_) {
       try {
         amplitude_->forward(sessionKey.asString(), caller, accepted);

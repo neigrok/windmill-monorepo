@@ -16,9 +16,6 @@ namespace wm {
 
 namespace {
 
-// Nobody is waiting on this call. It runs in a nightly batch, on a model that thinks before it
-// writes, at an effort level the caller picks — so the deadline is sized for the slowest honest
-// answer rather than for a person watching a spinner. A timeout here costs one page one night.
 constexpr double kDeadlineSeconds = 300.0;
 
 }
@@ -29,8 +26,8 @@ void applyAnthropicHeaders(const drogon::HttpRequestPtr& request, const std::str
 }
 
 std::string messagesPayload(const MessagesRequest& request) {
-  // The one cached block. Everything that varies per request lives in the user turn below, because
-  // a single interpolated byte here moves the prefix and the cache silently never reads.
+  // The one cached block. Everything that varies per request lives in the user turn: a single
+  // interpolated byte here moves the prefix and the cache silently never reads.
   Json::Value system(Json::objectValue);
   system["type"] = "text";
   system["text"] = request.system;
@@ -57,9 +54,7 @@ std::string messagesPayload(const MessagesRequest& request) {
   body["messages"] = Json::Value(Json::arrayValue);
   body["messages"].append(message);
   body["output_config"] = output;
-  // Stated rather than left to the model's default, because it is load-bearing and the default is
-  // not the same on every model in the family: thinking on, depth chosen by the model, spend chosen
-  // by `effort`. No budget_tokens and no temperature/top_p/top_k — all four are rejected outright.
+  // Thinking on, depth chosen by the model, spend chosen by `effort`. No budget_tokens and no temperature/top_p/top_k — all four are rejected outright.
   body["thinking"] = Json::Value(Json::objectValue);
   body["thinking"]["type"] = "adaptive";
 
@@ -69,9 +64,7 @@ std::string messagesPayload(const MessagesRequest& request) {
 }
 
 MessagesReply readMessagesReply(int status, const std::string& body) {
-  // Both words at every exit. `failure` is what the caller branches on; `outcome` is what the meter
-  // aggregates by. They spell the same five things today and are written side by side so that if one
-  // ever moves, the other does not follow it silently.
+  // `failure` is what the caller branches on; `outcome` is what the meter aggregates by.
   const auto failed = [](const char* failure, const char* outcome, const TokenUse& tokens) {
     MessagesReply reply;
     reply.failure = failure;
@@ -80,8 +73,7 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
     return reply;
   };
 
-  // 429 is the vendor asking for quiet; 529 is the vendor saying it is full. To a batch those are
-  // the same instruction, and it is a different instruction from "this request was wrong".
+  // 429 and 529 are both "come back later, the work stands" — a different instruction from "this request was wrong".
   if (status == 429 || status == 529)
     return failed(MessagesFailure::rateLimited, AiOutcome::rateLimited, TokenUse{});
   if (status < 200 || status >= 300)
@@ -95,20 +87,14 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
   if (!reader->parse(body.data(), body.data() + body.size(), &reply, &errors) || !reply.isObject())
     return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, TokenUse{});
 
-  // Counted before anything is judged, because every branch below spent these. The expensive
-  // failures are the ones that thought hardest first — a truncation burned the whole budget — and a
-  // meter that only counted the usable replies would miss exactly them.
+  // Counted before anything is judged, because every branch below spent these.
   const TokenUse tokens = tokensFrom(reply["usage"]);
 
-  // stop_reason is read BEFORE content, and this order is the whole point. A refusal on this model
-  // is an HTTP 200 whose content array is empty or half filled, so code that reaches for content[0]
-  // first reads a hole and calls it an answer.
+  // stop_reason is read BEFORE content: a refusal is an HTTP 200 whose content array is empty or half filled.
   const Json::Value& stop = reply["stop_reason"];
   if (stop.isString() && stop.asString() == "refusal")
     return failed(MessagesFailure::refused, AiOutcome::refused, tokens);
-  // Anything that is not a clean finish — max_tokens above all, a missing stop_reason included — is
-  // refused outright rather than parsed. Half a JSON object is not a smaller answer, it is a
-  // different one, and a batch that stores it has no way to learn it was wrong.
+  // Anything that is not a clean finish — max_tokens, a missing stop_reason — is refused rather than parsed.
   if (!stop.isString() || stop.asString() != "end_turn")
     return failed(MessagesFailure::truncated, AiOutcome::truncated, tokens);
 
@@ -152,16 +138,13 @@ MessagesReply AnthropicClient::send(const MessagesRequest& request) {
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(messagesPayload(request));
 
-  // The line carries vendor, op, status and cost, and never a byte of the prompt or the reply. This
-  // seam is handed whatever the caller is asking about, and on this codebase that is somebody's
-  // private writing.
+  // The line carries vendor, op, status and cost, and never a byte of the prompt or the reply.
   VendorCall call("anthropic", "messages");
   const std::pair<drogon::ReqResult, drogon::HttpResponsePtr> outcome =
       client->sendRequest(req, kDeadlineSeconds);
   const drogon::HttpResponsePtr& resp = outcome.second;
 
-  // A call that never landed has no body to read, and a status of zero — which the same reader
-  // turns into the same word it would have used anyway. One mapping, one place.
+  // A call that never landed has no body to read and a status of zero.
   const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
   if (!call.succeeded(outcome.first, resp)) return readMessagesReply(status, {});
   return readMessagesReply(status, std::string(resp->getBody()));
@@ -174,8 +157,7 @@ long long nowMs() {
 }
 
 std::string newRunId(const std::string& prefix) {
-  // Wall time plus a process-lifetime counter. Two runs starting in the same millisecond on the same
-  // process are told apart by the counter; two processes by the time. Nothing here is a secret.
+  // Wall time plus a process-lifetime counter. Nothing here is a secret.
   static std::atomic<unsigned long long> sequence{0};
   char tail[33];
   std::snprintf(tail, sizeof(tail), "%llx-%llx", static_cast<unsigned long long>(nowMs()),
@@ -185,9 +167,7 @@ std::string newRunId(const std::string& prefix) {
 
 void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
                 const std::shared_ptr<UsageSink>& usage) {
-  // The fuse first, and unconditionally: an unpriced model still burned an hour of somebody's
-  // capacity, and charging it zero is the one arithmetic that lets a runaway model be invisible.
-  // floorCostNanos is what makes that sentence true — value_or(0) said it and then did the opposite.
+  // The fuse first and unconditionally: floorCostNanos charges an unpriced model rather than zero.
   if (fuse) fuse->spent(floorCostNanos(spend.model, spend.tokens), nowMs());
   if (usage) usage->record(spend);
 }
@@ -201,9 +181,8 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
           turn](const Json::Value& request) -> std::optional<Json::Value> {
     AiSpend spend = frame;
 
-    // Asked before the call, never after: the whole value of a fuse is the money it does not spend.
-    // allows() raises tripped() itself, so the flag is read first — whoever finds it still down is
-    // the one call that reports, and a runaway loop does not become a runaway alert.
+    // Asked before the call. allows() raises tripped() itself, so the flag is read first — whoever
+    // finds it still down is the one call that reports.
     if (fuse) {
       const bool alreadyReported = fuse->tripped();
       if (!fuse->allows(nowMs())) {
@@ -213,8 +192,7 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
         return std::nullopt;
       }
     }
-    // Numbered only now: a turn the fuse refused made no call and must not consume an ordinal, or a
-    // run's iterations come back with holes in them and max(iteration)+1 stops counting anything.
+    // Numbered only now: a turn the fuse refused made no call and must not consume an ordinal.
     spend.iteration = (*turn)++;
 
     const std::optional<Json::Value> reply = inner(request);
@@ -227,8 +205,7 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
     spend.tokens = tokensFrom((*reply)["usage"]);
     const Json::Value& stop = (*reply)["stop_reason"];
     const std::string reason = stop.isString() ? stop.asString() : std::string();
-    // A turn that ended asking for tools is as finished as one that ended talking. Anything else —
-    // max_tokens above all — cut the turn short, and it is the most expensive shape a loop has.
+    // A turn that ended asking for tools is as finished as one that ended talking.
     spend.outcome = reason == "end_turn" || reason == "tool_use" ? AiOutcome::ok
                     : reason == "refusal"                        ? AiOutcome::refused
                                                                  : AiOutcome::truncated;

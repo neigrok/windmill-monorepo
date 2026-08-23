@@ -16,25 +16,12 @@
 namespace wm {
 
 // How much of a tree an MCP read answers with — which fields, and how many nodes at a time.
-//
-// adapters/json/TreeJson.h is the document the browser paints from: it needs `position`,
-// `order`, `icon` and every link to draw a first frame. An agent reading those same bytes pays
-// for all of it and uses almost none — one node's `description` alone may run to 4000
-// characters, its `links` to 32 × 2048. So every MCP read projects. `fields` is spelled the
-// same on every tool that takes one; each shape carries its own vocabulary, and each default is
-// the lean answer that tool exists to give. This is MCP-only: the REST endpoints keep the whole
-// document.
+// MCP-only: the REST endpoints keep the whole document.
 
-// `status` is the CALLER'S OWN mark — set_progress's vocabulary, set_progress's meaning — and
-// `seedStatus` is the document's authored baseline, the inert seed an import may carry and every
-// reader sees before their own marks. Two facts, deliberately two words: served under one name
-// they would silently convert into each other on a read-then-import round trip. `state` is the
-// third fact and the one the tree DERIVES: locked / available / active / complete, the unlock
-// cascade UnlockRules runs over the caller's marks — the answer to "what can I work on" that a
-// caller otherwise reconstructs from the whole graph, and gets silently wrong. `summary` is the
-// description's opening — its first kSummaryChars, cut at a word and marked with an ellipsis when
-// cut — for a reader skimming a whole tree's notes: on an annotated tree a page of full
-// descriptions runs past any client's result ceiling, and the full text is one call away.
+// Three distinct facts, deliberately three words: `status` is the CALLER'S OWN mark,
+// `seedStatus` is the document's authored baseline, and `state` is what the tree DERIVES —
+// locked / available / active / complete, the unlock cascade over the caller's marks. `summary`
+// is the description's first kSummaryChars, cut at a word and marked with an ellipsis when cut.
 enum class NodeField { id, label, icon, color, order, prerequisites, position, status, seedStatus, state,
                        summary, description, links };
 constexpr std::size_t kSummaryChars = 200;
@@ -46,25 +33,23 @@ using KindFields = std::set<KindField>;
 using ProgressFields = std::set<ProgressField>;
 
 // find_nodes answers an INDEX: the ids are what you edit by, the label and hue what you pick
-// them out by. Returning whole node bodies is what once blew a caller's token budget on a
-// three-letter query.
+// them out by.
 inline const NodeFields kFindNodesFields{NodeField::id, NodeField::label, NodeField::color};
 
-// get_tree answers the SHAPE: what exists, and what unlocks what. Layout (`position`, `order`),
-// `icon`, and both status fields are noise to a reader asking what the tree IS; `description`
-// and `links` are the bulk. All of them are one `fields` away.
+// get_tree answers the SHAPE: what exists, and what unlocks what. Everything else is one
+// `fields` away.
 inline const NodeFields kGetTreeFields{NodeField::id, NodeField::label, NodeField::color,
                                        NodeField::prerequisites};
 
-// The legend names the hues; a kind's description is the generator's sorting brief, rarely read.
+// The legend names the hues; a kind's description is rarely read.
 inline const KindFields kLegendFields{KindField::id, KindField::hue, KindField::label};
 
-// `cleared` lets a browser's reconcile tell "cleared" from "never marked". To an agent it is a
-// third full list of ids with no meaning — the tool's own description never mentions it.
+// `cleared` lets a browser's reconcile tell "cleared" from "never marked"; an agent has no use
+// for it.
 inline const ProgressFields kProgressFields{ProgressField::completed, ProgressField::inProgress};
 
 // One shape's `fields` vocabulary: the legal names, in wire order, each paired with the field it
-// selects. Parsing is the same for every shape — only the table differs.
+// selects.
 template <typename Field>
 class Vocabulary {
 public:
@@ -72,8 +57,7 @@ public:
 
   explicit Vocabulary(std::vector<std::pair<std::string, Field>> entries) : entries_(std::move(entries)) {}
 
-  // The legal set, for the `enum` a tool's schema advertises — a client can pre-validate only
-  // what the schema states.
+  // The legal set, for the `enum` a tool's schema advertises.
   std::vector<std::string> names() const {
     std::vector<std::string> out;
     for (const auto& [name, field] : entries_) out.push_back(name);
@@ -89,9 +73,8 @@ public:
     return out + "}";
   }
 
-  // The fields `requested` names, or `fallback` when the caller asked for nothing. Every refusal
-  // names the argument by the spelling that tool publishes (`path` — "fields" or "kindFields"),
-  // the offending element by its index, and the whole legal set, so one round trip is enough.
+  // The fields `requested` names, or `fallback` when the caller asked for nothing. `path` is the
+  // spelling that tool publishes — "fields" or "kindFields" — and every refusal names it.
   std::optional<Fields> parse(const Json::Value& requested, const char* path, const Fields& fallback,
                               std::string& error) const {
     if (requested.isNull()) return fallback;
@@ -126,20 +109,17 @@ const Vocabulary<NodeField>& nodeVocabulary();
 const Vocabulary<KindField>& kindVocabulary();
 const Vocabulary<ProgressField>& progressVocabulary();
 
-// The caller's side of one read: their own progress rows, and the states the tree derives from
-// them over EVERY node it holds (a prerequisite may sit off the page). Both are the same for every
-// node on the page, so a read builds this once and hands it to each projection; each half is
-// filled only when a field or a filter asks for it, and stays empty otherwise.
+// The caller's side of one read: their own progress rows, and the states derived from them over
+// EVERY node the tree holds (a prerequisite may sit off the page). Each half is filled only when
+// a field or a filter asks for it, and stays empty otherwise.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
 };
 
-// The field semantics are TreeJson's, field for field — an empty `order`, an absent `position`
-// or `seedStatus`, an empty `description` or `links` are omitted exactly as the document omits
-// them. `status` and `state` are the exceptions, and deliberately: an unmarked node answers
-// `status: "none"` rather than nothing, so a reader can never mistake a node with no mark for a
-// server that does not serve the field, and `state` is derived for every node the tree holds.
+// The field semantics are TreeJson's, field for field: empty and absent values are omitted
+// exactly as the document omits them. `status` and `state` are the exceptions — an unmarked node
+// answers `status: "none"`, and `state` is derived for every node the tree holds.
 Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const NodeReadContext& context);
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);
@@ -148,19 +128,16 @@ inline constexpr int kDefaultLimit = 200;
 inline constexpr int kMaxLimit = 1000;
 
 // One page of a read's matches: `[begin, end)` index the caller's own ordered match list, and
-// `nextCursor` is the opaque token that asks for the page after this one — empty when this page
-// is the last. A cap without a way past it makes the rows beyond it unreachable, so a capped
-// answer always carries the token that resumes it.
+// `nextCursor` is the opaque token asking for the page after this one — empty on the last page.
 struct Page {
   std::size_t begin = 0;
   std::size_t end = 0;
   std::string nextCursor;
 };
 
-// The page `args` asks for out of `matches`: `limit` nodes (default 200, max 1000) starting
-// after the node `cursor` names. Fails, naming the offending value, on a limit out of range or
-// a cursor these matches no longer hold — a walk that silently restarted would hand back rows
-// the caller has already read.
+// The page `args` asks for out of `matches`: `limit` nodes starting after the node `cursor`
+// names. Fails, naming the offending value, on a limit out of range or a cursor these matches no
+// longer hold.
 std::optional<Page> pageOf(const std::vector<NodeSpec>& matches, const Json::Value& args, std::string& error);
 
 }

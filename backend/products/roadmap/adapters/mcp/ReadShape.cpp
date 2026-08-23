@@ -14,11 +14,9 @@ Json::Value idArray(const std::set<NodeId>& ids) {
 }
 
 // The description's opening, cut at the last word boundary inside the budget and marked with an
-// ellipsis when anything was cut, so a reader can tell a short note from a long one they are
-// only seeing the head of. The budget is bytes; the cut is never mid-character: with no word
-// boundary in the back half (an unbroken run of CJK, a long URL) the head is backed off to the
-// start of the code point straddling the edge — a UTF-8 continuation byte is 10xxxxxx — so
-// jsoncpp is never handed a dangling lead byte to re-decode as something else.
+// ellipsis when anything was cut. The budget is BYTES, and the cut is never mid-character: with
+// no word boundary in the back half the head backs off to the start of the code point straddling
+// the edge (a UTF-8 continuation byte is 10xxxxxx).
 std::string summaryOf(const std::string& description) {
   if (description.size() <= kSummaryChars) return description;
   std::string head = description.substr(0, kSummaryChars);
@@ -32,8 +30,7 @@ std::string summaryOf(const std::string& description) {
   return head + "\u2026";
 }
 
-// The caller's own mark on one node, spelled the way set_progress spells it — one word for one
-// concept, whichever end of the surface you are on.
+// The caller's own mark on one node, spelled the way set_progress spells it.
 const char* markOn(const Progress& marks, const NodeId& node) {
   if (marks.completed.count(node)) return progressStatusName(ProgressStatus::complete);
   if (marks.inProgress.count(node)) return progressStatusName(ProgressStatus::active);

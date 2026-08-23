@@ -8,14 +8,12 @@
 namespace wm {
 namespace {
 
-// Every window arrives as epoch-ms and becomes an instant in SQL, so the comparison happens against
-// the same clock that stamped the row and the two can never drift.
+// Every window arrives as epoch-ms and becomes an instant in SQL, against the clock that stamped the row.
 constexpr const char* kFrom = "to_timestamp($1::bigint / 1000.0)";
 constexpr const char* kTo = "to_timestamp($2::bigint / 1000.0)";
 
-// A call whose model we could not price makes every total it lands in a floor rather than a figure.
-// It rides on each aggregate row and not only on the summary scalar, or the page cannot honestly
-// mark which of its numbers is a "≥".
+// A call whose model we could not price makes every total it lands in a floor rather than a figure;
+// it rides on each aggregate row as well as the summary scalar.
 constexpr const char* kUnpriced = "count(*) filter (where cost_nanos is null)";
 
 }
@@ -23,15 +21,12 @@ constexpr const char* kUnpriced = "count(*) filter (where cost_nanos is null)";
 PgAiUsageRepository::PgAiUsageRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgAiUsageRepository::record(const AiSpend& spend) noexcept {
-  // The whole body, guarded. This is the sink an LLM adapter calls after the answer is already in
-  // hand: a lost ledger row costs us a line in a chart, and a thrown one would cost the user their
-  // reply. The port's `noexcept` is only honest because of this catch.
+  // Guarded whole: this sink is called after the answer is already in hand, and the port's
+  // `noexcept` is only honest because of this catch.
   try {
     const std::optional<long long> cost = costNanos(spend.model, spend.tokens);
-    // Two costs, deliberately. `cost_nanos` is what we KNOW and is null when we do not — that null
-    // is what lights the unpriced badge and keeps the dashboard honest. `cost_floor_nanos` is what
-    // the CEILINGS read, and is never null: an unknown model is charged the dearest rate we know,
-    // because a model we forgot to price must not be a model that spends for free.
+    // Two costs. `cost_nanos` is what we KNOW and is null when we do not. `cost_floor_nanos` is what
+    // the CEILINGS read and is never null: an unknown model is charged the dearest rate we know.
     const long long floorCost = floorCostNanos(spend.model, spend.tokens);
 
     pqxx::params params;
@@ -71,11 +66,10 @@ long long PgAiUsageRepository::spentSinceNanos(const UserId& user, const std::st
                                                long long sinceMs) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // An empty product means every product — one query rather than two, because the caller's question
-  // is the same question either way.
+  // An empty product means every product — one query rather than two.
   const pqxx::result rows = txn.exec_params(
-      // cost_floor_nanos, not cost_nanos: summing the nullable column let an unpriced model spend
-      // against no ceiling at all — fifty such calls moved a $25 budget by nothing.
+      // cost_floor_nanos, not cost_nanos: summing the nullable column lets an unpriced model spend
+      // against no ceiling at all.
       "SELECT coalesce(sum(cost_floor_nanos), 0) FROM ai_usage "
       "WHERE user_id = $1::uuid AND ts >= to_timestamp($2::bigint / 1000.0) "
       "AND ($3 = '' OR product = $3)",
@@ -143,9 +137,8 @@ std::vector<UserSpend> PgAiUsageRepository::topSpenders(long long fromMs, long l
                                                         int limit) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // `user_id is not null` is the load-bearing line: this table is a list of PEOPLE, and the
-  // anonymous birth canvas is not one. Its total rides on UsageSummary.anonymousCostNanos instead,
-  // where nobody can misread it as an account.
+  // `user_id is not null` is load-bearing: this table is a list of PEOPLE, and the anonymous birth
+  // canvas is not one. Its total rides on UsageSummary.anonymousCostNanos instead.
   const pqxx::result rows = txn.exec_params(
       "SELECT a.user_id::text, coalesce(u.email, ''), coalesce(sum(a.cost_nanos), 0), count(*), " +
           std::string(kUnpriced) +

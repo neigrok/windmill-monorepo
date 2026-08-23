@@ -11,10 +11,6 @@
 #include <string>
 #include <vector>
 
-// These cases assert what a failure SAYS, not merely that it failed: an agent that cannot see
-// which argument was wrong, what it sent, and what is legal cannot fix the call without another
-// round trip — so every message here is pinned whole, and the tool catalog is pinned against it.
-
 using namespace wm;
 using namespace wm::test;
 
@@ -28,11 +24,9 @@ const Json::Value* toolNamed(const Json::Value& catalog, const std::string& name
   return nullptr;
 }
 
-// The five tools whose subject is a node that already exists — the whole reach of the handle law.
 const std::vector<const char*> kNodeHandleTools = {"annotate_node", "rename_node", "set_node_color",
                                                    "move_node", "delete_node"};
 
-// One well-formed call per node-handle tool, minus the handle itself.
 Json::Value handleToolArgs(const std::string& tool) {
   Json::Value args(Json::objectValue);
   if (tool == "annotate_node") args["description"] = "a note";
@@ -47,9 +41,7 @@ Json::Value handleToolArgs(const std::string& tool) {
 
 }
 
-// Every tool's grant level, pinned by name. This is the list a reviewer checks a NEW tool against:
-// a tool that destroys something a person authored and is declared `write` hands its reach to every
-// connection that asked to author, which is exactly the thing the three levels exist to prevent.
+// Every tool's grant level, pinned by name.
 TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
   const std::vector<ToolDeclaration> catalog = roadmapToolCatalog();
   std::vector<std::string> reads;
@@ -73,8 +65,6 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
   CHECK_EQ(catalog.size(), std::size_t{27});
 }
 
-// The gate, over the real catalog rather than a fixture: a connection that may author but was never
-// handed delete does not learn the delete tools exist from tools/list.
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   Harness h;
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
@@ -117,7 +107,7 @@ TEST(mcp_nodeId_is_canonical_and_the_legacy_id_is_still_accepted) {
     CHECK_FALSE(byHandle.isError);
     CHECK(body(byHandle)["applied"].asBool());
 
-    h.call("create_node", node("a", "A"));  // delete_node tombstoned it; plant it again
+    h.call("create_node", node("a", "A"));
     Json::Value legacy = handleToolArgs(tool);
     legacy["id"] = "a";
     ToolResult byAlias = h.call(tool, legacy);
@@ -126,7 +116,6 @@ TEST(mcp_nodeId_is_canonical_and_the_legacy_id_is_still_accepted) {
     h.call("create_node", node("a", "A"));
   }
 
-  // set_progress takes both spellings too, and answers under the canonical one either way.
   CHECK_FALSE(h.call("set_progress", mark("a", "complete")).isError);
   Json::Value legacyMark(Json::objectValue);
   legacyMark["id"] = "a";
@@ -156,7 +145,6 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
     for (const Json::Value& field : schema["required"]) CHECK(field.asString() != std::string("id"));
   }
 
-  // set_progress carries the same pair in both of its shapes: the single mark and a batch row.
   const Json::Value* progress = toolNamed(catalog, "set_progress");
   REQUIRE(progress != nullptr);
   const Json::Value& marks = (*progress)["inputSchema"]["properties"];
@@ -170,7 +158,6 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   CHECK_EQ(row["required"][0].asString(), std::string("nodeId"));
   CHECK_EQ(row["required"][1].asString(), std::string("status"));
 
-  // Every array this wave made strict publishes what it requires, or a client cannot pre-validate.
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
   const Json::Value& arrays = (*import)["inputSchema"]["properties"];
@@ -180,7 +167,6 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   CHECK_EQ(arrays["kinds"]["items"]["required"][1].asString(), std::string("hue"));
   CHECK_EQ(arrays["progress"]["items"]["required"][0].asString(), std::string("nodeId"));
 
-  // …and every id-shaped string publishes its cap, including the ones inside arrays.
   const Json::Value* reconnect = toolNamed(catalog, "reconnect");
   REQUIRE(reconnect != nullptr);
   for (const char* endpoint : {"oldFrom", "oldTo", "newFrom", "newTo"})
@@ -199,7 +185,6 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);
 
-  // create_node's `id` is the OTHER concept — an id being proposed — so it is not the alias.
   const Json::Value* create = toolNamed(catalog, "create_node");
   REQUIRE(create != nullptr);
   CHECK_FALSE((*create)["inputSchema"]["properties"]["id"].isMember("deprecated"));
@@ -218,7 +203,6 @@ TEST(mcp_create_node_refuses_the_handle_of_an_existing_node) {
                        "propose for a NEW node is \"id\", and is minted from the label when you "
                        "omit it."));
 
-  // …and the same conflation, refused the same way, one layer over in the legend.
   Json::Value kind(Json::objectValue);
   kind["kindId"] = "infra";
   kind["hue"] = "sky";
@@ -240,7 +224,6 @@ TEST(mcp_an_over_long_description_names_the_size_and_the_max) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused), std::string("annotate_node: description is 4613 characters, max 4000"));
 
-  // …and the cap is published, so a client can pre-validate what the server refuses.
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* annotate = toolNamed(catalog, "annotate_node");
   REQUIRE(annotate != nullptr);
@@ -289,7 +272,7 @@ TEST(mcp_a_malformed_import_item_names_its_path_and_its_type) {
   Harness h;
 
   Json::Value encoded(Json::arrayValue);
-  encoded.append("{\"id\":\"a\",\"label\":\"A\"}");  // the schema once typed these as strings
+  encoded.append("{\"id\":\"a\",\"label\":\"A\"}");
   Json::Value args(Json::objectValue);
   args["nodes"] = encoded;
   ToolResult refused = h.call("import_subgraph", args);
@@ -338,8 +321,6 @@ TEST(mcp_a_malformed_import_item_names_its_path_and_its_type) {
 TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
   Harness h;
 
-  // `status` reads as the caller's own mark everywhere else on this surface, so a node claiming
-  // one is refused by name rather than quietly published into the document every reader sees.
   Json::Value marked = node("a", "A");
   marked["status"] = "complete";
   Json::Value nodes(Json::arrayValue);
@@ -353,7 +334,6 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
                        "document's — the authored baseline every reader sees is \"seedStatus\", and "
                        "your own progress goes in \"progress\": [{nodeId, status}]."));
 
-  // The baseline itself is refused against the same vocabulary set_progress publishes.
   Json::Value wrong = node("a", "A");
   wrong["seedStatus"] = "shipped";
   Json::Value seeded(Json::arrayValue);
@@ -366,8 +346,6 @@ TEST(mcp_an_imported_node_carries_a_seed_status_and_never_the_callers_mark) {
            std::string("import_subgraph: nodes[0].seedStatus \"shipped\" is not one of "
                        "{active, complete, none}"));
 
-  // …and the catalog publishes the one spelling it accepts, so a strict client cannot send the
-  // other by reading the schema.
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
@@ -395,7 +373,6 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
   CHECK(wrongNumber.isError);
   CHECK_EQ(message(wrongNumber), std::string("move_node: argument \"x\" must be a number, got string"));
 
-  // A whole tree where a list was wanted: refused by name, not by dying at the decoder.
   Json::Value notAList(Json::objectValue);
   notAList["nodes"] = "everything";
   ToolResult refused = h.call("import_subgraph", notAList);
@@ -403,15 +380,13 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
   CHECK_EQ(message(refused),
            std::string("import_subgraph: argument \"nodes\" must be an array of objects, got string"));
 
-  // Arguments that are not an object at all: jsoncpp throws on a keyed read, and that throw must
-  // never reach the transport — it is why a malformed import once died as a bare POST error.
+  // Arguments that are not an object at all: jsoncpp throws on a keyed read, and that throw must never reach the transport.
   ToolResult notAnObject = h.tools.callTool("get_tree", Json::Value("t"), h.actor);
   CHECK(notAnObject.isError);
   CHECK_EQ(message(notAnObject),
            std::string("get_tree: arguments must be a JSON object of this tool's named arguments, "
                        "got string"));
 
-  // A link list whose element is neither shape it accepts.
   Json::Value links(Json::arrayValue);
   links.append(42);
   Json::Value annotated(Json::objectValue);
@@ -424,7 +399,7 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
                        "got number"));
 }
 
-// Quoting back what arrived is the premise; 17 significant digits quotes back what IEEE stored.
+// 17 significant digits quotes back what IEEE stored.
 TEST(mcp_a_number_is_quoted_back_as_the_caller_wrote_it) {
   Harness h;
   Json::Value fraction(Json::objectValue);
@@ -501,23 +476,21 @@ TEST(mcp_every_tool_failure_names_the_tool_exactly_once) {
                                           "set_progress",  "import_subgraph"};
   for (const char* name : tools) {
     Json::Value nonsense(Json::objectValue);
-    nonsense["fields"] = 12;  // wrong for the reads, unknown-but-harmless for the writes
+    nonsense["fields"] = 12;
     ToolResult refused = h.call(name, nonsense);
     CHECK(refused.isError);
     const std::string said = message(refused);
     const std::string prefix = std::string(name) + ": ";
     CHECK_EQ(said.rfind(prefix, 0), 0u);
-    // Stamped once means the stamp is not itself re-stamped. A caller-controlled value quoted
-    // back may legitimately contain the tool name, so the invariant is about the prefix only.
+    // A caller-controlled value quoted back may legitimately contain the tool name, so the invariant is about the prefix only.
     CHECK_EQ(said.substr(prefix.size()).rfind(prefix, 0), std::string::npos);
     CHECK_EQ(said.find("invalid arguments"), std::string::npos);
     CHECK_EQ(said.find("bad request"), std::string::npos);
-    CHECK_EQ(said.find("is empty"), std::string::npos);  // E4: the third string the wave deletes
+    CHECK_EQ(said.find("is empty"), std::string::npos);
   }
 }
 
-// A null is how a great many clients serialise an unset optional. This module reads one as
-// "not given"; the decoder reads presence. Where the two disagreed, data was destroyed.
+// A null is how many clients serialise an unset optional: this module reads one as "not given", the decoder reads presence.
 TEST(mcp_a_null_argument_is_absent_and_never_a_command_to_clear) {
   Harness h;
   Json::Value seed = node("a", "A");
@@ -568,7 +541,7 @@ TEST(mcp_dry_run_is_a_boolean_and_a_preview_never_writes) {
            std::string("import_subgraph: argument \"dryRun\" must be a boolean, got string"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);  // nothing was written
 
-  Json::Value spelled(Json::objectValue);  // even the spelling that used to mean "preview"
+  Json::Value spelled(Json::objectValue);
   spelled["nodes"] = nodes;
   spelled["dryRun"] = "true";
   CHECK(h.call("import_subgraph", spelled).isError);
@@ -597,7 +570,6 @@ TEST(mcp_import_refuses_a_legend_it_could_not_repair) {
                        "a hue names one kind, so pick a free one"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["kinds"].size(), 0u);
 
-  // A hue held by a kind the import is NOT replacing conflicts just the same.
   Json::Value first(Json::objectValue);
   first["id"] = "build";
   first["hue"] = "sky";
@@ -609,7 +581,6 @@ TEST(mcp_import_refuses_a_legend_it_could_not_repair) {
   later["kinds"] = second;
   CHECK(h.call("import_subgraph", later).isError);
 
-  // …and re-importing a kind over ITSELF keeps its own hue, which is not a conflict.
   Json::Value again(Json::arrayValue);
   again.append(first);
   Json::Value repeat(Json::objectValue);
@@ -634,11 +605,10 @@ TEST(mcp_an_import_with_no_nodes_names_the_way_through) {
            std::string("import_subgraph: missing required argument \"nodes\". Pass \"nodes\": [] "
                        "to import only kinds or progress."));
 
-  legendOnly["nodes"] = Json::Value(Json::arrayValue);  // the escape the message names
+  legendOnly["nodes"] = Json::Value(Json::arrayValue);
   CHECK_FALSE(h.call("import_subgraph", legendOnly).isError);
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["kinds"].size(), 1u);
 
-  // `title` is neither read nor published, so it is no longer part of the shape it documents.
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
@@ -661,7 +631,7 @@ TEST(mcp_set_progress_refuses_two_routes_at_once) {
   CHECK_EQ(message(refused),
            std::string("set_progress: pass a single \"nodeId\"+\"status\" or an \"updates\" batch, "
                        "not both — the single mark would be dropped."));
-  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);  // neither was applied
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);
 }
 
 TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
@@ -697,7 +667,6 @@ TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
            std::string("rename_kind: missing required argument \"id\". Call get_tree and read "
                        "`kinds` to list this legend's ids."));
 
-  // The catalog publishes both spellings, so `additionalProperties: false` admits either.
   const Json::Value catalog = h.tools.listTools(h.actor);
   for (const char* name : {"rename_kind", "describe_kind", "remove_kind", "recolor_kind"}) {
     const Json::Value* tool = toolNamed(catalog, name);
@@ -707,8 +676,6 @@ TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
   }
 }
 
-// The domain owns these facts, so the domain owns the sentences: a message with a tool name
-// stapled to the front but no id, no holder and no limit is not a message a caller can act on.
 TEST(mcp_a_legend_refusal_names_the_hue_its_holder_and_the_limit) {
   Harness h;
   Json::Value build(Json::objectValue);
@@ -759,9 +726,6 @@ TEST(mcp_a_legend_refusal_names_the_hue_its_holder_and_the_limit) {
                        "another"));
 }
 
-// tree-visibility shipped on the promise that a private denial is byte-identical to an absent
-// one. That was only ever true on the READ path; a write answered "belongs to another account",
-// which tells a stranger the id names something real.
 TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_one) {
   Harness h;
   h.trees.byId["priv"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}},
@@ -777,7 +741,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
   for (const char* name : writes) {
     Json::Value args(Json::objectValue);
     args["label"] = "x";
-    args["id"] = "a";  // the legacy handle spelling, which create_node reads as a proposed id
+    args["id"] = "a";
     args["color"] = "olive";
     args["hue"] = "olive";
     args["description"] = "x";
@@ -814,17 +778,13 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));
 
   const std::string& text = catalog[0].text;
-  // The one thing agents get backwards, verbatim.
   CHECK(text.find("`connect(from, to)` means `from` must be complete before `to` is unlocked.") !=
         std::string::npos);
   CHECK(text.find("prerequisite first") != std::string::npos);
-  // The handle law, and the caps — read off the constants the tools enforce, so a cap that moves
-  // fails here rather than leaving the document quietly lying.
   CHECK(text.find(kNodeHandle.published) != std::string::npos);
   CHECK(text.find(std::to_string(kMaxNodeDescriptionLength) + " characters") != std::string::npos);
   CHECK(text.find("max " + std::to_string(kMaxLimit)) != std::string::npos);
 
-  // Every tool the quickstart names has to exist, or the document lies.
   const Json::Value tools = h.tools.listTools(h.actor);
   for (const char* named : {"list_trees", "get_tree", "find_nodes", "get_progress", "get_diagnostics",
                             "create_node", "connect", "import_subgraph", "set_progress"}) {
@@ -832,9 +792,6 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
     CHECK(toolNamed(tools, named) != nullptr);
   }
 
-  // …and so does every field it promises. The document explains what an edit answers and what the
-  // two status words mean; both claims are checked against a real receipt and a real read, because
-  // a quickstart that describes the surface it used to have is worse than none.
   for (const char* claim : {"introducedDiagnostics", "seedStatus", "id, label and description",
                             "find_nodes {state: \"available\"}"})
     CHECK(text.find(claim) != std::string::npos);
@@ -850,6 +807,6 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   Json::Value read(Json::objectValue);
   read["fields"] = list({"id", "status", "seedStatus"});
   const Json::Value found = body(h.call("find_nodes", read))["nodes"][0];
-  CHECK_EQ(keys(found), (std::vector<std::string>{"id", "status"}));  // seedStatus: absent, unseeded
+  CHECK_EQ(keys(found), (std::vector<std::string>{"id", "status"}));
   CHECK_EQ(found["status"].asString(), std::string("none"));
 }

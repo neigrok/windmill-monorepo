@@ -228,17 +228,6 @@ std::vector<Edge> LooseGraph::danglingEdges() const {
   return dangling;
 }
 
-// Measured end to end on the local stack, hunting the worst shape each pass has rather than a
-// convenient one — the two passes are worst at different shapes, so both were built. tidy peaks
-// on concentrated IN-degree over a deep chain (500 nodes / 6000 edges: a 488-long chain plus 12
-// sinks requiring all of it) at 507-511ms across three fresh trees; get_health peaks on
-// concentrated OUT-degree (500 nodes / 5856 edges: 12 hubs parenting 488 sinks) at 230ms. Both
-// against the 32s that one get_health cost on the 1500-node / 500000-edge tree the node-only
-// guard admitted. At the largest tree the caps now allow (10000 nodes / ~20000 edges) the pass is
-// over budget and skipped, so what is left is the O(V+E) rebuild: 84ms on a two-hub star, 99ms on
-// a 10000-deep chain. The product term is what holds a wide tree and a deep one to one budget.
-// Half a second of a handler thread is 60x better than 32s but is not free — COMPUTE-3 (moving
-// this work off the request thread) is the remaining half of the fix, and is not in this file.
 bool withinReachabilityBudget(std::size_t nodes, std::size_t edges) {
   constexpr std::size_t kBudgetNodes = 1500;
   constexpr std::size_t kBudgetEdges = 6000;

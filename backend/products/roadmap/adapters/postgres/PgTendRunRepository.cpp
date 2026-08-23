@@ -36,9 +36,8 @@ std::string writeIdArray(const std::vector<std::string>& ids) {
   return Json::writeString(builder, array);
 }
 
-// The inverse of tendStatusName / tendRefusalName (domain/Tending.h). The name→enum direction
-// lives here, at the read boundary, because it is only ever needed when a row comes back off
-// the wire — the domain owns the enum→name direction the writers use.
+// The inverse of tendStatusName / tendRefusalName (domain/Tending.h): the name→enum direction,
+// needed only where a row comes back off the wire.
 TendStatus tendStatusFrom(const std::string& name) {
   if (name == "running") return TendStatus::running;
   if (name == "done")    return TendStatus::done;
@@ -84,7 +83,7 @@ PgTendRunRepository::PgTendRunRepository(std::shared_ptr<PgPool> pool) : pool_(s
 
 void PgTendRunRepository::save(const TendRun& run) {
   // Upsert keyed on the run id: start() writes the `running` row, the worker overwrites it with
-  // the terminal one. The id never changes, so every field but it is refreshed to the latest.
+  // the terminal one.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec("INSERT INTO tend_runs "
@@ -113,9 +112,8 @@ std::optional<TendRun> PgTendRunRepository::find(const std::string& id) {
 }
 
 int PgTendRunRepository::failOrphanedRuns() {
-  // Every `running` row at startup was orphaned by the restart (a run lives on this process's
-  // worker thread), so settle them all to `failed` with a plain diagnostic. finished_at is stamped
-  // from the DB clock — no Clock dependency for a one-shot boot sweep.
+  // A run lives on this process's worker thread, so every `running` row at startup was orphaned
+  // by the restart. finished_at is stamped from the DB clock.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result result = txn.exec(
@@ -128,16 +126,14 @@ int PgTendRunRepository::failOrphanedRuns() {
 }
 
 int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs) {
-  // The allowance read: runs this user started within the window. An agent loop is expensive, so
-  // this is the real brake on a single account — counted over started_at, the indexed column.
-  // Read through pqxx::result (never a bare row: pqxx names it row_ref on macOS, row on CI Linux).
+  // The allowance read: runs this user started within the window, counted over started_at, the
+  // indexed column. Read through pqxx::result (never a bare row: pqxx names it row_ref on macOS,
+  // row on CI Linux).
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      // Only runs that actually started work count against the day's allowance — a refusal (blank
-      // prompt, the dark-launch "not turned on" tap, an over-length paste) costs nothing, so
-      // counting it would let someone lock themselves out for free, or pre-spend the allowance on
-      // taps made while the feature was still dark.
+      // Only runs that actually started work count against the day's allowance: a refusal costs
+      // nothing, and counting it would let someone lock themselves out for free.
       "SELECT count(*) AS n FROM tend_runs "
       "WHERE user_id = $1::uuid AND started_at >= $2 AND status <> 'refused'",
       user.str(), sinceMs);
@@ -147,7 +143,7 @@ int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs)
 std::vector<TendRun> PgTendRunRepository::recentForUser(const UserId& user, std::uint64_t sinceMs,
                                                         int limit) {
   // The ledger read, newest first: the same window and refusal exclusion as the count, so the
-  // receipts the user reads are exactly the runs the meter counted spent.
+  // receipts match what the meter counted spent.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(

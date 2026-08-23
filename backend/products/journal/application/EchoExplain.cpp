@@ -23,8 +23,7 @@ EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embed
 void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& request,
                                  std::function<void(EchoExplanation)> done) {
   heartbeat_.queue([this, user, request, done = std::move(done)] {
-    // `done` fires on every path. An operator waiting on a promise this thread cannot fulfil is
-    // worse than an answer that says the run failed.
+    // `done` fires on every path: an operator is waiting on a promise this thread cannot fulfil.
     try {
       done(explain(user, request));
     } catch (const std::exception& error) {
@@ -67,10 +66,8 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
                    PipelineVersions{segmenter_.version(), embedder_.version()})
           .has_value();
 
-  // The corpus, read BEFORE anything can return early. It used to be read at step 4, so an empty
-  // page — or an unwired embedder — answered `corpus: 0`, which reads as "this account has no
-  // passages" when it means "nobody looked". A debug door that says something false about the
-  // corpus is worse than one that says nothing.
+  // The corpus, read BEFORE anything can return early, so an empty page or an unwired embedder does
+  // not answer `corpus: 0` when it means nobody looked.
   if (explained.embedderConfigured) {
     const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
     explained.corpus = static_cast<int>(corpus.size());
@@ -79,8 +76,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   }
 
   // 1 — the idea units. Read back from storage by default, because what the page reaches today was
-  // decided by the units it actually carries; `recut=true` buys a fresh cut, which is how a prompt
-  // change is tried against a real night.
+  // decided by the units it actually carries; `recut=true` buys a fresh cut.
   const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
   explained.storedSpans = static_cast<int>(stored.size());
   if (!request.recut && !stored.empty()) {
@@ -98,8 +94,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   if (!explained.embedderConfigured || explained.passages.empty()) return explained;
 
   // 2 — embed. The vendor call this door always pays for: tonight's vectors exist nowhere else
-  // unless the page has already been derived, and reading the stored ones back would explain the
-  // LAST body rather than this one.
+  // unless the page has already been derived, and the stored ones describe the LAST body.
   std::vector<std::string> texts;
   texts.reserve(explained.passages.size());
   for (const Passage& passage : explained.passages) texts.push_back(passage.text);
@@ -130,8 +125,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.selection = selectForPage(tonight, history, waved, request.rules, request.echoesPerPage,
                                       request.nearest);
 
-  // 6 — curate, only when asked. It is the one step here that bills, and an operator moving
-  // retrieval knobs usually wants to see what retrieval did without paying for a verdict on it.
+  // 6 — curate, only when asked. It is the one step here that bills.
   if (!request.curate || !explained.curatorConfigured || explained.selection.pairings.empty())
     return explained;
 

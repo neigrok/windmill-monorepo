@@ -13,15 +13,9 @@ Page::Page(UserId user, LocalDate day)
     : user(std::move(user)), day(std::move(day)), body(), mood(Mood::none), energy(Energy::none),
       source(Source::typed), stamp(), updatedAtMs(0) {}
 
-// The real calendar, and nothing beyond it — "YYYY-MM-DD" naming a day that actually happened. It
-// still never asks a time library what today is: the writer's device owns which day it is writing,
-// and this owns only whether the day exists at all.
-//
-// It used to stop at the shape, so a 31st of February reached storage and became a `$n::date` cast
-// that threw inside pqxx — a 500, a retained server_errors row and a Sentry event, on every
-// date-bearing route in the product, from any signed-in account at the rate limiter's pace. An
-// impossible date is the client's mistake and has to be refused here, where every route already
-// passes, rather than by nine repositories each catching a driver's exception.
+// The real calendar, and nothing beyond it — "YYYY-MM-DD" naming a day that actually happened. An
+// impossible date is refused here, where every route already passes, rather than becoming a
+// `$n::date` cast that throws inside pqxx.
 LocalDate::LocalDate(std::string iso) {
   auto digit = [](char c) { return c >= '0' && c <= '9'; };
   bool shaped = iso.size() == 10 && iso[4] == '-' && iso[7] == '-' &&
@@ -30,8 +24,7 @@ LocalDate::LocalDate(std::string iso) {
   if (!shaped) throw InvalidPage("date must be YYYY-MM-DD: " + iso);
 
   int year = (iso[0] - '0') * 1000 + (iso[1] - '0') * 100 + (iso[2] - '0') * 10 + (iso[3] - '0');
-  // Year 0000 is not a year — Postgres has no such date, so "0000-01-01" was the cheapest 500 in
-  // the product: shaped like a date, impossible as one.
+  // Year 0000 is not a year — Postgres has no such date.
   if (year < kFirstJournalYear) throw InvalidPage("year out of range: " + iso);
 
   int month = (iso[5] - '0') * 10 + (iso[6] - '0');

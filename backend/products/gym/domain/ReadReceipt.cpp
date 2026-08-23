@@ -3,11 +3,9 @@
 namespace wm::gym {
 
 std::uint64_t weekStartMs(std::uint64_t atMs) {
-  // The epoch itself was a Thursday, so the instant is shifted three days forward before it is
-  // floored to a week and shifted back — the same walk `date_trunc('week', ts AT TIME ZONE 'UTC')`
-  // makes in Postgres, which is where every OTHER week in this product is counted. Signed
-  // throughout, and clamped exactly as the store's own instants are, so the first week of 1970
-  // cannot come back as a negative — or, unsigned, as an enormous — bucket.
+  // The epoch was a Thursday, so the instant shifts three days forward before it is floored to a
+  // week and shifts back — the same walk `date_trunc('week', ts AT TIME ZONE 'UTC')` makes. Signed
+  // throughout and clamped, so the first week of 1970 cannot come back as a negative bucket.
   constexpr long long kWeekMs = 604'800'000;
   constexpr long long kEpochToMonday = 259'200'000;
   const long long shifted = static_cast<long long>(atMs) + kEpochToMonday;

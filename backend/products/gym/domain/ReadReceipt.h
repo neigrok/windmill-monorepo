@@ -8,30 +8,15 @@
 
 namespace wm::gym {
 
-// WHAT WE SERVED, COUNTED WHERE IT WAS SERVED.
+// What a read tool served, counted by the server as it handed the rows over and carried in the
+// tool's own reply.
 //
-// Every answer Ask gives states what it read — `read 214 sets · 12 weeks · 34 sessions` — and the
-// whole value of that line is that it is OURS and not the model's. A model asked how much it read
-// will happily say a number; the only number worth printing is the one the server counted as it
-// handed the rows over. So the count is made here, on the way out of a read tool, and it rides in the
-// tool's own reply — which means a lifter's own Claude over MCP sees the same accounting we do, and a
-// proposal minted through either door arrives reviewable on the same terms.
-//
-// Three buckets, each counted by IDENTITY so two reads that overlap count once: ask twice about the
-// same workout and it is one workout. A read that serves a SUMMARY rather than rows contributes what
-// it actually named — a default page of `list_sessions` names twenty workouts and hands over no
-// sets, so it adds twenty sessions and not one set. That is the conservative direction on purpose:
-// the receipt never claims a row it did not hand to the model.
-//
-// SO THE LINE IS A FLOOR, AND IT IS MEANT TO BE READ AS ONE. `get_stats` is the honest limit: it
-// serves one point per session per movement, and those points carry no session id — only the
-// SESSION'S start instant, which two workouts can tie on (GymTools.cpp, the page cursor) — so
-// counting them by identity is not something this receipt can do, and counting them by instant would
-// merge two workouts into one. It therefore contributes its weeks and no sessions or sets at all,
-// and a run whose only read was `get_stats` says "read 12 weeks" under an answer about twelve
-// sessions of bench. Under-claiming keeps the promise; over-claiming would be the lie the whole
-// object exists to prevent. Widening it means a session id in `MovementTop` (domain/Statistics.h) and
-// in the store's projection, which is a W8 request and not a comment to leave here as if it were done.
+// Three buckets, each counted by IDENTITY so two overlapping reads count once. A read that serves a
+// summary contributes what it actually named: a page of `list_sessions` names twenty workouts and
+// hands over no sets, so it adds twenty sessions and no set. The tally is a FLOOR and never claims a
+// row it did not hand over. `get_stats` is the limit: its points carry no session id, only the
+// session's start instant, which two workouts can tie on, so it contributes its weeks and no
+// sessions or sets at all.
 
 struct ReadTally {
   int sets = 0;
@@ -42,21 +27,17 @@ struct ReadTally {
   bool operator==(const ReadTally&) const = default;
 };
 
-// Monday 00:00 UTC of the week an instant falls in. gym counts weeks Monday-to-Monday in UTC
-// everywhere (domain/Statistics.h), and `get_stats` gets its week boundaries from Postgres —
-// so this is that same rule stated a second time, in the one place a set or a session has to be
-// bucketed without a database in the loop. If the two ever disagree, a receipt counts one week twice.
+// Monday 00:00 UTC of the week an instant falls in — the same boundary Postgres computes for
+// `get_stats`; if the two disagree a receipt counts one week twice.
 std::uint64_t weekStartMs(std::uint64_t atMs);
 
 class ReadReceipt {
 public:
   void sawSet(const SetId& id, std::uint64_t completedAtMs);
   void sawSession(const SessionId& id, std::uint64_t startedAtMs);
-  // A week the store itself counted — `get_stats` hands over one row per week, including the empty
-  // ones, and a week with no training in it is still a week we read and answered about.
+  // `get_stats` hands over one row per week including the empty ones, and an empty week still counts.
   void sawWeek(std::uint64_t weekStartedAtMs);
-  // One run of Ask asks several questions to answer one. Merging by id is why the run's line can say
-  // 214 sets when four replies each carried some of the same ones.
+  // Merges by id, so rows several replies both carried count once.
   void merge(const ReadReceipt& other);
 
   ReadTally tally() const;

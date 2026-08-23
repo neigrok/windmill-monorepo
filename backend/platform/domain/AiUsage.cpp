@@ -6,10 +6,8 @@
 namespace wm {
 namespace {
 
-// Nanos per token, which is the per-MTok USD rate times a thousand — so $5/MTok is 5000 nanos and
-// nothing here needs a division to become exact. One table, one place to edit when a rate moves.
-// No validity dates: a cost is computed once and stored on its row, which is the immutability a
-// from/until pair would only have approximated.
+// Nanos per token: the per-MTok USD rate times a thousand, so $5/MTok is 5000 nanos and nothing
+// here needs a division to be exact.
 struct ModelRate {
   const char* model;
   long long inputNanos;
@@ -29,8 +27,7 @@ constexpr std::array<ModelRate, 10> kRates{{
     {"claude-haiku-4-5-20251001", 1'000, 5'000},
 }};
 
-// True when everything after `at` is "-" followed by digits — the shape of a pinned snapshot, and
-// deliberately nothing else.
+// True when everything after `at` is "-" followed by digits: the shape of a pinned snapshot.
 bool datedSnapshot(const std::string& model, std::size_t at) {
   if (at + 1 >= model.size() || model[at] != '-') return false;
   for (std::size_t i = at + 1; i < model.size(); ++i) {
@@ -55,13 +52,8 @@ TokenUse tokensFrom(const Json::Value& usage) {
                   countAt(usage, "cache_creation_input_tokens")};
 }
 
-// What a call costs when we cannot price it. Every spend CONTROL reads this rather than the optional
-// above, because the alternative is charging an unknown model zero — and an unknown model charged
-// zero is exactly the runaway nobody stops: it moves no ceiling and trips no fuse, so the one
-// failure the ledger shouts about on screen is the one failure it silently permits. Priced at the
-// dearest rate we know, so the guess errs toward refusing, which is the right way for a fuse to be
-// wrong. The ledger still stores NULL for the true cost — "we did not price this" and "this cost
-// nothing" are different facts, and only the display half is allowed to say the first one.
+// An unpriced model is charged the dearest rate known, so the guess errs toward refusing. The
+// ledger still stores NULL for the true cost.
 long long floorCostNanos(const std::string& model, const TokenUse& tokens) {
   if (const std::optional<long long> known = costNanos(model, tokens)) return *known;
   long long dearest = 0;
@@ -81,11 +73,8 @@ std::optional<long long> costNanos(const std::string& model, const TokenUse& tok
     rate = &candidate;
     break;
   }
-  // A dated snapshot ("claude-sonnet-5-20260114") is the same price as the alias it pins, so fall
-  // back to the longest prefix that matches rather than calling a real, billed model unpriced. The
-  // remainder must be a DATE and nothing else: a bare prefix rule cannot tell "-20260114" from
-  // "-mini", so the day a cheaper or dearer sibling ships it would silently inherit this family's
-  // rate and never light the unpriced badge — the one signal that says look at this.
+  // A dated snapshot is priced as the alias it pins, so fall back to the longest matching prefix.
+  // The remainder must be a date and nothing else, or a cheaper sibling would inherit this rate.
   if (!rate) {
     std::size_t matched = 0;
     for (const ModelRate& candidate : kRates) {
@@ -98,9 +87,8 @@ std::optional<long long> costNanos(const std::string& model, const TokenUse& tok
   }
   if (!rate) return std::nullopt;
 
-  // Cache modifiers ride on the model's INPUT rate: a read is a tenth of it, a write (5m ephemeral,
-  // the only kind we ever ask for) is a quarter more. Both as integer maths — every rate here is a
-  // multiple of 1000 nanos, so neither division loses a nano.
+  // Cache modifiers ride on the input rate: a read is a tenth of it, a 5m-ephemeral write a
+  // quarter more. Integer maths only — every rate is a multiple of 1000 nanos, so nothing is lost.
   return tokens.input * rate->inputNanos + tokens.output * rate->outputNanos +
          tokens.cacheRead * (rate->inputNanos / 10) + tokens.cacheWrite * (rate->inputNanos * 5 / 4);
 }

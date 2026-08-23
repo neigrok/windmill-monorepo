@@ -13,15 +13,8 @@ namespace wm::gym {
 struct ProposalTag;
 using ProposalId = Id<ProposalTag>;
 
-// ── THE RULE: RECORD OR INTENT ───────────────────────────────────────────────────────────────
-//
-// Split every write an agent makes by WHAT CLASS OF OBJECT IT TOUCHES, and it is a predicate here
-// rather than a list of tool names on purpose: when routine templates or plate profiles arrive in
-// 2027 they are classified by what they do, and nobody has to remember to add them to anything. A
-// table is what rots.
-//
-// The log is what already happened. The program is what will happen. The catalog is the vocabulary
-// both are written in.
+// What class of object a write touches. The log is what already happened, the program is what will
+// happen, the catalog is the vocabulary both are written in.
 enum class Subject { log, catalog, program };
 
 // Whether the write lands on something that already stands, or brings a new thing into being.
@@ -29,62 +22,34 @@ enum class Standing { fresh, existing };
 
 enum class Mutation { record, intent };
 
-// A mutation that RECORDS something that already happened executes immediately, at every door: the
-// bar is already back on the rack, the consequence is visible in the room within seconds, and
-// confirming a fact is theatre. A mutation that CHANGES something that will happen mints a proposal
-// that does nothing until the lifter taps Apply — a rewritten Tuesday speaks to a tired future
-// person in a room where the conversation that caused it is gone, and Apply is the only UI that
-// decision will ever have.
-//
-// So: every write to the log is a record however it arrives. Bringing a new day of the program, or
-// a new movement, into being takes nothing away and is a record too. Changing or removing one that
-// already stands is an intent.
+// A `record` executes immediately at every door. An `intent` mints a proposal that does nothing
+// until the lifter taps Apply.
 constexpr Mutation classify(Subject subject, Standing standing) {
   if (subject == Subject::log) return Mutation::record;
   if (standing == Standing::fresh) return Mutation::record;
   return Mutation::intent;
 }
 
-// ── THE PROPOSAL ─────────────────────────────────────────────────────────────────────────────
-
-// What the whole proposal is for. `revise` carries a document the routine takes on; `remove` says
-// this day leaves the program. They are one object rather than two because both wait for the same
-// tap, settle into the same dated record, and are read on the same screen.
+// `revise` carries a document the routine takes on; `remove` says this day leaves the program.
 enum class ProposalIntent { revise, remove };
 
-// Pending until the lifter settles it, and every other state is terminal. `superseded` is what a
-// pending proposal becomes when the routine moves underneath it — by the lifter's own hand, or by
-// a newer proposal from the same door — because a proposal minted against a document that has
-// since changed is merged over the top by nobody. It drops into the routine's dated history rather
-// than vanishing: nothing piles up, nothing disappears.
+// Pending until the lifter settles it; every other state is terminal. `superseded` is what a pending
+// proposal becomes when the routine moves underneath it — nothing is merged over the top, and the
+// proposal stays in the routine's dated history.
 enum class ProposalState { pending, applied, dismissed, superseded };
 
-// Which door it came through. Two doors onto one engine — the lifter's own agent over MCP, and
-// gym's own Ask — and the state below is deliberately a COLUMN rather than a fork: "a change
-// appeared in my Tuesday and I cannot tell whether it was my Claude or Windmill's own chat" is the
-// exact mental-model failure this design exists to prevent, and one type is what makes the two
-// impossible to tell apart in code and trivial to tell apart on screen.
+// Which door it came through: the lifter's own agent over MCP, or gym's own Ask.
 enum class ProposalDoor { mcp, ask };
 
-// The conversation a proposal was minted in. The thread itself is `domain/Thread.h`, which INCLUDES
-// this file — the source is what a thread's proposals are found by — so the id is declared on this
-// side of that one direction rather than in a third header nothing else would want.
+// The conversation a proposal was minted in; the thread itself is `domain/Thread.h`, which includes
+// this file.
 struct AskThreadTag;
 using ThreadId = Id<AskThreadTag>;
 
-// Which door, which connection, which model, and — since W11 — which conversation. `connection` and
-// `agent` are EMPTY today and that is a fact about the transport rather than a shrug: `ToolCaller`
-// (platform/domain/ToolScope.h) carries the account and the grant and nothing that names one
-// connection apart from another, so gym cannot honestly fill either yet. They are columns now so
-// that the day the transport carries a connection identity, one line fills them and nothing else
-// moves.
-//
-// `thread` is ABSENT from the MCP door, where there is no conversation on our side of the wire at
-// all — and absent again once the lifter DELETES the thread an Ask proposal came from, which is §O's
-// rule made structural: deleting a thread deletes the conversation, not the consequence. The change
-// stays in the routine's history and still says it came from Ask; it just no longer opens a
-// conversation that exists. So a client reads the two absences the same way, because they mean the
-// same thing to it: there is nothing here to open.
+// `connection` and `agent` are empty: `ToolCaller` (platform/domain/ToolScope.h) carries nothing
+// that names one connection apart from another. `thread` is absent from the MCP door, and absent
+// again once the lifter deletes the thread an Ask proposal came from — both mean there is nothing
+// here to open.
 struct ProposalSource {
   ProposalDoor door;
   std::string connection;
@@ -101,12 +66,10 @@ ProposalIntent proposalIntentFromStored(std::string_view text);
 ProposalState proposalStateFromStored(std::string_view text);
 ProposalDoor proposalDoorFromStored(std::string_view text);
 
-// What one line of the program asks for — a routine entry with its identity and its place taken
-// off, which is exactly the half of it a diff compares. The absences mean what they mean
-// everywhere else: no SETS is an open line the rack decides, no reps is `max`, no weight is
-// "whatever you did last time", no rest falls back to the lifter's global target. So `sets` being
-// absent is NOT what says a side of the diff is missing — `kind` is, and it is the only thing that
-// may be read for it (an added line has no `before`, a removed one no `after`).
+// A routine entry with its identity and its place taken off — the half a diff compares. Absences
+// carry their usual meaning: no sets is an open line, no reps is `max`, no weight is "whatever you
+// did last time", no rest falls back to the global target. Only `kind` says which side of a diff is
+// missing, never an absent `sets`.
 struct EntryTargets {
   std::optional<int> sets;
   std::optional<int> reps;
@@ -118,16 +81,12 @@ struct EntryTargets {
 
 EntryTargets targetsOf(const RoutineEntry& entry);
 
-// `kept` is a line the proposal leaves alone, and it is stored beside the other three because the
-// rows are the DOCUMENT as well as the diff (see RoutineProposal). A screen draws the other three.
+// `kept` is a line the proposal leaves alone, stored because the rows are the document as well as
+// the diff (see RoutineProposal); a screen draws the other three.
 enum class ChangeKind { kept, added, removed, retargeted };
 
-// One row of the typed field-level diff §D14 draws: `sets 5 × 5 → 5 × 3`, `weight 82.5 → 87.5`,
-// `+ Incline DB Press · added · 3 × 10 · 24`, `− Cable Fly · removed · 41 logged sets kept`.
-//
-// `loggedSets` is filled on READ and stored nowhere, for a `removed` row alone: it is the sentence
-// that makes a removal safe to read — the lines leave the program and every set logged under them
-// stays in the log — and a count frozen at mint would be wrong by the time anybody read it.
+// One row of the typed field-level diff. `loggedSets` is filled on READ and stored nowhere, for a
+// `removed` row alone.
 struct RoutineChange {
   int position;
   ChangeKind kind;
@@ -139,14 +98,10 @@ struct RoutineChange {
   bool operator==(const RoutineChange&) const = default;
 };
 
-// The one line a lifter reads before they open the diff, capped where every other free text in
-// this product is capped.
+// The one line a lifter reads before opening the diff.
 constexpr std::size_t kMaxSummaryLength = 400;
 
-// Everything a CARD needs and nothing more — Today's card, the dot on the routines list, and a row
-// of the routine editor's History section. The change rows are deliberately not here: a list read
-// that carried every diff row of every proposal would be the token budget spent on a screen that
-// draws a count.
+// Everything a card needs and nothing more; the diff rows are deliberately not here.
 struct ProposalHead {
   ProposalId id;
   RoutineId routine;
@@ -164,15 +119,11 @@ struct ProposalHead {
 
 // A proposal, whole: its head, the base it was minted against, and the typed diff.
 //
-// THE ROWS ARE THE DOCUMENT AS WELL AS THE DIFF, and that is the one structural decision here.
-// Rows `1..k` are the run the routine takes on, in order — `kept`, `added` and `retargeted` alike
-// — and rows `k+1..n` are the lines the proposal takes away. So there is exactly one stored
-// representation: the diff a lifter reads and the document an Apply writes are the same rows read
-// two ways, and they cannot drift apart the way a stored diff beside a stored document would.
+// The rows are the document as well as the diff: rows `1..k` are the run the routine takes on, in
+// order — `kept`, `added` and `retargeted` alike — and rows `k+1..n` are the lines it takes away.
 //
-// `baseRevision` and `baseName` are FROZEN at mint, exactly as a session's plan snapshot is. An
-// Apply lands only while the routine still stands at that revision; a routine that moved since is
-// superseded rather than merged over the top.
+// `baseRevision` and `baseName` are frozen at mint. An Apply lands only while the routine still
+// stands at that revision.
 struct RoutineProposal {
   ProposalHead head;
   int baseRevision;
@@ -186,39 +137,27 @@ struct RoutineProposal {
   bool operator==(const RoutineProposal&) const = default;
 };
 
-// The diff, computed once from the two documents and stored. Proposed lines are matched to base
-// lines by movement, first unmatched first — so bench heavy followed by bench back-off keeps both
-// of its lines, which is the whole reason a routine's key is its position and not its movement.
+// Computed once from the two documents and stored. Proposed lines are matched to base lines by
+// movement, first unmatched first, so a movement appearing twice keeps both of its lines.
 std::vector<RoutineChange> changesBetween(const std::vector<RoutineEntry>& base,
                                           const std::vector<RoutineEntry>& proposed);
 
 // What `Apply all N` counts: every row that moves, one for a renamed routine, and one for a run the
-// proposal REORDERS. A `kept` row is not a change and is not counted — but a day is trained top to
-// bottom, so moving squats to the front IS a change, and the rows express it by their order alone.
-// Counting it is what keeps "move squats first" from being answered with `nothing to propose`, which
-// would be a refusal that is simply untrue.
+// proposal reorders. A `kept` row is not counted, but a reorder of kept rows is.
 int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<RoutineChange>& changes,
                    const std::string& baseName, const std::string& proposedName);
 
-// Whether a mint arriving under an id this account has ALREADY SPENT is the replay of what stands
-// under it, or a second idea wearing the first one's id. Everything the caller sent is compared —
-// the routine, the intent, the door, the summary, the base it was minted against, both names, every
-// diff row — and nothing the store decided: the state a lifter has since moved it to, when it was
-// minted, and the `loggedSets` counted at read time are not the caller's to match.
-//
-// A replay answers with the stored proposal. Anything else must be REFUSED, because answering a
-// document that was thrown away with a receipt saying "a proposal is waiting in the lifter's app"
-// is the unforgivable defect running backwards: an agent that has just told its human it proposed a
-// deload would be lying, and the proposal waiting would be somebody else's idea.
+// Whether a mint under an already-spent id is the replay of what stands under it. Everything the
+// caller sent is compared — routine, intent, door, summary, base, both names, every diff row — and
+// nothing the store decided: state, mint instant and read-time `loggedSets` are not the caller's to
+// match. A replay answers with the stored proposal; anything else must be refused.
 bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming);
 
 // The run rows `1..k` describe, renumbered 1..n — the document an Apply writes.
 std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal);
 
-// The routine this proposal makes true, built from the base it was minted against. It goes through
-// the Routine constructor like every other routine in this product, so a proposal that could not
-// be stored as a plan is refused where every malformed value is refused. The revision moves,
-// because applying is a write like the lifter's own.
+// The routine this proposal makes true, built from the base through the Routine constructor so a
+// proposal that could not be stored as a plan is refused there. The revision moves.
 Routine appliedTo(const Routine& base, const RoutineProposal& proposal);
 
 }

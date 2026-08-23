@@ -33,9 +33,8 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::admitted(const TreeId
   const std::set<drogon::WebSocketConnectionPtr> subscribers = subscribersOf(tree);
   if (!gate_) return {subscribers.begin(), subscribers.end()};
 
-  // The gate is asked with no lock held: it re-proves a session (a database lookup, throttled) and
-  // reads the tree's access row, and holding this mutex across either would put the whole bus
-  // behind them.
+  // The gate is asked with no lock held: it reads the tree's access row, and holding this mutex
+  // across that would put the whole bus behind it.
   std::vector<drogon::WebSocketConnectionPtr> admitted;
   std::vector<drogon::WebSocketConnectionPtr> denied;
   for (const auto& conn : subscribers) {
@@ -45,8 +44,7 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::admitted(const TreeId
   if (!denied.empty()) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = subscribers_.find(tree.str());
-    // Dropped from THIS tree only — the same socket may still be legitimately reading another.
-    // connUser_ stays until the connection closes, since it is keyed by connection, not by tree.
+    // Dropped from THIS tree only; connUser_ stays until the connection closes.
     if (it != subscribers_.end())
       for (const auto& conn : denied) it->second.erase(conn);
   }
@@ -56,8 +54,7 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::admitted(const TreeId
 void WsPresenceBus::resweep(const TreeId& tree) { admitted(tree); }
 
 void WsPresenceBus::resweepAll() {
-  // The tree list is snapshotted first: admitted() takes this mutex itself, and the gate it calls
-  // reaches back into the registry and the presence roster.
+  // Snapshot the tree list first: admitted() takes this mutex itself.
   std::vector<TreeId> trees;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -77,9 +74,8 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::connections() const {
 void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) {
   Json::Value frame = toJson(subgraph);
   frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order, stamped on the verbatim frame
-  // A broadcast is a live delta by definition, whatever intent the frame arrived with.
-  // Echoing a client's 'flush' intent made every subscriber (the sender included) treat
-  // the echo as a re-baselining graft — wiping its coverage and re-flushing forever.
+  // A broadcast is a live delta whatever intent the frame arrived with: echoing a client's
+  // 'flush' intent would make every subscriber treat it as a re-baselining graft.
   frame["intent"] = "live";
   std::string text = dump(frame);
   for (const auto& conn : admitted(tree)) {
@@ -91,15 +87,14 @@ void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, co
   if (user.empty()) return;  // anonymous progress has no owner to notify
   if (marks.marks.empty()) return;
 
-  // One codec, both directions: the echo is the same `{marks:[…]}` frame the graft serves, so a
-  // replica folds a live mark and a whole overlay through the identical join.
+  // One codec, both directions: the echo is the same `{marks:[…]}` frame the graft serves.
   Json::Value frame = toJson(marks);
   frame["t"] = "progress";
   frame["treeId"] = tree.str();
   const std::string text = dump(frame);
 
   // The same gate as an op broadcast: a mark echoed to this account's other tabs must not reach a
-  // tab whose read of the tree was revoked while it sat open.
+  // tab whose read was revoked while it sat open.
   std::vector<drogon::WebSocketConnectionPtr> targets;
   {
     const std::vector<drogon::WebSocketConnectionPtr> readers = admitted(tree);

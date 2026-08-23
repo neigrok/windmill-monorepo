@@ -50,10 +50,14 @@ public:
   // FailureReporter already keeps everywhere else. This seam is the one that spends money nobody
   // asked it to: it runs six-hourly against pages the writer never requested a pass over, so it is
   // the seam a runaway most easily hides in and the one whose spend is least likely to be noticed.
+  // `floor` is the least `relation` a pairing may carry and still be shown. The prompt defines an
+  // ABSOLUTE scale — 0.9+ the same specific thing, 0.6-0.8 that thing seen later, 0.3-0.5 the same
+  // theme and not the same subject — so the floor sits above the theme band. It lives beside the
+  // prompt because the prompt is what gives the number its meaning; move one and you move both.
   explicit AnthropicCurator(std::shared_ptr<MessagesApi> transport,
                             std::string model = "claude-sonnet-5", std::string effort = "low",
                             std::shared_ptr<AiFuse> fuse = nullptr,
-                            std::shared_ptr<UsageSink> usage = nullptr);
+                            std::shared_ptr<UsageSink> usage = nullptr, float floor = 0.6f);
 
   bool configured() const override;
 
@@ -70,6 +74,7 @@ private:
   std::shared_ptr<MessagesApi> transport_;
   std::string model_;
   std::string effort_;
+  float floor_ = 0.6f;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
 };

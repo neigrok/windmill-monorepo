@@ -8,20 +8,15 @@
 
 namespace wm {
 
-// The write half, and the only half an LLM adapter ever holds. `noexcept` IS the contract: a ledger
-// write that fails must never break the product it was only watching. A null shared_ptr is the
-// no-op, exactly as FailureReporter is used today — there is no NullUsageSink to remember to wire.
-//
-// Counts and costs only, never content. The same rule VendorCall holds: what someone wrote is theirs,
-// and an accounting table is not a place to keep it.
+// The write half, and the only half an LLM adapter holds. `noexcept` is the contract: a failed
+// ledger write must never break the product it was watching. A null shared_ptr is the no-op.
+// Counts and costs only, never content.
 struct UsageSink {
   virtual ~UsageSink() = default;
   virtual void record(const AiSpend& spend) noexcept = 0;
 };
 
-// One person's line in the ranked table. `unpricedCalls` rides here, and on every other aggregate
-// below, because a row with unpriced calls in it is a row whose total is a floor — the reader is owed
-// the "≥" and cannot be shown one we did not measure.
+// `unpricedCalls` non-zero means costNanos is a floor, not a total.
 struct UserSpend {
   UserId user;
   std::string email;
@@ -45,8 +40,7 @@ struct DaySpend {
   long long unpricedCalls = 0;
 };
 
-// One window, read once. `anonymousCostNanos` is carried apart from the rest because anonymous
-// compose is not a person: it belongs in the total and never in a ranked list of people.
+// `anonymousCostNanos` is inside costNanos but belongs to no person, so it is never ranked.
 struct UsageSummary {
   long long costNanos = 0;
   long long calls = 0;
@@ -61,8 +55,6 @@ struct UsageSummary {
   std::vector<std::string> unpricedModels;
 };
 
-// The read half, held only by the two readers that are allowed one: the budget check and the owner
-// page. Adapters take the UsageSink above and so structurally cannot read the ledger back.
 // Windows arrive as epoch-ms; an empty `product` means every product.
 struct AiUsageRepository : UsageSink {
   virtual long long spentSinceNanos(const UserId& user, const std::string& product,

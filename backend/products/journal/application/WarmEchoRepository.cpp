@@ -15,9 +15,8 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
     std::lock_guard<std::mutex> guard{lock_};
     writesBefore = writes_[user.str()];
     auto held = warm_.find(user.str());
-    // Three ways a warm copy is not the answer, and the version check is the one that matters most:
-    // cosine across two embedding spaces is not degraded, it is meaningless, and nothing about it
-    // looks like an error.
+    // The version check matters most: cosine across two embedding spaces is meaningless, and
+    // nothing about it looks like an error.
     if (held != warm_.end() && held->second.embedVersion == embedVersion &&
         nowMs - held->second.loadedAtMs < ttlMs_) {
       std::vector<Vectored> corpus;
@@ -27,8 +26,8 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
     }
   }
 
-  // Loaded outside the lock: it is the multi-megabyte call this whole class exists to avoid, and
-  // holding a mutex across it would hand every other user the cost we just spared this one.
+  // Loaded outside the lock: holding a mutex across the multi-megabyte call would hand every other
+  // user the cost this class exists to spare.
   std::vector<Vectored> corpus = storage_.corpusOf(user, embedVersion);
 
   Warm fresh;
@@ -39,22 +38,17 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
   std::lock_guard<std::mutex> guard{lock_};
   ++loads_;
 
-  // Expired entries are DROPPED here, not merely ignored. The TTL check on the read path decides
-  // whether a copy may be used; without this it never decides whether one may be kept, so every
-  // user who ever derived in this process holds their corpus until it exits — 12.3 MB each at the
-  // measured 8,000 passages, on one VPS, growing with the account list rather than with concurrent
-  // writers. The ceiling this class advertises is only true because this loop runs. Sweeping on
-  // load rather than on a timer keeps it to one pass over a map whose size is the thing being
-  // bounded, and costs nothing on the path that was already paying for a multi-megabyte fetch.
+  // Expired entries are DROPPED here, not merely ignored: the TTL check on the read path decides
+  // only whether a copy may be USED, so without this loop every user who ever derived in this
+  // process holds their corpus until it exits.
   for (auto it = warm_.begin(); it != warm_.end();) {
     if (it->first != user.str() && nowMs - it->second.loadedAtMs >= ttlMs_) it = warm_.erase(it);
     else ++it;
   }
 
   // A write that landed while the load was in flight makes what came back already old, and storing
-  // it would keep it old for the whole TTL. Counting writes rather than timing them is what makes
-  // that decidable at all: the answer is returned to this caller, which asked before the write, and
-  // simply not kept.
+  // it would keep it old for the whole TTL. The answer still goes to this caller, which asked
+  // before the write; it is simply not kept.
   if (writes_[user.str()] != writesBefore) return corpus;
   warm_[user.str()] = std::move(fresh);
   return corpus;
@@ -78,7 +72,7 @@ std::vector<Vectored> WarmEchoRepository::replaceSpans(const UserId& user, const
     return stored;
   }
   // The page IS its passages: an empty write is a page with nothing left on it, and the day leaves
-  // the corpus entirely rather than keeping the set it had before.
+  // the corpus entirely.
   if (stored.empty()) held->second.byDay.erase(day.iso());
   else held->second.byDay[day.iso()] = stored;
   return stored;

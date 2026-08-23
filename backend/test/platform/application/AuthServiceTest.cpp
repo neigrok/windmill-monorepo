@@ -16,9 +16,6 @@ struct Harness {
   FakeAccountFootprint footprint;
   AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
 
-  // requestLink is async now: the verdict rides a callback, not a return value. The fake
-  // sender resolves inline, so this reads the verdict back as a value — and the callback
-  // firing before requestLink returns is the proof the send never parks the caller.
   AuthService::RequestResult requestLink(
       const std::string& email, const std::string& forkSource = "",
       const std::optional<ForkDescription>& forkDescription = std::nullopt,
@@ -26,24 +23,19 @@ struct Harness {
     std::optional<AuthService::RequestResult> verdict;
     service.requestLink(email, forkSource, forkDescription, door,
                         [&](AuthService::RequestResult result) { verdict = result; });
-    CHECK(verdict.has_value());  // the callback shape is void(RequestResult), fired exactly once
+    CHECK(verdict.has_value());
     return *verdict;
   }
 
-  // The app door's mint: same pipeline, the mail carries the code instead of the link.
   AuthService::RequestResult requestCode(const std::string& email) {
     return requestLink(email, "", std::nullopt, "app");
   }
 
-  // The secret out of the last mail, rather than a hand-counted "s4" — every session mint moves the
-  // counter, so counting by hand silently hands a later test a SESSION secret and calls the pass a
-  // proof. Read what the human would have clicked.
   std::string lastLinkSecret() const {
     const std::string& url = email.sent.back().url;
     return url.substr(url.find("token=") + 6);
   }
 
-  // And what the human would have typed: the code out of the last app-door mail.
   std::string lastCode() const { return email.sent.back().code; }
 };
 }
@@ -58,7 +50,6 @@ TEST(request_link_sends_a_link_that_carries_the_minted_secret) {
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
   CHECK_EQ(h.email.sent[0].sourceTitle, std::string(""));
   CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
-  // The link is stored under its digest, unspent, expiring 15 minutes out.
   std::optional<StoredLink> link = h.repo.findLink("d1");
   REQUIRE(link.has_value());
   CHECK_FALSE(link->consumed);
@@ -70,10 +61,7 @@ TEST(request_link_with_a_failing_send_is_unreachable_but_still_leaves_a_usable_l
   h.email.failNext = true;
   CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::unreachable);
 
-  // Resend refused the mail, so nothing was recorded as sent.
   CHECK_EQ(h.email.sent.size(), 0u);
-  // But the link row was inserted before the send, so the failure loses no link: it is
-  // stored under its digest, unspent, expiring 15 minutes out — a usable door on a retry.
   std::optional<StoredLink> link = h.repo.findLink("d1");
   REQUIRE(link.has_value());
   CHECK_FALSE(link->consumed);
@@ -95,7 +83,6 @@ TEST(request_link_rate_limits_after_the_cap_in_the_window) {
   CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::rateLimited);
   CHECK_EQ(h.email.sent.size(), static_cast<std::size_t>(AuthPolicy::maxLinksPerWindow));
 
-  // A different address is unaffected; the window is per-email.
   CHECK(h.requestLink("other@example.com") == AuthService::RequestResult::sent);
 }
 
@@ -104,7 +91,7 @@ TEST(request_link_window_slides_so_old_links_stop_counting) {
   for (int i = 0; i < AuthPolicy::maxLinksPerWindow; ++i) h.requestLink("sam@example.com");
   CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::rateLimited);
 
-  h.clock.now += AuthPolicy::rateWindowMs + 1;  // the earlier links fall out of the window
+  h.clock.now += AuthPolicy::rateWindowMs + 1;
   CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);
 }
 
@@ -118,14 +105,12 @@ TEST(complete_link_creates_the_account_and_a_session_on_first_sign_in) {
   CHECK_EQ(done.signedIn->user.email.value, std::string("sam@example.com"));
   CHECK_EQ(done.signedIn->user.name, std::string("sam"));
 
-  // Session secret is the next mint (s2); it is stored under its digest (d2), 90 days out.
   CHECK_EQ(done.signedIn->sessionSecret, std::string("s2"));
   std::optional<StoredSession> session = h.repo.findSession("d2");
   REQUIRE(session.has_value());
   CHECK_EQ(session->user.str(), done.signedIn->user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
 
-  // The link is now spent.
   CHECK(h.repo.findLink("d1")->consumed);
 }
 
@@ -137,12 +122,10 @@ TEST(complete_link_reuses_the_existing_account_on_a_later_sign_in) {
   h.requestLink("sam@example.com");  // mints s3 / d3
   AuthService::Completion again = h.service.completeLink("s3");
   REQUIRE(again.signedIn.has_value());
-  CHECK_EQ(again.signedIn->user.id.str(), first.str());  // same account, keyed by email
+  CHECK_EQ(again.signedIn->user.id.str(), first.str());
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
-// A websocket authenticates once at its upgrade and can then live for hours, so it re-proves its
-// session by digest as it writes. These pin the two revocations that must actually reach it.
 TEST(revalidate_accepts_a_live_session_and_refuses_a_signed_out_one) {
   Harness h;
   h.requestLink("sam@example.com");
@@ -191,23 +174,18 @@ TEST(google_sign_in_creates_the_account_and_a_session_for_a_new_email) {
   std::optional<AuthService::ProviderSignIn> signIn = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam Gold"));
   REQUIRE(signIn.has_value());
   CHECK_EQ(signIn->signedIn.user.email.value, std::string("sam@example.com"));
-  CHECK_EQ(signIn->signedIn.user.name, std::string("Sam Gold"));  // Google's name, not the email-derived one
+  CHECK_EQ(signIn->signedIn.user.name, std::string("Sam Gold"));
   CHECK(signIn->created);
   CHECK_FALSE(signIn->privateEmail);
 
-  // No link to consume, so the session secret is the first mint (s1), stored under its digest 90 days out.
   CHECK_EQ(signIn->signedIn.sessionSecret, std::string("s1"));
   std::optional<StoredSession> session = h.repo.findSession("d1");
   REQUIRE(session.has_value());
   CHECK_EQ(session->user.str(), signIn->signedIn.user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
-  // The door is bound on the way through — which is the only way this table ever fills, since no
-  // provider subject was ever stored to migrate.
   CHECK_EQ(h.repo.findIdentity(Provider::google, "g-1")->str(), signIn->signedIn.user.id.str());
 }
 
-// The load-bearing account-linking guarantee: one email, either door, ONE account. A Google-verified
-// email that a magic link already created resolves to the same row — and casing can't fork it.
 TEST(google_sign_in_links_to_the_same_account_a_magic_link_created) {
   Harness h;
   h.requestLink("sam@example.com");
@@ -217,7 +195,7 @@ TEST(google_sign_in_links_to_the_same_account_a_magic_link_created) {
   REQUIRE(viaGoogle.has_value());
   CHECK_EQ(viaGoogle->signedIn.user.id.str(), viaLink.str());
   CHECK_FALSE(viaGoogle->created);
-  CHECK_EQ(h.repo.usersById.size(), 1u);  // one account, two doors — no duplicate
+  CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
 TEST(google_sign_in_revives_a_within_grace_closed_account) {
@@ -225,18 +203,15 @@ TEST(google_sign_in_revives_a_within_grace_closed_account) {
   h.requestLink("sam@example.com");
   const UserId account = h.service.completeLink("s1").signedIn->user.id;
   h.service.closeAccount(account);
-  CHECK(h.repo.usersById.at(account.str()).deletedAt.has_value());  // closed, within grace
+  CHECK(h.repo.usersById.at(account.str()).deletedAt.has_value());
 
   std::optional<AuthService::ProviderSignIn> revived = h.service.completeProvider(googleId("g-1", "sam@example.com", "Sam"));
   REQUIRE(revived.has_value());
-  CHECK_EQ(revived->signedIn.user.id.str(), account.str());  // same account — signing in is the undo
+  CHECK_EQ(revived->signedIn.user.id.str(), account.str());
   CHECK_FALSE(revived->signedIn.user.deletedAt.has_value());
   CHECK_FALSE(h.repo.usersById.at(account.str()).deletedAt.has_value());
 }
 
-// Step one of the ladder, and the whole reason the table exists: once a door is bound, the address
-// behind it stops mattering. This is the case the old email-only rule got wrong — a changed Google
-// primary address forked the account.
 TEST(a_bound_door_resolves_the_same_account_after_the_address_moves) {
   Harness h;
   const UserId first = h.service.completeProvider(googleId("g-1", "sam@example.com"))->signedIn.user.id;
@@ -245,11 +220,9 @@ TEST(a_bound_door_resolves_the_same_account_after_the_address_moves) {
   REQUIRE(later.has_value());
   CHECK_EQ(later->signedIn.user.id.str(), first.str());
   CHECK_FALSE(later->created);
-  CHECK_EQ(h.repo.usersById.size(), 1u);  // the new address created nothing
+  CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
-// Apple without Hide My Email: a real verified address, so step two resolves the account the human
-// already has on the web, exactly as Google does. No prompt, nothing to explain.
 TEST(apple_with_a_real_address_lands_on_the_existing_web_account) {
   Harness h;
   h.requestLink("sam@example.com");
@@ -262,9 +235,6 @@ TEST(apple_with_a_real_address_lands_on_the_existing_web_account) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
-// Hide My Email: a relay can never find the account on the web, so a NEW one opens and the caller
-// is told both facts the link door is offered on. The fork is real — it is made recoverable, not
-// prevented, because there is no honest way to guess which account this is.
 TEST(apple_with_hide_my_email_opens_a_new_account_and_flags_the_link_door) {
   Harness h;
   h.requestLink("sam@example.com");
@@ -278,12 +248,10 @@ TEST(apple_with_hide_my_email_opens_a_new_account_and_flags_the_link_door) {
   CHECK_EQ(h.repo.usersById.size(), 2u);
 }
 
-// The relay is stable for this app, so a returning Apple user re-finds the account they opened —
-// even with the door unbound, which is what an Apple REVOKE leaves behind.
 TEST(a_returning_relay_address_never_opens_a_third_account) {
   Harness h;
   const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
-  h.repo.identities.clear();  // the door revoked; the address is all that is left
+  h.repo.identities.clear();
 
   std::optional<AuthService::ProviderSignIn> again = h.service.completeProvider(appleId("a-1", kRelay));
   REQUIRE(again.has_value());
@@ -291,8 +259,6 @@ TEST(a_returning_relay_address_never_opens_a_third_account) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
-// An unverified address must never touch an account: resolving one would be a takeover by anyone
-// who can type it.
 TEST(an_unverified_provider_address_is_refused_outright) {
   Harness h;
   ProviderIdentity unverified = googleId("g-1", "sam@example.com");
@@ -305,25 +271,21 @@ TEST(an_unverified_provider_address_is_refused_outright) {
   CHECK_EQ(h.repo.usersById.size(), 0u);
 }
 
-// The rule that stops "sign in by link, then tap Apple" from forking the account on screen.
 TEST(a_provider_sign_in_while_signed_in_attaches_rather_than_resolving) {
   Harness h;
   h.requestLink("sam@example.com");
   const UserId account = h.service.completeLink("s1").signedIn->user.id;
 
   CHECK(h.service.attachIdentity(account, appleId("a-1", kRelay)) == AuthService::AttachOutcome::attached);
-  CHECK_EQ(h.repo.usersById.size(), 1u);  // no second account, though the address is a relay
+  CHECK_EQ(h.repo.usersById.size(), 1u);
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), account.str());
 
-  // Idempotent, and never a theft: the same door again is mine; someone else's stays theirs.
   CHECK(h.service.attachIdentity(account, appleId("a-1", kRelay)) == AuthService::AttachOutcome::alreadyMine);
   const UserId other = h.service.completeProvider(googleId("g-9", "other@example.com"))->signedIn.user.id;
   CHECK(h.service.attachIdentity(other, appleId("a-1", kRelay)) == AuthService::AttachOutcome::takenByAnother);
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), account.str());
 }
 
-// The link door, end to end: the phone's empty account folds into the web account and its Apple
-// door comes with it, so the next Apple sign-in lands on the surviving row.
 TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
   Harness h;
   h.requestLink("sam@example.com");
@@ -331,39 +293,34 @@ TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
   const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
   CHECK_EQ(h.repo.usersById.size(), 2u);
 
-  h.requestLink("sam@example.com");  // the in-app link the human asks for, minting s3/d3
+  h.requestLink("sam@example.com");  // s3/d3
   AuthService::LinkResult result = h.service.linkAccount(phone, h.lastLinkSecret());
   CHECK(result.outcome == AuthService::LinkOutcome::linked);
   REQUIRE(result.signedIn.has_value());
   CHECK_EQ(result.signedIn->user.id.str(), web.str());
 
-  CHECK_EQ(h.repo.usersById.size(), 1u);                 // the empty row is gone
+  CHECK_EQ(h.repo.usersById.size(), 1u);
   CHECK_FALSE(h.repo.findUserById(phone).has_value());
-  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), web.str());  // the door moved
-  // And the door now proves it: the same Apple ID resolves the web account outright.
+  CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), web.str());
   CHECK_EQ(h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id.str(), web.str());
 }
 
-// The one precondition. An account holding anything at all is never folded away — which is exactly
-// what keeps a general account merger from ever having to be written.
 TEST(linking_is_refused_when_the_callers_account_holds_data) {
   Harness h;
   h.requestLink("sam@example.com");
   const UserId web = h.service.completeLink("s1").signedIn->user.id;
   const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
-  h.footprint.withData.insert(phone.str());  // a workout was logged before the human linked
+  h.footprint.withData.insert(phone.str());
 
   h.requestLink("sam@example.com");
   const std::string secret = h.lastLinkSecret();
   AuthService::LinkResult result = h.service.linkAccount(phone, secret);
   CHECK(result.outcome == AuthService::LinkOutcome::notEmpty);
   CHECK_FALSE(result.signedIn.has_value());
-  CHECK_EQ(h.repo.usersById.size(), 2u);  // both rows stand, both logs intact
+  CHECK_EQ(h.repo.usersById.size(), 2u);
   CHECK(h.repo.findUserById(phone).has_value());
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), phone.str());
 
-  // And the link is UNSPENT: a permanent refusal must not cost the human their credential, so the
-  // same link still works the moment the reason for the refusal is gone.
   CHECK_FALSE(h.repo.findLink(h.service.digestOf(secret))->consumed);
   h.footprint.withData.clear();
   CHECK(h.service.linkAccount(phone, secret).outcome == AuthService::LinkOutcome::linked);
@@ -379,23 +336,21 @@ TEST(linking_to_the_account_you_are_already_on_is_a_no_op) {
   CHECK(result.outcome == AuthService::LinkOutcome::sameAccount);
   CHECK_FALSE(result.signedIn.has_value());
   CHECK_EQ(h.repo.usersById.size(), 1u);
-  CHECK(h.repo.findUserById(account).has_value());  // emphatically not deleted
+  CHECK(h.repo.findUserById(account).has_value());
 }
 
-// A link is a link: spent, expired or never issued, it opens nothing — and it must not be possible
-// to fold an account away with one.
 TEST(linking_refuses_a_spent_or_unknown_link) {
   Harness h;
   h.requestLink("sam@example.com");
   const UserId web = h.service.completeLink("s1").signedIn->user.id;
   const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
 
-  CHECK(h.service.linkAccount(phone, "s1").outcome == AuthService::LinkOutcome::badLink);  // already spent
+  CHECK(h.service.linkAccount(phone, "s1").outcome == AuthService::LinkOutcome::badLink);
   CHECK(h.service.linkAccount(phone, "s-never").outcome == AuthService::LinkOutcome::badLink);
 
   h.requestLink("sam@example.com");
   h.clock.now += AuthPolicy::linkLifetimeMs;
-  CHECK(h.service.linkAccount(phone, h.lastLinkSecret()).outcome == AuthService::LinkOutcome::badLink);  // lapsed
+  CHECK(h.service.linkAccount(phone, h.lastLinkSecret()).outcome == AuthService::LinkOutcome::badLink);
   CHECK_EQ(h.repo.usersById.size(), 2u);
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), phone.str());
 }
@@ -414,9 +369,6 @@ TEST(a_fork_request_sends_the_fork_mail_naming_the_source) {
   CHECK_EQ(h.repo.findLink("d1")->forkSource, std::string("t_source"));
 }
 
-// The description is prose the product wrote, and this service is not allowed to have an opinion
-// about it: whatever arrives is what the mail prints, verbatim. The counting and the pluralising
-// that used to live here now live in roadmap's ForkSignup (ForkServiceTest covers them).
 TEST(a_fork_description_is_forwarded_word_for_word) {
   Harness h;
   ForkDescription source{"Plant one seed", "1 step"};
@@ -435,7 +387,6 @@ TEST(a_fork_request_with_an_unreadable_source_falls_back_to_the_plain_mail) {
   CHECK_EQ(h.email.sent[0].templateId, std::string("magic-link"));
   CHECK_EQ(h.email.sent[0].sourceTitle, std::string(""));
   CHECK_EQ(h.email.sent[0].sourceMeta, std::string(""));
-  // The pending fork still rides the link; verify degrades it if the source stays gone.
   CHECK_EQ(h.repo.findLink("d1")->forkSource, std::string("t_ghost"));
 }
 
@@ -469,8 +420,6 @@ TEST(complete_link_is_single_use) {
 }
 
 TEST(complete_link_loses_the_race_when_a_concurrent_verify_already_spent_it) {
-  // The link is still unspent when findLink reads it, but consume loses the atomic race —
-  // exactly what a second concurrent verify sees. No session, no account for the loser.
   struct LostRaceRepo : FakeAuthRepository {
     bool consumeLink(const std::string&, UnixMs) override { return false; }
   } repo;
@@ -512,11 +461,10 @@ TEST(authenticate_resolves_a_session_and_rolls_the_window_forward) {
   h.requestLink("sam@example.com");
   const std::string session = h.service.completeLink("s1").signedIn->sessionSecret;  // s2
 
-  h.clock.now += 24ull * 60 * 60 * 1000;  // a day passes
+  h.clock.now += 24ull * 60 * 60 * 1000;
   std::optional<User> user = h.service.authenticate(session);
   REQUIRE(user.has_value());
   CHECK_EQ(user->email.value, std::string("sam@example.com"));
-  // Rolling: the stored expiry is now measured from the new present.
   CHECK_EQ(h.repo.findSession("d2")->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
 }
 
@@ -528,7 +476,7 @@ TEST(authenticate_declines_an_expired_or_empty_or_unknown_session) {
   CHECK_FALSE(h.service.authenticate("").has_value());
   CHECK_FALSE(h.service.authenticate("s999").has_value());
 
-  h.clock.now += AuthPolicy::sessionLifetimeMs;  // lapse
+  h.clock.now += AuthPolicy::sessionLifetimeMs;
   CHECK_FALSE(h.service.authenticate(session).has_value());
 }
 
@@ -549,14 +497,12 @@ TEST(update_name_trims_and_persists_and_rejects_blank_or_over_cap) {
 
   std::optional<User> renamed = h.service.updateName(account, "  Samwise Gamgee  ");
   REQUIRE(renamed.has_value());
-  CHECK_EQ(renamed->name, std::string("Samwise Gamgee"));  // trimmed
+  CHECK_EQ(renamed->name, std::string("Samwise Gamgee"));
   CHECK_EQ(h.repo.usersById[account.str()].name, std::string("Samwise Gamgee"));
 
-  // Blank once trimmed → refused, the stored name unchanged.
   CHECK_FALSE(h.service.updateName(account, "   ").has_value());
   CHECK_EQ(h.repo.usersById[account.str()].name, std::string("Samwise Gamgee"));
 
-  // Over the byte cap → refused; exactly at the cap → accepted.
   const std::string tooLong(AuthPolicy::nameMaxBytes + 1, 'x');
   CHECK_FALSE(h.service.updateName(account, tooLong).has_value());
   CHECK_EQ(h.repo.usersById[account.str()].name, std::string("Samwise Gamgee"));
@@ -580,7 +526,7 @@ TEST(list_sessions_flags_the_callers_current_session) {
   CHECK_EQ(list.size(), 2u);
   int currentCount = 0;
   for (const SessionView& v : list) if (v.current) ++currentCount;
-  CHECK_EQ(currentCount, 1);  // exactly the caller's own is current
+  CHECK_EQ(currentCount, 1);
 }
 
 TEST(list_sessions_coalesces_a_zero_last_seen_to_the_created_time) {
@@ -590,7 +536,6 @@ TEST(list_sessions_coalesces_a_zero_last_seen_to_the_created_time) {
   const std::string current = done.signedIn->sessionSecret;
   const UserId account = done.signedIn->user.id;
 
-  // A pre-migration row: a recorded creation time, but never a last_seen stamp.
   const UnixMs createdAt = h.clock.now;
   h.repo.sessions["d2"].lastSeenMs = 0;
 
@@ -608,7 +553,7 @@ TEST(authenticate_heals_a_pre_migration_rows_user_agent_and_last_seen) {
   const std::string current = done.signedIn->sessionSecret;
   const UserId account = done.signedIn->user.id;
 
-  h.repo.sessions["d2"].userAgent = "";  // pre-migration: blank UA, zero last_seen
+  h.repo.sessions["d2"].userAgent = "";  // blank UA, zero last_seen
   h.repo.sessions["d2"].lastSeenMs = 0;
 
   h.clock.now += 60'000;
@@ -638,15 +583,12 @@ TEST(revoke_session_revokes_one_flags_the_current_and_404s_unknown) {
   CHECK_FALSE(currentId.empty());
   CHECK_FALSE(otherId.empty());
 
-  // An unknown id is a 404, no matter that it is the caller asking.
   CHECK(h.service.revokeSession(account, "sess-nope", current) == AuthService::RevokeOutcome::notFound);
 
-  // Revoking the other device: a plain revoke, the caller's cookie stands.
   CHECK(h.service.revokeSession(account, otherId, current) == AuthService::RevokeOutcome::revoked);
   CHECK_FALSE(h.service.authenticate(other).has_value());
   CHECK(h.service.authenticate(current).has_value());
 
-  // Revoking the current device: reported so the edge clears the cookie.
   CHECK(h.service.revokeSession(account, currentId, current) == AuthService::RevokeOutcome::revokedCurrent);
   CHECK_FALSE(h.service.authenticate(current).has_value());
   CHECK_EQ(h.repo.sessions.size(), 0u);
@@ -663,7 +605,6 @@ TEST(revoke_session_of_another_account_is_not_found) {
   const UserId eve = h.repo.usersByEmail["eve@example.com"].id;
   const std::string eveId = h.service.listSessions(eve, eveSession)[0].id;
 
-  // Sam cannot revoke Eve's session: it is not his, so a 404 and Eve stays signed in.
   CHECK(h.service.revokeSession(account, eveId, sam.signedIn->sessionSecret) == AuthService::RevokeOutcome::notFound);
   CHECK(h.service.authenticate(eveSession).has_value());
 }
@@ -682,8 +623,8 @@ TEST(sign_out_everywhere_keeps_the_caller_current_and_drops_the_rest) {
   h.service.signOutEverywhere(account, current);
 
   CHECK_EQ(h.repo.sessions.size(), 1u);
-  CHECK(h.service.authenticate(current).has_value());      // this device stands
-  CHECK_FALSE(h.service.authenticate(other).has_value());  // the rest are gone
+  CHECK(h.service.authenticate(current).has_value());
+  CHECK_FALSE(h.service.authenticate(other).has_value());
 }
 
 TEST(authenticate_refuses_a_session_whose_account_is_closed) {
@@ -693,8 +634,6 @@ TEST(authenticate_refuses_a_session_whose_account_is_closed) {
   const std::string session = done.signedIn->sessionSecret;  // s2/d2
   CHECK(h.service.authenticate(session).has_value());
 
-  // Close the account but leave its session row in place: the refusal is the user check,
-  // defense in depth behind the close's own session sweep.
   h.repo.markUserDeleted(done.signedIn->user.id, h.clock.now);
   CHECK_FALSE(h.service.authenticate(session).has_value());
   CHECK_EQ(h.repo.sessions.size(), 1u);
@@ -710,16 +649,15 @@ TEST(close_account_drops_every_session_disconnects_tools_and_returns_the_grace_e
   h.requestLink("sam@example.com");                                          // s3/d3
   const std::string otherSession = h.service.completeLink("s3").signedIn->sessionSecret;  // s4/d4
 
-  // The account has a connected tool.
   h.oauthRepo.recordGrant(account, "client-abc", h.clock.now, "");
   CHECK_EQ(h.oauth.listGrants(account).size(), 1u);
 
   const UnixMs closesMs = h.service.closeAccount(account);
   CHECK_EQ(closesMs, h.clock.now + AuthPolicy::closeGraceMs);
-  CHECK_EQ(h.repo.sessions.size(), 0u);                       // every device signed out
+  CHECK_EQ(h.repo.sessions.size(), 0u);
   CHECK_FALSE(h.service.authenticate(staleSession).has_value());
   CHECK_FALSE(h.service.authenticate(otherSession).has_value());
-  CHECK_EQ(h.oauth.listGrants(account).size(), 0u);           // every tool disconnected
+  CHECK_EQ(h.oauth.listGrants(account).size(), 0u);
   CHECK(h.repo.usersById[account.str()].deletedAt.has_value());
 }
 
@@ -730,18 +668,16 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   h.service.closeAccount(account);
   CHECK(h.repo.usersById[account.str()].deletedAt.has_value());
 
-  // A day later — well inside the 30-day grace — signing in undoes the close.
   h.clock.now += 24ull * 60 * 60 * 1000;
   h.requestLink("sam@example.com");                                          // s3/d3
   AuthService::Completion revived = h.service.completeLink("s3");                     // s4/d4
   CHECK(revived.verdict == LinkVerdict::valid);
   REQUIRE(revived.signedIn.has_value());
-  CHECK_EQ(revived.signedIn->user.id.str(), account.str());   // same account — its trees stay owned by it
+  CHECK_EQ(revived.signedIn->user.id.str(), account.str());
   REQUIRE_EQ(h.repo.usersById.size(), 1u);
-  CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());  // the close is undone
-  CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());          // and the handed-back user is live
+  CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());
+  CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());
 
-  // The freshly issued session works: the account is live again.
   std::optional<User> back = h.service.authenticate(revived.signedIn->sessionSecret);
   REQUIRE(back.has_value());
   CHECK_EQ(back->email.value, std::string("sam@example.com"));
@@ -751,13 +687,11 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
 
 TEST(every_mint_stores_both_credentials_on_one_row) {
   Harness h;
-  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);  // the web door
+  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);
 
-  // ONE row (d1): the link token's digest is its key, the code's digest sits beside it, unspent.
   REQUIRE_EQ(h.repo.links.size(), 1u);
   CHECK_EQ(h.repo.links["d1"].codeDigest, std::string("d00001"));  // digestOf("100001")
   CHECK_EQ(h.repo.links["d1"].attempts, 0);
-  // The web mail carried the link alone — but the code is real: typing it signs in.
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
   CHECK_EQ(h.email.sent.back().code, std::string(""));
   AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", "100001");
@@ -772,11 +706,10 @@ TEST(the_app_door_mails_the_code_and_any_other_door_mails_the_link) {
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));
   CHECK_EQ(h.email.sent.back().to.value, std::string("sam@example.com"));
   CHECK_EQ(h.email.sent.back().code, std::string("100001"));
-  CHECK_EQ(h.email.sent.back().url, std::string(""));  // the code mail never carries the link
+  CHECK_EQ(h.email.sent.back().url, std::string(""));
 
   CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::sent);
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
-  // An unknown door is nobody's door: today's link mail, byte-identical behavior.
   CHECK(h.requestLink("sam@example.com", "", std::nullopt, "toaster") ==
         AuthService::RequestResult::sent);
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
@@ -791,14 +724,12 @@ TEST(complete_code_signs_in_through_the_same_tail_and_burns_the_links_row) {
   REQUIRE(done.signedIn.has_value());
   CHECK_EQ(done.signedIn->user.email.value, std::string("sam@example.com"));
   CHECK_EQ(done.signedIn->user.name, std::string("sam"));
-  // The same mintSessionFor tail as the link door: session s2 under digest d2, 90 days out.
   CHECK_EQ(done.signedIn->sessionSecret, std::string("s2"));
   std::optional<StoredSession> session = h.repo.findSession("d2");
   REQUIRE(session.has_value());
   CHECK_EQ(session->user.str(), done.signedIn->user.id.str());
   CHECK_EQ(session->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
 
-  // One row, spent once: the code is dead — and so is the link that rode the same mint.
   CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::noLiveCode);
   CHECK(h.service.completeLink("s1").verdict == LinkVerdict::alreadyUsed);
 }
@@ -814,16 +745,12 @@ TEST(complete_code_spends_an_attempt_only_on_a_wrong_guess_against_a_live_row) {
   Harness h;
   h.requestCode("sam@example.com");
 
-  // A wrong guess: refused, and exactly one attempt spent on the row.
   CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
   CHECK_EQ(h.repo.links["d1"].attempts, 1);
-  // An unknown address holds no live code — nothing to guess against, nothing spent.
   CHECK(h.service.completeCode("nobody@example.com", "100001").verdict == CodeVerdict::noLiveCode);
-  // An unfinished address is the same refusal, decided before any lookup.
   CHECK(h.service.completeCode("sam@example", "100001").verdict == CodeVerdict::noLiveCode);
   CHECK_EQ(h.repo.links["d1"].attempts, 1);
 
-  // Expiry is the link's own 15 minutes, lapsed exactly at the boundary; a dead row spends nothing.
   h.clock.now += AuthPolicy::linkLifetimeMs;
   CHECK(h.service.completeCode("sam@example.com", "100001").verdict == CodeVerdict::noLiveCode);
   CHECK_EQ(h.repo.links["d1"].attempts, 1);
@@ -836,7 +763,6 @@ TEST(the_guess_before_the_cap_can_still_be_the_right_one) {
   for (int guess = 0; guess < AuthPolicy::maxCodeAttempts - 1; ++guess)
     CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
 
-  // Four wrong: the row still lives, and the right code on the fifth try signs in.
   CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
 }
 
@@ -848,12 +774,10 @@ TEST(five_wrong_guesses_kill_the_code_even_for_the_right_one) {
     CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
   CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);
 
-  // The right code is now refused — the row is dead, not the address...
   CHECK(h.service.completeCode("sam@example.com", code).verdict == CodeVerdict::noLiveCode);
-  CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);  // dead rows spend nothing
+  CHECK_EQ(h.repo.links["d1"].attempts, AuthPolicy::maxCodeAttempts);
   CHECK_EQ(h.repo.sessions.size(), 0u);
 
-  // ...and a resend is the remedy: the fresh code signs in.
   h.clock.now += 1;
   h.requestCode("sam@example.com");
   CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
@@ -865,8 +789,6 @@ TEST(racing_wrong_guesses_can_never_push_attempts_past_the_cap) {
   for (int guess = 0; guess < AuthPolicy::maxCodeAttempts - 1; ++guess)
     CHECK(h.service.completeCode("sam@example.com", "999999").verdict == CodeVerdict::wrongCode);
 
-  // Two wrong guesses race: both read the row live at one-under-the-cap, then both spend.
-  // The WHERE gate lets exactly one increment through; the loser's matches nothing.
   CHECK(h.repo.findLiveCode(Email{"sam@example.com"}, h.clock.now, AuthPolicy::maxCodeAttempts)
             .has_value());
   CHECK(h.repo.findLiveCode(Email{"sam@example.com"}, h.clock.now, AuthPolicy::maxCodeAttempts)
@@ -881,20 +803,16 @@ TEST(a_resend_supersedes_the_code_before_it) {
   h.requestCode("sam@example.com");  // code 100001 on row d1
   const std::string oldCode = h.lastCode();
   h.clock.now += 1'000;
-  h.requestCode("sam@example.com");  // code 100002 on row d2 — the newest live row
+  h.requestCode("sam@example.com");  // code 100002 on row d2
 
-  // The old code is now just a wrong guess against the newest row, and spends THAT row's attempt.
   CHECK(h.service.completeCode("sam@example.com", oldCode).verdict == CodeVerdict::wrongCode);
   CHECK_EQ(h.repo.links["d2"].attempts, 1);
   CHECK_EQ(h.repo.links["d1"].attempts, 0);
 
-  // The fresh code signs in.
   CHECK(h.service.completeCode("sam@example.com", h.lastCode()).verdict == CodeVerdict::valid);
 }
 
 TEST(complete_code_loses_the_race_when_a_concurrent_verify_already_spent_the_row) {
-  // The row is still live when findLiveCode reads it, but consume loses the atomic race — exactly
-  // what the second of two concurrent verifies sees, whichever credential the winner presented.
   struct LostRaceRepo : FakeAuthRepository {
     bool consumeLink(const std::string&, UnixMs) override { return false; }
   } repo;
@@ -927,7 +845,7 @@ TEST(a_within_grace_code_sign_in_revives_the_account) {
   AuthService::CodeCompletion revived = h.service.completeCode("sam@example.com", h.lastCode());
   CHECK(revived.verdict == CodeVerdict::valid);
   REQUIRE(revived.signedIn.has_value());
-  CHECK_EQ(revived.signedIn->user.id.str(), account.str());  // typing is the undo too
+  CHECK_EQ(revived.signedIn->user.id.str(), account.str());
   CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());
   CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());
   CHECK(h.service.authenticate(revived.signedIn->sessionSecret).has_value());
@@ -938,14 +856,14 @@ TEST(the_code_door_spends_the_same_per_email_budget_as_the_link_door) {
   for (int i = 0; i < AuthPolicy::maxLinksPerWindow; ++i)
     CHECK(h.requestCode("sam@example.com") == AuthService::RequestResult::sent);
   CHECK(h.requestCode("sam@example.com") == AuthService::RequestResult::rateLimited);
-  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::rateLimited);  // one budget
+  CHECK(h.requestLink("sam@example.com") == AuthService::RequestResult::rateLimited);
 }
 
 TEST(a_pending_fork_rides_the_row_whichever_credential_spends_it) {
   Harness h;
   CHECK(h.requestLink("sam@example.com", "t_source", std::nullopt, "app") ==
         AuthService::RequestResult::sent);
-  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));  // the app door wins the mail
+  CHECK_EQ(h.email.sent.back().templateId, std::string("magic-code"));
 
   AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", h.lastCode());
   CHECK(done.verdict == CodeVerdict::valid);

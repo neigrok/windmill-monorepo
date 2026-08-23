@@ -20,10 +20,8 @@ Json::Value result(const Json::Value& id, Json::Value payload) {
   return response;
 }
 
-// jsoncpp does not answer asString() on an object or an array — it THROWS, and on the stdio
-// transport a throw out of handle() leaves main and terminates the process: one malformed frame
-// takes the whole session down, not the one call. So every leaf this engine reads is checked
-// before it is read, and a bad one is answered as invalid params like any other.
+// jsoncpp THROWS rather than answering asString() on an object or array, and on the stdio transport
+// a throw out of handle() terminates the process — so every leaf is checked before it is read.
 std::optional<std::string> notAString(const Json::Value& parent, const char* field) {
   if (parent[field].isNull() || parent[field].isString()) return std::nullopt;
   return "\"" + std::string(field) + "\" must be a string";
@@ -53,8 +51,8 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const T
     return wm::failure(id, -32600, *bad);
   const std::string method = message["method"].asString();
 
-  // Every branch below reads `params` by key, and jsoncpp throws rather than answers when a key
-  // is asked of something that is not an object — a throw here would take the whole request down.
+  // Every branch below reads `params` by key, and jsoncpp throws rather than answers when a key is
+  // asked of something that is not an object.
   const Json::Value& params = message["params"];
   if (!params.isNull() && !params.isObject())
     return wm::failure(id, -32602, "\"params\" must be an object");
@@ -86,16 +84,14 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const T
 
   if (method == "ping") return result(id, Json::Value(Json::objectValue));
 
-  // The catalog is per-request, not per-process: two clients on the same server see different
-  // surfaces because they hold different grants, which is why the caller reaches this branch at all.
+  // The catalog is per-request, not per-process: two clients on the same server hold different grants.
   if (method == "tools/list") {
     Json::Value payload(Json::objectValue);
     payload["tools"] = tools_.listTools(caller);
     return result(id, payload);
   }
 
-  // Resources cost no tool slot, so the document an agent needs before its first call rides
-  // here rather than in a tool description. The catalog is injected by the product (may be empty).
+  // Resources cost no tool slot. The catalog is injected by the product (may be empty).
   if (method == "resources/list") {
     Json::Value listing(Json::arrayValue);
     for (const McpResource& resource : resources_) {
@@ -147,14 +143,14 @@ std::optional<Json::Value> McpServer::handle(const Json::Value& message, const T
     Json::Value payload(Json::objectValue);
     payload["content"] = outcome.content;
     payload["isError"] = outcome.isError;
-    // Only a tool that declares an `outputSchema` sets `structured`; without one the block
-    // would be the answer the caller already has in `content`, shipped twice.
+    // Only a tool that declares an `outputSchema` sets `structured`; without one the block would be
+    // the answer the caller already has in `content`, shipped twice.
     if (!outcome.structured.isNull()) payload["structuredContent"] = outcome.structured;
     return result(id, payload);
   }
 
-  // Notifications (initialized, cancelled, …) are accepted silently; unknown *requests*
-  // get a method-not-found so the caller learns the surface.
+  // Notifications (initialized, cancelled, …) are accepted silently; unknown *requests* get a
+  // method-not-found so the caller learns the surface.
   if (isNotification) return std::nullopt;
   return wm::failure(id, -32601, "unknown method: " + method);
 }

@@ -23,8 +23,7 @@ std::string arrayLiteral(const std::vector<std::string>& items) {
   return out;
 }
 
-// Parse a Postgres text[] literal ({"a","b"}) back into its elements — controlled inputs
-// (registered redirect URIs), so a straightforward quoted/unquoted scan suffices.
+// Parse a Postgres text[] literal ({"a","b"}) back into its elements.
 std::vector<std::string> parseArrayLiteral(const std::string& literal) {
   std::vector<std::string> out;
   std::size_t i = literal.find('{');
@@ -60,8 +59,7 @@ void PgOAuthRepository::registerClient(const OAuthClient& client) {
 }
 
 int PgOAuthRepository::unattachedClientsSince(UnixMs sinceMs) {
-  // One hour of registrations, by the created_at index — not the whole table. It runs on the
-  // anonymous registration path, so the window is what keeps it an index range scan.
+  // One hour of registrations, by the created_at index — the window keeps it an index range scan.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   return txn
@@ -136,9 +134,7 @@ std::optional<StoredToken> PgOAuthRepository::findAccessToken(const std::string&
 
 RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refreshDigest, UnixMs now) {
   // The row is SPENT, not deleted: one UPDATE stamps rotated_ms and expires the access token that
-  // shared the row, so the pair still dies together and the exactly-once guarantee is still the
-  // single row the update touched. What is new is what stays behind — a tombstone that makes a
-  // second presentation of the same refresh token recognisable as reuse rather than as noise.
+  // shared the row, leaving a tombstone that makes a second presentation recognisable as reuse.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rotated = txn.exec_params(
@@ -148,8 +144,7 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
       refreshDigest, static_cast<long long>(now));
   if (!rotated.empty()) {
     txn.commit();
-    // Expiry is not among the columns: this row is freshly spent, so its access-token lifetime is
-    // gone by the same statement that answered.
+    // Expiry is not among the columns: this row is freshly spent.
     const auto& row = rotated[0];
     return RefreshRotation{RefreshOutcome::rotated,
                            StoredToken{row["client_id"].as<std::string>(),
@@ -157,8 +152,8 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
                                        row["resource"].as<std::string>(),
                                        row["scope"].as<std::string>(), 0}};
   }
-  // Nothing to rotate. Either this was never a refresh token here, or it was one and is spent —
-  // and only the second is a breach signal, so the tombstone is what the two are told apart by.
+  // Nothing to rotate: either this was never a refresh token here, or it was one and is spent —
+  // and only the second is a breach signal, which the tombstone is what tells the two apart.
   pqxx::result spent = txn.exec_params(
       "SELECT client_id, user_id::text, resource, scope, rotated_ms FROM oauth_tokens "
       "WHERE refresh_hash = $1 AND rotated_ms IS NOT NULL",
@@ -166,8 +161,8 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
   txn.commit();
   if (spent.empty()) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
   const auto& row = spent[0];
-  // The stamp rides along: whether a second presentation is a thief or the same client's retry is
-  // a question about HOW LONG AGO the first one landed, and only the caller holds the policy.
+  // The stamp rides along: whether a second presentation is a thief or a retry is a question about
+  // HOW LONG AGO the first one landed, and only the caller holds the policy.
   return RefreshRotation{RefreshOutcome::reused,
                          StoredToken{row["client_id"].as<std::string>(),
                                      UserId{row["user_id"].as<std::string>()},
@@ -178,8 +173,7 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
 
 void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
                                     const std::string& scope) {
-  // granted_ms is set once and kept as the earliest; last_used_ms and scope advance to this consent,
-  // so re-approving a narrower grant is what the settings row then says.
+  // granted_ms is set once and kept as the earliest; last_used_ms and scope advance to this consent.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(

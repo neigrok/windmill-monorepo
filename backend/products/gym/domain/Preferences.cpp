@@ -25,8 +25,7 @@ GymPreferences::GymPreferences(UserId user, Unit units, std::optional<int> restS
     : user(std::move(user)), units(units), restSeconds(restSeconds), restSound(restSound),
       confirmHaptic(confirmHaptic), confirmSound(confirmSound) {
   if (this->user.empty()) throw InvalidTraining("preferences belong to an account");
-  // The same band a routine line's rest target lives in, from the same pair of constants: a program
-  // that could ask for a wait the global dial refuses would be two rules about one rest.
+  // The same band a routine line's rest target lives in, from the same pair of constants.
   if (restSeconds && (*restSeconds < kMinRestSeconds || *restSeconds > kMaxRestSeconds))
     throw InvalidPreference("rest-target",
                             "a rest target runs from 15 to 900 seconds — send none for no timer");

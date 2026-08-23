@@ -30,11 +30,8 @@ std::set<std::string> parseOriginList(const std::string& csv);
 // bearer that acts as `fallbackUser` (CI/agents). With none configured, requests run
 // unauthenticated as `fallbackUser` (local/stdio-style, and the tests). `resourceMetadataUrl`
 // is advertised in the 401 WWW-Authenticate challenge.
-//
-// `fallbackScope` is what the two credential-less doors carry — the shared bearer and the no-auth
-// local topology. It has no default: the widest reach in the system is a line a composition root
-// writes on purpose, and a root that omits it gets a caller who can do nothing rather than a caller
-// who can do everything.
+// `fallbackScope` is what the two credential-less doors carry; it has no default, so a root that
+// omits it gets a caller who can do nothing.
 struct McpAuth {
   OAuthService* oauth = nullptr;
   std::string resource;

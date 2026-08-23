@@ -11,11 +11,9 @@
 namespace wm {
 
 namespace {
-// Concurrent tends before they queue. Each run is a blocking agent loop of tens of seconds, so a
-// handful of threads is plenty against the fleet rate ceiling (~0.2 runs/s) — more would just idle.
+// Concurrent tends before they queue. Each run is a blocking agent loop of tens of seconds.
 constexpr std::size_t kTendWorkers = 4;
-// How many receipts the ledger read returns — a month's worth of a Pro account (300) would be a
-// wall; the newest score of runs is the meaningful history and the rest lives in the count.
+// How many receipts the ledger read returns; the rest of the month lives in the count.
 constexpr int kLedgerDepth = 20;
 
 bool blank(const std::string& text) {
@@ -43,8 +41,7 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
     return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
   // The dollar fuse, last because it is the only rung that reads the ledger. It measures something
   // the run count cannot: one sentence that sets a twelve-iteration agent loose costs many times
-  // what another does, so thirty cheap runs and thirty expensive ones are the same number and
-  // nowhere near the same money.
+  // what another does.
   if (!entitlements_.aiAllowanceFor(caller, email).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfBudget);
 
@@ -112,9 +109,8 @@ void TendingService::execute(TendRun run) {
     // The failed-run guard: an upstream error, a timeout, or a tool that would not settle becomes a
     // `failed` run carrying its diagnostic, never a thrown exception past this point.
     try {
-      // The agent is pinned to the tended tree: it can edit only this one, and cannot mint, list
-      // or delete trees — so an injected node label can't turn a tend into a raid on the caller's
-      // other trees (the injection risk a forkable public tree carries into the loop).
+      // The agent is pinned to the tended tree: it can edit only this one, and cannot mint, list or
+      // delete trees, so an injected node label can't turn a tend into a raid on the caller's other trees.
       ScopedToolHost scoped(tools_, run.tree);
       const AgentOutcome outcome =
           agent_.run(run.prompt, run.tree, run.user, scoped, [](const AgentStep&) {});
@@ -143,7 +139,7 @@ void TendingService::execute(TendRun run) {
 std::uint64_t TendingService::seqOf(const TreeId& tree, const UserId& caller) {
   // The run's footprint in the op log is read through the very seam the agent edits through:
   // get_tree answers as the caller with the tree's current head seq. A tree the caller can't read
-  // (or any tool error) reads as 0 — the run simply records no footprint rather than leaking one.
+  // (or any tool error) reads as 0 — the run records no footprint rather than leaking one.
   Json::Value args(Json::objectValue);
   args["treeId"] = tree.str();
   const ToolResult result =

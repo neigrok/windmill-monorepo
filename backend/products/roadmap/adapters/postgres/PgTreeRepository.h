@@ -36,11 +36,9 @@ public:
             const LegendState& legend, const std::string& title, const UserId& owner) override;
 
 private:
-  // The read-model projection both list queries need: each present node's id and colour — one
-  // narrow indexed read, never the whole lattice — with the legacy document blob as the fallback
-  // for a tree whose rows were never backfilled. It lives here rather than twice inline because
-  // that fallback is the subtle half: a copy of it that fell behind would silently project those
-  // trees as empty, which reads as "a tree with no steps" rather than as a bug.
+  // The projection both list queries need: each present node's id and colour, one narrow indexed
+  // read, with the legacy document blob as the fallback for a tree whose rows were never
+  // backfilled.
   TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                            const std::string& documentBlob);
 

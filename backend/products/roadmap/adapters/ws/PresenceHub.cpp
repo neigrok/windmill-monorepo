@@ -12,16 +12,12 @@
 namespace wm {
 
 namespace {
-// One stable colour per actor, so a peer's cursor keeps its hue for the whole session. A visitor's
-// name starts from the same hash but is not promised to be stable: it steps off a pairing the room
-// already has, so the same person can return under a different name to a differently-filled tree.
+// One stable colour per actor, so a peer's cursor keeps its hue for the whole session. A guest
+// name is not stable: it steps off a pairing the room already wears.
 const std::vector<std::string> kPalette = {
     "#e8743b", "#19a979", "#945ecf", "#13a4b4",
     "#e6c229", "#c43d5c", "#6f9654", "#5b6ee1"};
 
-// A visitor is someone passing through the tree, so they get a traveller's name rather than a row
-// number. 24 x 24 pairings: a crowded ring rarely doubles up, and a repeat costs nothing but a
-// shared name — the colour and cursor still tell them apart.
 const std::vector<std::string> kQualities = {
     "Amber", "Quiet", "Wandering", "Bright", "Distant", "Golden",
     "Restless", "Gentle", "Clever", "Wild", "Patient", "Silver",
@@ -34,10 +30,8 @@ const std::vector<std::string> kCreatures = {
     "Raven", "Birch", "Hare", "Lantern", "Kestrel", "Bramble",
     "Vixen", "Alder", "Wren", "Juniper", "Stoat", "Rowan"};
 
-// FNV-1a over the whole id, then a fmix64 finalizer. The previous splice read only the digits, so
-// it collapsed every hyphenated uuid into one enormous overflowing seat number; FNV alone then
-// barely moved its high bits across ids as close as u1 and u2, which handed a whole row of guests
-// the same hue. The finalizer is what makes an arbitrary bit slice safe to index with.
+// FNV-1a over the whole id, then a fmix64 finalizer: the finalizer is what makes an arbitrary
+// bit slice of the result safe to index with.
 std::uint64_t hashOf(const UserId& actor) {
   std::uint64_t hash = 1469598103934665603ull;
   for (unsigned char c : actor.str()) {
@@ -65,9 +59,8 @@ void sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& paylo
 }
 }
 
-// A stranger takes the first pairing the room is not already wearing, so a roster never shows two
-// identical visitors. There are more pairings than the member cap, so the walk always lands on a
-// free one — the trailing return is a guard, not a reachable outcome.
+// A stranger takes the first pairing the room is not already wearing. There are more pairings
+// than the member cap, so the trailing return is a guard, not a reachable outcome.
 std::string PresenceHub::guestName(const UserId& actor, const std::map<drogon::WebSocketConnectionPtr, Member>& members) const {
   const std::size_t pairings = kQualities.size() * kCreatures.size();
   const std::size_t first = hashOf(actor) % pairings;
@@ -85,26 +78,22 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   auto& room = byTree_[tree.str()];
   auto& members = room.members;
 
-  // A resubscribe is how a client re-baselines after a gap, so the same connection arrives here
-  // more than once. It is already in the room: announcing it again would burn a second name it
-  // never keeps, and hand anyone flooding subscribes a whole roster's worth of fan-out per frame.
+  // A resubscribe brings the same connection here more than once; announcing it again would burn
+  // a second name and hand a subscribe flood a whole roster's worth of fan-out per frame.
   if (members.count(conn)) return;
 
-  // Past the cap a newcomer is neither tracked nor announced: it adds no fan-out and, in
-  // trade, sees no peers. Bounds both membership and per-flush cost on a crowded tree.
+  // Past the cap a newcomer is neither tracked nor announced: it adds no fan-out and sees no peers.
   if (members.size() >= kMaxMembersPerTree) return;
 
   const Principal& principal = conn->getContextRef<Principal>();
   UserId actor = principal.user;
-  // An account wears the name it chose even if a peer shares it — only a stranger we are naming
-  // ourselves gets rotated off a collision.
+  // An account wears the name it chose even if a peer shares it; only a generated name rotates.
   std::string name = principal.name.empty() ? guestName(actor, members) : principal.name;
   Member self{actor, "p" + std::to_string(++room.seats), std::move(name), colorOf(actor),
               std::nullopt, std::nullopt, false};
 
-  // Tell the newcomer who is already here (roster + any live cursor), and tell everyone
-  // else the newcomer arrived. The arrival frame is one broadcast, so serialize it once
-  // and reuse the buffer; the roster frames are distinct and dumped in place.
+  // Tell the newcomer who is already here (roster + any live cursor), and tell everyone else the
+  // newcomer arrived. The arrival frame is one broadcast, so serialize it once and reuse it.
   std::string arrival = dump(peerFrame(tree.str(), self, "join"));
   for (const auto& [other, member] : members) {
     sendTo(conn, dump(peerFrame(tree.str(), member, "join")));
@@ -141,8 +130,7 @@ void PresenceHub::depart(const std::string& tree, const drogon::WebSocketConnect
   std::string gone = dump(peerFrame(tree, it->second, "leave"));
   members.erase(it);
   for (const auto& [other, _] : members) sendTo(other, gone);
-  // An empty room is erased rather than kept: byTree_ is keyed by tree id, so a roster left
-  // standing for every tree anyone ever watched is one more thing that only grows.
+  // An empty room is erased, or byTree_ grows a roster for every tree anyone ever watched.
   if (members.empty()) byTree_.erase(room_it);
 }
 

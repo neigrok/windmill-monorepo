@@ -11,8 +11,6 @@
 using namespace wm::gym;
 
 namespace {
-// A legal line every bounds test perturbs one field of — so a refusal is about that field and not
-// about an accident of the fixture.
 RoutineEntry bench(int position = 1, int targetSets = 5, std::optional<int> targetReps = 5,
                    std::optional<double> targetWeightKg = 82.5,
                    std::optional<int> restSeconds = 180) {
@@ -38,15 +36,12 @@ bool rejects(const std::function<void()>& build) {
 }
 }
 
-// ---- RoutineEntry: the line, and what a line may hold -------------------------------------
-
 TEST(routine_entry_accepts_the_full_legal_range) {
   CHECK_EQ(bench().targetSets, 5);
   CHECK_EQ(bench(1, 1, 1).targetSets, 1);
   CHECK_EQ(bench(1, 20, 100).targetSets, 20);
   CHECK_EQ(bench(1, 20, 100).targetReps, std::optional<int>(100));
-  // Every optional means something by its absence: `open`, `3 × max`, last time's weight, and the
-  // client's own rest.
+  // Every optional means something by its absence: open, `3 × max`, last time's weight, rest.
   CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).targetWeightKg, std::optional<double>());
   CHECK_EQ(bench(1, 5, 5, std::nullopt, std::nullopt).restSeconds, std::optional<int>());
   // Band-assisted work is a negative load on the same number line the sets are logged on.
@@ -73,9 +68,6 @@ TEST(routine_entry_rejects_out_of_range_fields) {
   }));
 }
 
-// `Chin-up 3 × max`. A rep target the entity required could not express that line at all — the
-// canon draws it on three screens — and no number stands in for it: 0 is out of range and 1 is a
-// single. The absence is the target, and the bound still holds for every line that names one.
 TEST(routine_entry_holds_a_line_that_names_no_rep_target) {
   RoutineEntry chinUp{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 180};
 
@@ -86,9 +78,6 @@ TEST(routine_entry_holds_a_line_that_names_no_rep_target) {
   CHECK(rejects([] { bench(1, 5, 101); }));
 }
 
-// A routine built at the kitchen table is savable while it is still incomplete (§M): the movement
-// is in the day and what to do with it is decided at the rack. That is the ABSENCE of a set target
-// and never a zero — a zero is a target of nothing, and `0 × 5` is a line no screen can draw.
 TEST(routine_entry_holds_an_open_line_that_names_no_target_at_all) {
   RoutineEntry open{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt,
                     std::nullopt};
@@ -96,24 +85,19 @@ TEST(routine_entry_holds_an_open_line_that_names_no_target_at_all) {
   CHECK_EQ(open.targetSets, std::optional<int>());
   CHECK_EQ(open.targetReps, std::optional<int>());
   CHECK_EQ(open.targetWeightKg, std::optional<double>());
-  // Rest is how long you WAIT, not what you are asked to do, so it rides on an open line unharmed.
+  // Rest is a wait, not a target, so it rides on an open line.
   CHECK_EQ(RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, std::nullopt, 180)
                .restSeconds,
            std::optional<int>(180));
-  // Zero is still nothing anyone asked for, on the one field that now means something by absence.
   CHECK(rejects([] { bench(1, 0); }));
 }
 
-// Half a target is not a target. The sheet that leaves a line open clears the whole row, so a line
-// that names reps or a load while naming no sets is a document no surface here can draw or store.
 TEST(routine_entry_refuses_a_half_open_line) {
   CHECK(rejects(
       [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, 5, std::nullopt, std::nullopt); }));
   CHECK(rejects(
       [] { RoutineEntry(1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt, 60.0, std::nullopt); }));
 }
-
-// ---- Routine: the document ----------------------------------------------------------------
 
 TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   Routine routine = pushA({bench(1), squat(2)});
@@ -126,8 +110,6 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   CHECK(rejects([] { Routine{RoutineId{"rt_001"}, wm::UserId{"u1"}, "Push A", 0, {bench(1)}}; }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{""}, "Push A", 0, {bench(1)}}; }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "", 0, {bench(1)}}; }));
-  // Blanks are the empty name in disguise, and both display names in this module refuse it by the
-  // one rule (trimmedName) rather than by two that could drift.
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, " \t ", 0, {bench(1)}}; }));
   CHECK_EQ(Routine(RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "  Push A  ", 0, {bench(1)}).name,
            std::string("Push A"));
@@ -139,9 +121,7 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
                    {bench(1)})
                .name.size(),
            kMaxNameLength);
-  // The one text rule (storableText, domain/Training.h): `text` stops at a NUL, so the name would be
-  // stored as its own head, and bytes that are not UTF-8 are refused by the column mid-transaction
-  // where the answer would be a 500 every client is told to retry.
+  // A name stops at a NUL and must be UTF-8 (storableText, domain/Training.h).
   CHECK(rejects([] {
     Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, std::string("Push\0A", 6), 0, {bench(1)}};
   }));
@@ -149,7 +129,6 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
     Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push \xED\xA0\x80 A", 0, {bench(1)}};
   }));
   CHECK(rejects([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push A", -1, {bench(1)}}; }));
-  // The last-trained instant obeys the same band every other instant in the module does.
   CHECK(rejects([] {
     Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Push A", 0, {bench(1)},
             std::optional<std::uint64_t>(0)};
@@ -160,15 +139,10 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   }));
 }
 
-// A routine with no lines is not a plan: the editor never composes one, the wire refuses one, and
-// the store lays the row and its lines down in a single transaction so it cannot mint one either.
 TEST(routine_construction_refuses_a_document_with_no_entries) {
   CHECK(rejects([] { pushA({}); }));
 }
 
-// The document's own size, bounded beside every field's value: each line is one INSERT inside the
-// one transaction a routine write is, so a body naming five thousand of them holds a transaction
-// open for as long as it likes. Fifty is already far past anything the editor draws.
 TEST(routine_construction_bounds_how_many_movements_one_day_may_hold) {
   const auto run = [](int lines) {
     std::vector<RoutineEntry> entries;
@@ -182,8 +156,6 @@ TEST(routine_construction_bounds_how_many_movements_one_day_may_hold) {
   CHECK(rejects([&] { pushA(run(5'000)); }));
 }
 
-// One rule refusing a gap, a duplicate and a shuffle at once — the vector's order IS the routine's
-// order, and position is what the store keys on, so the two may never disagree.
 TEST(routine_positions_run_one_to_n_in_order) {
   CHECK_EQ(pushA({bench(1), squat(2), bench(3)}).entries.size(), static_cast<std::size_t>(3));
   CHECK(rejects([] { pushA({bench(2)}); }));                        // not 1-based
@@ -192,8 +164,6 @@ TEST(routine_positions_run_one_to_n_in_order) {
   CHECK(rejects([] { pushA({bench(2), squat(1)}); }));              // out of order
 }
 
-// The same movement twice in one routine — bench heavy, then bench back-off — is the case position
-// exists for. Lift collapsed the pair into one counter and lost the second line.
 TEST(routine_holds_the_same_movement_twice_at_two_positions) {
   Routine routine = pushA({bench(1, 5, 5, 82.5), bench(2, 3, 12, 60.0)});
 
@@ -202,8 +172,6 @@ TEST(routine_holds_the_same_movement_twice_at_two_positions) {
   CHECK_EQ(routine.entries[0].targetWeightKg, std::optional<double>(82.5));
   CHECK_EQ(routine.entries[1].targetWeightKg, std::optional<double>(60.0));
 }
-
-// ---- the snapshot: what the server freezes onto a session ----------------------------------
 
 TEST(snapshot_copies_the_name_and_every_line_in_order) {
   Routine routine = pushA({bench(1, 5, 5, 82.5, 180), squat(2)});
@@ -216,8 +184,6 @@ TEST(snapshot_copies_the_name_and_every_line_in_order) {
                           PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}}));
 }
 
-// The copy carries the absence through: a session started from a program holding `3 × max` freezes
-// a line with no rep target, so the logger asks for nothing rather than asking for zero.
 TEST(snapshot_copies_a_line_that_names_no_rep_target_as_naming_none) {
   Routine routine = pushA({RoutineEntry{1, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt,
                                         180}});
@@ -228,9 +194,6 @@ TEST(snapshot_copies_a_line_that_names_no_rep_target_as_naming_none) {
                                                         std::nullopt, 180}}}));
 }
 
-// And it carries the OPEN line through as open. The frozen plan is what a session reads its targets
-// off, so a snapshot that filled this in would be the one place the difference between "3 × 5" and
-// "you decide" could quietly become a number nobody chose.
 TEST(snapshot_copies_an_open_line_as_naming_nothing) {
   Routine routine = pushA({RoutineEntry{1, ExerciseId{"barbell-row"}, std::nullopt, std::nullopt,
                                         std::nullopt, std::nullopt}});
@@ -242,8 +205,6 @@ TEST(snapshot_copies_an_open_line_as_naming_nothing) {
                                                         std::nullopt}}}));
 }
 
-// The copy holds the plan's numbers and not the routine's identity: there is nothing in it to point
-// back at a row that may be renamed, re-ordered or deleted the day after the workout.
 TEST(snapshot_keeps_no_link_to_the_routine_it_was_taken_from) {
   Routine routine = pushA({bench(1)});
 

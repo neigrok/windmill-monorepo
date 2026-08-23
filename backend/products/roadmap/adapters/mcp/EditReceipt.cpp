@@ -9,8 +9,7 @@ namespace wm {
 
 namespace {
 
-// One graft can dangle an edge per imported node, and a receipt is not a diagnostics report:
-// name enough to act on, then say how many more and where the rest live.
+// A receipt is not a diagnostics report: name enough to act on, then say how many more.
 constexpr std::size_t kMostNamed = 5;
 
 std::string quoted(const NodeId& node) { return "\"" + node.str() + "\""; }
@@ -28,8 +27,7 @@ std::string named(const Cycle& cycle) {
 
 void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt) {
   // Taken under the tree's strand, `before` and `after` bracket this one write and nothing else,
-  // so the difference between them is this edit's doing — no reasoning about command shapes, and
-  // no shape (a delete that dangles every edge it touched, a graft of a hundred) left out.
+  // so the difference between them is this edit's doing.
   std::set<std::vector<NodeId>> knownCycles;
   for (const Cycle& cycle : before.cycles) knownCycles.insert(cycle.members);
   const std::set<Edge> knownDangling(before.dangling.begin(), before.dangling.end());

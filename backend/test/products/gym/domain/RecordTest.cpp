@@ -39,15 +39,11 @@ Set squatSet(const std::string& id, double weightKg, int reps, std::uint64_t com
 }
 }
 
-// A movement in the catalog nobody has lifted: the counts are real zeros and every list is empty,
-// so the page says `never logged` rather than drawing a chart frame with nothing in it.
 TEST(gym_record_of_a_movement_never_lifted_draws_nothing_at_all) {
   const MovementRecord page =
       movementRecord(squat(), MovementHistory{squat(), {"Push A", "Legs"}, {}, {}}, kNow);
 
   CHECK_EQ(page.exercise.id, ExerciseId{"back-squat"});
-  // The days that name it come back as their NAMES, and a movement nobody has lifted still sits in
-  // two of them — the count on the page is that list's length and never a second read.
   CHECK_EQ(page.routines, (std::vector<std::string>{"Push A", "Legs"}));
   CHECK_EQ(page.sessions, 0);
   CHECK_EQ(page.bestE1rm, std::nullopt);
@@ -57,9 +53,6 @@ TEST(gym_record_of_a_movement_never_lifted_draws_nothing_at_all) {
   CHECK(page.recent.empty());
 }
 
-// The bar a session earns is the best estimate over EVERY working set of it, not Epley over the
-// heaviest one: 100 × 5 then three back-offs at 95 × 10 is 126.7 and never the top set's 116.7.
-// The tile agrees with the tallest bar because it is read off the same walk.
 TEST(gym_record_plots_the_best_estimate_of_a_session_and_not_its_top_set) {
   const MovementHistory history{
       squat(), {"Push A"},
@@ -73,14 +66,10 @@ TEST(gym_record_plots_the_best_estimate_of_a_session_and_not_its_top_set) {
   CHECK_EQ(page.series[0], (RecordPoint{kNow - kWeek, 95, 10, 126.7}));
   REQUIRE(page.bestE1rm.has_value());
   CHECK_EQ(*page.bestE1rm, (Best{95, 10, kNow - kWeek, 126.7}));
-  // The heaviest tile is a different question and the lifter is owed both answers.
   REQUIRE(page.heaviest.has_value());
   CHECK_EQ(*page.heaviest, (Best{100, 5, kNow - kWeek, 116.7}));
 }
 
-// The ladder is every session that beat every session before it, newest first — and the FIRST one
-// is not on it. A mark has to be passed, which is the rule the finish screen states, so a lifter's
-// opening session sets the standing best and claims nothing.
 TEST(gym_record_ladder_holds_every_session_that_beat_the_one_standing_and_never_the_first) {
   const MovementHistory history{squat(),
                                 {},
@@ -101,9 +90,6 @@ TEST(gym_record_ladder_holds_every_session_that_beat_the_one_standing_and_never_
   CHECK_EQ(*page.bestE1rm, (Best{105, 5, kNow, 122.5}));
 }
 
-// Twelve weeks is the CHART's window and the only window on the page: the bests and the ladder are
-// lifetime facts, because "your best ever" that quietly meant "your best this quarter" would be the
-// loudest false number in the product.
 TEST(gym_record_windows_the_chart_to_twelve_weeks_and_nothing_else) {
   const MovementHistory history{squat(),
                                 {},
@@ -122,9 +108,7 @@ TEST(gym_record_windows_the_chart_to_twelve_weeks_and_nothing_else) {
   CHECK_EQ(page.heaviest->weightKg, 140);
 }
 
-// Epley is undefined at and below zero, so a bodyweight or band-assisted movement has NO estimate:
-// no tile, no bar, no ladder — not a zero and not a dash inside a chart frame. The heaviest tile
-// and the sets carry the page on their own.
+// Epley is undefined at and below zero, so an unloaded movement has no estimate at all.
 TEST(gym_record_of_an_unloaded_movement_draws_the_heaviest_tile_and_no_chart) {
   const MovementHistory history{
       chinUp(),
@@ -145,8 +129,6 @@ TEST(gym_record_of_an_unloaded_movement_draws_the_heaviest_tile_and_no_chart) {
   CHECK_EQ(*page.heaviest, (Best{0, 10, kNow - kWeek, std::nullopt}));
 }
 
-// The recent days ride through untouched — the rule computes nothing about them, because a list of
-// what you did is a read and not a calculation.
 TEST(gym_record_hands_the_recent_days_through_as_the_store_grouped_them) {
   const MovementDay today{SessionId{"ses_00000001"},
                           kNow,

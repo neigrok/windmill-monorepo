@@ -11,16 +11,8 @@
 
 namespace wm {
 
-// The second authorization axis, and the one Access.h deliberately knows nothing about. That file
-// answers OWNERSHIP — a resource is its owner's to change — and a read-only credential authenticates
-// to the very same account a full one does, so it passes every ownership gate identically. This one
-// answers how far the CREDENTIAL reaches, which is why it is enforced above the domain, at the tool
-// boundary: it is a fact about the grant, never about the resource.
-//
-// Three levels, and none of them implies another — naming `write` hands you neither `read` nor, above
-// all, `delete`. That last separation is the whole gate: a connection that was not granted
-// `gym:delete` never even sees a delete tool in tools/list, so the destructive reach of a token is a
-// thing the human approved rather than a thing that rode along.
+// How far a CREDENTIAL reaches, enforced at the tool boundary; Access.h answers ownership instead.
+// No level implies another: naming `write` grants neither `read` nor `delete`.
 enum class Access { read, write, del };  // `del` because `delete` is a keyword; the wire spells it out
 
 inline std::string toString(Access access) {
@@ -36,19 +28,16 @@ inline std::optional<Access> parseAccess(const std::string& level) {
   return std::nullopt;
 }
 
-// What one credential was granted: a set of (product, level) pairs. The product is an opaque string
-// here on purpose — platform must not name products, and a grant naming a product this server does
-// not serve simply matches no tool, which is the fail-closed answer anyway.
+// A set of (product, level) pairs. The product is an opaque string: a grant naming a product this
+// server does not serve matches no tool.
 class ToolScope {
 public:
   using Grant = std::pair<std::string, Access>;
 
-  ToolScope() = default;  // grants nothing — the fail-closed default a forgotten field lands on
+  ToolScope() = default;  // grants nothing
   explicit ToolScope(std::set<Grant> grants) : grants_(std::move(grants)) {}
 
-  // The account-wide grant: every product, every level, including the ones added after this token
-  // was minted. Written explicitly at the doors that carry it so the widest reach is the most
-  // visible line in the file, never a default that reads as an omission.
+  // Every product, every level, including ones added after the token was minted.
   static ToolScope everything() {
     ToolScope scope;
     scope.everything_ = true;
@@ -60,8 +49,7 @@ public:
     return grants_.count(Grant{product, access}) > 0;
   }
 
-  // The OAuth wire spelling, canonical: the account-wide grant renders as the empty string, which is
-  // exactly what parseToolScope reads it back from.
+  // OAuth wire spelling; the account-wide grant renders as the empty string.
   std::string toString() const {
     if (everything_) return "";
     std::string out;
@@ -79,15 +67,9 @@ private:
   std::set<Grant> grants_;
 };
 
-// Parse the OAuth `scope` parameter: space-delimited `<product>:<level>` tokens. A token that is not
-// spelled that way, or whose level is not one of the three, confers NOTHING — a typo at rest can only
-// ever narrow a grant, never widen one, the same fail-closed stance parseVisibility takes.
-//
-// The one exception is the empty string, and it is deliberate rather than an oversight: every code and
-// token already at rest carries `scope ''` — the columns default to it and no client has ever sent a
-// scope — so empty has to keep meaning the account-wide grant this server issued before it had a
-// vocabulary. Narrowing it here would not be a fix; it would disconnect every tool anyone has
-// connected, on deploy, silently.
+// Space-delimited `<product>:<level>` tokens. A malformed token or unknown level confers nothing,
+// so a typo at rest can only narrow a grant. The empty string means the account-wide grant: that is
+// what every code and token at rest carries.
 inline ToolScope parseToolScope(const std::string& spaceDelimited) {
   std::vector<std::string> tokens;
   std::istringstream stream(spaceDelimited);
@@ -104,9 +86,8 @@ inline ToolScope parseToolScope(const std::string& spaceDelimited) {
   return ToolScope(std::move(grants));
 }
 
-// Every scope token a server serving these products honours, in the order a consent screen reads
-// them. Derived from what is actually connected rather than written down twice, so the
-// `scopes_supported` an authorization server advertises cannot promise a product it does not serve.
+// Derived from the products actually connected, so `scopes_supported` cannot advertise one that
+// is not served.
 inline std::vector<std::string> supportedScopes(const std::vector<std::string>& products) {
   std::vector<std::string> tokens;
   for (const std::string& product : products)
@@ -115,11 +96,9 @@ inline std::vector<std::string> supportedScopes(const std::vector<std::string>& 
   return tokens;
 }
 
-// The credential's own identity, as distinct from the account it acts for: over OAuth the client id
-// and the display name the client registered under; over an MCP key the key's public id and the
-// name the person gave it when they minted it. Both empty means no connection stands behind this
-// call at all — stdio's configured user, tending's internal calls, Ask — and is never a placeholder
-// for one we did not look up.
+// The credential's own identity, not the account it acts for: over OAuth the client id and its
+// registered name, over an MCP key the key's public id and name. Both empty means no connection
+// stands behind the call at all, never an identity we failed to look up.
 struct ToolConnection {
   std::string id;
   std::string name;
@@ -127,10 +106,7 @@ struct ToolConnection {
   bool operator==(const ToolConnection&) const = default;
 };
 
-// Who is calling, how far their credential reaches, and which connection the credential is —
-// resolved once at the transport's authentication point and carried unchanged from there to the
-// tool. They travel together because every credential answers all three questions at once, and a
-// tool that stores what an agent asked for needs the third to say which agent asked.
+// Resolved once at the transport's authentication point and carried unchanged to the tool.
 struct ToolCaller {
   UserId user;
   ToolScope scope;

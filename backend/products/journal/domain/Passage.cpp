@@ -10,17 +10,16 @@ namespace wm {
 
 namespace {
 
-// A half-open byte range into the body. Every cut this file makes lands on a newline, on ASCII
-// whitespace, or immediately after an ASCII terminator or a whole closing quote — and no ASCII byte
-// ever occurs inside a multi-byte UTF-8 sequence, so a span boundary is always a codepoint boundary
-// without the segmenter decoding a single character.
+// A half-open byte range into the body. Every cut lands on a newline, on ASCII whitespace, or just
+// after an ASCII terminator or a whole closing quote, and no ASCII byte occurs inside a multi-byte
+// UTF-8 sequence, so a span boundary is always a codepoint boundary.
 struct Span {
   int lo = 0;
   int hi = 0;
 };
 
 // A run of sentences that will not be split further. The count travels with the span because the
-// `maxSentences` cap is counted in sentences, and a merge puts several of them inside one unit.
+// `maxSentences` cap is counted in sentences and a merge puts several inside one unit.
 struct Unit {
   Span span;
   int sentences = 0;
@@ -36,9 +35,7 @@ Span trimmed(const std::string& body, Span span) {
   return span;
 }
 
-// Whitespace-separated runs, so "- called mum" counts three: the bullet is a character the writer
-// typed, and the alternative is a punctuation table that has to be right about every language the
-// journal might be written in.
+// Whitespace-separated runs, so "- called mum" counts three.
 int wordCount(const std::string& body, Span span) {
   int words = 0;
   int at = span.lo;
@@ -51,9 +48,8 @@ int wordCount(const std::string& body, Span span) {
   return words;
 }
 
-// The hard boundary. `journal_page.body` keeps the writer's soft line breaks, and a large share of
-// nightly journalers write bare lists with no terminal punctuation anywhere — split those on
-// sentences alone and three unrelated items become one passage whose vector means nothing.
+// The hard boundary. `journal_page.body` keeps the writer's soft line breaks, and a bare list with
+// no terminal punctuation would otherwise become one passage.
 std::vector<Span> linesOf(const std::string& body) {
   std::vector<Span> lines;
   const int size = static_cast<int>(body.size());
@@ -69,8 +65,7 @@ std::vector<Span> linesOf(const std::string& body) {
 }
 
 // A closing quote or bracket sits after the full stop and belongs to the sentence it closes. The
-// curly forms are here because a phone substitutes them as you type; each is three bytes and is
-// stepped over whole, never byte by byte.
+// curly forms are three bytes each and are stepped over whole, never byte by byte.
 int pastClosers(const std::string& body, Span line, int at) {
   while (at < line.hi) {
     const char c = body[at];
@@ -86,9 +81,8 @@ int pastClosers(const std::string& body, Span line, int at) {
   return at;
 }
 
-// Does the full stop at `dot` end a word that carries one mid-sentence? Deliberately short and
-// obvious rather than exhaustive: this is someone's diary, not a legal corpus, and every entry here
-// is a sentence break the segmenter refuses forever.
+// Does the full stop at `dot` end a word that carries one mid-sentence? Deliberately short rather
+// than exhaustive: every entry here is a sentence break the segmenter refuses forever.
 bool closesAbbreviation(const std::string& body, Span line, int dot) {
   static constexpr std::string_view known[] = {"mr", "mrs", "ms",  "dr",  "prof", "st",
                                                "jr", "sr",  "vs",  "etc", "e.g",  "i.e"};
@@ -105,9 +99,9 @@ bool closesAbbreviation(const std::string& body, Span line, int dot) {
 }
 
 // Sentence boundaries within one line. A boundary is a run of `.`, `!` or `?` followed by
-// whitespace — demanding the whitespace is what keeps "3.5" and "c++.net" whole without a special
-// case for either — and a run ending in a full stop is refused when that stop closes an
-// abbreviation. Capitalisation is never consulted: a journal is written in lower case.
+// whitespace — demanding the whitespace is what keeps "3.5" and "c++.net" whole — and a run ending
+// in a full stop is refused when that stop closes an abbreviation. Capitalisation is never
+// consulted.
 std::vector<Span> sentencesIn(const std::string& body, Span line) {
   std::vector<Span> sentences;
   int start = line.lo;
@@ -134,15 +128,13 @@ std::vector<Span> sentencesIn(const std::string& body, Span line) {
   return sentences;
 }
 
-// One line's passages: fragments merge first, and the cap applies to what survives. That order is
-// the policy — a passage under `minWords` is a universal attractor, measured at a hub score of 18.4
-// against 7.4 for a passage of ten words or more, so gluing one to its neighbour is worth overrunning
-// `maxSentences` for, and never the other way round.
+// One line's passages: fragments merge first, and the cap applies to what survives. Gluing a
+// passage under `minWords` to its neighbour is worth overrunning `maxSentences` for, never the
+// other way round.
 std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRules& rules) {
   std::vector<Unit> units;
   for (const Span& sentence : sentencesIn(body, line)) {
-    // A fragment joins the passage before it — on this line only, because joining across one is
-    // precisely what the line boundary exists to forbid.
+    // A fragment joins the passage before it — on this line only.
     if (!units.empty() && wordCount(body, sentence) < rules.minWords) {
       units.back().span.hi = sentence.hi;
       ++units.back().sentences;
@@ -150,8 +142,8 @@ std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRu
     }
     units.push_back({sentence, 1});
   }
-  // An opening fragment had nothing before it, so it joins the one after instead. With no "after"
-  // either, the line is one short fragment and stands as its own passage — never nothing.
+  // An opening fragment joins the one after instead. With no "after" either, the line is one short
+  // fragment and stands as its own passage — never nothing.
   if (units.size() > 1 && wordCount(body, units.front().span) < rules.minWords) {
     units[1].span.lo = units.front().span.lo;
     units[1].sentences += units.front().sentences;
@@ -175,9 +167,8 @@ std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRu
 
 }
 
-// Lines, then sentences within a line, then fragments merged into their neighbours. The nesting is
-// the guarantee: passages are produced one line at a time, so nothing downstream of `linesOf` can
-// see across a line break, let alone join over one.
+// Lines, then sentences within a line, then fragments merged into their neighbours. Passages are
+// produced one line at a time, so nothing downstream of `linesOf` can see across a line break.
 std::vector<Passage> segment(const std::string& body, const SegmentRules& rules) {
   std::vector<Passage> passages;
   for (const Span& line : linesOf(body)) {
@@ -190,8 +181,8 @@ std::vector<Passage> segment(const std::string& body, const SegmentRules& rules)
 }
 
 // Whitespace and nothing else. No case folding, no punctuation stripping, no Unicode folding: this
-// is the predicate that decides whether a deleted line is gone everywhere, and every forgiving
-// transformation is a way for text the user removed to keep matching text that is still there.
+// decides whether a deleted line is gone everywhere, and every forgiving transformation lets text
+// the user removed keep matching text that is still there.
 std::string normalizedForIdentity(const std::string& text) {
   std::string identity;
   identity.reserve(text.size());
@@ -235,9 +226,7 @@ int matchAt(const std::string& body, const std::string& unit, int at) {
   return b;
 }
 
-// The first place at or after `from` where `unit` sits, or -1. Only positions whose byte equals the
-// unit's first byte are tried, which is what keeps a long page and a long unit from costing their
-// product on every call.
+// The first place at or after `from` where `unit` sits, or -1.
 int findFrom(const std::string& body, const std::string& unit, int from) {
   if (unit.empty()) return -1;
   const int bodySize = static_cast<int>(body.size());
@@ -259,8 +248,7 @@ std::vector<Passage> locateUnits(const std::string& body, const std::vector<std:
     if (unit.empty()) continue;
 
     int lo = findFrom(body, unit, after);
-    // Out of order, or overlapping something already taken: look once from the top before giving
-    // up, because a segmenter that reordered its answer still named real text.
+    // Out of order, or overlapping something already taken: look once from the top before giving up.
     if (lo < 0) lo = findFrom(body, unit, 0);
     if (lo < 0) continue;
 

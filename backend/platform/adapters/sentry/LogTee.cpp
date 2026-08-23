@@ -12,9 +12,8 @@
 namespace wm {
 
 namespace {
-// trantor writes the level as a fixed six-character field, so the padding differs by level
-// (" ERROR" carries none, " INFO " carries one). Matching the word and then eating whatever spaces
-// follow is what makes the parse survive that, and a future trantor that pads differently.
+// trantor writes the level as a fixed six-character field, so the padding differs by level. Match
+// the word and then eat whatever spaces follow.
 struct LevelToken {
   std::string_view word;
   SentryClient::Level level;
@@ -26,8 +25,7 @@ constexpr LevelToken kLevels[] = {
     {"ERROR", SentryClient::Level::error}, {"FATAL", SentryClient::Level::fatal},
 };
 
-// The level word never appears further in than the timestamp and thread id put it. Bounding the
-// search keeps a message that merely CONTAINS the word "ERROR" from being read as the level.
+// Bound the search so a message that merely CONTAINS the word "ERROR" is not read as the level.
 constexpr std::size_t kPrefixSearchLimit = 64;
 }
 
@@ -35,8 +33,7 @@ TrantorLine parseTrantorLine(const char* msg, std::size_t len) {
   std::string_view line(msg, len);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.remove_suffix(1);
 
-  // Unparsed is not unsent: an unrecognised shape keeps the whole line as the body at info, so a
-  // trantor that changes its prefix costs fidelity and never costs the log itself.
+  // Unparsed is not unsent: an unrecognised shape keeps the whole line as the body at info.
   TrantorLine parsed{SentryClient::Level::info, std::string(line), std::string()};
 
   const std::size_t horizon = std::min(line.size(), kPrefixSearchLimit);
@@ -52,7 +49,7 @@ TrantorLine parseTrantorLine(const char* msg, std::size_t len) {
   }
 
   // trantor appends " - file.cc:42". Split on the LAST separator and only when what follows really
-  // is a source location, because a message is free to contain " - " and usually means it.
+  // is a source location, because a message is free to contain " - ".
   const std::size_t separator = parsed.body.rfind(" - ");
   if (separator != std::string::npos) {
     const std::string tail = parsed.body.substr(separator + 3);
@@ -89,9 +86,8 @@ std::string oneLine(const char* msg, std::size_t len) {
     else if (msg[at] == '\r') flat += "\\r";
     else flat.push_back(msg[at]);
   }
-  // The terminator is part of the buffer, not a second call. stdio takes the FILE lock per call, so
-  // a body and a newline written separately let another thread's line land between them: two
-  // records glued into one, and a blank line where the split happened. Measured, 24 threads deep.
+  // The terminator is part of the buffer, not a second call: stdio takes the FILE lock per call, so
+  // a body and a newline written separately let another thread's line land between them.
   flat.push_back('\n');
   return flat;
 }
@@ -99,9 +95,6 @@ std::string oneLine(const char* msg, std::size_t len) {
 void installLogTee(std::shared_ptr<SentryClient> sentry, SentryClient::Level minimum) {
   // Line-buffer stdout before anything writes to it. Redirected — which is what a container does —
   // stdio buffers in 4 KB blocks and drops whatever is still held when the process takes a signal.
-  // Docker stops a container with SIGTERM, so the last block written before every deploy was being
-  // lost: exactly the lines that say why the process was going down. Measured against a syscall per
-  // line, having the record survive the shutdown is the trade worth making.
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   trantor::Logger::setOutputFunction(
       [sentry, minimum](const char* msg, const std::uint64_t len) {

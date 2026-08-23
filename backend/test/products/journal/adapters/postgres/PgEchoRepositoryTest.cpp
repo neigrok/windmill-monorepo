@@ -10,24 +10,11 @@
 #include <string>
 #include <vector>
 
-// Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
-// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own rows, so it
-// is fully self-contained. It exists for the four things a fake cannot prove — that the anchoring
-// hint is counted against the body Postgres actually holds, that the corpus count is the SQL's own
-// idea of a written page, that one statement retires a whole panel on exactly the content hashes
-// the pair-level door writes, and that a signal's score and curator version are copied off the echo
-// row by the INSERT itself rather than by a second implementation of the same idea.
-//
-// Spans and echoes are planted THROUGH the repository rather than by hand, so the digests under
-// every dismissal are the ones production computes and never a second implementation of them.
+// Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own rows.
 using namespace wm;
 
 namespace {
 
-// What the running build would produce. Every case below records it and asks with it, so the
-// version clause stays out of the way of what they are actually about — except the one case that
-// is about it.
 const PipelineVersions kPipeline{"segmenter-v1", "embedder-v1"};
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
@@ -43,9 +30,7 @@ void reset() {
   for (const std::string& user : {kMine, kTheirs}) {
     w.exec("INSERT INTO users (id, email) VALUES ('" + user + "', 'echo-" + user.substr(0, 4) +
            "@example.com') ON CONFLICT (id) DO NOTHING");
-    // journal_page_curation is on this list because a page's derivation stamps outlive the page:
-    // leave one behind and the next case's brand-new page is already "derived", which is exactly
-    // the silent cross-case leak a due-page test cannot survive.
+    // journal_page_curation must be cleared too: a page's derivation stamps outlive the page.
     for (const std::string& table : {"journal_echo_signal", "journal_echo_offer_dismissal",
                                      "journal_echo_dismissal", "journal_echo", "journal_span",
                                      "journal_page_curation", "journal_page"})
@@ -72,9 +57,7 @@ EchoRow echoRow(std::int64_t triggerSpanId, const std::string& matchDay,
   return EchoRow{triggerSpanId, LocalDate{matchDay}, matchSpanId, 0.8f, 0.9f, true};
 }
 
-// One panel: tonight's page reaching into three older ones. Every passage names its owner and its
-// day, because dismissal is keyed on CONTENT — two accounts writing the identical sentence would
-// otherwise be indistinguishable to a test that means to prove they are separate.
+// Every passage names its owner and its day: dismissal is keyed on CONTENT.
 void plantPanel(PgEchoRepository& repo, const std::string& user, const std::string& triggerDay,
                 std::int64_t base) {
   const std::string tag = " (" + user.substr(0, 4) + " " + triggerDay + ")";
@@ -110,9 +93,6 @@ int signalsFor(const std::string& user) {
 }
 }
 
-// The gap this hint closes, against a real body. The match page says the same sentence twice and
-// the echo points at the SECOND one; without a hint the client can only search, and it lands on
-// the first.
 TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -138,9 +118,7 @@ TEST(pg_echo_a_repeated_passage_carries_the_occurrence_it_is) {
   CHECK_EQ(echoes[0].daysEarlier, 851);
 }
 
-// Why it is an occurrence index and not the offset storage holds. The second passage here starts
-// 27 BYTES into the body and 23 UTF-16 code units into it; either number sent raw puts the
-// browser's slice inside a word. The occurrence index is 1 in every encoding anyone counts in.
+// The occurrence index, not the offset storage holds: this passage starts 27 bytes and 23 UTF-16 code units in, and either raw number splits a word.
 TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -167,8 +145,6 @@ TEST(pg_echo_the_hint_is_the_one_number_both_sides_agree_on) {
   CHECK_EQ(echoes[0].matchOccurrenceHint, 1);
 }
 
-// A hint the server cannot stand behind is not offered: the body moved under the passage, so there
-// is no occurrence to name and the client goes back to searching by text.
 TEST(pg_echo_a_body_edited_under_a_passage_offers_no_hint) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -188,8 +164,6 @@ TEST(pg_echo_a_body_edited_under_a_passage_offers_no_hint) {
   CHECK_EQ(hinted, 2);
 }
 
-// The ~20-page corpus floor, counted the way SQL counts it: a page holding only whitespace is one
-// the reader opened, not one they wrote.
 TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -204,9 +178,6 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
   CHECK_EQ(repo.pagesWritten(UserId{kTheirs}), 1);
 }
 
-// The live path's opening move, against the real three-way condition. A page nobody has derived is
-// owed one; the page the writer just saved is owed one; a page already derived against this body
-// and this corpus is owed nothing, and that last answer is what makes a debounced second save free.
 TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_conditions_the_shelf_is) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -221,29 +192,21 @@ TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_conditions_the_shel
     w.commit();
   }
 
-  // Never derived.
   std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 0, kPipeline);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->body, std::string("wrote a little."));
   CHECK_EQ(owed->bodyStampMs, std::uint64_t{500});
   CHECK_EQ(owed->attempts, 0);
 
-  // Derived against this body and this corpus: nothing owed.
   repo.recordCuration(UserId{kMine}, LocalDate{day}, CurationOutcome{CurationStatus::ok, 500, 9, "", kPipeline});
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 
-  // The corpus moved under it — the backfill case, and the reason the repair pass still exists.
   CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
 
-  // A day nobody has written on is not a page, and another account's day is not this one's.
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{"2026-05-02"}, 0, kPipeline).has_value());
   CHECK(!repo.duePage(UserId{kTheirs}, LocalDate{day}, 0, kPipeline).has_value());
 }
 
-// A PIPELINE that moved under a page nobody touched. Neither the body nor the corpus moves when the
-// segmenter's prompt or the embedder's model changes, so before 2026-08-23 nothing made an existing
-// page due and a pipeline change reached only pages written after it — silently, for as long as the
-// writer left their archive alone.
 TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -253,28 +216,22 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   repo.recordCuration(UserId{kMine}, LocalDate{day},
                       CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
 
-  // Same pipeline, same body, same corpus: nothing owed.
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 
-  // A new segmenter: the page has to be CUT again, so it reports as a moved body and the sweep
-  // buys a fresh cut for it.
+  // A new segmenter: the page reports as a moved body — it has to be cut again.
   const PipelineVersions recut{"segmenter-v2", "embedder-v1"};
   std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, recut);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, true);
   CHECK_EQ(repo.duePages(UserId{kMine}, 9, recut).size(), std::size_t{1});
 
-  // A new embedder alone: the units still stand, so the page is owed a pass but NOT a re-cut —
-  // which is the whole reason the two versions travel as two strings rather than one stamp.
+  // A new embedder alone: the units still stand, so the page is owed a pass but not a re-cut.
   const PipelineVersions reembed{"segmenter-v1", "embedder-v2"};
   owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, reembed);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, false);
 }
 
-// A REFUSED page is the one thing a corpus that moves cannot reopen — but a pipeline that moves
-// must, because a body cut into different units is a different question from the one the vendor
-// declined. Any other reading leaves a page refused forever on a prompt nobody runs any more.
 TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -284,16 +241,12 @@ TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {
   repo.recordCuration(UserId{kMine}, LocalDate{day},
                       CurationOutcome{CurationStatus::refused, 0, 9, "refused", kPipeline});
 
-  // The corpus moving does not reopen it, which is the rule *A refusal is final* states.
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
-  // A different segmenter does.
   CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10,
                      PipelineVersions{"segmenter-v2", "embedder-v1"})
             .has_value());
 }
 
-// A failed curate leaves both stamps where they were, so the page comes back as owed — the one rule
-// that keeps a vendor blip from costing a page its echoes permanently.
 TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -308,8 +261,6 @@ TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
   CHECK_EQ(owed->attempts, 1);
 }
 
-// The one failure that finishes the page. Both stamps advance, so neither the next sweep nor a
-// corpus that moves under it asks the vendor about this body again — only the writer editing it can.
 TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reopen_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -329,7 +280,6 @@ TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reop
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
 
-  // The row still says what happened, and says it without counting a retry that will never come.
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
@@ -343,7 +293,6 @@ TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reop
     CHECK_EQ(rows[0]["last_error"].as<std::string>(), std::string("refused"));
   }
 
-  // The writer edits it: different text, and a fair thing to ask about again.
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
@@ -354,8 +303,6 @@ TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reop
   CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 }
 
-// Storage hands back what it stored, minted identities and all. This is what a warm corpus splices
-// on, so an id it invented has to travel out of the INSERT rather than be read for a second time.
 TEST(pg_echo_replacing_a_pages_spans_hands_back_the_identities_it_minted) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -368,20 +315,18 @@ TEST(pg_echo_replacing_a_pages_spans_hands_back_the_identities_it_minted) {
       {span(0, 0, 0, kLine), span(4242, 1, static_cast<int>(kLine.size()) + 1, kTrigger)}, "v1", 1);
 
   REQUIRE_EQ(stored.size(), std::size_t{2});
-  CHECK(stored[0].spanId != 0);            // minted by the sequence, and it came back
+  CHECK(stored[0].spanId != 0);
   CHECK_EQ(stored[0].text, kLine);
   CHECK(stored[0].day == LocalDate{day});
-  CHECK_EQ(stored[1].spanId, std::int64_t{4242});   // carried forward, recorded as chosen
+  CHECK_EQ(stored[1].spanId, std::int64_t{4242});
   CHECK_EQ(stored[1].text, kTrigger);
 
-  // And it is the same set, in the same order, that a cold corpus read serves.
   const std::vector<Vectored> cold = repo.corpusOf(UserId{kMine}, "v1");
   REQUIRE_EQ(cold.size(), std::size_t{2});
   CHECK_EQ(cold[0].spanId, stored[0].spanId);
   CHECK_EQ(cold[1].spanId, stored[1].spanId);
 }
 
-// One statement retires the panel, and pressing "Not useful" twice is the same as pressing it once.
 TEST(pg_echo_dismissing_a_page_retires_every_pairing_and_repeats_harmlessly) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -408,12 +353,9 @@ TEST(pg_echo_dismissing_a_page_leaves_another_day_and_another_account_untouched)
 
   CHECK_EQ(echoesOn(repo, kMine, "2026-05-01").size(), std::size_t{0});
   CHECK_EQ(echoesOn(repo, kMine, "2026-06-01").size(), std::size_t{3});
-  CHECK_EQ(echoesOn(repo, kTheirs, "2026-05-01").size(), std::size_t{3});   // a forged day reaches nobody else
+  CHECK_EQ(echoesOn(repo, kTheirs, "2026-05-01").size(), std::size_t{3});
 }
 
-// "Not now" retires the ASKING and nothing else — the echoes on that page are still there — and it
-// survives a re-derivation, which is the whole reason it keys on the day rather than on a hash of
-// text that is about to move.
 TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -431,13 +373,12 @@ TEST(pg_echo_declining_the_offer_keeps_every_echo_and_outlives_a_re_derivation) 
   REQUIRE_EQ(retired.size(), std::size_t{1});
   CHECK_EQ(retired[0].iso(), std::string("2026-05-01"));
 
-  // The page is re-derived from scratch: new span ids, new offsets, every sentence rewritten.
   const std::string rewritten = "a completely different sentence tonight, nothing like the last.";
   writePage(kMine, "2026-05-01", rewritten);
   repo.replaceSpans(UserId{kMine}, LocalDate{"2026-05-01"}, {span(900, 0, 0, rewritten)}, "v1", 2);
 
   CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"2026-01-01"}, LocalDate{"2026-12-31"}).size(),
-           std::size_t{1});   // the reader still said no to being asked here
+           std::size_t{1});
 }
 
 TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) {
@@ -456,12 +397,10 @@ TEST(pg_echo_declining_one_offer_leaves_another_day_and_another_account_asking) 
   CHECK_EQ(mine[0].iso(), std::string("2026-05-01"));
   CHECK_EQ(repo.retiredOffers(UserId{kTheirs}, LocalDate{"0001-01-01"}, LocalDate{"9999-12-31"}).size(),
            std::size_t{0});
-  // and the window is honoured, so a read of June alone never sees May's answer
   CHECK_EQ(repo.retiredOffers(UserId{kMine}, LocalDate{"2026-06-01"}, LocalDate{"2026-06-30"}).size(),
            std::size_t{0});
 }
 
-// The two answers are independent: retiring a page's echoes is not an answer to the offer.
 TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -474,9 +413,6 @@ TEST(pg_echo_retiring_a_pages_echoes_writes_no_offer_row) {
            std::size_t{0});
 }
 
-// Keyed on what the passages SAY. The night re-derives the page with brand new span ids and every
-// offset on it shifted; the dismissal has to hold anyway, because an echo the reader retired
-// coming back is the one failure this feature cannot afford.
 TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -504,8 +440,6 @@ TEST(pg_echo_a_dismissed_page_stays_dismissed_when_its_passages_move) {
 }
 
 // ── The quality signals ─────────────────────────────────────────────────────────────────────────
-// The columns that make journal_echo_signal a dataset rather than a tally are copied off the echo
-// row by the INSERT itself, which is precisely the part a fake cannot prove.
 
 TEST(pg_echo_a_useful_mark_carries_the_score_and_the_curator_that_produced_the_pairing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -534,8 +468,6 @@ TEST(pg_echo_a_useful_mark_carries_the_score_and_the_curator_that_produced_the_p
   CHECK_EQ(rows[0]["curator_version"].as<std::string>(), std::string("pg-test-v1"));
 }
 
-// The answer comes back on the read, which is the whole reason it is server-side: a mark made on a
-// laptop that a phone cannot see is a mark the phone asks for a second time.
 TEST(pg_echo_the_read_says_which_pairings_the_reader_called_useful) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -555,8 +487,6 @@ TEST(pg_echo_the_read_says_which_pairings_the_reader_called_useful) {
   CHECK_EQ(marked, 1);
 }
 
-// Only 'useful' is an endorsement. Opening the older page is a weaker label and a dismissal is the
-// opposite one, and neither may come back on the read as a mark the reader never made.
 TEST(pg_echo_opening_and_dismissing_are_not_read_back_as_useful) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -572,8 +502,6 @@ TEST(pg_echo_opening_and_dismissing_are_not_read_back_as_useful) {
   for (const EchoView& echo : echoesOn(repo, kMine, "2026-05-01")) CHECK(!echo.markedUseful);
 }
 
-// One pairing can carry all three answers — opened on Monday, useful on Tuesday, retired in March —
-// so kind is in the primary key. Pressing any one of them twice is still one row.
 TEST(pg_echo_the_three_answers_are_three_rows_and_each_repeats_harmlessly) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -587,8 +515,6 @@ TEST(pg_echo_the_three_answers_are_three_rows_and_each_repeats_harmlessly) {
   CHECK_EQ(signalsFor(kMine), 3);
 }
 
-// A pairing this account never had is no row at all, so a forged day buys a caller an empty insert
-// rather than a signal about somebody else's page.
 TEST(pg_echo_a_signal_about_a_pairing_that_never_existed_writes_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -602,12 +528,10 @@ TEST(pg_echo_a_signal_about_a_pairing_that_never_existed_writes_nothing) {
                     EchoSignal::useful);
 
   CHECK_EQ(signalsFor(kMine), 1);
-  CHECK_EQ(signalsFor(kTheirs), 0);   // the same day in another account is untouched
+  CHECK_EQ(signalsFor(kTheirs), 0);
   for (const EchoView& echo : echoesOn(repo, kTheirs, "2026-05-01")) CHECK(!echo.markedUseful);
 }
 
-// The panel-level "Not useful" is one tap about every pairing on the page, so it records one
-// judgement about each — and repeating it is still three rows.
 TEST(pg_echo_a_page_signal_records_one_row_per_pairing_and_repeats_harmlessly) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -624,12 +548,9 @@ TEST(pg_echo_a_page_signal_records_one_row_per_pairing_and_repeats_harmlessly) {
            3);
   CHECK_EQ(countOf("journal_echo_signal WHERE user_id = '" + kMine +
                    "' AND trigger_day = '2026-06-01'"),
-           0);   // the other page was not part of the tap
+           0);
 }
 
-// The pair-level door, now one statement. It retires exactly the pairing it names, on the same
-// content hashes the panel door writes — the guarantee that must not regress is that what it
-// retires never comes back.
 TEST(pg_echo_dismissing_one_pairing_retires_that_one_and_leaves_the_panel_standing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -648,8 +569,6 @@ TEST(pg_echo_dismissing_one_pairing_retires_that_one_and_leaves_the_panel_standi
   CHECK_EQ(echoesOn(repo, kTheirs, "2026-05-01").size(), std::size_t{3});
 }
 
-// Keyed on what the two passages SAY. The night re-derives the page with brand new span ids and
-// every offset shifted, and the pairing the reader retired must stay retired.
 TEST(pg_echo_a_dismissed_pairing_stays_dismissed_when_its_passages_move) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

@@ -42,7 +42,6 @@ struct Harness {
     return user.id;
   }
 
-  // A shared (unlisted) source, forkable and readable by anyone with the id.
   void seedSource(const char* id, const char* title) {
     seed(id, title, UserId{"owner"}, Visibility::unlisted);
   }
@@ -90,7 +89,6 @@ drogon::HttpResponsePtr sendGetProgress(HttpApi& api, const std::string& session
   return captured;
 }
 
-// A posted document: the exact body a PUT carries — a title and one node.
 Json::Value document(const std::string& title, const std::string& nodeId) {
   Json::Value node(Json::objectValue);
   node["id"] = nodeId;
@@ -114,15 +112,11 @@ drogon::HttpResponsePtr sendPut(HttpApi& api, const std::string& session, const 
   return captured;
 }
 
-// A live room that has run past its stored row: one server-minted edit, logged at the next seq
-// and broadcast, but not yet flushed — exactly the window every write path leaves open between
-// appending its op and saving the snapshot.
 void editInTheLiveRoom(Harness& h, const char* id, const char* nodeId, const UserId& actor) {
   std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{id}));
   h.rooms->open(TreeId{id})->applyCommand(createNode(nodeId), 5'000, actor);
 }
 
-// The ids a stored tree's lattice still has present — what "was it overwritten?" reads as.
 std::vector<std::string> storedNodeIds(FakeTreeRepository& trees, const std::string& id) {
   std::vector<std::string> out;
   for (const NodeId& node : LooseGraph(trees.byId[id].state).presentNodeIds()) out.push_back(node.str());
@@ -153,13 +147,9 @@ Json::Value withId(const std::string& id) {
 
 Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->getJsonObject(); }
 
-// The single completed id in a progress body (these tests seed exactly one), or "" for none. The
-// body is a lattice frame of stamped registers, so "completed" is a status to look for among the
-// marks, not an array to index.
+// The single completed id in a progress body, or "" for none; the body is a lattice frame of stamped registers.
 std::string soleCompleted(const drogon::HttpResponsePtr& response) {
-  // The body is bound to a named local, NOT iterated as bodyOf(response)["marks"]: a range-for
-  // does not extend the lifetime of a temporary the range expression only reaches THROUGH, so
-  // that spelling walks a destroyed Json::Value and silently finds nothing.
+  // Bind the body to a named local: a range-for over bodyOf(response)["marks"] walks a destroyed temporary.
   const Json::Value body = bodyOf(response);
   std::string found;
   for (const Json::Value& mark : body["marks"]) {
@@ -190,7 +180,7 @@ TEST(fork_rejects_a_malformed_requested_id_before_touching_the_source) {
     CHECK_EQ(dump(bodyOf(response)),
              std::string(R"({"code":"bad-id","error":"id must be t_ followed by 16 lowercase hex characters"})"));
   }
-  CHECK_EQ(h.trees->byId.size(), 1u);  // only the source — nothing was forked
+  CHECK_EQ(h.trees->byId.size(), 1u);
   CHECK(h.trees->forkedFrom.empty());
 }
 
@@ -246,19 +236,19 @@ TEST(get_tree_serves_the_planting_time_and_zero_when_there_is_none) {
   UserId me = h.signIn("s-me");
   h.seed("t_plant", "Sourdough", me, Visibility::private_);
   h.seed("t_undated", "Ancient", me, Visibility::private_);
-  h.trees->byId["t_plant"].createdAt = 1'753'400'000'000;  // epoch ms, exactly like updatedAt
+  h.trees->byId["t_plant"].createdAt = 1'753'400'000'000;  // epoch ms
 
   Json::Value planted = bodyOf(sendGetTree(h.api, "s-me", "t_plant"));
   Json::Value undated = bodyOf(sendGetTree(h.api, "s-me", "t_undated"));
 
   CHECK_EQ(planted["createdAt"].asInt64(), 1'753'400'000'000);
-  CHECK(undated.isMember("createdAt"));  // present and 0 — never a missing key, never null
+  CHECK(undated.isMember("createdAt"));  // present and 0 — never missing, never null
   CHECK_EQ(undated["createdAt"].asInt64(), 0);
 }
 
 TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
   Harness h;
-  h.signIn("s-other", "other@example.com");  // a signed-in non-owner (u1)
+  h.signIn("s-other", "other@example.com");
   h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
 
   drogon::HttpResponsePtr anon = sendGetTree(h.api, "", "t_priv");
@@ -268,7 +258,6 @@ TEST(get_tree_private_denial_is_404_byte_identical_to_absent) {
   CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(nonOwner->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
-  // No existence leak: a private-denied read is indistinguishable from a missing tree.
   const std::string absentBody = dump(bodyOf(absent));
   CHECK_EQ(dump(bodyOf(anon)), absentBody);
   CHECK_EQ(dump(bodyOf(nonOwner)), absentBody);
@@ -283,7 +272,7 @@ TEST(get_tree_unlisted_is_readable_by_anyone_but_not_mine_for_a_stranger) {
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
   Json::Value body = bodyOf(anon);
   CHECK_EQ(body["visibility"].asString(), std::string("unlisted"));
-  CHECK_FALSE(body["mine"].asBool());  // an anonymous reader owns nothing
+  CHECK_FALSE(body["mine"].asBool());
 }
 
 TEST(get_tree_public_is_world_readable) {
@@ -301,7 +290,7 @@ TEST(get_diagnostics_private_denial_is_404_byte_identical_to_absent) {
   h.seed("t_mine", "Mine", me, Visibility::private_);
   h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
 
-  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);  // owner reads
+  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
   drogon::HttpResponsePtr anon = sendGetDiagnostics(h.api, "", "t_priv");
   drogon::HttpResponsePtr absent = sendGetDiagnostics(h.api, "", "t_ghost");
   CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
@@ -321,7 +310,7 @@ TEST(get_activity_private_denial_is_404_byte_identical_to_absent) {
   h.seed("t_mine", "Mine", me, Visibility::private_);
   h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_);
 
-  CHECK_EQ(sendGetActivity(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);  // owner reads
+  CHECK_EQ(sendGetActivity(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
   drogon::HttpResponsePtr anon = sendGetActivity(h.api, "", "t_priv");
   drogon::HttpResponsePtr absent = sendGetActivity(h.api, "", "t_ghost");
   CHECK_EQ(anon->getStatusCode(), drogon::k404NotFound);
@@ -344,15 +333,14 @@ TEST(get_progress_shows_the_owners_journey_to_an_anonymous_visitor) {
 
   drogon::HttpResponsePtr anon = sendGetProgress(h.api, "", "t_shared");
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(soleCompleted(anon), std::string("root"));  // the lit tree the share promised, not empty
+  CHECK_EQ(soleCompleted(anon), std::string("root"));
 }
 
 TEST(get_progress_shows_the_same_journey_to_owner_and_stranger) {
   Harness h;
-  UserId me = h.signIn("s-me", "me@example.com");  // a signed-in NON-owner
+  UserId me = h.signIn("s-me", "me@example.com");
   h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_);
   h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "owner"}, 2);
-  // A stranger has their own (empty) row set for the same tree — it must NOT shadow the owner's.
   h.progress->setStatus(TreeId{"t_shared"}, me, NodeId{"root"}, ProgressStatus::none, Hlc{2, 0, "me"}, 2);
 
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-me", "t_shared")), std::string("root"));
@@ -366,9 +354,9 @@ TEST(get_progress_of_a_private_tree_is_404_for_a_non_owner_and_200_for_its_owner
   h.seed("t_priv", "Secret", owner, Visibility::private_);
   h.progress->setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, Hlc{2, 0, "o"}, 2);
 
-  CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);  // never leaked
+  CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(sendGetProgress(h.api, "", "t_priv")->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-owner", "t_priv")), std::string("root"));  // owner reads
+  CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-owner", "t_priv")), std::string("root"));
 }
 
 TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {
@@ -381,7 +369,7 @@ TEST(fork_of_a_private_source_you_dont_own_is_404_like_absent) {
 
   CHECK_EQ(denied->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(dump(bodyOf(denied)), dump(bodyOf(absent)));  // no existence leak through the fork endpoint
+  CHECK_EQ(dump(bodyOf(denied)), dump(bodyOf(absent)));
   CHECK(h.trees->forkedFrom.empty());
 }
 
@@ -396,10 +384,6 @@ TEST(fork_of_your_own_private_source_succeeds) {
 }
 
 // ---- PUT /v1/trees/{id} : the write gate, and a tree born owned -----------------------------
-//
-// This route had no read gate, no ownership gate that meant anything (it refused only a tree
-// someone ELSE owned), and no test. It saved an ownerless row and then claimed it — so a PUT to
-// the seeded demo id would have replaced the demo wholesale and handed it to the caller.
 
 TEST(put_by_an_anonymous_caller_is_401_and_writes_nothing) {
   Harness h;
@@ -421,13 +405,11 @@ TEST(put_to_an_unowned_tree_is_403_and_leaves_it_unowned_and_unmodified) {
   drogon::HttpResponsePtr response = sendPut(h.api, "s-visitor", "t_00000000000000de", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  // Not "belongs to another account" — that sends the reader looking for an account that does not
-  // exist. This route is public and reachable by any client, so the sentence has to be true here.
   CHECK_EQ(bodyOf(response)["code"].asString(), std::string("nobodys-tree"));
   CHECK_EQ(bodyOf(response)["error"].asString(),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));
-  CHECK_FALSE(h.trees->byId["t_00000000000000de"].owner.has_value());   // nobody took it
-  CHECK(h.trees->byId["t_00000000000000de"] == before);                 // and nothing was written over it
+  CHECK_FALSE(h.trees->byId["t_00000000000000de"].owner.has_value());
+  CHECK(h.trees->byId["t_00000000000000de"] == before);
   CHECK_EQ(storedNodeIds(*h.trees, "t_00000000000000de"), std::vector<std::string>{"root"});
 }
 
@@ -445,9 +427,6 @@ TEST(put_to_someone_elses_readable_tree_is_403_and_writes_nothing) {
   CHECK(h.trees->byId["t_000000000000ffee"].owner == std::optional<UserId>(UserId{"owner"}));
 }
 
-// The read gate this route never had: a private tree the caller cannot read answers "no such
-// tree", the same sentence every other read on this surface gives — a refusal must never state
-// that a private id belongs to someone.
 TEST(put_to_a_private_tree_you_cannot_read_is_404_and_writes_nothing) {
   Harness h;
   h.signIn("s-other", "other@example.com");
@@ -461,8 +440,6 @@ TEST(put_to_a_private_tree_you_cannot_read_is_404_and_writes_nothing) {
   CHECK(h.trees->byId["t_00000000000000aa"] == before);
 }
 
-// An unowned PRIVATE row — a legacy orphan — fails the read gate before the write gate, so it
-// reads as absent and is neither overwritten nor seized.
 TEST(put_to_an_unowned_private_tree_is_404_and_writes_nothing) {
   Harness h;
   h.signIn("s-me");
@@ -477,8 +454,6 @@ TEST(put_to_an_unowned_private_tree_is_404_and_writes_nothing) {
   CHECK_FALSE(h.trees->byId["t_0000000000000bbb"].owner.has_value());
 }
 
-// Create-if-absent: the row is born OWNED, in the one insert that creates it. There is no
-// instant at which it exists ownerless, so no other account can ever reach it.
 TEST(put_to_an_absent_id_creates_a_tree_owned_by_the_caller) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -490,11 +465,11 @@ TEST(put_to_an_absent_id_creates_a_tree_owned_by_the_caller) {
   CHECK_EQ(body["seq"].asInt64(), 0);
   CHECK_EQ(body["data"]["id"].asString(), std::string("t_00000000000000e0"));
   CHECK_EQ(body["data"]["title"].asString(), std::string("Learn to sail"));
-  CHECK_EQ(body["data"]["kinds"].size(), 3u);  // a brand-new tree gets the three seeded defaults
+  CHECK_EQ(body["data"]["kinds"].size(), 3u);
 
   REQUIRE_EQ(h.trees->byId.count("t_00000000000000e0"), std::size_t{1});
   CHECK(h.trees->byId["t_00000000000000e0"].owner == std::optional<UserId>(me));
-  CHECK(h.trees->byId["t_00000000000000e0"].visibility == Visibility::private_);  // born private, like every tree
+  CHECK(h.trees->byId["t_00000000000000e0"].visibility == Visibility::private_);
   CHECK_EQ(h.trees->byId["t_00000000000000e0"].title.value, std::string("Learn to sail"));
   CHECK_EQ(storedNodeIds(*h.trees, "t_00000000000000e0"), std::vector<std::string>{"hull"});
 }
@@ -509,18 +484,14 @@ TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string("New name"));
   CHECK(h.trees->byId["t_00000000000000cc"].owner == std::optional<UserId>(me));
-  CHECK(h.trees->byId["t_00000000000000cc"].visibility == Visibility::unlisted);  // an overwrite never reshares
+  CHECK(h.trees->byId["t_00000000000000cc"].visibility == Visibility::unlisted);
   CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("New name"));
-  // The posted document is the new baseline: its node lands beside the seeded one (the lattice
-  // is entry-grow-only — a save adds and overwrites entries, it never deletes rows).
+  // The lattice is entry-grow-only: a save adds and overwrites entries, never deletes rows.
   std::vector<std::string> ids = storedNodeIds(*h.trees, "t_00000000000000cc");
   std::sort(ids.begin(), ids.end());
   CHECK_EQ(ids, (std::vector<std::string>{"mast", "root"}));
 }
 
-// PUT creates a tree at whatever id the path names, so the id must be the shape fork and create
-// already demand. Without this the route planted trees at any string at all — a 20KB primary key
-// copied into every child row after it.
 TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {
   Harness h;
   h.signIn("s-me");
@@ -533,8 +504,6 @@ TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {
   CHECK_EQ(h.trees->byId.count("audit-weird-id"), std::size_t{0});
 }
 
-// A wrong-typed field used to throw jsoncpp's LogicError out of the handler: a 500, a
-// server_errors row and a Sentry event, per request, for what is plainly a bad body.
 TEST(put_with_a_wrong_typed_field_is_400_not_500_and_creates_nothing) {
   Harness h;
   h.signIn("s-me");
@@ -550,8 +519,6 @@ TEST(put_with_a_wrong_typed_field_is_400_not_500_and_creates_nothing) {
   CHECK_EQ(h.trees->byId.count("t_00000000000000e1"), std::size_t{0});
 }
 
-// The per-field caps the command path enforces, on the document path too — a 200KB label was
-// persisted here for as long as this route checked only the node count.
 TEST(put_with_an_oversized_field_is_400_naming_the_node_and_creates_nothing) {
   Harness h;
   h.signIn("s-me");
@@ -566,16 +533,13 @@ TEST(put_with_an_oversized_field_is_400_naming_the_node_and_creates_nothing) {
   CHECK_EQ(h.trees->byId.count("t_00000000000000e2"), std::size_t{0});
 }
 
-// Edges were never counted on this route at all: 10000 legal nodes could carry half a million
-// prerequisites, and every later read — and every health pass — paid for them.
 TEST(put_over_the_edge_ceiling_is_413_and_creates_nothing) {
   Harness h;
   h.signIn("s-me");
   Json::Value body(Json::objectValue);
   body["title"] = "Too tangled";
   body["nodes"] = Json::Value(Json::arrayValue);
-  // Five hubs, and 4001 steps that each require all five: 20005 edges over 4006 nodes, so the
-  // document is under the node ceiling and over the edge one.
+  // Five hubs and 4001 steps requiring all five: 20005 edges over 4006 nodes — under the node ceiling, over the edge one.
   for (int hub = 0; hub < 5; ++hub) {
     Json::Value node(Json::objectValue);
     node["id"] = "hub" + std::to_string(hub);
@@ -617,12 +581,6 @@ TEST(put_over_the_node_ceiling_is_413_and_creates_nothing) {
 }
 
 // ---- PUT and the live room: gate first, evict second ---------------------------------------
-//
-// `evict` flushes a room to the database and closes it, under the one registry mutex every room
-// in the process shares. Above the gates it would be a lever anyone could pull: a signed-in
-// caller could force a flush-and-close of ANY id — a private tree they cannot read, the hot demo
-// room — serializing every other room behind the write and making the victim's next frame pay a
-// cold reopen. Below them, a refusal costs its victim nothing.
 
 TEST(a_refused_put_leaves_the_owners_live_room_open_and_untouched) {
   Harness h;
@@ -635,8 +593,8 @@ TEST(a_refused_put_leaves_the_owners_live_room_open_and_untouched) {
   drogon::HttpResponsePtr response = sendPut(h.api, "s-stranger", "t_000000000000ffee", document("Mine now", "seized"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
-  CHECK(h.rooms->isOpen(TreeId{"t_000000000000ffee"}));  // the victim's room was never flushed and closed
-  CHECK(h.trees->savedNodeCounts.empty());     // and a refusal writes nothing, not even a flush
+  CHECK(h.rooms->isOpen(TreeId{"t_000000000000ffee"}));
+  CHECK(h.trees->savedNodeCounts.empty());
   CHECK(h.trees->byId["t_000000000000ffee"] == before);
 }
 
@@ -651,15 +609,11 @@ TEST(a_put_to_a_private_tree_you_cannot_read_leaves_its_live_room_open_and_untou
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such tree"})"));
-  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000aa"}));  // an unreadable id is no lever on its owner's room
+  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000aa"}));
   CHECK(h.trees->savedNodeCounts.empty());
   CHECK(h.trees->byId["t_00000000000000aa"] == before);
 }
 
-// The other half of the ordering: once authorized, the write must read the row the eviction just
-// flushed, never one read before it. Taking `head` from a row the room has already run past
-// rewinds head_seq under the op log — the row says 0 while the log holds seq 1 — and the next
-// open replays that tail straight back over the document this PUT wrote.
 TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -673,13 +627,9 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it)
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(h.trees->byId["t_00000000000000cc"].head, Seq{1});
   CHECK_EQ(bodyOf(response)["seq"].asInt64(), 1);
-  CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());  // nothing left to replay
+  CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());
 }
 
-// The same staleness, one field over, and this one loses data silently: the room was renamed at
-// ms 5000, so a title minted past the row's untouched stamp lands at {0,1,srv} and loses the
-// repository's LWW guard against {5000,0,srv}. The reply would say 200 "Posted name" while the
-// row kept the socket's name — the worst shape a write can take.
 TEST(put_over_a_live_room_mints_its_title_past_the_rooms_rename_not_the_stale_row) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -688,19 +638,16 @@ TEST(put_over_a_live_room_mints_its_title_past_the_rooms_rename_not_the_stale_ro
     std::lock_guard<std::mutex> lock(h.rooms->strandFor(TreeId{"t_00000000000000cc"}));
     h.rooms->open(TreeId{"t_00000000000000cc"})->rename("Renamed over the socket", 5'000);
   }
-  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Old name"));  // not flushed yet
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Old name"));
 
   drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000cc", document("Posted name", "mast"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string("Posted name"));
-  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Posted name"));  // the row says what the reply did
-  CHECK(h.trees->byId["t_00000000000000cc"].title.stamp == (Hlc{5'000, 1, "srv"}));       // minted one past the rename
+  CHECK_EQ(h.trees->byId["t_00000000000000cc"].title.value, std::string("Posted name"));
+  CHECK(h.trees->byId["t_00000000000000cc"].title.stamp == (Hlc{5'000, 1, "srv"}));
 }
 
-// A document of N nodes is a JOIN into whatever the row already holds — save upserts the entries
-// the document names and deletes nothing — so a per-request ceiling is no ceiling at all: five
-// individually-legal PUTs of fresh ids each left 45000 nodes standing on a 10000 cap.
 TEST(repeated_puts_of_fresh_ids_cannot_walk_a_tree_past_the_node_ceiling) {
   Harness h;
   h.signIn("s-me");
@@ -724,11 +671,9 @@ TEST(repeated_puts_of_fresh_ids_cannot_walk_a_tree_past_the_node_ceiling) {
   CHECK_EQ(bodyOf(second)["error"].asString(),
            std::string("this tree would hold 12000 nodes, max 10000 — split it across roadmaps, "
                        "or delete what it has outgrown"));
-  CHECK_EQ(storedNodeIds(*h.trees, id).size(), std::size_t{6000});  // the refused batch wrote nothing
+  CHECK_EQ(storedNodeIds(*h.trees, id).size(), std::size_t{6000});
 }
 
-// The same document twice is an upsert, not growth — the tree it would leave behind is the
-// measure, so re-PUTting what is already there stays admissible at any size.
 TEST(a_put_that_re_sends_the_nodes_already_stored_is_still_admitted) {
   Harness h;
   h.signIn("s-me");
@@ -747,9 +692,7 @@ TEST(a_put_that_re_sends_the_nodes_already_stored_is_still_admitted) {
   CHECK_EQ(storedNodeIds(*h.trees, id).size(), kMaxNodes);
 }
 
-// The id shape is a MINT rule, so it binds the PUT that creates and nothing else. Slug ids
-// (`windmill-roadmap`, `demo`) predate the mint and are the documented contract in db/schema.sql;
-// gating every PUT locked 12 of 68 trees on a real database out of their own owners' writes.
+// The id shape is a MINT rule: it binds the PUT that creates and nothing else — slug ids (`windmill-roadmap`, `demo`) are the contract in db/schema.sql.
 TEST(put_to_an_existing_slug_id_tree_is_still_the_owners_to_write) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -761,8 +704,6 @@ TEST(put_to_an_existing_slug_id_tree_is_still_the_owners_to_write) {
   CHECK_EQ(h.trees->byId["windmill-roadmap"].title.value, std::string("Renamed"));
 }
 
-// A root that parsed but is not an object throws out of every keyed read jsoncpp does — which
-// reached the global handler as a 500, a server_errors row and a Sentry event, per request.
 TEST(put_and_fork_refuse_a_non_object_json_root_with_400) {
   Harness h;
   h.signIn("s-me");

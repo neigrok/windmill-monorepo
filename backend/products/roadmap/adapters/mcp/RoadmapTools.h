@@ -10,12 +10,9 @@
 
 namespace wm {
 
-// The Windmill roadmap surface exposed over MCP. Reads (tree, diagnostics, health,
-// progress) and edits (the Class A/B commands + progress) drive the very same application
-// core an HTTP or socket client would: edits route through the tree's room — merged,
-// sequenced, logged, persisted — so an agent's changes are first-class ops, visible to
-// every collaborator on their next load. HLC stamps come from the room's own clock (fed
-// wall time from the injected Clock), the single stamp domain a socket edit also uses.
+// The roadmap surface exposed over MCP. Reads and edits drive the same application core an HTTP
+// or socket client would: an edit routes through the tree's room, and its HLC stamp comes from
+// the room's own clock — the single stamp domain a socket edit also uses.
 class RoadmapTools : public ToolHost {
 public:
   RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
@@ -25,10 +22,8 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
 
 private:
-  // The tool itself, over the account alone: the grant was settled above (CompositeToolHost) and
-  // everything below here is an ownership question, which is the only one the core knows how to ask.
-  // callTool wraps it so every failure — refused, thrown, or raised deeper in the core — reaches the
-  // agent naming the tool it came from, exactly once.
+  // The tool itself, over the account alone: the grant is settled above by CompositeToolHost, so
+  // everything below is an ownership question. callTool wraps it so every failure names its tool.
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
 
 

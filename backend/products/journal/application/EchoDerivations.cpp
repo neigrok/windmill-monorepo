@@ -9,10 +9,8 @@
 namespace wm {
 
 namespace {
-// A second, because the debounce is measured in seconds and a ticker finer than its own policy is
-// spending wakeups to answer a question that cannot have changed. The ticker holds no schedule: it
-// asks the pending map who has gone quiet, so a restart loses at most the pages mid-debounce, and
-// the repair pass owes them anyway.
+// The ticker holds no schedule: it asks the pending map who has gone quiet, so a restart loses at
+// most the pages mid-debounce, which the repair pass owes anyway.
 constexpr double kDrainTickSeconds = 1.0;
 constexpr double kDrainFirstTickSeconds = 1.0;
 
@@ -44,9 +42,8 @@ void EchoDerivations::pageSaved(const UserId& user, const LocalDate& day, std::s
 
   auto entry = pending_.find(key);
   if (entry == pending_.end()) {
-    // A NEW page for this account, so the queue bound is asked here and only here — an entry that
-    // already exists is one this account is already paying for. The keys are "user|day" in an
-    // ordered map, so an account's entries are one contiguous range and counting stops at the cap.
+    // A NEW page for this account, so the queue bound is asked here and only here. The keys are
+    // "user|day" in an ordered map, so an account's entries are one contiguous range.
     const std::string mine = user.str() + "|";
     std::size_t held = 0;
     for (auto it = pending_.lower_bound(mine);
@@ -55,7 +52,6 @@ void EchoDerivations::pageSaved(const UserId& user, const LocalDate& day, std::s
     }
     if (held >= rules_.pendingPerUser) {
       // Not queued and not failed: the page's stamps never moved, so the repair pass still owes it.
-      // One account cannot make the drain thread its own by writing a thousand different days.
       ++queueFull_;
       return;
     }
@@ -64,8 +60,8 @@ void EchoDerivations::pageSaved(const UserId& user, const LocalDate& day, std::s
   }
 
   // A page that has grown by a paragraph since this entry opened is worth answering about now: an
-  // evening of steady writing never goes quiet, and waiting for a pause that never comes is how a
-  // pure debounce delivers nothing until the writer stops for the night.
+  // evening of steady writing never goes quiet, and a pure debounce would deliver nothing until the
+  // writer stopped for the night.
   const std::size_t grew = bodyBytes > entry->second.openedBytes
                                ? bodyBytes - entry->second.openedBytes
                                : entry->second.openedBytes - bodyBytes;
@@ -100,11 +96,9 @@ EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
     queueFull_ = 0;
   }
 
-  // ROUND ROBIN ACROSS ACCOUNTS, and it is the difference between one writer waiting a second and
-  // one writer waiting for somebody else's whole flood. `ready` comes out of the pending map in key
-  // order, which is insertion-independent but still groups an account's pages together — draining it
-  // as it stands means fifteen pages from one account are fifteen derivations another writer's page
-  // sits behind. Dealt one page per account per round, everybody advances at the same rate.
+  // Round robin across accounts. `ready` comes out of the pending map in key order, which groups an
+  // account's pages together, so draining it as it stands puts one account's flood in front of
+  // everybody else. Dealt one page per account per round, everybody advances at the same rate.
   std::map<std::string, std::vector<Pending>> byUser;
   for (const Pending& page : ready) byUser[page.user.str()].push_back(page);
   std::vector<Pending> dealt;
@@ -122,12 +116,11 @@ EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
       Spent& spent = spent_.try_emplace(key, Spent{0, nowMs}).first->second;
       Spent& mine = userSpent_.try_emplace(page.user.str(), Spent{0, nowMs}).first->second;
       // Two caps, one answer. The page cap stops an afternoon of editing buying the same page over
-      // and over; the ACCOUNT cap is the one a flood of invented days meets, and it is what finally
-      // counts the embedder — a step the sweep's dollar budget never saw, because the dollars it
-      // meters are the curator's.
+      // and over; the ACCOUNT cap is the one a flood of invented days meets, and the only one that
+      // counts the embedder — the sweep's dollar budget meters the curator.
       if (spent.derivations >= rules_.perPageDaily || mine.derivations >= rules_.perUserDaily) {
-        // Not derived and not failed: nothing is written, so the page's stamps do not move, so the
-        // repair pass still owes it. The cap defers work, it never destroys it.
+        // Not derived and not failed: nothing is written, so the page's stamps do not move and the
+        // repair pass still owes it.
         ++report.deferred;
         continue;
       }
@@ -142,8 +135,7 @@ EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
     if (answered == 0 && outcome.usersOverAiBudget == 0) ++report.alreadyDerived;
 
     // The cap counts what was BOUGHT. An over-budget skip and a page that turned out not to be due
-    // both spent nothing, and charging a page for them would ration it out of derivations it never
-    // had. A refusal is not one of those: it was thought about and paid for.
+    // both spent nothing. A refusal did not: it was thought about and paid for.
     if (answered == 0) continue;
     std::lock_guard<std::mutex> guard{lock_};
     ++spent_.try_emplace(key, Spent{0, nowMs}).first->second.derivations;

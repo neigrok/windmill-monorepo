@@ -17,13 +17,10 @@
 namespace wm {
 
 namespace {
-// The repair cadence, and it is no longer how anyone receives an echo — a saved page is derived
-// seconds later by EchoDerivations. What is left for this ticker is the work no save triggers:
-// inbound reverse edges a live derivation deliberately does not chase, pages made stale by a
-// corpus that moved under them, pages a vendor blip failed, and the derivations a per-page daily
-// cap deferred. Six hours is generous for all four, because none of them is anybody waiting.
-// Re-deriving an unchanged page is prevented by its stamps, not by the cadence: duePages only
-// returns what is genuinely owed, so a live derivation that already ran costs this pass nothing.
+// The repair cadence. It carries the work no save triggers: inbound reverse edges a live
+// derivation deliberately does not chase, pages made stale by a corpus that moved under them,
+// pages a vendor blip failed, and the derivations a per-page daily cap deferred. Re-deriving an
+// unchanged page is prevented by its stamps, not by the cadence.
 constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
@@ -36,10 +33,8 @@ CurationStatus statusFor(const std::string& failure) {
   return CurationStatus::transport;
 }
 
-// Three disjoint counters over one status, because the three mean three different things to whoever
-// reads the log line: work delivered, work still owed, and work that will never be delivered and is
-// no longer owed either. Blending the last into `pagesFailed` is how a permanent silence reads as a
-// vendor having a bad night.
+// Three disjoint counters over one status: work delivered, work still owed, and work that will
+// never be delivered and is no longer owed.
 void countPage(EchoSweepReport& report, CurationStatus status) {
   if (isSuccess(status)) ++report.pagesDerived;
   else if (status == CurationStatus::refused) ++report.pagesRefused;
@@ -75,8 +70,7 @@ void EchoSweep::start() {
 
 void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done) {
   heartbeat_.queue([this, sinceMs, done = std::move(done)] {
-    // `done` fires on every path: the operator is waiting on a promise it cannot fulfil itself, and
-    // an empty report reads as "nothing ran", which is exactly what happened.
+    // `done` fires on every path: the operator is waiting on a promise it cannot fulfil itself.
     try {
       done(run(sinceMs));
     } catch (const std::exception& error) {
@@ -95,8 +89,8 @@ PipelineVersions EchoSweep::versions() const {
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
   EchoSweepReport report;
-  // Any boundary missing is the same quiet no-op it is on the repair path: no row is written and
-  // the page stays due, so wiring the vendors later derives it rather than skipping it forever.
+  // Any boundary missing is a quiet no-op: no row is written and the page stays due, so wiring the
+  // vendors later derives it rather than skipping it forever.
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
   ++report.usersScanned;
 
@@ -107,8 +101,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 
   const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
   const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
-  // Nothing owed. The ordinary case for the second of two debounced saves that carried no new text,
-  // and the reason a coalesced burst cannot bill twice even when it fires twice.
+  // Nothing owed — the ordinary case for the second of two debounced saves that carried no new text.
   if (!page) return report;
 
   const CurationOutcome outcome = derive(user, *page, corpusStamp, report);
@@ -119,8 +112,8 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
   EchoSweepReport report;
-  // Any boundary missing makes the whole pass a quiet no-op rather than an error — the same
-  // discipline PlanComposer uses behind paste-import. No user is scanned and no row is written.
+  // Any boundary missing makes the whole pass a quiet no-op rather than an error: no user is
+  // scanned and no row is written.
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
 
   for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
@@ -128,15 +121,14 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
     const UserId& user = due.user;
 
     // The background bucket, asked once for the whole user rather than per page. Dry means SKIPPED,
-    // not failed: nothing is written, so no stamp advances, so every page this user is owed is still
-    // owed on the next pass. A refusal recorded here would mark the night done and lose it.
+    // not failed: nothing is written, so no stamp advances and every page is still owed next pass.
     if (!entitlements_.sweepAllowanceFor(user).allows()) {
       ++report.usersOverAiBudget;
       continue;
     }
 
-    // Read once and carry it through the user's whole pass. A page derived halfway through would
-    // otherwise record a stamp covering spans it never saw, and would never re-run against them.
+    // Read once and carried through the user's whole pass, or a page derived halfway records a
+    // stamp covering spans it never saw.
     const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
 
     std::vector<DuePage> pages = echoes_.duePages(user, corpusStamp, versions());
@@ -146,9 +138,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
     }
 
     // A page derived this pass may have moved text that other pages reach into, so those pages'
-    // stored quotes can no longer locate. Walk that reverse edge in the same pass, budgeted — the
-    // alternative is an edited page silently killing every echo aimed at it until it is touched
-    // again, which for a page nobody edits is forever.
+    // stored quotes can no longer locate. Walk that reverse edge in the same pass, budgeted.
     std::set<std::string> queued;
     for (const DuePage& page : pages) queued.insert(page.day.iso());
 
@@ -158,8 +148,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
       echoes_.recordCuration(user, page.day, outcome);
       countPage(report, outcome.status);
       // The reverse edge is walked on SETTLED, not on success: a refused page still replaced its own
-      // spans at step 3, so the pages reaching into it still hold quotes that have moved, and they
-      // are owed a re-derivation whether or not this page got an answer.
+      // spans at step 3, so the pages reaching into it still hold quotes that have moved.
       if (!isSettled(outcome.status)) continue;
 
       int enqueued = 0;
@@ -167,10 +156,9 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
         if (enqueued >= budget_.inboundPerPage) break;
         if (!queued.insert(inbound.iso()).second) continue;
         // Re-derive it FROM ITS CURRENT BODY, read here because duePages did not name it — its own
-        // body never moved, only the page it points at. Enqueuing it with an empty body is what
-        // this walk did until 2026-08-23, and an empty body is a page with nothing on it: step 1
-        // replaced its passages with none and its echoes with none, so the repair deleted exactly
-        // what it had come to save. A day the writer has no page on is simply skipped.
+        // body never moved, only the page it points at. An empty body would be a page with nothing
+        // on it, and step 1 would replace its passages and echoes with none. A day the writer has
+        // no page on is skipped.
         const std::optional<DuePage> body = echoes_.pageAt(user, inbound);
         if (!body) continue;
         pages.push_back(*body);
@@ -187,19 +175,17 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   CurationOutcome outcome;
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
-  // Recorded on every settled pass, so the next build can tell what derived this page and re-derive
-  // it when that stops being what this build would produce.
+  // Recorded on every settled pass, so the next build can tell what derived this page.
   outcome.versions = versions();
 
   // 1 — cut the page into idea units. A vendor call, so it is made only when the BODY moved: a
   // corpus that moved under unchanged text changes what this page REACHES, never what it SAYS, and
-  // re-cutting it would buy the same units twice — at a price, and with the risk of a different
-  // answer churning every span id on the page.
+  // re-cutting risks a different answer churning every span id on the page.
   const std::vector<KnownSpan> stored = echoes_.spansOf(user, page.day);
   std::vector<Passage> fresh;
   if (!page.bodyMoved && !stored.empty()) {
-    // Located rather than trusted, exactly as a model's units are: the stored text is re-found in
-    // the live body, so a page whose stamp lied cannot produce a passage that is not there.
+    // Located rather than trusted, exactly as a model's units are, so a page whose stamp lied cannot
+    // produce a passage that is not there.
     std::vector<std::string> texts;
     texts.reserve(stored.size());
     for (const KnownSpan& span : stored) texts.push_back(span.text);
@@ -207,17 +193,14 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   } else {
     const Segmentation cut = segmenter_.unitsOf(user, page.body);
     report.unitsDiscarded += cut.discarded;
-    // A failed CUT is a failed call, never a page with nothing on it — the same rule the curator's
-    // failures follow, and for the same reason: stored as empty it would settle the page and lose
-    // the night to one bad answer.
+    // A failed CUT is a failed call, never a page with nothing on it: stored as empty it would
+    // settle the page and lose the night to one bad answer.
     if (!cut.ok) {
       outcome.status = statusFor(cut.failure);
       outcome.error = "segmenter: " + cut.failure;
-      // A refusal settles the page here exactly as it does at the curator (*A refusal is final*):
-      // a vendor declining to touch this body declines it again in six hours, and the bodies that
-      // draw one are the heaviest a journal holds. So the page ends carrying NOTHING rather than
-      // whatever an earlier body's pass left standing — the spans are deliberately left alone,
-      // because they still describe the text that produced them and nothing has replaced it.
+      // A refusal settles the page here exactly as it does at the curator, so the page ends carrying
+      // NOTHING rather than whatever an earlier body's pass left standing. The spans are left alone:
+      // they still describe the text that produced them and nothing has replaced it.
       if (outcome.status == CurationStatus::refused)
         echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
       return outcome;
@@ -270,11 +253,9 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   for (const SpanPair& pair : echoes_.dismissalsOn(user, page.day))
     waved.insert({pair.triggerSpanId, pair.matchSpanId});
 
-  // 5 — select, for the page. The refrain gate, each trigger's ranking, the reader's dismissals
-  // and the page ceiling are one domain call (EchoSelection.h, selectForPage) — the same call the
-  // debug door runs, so what an operator is shown is what a save did and not a second opinion
-  // about it. `nearestReported` 0: the near misses cost another corpus scan and only that door
-  // pays for them.
+  // 5 — select, for the page. The refrain gate, each trigger's ranking, the reader's dismissals and
+  // the page ceiling are one domain call (EchoSelection.h, selectForPage) — the same call the debug
+  // door runs. `nearestReported` 0: the near misses cost another corpus scan and only that door pays.
   const PageSelection selection =
       selectForPage(tonight, history, waved, rules_, budget_.echoesPerPage, 0);
   report.pagesSkippedRefrain += selection.refrains;
@@ -293,8 +274,8 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     return outcome;
   }
 
-  // 6 — curate. `ok == false` is a failed CALL, which is not the same as finding nothing, and the
-  // difference is the whole reason a page can be retried tomorrow instead of lost tonight.
+  // 6 — curate. `ok == false` is a failed CALL, not the same as finding nothing, which is why the
+  // page can be retried tomorrow instead of lost tonight.
   std::vector<Vectored> candidates;
   candidates.reserve(offered.size());
   for (const auto& [spanId, span] : offered) candidates.push_back(span);
@@ -302,10 +283,8 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   if (!curation.ok) {
     outcome.status = statusFor(curation.failure);
     outcome.error = curation.failure;
-    // A refusal settles the page, so it leaves it in a DEFINITE state rather than carrying whatever
-    // an earlier body's pass wrote. Step 3 has already replaced this page's spans; echoes aimed from
-    // here at span ids that no longer exist are not a record of anything, and a page the vendor will
-    // not judge is a page that carries none.
+    // A refusal settles the page, so it leaves it in a DEFINITE state. Step 3 has already replaced
+    // this page's spans, and echoes aimed from here at span ids that no longer exist record nothing.
     if (outcome.status == CurationStatus::refused)
       echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     return outcome;

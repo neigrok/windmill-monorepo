@@ -8,18 +8,15 @@
 
 namespace wm {
 
-// The agent loop: a sentence and a tree in, a sequence of tool calls out, until the model
-// stops asking for tools. It is the head and the mouth; ToolHost is the hands, and those
-// already exist — the same 27 tools an external MCP client drives, executed as the same
-// caller, through the same rooms and the same op log. Hosting the agent means running this
-// loop against them ourselves.
+// The agent loop: a sentence and a tree in, a sequence of tool calls out, until the model stops
+// asking for tools. ToolHost is the hands — the same tools an external MCP client drives, executed
+// as the same caller, through the same rooms and the same op log.
 //
-// `run` BLOCKS until the loop settles. It is called from the tending worker's own thread,
-// never from a request loop — the HTTP handler that starts a run has already answered by
-// then (see domain/Tending.h on why a run outlives its browser).
+// `run` BLOCKS until the loop settles. It is called from the tending worker's own thread, never
+// from a request loop.
 
 struct AgentStep {
-  std::string tool;      // the tool the model asked for
+  std::string tool;
   bool changedTree = false;
   bool failed = false;
   std::string note;      // one line for the ledger, already human-readable

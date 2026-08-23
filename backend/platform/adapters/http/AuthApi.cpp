@@ -12,8 +12,7 @@
 namespace wm {
 
 namespace {
-// The session secret behind a request: the HttpOnly cookie, or a Bearer token for API/test
-// callers. One reader shared by every account endpoint (me, logout, patch, delete, sessions).
+// The session secret behind a request: the HttpOnly cookie, or a Bearer token.
 std::string sessionSecret(const drogon::HttpRequestPtr& req) {
   std::string secret = req->getCookie("wm_session");
   if (secret.empty()) {
@@ -23,7 +22,6 @@ std::string sessionSecret(const drogon::HttpRequestPtr& req) {
   return secret;
 }
 
-// What the request says about the device, threaded onto the session for the §5 list.
 SessionContext contextOf(const drogon::HttpRequestPtr& req) {
   return SessionContext{req->getHeader("user-agent"), clientIp(req)};
 }
@@ -36,8 +34,6 @@ Json::Value userJson(const User& user) {
   return out;
 }
 
-// Set the wm_session cookie — the single place its attributes live, shared by the magic-link
-// verify and the Google callback so the two doors mint a byte-identical session cookie.
 void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure,
                       const std::string& domain) {
   drogon::Cookie cookie("wm_session", secret);
@@ -50,8 +46,6 @@ void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string
   response->addCookie(std::move(cookie));
 }
 
-// Expire the wm_session cookie, matching the flags it was set with — used on logout, on a
-// close, and when a caller revokes the very session they are calling from.
 void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, const std::string& domain) {
   drogon::Cookie cookie("wm_session", "");
   cookie.setHttpOnly(true);
@@ -63,9 +57,7 @@ void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, co
   response->addCookie(std::move(cookie));
 }
 
-// Expire the short-lived OAuth `state` cookie once a Google round trip ends (success or failure).
-// It touches ONLY wm_oauth_state — never wm_session — so a bounced callback can't log a signed-in
-// user out (a forced-logout CSRF: a failed /callback must not clear the session it never minted).
+// Expires ONLY wm_oauth_state — never wm_session, so a bounced callback can't log a signed-in user out.
 void expireStateCookie(const drogon::HttpResponsePtr& response, const std::string& domain) {
   drogon::Cookie cookie("wm_oauth_state", "");
   cookie.setPath("/");
@@ -74,9 +66,7 @@ void expireStateCookie(const drogon::HttpResponsePtr& response, const std::strin
   response->addCookie(std::move(cookie));
 }
 
-// An unguessable OAuth `state` nonce (CSRF): echoed in the authorize URL and stashed in an HttpOnly
-// cookie, the callback accepts the code only when the two match. Empty on the (near-impossible)
-// entropy failure, which the caller treats as "can't start the flow".
+// The OAuth `state` CSRF nonce, echoed in the authorize URL and stashed in a cookie; empty on an entropy failure.
 std::string randomState() {
   unsigned char buf[16];
   if (RAND_bytes(buf, sizeof(buf)) != 1) return "";
@@ -90,7 +80,6 @@ std::string randomState() {
   return out;
 }
 
-// A UnixMs as an ISO 8601 UTC instant (the §4 close date the client formats for its chip).
 std::string isoUtc(UnixMs ms) {
   const std::time_t secs = static_cast<std::time_t>(ms / 1000);
   std::tm tm{};
@@ -109,7 +98,6 @@ AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> 
       apple_(std::move(apple)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // One door in: parse the address, defer the verdict to the service, translate to the doc's copy.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   std::string email = json ? json->get("email", "").asString() : "";
   if (email.empty()) {
@@ -123,21 +111,14 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
   std::string forkOf = json ? json->get("forkOf", "").asString() : "";
   if (forkOf.size() > 64) forkOf.clear();  // an id, not a payload — drop junk quietly
 
-  // The optional door: "app" asks the mail to carry the row's 6-digit code instead of the link;
-  // absent or anything else is today's link mail, byte for byte.
+  // door "app" mails the row's 6-digit code instead of the link; anything else mails the link.
   const std::string door = json ? json->get("door", "").asString() : "";
 
-  // A fork mail must name what it plants, so resolve the source's face here — the auth pipeline
-  // stays product-free, taking two already-rendered strings from the injected port rather than any
-  // product type. A deploy with no forkable product injects nothing, and a source we can't read
-  // stays undescribed: the mail falls back to the plain template rather than promise a name it
-  // can't see.
+  // A source we can't read stays undescribed: the mail falls back to the plain template.
   std::optional<ForkDescription> forkDescription;
   if (!forkOf.empty() && signupFork_) forkDescription = signupFork_->describe(forkOf);
 
-  // The send is async, so the verdict rides back through the callback — fired inline for
-  // invalid / rate-limited, or off the sender's loop once the Resend call settles. The
-  // handler thread is freed the instant this returns; the drogon callback carries the reply.
+  // The send is async: the verdict rides back through the callback, freeing the handler thread.
   auth_->requestLink(email, forkOf, forkDescription, door,
                      [callback = std::move(callback)](AuthService::RequestResult result) {
     if (result == AuthService::RequestResult::sent) {
@@ -169,7 +150,6 @@ void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The link comes back once: resolve it, and on success mint the session cookie.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   std::string token = json ? json->get("token", "").asString() : "";
   if (token.empty()) {
@@ -193,7 +173,6 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 }
 
 void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The app door's landing: the typed code comes back once, against the address it was sent to.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   const std::string email = json ? json->get("email", "").asString() : "";
   const std::string code = json ? json->get("code", "").asString() : "";
@@ -207,8 +186,8 @@ void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callb
 
   AuthService::CodeCompletion completion = auth_->completeCode(email, code, contextOf(req));
   if (completion.verdict != CodeVerdict::valid) {
-    // Wrong, expired, spent, exhausted, unknown address — one identical brick, so this endpoint
-    // can never be read as an oracle for which addresses hold pending codes or accounts.
+    // Every failure answers one identical brick, so this endpoint is never an oracle for which
+    // addresses hold pending codes or accounts.
     Json::Value body(Json::objectValue);
     body["error"] = "That code has expired";
     body["detail"] = "Codes work once and last 15 minutes.";
@@ -224,26 +203,19 @@ void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::
   Json::Value body(Json::objectValue);
   body["user"] = userJson(signedIn.user);
 
-  // A pending fork rides the credential: plant it into the fresh session through the injected
-  // port. Failure degrades to a plain sign-in — the fork never blocks the door — and the port
-  // owns the logging (the credential is already spent, so a dropped fork is unrecoverable and
-  // must leave a trace). A deploy with no forkable product injects nothing; the branch falls
-  // through.
+  // A failed plant degrades to a plain sign-in — the fork never blocks the door — and the port owns the logging.
   if (!forkSource.empty() && signupFork_) {
     if (std::optional<std::string> planted = signupFork_->plant(forkSource, signedIn.user.id))
       body["forkedTree"] = *planted;
   }
 
-  // The session secret rides ONLY in the cookie, never the body — both apps lift it from the
-  // Set-Cookie header, and script must never be able to read it.
+  // The session secret rides only in the cookie here, never the body.
   auto response = jsonResponse(body);
   setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
   callback(response);
 }
 
-// Google sign-in, door one: mint a CSRF state, stash it in a short-lived HttpOnly cookie, and 302
-// the browser to Google's consent. Unconfigured (no client id/secret) → bounce to the app, so a
-// stray click before the secrets land is a harmless no-op rather than an error page.
+// Google door one: mint a CSRF state, stash it in a short-lived HttpOnly cookie, 302 to consent.
 void AuthApi::googleStart(const drogon::HttpRequestPtr&, HttpCallback&& callback) {
   const std::string state = (google_ && google_->configured()) ? randomState() : "";
   if (state.empty()) {  // unconfigured, or an entropy failure — bounce rather than start a broken flow
@@ -263,13 +235,10 @@ void AuthApi::googleStart(const drogon::HttpRequestPtr&, HttpCallback&& callback
   callback(response);
 }
 
-// Google sign-in, door two: validate the state against the cookie, exchange the code for a verified
-// identity, then run the SAME session-mint tail as a magic link (revival + account-linking-by-email)
-// and land the browser back in the app with a wm_session cookie. Any failure lands unauthenticated —
-// the user simply isn't signed in and can retry — never an error page.
+// Google door two: validate the state against the cookie, exchange the code, mint a session.
+// Any failure lands unauthenticated — the user simply isn't signed in and can retry.
 void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // A bounce only ever expires the OAuth state cookie — it must NEVER clear wm_session, so a failed
-  // or forged callback can't force-log-out a signed-in user.
+  // A bounce expires only the OAuth state cookie — never wm_session.
   auto bounce = [this](const std::string& hash) {
     auto response = drogon::HttpResponse::newRedirectionResponse(appUrl_ + hash);
     expireStateCookie(response, cookieDomain_);
@@ -307,15 +276,9 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
       });
 }
 
-// Apple sign-in, the native door: the app has already run ASAuthorizationController and posts
-// { authorizationCode, name? }. There is no redirect and no state cookie — the app is the user
-// agent, and the session comes back as JSON for the Keychain rather than as a Set-Cookie the app
-// would have to keep a jar for (the cookie is still set, so a browser caller works unchanged).
-//
-// The caller's session is read BEFORE the exchange, because holding one changes what this route
-// means: a provider sign-in taken while already signed in ATTACHES the door to that account and
-// never resolves one, which is what stops "sign in by link, then tap Apple" from forking the
-// account the user is looking at.
+// Apple's native door: the app posts { authorizationCode, name? } and the session comes back as JSON
+// for the Keychain (the cookie is set too). The caller's session is read BEFORE the exchange: a
+// provider sign-in taken while already signed in ATTACHES the door to that account, never resolves one.
 void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   if (!apple_ || !apple_->configured()) {
     callback(error(drogon::k404NotFound, "apple sign-in is not configured"));
@@ -327,8 +290,8 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
     callback(error(drogon::k400BadRequest, "missing authorization code"));
     return;
   }
-  // Apple hands the app a name exactly once, on the first authorization ever, so it arrives here or
-  // never. It seeds a NEW account and is never allowed to overwrite the name on an existing one.
+  // Apple sends the name only on the first authorization ever: it seeds a NEW account and is
+  // never allowed to overwrite the name on an existing one.
   std::string name = json ? json->get("name", "").asString() : "";
   if (name.size() > 200) name.clear();
 
@@ -371,8 +334,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
         body["user"] = userJson(signIn->signedIn.user);
         body["session"] = signIn->signedIn.sessionSecret;  // the app's Bearer credential
         body["created"] = signIn->created;
-        // The two facts together are the link door's condition, and the client owns the decision:
-        // a relay address can never find the account this human has on the web.
+        // A relay address can never find the account this human has on the web; the client owns the decision.
         body["privateEmail"] = signIn->privateEmail;
         auto response = jsonResponse(body);
         setSessionCookie(response, signIn->signedIn.sessionSecret, secure, domain);
@@ -381,8 +343,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
 }
 
 // The link door: the caller's account folds into the one this magic link names, carrying its
-// provider doors with it. Refused unless the caller's account is empty — the merge is a delete of
-// nothing, never a reconciliation, which is why no account merger exists to go wrong.
+// provider doors with it. Refused unless the caller's account is empty.
 void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   const SessionContext ctx = contextOf(req);
   const std::optional<User> caller = auth_->authenticate(sessionSecret(req), ctx);
@@ -430,7 +391,6 @@ void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The session rides in the cookie or a Bearer header; resolve it to a user or refuse.
   std::optional<User> user = auth_->authenticate(sessionSecret(req), contextOf(req));
   if (!user) {
     callback(jsonResponse(Json::Value(Json::objectValue), drogon::k401Unauthorized));
@@ -442,7 +402,6 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Retire the session server-side, then clear the cookie on the way out.
   auth_->signOut(sessionSecret(req));
 
   auto response = drogon::HttpResponse::newHttpResponse();
@@ -452,7 +411,6 @@ void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 }
 
 void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Settings §5 profile: the only editable identity field is the name.
   const std::string secret = sessionSecret(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
@@ -473,7 +431,7 @@ void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 }
 
 void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Settings §4 close: soft-close with a 30-day grace, every session and grant signed out.
+  // Soft-close with a 30-day grace; every session and grant is signed out.
   const std::string secret = sessionSecret(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
@@ -491,7 +449,6 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 }
 
 void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Settings §5 sessions: the caller's live sessions, their own flagged current.
   const std::string secret = sessionSecret(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
@@ -516,7 +473,7 @@ void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cal
 
 void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                             const std::string& sessionId) {
-  // Settings §5: revoke one device. Revoking the current one also clears this cookie.
+  // Revoking the current session also clears this cookie.
   const std::string secret = sessionSecret(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
@@ -536,7 +493,7 @@ void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& ca
 }
 
 void AuthApi::signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Settings §5: every other device, the caller's own left alive (so its cookie stands).
+  // Every other device; the caller's own session is left alive.
   const std::string secret = sessionSecret(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {

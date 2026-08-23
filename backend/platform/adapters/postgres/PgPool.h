@@ -13,40 +13,23 @@
 namespace wm {
 
 // Every Postgres connection this process opens comes from here, and there are never more than
-// `maxConnections` alive at once.
-//
-// The rule the file exists to enforce is that a connection is BORROWED and RETURNED, never opened
-// per unit of work. What stood here before kept one connection per thread, which is bounded only
-// by how many threads happen to exist — so every short-lived thread opened a connection and closed
-// it again on exit. A closed loopback connection holds a TCP ephemeral port in TIME_WAIT for twice
-// the maximum segment lifetime, macOS has 16,384 of those ports for the whole machine, and the
-// test suite alone opened 157 connections in 1.1 seconds. On 2026-08-08 that took the developer's
-// box off the network entirely: 19,771 sockets in TIME_WAIT, 7,234 of them to ::1:5432, every new
-// outbound TCP connection failing with EADDRNOTAVAIL while ping and dig stayed perfectly healthy.
-//
-// So connections are opened lazily — an idle process holds none — and a returned connection stays
-// open for the next borrower rather than being closed. A connection that comes back broken is
-// dropped instead of pooled, and the slot it frees lets the next borrower open a fresh one.
-//
-// Borrow through PgLease below, never through acquire/release by hand.
+// `maxConnections` alive at once. A connection is BORROWED and RETURNED, never opened per unit of
+// work: a closed loopback connection holds a TCP ephemeral port in TIME_WAIT and macOS has 16,384
+// of them for the whole machine. Connections open lazily, a returned connection stays open for the
+// next borrower, and one that comes back broken is dropped. Borrow through PgLease, never by hand.
 class PgPool {
 public:
-  // A ceiling, not a target — but it must sit ABOVE the number of borrowers that can be inside a
-  // handler at once, or the pool converts a busy moment into 30-second waits and 500s. The server's
-  // borrowers are one per drogon IO thread (one per core since COMPUTE-3, main.cpp) plus the
-  // heartbeat loops — the mail sweeps, the echo sweep — and the sweep that holds the fleet lock
-  // keeps its connection for a whole pass. So main.cpp sizes the pool as ioThreads + the reserve
-  // below rather than taking this default, and this default is what a tool with no listener uses.
-  // Postgres itself allows 100 in total, which several local processes share.
+  // A ceiling that must sit ABOVE the number of borrowers that can be inside a handler at once, or
+  // the pool turns a busy moment into 30-second waits and 500s. main.cpp sizes the pool as ioThreads
+  // + kReservedConnections; this default is what a tool with no listener uses.
   static constexpr std::size_t kDefaultMaxConnections = 20;
 
-  // Headroom over the IO threads for the borrowers that are not request threads: three heartbeat
-  // loops today, plus the lease a sweep holds across its pass and room for one more of each.
+  // Headroom over the IO threads for borrowers that are not request threads: the heartbeat loops,
+  // plus the lease a sweep holds across its whole pass.
   static constexpr std::size_t kReservedConnections = 8;
 
-  // How long a borrower waits for the pool to hand something back before giving up. A connection is
-  // held for one transaction and every connection carries a 5s statement_timeout, so waiting this
-  // long means a borrower leaked one — a failure worth an exception rather than a silent hang.
+  // How long a borrower waits for the pool before giving up. A connection is held for one transaction
+  // and carries a 5s statement_timeout, so waiting this long means a borrower leaked one.
   static constexpr std::chrono::milliseconds kDefaultAcquireTimeout{30'000};
 
   explicit PgPool(std::string connString, std::size_t maxConnections = kDefaultMaxConnections,
@@ -71,14 +54,13 @@ private:
   std::size_t open_ = 0;  // idle plus borrowed: what the ceiling counts
 };
 
-// The borrow, scoped. Declare one, open the transaction on it, and let both go out of scope:
+// The borrow, scoped:
 //
 //   PgLease conn{*pool_};
 //   pqxx::work txn{*conn};
 //
-// That order is not a style choice. The transaction is declared second so it is destroyed first,
-// which is what lets an uncommitted `pqxx::work` roll itself back while the connection it rolls
-// back on is still borrowed.
+// The transaction is declared second so it is destroyed first, which is what lets an uncommitted
+// `pqxx::work` roll itself back on a connection that is still borrowed.
 class PgLease {
 public:
   explicit PgLease(PgPool& pool) : pool_(pool), conn_(pool.acquire()) {}
@@ -95,8 +77,7 @@ private:
   std::unique_ptr<pqxx::connection> conn_;
 };
 
-// Strip any `user:password@` credentials before a connection string reaches a log line. Every
-// process that announces which database it opened goes through here.
+// Strip any `user:password@` credentials before a connection string reaches a log line.
 std::string redactDbUrl(const std::string& connString);
 
 }

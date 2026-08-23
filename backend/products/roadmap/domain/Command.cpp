@@ -21,8 +21,8 @@ std::optional<std::string> countedOver(const std::string& what, std::size_t size
 }
 
 // Every per-node bound admit() enforces, wherever the node arrived from — a document's NodeSpec
-// or a frame's NodeStateEntry. The id leads, and an over-long id is never quoted back: a 20KB id
-// was the thing being refused, and echoing it would make the refusal as expensive as the request.
+// or a frame's NodeStateEntry. The id leads, and an over-long id is never quoted back: echoing it
+// would make the refusal as expensive as the request.
 std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& label, const std::string& icon,
                                            const std::string& description, const std::vector<Link>& links,
                                            const std::optional<Vec2>& position) {
@@ -67,8 +67,8 @@ std::optional<std::string> kindFieldBounds(const KindId& id, const std::string& 
 
 // The two whole-tree ceilings, read off the totals the arrival would leave behind. Stated last,
 // after the field bounds, so a caller learns about a bad node before it learns about the size.
-// A ceiling refuses GROWTH, not size: trees already past the caps exist — this very gap built
-// them — and freezing one would leave its owner unable to rename, retire or thin it back down.
+// A ceiling refuses GROWTH, not size: trees already past the caps exist, and freezing one would
+// leave its owner unable to rename, retire or thin it back down.
 std::optional<Admission> growthWithin(std::size_t nodesBefore, std::size_t nodesAfter,
                                       std::size_t edgesBefore, std::size_t edgesAfter) {
   if (nodesAfter > kMaxNodes && nodesAfter > nodesBefore)
@@ -131,9 +131,7 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
 
 // A refusal names the thing it is about — the id, the value that clashed, who holds it, the limit
 // that was reached — because the caller cannot see this state and must be able to act on the
-// sentence alone. Every fact these messages quote is already in hand at the point of refusal; the
-// old strings simply withheld it. Same words reach an MCP agent (with its tool name stamped on by
-// adapters/mcp) and an HTTP client.
+// sentence alone. The same words reach an MCP agent and an HTTP client.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command) {
   auto idBounds = [](const NodeId& id) -> std::optional<std::string> {
     if (id.empty()) return "node id is empty";
@@ -233,8 +231,8 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       std::optional<NodeColor> hue = legend.hueOf(c.id);
       if (!hue) return "no kind " + quoted(c.id.str()) + " in this legend";
       if (!graph.hueInUse(*hue)) return std::nullopt;
-      // Only the refusal pays for the count — the caller needs to know how much repainting the
-      // removal is asking of it, which "kind is in use" never said.
+      // Only the refusal pays for the count: the caller needs to know how much repainting the
+      // removal is asking of it.
       return "kind " + quoted(c.id.str()) + " is in use — " +
              std::to_string(graph.nodesWithColor(*hue).size()) + " node(s) still wear hue " +
              quoted(std::string(toString(*hue))) + "; recolor them first";
@@ -253,8 +251,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
 
 std::optional<Admission> admitTitle(const std::string& title) {
   // Counted as UTF-8 codepoints, because kMaxTitleChars is a count of characters and a rename
-  // truncates on the same reading — a byte cap here would refuse a hundred perfectly legal CJK
-  // characters that the rename path happily keeps.
+  // truncates on the same reading.
   std::size_t characters = 0;
   for (char byte : title)
     if ((static_cast<unsigned char>(byte) & 0xC0) != 0x80) ++characters;
@@ -275,16 +272,15 @@ std::optional<Admission> admit(const TreeData& document) {
     if (std::optional<std::string> bad = kindFieldBounds(kind.id, kind.label, kind.description))
       return Admission{Admission::Verdict::malformed, *bad};
   // A posted document IS the whole tree it describes, so it is judged as a graft into an empty
-  // one — the counting rule lives in one place and the document path gets it for free. The tree
-  // it lands ON is judged separately, by the caller holding that graph: a save GROWS a lattice
-  // rather than replacing it, so one request's payload is never the whole of what the tree holds.
+  // one. The tree it lands ON is judged separately, by the caller holding that graph: a save GROWS
+  // a lattice rather than replacing it, so one request's payload is never the whole of what the
+  // tree holds.
   return admit(LooseGraph{}, document);
 }
 
 std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming) {
-  // The ids and edges the batch would ADD, as sets: a document may name the same id — or the
-  // same prerequisite — many times, and counting the repetitions once each refused legal
-  // documents with a sentence that stated a number the tree would never have held.
+  // The ids and edges the batch would ADD, as sets: a document may name the same id — or the same
+  // prerequisite — many times, and each must count once.
   std::set<NodeId> arrivingNodes;
   std::set<Edge> arrivingEdges;
   for (const NodeSpec& node : incoming.nodes) {
@@ -304,9 +300,8 @@ std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming) {
   // Run the element-set join itself — the graph's own life for each key, merged with every entry
   // the frame carries for it — instead of reading each entry's stamps and trusting them. An
-  // estimate let a losing tombstone subtract from a count it never actually lowered, and let a
-  // repeated id subtract once per repetition: 10000 nodes walked to 13600 over 45 acked frames,
-  // with the drift never settling because the real count was re-read each time.
+  // estimate lets a losing tombstone subtract from a count it never lowered, and a repeated id
+  // subtract once per repetition.
   std::map<NodeId, ElementSet> nodeLives;
   for (const NodeStateEntry& node : incoming.nodes) {
     if (std::optional<std::string> bad =
@@ -341,8 +336,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
 }
 
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming) {
-  // The legend rides the same frame the graph does and was judged by nobody: 200 kinds landed on
-  // a legend capped at six, and stayed. Same element-set join, same growth rule.
+  // The legend rides the same frame the graph does: same element-set join, same growth rule.
   std::map<KindId, ElementSet> lives;
   std::size_t before = 0;
   for (const KindStateEntry& kind : legend.exportState().kinds) {

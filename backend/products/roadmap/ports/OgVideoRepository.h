@@ -12,12 +12,10 @@ struct StoredVideo {
   std::string mime;
 };
 
-// The store behind per-tree share videos (og-share-video): one short mp4/webm loop per tree,
-// keyed by tree id. The client renders + encodes the loop and uploads it; this is the only place
-// its bytes live. Upsert replaces any prior video; get returns the bytes and their mime, or
-// nullopt when a tree has never had one — the share page keeps the og:image poster as the
-// fallback there. has is the cheap "does this tree carry a video?" the share page asks before it
-// emits the og:video tag, without dragging the bytes off disk.
+// The store behind per-tree share videos: one short mp4/webm loop per tree, keyed by tree id, and
+// the only place its bytes live. Upsert replaces any prior video; get returns the bytes and their
+// mime, or nullopt when a tree has never had one — the share page keeps the og:image poster as the
+// fallback there. has answers "does this tree carry a video?" without dragging the bytes off disk.
 struct OgVideoRepository {
   virtual ~OgVideoRepository() = default;
   virtual void put(const std::string& treeId, const std::string& bytes, const std::string& mime) = 0;

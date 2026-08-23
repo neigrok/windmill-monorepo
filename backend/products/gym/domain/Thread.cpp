@@ -5,14 +5,9 @@ namespace wm::gym {
 namespace {
 
 // Every proposal in one state, folded into the outcome that names it: the count is what those
-// proposals moved, and the routine is named only where they all landed on the same one.
-//
-// THE LOOP RUNS TO THE END WHATEVER IT MEETS, and that is the fix for a real defect: it used to
-// return the moment a second routine appeared, so a thread that moved Push A, then Legs, then Push A
-// again printed the first two counts and silently dropped the third. `6 changes dismissed` under a
-// thread that dismissed eleven is exactly the kind of sentence this file exists to refuse — a number
-// the server states about somebody's evening that the server did not observe. Meeting a second
-// routine costs the NOUN and nothing else, so the noun is decided at the end rather than mid-walk.
+// proposals moved, and the routine is named only where they all landed on the same one. The loop
+// runs to the end whatever it meets — meeting a second routine costs the NOUN and nothing else, so
+// the noun is decided at the end rather than mid-walk.
 ThreadOutcome foldedInto(ThreadOutcomeKind kind, const AskThread& thread, ProposalState state) {
   ThreadOutcome outcome{kind};
   std::optional<RoutineId> landedOn;

@@ -11,33 +11,23 @@ namespace wm {
 
 // The weekly reminder, decided as a PURE function of one user's loaded facts. Nothing here
 // reaches for a clock, a database or a mailer: `decide` takes everything it needs and answers
-// with a decision the sweep records verbatim in the ledger. That is what makes the guardrail
-// metric a GROUP BY over one table rather than an analytics project — every user who reaches
-// the decision point leaves exactly one honest row a week, whether or not a mail went out.
-//
-// The promise the shipped footer already makes ("You get this once a week, only while a tree
-// has steps ready") is the specification. Where a rule could be read two ways, the reading
-// that keeps that sentence literally true is the right one.
+// with a decision the sweep records verbatim in the ledger.
 
 enum class ReminderOutcome { send, skip };
 
 // `loadFailed` is the one reason `decide` can never reach: it is stamped by the sweep when the
-// facts could not be read at all. It exists so that a turn which threw still claims its week —
-// a user whose load keeps failing would otherwise keep the oldest pointer in the fleet, sort
-// first in every batch, and eventually crowd everyone else out of it.
+// facts could not be read at all, so a turn that threw still claims its week.
 enum class SkipReason { none, tooLate, recentlyActive, inGrace, noReadySteps, loadFailed };
 
-// One step the email may name: the id the deep link points at, its label, and the hue it
-// wears in the tree — rendered to a fixed hex beside the row, never to user text.
+// One step the email may name. `color` is rendered to a fixed hex beside the row, never to user text.
 struct ReadyStep {
   NodeId id;
   std::string label;
   NodeColor color = NodeColor::terracotta;
 };
 
-// One of the caller's trees as the decision sees it. `ready` is already DERIVED — by
-// UnlockRules::derive, the very code the UI runs — so this file never re-decides what
-// "available" means and the mail can never promise a step the app doesn't show.
+// One of the caller's trees as the decision sees it. `ready` is already DERIVED by
+// UnlockRules::derive, so this file never re-decides what "available" means.
 struct TreeReadiness {
   TreeId id;
   std::string title;
@@ -47,9 +37,8 @@ struct TreeReadiness {
   std::vector<ReadyStep> ready;
 };
 
-// Everything decide() is allowed to look at, loaded for ONE user. `slotDate` is the LOCAL date
-// of this week's slot (Postgres resolved it; C++ never converts a timezone) and doubles as the
-// ledger's week key; `slotInstantMs` is that same slot as a UTC instant.
+// Everything decide() is allowed to look at, loaded for ONE user. `slotDate` is the LOCAL date of
+// this week's slot and doubles as the ledger's week key; `slotInstantMs` is that slot as a UTC instant.
 struct ReminderCandidate {
   UserId user;
   std::string slotDate;
@@ -61,9 +50,8 @@ struct ReminderCandidate {
 
 // What a sent reminder says: one featured tree, a few of its ready steps, and the count of the
 // OTHER trees also waiting. No URLs — a base URL is deployment config and never enters the
-// decision. A skipped week fills in `readyCount` and nothing else: the ledger's most useful
-// question is "how many people who DID have steps ready did we hold back, and why", and it can
-// only answer that if the count is taken before the gates rather than after them.
+// decision. A skipped week fills in `readyCount` and nothing else, counted before the gates
+// rather than after them.
 struct ReminderContent {
   TreeId treeId;
   std::string treeTitle;
@@ -82,41 +70,31 @@ struct ReminderDecision {
 
 // How many ready steps the mail names before it stops listing and starts counting.
 inline constexpr int kMaxSteps = 3;
-// Past this much lateness the slot is abandoned rather than served: the box was down, and
-// losing one reminder beats mailing the whole fleet at 9pm local.
+// Past this much lateness the slot is abandoned rather than served.
 inline constexpr std::uint64_t kMaxLatenessMs = 6ull * 60 * 60 * 1000;
 // Someone who was just here does not need to be told their tree is waiting.
 inline constexpr std::uint64_t kActiveWindowMs = 3ull * 24 * 60 * 60 * 1000;
-// The new-account grace: nothing is mailed until the ACCOUNT is a week old. It measures the
-// person's age here, not their trees' — a long-time user who starts a fresh plan is not new, and
-// deleting an old tree must not hand anyone a second first week.
+// The new-account grace: nothing is mailed until the ACCOUNT is a week old — the person's age,
+// not their trees'.
 inline constexpr std::uint64_t kGraceMs = 7ull * 24 * 60 * 60 * 1000;
-// Everyone gets Tuesday 09:00 local until someone asks for a choice. 1 = Monday .. 7 = Sunday;
-// the minute is counted from local midnight and is confined to 08:00–11:00, which is how DST's
-// nonexistent and ambiguous local times (2–3am) are dodged by construction rather than handled.
+// 1 = Monday .. 7 = Sunday; the minute is counted from local midnight and is confined to
+// 08:00–11:00, which dodges DST's nonexistent and ambiguous local times by construction.
 inline constexpr int kDefaultSlotDow = 2;
 inline constexpr int kDefaultSlotMinute = 9 * 60;
 inline constexpr int kEarliestSlotMinute = 8 * 60;
 inline constexpr int kLatestSlotMinute = 11 * 60;
-// The ceiling on one sweep. The tick is 15 minutes, so this is also the fleet's send rate —
-// the reminder path bypasses the magic-link limiter entirely, and this is what replaces it.
+// The ceiling on one sweep. The tick is 15 minutes, so this is also the fleet's send rate.
 inline constexpr int kSweepBatch = 200;
 
 // The whole rule, top to bottom, first match wins.
 ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs);
 
-// The ledger's `reason` vocabulary. A send reads "ok". 'load-failed' is stamped when decide() was
-// never reached at all, and 'held' / 'send-failed' after the claim — none of the three is a
-// decision this function can arrive at.
+// The ledger's `reason` vocabulary. A send reads "ok". 'load-failed', 'held' and 'send-failed' are
+// stamped by the sweep — none of the three is a decision this function can arrive at.
 const char* skipReasonName(SkipReason reason);
 
-// The mail's three counted sentences, worded HERE rather than in the vendor adapter, so the
-// mailer only binds finished strings and every product sentence stays reachable from a test.
-// Each of them is empty when it has nothing to say, and the template simply renders nothing.
-//
-//   readyPhrase(4)      -> "4 steps"                        (the subject line's count)
-//   remainderPhrase(5)  -> "…and 2 more on this tree"       (kMaxSteps of them were named)
-//   otherTreesPhrase(2) -> "2 other trees have steps ready"  (TREES, and it says so)
+// The mail's counted sentences, worded here rather than in the vendor adapter. Each is empty when
+// it has nothing to say, and the template then renders nothing.
 std::string readyPhrase(int readySteps);
 std::string remainderPhrase(int readySteps);
 std::string otherTreesPhrase(int otherReadyTrees);

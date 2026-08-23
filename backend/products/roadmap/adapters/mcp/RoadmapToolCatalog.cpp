@@ -21,8 +21,7 @@ Json::Value str(const char* description) {
   return property;
 }
 
-// A string with a published cap. The cap exists either way — the tool refuses past it — and a
-// client can only pre-validate what the schema states, so it is stated.
+// A string with a published cap: a client can only pre-validate what the schema states.
 Json::Value cappedStr(const char* description, std::size_t limit) {
   Json::Value property = str(description);
   property["maxLength"] = static_cast<Json::UInt64>(limit);
@@ -39,18 +38,16 @@ Json::Value nodeHandle() {
   return cappedStr("The node id (legacy `id` is still accepted).", kMaxIdLength);
 }
 
-// …and that legacy spelling, still read but no longer canonical. It stays in the schema because
-// every tool declares `additionalProperties: false`: a client that dropped it from the published
-// properties would have its own validator reject the alias before the server ever saw it.
+// The alias spelling. It stays in the schema because every tool declares
+// `additionalProperties: false`: a client's own validator would otherwise reject it.
 Json::Value legacyNodeHandle() {
   Json::Value property = cappedStr("Deprecated alias for `nodeId`.", kMaxIdLength);
   property["deprecated"] = true;
   return property;
 }
 
-// A legend kind's handle. Kinds keep `id` as the published property — all six *_kind tools spell
-// it alike, so there is no sibling split to guess — but `kindId` is accepted too, so an agent
-// that learned "<thing>Id names a thing that exists" from the node tools is never wrong.
+// A legend kind's handle: `id` is the published property on all six *_kind tools, and `kindId`
+// is accepted too.
 Json::Value kindHandle() {
   return cappedStr("The kind id (`kindId` is accepted too).", kMaxIdLength);
 }
@@ -91,11 +88,8 @@ Json::Value strArray(const char* description, std::size_t itemLimit) {
   return property;
 }
 
-// An array of objects, publishing the shape of one. Separate from strArray because the difference
-// is not cosmetic: a caller that believes `items` is a string sends strings, and the request dies
-// at the parser with a bare transport error naming no field. A schema is the only thing an agent
-// has — it cannot look at an example and recover the way a person reading docs can — so it states
-// what each item requires, which is exactly what the tool enforces.
+// An array of objects, publishing the shape of one: a schema is the only thing an agent has, so
+// it states what each item requires, which is exactly what the tool enforces.
 Json::Value objArray(const char* description, Json::Value properties, std::vector<const char*> required) {
   Json::Value item(Json::objectValue);
   item["type"] = "object";
@@ -111,8 +105,7 @@ Json::Value objArray(const char* description, Json::Value properties, std::vecto
   return property;
 }
 
-// A read's `fields` argument, carrying its shape's whole vocabulary as the item `enum` — a
-// client can only pre-validate what the schema states, so the legal set is stated.
+// A read's `fields` argument, carrying its shape's whole vocabulary as the item `enum`.
 Json::Value fieldArray(const char* description, const std::vector<std::string>& legal) {
   Json::Value allowed(Json::arrayValue);
   for (const std::string& name : legal) allowed.append(name);
@@ -168,13 +161,11 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
-// Each tool names the grant level that reaches it beside the sentence describing what it does, so a
-// client cannot be told one thing and gated on another. The three levels split like this: `read`
-// answers questions, `write` changes the document, and `delete` destroys something a person AUTHORED
-// — a whole roadmap, a step, or a legend kind. Edges are relationships rather than authored things,
-// which is why disconnect/reconnect/tidy/prune stay writes: they rearrange the graph, they never take
-// out of it something someone wrote. And `delete` is never implied by `write` — a connection that was
-// not handed that level does not so much as see these three in tools/list.
+// Each tool names the grant level that reaches it beside its description, so a client cannot be
+// told one thing and gated on another. `read` answers questions, `write` changes the document,
+// and `delete` destroys something a person AUTHORED — a roadmap, a step, or a legend kind. Edges
+// are relationships, so disconnect/reconnect/tidy/prune stay writes. `delete` is never implied by
+// `write`: a connection without that level does not see these three in tools/list.
 ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
                      std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);

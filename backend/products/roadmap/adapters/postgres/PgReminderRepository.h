@@ -13,18 +13,14 @@
 
 namespace wm {
 
-// The reminder engine against Postgres. Two things about this class are load-bearing.
+// The reminder engine against Postgres.
 //
-// EVERY calendar conversion happens in SQL, through AT TIME ZONE. Postgres carries its own IANA
-// database, so a slot resolves identically on a macOS dev box and on CI's Linux — which C++
-// calendar functions demonstrably do not (this codebase has already been burned by timegm
-// diverging between the two). There is no mktime, timegm, localtime_r or chrono time zone here,
-// and there must never be one.
+// EVERY calendar conversion happens in SQL, through AT TIME ZONE: Postgres carries its own IANA
+// database, so a slot resolves identically on macOS and on CI's Linux, which C++ calendar
+// functions do not. No mktime, timegm, localtime_r or chrono time zone here, ever.
 //
-// `readinessFor` is the ONE place readiness is computed, and it computes it by running the real
-// UnlockRules::derive over the real graph — the same code the UI runs. A bespoke "is available"
-// query would eventually disagree with the app, and an email promising steps the app doesn't
-// show breaks the footer's promise far harder than any timing bug ever could.
+// `readinessFor` is the ONE place readiness is computed, and it runs the real
+// UnlockRules::derive over the real graph — the same code the UI runs.
 class PgReminderRepository : public ReminderRepository {
 public:
   explicit PgReminderRepository(std::shared_ptr<PgPool> pool);

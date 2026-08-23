@@ -25,13 +25,9 @@ struct NodeRecord {
   Lww<std::vector<Link>> links;            // external references, the list as one register
 };
 
-// The redundant-edge pass — LooseGraph::redundantEdges behind tidy, and TreeHealth's health
-// report — walks a transitive closure whose cost grows with edges far faster than with nodes:
-// its inner loop is a sum of squared degrees. Guarded by node count alone, a 1500-node tree
-// carrying 500000 edges cost 32 seconds of one handler thread per call, repeatably, and four
-// such calls froze the whole API. So the budget counts the WORK: a node ceiling, an edge
-// ceiling, and their product. Over budget the pass is skipped and reports nothing — tidy finds
-// no edge to drop, health reports 0 redundant — exactly as the node ceiling always behaved.
+// The redundant-edge pass walks a transitive closure whose inner loop is a sum of squared degrees,
+// so the budget counts the WORK: a node ceiling, an edge ceiling, and their product. Over budget
+// the pass is skipped and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
 bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
 
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;
@@ -42,11 +38,10 @@ public:
   LooseGraph(const TreeData& seed, const Hlc& at);
   explicit LooseGraph(const GraphState& state);
 
-  // Fold a partial state into this one, entry by entry, field by field: the same
-  // element-set and LWW merges a command takes, applied to serialized records. Absence at
-  // every granularity — a missing entry, a missing field, the unset stamp — means "no
-  // information", so joining a subgraph delta only ever adds. Commutative, associative,
-  // idempotent; the one convergence primitive the whole sync framework rides on.
+  // Fold a partial state into this one, entry by entry, field by field: the same element-set and
+  // LWW merges a command takes, applied to serialized records. Absence at every granularity — a
+  // missing entry, a missing field, the unset stamp — means "no information", so joining a subgraph
+  // delta only ever adds. Commutative, associative, idempotent.
   void join(const GraphState& state);
 
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
@@ -76,8 +71,8 @@ public:
 
   std::vector<NodeId> presentNodeIds() const;
   std::vector<Edge> presentEdges() const;
-  // The same two counts without materializing the lists — what the capacity checks actually
-  // want, and they run on every admitted write, once per node of an arriving frame.
+  // The same two counts without materializing the lists — what the capacity checks want, and they
+  // run on every admitted write, once per node of an arriving frame.
   std::size_t presentNodeCount() const;
   std::size_t presentEdgeCount() const;
   std::vector<Edge> liveEdges() const;
@@ -87,8 +82,7 @@ public:
   std::vector<Edge> danglingEdges() const;
 
   // One entry's element-set life — the add/remove stamps alone, without the fields exportNode
-  // copies. An admission check needs exactly this: the life a graph already holds, to merge an
-  // arriving entry against, so a join can be COUNTED instead of estimated. nullopt for a
+  // copies — so an arriving entry's join can be COUNTED instead of estimated. nullopt for a
   // never-seen key.
   std::optional<ElementSet> lifeOf(const NodeId& id) const;
   std::optional<ElementSet> lifeOf(const Edge& edge) const;

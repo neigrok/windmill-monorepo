@@ -221,7 +221,9 @@ TEST(curator_reads_a_clean_multi_verdict_reply) {
 
   CHECK_EQ(curation.verdicts[2].triggerSpanId, std::int64_t{12});
   CHECK_EQ(curation.verdicts[2].matchSpanId, std::int64_t{23});
-  CHECK(curation.verdicts[2].related);
+  // The model said related at 0.4, which its own prompt calls "the same theme and not the same
+  // subject". Under the floor that is not an echo, and the number it graded is kept as it came.
+  CHECK_FALSE(curation.verdicts[2].related);
   CHECK_EQ(curation.verdicts[2].relation, 0.4f);
   CHECK_FALSE(curation.verdicts[2].speakerIsSelf);
 }
@@ -284,7 +286,7 @@ TEST(curator_drops_a_verdict_naming_a_pairing_nobody_proposed) {
   transport->reply = readMessagesReply(
       200, replyBody("end_turn", answerJson({{9, true, 1.0, true},     // out of range
                                              {0, true, 1.0, true},     // below the first
-                                             {2, true, 0.5, true},     // the only real one
+                                             {2, true, 0.8, true},     // the only real one
                                              {2, true, 0.1, false}})));  // a second go at it
 
   AnthropicCurator curator(transport);
@@ -295,8 +297,42 @@ TEST(curator_drops_a_verdict_naming_a_pairing_nobody_proposed) {
   CHECK_EQ(curation.verdicts[0].triggerSpanId, std::int64_t{11});
   CHECK_EQ(curation.verdicts[0].matchSpanId, std::int64_t{22});
   CHECK(curation.verdicts[0].related);
-  CHECK_EQ(curation.verdicts[0].relation, 0.5f);
+  CHECK_EQ(curation.verdicts[0].relation, 0.8f);
   CHECK(curation.verdicts[0].speakerIsSelf);
+}
+
+// THE FLOOR. `relation` was stored and never read until 2026-08-23, so a pairing the model itself
+// graded 0.3 — its own prompt's word for "the same theme, not the same subject" — was shown to the
+// reader as an echo. Measured on a real page: the two pairings its writer called false positives
+// came back at 0.3 and 0.4, and the one they had actually meant came back at 0.9.
+TEST(a_pairing_the_model_graded_as_theme_only_is_not_an_echo) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply = readMessagesReply(
+      200, replyBody("end_turn", answerJson({{1, true, 0.3, true},     // two ailments
+                                             {2, true, 0.9, true}}))); // the same plan, later
+
+  AnthropicCurator curator(transport);
+  const Curation curation = curator.curate(kWriter, tonight(), candidates(), proposed());
+
+  REQUIRE_EQ(curation.verdicts.size(), std::size_t{2});
+  // Both numbers survive exactly as graded — the floor decides what is SHOWN, and hiding the score
+  // would leave the tuning door with nothing to explain a refusal with.
+  CHECK_FALSE(curation.verdicts[0].related);
+  CHECK_EQ(curation.verdicts[0].relation, 0.3f);
+  CHECK(curation.verdicts[1].related);
+  CHECK_EQ(curation.verdicts[1].relation, 0.9f);
+}
+
+TEST(the_floor_is_a_knob_and_a_deploy_may_lower_it) {
+  auto transport = std::make_shared<FakeMessages>();
+  transport->reply =
+      readMessagesReply(200, replyBody("end_turn", answerJson({{1, true, 0.4, true}})));
+
+  AnthropicCurator generous(transport, "claude-sonnet-5", "low", nullptr, nullptr, 0.35f);
+  const Curation curation = generous.curate(kWriter, tonight(), candidates(), proposed());
+
+  REQUIRE_EQ(curation.verdicts.size(), std::size_t{1});
+  CHECK(curation.verdicts[0].related);
 }
 
 TEST(curator_fails_rather_than_reporting_an_empty_night_when_unconfigured) {

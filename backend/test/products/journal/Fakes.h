@@ -30,10 +30,7 @@ inline Hlc hlc(std::uint64_t ms, std::uint32_t counter = 0, std::string actor = 
   return Hlc{ms, counter, std::move(actor)};
 }
 
-// An in-memory JournalRepository that applies the SAME last-writer-wins rule as the SQL upsert:
-// an incoming write wins only if its stamp is STRICTLY greater than the stored one (ties keep the
-// stored row, exactly like the adapter's `EXCLUDED.stamp > stored.stamp`). Convergence tests assert
-// against this so the fake and the real adapter can never quietly disagree about who wins.
+// Applies the same last-writer-wins rule as the SQL upsert: an incoming write wins only on a strictly greater stamp.
 class FakeJournalRepository : public JournalRepository {
 public:
   using Key = std::pair<std::string, std::string>;   // (user, day-iso)
@@ -60,8 +57,7 @@ public:
     for (const auto& [k, page] : byKey)
       if (k.first == user.str() && cursor < page.stamp) out.push_back(page);
     std::sort(out.begin(), out.end(), [](const Page& a, const Page& b) { return a.stamp < b.stamp; });
-    // Page is not default-constructible (LocalDate has only an explicit ctor), so resize() won't
-    // compile — erase the tail instead; the branch only ever shrinks, so no default is needed.
+    // Page is not default-constructible, so resize() won't compile — erase the tail instead.
     if (static_cast<int>(out.size()) > limit) out.erase(out.begin() + limit, out.end());
     return out;
   }
@@ -87,11 +83,7 @@ public:
   }
 };
 
-// An in-memory NudgeRepository the sweep's tests drive by hand. It records what it was asked in the
-// order it was asked — DECIDE → CLAIM → SEND is an ordering guarantee, so a test asserts the order
-// as well as the outcome. claimDay is the whole mutex: the ledger row IS the primary key, and a
-// claim clears next_due_at so the served instant can never fire twice. The sweep lock is a no-op
-// (correctness rides on the claim, never on it).
+// Records what it was asked in order: DECIDE → CLAIM → SEND. claimDay is the whole mutex — the ledger row IS the primary key, and a claim clears next_due_at so the served instant can never fire twice.
 class FakeNudgeRepository : public NudgeRepository {
 public:
   struct Claim {
@@ -118,9 +110,7 @@ public:
     return user.str() + "|" + day.iso();
   }
 
-  // Arm one user the sweep will find due: an address to send to and an enabled, device-materialised
-  // schedule whose instant has already arrived (that instant doubles as slotInstantMs). Tweak the
-  // stored settings — pause(), disable(), or the exposed map — for the paused/suppressed variants.
+  // Arm one user the sweep will find due: an address plus an enabled schedule whose instant has already arrived (that instant doubles as slotInstantMs).
   void armDue(const UserId& user, const Email& email, const LocalDate& slotDay,
               std::uint64_t instantMs) {
     emails[user.str()] = email;
@@ -176,16 +166,13 @@ public:
     return it->second;
   }
   void upsertSettings(const UserId& user, const NudgeSettings& row) override {
-    // The real one writes every column BUT `suppressed`: only liftSuppression clears the provider's
-    // verdict — mirrored here, or a test could pass against a fake whose upsert quietly does it.
+    // The real one writes every column BUT `suppressed`: only liftSuppression clears the provider's verdict.
     const bool suppressed = settings[user.str()].suppressed;
     settings[user.str()] = row;
     settings[user.str()].suppressed = suppressed;
   }
 
-  // MailSuppression, keyed by address exactly like the real one: a provider event carries nothing
-  // else. An address nobody owns writes nothing and answers false, and the row is created when it
-  // is missing so an account whose device never pushed a schedule still remembers the mailbox died.
+  // Keyed by address like the real one. An address nobody owns writes nothing and answers false; the row is created when missing.
   bool stopMailing(const Email& address) override {
     for (const auto& [user, owned] : emails)
       if (owned.value == address.value) {
@@ -194,8 +181,7 @@ public:
       }
     return false;
   }
-  // The inverse by user id, and like the real UPDATE it creates nothing: a row that never existed
-  // has nothing to lift. `enabled` stays exactly as it was.
+  // Like the real UPDATE it creates nothing, and `enabled` stays exactly as it was.
   void liftSuppression(const UserId& user) override {
     auto it = settings.find(user.str());
     if (it != settings.end()) it->second.suppressed = false;
@@ -216,10 +202,7 @@ public:
   void disable(const UserId& user) override { settings[user.str()].enabled = false; }
 };
 
-// The nudge mailer as a fake: the daily nudge arrives fully rendered, so it keeps the whole mail and
-// the recipient, and the sweep's tests read the pause and settings links straight back off it. Async
-// like the real sender but resolves inline — failNext makes the next send report false, recording
-// nothing, exactly as a refused provider call would.
+// Async like the real sender but resolves inline; failNext makes the next send report false and record nothing.
 struct FakeNudgeMail : NudgeMailSender {
   struct Sent {
     Email to;
@@ -240,17 +223,7 @@ struct FakeNudgeMail : NudgeMailSender {
   }
 };
 
-// A deterministic stand-in for the server-side embedding model: normalised per-letter counts over
-// the 26 lowercase letters. Same text embeds to the same vector (cosine 1), text sharing most of its
-// letters cosines close, and text over a disjoint set cosines low — enough for the echo sweep to
-// A deterministic stand-in for a real embedding model: a 26-dim letter-frequency vector, unit
-// normalised, so two passages sharing letters sit close and a test can reason about cosine without
-// a model. `isConfigured` flips so a test can exercise the "unwired — the whole pass is a no-op"
-// path, and `failNext` returns short so a test can prove a failed embed never marks a page done.
-// Cuts a page the way the shipped RULE did — lines, then sentences — so a test that is not about
-// segmentation reads exactly as it did before step 1 became a vendor call. `units` overrides that
-// for the tests that ARE about it, including the ones that hand back text the page does not
-// contain, which is the answer the verbatim check exists for.
+// Cuts a page by lines, then sentences; `units` overrides that.
 struct FakeSegmenter : Segmenter {
   bool isConfigured = true;
   bool callSucceeds = true;
@@ -308,8 +281,7 @@ struct FakeEmbedder : Embedder {
   }
 };
 
-// Keeps or rejects every pairing wholesale, and can fail the CALL — which the sweep must treat as
-// completely different from finding nothing, since only one of the two owes the page a retry.
+// Keeps or rejects every pairing wholesale, and can fail the CALL — which the sweep must treat differently from finding nothing.
 struct FakeCurator : Curator {
   bool isConfigured = true;
   bool callSucceeds = true;
@@ -337,9 +309,7 @@ struct FakeCurator : Curator {
   }
 };
 
-// An in-memory EchoRepository the sweep's tests drive by hand. Spans and echoes are stored the way
-// the real adapter stores them — replace-a-page-atomically, identities minted on demand — so a test
-// asserting "the pass carried this identity forward" is asserting the same thing production does.
+// Stores spans and echoes the way the real adapter does: replace-a-page-atomically, identities minted on demand.
 class FakeEchoRepository : public EchoRepository {
 public:
   struct StoredSpan {
@@ -348,8 +318,7 @@ public:
     std::string embedVersion;
   };
 
-  // What the reader said about a pairing, with the score and the curator version it was judged
-  // under carried alongside — the two columns that make journal_echo_signal a dataset.
+  // What the reader said about a pairing, with the score and the curator version it was judged under.
   struct StoredSignal {
     LocalDate triggerDay;
     std::int64_t triggerSpanId = 0;
@@ -365,9 +334,7 @@ public:
   std::map<std::string, std::vector<DuePage>> due;
   std::map<std::string, std::string> bodies;   // "user|day" -> the page as it stands right now
   std::map<std::string, std::vector<StoredSpan>> spans;
-  // Waved-away pairs, keyed on the two passages' NORMALISED TEXT and scoped to one user, exactly
-  // as the SQL keys them on their content hashes. Storing span ids here instead would let a test
-  // pass while production resurrected a dismissed echo the first time a sentence moved.
+  // Waved-away pairs keyed on the two passages' NORMALISED TEXT and scoped to one user, exactly as the SQL keys them on content hashes.
   std::map<std::string, std::set<std::pair<std::string, std::string>>> dismissals;
   std::set<std::string> offersRetired;   // "user|day" -> the reader answered "not now" here
   std::map<std::string, std::vector<StoredSignal>> signals;
@@ -390,10 +357,7 @@ public:
     due[user.str()].push_back(DuePage{day, body, stamp, 0});
     plantPage(user, day, body);
   }
-  // Plant an already-derived page, the way a night that ran before this one would have left it.
-  // `lo` is the passage's byte offset into that page's body, which is what tells two identical
-  // sentences apart — the default puts the passage at the top, which is where a one-passage page
-  // has it anyway.
+  // Plant an already-derived page. `lo` is the passage's byte offset into the body, which is what tells two identical sentences apart.
   void plantSpan(const UserId& user, const LocalDate& day, std::int64_t spanId,
                  const std::string& text, const std::vector<float>& vector, int lo = 0) {
     spans[user.str()].push_back(
@@ -406,9 +370,7 @@ public:
   std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
   std::uint64_t corpusStamp(const UserId&) override { return stamp; }
 
-  // A test drives what is owed through `due`, so the version clause the SQL carries is modelled
-  // rather than reimplemented: `staleVersions` is the switch a test flips to say "this page was
-  // derived by a pipeline that has since moved", which is what the SQL's IS DISTINCT FROM decides.
+  // `staleVersions` is the switch a test flips to say the page was derived by a pipeline that has since moved — the SQL's IS DISTINCT FROM.
   std::vector<DuePage> duePages(const UserId& user, std::uint64_t,
                                 const PipelineVersions&) override {
     auto it = due.find(user.str());
@@ -416,9 +378,7 @@ public:
     return it->second;
   }
 
-  // The one named row, the way the SQL asks it. A test drives what is owed through `due`, and a
-  // page derived by the live path takes itself off that list — which is what makes "the second of
-  // two debounced saves costs nothing" assertable here rather than only against Postgres.
+  // The one named row, the way the SQL asks it.
   std::optional<DuePage> duePage(const UserId& user, const LocalDate& day, std::uint64_t,
                                  const PipelineVersions&) override {
     auto it = due.find(user.str());
@@ -428,8 +388,7 @@ public:
     return std::nullopt;
   }
 
-  // A page stops being owed once it has been derived, exactly as advancing body_stamp_ms takes it
-  // out of the duePages query. Only a SETTLED pass calls this — a failure that clears leaves it owed.
+  // Only a SETTLED pass calls this — a failure that clears leaves the page owed.
   void settle(const UserId& user, const LocalDate& day) {
     std::vector<DuePage>& pages = due[user.str()];
     pages.erase(std::remove_if(pages.begin(), pages.end(),
@@ -437,9 +396,7 @@ public:
                 pages.end());
   }
 
-  // The page as it stands, whether or not anything is owed on it — what the reverse edge reads to
-  // re-derive a page whose own body never moved. `bodyMoved` false is the whole point: that page's
-  // text is unchanged, so its units are read back rather than bought again.
+  // The page as it stands, whether or not anything is owed. `bodyMoved` false means the text is unchanged, so units are read back rather than bought again.
   std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override {
     auto it = bodies.find(pageKey(user, day));
     if (it == bodies.end()) return std::nullopt;
@@ -455,14 +412,10 @@ public:
     return known;
   }
 
-  // Hands back what it stored, minted identities and all — the same contract the SQL keeps with its
-  // RETURNING clause, and the one a warm corpus splices on.
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& writes,
                                      const std::string& embedVersion, std::uint64_t) override {
-    // Every derivation that got past the embedder lands here, so this list is the ORDER the pages
-    // were worked in — which is what a fairness test asserts against, and it stays true whether or
-    // not a page ended up proposing anything for the curator to judge.
+    // The ORDER pages were worked in, whether or not a page proposed anything.
     derived.push_back(pageKey(user, day));
     std::vector<StoredSpan>& all = spans[user.str()];
     all.erase(std::remove_if(all.begin(), all.end(),
@@ -488,8 +441,7 @@ public:
       corpus.push_back(Vectored{stored.write.spanId, stored.day, stored.write.passage.text,
                                 stored.write.vector});
     }
-    // ORDER BY day, ord, like the SQL — the order is part of the port's contract, and a cache that
-    // claims to serve the same bytes has to be asserted against the same order.
+    // ORDER BY day, ord, like the SQL — the order is part of the port's contract.
     std::stable_sort(corpus.begin(), corpus.end(), [&](const Vectored& a, const Vectored& b) {
       if (!(a.day == b.day)) return a.day < b.day;
       const StoredSpan* left = spanOf(user, a.spanId);
@@ -499,8 +451,7 @@ public:
     return corpus;
   }
 
-  // One span by identity, or nothing at all — the same INNER join the SQL does, so an echo aimed
-  // at a passage that died with the last re-derivation is invisible here too.
+  // One span by identity, or nothing — the same INNER join the SQL does.
   const StoredSpan* spanOf(const UserId& user, std::int64_t spanId) const {
     auto it = spans.find(user.str());
     if (it == spans.end()) return nullptr;
@@ -517,9 +468,7 @@ public:
   }
 
   std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& day) override {
-    // Content in, identities out: every span on this page carrying dismissed text is dismissed
-    // against every earlier span carrying its partner's text, which is what makes a dismissal
-    // survive a re-segmentation that minted brand new span ids.
+    // Content in, identities out: every span carrying dismissed text is dismissed against every earlier span carrying its partner's text.
     std::vector<SpanPair> pairs;
     auto it = spans.find(user.str());
     if (it == spans.end()) return pairs;
@@ -534,8 +483,7 @@ public:
     return pairs;
   }
 
-  // Content in, and only content: the same key the SQL writes, so a test that dismisses a pair is
-  // dismissing what the two passages SAY and not where they sit.
+  // Content in, and only content: the same key the SQL writes.
   void plantDismissal(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId) {
     const StoredSpan* trigger = spanOf(user, triggerSpanId);
     const StoredSpan* match = spanOf(user, matchSpanId);
@@ -557,15 +505,12 @@ public:
       plantDismissal(user, row.triggerSpanId, row.matchSpanId);
   }
 
-  // "Not now" lives in its own set and touches nothing else — the same separation the SQL keeps,
-  // where declining the offer writes one row in its own table and journal_echo never moves.
+  // "Not now" lives in its own set and touches nothing else, exactly as the SQL keeps it.
   void dismissOffer(const UserId& user, const LocalDate& day) override {
     offersRetired.insert(pageKey(user, day));
   }
 
-  // Signals are stored with the retrieval score and the curator's version copied off the echo row,
-  // exactly as the INSERT ... SELECT does — a fake that kept only the kind would let a test pass
-  // while production wrote a tally instead of a dataset.
+  // Signals store the retrieval score and the curator's version copied off the echo row, as the INSERT ... SELECT does.
   bool hasSignal(const UserId& user, std::int64_t triggerSpanId, std::int64_t matchSpanId,
                  EchoSignal kind) const {
     auto it = signals.find(user.str());
@@ -600,11 +545,7 @@ public:
                      const CuratedEchoes& curated) override {
     echoesByPage[pageKey(user, day)] = curated;
   }
-  // A SETTLED pass advances the page's stamps, which is what takes it off the owed list; a failure
-  // that will clear on its own writes the error and leaves both stamps where they were, so the page
-  // is still owed. Mirrored here exactly, because "a failed curate leaves the page still due" and
-  // "a refused page never comes back" are both claims about this branch, and a fake that settled
-  // either way would let both pass while production lost the page or billed it forever.
+  // A SETTLED pass advances the page's stamps; a failure that will clear on its own writes the error and leaves both stamps, so the page stays owed.
   void recordCuration(const UserId& user, const LocalDate& day,
                       const CurationOutcome& outcome) override {
     outcomes.push_back(outcome);
@@ -617,9 +558,7 @@ public:
     return it->second;
   }
 
-  // The reader's view, assembled the way the SQL assembles it: both spans join INNER, dismissed
-  // pairs are gone, the passages travel as text, and the anchoring hint is counted against the
-  // match page as it stands right now — so a body edited under a passage yields -1 here too.
+  // The reader's view as the SQL assembles it: both spans join INNER, dismissed pairs are gone, passages travel as text, and the anchoring hint is counted against the match page as it stands.
   std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
                                   const LocalDate& to) override {
     std::vector<EchoView> views;
@@ -666,10 +605,9 @@ public:
     return written;
   }
 
-  // Pages worked, oldest call first — see replaceSpans.
+  // Pages worked, oldest call first.
   std::vector<std::string> derived;
 
-  // What one page ended up carrying, for a test that wants to assert the whole set at once.
   std::vector<EchoRow> rowsOn(const UserId& user, const LocalDate& day) {
     auto it = echoesByPage.find(pageKey(user, day));
     if (it == echoesByPage.end()) return {};
@@ -677,12 +615,7 @@ public:
   }
 };
 
-// A transcriber the voice tests drive: `on` toggles configured() (the 503 path), `answers` toggles
-// the vendor failure (the 502 path), and transcribe returns a fixed line plus the last audio/mime and
-// user it saw, so a test can assert the bytes reached it and whose spend it was.
-//
-// `hold` keeps a take with the "vendor" instead of answering it, which is how a test drives the
-// in-flight caps: the callbacks pile up in `held` and `answerHeld()` releases them.
+// `on` toggles configured() (the 503 path), `answers` toggles the vendor failure (the 502 path); `hold` keeps a take with the vendor so `held`/`answerHeld()` drive the in-flight caps.
 struct FakeTranscriber : Transcriber {
   bool on = true;
   bool answers = true;

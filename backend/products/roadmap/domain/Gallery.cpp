@@ -8,8 +8,7 @@ std::vector<GalleryEntry> publicWall(const std::vector<WallCandidate>& candidate
   std::vector<GalleryEntry> wall;
   wall.reserve(candidates.size());
   for (const WallCandidate& candidate : candidates) {
-    // A title of nothing but whitespace is no title at all — it would hang a blank card on the
-    // wall, so it fails the same test an empty one does.
+    // A title of nothing but whitespace is no title at all — it fails the same test an empty one does.
     if (candidate.data.title.find_first_not_of(" \t\n\r") == std::string::npos) continue;
     const TreeStats stats = treeStats(candidate.data, candidate.ownerProgress);
     if (stats.total < kWallMinimumSteps) continue;
@@ -21,8 +20,8 @@ std::vector<GalleryEntry> publicWall(const std::vector<WallCandidate>& candidate
     entry.forks = candidate.forks;
     entry.updatedAt = lastActiveAt(candidate.updatedAt, candidate.lastMarkedAt);
     entry.sourceTitle = candidate.sourceTitle;
-    // The two facts the row wears about its reader. An anonymous Viewer owns nothing and has
-    // forked nothing, so both fall out false without a special case.
+    // The two facts the row wears about its reader. An anonymous Viewer owns nothing and has forked
+    // nothing, so both fall out false without a special case.
     entry.mine = viewer.user && *viewer.user == candidate.owner;
     entry.forked = viewer.forked.count(candidate.data.id) > 0;
     wall.push_back(std::move(entry));

@@ -32,9 +32,7 @@ std::string nameFromEmail(const Email& email) {
 }
 
 std::string sharableName(const User& user) {
-  // Case-insensitively: an address is stored lowercased but a name is not, so a Google profile
-  // reading "Sam.Gold" over sam.gold@example.com is the same derivation wearing different case,
-  // and an exact match would wave it straight through to strangers.
+  // Compared case-insensitively: an address is stored lowercased but a name is not.
   const std::string derived = nameFromEmail(user.email);
   const bool isDerived =
       user.name.size() == derived.size() &&
@@ -45,9 +43,8 @@ std::string sharableName(const User& user) {
   return user.name;
 }
 
-// A name is shown to other people, so it has to survive being pasted into a line of text without
-// rearranging it: no control characters, and none of the Unicode bidi or invisible-formatting
-// marks (U+200E/200F, U+202A-202E, U+2066-2069) that can reverse or hide whatever follows.
+// Rejects control characters and the Unicode bidi / invisible-formatting marks (U+200E/200F,
+// U+202A-202E, U+2066-2069) that can reverse or hide whatever follows.
 bool isDisplayable(const std::string& name) {
   for (std::size_t i = 0; i < name.size(); ++i) {
     const unsigned char lead = name[i];

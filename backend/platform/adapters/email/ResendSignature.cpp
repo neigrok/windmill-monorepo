@@ -12,13 +12,9 @@
 namespace wm {
 
 namespace {
-// A secret comes out of an env file carrying whatever the file had around it. The decoder below is
-// lenient about a TRAILING newline or space by accident, but a LEADING one — or a value someone
-// quoted — pushes `whsec_` off the front, so the prefix test misses and those six characters are
-// fed to the decoder as key material. The key silently becomes the wrong bytes, every genuine
-// delivery is refused, and the endpoint goes dark with no other symptom anywhere. Both quote
-// characters are trimmed alongside the whitespace, which is safe because a configured value is
-// `whsec_<base64>` end to end and neither quote is in that alphabet.
+// Trim whitespace and both quote characters off the secret: a LEADING one pushes `whsec_` off the
+// front, the prefix test misses, and those six characters are fed to the decoder as key material.
+// Safe because a configured value is `whsec_<base64>` end to end and neither quote is in that alphabet.
 std::string configuredSecret(const std::string& raw) {
   constexpr const char* kEdgeNoise = " \t\r\n\"'";
   const std::size_t begin = raw.find_first_not_of(kEdgeNoise);
@@ -33,15 +29,11 @@ bool verifyResendSignature(const std::string& body, const std::string& messageId
                            std::int64_t toleranceMs) {
   const std::string configured = configuredSecret(secret);
   if (body.empty() || messageId.empty() || signatureHeader.empty() || configured.empty()) return false;
-  // Refuse a stale signature, so a delivery captured off the wire can't be replayed later — one
-  // window, shared with the Paddle verifier (adapters/http/WebhookFreshness.h).
+  // Refuse a stale signature, so a captured delivery can't be replayed (adapters/http/WebhookFreshness.h).
   if (!signedWithinWindow(timestamp, nowMs, toleranceMs)) return false;
 
-  // `whsec_` names the encoding, not the key: Svix signs with the BYTES the base64 tail decodes to,
-  // so a verifier keyed on the printed secret would refuse every genuine delivery. drogon's decoder
-  // is LENIENT — it skips bytes outside the alphabet rather than refusing — so a secret that is not
-  // base64 does not decode to nothing; it decodes to the wrong bytes. Fail-closed holds anyway, and
-  // for the stronger reason: a key we did not intend cannot produce the digest Resend produced.
+  // `whsec_` names the encoding, not the key: Svix signs with the BYTES the base64 tail decodes to.
+  // drogon's decoder is LENIENT, so a non-base64 secret decodes to the wrong bytes and fails closed.
   const std::string encoded = configured.rfind("whsec_", 0) == 0 ? configured.substr(6) : configured;
   const std::string key = drogon::utils::base64Decode(encoded);
   if (key.empty()) return false;
@@ -56,8 +48,7 @@ bool verifyResendSignature(const std::string& body, const std::string& messageId
   const std::string expected = drogon::utils::base64Encode(mac, macLength);
 
   // "v1,<base64> v1,<base64>" — space-separated, more than one while a secret rotates, so matching
-  // any one of them is enough and a rotation never drops a delivery. An entry of some other version
-  // is a scheme this function cannot check, and must never be mistaken for one it can.
+  // any one is enough. An entry of another version is a scheme this function cannot check.
   std::size_t at = 0;
   while (at <= signatureHeader.size()) {
     const std::size_t end = signatureHeader.find(' ', at);

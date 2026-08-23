@@ -13,26 +13,18 @@ namespace wm {
 //
 //     <argument or JSON path> <what was wrong>, <what was given>, <what is legal>
 //
-// A caller has to be able to fix the call from the message alone — no second round trip. So a
-// message names the argument by its PUBLISHED spelling (`label`, `nodes[3].label`), the value
-// that arrived (its type when the type was wrong, its size when a cap was hit, its text when an
-// enum missed), and the limit or legal set it missed. The TOOL name is stamped once, by
-// RoadmapTools::callTool, onto whatever comes back — so no message here repeats it and none can
-// forget it. Where there is an obvious next move it rides along as a second sentence; a hint
-// that restates the error is noise, so most checks carry none.
-//
-// Every check answers nullopt when the argument is fine and the whole sentence when it is not,
-// so a tool's argument contract reads as a fail-fast pipeline, top to bottom.
+// A message names the argument by its PUBLISHED spelling, the value that arrived, and the limit
+// or legal set it missed. The TOOL name is stamped once by RoadmapTools::callTool, so no message
+// here repeats it. Every check answers nullopt when the argument is fine and the whole sentence
+// when it is not.
 
 // Whether "" is a legal value for a required string: `rename_kind` clears a label with it,
 // `create_node` has no use for a blank one.
 enum class Empty { rejected, allowed };
 
-// The handle of a thing that EXISTS, as opposed to the id you PROPOSE for a new one — which is
-// always the bare `id` (create_node, add_kind, an import's nodes[]). Two concepts, deliberately
-// two words. Each handle is read under either spelling so no client has to guess: `published` is
-// the one a message names and the schema requires, `alias` the one still accepted in silence.
-// The split runs the other way for kinds, whose published property is still `id`.
+// The handle of a thing that EXISTS, as opposed to the id you PROPOSE for a new one, which is
+// always the bare `id`. Each handle is read under either spelling: `published` is the one a
+// message names and the schema requires, `alias` the one accepted in silence.
 struct Handle {
   const char* published;
   const char* alias;
@@ -44,8 +36,7 @@ inline constexpr Handle kNodeHandle{
 inline constexpr Handle kKindHandle{
     "id", "kindId", "Call get_tree and read `kinds` to list this legend's ids."};
 
-// What a value IS ("string", "number", …) and what it SAYS (`"chartreuse"`, `5000`) — the two
-// ways a message quotes back what arrived.
+// What a value IS ("string", "number", …) and what it SAYS (`"chartreuse"`, `5000`).
 std::string typeName(const Json::Value& value);
 std::string literal(const Json::Value& value);
 
@@ -68,12 +59,11 @@ std::optional<std::string> optionalStrings(const Json::Value& value, const std::
                                            std::size_t itemLimit = 0);
 std::optional<std::string> optionalObject(const Json::Value& value, const std::string& path);
 
-// A node's external references: a list of {url, label?} objects — a bare url string is accepted
-// too (adapters/json/TreeJson linksFromJson), so both spellings are named as legal.
+// A list of {url, label?} objects; a bare url string is accepted too, so both are named legal.
 std::optional<std::string> optionalLinks(const Json::Value& value, const std::string& path);
 
-// One handle out of `args`, under either of its spellings. `path` is blank at the top level and
-// names the row inside a batch ("updates[0]"), so a message reads `updates[0].nodeId`.
+// One handle out of `args`, under either spelling. `path` is blank at the top level and names
+// the row inside a batch ("updates[0]").
 std::optional<std::string> requireHandle(const Json::Value& args, const Handle& handle,
                                          const std::string& path, std::string& out);
 

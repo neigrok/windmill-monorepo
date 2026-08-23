@@ -6,10 +6,7 @@ the way `products/journal/ARCHITECTURE.md` was, because the four decisions that 
 later (exercise identity, session snapshots, set kinds, canonical units) are all schema decisions
 and this is where they get taken.
 
-The product thinking lives in `docs/PRODUCT_LOG.md` ("Gym — the third product"); the evidence it
-is built on is `docs/lift-dossier.md`, a code-verified inventory of Lift, a shipped SwiftUI
-training log. **Lift is not a codebase we migrate. It is a spec written in Swift and a bug
-ledger** — every rule below that reads like paranoia is a bug Lift actually shipped.
+The product thinking lives in `docs/PRODUCT_LOG.md` ("Gym — the third product").
 
 Read `STRUCTURE.md` for the one rule (platform is product-neutral; products depend on platform,
 never the reverse; products never depend on each other). Gym mirrors the journal product's shape

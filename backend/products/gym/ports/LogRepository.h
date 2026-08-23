@@ -12,10 +12,8 @@
 
 namespace wm::gym {
 
-// The heaviest WORKING set of a whole session, ties broken by more reps — never by volume, the same
-// rule the review's per-movement top set obeys. It is two numbers where TopSet is three: "how many
-// sets at that load" is a question about one movement, and this one spans every movement in the
-// session. Warmups, drops and failures are not what a session was, so none of them can be its top.
+// The heaviest working set of a whole session, ties broken by more reps — never by volume. Warmups,
+// drops and failures cannot be a session's top.
 struct TopWorkingSet {
   double weightKg;
   int reps;
@@ -23,49 +21,24 @@ struct TopWorkingSet {
   bool operator==(const TopWorkingSet&) const = default;
 };
 
-// One row of the training log read: the session plus what the list needs to say about it without
-// loading its sets — how many sets it holds and how many of those were working, the tonnage those
-// working sets moved, which movements by display name, the heaviest working set in it, the loads it
-// worked, and whether the four-hour rule ended it rather than a tap.
+// One row of the training log read: the session plus what the list says about it without loading
+// its sets.
 //
-// BOTH counts are here because they answer different questions and the log screen asks the second
-// one. Until 2026-08-12 the row printed setCount beside topSet, and topSet is a lateral over the
-// working sets alone — so the count included the ramp-up while the top set beside it could not, and
-// a five-set session with two warmups read "5 sets" over a number three sets earned. setCount keeps
-// its meaning — every set, every kind — because it already has readers, and redefining a field
-// under its readers is how a number starts lying quietly. The log screen reads workingSetCount.
+// setCount is every set of every kind; workingSetCount only the working ones.
 //
-// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over the working sets, and the clamp is the
-// whole of what makes it honest: band-assisted work logs a NEGATIVE load, so a naive sum lets an
-// assisted pull-up subtract from a week the lifter trained. An assisted set moved no external load,
-// so it contributes nothing; a bodyweight set contributes nothing for the same reason, gym holding
-// no bodyweight to add to it. Zero is therefore a real answer meaning "nothing here moved a
-// measurable load", never "no work" — which is why every surface draws NOTHING where a zero tonnage
-// would go rather than `0.0 t` (domain/Statistics.h states that rule and why it is not the volume
-// this product refuses).
+// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over the working sets: band-assisted work logs a
+// negative load, so the clamp keeps it from subtracting. Zero means "nothing here moved a measurable
+// load", never "no work" — surfaces draw nothing rather than `0.0 t`.
 //
-// workingMarks is the session's working sets collapsed to one row per (movement, load), carrying
-// the best reps done at it — PriorMark's projection (domain/Review.h) narrowed to a single session,
-// grouped by movement and heaviest first inside each and dated by the SESSION's own start like
-// every mark a store hands over, so both implementations of this port hand back the same vector. ONE projection serves the row's two questions, because the coarser one it
-// replaced was this one summed again:
-//   · the row's e1RM is Epley over EVERY working set, not over topSet — the heaviest set is rarely
-//     the best estimate, and a row that ran Epley on topSet alone printed 116.7 under a session
-//     whose finish screen said 126.7 — so `topE1rmOf` takes the maximum over these rows and the
-//     movement they name simply does not enter that maximum.
-//   · the row's gold PR dot is a fact about ONE movement, so the same rows carry the movement and
-//     the domain's three record rules read them per movement (§2.4).
-// Picking a set by e1RM is not an ordering the store can make — it IS the formula, and the formula
-// does not reach the database (§11.5) — so the store hands over the fewest rows the answer can
-// honestly be computed from and the domain runs its rules over them. Loads at or below zero ride
-// along unfiltered: which of them Epley is defined for is the domain's rule to state, and it states
-// it in exactly one place.
+// workingMarks is the session's working sets collapsed to one row per (movement, load) carrying the
+// best reps at it, grouped by movement and heaviest first inside each, dated by the SESSION's start;
+// both implementations hand back the same vector. The row's e1RM is Epley's maximum over these rows,
+// not over topSet, and the gold PR dot reads them per movement. Loads at or below zero ride along
+// unfiltered — which of them Epley is defined for is the domain's rule.
 //
-// closedItself reads `closed_by` — the column the late-set rule gave sessions on 2026-08-16 (§2.2),
-// so the log row's subtitle and the rule that revises a stale close are one fact — and for a row
-// closed before that column existed it falls back to the four-hour rule's own signature:
-// autoCloseAt stamps finished_at at the last set's instant exactly, or at started_at for a session
-// holding none. Both implementations of this port read it the same way.
+// closedItself reads `closed_by`, falling back for rows written without it to autoCloseAt's own
+// signature: finished_at exactly at the last set's instant, or at started_at for a session holding
+// none. Both implementations read it the same way.
 struct SessionSummary {
   Session session;
   int setCount;
@@ -79,14 +52,10 @@ struct SessionSummary {
   bool operator==(const SessionSummary&) const = default;
 };
 
-// One page of the log, and everything the rules that read a page need in ONE round trip: the rows
-// themselves and the marks that stood before the OLDEST of them. `standing` is what makes the gold
-// dot answerable at all — a record is judged against the history before its session, and a page has
-// history before it that is not on the page. It is bounded by the page's own movements and by
-// distinct loads rather than by set count, so a lifter with ten years of squats hands over a few
-// dozen rows and not a few thousand, and it reads in the order a session's own marks do — by
-// movement, heaviest load first — so both implementations of this port hand back the same vector.
-// An empty page has no oldest session, so nothing stands before it and `standing` is empty too.
+// One page of the log plus `standing`: the marks that stood before the OLDEST row on it, which is
+// what makes a record judgeable from a page alone. Bounded by the page's own movements and by
+// distinct loads, ordered by movement and heaviest load first, so both implementations hand back the
+// same vector. An empty page has empty `standing`.
 struct LogPage {
   std::vector<SessionSummary> sessions;   // newest first
   std::vector<PriorMark> standing;
@@ -94,15 +63,10 @@ struct LogPage {
   bool operator==(const LogPage&) const = default;
 };
 
-// What "last time" is, once resolved: the most recent FINISHED session holding a non-warmup set of
-// the movement, the name that session was trained under, and its sets of that movement in
-// set_number order. Most recent is the session's own (startedAt, id) — the log read's sort key, so
-// the two reads can never disagree about which session is newest, whatever instants the device
-// stamped on the sets inside it. The block is never empty — the session is chosen BY holding one of
-// those sets.
-// routineName is the name frozen in the session's plan snapshot ("" when the session was ad-hoc),
-// never the routine's name today: the prefill card says which day of the program you did it on, and
-// a routine renamed since must not rewrite what the log says about the past.
+// The most recent FINISHED session holding a non-warmup set of the movement, and its sets of that
+// movement in set_number order. Most recent is the session's own (startedAt, id) — the log read's
+// sort key. `sets` is never empty. routineName is the name frozen in the session's plan snapshot
+// ("" when ad-hoc), never the routine's name today.
 struct LastTime {
   Session session;
   std::string routineName;
@@ -111,20 +75,10 @@ struct LastTime {
   bool operator==(const LastTime&) const = default;
 };
 
-// The picker's meta line for ONE movement: the last set of it this lifter performed, and when. It
-// is `LastTime` projected to the one line a list can print — the LAST row of that block, which is
-// the row the prefill dials its weight off — so the two reads answer with the same set or the
-// product says two different things about "last time" one tap apart.
-//
-// atMs is the SESSION's start and never the set's own instant, the rule every mark a store hands
-// over already obeys: completed_at is the device's wall clock (§2.2), and dating a line by it put
-// the same set on two calendar days on two different screens. "3 days ago" is the day you trained
-// it.
-//
-// The vector is SPARSE — one row per movement this account has actually worked, nothing for the
-// rest — and that absence is the whole of `never logged`. It is what makes this read proportional
-// to a lifter's history instead of to a 64-row catalog, which is why the annotation is not a column
-// on the catalog row (§5).
+// The picker's meta line for one movement: `LastTime`'s LAST row, the one the prefill dials off, so
+// the two reads name the same set. atMs is the SESSION's start, never the set's own completed_at,
+// which is the device's wall clock. The vector is SPARSE — one row per movement this account has
+// worked, and absence is `never logged`.
 struct LastSet {
   ExerciseId exercise;
   double weightKg;
@@ -134,11 +88,8 @@ struct LastSet {
   bool operator==(const LastSet&) const = default;
 };
 
-// A first-ever movement has no last time, and that is a fact, not a fault — it comes back as an
-// empty outcome with no error. unknownExercise is the other thing an empty answer could mean and
-// the store is the only layer that can tell them apart, so it says which in a value, exactly as
-// insertSet does: "you have never trained this" and "no catalog holds this" are different sentences
-// and different moves for the client.
+// A first-ever movement comes back as an empty outcome with no error; unknownExercise means no
+// catalog this account can see holds the movement at all.
 enum class LastTimeError { none, unknownExercise };
 
 struct LastTimeOutcome {
@@ -146,30 +97,19 @@ struct LastTimeOutcome {
   LastTimeError error;
 };
 
-// Where a page of the log resumes and how wide it is. The sort key is (startedAt, id), descending
-// and UNIQUE end to end — a plain started_at cursor drops a session whose start instant ties with
-// another's across a page edge, and it is then in no page, ever. beforeId is the second half of
-// that cursor: absent on the first page, the previous page's last id after that.
+// Where a page of the log resumes. The sort key is (startedAt, id), descending and unique end to
+// end; beforeId is absent on the first page, the previous page's last id after that.
 struct LogCursor {
   std::uint64_t beforeMs;
   std::optional<SessionId> beforeId;
   int limit;
 };
 
-// What became of an insertSet: the stored row, or the one fact that stopped it. Every refusal here
-// is the store's to state and each crosses the port as a VALUE — a vendor exception escaping to the
-// HTTP edge would make the wire layer know which database gym is kept in. idTaken says the id is
-// spent on a row this session does not hold, never whose, so absent stays byte-identical to
-// forbidden; unknownExercise says the set names a movement this account's catalog does not hold —
-// a slug nobody has, and another lifter's private movement alike; finished says the session was
-// already closed when the write took its lock, which is the boundary §3.3 makes the STORE hold,
-// because it is the only layer that reads that column under the lock that decides it.
-//
-// `deleted` is the refusal the delete route made necessary, and it is NOT idTaken however alike the
-// two look. An id spent ELSEWHERE is repaired by minting a fresh one and sending the set again —
-// that is precisely what every queue does with it — and a set the LIFTER deleted must never be
-// repaired that way, or the deletion undoes itself under a new id the first time a POST whose reply
-// was lost is replayed. Same shape, opposite move, so it crosses the port as its own fact.
+// Every refusal an insertSet can make, each crossing the port as a value rather than an exception.
+// idTaken: the id is spent on a row this session does not hold, never whose. unknownExercise: no
+// movement this account's catalog holds. finished: the session was already closed when the write
+// took its lock. deleted: the id belongs to a set the lifter deleted — kept apart from idTaken
+// because minting a fresh id and resending, the repair for idTaken, would undo that deletion.
 enum class SetInsertError { none, idTaken, unknownExercise, finished, deleted };
 
 struct SetInsertOutcome {
@@ -177,14 +117,9 @@ struct SetInsertOutcome {
   SetInsertError error;
 };
 
-// One line of the export, and it is TEXT end to end because a CSV is text and every rendering
-// decision in one is a decision Postgres already makes better than C++ would. The instants come
-// back ISO-8601 UTC — a spreadsheet cannot read an epoch, and the calendar conversion belongs where
-// gym does all of its date work rather than in a second place that could disagree with it. The
-// numerics come back at their column's own scale, so 72.5 kg is "72.50" forever, and an absent rpe
-// is an empty cell rather than a zero that would read as a real one. The row is flat because a CSV
-// row is flat: the two facts a set does not carry — which session it belongs to and what its
-// movement is called — ride beside it instead of being joined back by whoever opens the file.
+// One line of the export: text end to end, instants ISO-8601 UTC, numerics at their column's own
+// scale (72.5 kg is "72.50"), an absent rpe an empty cell rather than a zero. Flat, with the
+// session and the movement's name repeated beside every set.
 struct ExportedSet {
   std::string sessionId;
   std::string startedAt;
@@ -204,13 +139,9 @@ struct ExportedSet {
   bool operator==(const ExportedSet&) const = default;
 };
 
-// The coach share, as a row of its own table. It is NOT a column on the session, and that is the
-// whole design: every one of gym's owner-scoped reads is untouched by it, so absent stays
-// byte-identical to forbidden on all of them and a share can only ever be reached through the one
-// door that was built for it. Both fields the server decides are decided by the server — the token
-// is minted here, never accepted from a client, because a client that picks its own share token
-// picks a guessable one — and the session id has already been resolved against the caller's own log
-// before a share is ever built from it.
+// The coach share, a row of its own table rather than a column on the session, so no owner-scoped
+// read is widened by it. The token is minted server-side, never accepted from a client, and the
+// session id is resolved against the caller's own log before a share is built from it.
 struct SessionShare {
   SessionId session;
   UserId user;
@@ -220,12 +151,8 @@ struct SessionShare {
   bool operator==(const SessionShare&) const = default;
 };
 
-// What the coach sees, and the whole of it. There is no account in this value: no email, no name,
-// no other session, and no id at all — not the session's, not a set's, not the routine's — because
-// the only thing an id could do for a reader who is not the owner is be tried somewhere else. The
-// movement travels as its display NAME for the same reason it has to: a coach holds no catalog to
-// resolve a slug against. The frozen plan does not travel — a share is one workout the lifter DID,
-// and a program is a longer-lived thing than one session's link.
+// The whole of what a coach sees: no account, no ids of any kind, no frozen plan. The movement
+// travels as its display name — a coach holds no catalog to resolve a slug against.
 struct SharedSet {
   std::string exercise;
   int setNumber;
@@ -248,22 +175,16 @@ struct SharedSession {
   bool operator==(const SharedSession&) const = default;
 };
 
-// The log's door to gym storage: sessions, their sets, what the sets left behind when they were
-// corrected, and the coach share, which is a row of its own table but reads a session in the same
-// statement it is minted from and goes with the session when the session goes. It is one of five
-// aggregate ports (CatalogRepository, ProgramRepository, AskThreadRepository, PreferencesRepository
-// are the others), one Postgres database behind all five. Every read and write is owner-scoped by
+// The log's door to gym storage: sessions, their sets, what corrections left behind, and the coach
+// share, which goes with the session when the session goes. Every read and write is owner-scoped by
 // the UserId it carries; absent is byte-identical to forbidden. Writes are idempotent by
 // client-minted id: insertSession and insertSet no-op on conflict and answer with the row that is
-// stored, and one open session per user is the partial unique index's rule, never a guard flag.
-// The two writes that CHANGE a stored set are idempotent by shape instead — a correction assigns
-// absolute values, and a delete of a set that is already gone is a delete.
+// stored, and one open session per user is a partial unique index, never a guard flag. The two
+// writes that CHANGE a stored set are idempotent by shape instead — a correction assigns absolute
+// values, and a delete of an already-gone set is a delete.
 //
-// A SET ID IS SPENT ONCE AND FOR GOOD, and that is what lets those two live beside the replay. The
-// primary key stopped being the whole of the idempotency the moment a row could LEAVE gym_sets: a
-// replayed append would find the id free and re-create the set a lifter deleted, which is the one
-// thing a delete has to survive. So insertSet refuses an id gym_set_revisions holds as deleted, and
-// it refuses it with `deleted` rather than `idTaken` for the reason that enum states.
+// A set id is spent once and for good: insertSet refuses an id gym_set_revisions holds as deleted,
+// with `deleted` rather than `idTaken`, or a replayed append would re-create a deleted set.
 struct LogRepository {
   virtual ~LogRepository() = default;
 
@@ -272,101 +193,64 @@ struct LogRepository {
   virtual std::optional<Set> setOf(const UserId& user, const SetId& id) = 0;
   virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
-  // Lands on an open session, and it records WHO closed: the lifter's finish is final; the log's
-  // stale guess is revisable — by a late set (lateSetLands), and by the lifter's own finish, which
-  // UPGRADES a stale close (closed_by becomes finish; finished_at moves as the domain's
-  // finishAfterStaleClose says — to the finish when it sits within four hours of the last activity,
-  // otherwise it stays at that activity) so their word ends the workout the guess only paused. A
-  // finish never moves once it is one:
-  // a replayed finish, or a finish racing another, keeps whichever landed first.
+  // Lands on an open session and records who closed. A lifter's finish is final — a replay or a
+  // race keeps whichever landed first. A stale close is revisable: by a late set (lateSetLands), and
+  // by the lifter's own finish, which upgrades closed_by to finish and moves finished_at as
+  // finishAfterStaleClose says.
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
-  // Assigns the number and returns the stored row; anything that stops the write comes back as a
-  // typed fact beside it, and EVERY refusal below this line is decided here and nowhere above it —
-  // one fact decided in two layers gets decided in two orders. A REPLAY IS NOT RESOLVED HERE —
-  // `TrainingService::append` answers it through `setOf` before this is ever reached, which is what lets
-  // this method answer `finished` for every write that arrives after the locked row closed, replay
-  // or not — every write but the one lateSetLands admits: a set that continues a STALE-closed
-  // workout lands and moves that workout's finish forward to it, in the same transaction, because
-  // the close was the log's guess and the set is the fact. Stating it the other way round would be a
-  // contract a second implementation could keep and still lose a set. And an id this account holds
-  // as DELETED is refused before either: it is the one refusal the primary key cannot make, because
-  // the row it would have collided with is gone.
+  // Assigns the set number and returns the stored row; every refusal is decided here and nowhere
+  // above. A replay is resolved earlier, by `TrainingService::append` through `setOf`, so this
+  // answers `finished` for every write arriving after the locked row closed — except the one
+  // lateSetLands admits, a set continuing a STALE-closed workout, which lands and moves that
+  // workout's finish forward to it in the same transaction. An id held as deleted is refused before
+  // either.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
 
-  // The two writes that change a set already stored, and the only pair here that leaves something
-  // behind: what they replace is appended to gym_set_revisions, so a correction rewrites the row the
-  // log reads AND keeps what it replaced. `gym_sets` therefore keeps its meaning exactly — one row
-  // per set that currently stands — and every read above it is untouched and correct by
-  // construction: the tonnage, the marks, the records, the chart, the prefill and the export all
-  // recompute off the live rows. The alternative, a superseding row with a tombstone, would make
-  // every one of those reads project the chain forever to buy a property nothing needs, and a
-  // forgotten projection shows a lifter a set twice.
+  // The two writes that change a stored set: what they replace is appended to gym_set_revisions, so
+  // gym_sets keeps one row per set that currently stands and every read above recomputes off it.
   //
-  // `updateSet` takes the WHOLE corrected row — the domain built it from the stored one — rather
-  // than a patch the store would merge, because merging in SQL is the correction rule stated a
-  // second time in a language the domain cannot read. It answers with the stored row, so a retry is
-  // a no-op that reads back the same values. Absent is the one fact: no such set, another account's,
-  // and one this session does not hold, told apart by nobody.
+  // `updateSet` takes the WHOLE corrected row, never a patch to merge, and answers with the stored
+  // row so a retry reads back the same values. Absent is the one answer for no such set, another
+  // account's, and one this session does not hold alike.
   //
-  // `deleteSet` answers NOTHING, and that is the contract rather than an omission — a set that was
-  // never there does not stand either, so a client whose reply was lost sends the same delete again
-  // and gets the same silence. Neither write is refused for a finished session: a lifter reads the
-  // log after the workout, and that is exactly when they see the 5 they meant to log as a 4.
+  // `deleteSet` answers nothing, so a lost reply is repaired by sending the same delete again.
+  // Neither write is refused for a finished session.
   virtual std::optional<Set> updateSet(const UserId& user, const Set& corrected) = 0;
   virtual void deleteSet(const UserId& user, const SessionId& session, const SetId& id) = 0;
 
   virtual LogPage log(const UserId& user, const LogCursor& cursor) = 0;
   virtual std::vector<Set> setsOf(const SessionId& id) = 0;
-  // The prefill read: what this account did the last time it trained this movement. Fired on every
-  // movement change, and the one read in this port with no write behind it anywhere.
+  // The prefill read: what this account did the last time it trained this movement.
   virtual LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) = 0;
-  // The picker's read: the same rule as above, run over every movement this account has trained,
-  // in one pass. A picker asking `lastTime` per row would be sixty-four round trips to draw a list,
-  // one per seeded catalog row — the N+1 the log read already refused when it made the summary carry
-  // its own derived facts.
-  // Ordered by movement id, because the caller joins these onto a catalog it already holds and an
-  // id is the key it joins on; the ordering the LIST is drawn in is the catalog's.
+  // The picker's read: the same rule over every movement this account has trained, in one pass.
+  // Ordered by movement id, the key the caller joins it onto its catalog by.
   virtual std::vector<LastSet> lastSets(const UserId& user) = 0;
 
-  // The finish read: everything the review rules need that this session does not already hold, in
-  // one pass. It answers in a DOMAIN value (SessionHistory) rather than a shape of its own, because
-  // the rule is what defines the shape and the store's job is to fill it: the marks of the movements
-  // this session works, and the earlier session it stands against with that session's sets.
+  // The finish read: everything the review rules need that this session does not hold, in one pass —
+  // the marks of the movements it works, and the earlier session it stands against with its sets.
   virtual SessionHistory historyFor(const UserId& user, const Session& session) = 0;
-  // The one destructive action in the product. The sets go with the row (`on delete cascade`), so
-  // a discard leaves nothing behind pointing at a session that is gone.
+  // The sets go with the row (`on delete cascade`).
   virtual bool deleteSession(const UserId& user, const SessionId& id) = 0;  // false = nothing to remove
 
-  // The record read: one movement's whole page in one pass, answered in the DOMAIN value the rule
-  // defines — historyFor's contract applied to one movement instead of one session. Nothing here
-  // computes an e1RM, picks a record or windows a chart; the store hands over orderings and the
-  // pure rule does the rest.
+  // One movement's whole page in one pass. Nothing here computes an e1RM, picks a record or windows
+  // a chart; the store hands over orderings and the pure rule does the rest.
   virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;
 
-  // The statistics read: everything the pure rule needs, in one pass, answered in the DOMAIN value
-  // the rule defines — historyFor's contract applied to a longer window. `tops` come back grouped
-  // by movement, oldest first within each group, which is what lets the rule assemble a line by
-  // appending; nothing here computes an e1RM, because that formula has one copy per language and
-  // none in the database.
+  // The statistics read, in one pass. `tops` come back grouped by movement, oldest first within each
+  // group, so the rule assembles a line by appending; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
-  // Every set this account holds, oldest first, including the workout it is in the middle of — an
-  // export that quietly omitted today would be the one row a lifter goes looking for.
+  // Every set this account holds, oldest first, including the workout still open.
   virtual std::vector<ExportedSet> exportedSets(const UserId& user) = 0;
 
-  // The coach share, three doors. The mint is idempotent ON THE SESSION rather than on a
-  // client-minted id, because there is no id for a client to mint here: a second call while a share
-  // is live hands back the SAME token, so a lifter who taps Share twice sends one link and not two
-  // capabilities they would have to revoke separately. An EXPIRED share is replaced rather than
-  // returned — re-sharing a workout a month later is a new capability, not the resurrection of one
-  // that ended. Absent, another account's, and already-shared-by-someone-else are one answer.
+  // The mint is idempotent ON THE SESSION: a second call while a share is live hands back the same
+  // token; an expired share is replaced rather than returned. Absent, another account's, and
+  // already-shared-by-someone-else are one answer.
   virtual std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                                   std::uint64_t nowMs) = 0;
   virtual bool revokeShare(const UserId& user, const SessionId& id) = 0;   // false = nothing to revoke
-  // The one read in this port with no owner behind it at all — setsOf and lastActivity take a
-  // session id the service already resolved under one, and this takes a token, because the token IS
-  // the credential. Expiry is decided against the instant the caller passes and not against the
-  // database's own clock, so one clock decides and a test can drive it. Revoked, expired and never-existed all answer nothing at
-  // all — the same value, so nothing above this line can tell them apart and neither can a prober.
+  // The one read here with no owner behind it: the token IS the credential. Expiry is decided
+  // against the instant the caller passes, never the database's clock. Revoked, expired and
+  // never-existed all answer the same nothing.
   virtual std::optional<SharedSession> sharedSession(const std::string& token,
                                                      std::uint64_t nowMs) = 0;
 };

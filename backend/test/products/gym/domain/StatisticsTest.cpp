@@ -10,7 +10,7 @@
 using namespace wm::gym;
 
 namespace {
-const std::uint64_t kMonday = 1'700'000'000'000;   // 2023-11-14, a Tuesday — the week is the SQL's
+const std::uint64_t kMonday = 1'700'000'000'000;   // 2023-11-14, a Tuesday
 const std::uint64_t kWeek = 604'800'000;
 const std::uint64_t kDay = 86'400'000;
 
@@ -23,8 +23,6 @@ PriorMark mark(const std::string& exercise, double weightKg, int reps, std::uint
 }
 }
 
-// The whole shape in one case: the series is the tops in the order they arrived, Epley is applied
-// to each of them, and the line is dated by the last one.
 TEST(gym_statistics_draws_a_line_per_movement_with_epley_over_it) {
   const Statistics answer = statistics(TrainingLog{
       {top("back-squat", kMonday, 100, 5), top("back-squat", kMonday + kWeek, 105, 5)},
@@ -40,8 +38,6 @@ TEST(gym_statistics_draws_a_line_per_movement_with_epley_over_it) {
   CHECK_EQ(squat.points[1], (MovementPoint{kMonday + kWeek, 105, 5, 122.5}));
 }
 
-// The two standing bests are different questions and a lifter is owed both answers: 110 × 2 is the
-// heavier bar and 105 × 5 is the better set, exactly as the finish's record rules rank them.
 TEST(gym_statistics_names_the_best_estimate_and_the_heaviest_load_separately) {
   const Statistics answer = statistics(TrainingLog{
       {top("back-squat", kMonday, 110, 2)},
@@ -55,8 +51,7 @@ TEST(gym_statistics_names_the_best_estimate_and_the_heaviest_load_separately) {
   CHECK_EQ(*answer.movements[0].heaviest, (Best{110, 2, kMonday, 117.3}));
 }
 
-// Epley is defined only for a loaded set, so a chin-up ladder draws a line of loads with no
-// estimate over it rather than a line of invented numbers — and its heaviest is still a real fact.
+// Epley is defined only for a loaded set.
 TEST(gym_statistics_leaves_an_unloaded_movement_without_an_estimate) {
   const Statistics answer = statistics(TrainingLog{{top("chin-up", kMonday, 0, 8)},
                                                    {mark("chin-up", 0, 8, kMonday)},
@@ -70,8 +65,7 @@ TEST(gym_statistics_leaves_an_unloaded_movement_without_an_estimate) {
   CHECK_EQ(*answer.movements[0].heaviest, (Best{0, 8, kMonday, std::nullopt}));
 }
 
-// A band-assisted pull-up logs a NEGATIVE load on the same number line, and the heaviest of two
-// negatives is the one closest to zero — the assistance coming off is the progress.
+// Band-assisted work is a NEGATIVE load, so the heaviest of two negatives is the one nearest zero.
 TEST(gym_statistics_reads_band_assisted_work_up_the_number_line) {
   const Statistics answer = statistics(TrainingLog{
       {top("pull-up", kMonday, -20, 5), top("pull-up", kMonday + kWeek, -10, 5)},
@@ -84,8 +78,6 @@ TEST(gym_statistics_reads_band_assisted_work_up_the_number_line) {
   CHECK_FALSE(answer.movements[0].bestE1rm);
 }
 
-// Most recently trained first, which is the order the routines screen already sorts by, so the two
-// lists read the same way down the page.
 TEST(gym_statistics_puts_the_most_recently_trained_movement_first) {
   const Statistics answer = statistics(TrainingLog{{top("back-squat", kMonday, 100, 5),
                                                     top("bench-press", kMonday + kDay, 80, 5)},
@@ -97,8 +89,6 @@ TEST(gym_statistics_puts_the_most_recently_trained_movement_first) {
   CHECK_EQ(answer.movements[1].exercise, ExerciseId{"back-squat"});
 }
 
-// A movement trained on the same day as another breaks its tie on the id, so the walk is the same
-// on every read rather than whatever order the rows happened to arrive in.
 TEST(gym_statistics_breaks_a_same_day_tie_on_the_movement_id) {
   const Statistics answer = statistics(TrainingLog{
       {top("zercher-squat", kMonday, 60, 5), top("back-squat", kMonday, 100, 5)}, {}, {}});
@@ -108,9 +98,6 @@ TEST(gym_statistics_breaks_a_same_day_tie_on_the_movement_id) {
   CHECK_EQ(answer.movements[1].exercise, ExerciseId{"zercher-squat"});
 }
 
-// The weekly counts are the store's and the rule hands them straight through: nothing here adds a
-// total, an average or a trend to them, because every one of those would be an opinion this surface
-// refuses to have.
 TEST(gym_statistics_passes_the_weeks_through_untouched) {
   const std::vector<TrainingWeek> weeks{TrainingWeek{kMonday, 3, 44}, TrainingWeek{kMonday + kWeek, 0, 0},
                                         TrainingWeek{kMonday + 2 * kWeek, 4, 61}};
@@ -120,8 +107,6 @@ TEST(gym_statistics_passes_the_weeks_through_untouched) {
   CHECK_EQ(answer.movements.size(), 0u);
 }
 
-// An account that has never finished a session answers with nothing at all — no zero-length line,
-// no week of zeroes, no movement with an empty series. An empty answer is the honest one.
 TEST(gym_statistics_of_an_empty_log_is_empty) {
   const Statistics answer = statistics(TrainingLog{});
 

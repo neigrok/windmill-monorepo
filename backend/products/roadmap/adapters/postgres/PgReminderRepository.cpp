@@ -18,20 +18,17 @@ namespace wm {
 
 namespace {
 
-// One fleet-wide lock for the sweep's WORK (not its correctness — the claimed week row is that).
-// PgSweepMutex owns everything about how it is held; this names it.
+// One fleet-wide lock for the sweep's WORK; the claimed week row is what makes it correct.
 constexpr std::string_view kSweepLock = "hashtext('reminder_sweep')::bigint";
 
-// The next occurrence of a user's weekly slot, strictly in their future, expressed entirely in
-// their own local calendar and only then converted back to an instant. The week is stepped in
-// LOCAL days rather than by adding 168 hours, which is what keeps a 09:00 slot at 09:00 across a
-// DST boundary instead of drifting an hour every spring.
+// The next occurrence of a user's weekly slot, strictly in their future, computed entirely in
+// their local calendar and only then converted back to an instant. Step whole LOCAL days, never
+// 168 hours, or a 09:00 slot drifts an hour across a DST boundary.
 //
-// A recomputed pointer may never land EARLIER than the one already there, hence the greatest().
-// slot_date is a LOCAL date, so two slots in different zones are distinct week keys while the
-// real-time gap between them compresses by up to 26 hours: Niue (UTC−11) to Kiritimati (UTC+14)
-// would put two reminders 5d23h apart and break the footer's "once a week" outright. Postgres'
-// greatest() ignores NULL, so a row that has no pointer yet simply takes the computed one.
+// A recomputed pointer may never land EARLIER than the one already there, hence the greatest():
+// slot_date is a LOCAL date, so a zone change compresses the real-time gap between two week keys
+// by up to 26 hours. Postgres' greatest() ignores NULL, so a row with no pointer takes the
+// computed one.
 constexpr std::string_view kMaterializeNextSlot =
     "WITH slot AS ("
     "  SELECT user_id, iana_tz, (now() AT TIME ZONE iana_tz) AS local_now,"
@@ -48,15 +45,13 @@ constexpr std::string_view kMaterializeNextSlot =
     "      r.next_due_at) "
     "FROM slot s WHERE r.user_id = s.user_id";
 
-// The pointer advance that rides inside the claim. It steps whole LOCAL weeks from the slot just
-// served, and takes as many as it needs to land strictly in the future — so a box that was down
-// for a month resumes on the next real slot instead of dribbling out one stale week per tick.
+// The pointer advance that rides inside the claim: whole LOCAL weeks from the slot just served,
+// as many as it takes to land strictly in the future, so a box down for a month resumes on the
+// next real slot.
 //
-// It is SCOPED TO THE SLOT SERVED ($2), which is what makes the claim idempotent rather than
-// merely non-duplicating. Two sweeps holding the same slot: the winner advances to D+7, and the
-// loser — whose insert correctly conflicted — matches nothing here and moves nothing. Recomputing
-// from whatever the pointer currently holds would push that user to D+14 and eat a week with no
-// ledger row to show for it, invisible to the guardrail metric.
+// SCOPED TO THE SLOT SERVED ($2), which is what makes the claim idempotent: a sweep that lost the
+// insert race matches nothing here and moves nothing. Recomputing from the pointer's current
+// value would push that user a week further and eat a week with no ledger row.
 constexpr std::string_view kAdvanceNextSlot =
     "WITH served AS ("
     "  SELECT user_id, (next_due_at AT TIME ZONE iana_tz)::date AS slot_date,"
@@ -70,8 +65,8 @@ constexpr std::string_view kAdvanceNextSlot =
     "                   )::timestamp + make_interval(mins => r.slot_minute)) AT TIME ZONE r.iana_tz "
     "FROM served s WHERE r.user_id = s.user_id";
 
-// The lattice columns readiness needs and no more: ids, labels, hues and their stamps. The
-// description and links columns can run to kilobytes a node and say nothing about what is ready.
+// The lattice columns readiness needs and no more: description and links run to kilobytes a node
+// and say nothing about what is ready.
 constexpr std::string_view kReadinessNodeColumns =
     "node_id, label, label_hlc, color, color_hlc, created_hlc, deleted_hlc";
 
@@ -98,9 +93,8 @@ bool PgReminderRepository::underSweepLock(const std::function<void()>& pass) {
 }
 
 std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit) {
-  // The sweep's whole question, and the only one it is allowed to ask about time: whose slot has
-  // arrived. The row carries its slot back in both currencies — the LOCAL date, which is the
-  // ledger's week key, and the UTC instant the lateness gate measures against.
+  // Whose slot has arrived. The row carries its slot back in both currencies: the LOCAL date,
+  // which is the ledger's week key, and the UTC instant the lateness gate measures against.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -109,8 +103,8 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
       "(extract(epoch from s.next_due_at) * 1000)::bigint AS slot_ms "
       "FROM reminder_subscription s JOIN users u ON u.id = s.user_id "
       "WHERE s.enabled AND NOT s.suppressed AND s.iana_tz <> '' AND s.next_due_at IS NOT NULL "
-      // A row in `users` only ever comes from a consumed magic link or Google sign-in, so
-      // existing here IS the proven-address signal; the soft-close stamp is the only extra gate.
+      // A row in `users` only comes from a consumed magic link or Google sign-in, so existing
+      // here IS the proven-address signal; the soft-close stamp is the only extra gate.
       "AND u.deleted_at IS NULL AND s.next_due_at <= to_timestamp($1::bigint / 1000.0) "
       "ORDER BY s.next_due_at LIMIT $2",
       static_cast<long long>(nowMs), limit);
@@ -137,16 +131,16 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
       user.str());
 
   // The caller's whole overlay in one read, joined through their own trees so it rides the
-  // node_progress primary key rather than scanning it by user. Also carries each tree's freshest
-  // mark, which is half of "when did this person last move this tree forward".
+  // node_progress primary key rather than scanning by user. Also carries each tree's freshest
+  // mark.
   std::map<TreeId, Progress> overlays;
   std::map<TreeId, std::uint64_t> markedAt;
   pqxx::result marks = txn.exec_params(
       "SELECT p.tree_id, p.node_id, p.status, "
       "(extract(epoch from p.updated_at) * 1000)::bigint AS marked_ms "
       "FROM node_progress p JOIN trees t ON t.id = p.tree_id "
-      // node_progress.user_id is text while trees.owner_id is uuid, and one placeholder cannot be
-      // both: the cast on each side is what keeps the same id comparable against either column.
+      // node_progress.user_id is text while trees.owner_id is uuid: one placeholder cannot be
+      // both, so each side is cast.
       "WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND p.user_id = $1::text",
       user.str());
   for (const auto& row : marks) {
@@ -164,8 +158,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
   for (const auto& row : trees) {
     const TreeId id{row["id"].as<std::string>()};
 
-    // The lattice as the read model sees it: present entries folded through LooseGraph, which
-    // drops self-edges and edges onto absent nodes exactly as every other read of a tree does.
+    // Present entries folded through LooseGraph, which drops self-edges and edges onto absent
+    // nodes exactly as every other read of a tree does.
     GraphState state;
     pqxx::result nodes = txn.exec_params(
         "SELECT " + std::string(kReadinessNodeColumns) +
@@ -193,9 +187,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     tree.total = stats.total;
     tree.done = stats.done;
     try {
-      // The same derive the UI runs, over the same graph. A tree that cannot be validated — a
-      // cycle survives every other read path — simply has nothing ready; one malformed tree must
-      // never abort a sweep or cost the rest of the fleet its reminders.
+      // The same derive the UI runs, over the same graph. A tree that cannot be validated has
+      // nothing ready: one malformed tree must never abort a sweep.
       const SkillTree skillTree(data);
       for (const auto& [node, unlocked] : UnlockRules::derive(skillTree, progress)) {
         if (unlocked != NodeState::available) continue;
@@ -211,9 +204,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
 }
 
 std::uint64_t PgReminderRepository::lastActiveAtMs(const UserId& user) {
-  // "Was this person just here?" — their freshest session use, or their freshest tree edit. Every
-  // authenticated request rolls last_seen_ms forward, so a signed-in visit of any kind lands
-  // here; both reads ride an existing index (sessions_user, trees_owner).
+  // Their freshest session use, or their freshest tree edit. Every authenticated request rolls
+  // last_seen_ms forward; both reads ride an existing index (sessions_user, trees_owner).
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -226,9 +218,7 @@ std::uint64_t PgReminderRepository::lastActiveAtMs(const UserId& user) {
 }
 
 std::uint64_t PgReminderRepository::accountCreatedAtMs(const UserId& user) {
-  // The new-account grace measures the ACCOUNT's age, plainly. The earlier reading — the birth of
-  // this person's first tree — denied a long-time user their grace-free status the moment they
-  // started a fresh plan, and handed anyone who deleted an old tree a brand new first week.
+  // The new-account grace measures the ACCOUNT's age, never the age of its oldest tree.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -241,15 +231,13 @@ std::uint64_t PgReminderRepository::accountCreatedAtMs(const UserId& user) {
 
 bool PgReminderRepository::claimWeek(const UserId& user, const std::string& slotDate,
                                      const ReminderDecision& decision) {
-  // The permission slip, and the whole of the "at most one per 7 days" guarantee: the primary key
-  // is the mutex. Whoever inserts the row owns the week; everyone else gets nothing back and must
-  // fall silent. The pointer advances on BOTH paths inside this one transaction — a sweep that
-  // lost the race must not leave its own row selected for the very next tick — and both halves
-  // name the slot being served, so neither can move a pointer that has already moved on.
+  // The whole of the "at most one per 7 days" guarantee: the primary key is the mutex. Whoever
+  // inserts the row owns the week; everyone else gets nothing back and must fall silent. The
+  // pointer advances on BOTH paths inside this one transaction, and both halves name the slot
+  // being served, so neither can move a pointer that has already moved on.
   //
-  // The EXISTS re-asks, inside the transaction, the question dueNow asked minutes ago. Someone
-  // who paused, bounced, or closed their account while this batch was running is a person who
-  // must not be mailed, and rows read up front cannot know that on their own.
+  // The EXISTS re-asks, inside the transaction, the question dueNow asked minutes ago: someone
+  // who paused, bounced or closed their account mid-batch must not be mailed.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   std::optional<std::string> treeId;
@@ -274,18 +262,16 @@ void PgReminderRepository::closeWeek(const UserId& user, const std::string& slot
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (outcome == WeekOutcome::delivered) {
-    // The one stamp that means a person actually received something. Its absence on a claimed row
-    // is ambiguous by construction — the mail may well have landed — which is exactly why such a
-    // row is never retried.
+    // The one stamp that means a person actually received something. Its absence on a claimed
+    // row is ambiguous — the mail may have landed — so such a row is never retried.
     txn.exec_params(
         "UPDATE reminder_week SET sent_at = now() WHERE user_id = $1::uuid AND slot_date = $2::date",
         user.str(), slotDate);
     txn.commit();
     return;
   }
-  // Held by the arming gate, or refused by the provider. Either way the week stays claimed and the
-  // ledger says which: a lost reminder costs nothing, re-sending would eventually double-mail
-  // somebody, and a dark rollout must not leave every row looking like a crash.
+  // Held by the arming gate, or refused by the provider. Either way the week stays claimed and
+  // the ledger says which: re-sending would eventually double-mail somebody.
   txn.exec_params(
       "UPDATE reminder_week SET decision = 'skipped', reason = $3::text "
       "WHERE user_id = $1::uuid AND slot_date = $2::date",
@@ -314,8 +300,8 @@ std::optional<ReminderSettings> PgReminderRepository::settingsFor(const UserId& 
 
 bool PgReminderRepository::upsertSettings(const UserId& user, bool enabled,
                                           const std::string& ianaTz) {
-  // Postgres is the authority on what a timezone is, so ask it before anything else — a rejected
-  // name inside the write below would poison the whole transaction.
+  // Ask Postgres to validate the zone name first: a rejected name inside the write below would
+  // poison the whole transaction.
   if (!ianaTz.empty()) {
     try {
       PgLease probeConn{*pool_};
@@ -344,16 +330,13 @@ bool PgReminderRepository::upsertSettings(const UserId& user, bool enabled,
 }
 
 bool PgReminderRepository::stopMailing(const Email& address) {
-  // One statement, and idempotent because the value it writes is a constant: a redelivered webhook
-  // performs the identical write and changes nothing, which is what makes a dedup table unnecessary
-  // rather than merely absent.
+  // One statement, idempotent because the value it writes is a constant: a redelivered webhook
+  // performs the identical write, so no dedup table is needed.
   //
-  // It INSERTS when there is no row, and that is deliberate. Most accounts have never opened the
-  // reminder settings, and a bounce on their sign-in mail still proves the mailbox is gone; without
-  // the insert, the day they turn reminders on we would mail a dead address for a week before
-  // learning it again. `enabled` is left exactly as its owner set it — suppression is our fact
-  // about the mailbox, never an edit to their choice, so liftSuppression restores what they asked for.
-  // users.email is citext, so the address matches however the provider cased it back to us.
+  // It INSERTS when there is no row: most accounts have never opened the reminder settings, and a
+  // bounce on their sign-in mail still proves the mailbox is gone. `enabled` is left exactly as
+  // its owner set it — suppression is a fact about the mailbox, never an edit to their choice.
+  // users.email is citext, so the address matches however the provider cased it back.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result changed = txn.exec_params(
@@ -366,9 +349,8 @@ bool PgReminderRepository::stopMailing(const Email& address) {
 }
 
 void PgReminderRepository::liftSuppression(const UserId& user) {
-  // The owner's own hand, keyed by their id: RemindersApi calls this when they turn reminders on
-  // over a suppressed row. `enabled` is untouched here too — the enable that prompted it is written
-  // by upsertSettings — and a row that never existed has nothing to lift, so an UPDATE is exact.
+  // The owner's own hand, keyed by their id. `enabled` is untouched here too — upsertSettings
+  // writes it — and a row that never existed has nothing to lift, so an UPDATE is exact.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params("UPDATE reminder_subscription SET suppressed = false WHERE user_id = $1::uuid",
@@ -395,9 +377,8 @@ std::optional<UserId> PgReminderRepository::userByPauseDigest(const std::string&
 }
 
 void PgReminderRepository::pause(const UserId& user) {
-  // The digest goes with it. A pause link is a bearer credential with no expiry of its own, so
-  // leaving it live would keep a forwarded reminder able to pause this account forever — including
-  // after they deliberately turn reminders back on. Spending it here is what ends it.
+  // The digest goes with it: a pause link is a bearer credential with no expiry of its own, so
+  // leaving it live would let a forwarded reminder pause this account forever.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(

@@ -13,13 +13,7 @@
 namespace wm {
 
 // Retention in Postgres: six bounded DELETEs, each naming the rows it takes by primary key from a
-// LIMITed subquery. The limit is the point — a single unbounded DELETE over a year of telemetry
-// would hold locks and bloat the very table this exists to keep small, so a pass takes a slice and
-// the heartbeat comes back for the rest.
-//
-// The telemetry tables are aged by `ts`, which the database writes itself; the OAuth tables are
-// aged by the expiry already IN the row, so the sweep only ever collects what the read paths have
-// already stopped honouring. Nothing here reaches a product's tables.
+// LIMITed subquery, so a pass takes a slice and the heartbeat comes back for the rest.
 class PgRetentionStore : public RetentionStore {
 public:
   explicit PgRetentionStore(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
@@ -28,8 +22,7 @@ public:
     PgRetentionStore::Pass pass{*pool_, windows.batch};
     RetentionReport report;
     report.ran = true;
-    // A window of zero or less is an operator saying "keep it all" — the table is skipped whole,
-    // never swept with a window we invented for them.
+    // A window of zero or less means keep it all — the table is skipped whole.
     if (windows.eventDays > 0)
       report.events = pass.byAge("events", "id", windows.eventDays);
     if (windows.feedbackDays > 0)
@@ -39,11 +32,8 @@ public:
 
     report.oauthCodes = pass.byExpiry("oauth_codes", "code_hash", "expires_ms", now);
     // Two deaths, whichever comes first. A live row dies at its refresh expiry — coalesced, because
-    // a token minted before refresh_expires_ms existed carries a null there and its access expiry is
-    // the whole of its life. A SPENT row (a rotation tombstone) is dead the instant it is stamped
-    // and is kept only long enough to recognise reuse: aging it by the refresh lifetime instead
-    // turned every rotation into a row held for thirty days, which at the request ceiling is
-    // millions, and that is a growth path the retention wave would have introduced itself.
+    // a token with a null refresh_expires_ms has its access expiry as the whole of its life. A SPENT
+    // row (a rotation tombstone) is dead when stamped, kept only long enough to recognise reuse.
     report.oauthTokens = pass.byExpiry(
         "oauth_tokens", "token_hash",
         "least(coalesce(refresh_expires_ms, expires_ms), "
@@ -56,8 +46,7 @@ public:
   }
 
 private:
-  // One lease for the whole pass: six statements on six tables is still one piece of work, and
-  // borrowing a connection per table would let an IO thread's request slip between them.
+  // One lease for the whole pass, so an IO thread's request cannot slip between the six statements.
   struct Pass {
     Pass(PgPool& pool, int batch) : lease(pool), batch(batch) {}
 
@@ -81,10 +70,7 @@ private:
       return static_cast<int>(done.affected_rows());
     }
 
-    // A registered client that never completed an authorization, past its TTL. Anonymous
-    // registration is open by design (RFC 7591) and this is what keeps that door from being a
-    // place to leave rows: an honest client is attached to a grant within a minute, and one that
-    // never came back is dead — an MCP host simply registers again on its next run.
+    // A registered client that never completed an authorization, past its TTL.
     int unattachedClients(int days) {
       pqxx::work txn{*lease};
       const pqxx::result done = txn.exec_params(

@@ -8,30 +8,23 @@ using namespace wm::test;
 
 namespace {
 
-// A `fields` request for the whole node vocabulary — what a caller asks for when it wants the
-// document shape the browser gets.
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "order", "prerequisites", "position", "status",
                "seedStatus", "state", "summary", "description", "links"});
 }
 
-// The ids of a read's nodes, in the order it answered with — what a caller trusts when it takes
-// the first match.
 std::vector<std::string> ids(const Json::Value& nodes) {
   std::vector<std::string> out;
   for (const Json::Value& node : nodes) out.push_back(node["id"].asString());
   return out;
 }
 
-// The strings an edit's receipt names as its own doing.
 std::vector<std::string> introduced(const Json::Value& receipt) {
   std::vector<std::string> out;
   for (const Json::Value& entry : receipt["introducedDiagnostics"]) out.push_back(entry.asString());
   return out;
 }
 
-// A repository whose load fails the way a real one does under an outage — with a message carrying
-// the kind of internals (a host, a port, a role, a secret) a pqxx exception drags along.
 struct FailingTreeRepository : FakeTreeRepository {
   std::optional<StoredTree> load(const TreeId&) override {
     throw std::runtime_error("connect host=db.internal port=5432 user=windmill password=hunter2: FATAL");
@@ -108,7 +101,7 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
   Json::Value b(Json::objectValue);
   b["id"] = "b";
   b["label"] = "B";
-  b["parentId"] = "a";  // a unlocks b
+  b["parentId"] = "a";
   h.call("create_node", b);
 
   Json::Value markB(Json::objectValue);
@@ -126,15 +119,13 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
 
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue)))["completed"].size(), 2u);
 
-  // Each set_progress call echoes ONE frame to the caller's live web sessions carrying that
-  // call's whole batch — here three calls (b, a, b), each a single mark.
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), 3u);
   const FakeBus::ProgressBroadcast& last = h.bus.progressBroadcasts.back();
   CHECK_EQ(last.user, h.caller.str());
   REQUIRE_EQ(last.marks.marks.size(), 1u);
   CHECK_EQ(last.marks.marks.begin()->first, nid("b"));
   CHECK(last.marks.marks.begin()->second.status == ProgressStatus::complete);
-  CHECK(last.marks.marks.begin()->second.at.isSet());  // the echo carries the stamp the mark won with
+  CHECK(last.marks.marks.begin()->second.at.isSet());
 }
 
 TEST(mcp_get_health_needs_a_valid_dag) {
@@ -151,15 +142,15 @@ TEST(mcp_get_health_needs_a_valid_dag) {
   Json::Value self(Json::objectValue);
   self["from"] = "a";
   self["to"] = "a";
-  h.call("connect", self);  // a self-edge makes the graph invalid
+  h.call("connect", self);
   CHECK(h.call("get_health", Json::Value(Json::objectValue)).isError);
 }
 
 TEST(mcp_unknown_tool_and_missing_tree_id_are_errors) {
   Harness h;
   CHECK(h.call("frobnicate", Json::Value(Json::objectValue)).isError);
-  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.actor).isError);  // no treeId
-  CHECK(h.tools.callTool("get_tree", with("treeId", "nope"), h.actor).isError);          // unknown tree
+  CHECK(h.tools.callTool("get_tree", Json::Value(Json::objectValue), h.actor).isError);
+  CHECK(h.tools.callTool("get_tree", with("treeId", "nope"), h.actor).isError);
 }
 
 TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {
@@ -178,7 +169,7 @@ TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {
 
   Json::Value dupe(Json::objectValue);
   dupe["id"] = "infra2";
-  dupe["hue"] = "sky";  // same hue — must be rejected
+  dupe["hue"] = "sky";
   CHECK(h.call("add_kind", dupe).isError);
 }
 
@@ -216,7 +207,7 @@ TEST(mcp_remove_kind_rejected_while_a_node_wears_its_hue) {
   k["hue"] = "sky";
   h.call("add_kind", k);
 
-  CHECK(h.call("remove_kind", with("id", "infra")).isError);  // sky is in use
+  CHECK(h.call("remove_kind", with("id", "infra")).isError);
 }
 
 TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
@@ -234,8 +225,8 @@ TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
 }
 
 TEST(mcp_list_trees_returns_the_callers_owned_rows) {
-  Harness h;  // "t" is owned by the caller
-  h.trees.byId["t"].createdAt = 1'753'400'000'000;  // planted; epoch ms, exactly like updatedAt
+  Harness h;
+  h.trees.byId["t"].createdAt = 1'753'400'000'000;  // epoch ms
   h.trees.updatedAt["t"] = 1'753'900'000'000;
   h.call("create_node", with("label", "A"));
   h.call("create_node", with("label", "B"));
@@ -253,16 +244,16 @@ TEST(mcp_list_trees_returns_the_callers_owned_rows) {
 }
 
 TEST(mcp_list_trees_reports_zero_for_a_tree_with_no_recorded_planting) {
-  Harness h;  // "t" is seeded without a createdAt
+  Harness h;
   const Json::Value trees = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor))["trees"];
   REQUIRE_EQ(trees.size(), 1u);
-  CHECK(trees[0].isMember("createdAt"));  // present and 0 — never a missing key, never null
+  CHECK(trees[0].isMember("createdAt"));  // present and 0 — never missing, never null
   CHECK_EQ(trees[0]["createdAt"].asInt64(), 0);
 }
 
 TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
   Harness h;
-  ToolResult deleted = h.call("delete_tree", Json::Value(Json::objectValue));  // caller owns "t"
+  ToolResult deleted = h.call("delete_tree", Json::Value(Json::objectValue));
   CHECK_FALSE(deleted.isError);
   CHECK(body(deleted)["deleted"].asBool());
 
@@ -274,8 +265,8 @@ TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
 
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor).isError);  // not the owner
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor).isError);  // no such tree
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor).isError);
+  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor).isError);
 }
 
 TEST(mcp_create_node_wires_prerequisites_description_and_links) {
@@ -299,7 +290,7 @@ TEST(mcp_create_node_wires_prerequisites_description_and_links) {
   c["links"] = links;
   CHECK_FALSE(h.call("create_node", c).isError);
 
-  Json::Value args(Json::objectValue);  // the annotation is one `fields` away, never in the default
+  Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "prerequisites", "description", "links"});
   const Json::Value got = body(h.call("get_tree", args));
   const Json::Value* cNode = nullptr;
@@ -324,14 +315,14 @@ TEST(mcp_annotate_node_sets_and_leaves_untouched_fields_alone) {
   Json::Value linkOnly(Json::objectValue);
   linkOnly["id"] = "a";
   Json::Value links(Json::arrayValue);
-  links.append("https://only-a-url");  // a bare-string link is accepted
+  links.append("https://only-a-url");
   linkOnly["links"] = links;
   CHECK_FALSE(h.call("annotate_node", linkOnly).isError);
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "description", "links"});
   const Json::Value a = body(h.call("get_tree", args))["tree"]["nodes"][0];
-  CHECK_EQ(a["description"].asString(), std::string("first pass"));  // survived the links-only update
+  CHECK_EQ(a["description"].asString(), std::string("first pass"));
   REQUIRE_EQ(a["links"].size(), 1u);
   CHECK_EQ(a["links"][0]["url"].asString(), std::string("https://only-a-url"));
 }
@@ -345,7 +336,7 @@ TEST(mcp_add_kind_seeds_label_and_description_inline) {
   k["description"] = "platform work";
   CHECK_FALSE(h.call("add_kind", k).isError);
 
-  Json::Value args(Json::objectValue);  // a kind's brief is one `kindFields` away
+  Json::Value args(Json::objectValue);
   args["kindFields"] = list({"label", "description"});
   const Json::Value kind = body(h.call("get_tree", args))["tree"]["kinds"][0];
   CHECK_EQ(kind["label"].asString(), std::string("Infra"));
@@ -354,7 +345,7 @@ TEST(mcp_add_kind_seeds_label_and_description_inline) {
 
 TEST(mcp_import_subgraph_bulk_upserts_and_reports_collisions) {
   Harness h;
-  h.call("create_node", node("a", "Old A"));  // will collide with the import
+  h.call("create_node", node("a", "Old A"));
 
   Json::Value nodeB = node("b", "B");
   Json::Value prereqs(Json::arrayValue);
@@ -380,7 +371,7 @@ TEST(mcp_import_subgraph_bulk_upserts_and_reports_collisions) {
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(got["tree"]["nodes"].size(), 2u);
   for (const Json::Value& n : got["tree"]["nodes"]) {
-    if (n["id"].asString() == "a") CHECK_EQ(n["label"].asString(), std::string("New A"));  // upserted
+    if (n["id"].asString() == "a") CHECK_EQ(n["label"].asString(), std::string("New A"));
     if (n["id"].asString() == "b") CHECK_EQ(n["prerequisites"][0].asString(), std::string("a"));
   }
 }
@@ -405,7 +396,7 @@ TEST(mcp_import_subgraph_dry_run_reports_without_applying) {
   CHECK_EQ(preview["nodeCollisions"].size(), 1u);
   CHECK_FALSE(preview.isMember("imported"));
 
-  const Json::Value got = body(h.call("get_tree", kNoArgs));  // nothing changed
+  const Json::Value got = body(h.call("get_tree", kNoArgs));
   REQUIRE_EQ(got["tree"]["nodes"].size(), 1u);
   CHECK_EQ(got["tree"]["nodes"][0]["label"].asString(), std::string("A"));
 }
@@ -421,7 +412,7 @@ TEST(mcp_import_subgraph_applies_carried_progress_order_safe) {
   nodes.append(nodeB);
 
   Json::Value progress(Json::arrayValue);
-  progress.append(mark("b", "complete"));  // b listed before its prerequisite a
+  progress.append(mark("b", "complete"));
   progress.append(mark("a", "complete"));
 
   Json::Value args(Json::objectValue);
@@ -432,19 +423,13 @@ TEST(mcp_import_subgraph_applies_carried_progress_order_safe) {
   CHECK_FALSE(result.isError);
   const Json::Value imported = body(result);
   CHECK_EQ(imported["progress"].size(), 2u);
-  CHECK_FALSE(imported.isMember("progressSkipped"));  // every id resolved — no skip list on a clean run
+  CHECK_FALSE(imported.isMember("progressSkipped"));
   for (const Json::Value& row : imported["progress"])
-    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());  // judged on final state
+    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());
 
   CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);
 }
 
-// The batch contract (mcp-batch-contract): atomic against MALFORMED input — a repeated id changes
-// nothing and names both the offender and the row it repeats — while a merely untidy result (a
-// dangling progress reference) is surfaced, never refused.
-// The graft mints no Command, so validate() never saw it and the tree caps every other authoring
-// tool obeys simply did not apply here: a 30000-node tree was built through this door, and the
-// room that held it was never freed.
 TEST(mcp_import_subgraph_past_the_node_ceiling_is_refused_and_writes_nothing) {
   Harness h;
   Json::Value nodes(Json::arrayValue);
@@ -460,8 +445,6 @@ TEST(mcp_import_subgraph_past_the_node_ceiling_is_refused_and_writes_nothing) {
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 }
 
-// A dry run promises the answer the real call would give, refusals included — a preview that
-// reported a clean graft and then failed for real would be worse than no preview.
 TEST(mcp_import_subgraph_dry_run_refuses_an_over_ceiling_graft_the_same_way) {
   Harness h;
   Json::Value nodes(Json::arrayValue);
@@ -477,8 +460,6 @@ TEST(mcp_import_subgraph_dry_run_refuses_an_over_ceiling_graft_the_same_way) {
                        "across roadmaps, or delete what it has outgrown"));
 }
 
-// The caps are read off what the tree would HOLD, not what the batch carries: a graft that
-// re-sends every node already present is an upsert and costs the tree nothing.
 TEST(mcp_import_subgraph_counts_the_resulting_tree_so_an_upsert_still_lands) {
   Harness h;
   Json::Value nodes(Json::arrayValue);
@@ -487,7 +468,7 @@ TEST(mcp_import_subgraph_counts_the_resulting_tree_so_an_upsert_still_lands) {
   args["nodes"] = nodes;
   CHECK_FALSE(h.call("import_subgraph", args).isError);
 
-  ToolResult again = h.call("import_subgraph", args);  // the same 40 ids, a second time
+  ToolResult again = h.call("import_subgraph", args);
   CHECK_FALSE(again.isError);
   CHECK_EQ(body(again)["newNodes"].asInt(), 0);
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 40u);
@@ -498,7 +479,7 @@ TEST(mcp_import_subgraph_refuses_a_repeated_node_id_and_writes_nothing) {
   Json::Value nodes(Json::arrayValue);
   nodes.append(node("a", "first"));
   nodes.append(node("b", "B"));
-  nodes.append(node("a", "second"));  // the same id twice in one batch is ambiguous, not an upsert
+  nodes.append(node("a", "second"));
   Json::Value args(Json::objectValue);
   args["nodes"] = nodes;
 
@@ -507,7 +488,7 @@ TEST(mcp_import_subgraph_refuses_a_repeated_node_id_and_writes_nothing) {
   CHECK_EQ(message(result),
            std::string("import_subgraph: nodes[2].id \"a\" is already used by nodes[0] — an id names "
                        "one node per batch"));
-  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);  // atomic: nothing landed
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 }
 
 TEST(mcp_import_subgraph_refuses_a_repeated_kind_id) {
@@ -516,7 +497,7 @@ TEST(mcp_import_subgraph_refuses_a_repeated_kind_id) {
   first["id"] = "craft";
   first["hue"] = "olive";
   Json::Value second(Json::objectValue);
-  second["id"] = "craft";  // repeated id, a free hue — so only the id check can fire
+  second["id"] = "craft";
   second["hue"] = "sky";
   Json::Value kinds(Json::arrayValue);
   kinds.append(first);
@@ -538,16 +519,16 @@ TEST(mcp_import_subgraph_reports_carried_progress_that_named_no_node) {
   nodes.append(node("a", "A"));
   Json::Value progress(Json::arrayValue);
   progress.append(mark("a", "complete"));
-  progress.append(mark("ghost", "active"));  // names no node the graft leaves behind
+  progress.append(mark("ghost", "active"));
   Json::Value args(Json::objectValue);
   args["nodes"] = nodes;
   args["progress"] = progress;
 
   ToolResult result = h.call("import_subgraph", args);
-  CHECK_FALSE(result.isError);  // a dangling reference is surfaced, not refused
+  CHECK_FALSE(result.isError);
   const Json::Value imported = body(result);
   CHECK(imported["imported"].asBool());
-  REQUIRE_EQ(imported["progress"].size(), 1u);  // only the real mark applied
+  REQUIRE_EQ(imported["progress"].size(), 1u);
   CHECK_EQ(imported["progress"][0]["nodeId"].asString(), std::string("a"));
   REQUIRE_EQ(imported["progressSkipped"].size(), 1u);
   CHECK_EQ(imported["progressSkipped"][0].asString(), std::string("ghost"));
@@ -559,8 +540,8 @@ TEST(mcp_import_subgraph_dry_run_previews_progress_that_would_skip) {
   Json::Value nodes(Json::arrayValue);
   nodes.append(node("a", "A"));
   Json::Value progress(Json::arrayValue);
-  progress.append(mark("a", "complete"));  // arrives in this batch — would land
-  progress.append(mark("ghost", "active"));  // names nothing — would skip
+  progress.append(mark("a", "complete"));
+  progress.append(mark("ghost", "active"));
   Json::Value args(Json::objectValue);
   args["nodes"] = nodes;
   args["progress"] = progress;
@@ -572,9 +553,9 @@ TEST(mcp_import_subgraph_dry_run_previews_progress_that_would_skip) {
   CHECK(preview["dryRun"].asBool());
   REQUIRE_EQ(preview["progressSkipped"].size(), 1u);
   CHECK_EQ(preview["progressSkipped"][0].asString(), std::string("ghost"));
-  CHECK_FALSE(preview.isMember("progress"));  // a preview applies nothing
+  CHECK_FALSE(preview.isMember("progress"));
   CHECK_FALSE(preview.isMember("imported"));
-  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);  // nothing written
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);
 }
 
 TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
@@ -585,7 +566,7 @@ TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
   h.call("create_node", nodeB);
 
   Json::Value updates(Json::arrayValue);
-  updates.append(mark("b", "complete"));  // out of dependency order
+  updates.append(mark("b", "complete"));
   updates.append(mark("a", "complete"));
   Json::Value args(Json::objectValue);
   args["updates"] = updates;
@@ -595,18 +576,18 @@ TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
   const Json::Value res = body(result);
   CHECK_EQ(res["results"].size(), 2u);
   for (const Json::Value& row : res["results"])
-    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());  // §9: not misreported false
+    if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());
 }
 
 TEST(mcp_set_progress_rejects_an_unknown_node) {
   Harness h;
-  CHECK(h.call("set_progress", mark("ghost", "complete")).isError);  // no orphan overlay row is born
+  CHECK(h.call("set_progress", mark("ghost", "complete")).isError);
 
   Json::Value updates(Json::arrayValue);
   updates.append(mark("ghost", "active"));
   Json::Value args(Json::objectValue);
   args["updates"] = updates;
-  CHECK(h.call("set_progress", args).isError);  // the batch form rejects it too
+  CHECK(h.call("set_progress", args).isError);
 }
 
 TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
@@ -632,9 +613,9 @@ TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
   CHECK_EQ(byColor["count"].asInt(), 2);
   CHECK_EQ(byColor["nodes"].size(), 2u);
 
-  CHECK_EQ(body(h.call("find_nodes", with("kind", "frontend")))["count"].asInt(), 2);  // frontend → sky
+  CHECK_EQ(body(h.call("find_nodes", with("kind", "frontend")))["count"].asInt(), 2);
 
-  const Json::Value byQuery = body(h.call("find_nodes", with("query", "webgl")));  // case-insensitive
+  const Json::Value byQuery = body(h.call("find_nodes", with("query", "webgl")));
   CHECK_EQ(byQuery["count"].asInt(), 1);
   CHECK_EQ(byQuery["nodes"][0]["id"].asString(), std::string("renderer"));
 
@@ -645,20 +626,18 @@ TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
   Json::Value combined(Json::objectValue);
   combined["color"] = "sky";
   combined["query"] = "zoom";
-  const Json::Value both = body(h.call("find_nodes", combined));  // AND: sky and matches "zoom"
+  const Json::Value both = body(h.call("find_nodes", combined));
   CHECK_EQ(both["count"].asInt(), 1);
   CHECK_EQ(both["nodes"][0]["id"].asString(), std::string("camera"));
 
-  CHECK(h.call("find_nodes", with("color", "chartreuse")).isError);  // unknown color rejected
+  CHECK(h.call("find_nodes", with("color", "chartreuse")).isError);
 }
 
 TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
-  Harness h;  // "t" is the caller's own (private) tree
+  Harness h;
   h.trees.byId["priv"] =
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}}, 0, uid("someone"), Visibility::private_};
 
-  // Every read tool denies a private tree the caller can't read with the EXACT message an
-  // absent tree returns — byte-identical, so the id is no existence oracle on this surface.
   const std::vector<const char*> reads = {"get_tree", "get_diagnostics", "get_health", "find_nodes"};
   for (const char* name : reads) {
     ToolResult denied = h.tools.callTool(name, with("treeId", "priv"), h.actor);
@@ -669,8 +648,6 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
     CHECK_EQ(message(absent), std::string(name) + ": no such tree \"nope\"");
   }
 
-  // set_progress must not become a node-id/prerequisite oracle on that same private tree:
-  // it denies exactly as absent does (per-user overlay or not, private stays owner-only).
   const auto progArgs = [](const char* tree) {
     Json::Value a(Json::objectValue);
     a["treeId"] = tree; a["nodeId"] = "anything"; a["status"] = "complete";
@@ -683,10 +660,6 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   CHECK_EQ(message(progAbsent), std::string("set_progress: no such tree \"nope\""));
 }
 
-// The point of open() returning its absence: not-found is answered "no such tree", while a genuine
-// repository failure is left to throw past withRoom up to callTool, which logs the detail and
-// answers generically — so the host/port/role/secret a pqxx message carries never reaches the model.
-// The two used to arrive as one throw, and withRoom returned error.what() to tell them apart.
 TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detail) {
   FailingTreeRepository trees;
   FakeOpLog ops;
@@ -706,7 +679,7 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   CHECK(result.isError);
   CHECK_EQ(message(result), std::string("get_tree: that call failed inside the server. Nothing was "
                                         "changed; the detail is in the server log."));
-  CHECK_EQ(message(result).find("hunter2"), std::string::npos);   // the secret never rides out
+  CHECK_EQ(message(result).find("hunter2"), std::string::npos);
   CHECK_EQ(message(result).find("db.internal"), std::string::npos);
 }
 
@@ -721,15 +694,11 @@ TEST(mcp_read_tools_allow_an_unlisted_tree_by_a_stranger) {
 }
 
 TEST(mcp_read_tools_allow_your_own_private_tree) {
-  Harness h;  // "t" is owned by the caller and private by default
+  Harness h;
   CHECK_FALSE(h.call("get_tree", Json::Value(Json::objectValue)).isError);
   CHECK_FALSE(h.call("get_diagnostics", Json::Value(Json::objectValue)).isError);
 }
 
-// The seeded demo tree's exact shape: owner NULL, visibility public. Every mutating path used to
-// gate on "deny only if someone ELSE owns it" — a no-op on a row nobody owns — so any agent could
-// edit the hosted demo AND permanently take ownership of it by writing once. An unowned tree is
-// nobody's to write: all three write paths refuse, and the row stays unowned and untouched.
 TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   Harness h;
   h.trees.byId["demo"] = StoredTree{LooseGraph().exportState(), LegendState{},
@@ -748,9 +717,6 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   Json::Value sweep(Json::objectValue);
   sweep["treeId"] = "demo";
 
-  // And the refusal tells the truth about WHY. "Belongs to another account" would be false of a
-  // row nobody owns, and list_trees — keyed on owner_id — could never surface it, so the sentence
-  // would send the caller hunting for an account and a listing that do not exist.
   const std::vector<std::pair<const char*, Json::Value>> writes = {
       {"create_node", edit}, {"import_subgraph", graft}, {"import_subgraph", preview}, {"prune", sweep}};
   for (const auto& [tool, args] : writes) {
@@ -762,20 +728,16 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
                                  "own with create_tree then import_subgraph.");
   }
 
-  CHECK_FALSE(h.trees.byId["demo"].owner.has_value());  // still nobody's — the claim is gone
-  CHECK(h.trees.byId["demo"] == before);                // and nothing was written
+  CHECK_FALSE(h.trees.byId["demo"].owner.has_value());
+  CHECK(h.trees.byId["demo"] == before);
   CHECK(h.ops.byTree["demo"].empty());
   CHECK(h.bus.subgraphBroadcasts.empty());
 
-  // And it is still the demo: a stranger reads it exactly as before.
   ToolResult read = h.tools.callTool("get_tree", with("treeId", "demo"), h.actor);
   CHECK_FALSE(read.isError);
   CHECK_EQ(body(read)["tree"]["nodes"].size(), 0u);
 }
 
-// The same rule on an unowned tree that is merely UNLISTED — writable by nobody for the same
-// reason, and the refusal still names the truth, because "this tree exists" is not a secret
-// about a tree anyone holding the id may read.
 TEST(mcp_write_tools_refuse_an_unowned_unlisted_tree) {
   Harness h;
   h.trees.byId["orphan"] = StoredTree{LooseGraph().exportState(), LegendState{},
@@ -794,8 +756,6 @@ TEST(mcp_write_tools_refuse_an_unowned_unlisted_tree) {
   CHECK_FALSE(h.trees.byId["orphan"].owner.has_value());
 }
 
-// The two refusals stay apart: a tree someone ELSE owns is still answered with the sentence that
-// names an owner and a listing, because for that tree both are real.
 TEST(mcp_a_tree_another_account_owns_is_still_refused_by_name) {
   Harness h;
   h.trees.byId["theirs"] = StoredTree{LooseGraph().exportState(), LegendState{},
@@ -811,10 +771,8 @@ TEST(mcp_a_tree_another_account_owns_is_still_refused_by_name) {
                                          "list_trees to see the roadmaps you own."));
 }
 
-// The gate did not over-narrow: the owner still writes their own tree, and the receipt is the
-// same one it always was.
 TEST(mcp_the_owner_still_writes_their_own_tree) {
-  Harness h;  // "t" is owned by the caller
+  Harness h;
   ToolResult created = h.call("create_node", node("keel", "Keel"));
   CHECK_FALSE(created.isError);
   CHECK(body(created)["applied"].asBool());
@@ -832,23 +790,23 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   h.call("connect", edge);
   Json::Value toGhost(Json::objectValue);
   toGhost["from"] = "a";
-  toGhost["to"] = "ghost";  // an edge to a node that does not exist
+  toGhost["to"] = "ghost";
   h.call("connect", toGhost);
 
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "active"));
-  h.call("delete_node", with("id", "b"));  // b's overlay row and the a->b edge are now orphaned
+  h.call("delete_node", with("id", "b"));
 
   ToolResult result = h.call("prune", kNoArgs);
   CHECK_FALSE(result.isError);
   const Json::Value pruned = body(result);
-  CHECK_EQ(pruned["prunedEdges"].asInt(), 2);     // a->ghost dangling + a->b (b tombstoned)
-  CHECK_EQ(pruned["prunedProgress"].asInt(), 1);  // b's orphaned overlay row
+  CHECK_EQ(pruned["prunedEdges"].asInt(), 2);
+  CHECK_EQ(pruned["prunedProgress"].asInt(), 1);
   CHECK(pruned["diagnosticsClean"].asBool());
 
   CHECK(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
   const Json::Value prog = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(prog["completed"].size(), 1u);  // a remains; b's row gone
+  CHECK_EQ(prog["completed"].size(), 1u);
   CHECK(prog["inProgress"].empty());
 }
 
@@ -867,12 +825,10 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
   k["description"] = "the generator's sorting brief";
   h.call("add_kind", k);
 
-  // find_nodes is an index: the ids you edit by, the label and hue you recognise them by.
   const Json::Value found = body(h.call("find_nodes", kNoArgs));
-  CHECK_EQ(keys(found), (std::vector<std::string>{"count", "nodes"}));  // no nextCursor on a last page
+  CHECK_EQ(keys(found), (std::vector<std::string>{"count", "nodes"}));
   CHECK_EQ(keys(found["nodes"][0]), (std::vector<std::string>{"color", "id", "label"}));
 
-  // get_tree is the shape: what exists and what unlocks what — no layout, icon or status seed.
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(keys(got), (std::vector<std::string>{"count", "seq", "tree"}));
   CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"id", "kinds", "nodes", "title"}));
@@ -880,7 +836,6 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
 
-  // get_progress drops the `cleared` tombstones a browser reconciles against.
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("a", "none"));
   const Json::Value progress = body(h.call("get_progress", kNoArgs));
@@ -931,15 +886,14 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["prerequisites"][0].asString(), std::string("a"));
   CHECK_EQ(b["position"]["x"].asDouble(), 12.0);
   CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
-  CHECK_EQ(b["seedStatus"].asString(), std::string("active"));  // the document's authored baseline
-  CHECK_EQ(b["status"].asString(), std::string("none"));        // …and the caller's own, unmarked
-  CHECK_EQ(b["state"].asString(), std::string("locked"));       // …and what the tree derives: a is not done
+  CHECK_EQ(b["seedStatus"].asString(), std::string("active"));
+  CHECK_EQ(b["status"].asString(), std::string("none"));
+  CHECK_EQ(b["state"].asString(), std::string("locked"));
   CHECK_EQ(b["description"].asString(), std::string("the whole annotation"));
-  CHECK_EQ(b["summary"].asString(), std::string("the whole annotation"));  // short: the summary IS the text
+  CHECK_EQ(b["summary"].asString(), std::string("the whole annotation"));
   CHECK_EQ(b["links"][0]["url"].asString(), std::string("https://spec"));
   CHECK_EQ(b["links"][0]["label"].asString(), std::string("Spec"));
 
-  // find_nodes spells `fields` identically, over the same vocabulary.
   Json::Value search(Json::objectValue);
   search["query"] = "whole annotation";
   search["fields"] = list({"id", "description"});
@@ -948,14 +902,10 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(match["description"].asString(), std::string("the whole annotation"));
 }
 
-// A long note answers its opening under `summary` — cut at a word, ellipsized — and its whole self
-// under `description`; a short note answers the same text under both, so a reader can tell the two
-// apart by the ellipsis alone. On an annotated tree, a page of full descriptions is what runs past a
-// client's result ceiling; the summary is what lets it skim.
 TEST(mcp_summary_is_the_descriptions_opening_and_says_when_it_was_cut) {
   Harness h;
   std::string words;
-  for (int i = 0; i < 60; ++i) words += "word" + std::to_string(i) + " ";  // ~400 chars, spaces throughout
+  for (int i = 0; i < 60; ++i) words += "word" + std::to_string(i) + " ";
   Json::Value annotated = node("long", "Long");
   annotated["description"] = words;
   h.call("create_node", annotated);
@@ -972,15 +922,12 @@ TEST(mcp_summary_is_the_descriptions_opening_and_says_when_it_was_cut) {
   CHECK(summary.size() <= 200 + ellipsis.size());
   CHECK_EQ(summary.substr(summary.size() - ellipsis.size()), ellipsis);
   CHECK_EQ(summary.back(), ellipsis.back());
-  CHECK(summary.find(' ' + ellipsis) == std::string::npos);  // cut AT the word, never leaving a trailing space
-  CHECK_EQ(words.rfind(summary.substr(0, summary.size() - ellipsis.size()), 0), 0u);  // a prefix of the note
+  CHECK(summary.find(' ' + ellipsis) == std::string::npos);
+  CHECK_EQ(words.rfind(summary.substr(0, summary.size() - ellipsis.size()), 0), 0u);
   CHECK_EQ(nodes[1]["summary"].asString(), std::string("one line"));
-  CHECK_FALSE(nodes[1].isMember("description"));  // asked for the summary, not the whole
+  CHECK_FALSE(nodes[1].isMember("description"));
 }
 
-// A note with no word boundary in the back half of the budget — an unbroken run of CJK, a long URL
-// — is cut at a code point, never inside one: 200 bytes is not a multiple of three, so a byte cut
-// would hand jsoncpp a dangling lead byte to re-decode as a different character.
 TEST(mcp_summary_never_cuts_inside_a_multibyte_character) {
   Harness h;
   std::string cjk;
@@ -995,7 +942,7 @@ TEST(mcp_summary_never_cuts_inside_a_multibyte_character) {
   const std::string ellipsis = "\u2026";
   const std::string head = summary.substr(0, summary.size() - ellipsis.size());
   CHECK_EQ(summary.substr(summary.size() - ellipsis.size()), ellipsis);
-  CHECK_EQ(head.size() % 3, 0u);                              // whole characters only
+  CHECK_EQ(head.size() % 3, 0u);
   CHECK_EQ(head.size(), 198u);                                // the last whole one under 200
   CHECK_EQ(cjk.rfind(head, 0), 0u);
 }
@@ -1006,7 +953,7 @@ TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   h.call("create_node", node("b", "B"));
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "complete"));
-  h.call("set_progress", mark("b", "none"));  // b is cleared, not merely unmarked
+  h.call("set_progress", mark("b", "none"));
 
   const Json::Value lean = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "inProgress"}));
@@ -1032,7 +979,6 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, order, "
                        "prerequisites, position, status, seedStatus, state, summary, description, links}"));
 
-  // Each shape refuses against ITS OWN vocabulary — the legend's and the overlay's differ.
   Json::Value kindArgs(Json::objectValue);
   kindArgs["kindFields"] = list({"color"});
   ToolResult wrongVocabulary = h.call("get_tree", kindArgs);
@@ -1063,18 +1009,17 @@ TEST(mcp_limit_and_cursor_walk_the_whole_set_exactly_once) {
     ToolResult result = h.call("find_nodes", args);
     CHECK_FALSE(result.isError);
     const Json::Value page = body(result);
-    CHECK_EQ(page["count"].asInt(), 5);  // the TOTAL matched, on every page — never the page length
+    CHECK_EQ(page["count"].asInt(), 5);
     for (const Json::Value& n : page["nodes"]) walked.push_back(n["id"].asString());
     ++pages;
-    if (!page.isMember("nextCursor")) break;  // absent, not empty, on the last page
+    if (!page.isMember("nextCursor")) break;
     cursor = page["nextCursor"].asString();
-    CHECK_EQ(cursor, walked.back());  // the token is the last id emitted
+    CHECK_EQ(cursor, walked.back());
   }
 
   CHECK_EQ(pages, 3);  // 2 + 2 + 1
-  CHECK_EQ(walked, (std::vector<std::string>{"a", "b", "c", "d", "e"}));  // once each, in order, no gaps
+  CHECK_EQ(walked, (std::vector<std::string>{"a", "b", "c", "d", "e"}));
 
-  // get_tree pages the same way, and its `count` is the whole tree.
   Json::Value firstArgs(Json::objectValue);
   firstArgs["limit"] = 3;
   const Json::Value first = body(h.call("get_tree", firstArgs));
@@ -1125,8 +1070,6 @@ TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
   h.call("set_progress", mark("done", "complete"));
   h.call("set_progress", mark("doing", "active"));
 
-  // Asked for, `status` is answered for EVERY node — an unmarked one says so, in set_progress's
-  // own vocabulary, so "no mark" can never read as "this server doesn't serve that field".
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "status"});
   const Json::Value tree = body(h.call("get_tree", args))["tree"]["nodes"];
@@ -1136,14 +1079,12 @@ TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
   CHECK_EQ(tree[1]["status"].asString(), std::string("complete"));
   CHECK_EQ(tree[2]["status"].asString(), std::string("none"));
 
-  // find_nodes answers identically — same field, same vocabulary, same always-present rule.
   const Json::Value found = body(h.call("find_nodes", args))["nodes"];
   CHECK_EQ(ids(found), (std::vector<std::string>{"doing", "done", "untouched"}));
   CHECK_EQ(found[0]["status"].asString(), std::string("active"));
   CHECK_EQ(found[1]["status"].asString(), std::string("complete"));
   CHECK_EQ(found[2]["status"].asString(), std::string("none"));
 
-  // …and it stays off the default projection: a page of 200 nodes pays nothing for it unasked.
   CHECK_EQ(keys(body(h.call("find_nodes", kNoArgs))["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label"}));
   CHECK_EQ(keys(body(h.call("get_tree", kNoArgs))["tree"]["nodes"][0]),
@@ -1167,8 +1108,6 @@ TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
   const Json::Value mine = body(h.tools.callTool("get_tree", args, h.actor))["tree"]["nodes"][0];
   CHECK_EQ(mine["status"].asString(), std::string("complete"));
 
-  // Progress is a private overlay: a stranger reading the same unlisted tree sees the node, and
-  // sees that THEY have not marked it.
   const Json::Value theirs =
       body(h.tools.callTool("get_tree", args, ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"][0];
   CHECK_EQ(keys(theirs), (std::vector<std::string>{"id", "status"}));
@@ -1191,8 +1130,6 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_FALSE(h.call("import_subgraph", imported).isError);
   h.call("set_progress", mark("a", "complete"));
 
-  // `state` is derived: a is complete, so b is available, and c is locked behind b — nobody had
-  // to walk the graph to learn it. `status` beside it stays the raw mark, so the two never blur.
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "state", "status"});
   Json::Value tree = body(h.call("get_tree", args))["tree"]["nodes"];
@@ -1203,7 +1140,6 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_EQ(tree[1]["status"].asString(), std::string("none"));
   CHECK_EQ(tree[2]["state"].asString(), std::string("locked"));
 
-  // An active mark answers active — the mark outranks availability, on find_nodes alike.
   h.call("set_progress", mark("b", "active"));
   Json::Value found = body(h.call("find_nodes", args))["nodes"];
   CHECK_EQ(ids(found), (std::vector<std::string>{"a", "b", "c"}));
@@ -1211,8 +1147,6 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_EQ(found[1]["status"].asString(), std::string("active"));
   CHECK_EQ(found[2]["state"].asString(), std::string("locked"));
 
-  // A caller with no account holds no marks, and the cascade over none is the honest reading:
-  // roots available, everything behind them locked.
   h.trees.byId["open"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Shared", {}}, 0,
                                     h.caller, Visibility::unlisted};
   imported["treeId"] = "open";
@@ -1226,7 +1160,6 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_EQ(tree[1]["state"].asString(), std::string("locked"));
   CHECK_EQ(tree[2]["state"].asString(), std::string("locked"));
 
-  // …and it stays off both default projections.
   CHECK_EQ(keys(body(h.call("find_nodes", kNoArgs))["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label"}));
   CHECK_EQ(keys(body(h.call("get_tree", kNoArgs))["tree"]["nodes"][0]),
@@ -1248,22 +1181,18 @@ TEST(mcp_find_nodes_by_state_is_the_frontier_in_one_call) {
   CHECK_FALSE(h.call("import_subgraph", imported).isError);
   h.call("set_progress", mark("a", "complete"));
 
-  // {state: "available"} answers what can be worked on right now — b alone — and `count` speaks
-  // of the filtered set, not of everything the other filters let through.
   const Json::Value frontier = body(h.call("find_nodes", with("state", "available")));
   CHECK_EQ(keys(frontier), (std::vector<std::string>{"count", "nodes"}));
   CHECK_EQ(frontier["count"].asUInt64(), 1u);
   CHECK_EQ(ids(frontier["nodes"]), (std::vector<std::string>{"b"}));
   CHECK_EQ(keys(frontier["nodes"][0]), (std::vector<std::string>{"color", "id", "label"}));
 
-  // Every filter is AND: a query that names the locked node finds nothing available.
   Json::Value both = with("state", "available");
   both["query"] = "c";
   CHECK_EQ(body(h.call("find_nodes", both))["count"].asUInt64(), 0u);
   CHECK_EQ(ids(body(h.call("find_nodes", with("state", "locked")))["nodes"]),
            (std::vector<std::string>{"c"}));
 
-  // A state outside the four is refused, naming the legal set.
   const ToolResult bogus = h.call("find_nodes", with("state", "bogus"));
   CHECK(bogus.isError);
   CHECK_EQ(message(bogus),
@@ -1272,11 +1201,6 @@ TEST(mcp_find_nodes_by_state_is_the_frontier_in_one_call) {
 
 TEST(mcp_state_still_answers_on_an_untidy_tree) {
   Harness h;
-  // A prerequisite that names no node, and a two-node cycle: edits accept both, get_diagnostics
-  // reports both, and a read must answer rather than fail the way SkillTree would. The document a
-  // read projects carries only live edges (a dangling one lives in diagnostics, not in
-  // `prerequisites`), so the node waiting on a ghost reads as a root — available; a cycle's members
-  // wait on each other forever, so both are locked.
   Json::Value dangling = node("waits-on-ghost", "Waits");
   dangling["prerequisites"] = list({"ghost"});
   CHECK_FALSE(body(h.call("create_node", dangling))["diagnosticsClean"].asBool());
@@ -1307,7 +1231,7 @@ TEST(mcp_state_still_answers_on_an_untidy_tree) {
 TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {
   Harness h;
   Json::Value seeded = node("shipped", "Shipped");
-  seeded["seedStatus"] = "complete";  // what every reader sees before their own marks
+  seeded["seedStatus"] = "complete";
   Json::Value nodes(Json::arrayValue);
   nodes.append(seeded);
   Json::Value imported(Json::objectValue);
@@ -1323,8 +1247,8 @@ TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {
 
   h.call("set_progress", mark("shipped", "active"));
   const Json::Value marked = body(h.call("find_nodes", args))["nodes"][0];
-  CHECK_EQ(marked["seedStatus"].asString(), std::string("complete"));  // the document is untouched
-  CHECK_EQ(marked["status"].asString(), std::string("active"));        // the mark is the caller's
+  CHECK_EQ(marked["seedStatus"].asString(), std::string("complete"));
+  CHECK_EQ(marked["status"].asString(), std::string("active"));
 }
 
 TEST(mcp_a_query_matches_a_node_by_its_own_id_and_ranks_the_exact_one_first) {
@@ -1337,20 +1261,15 @@ TEST(mcp_a_query_matches_a_node_by_its_own_id_and_ranks_the_exact_one_first) {
   mention["description"] = "supersedes alpha";
   h.call("create_node", mention);
 
-  // Every node that carries the string matches — including the one whose ID is the string, which
-  // used to be the only node a search for its own handle missed.
   const Json::Value ranked = body(h.call("find_nodes", with("query", "alpha")));
   CHECK_EQ(ranked["count"].asInt(), 5);
   CHECK_EQ(ids(ranked["nodes"]),
            (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
 
-  // The exact id outranks the prose that merely mentions it — the confident wrong answer this
-  // ranking exists to delete — and the match is case-insensitive on the id as on the rest.
   const Json::Value shouted = body(h.call("find_nodes", with("query", "ALPHA")));
   CHECK_EQ(ids(shouted["nodes"]),
            (std::vector<std::string>{"alpha", "alpha-two", "gamma", "pre-alpha", "delta"}));
 
-  // A filter still ANDs with the query, and paging walks the ranked order, best page first.
   Json::Value paged(Json::objectValue);
   paged["query"] = "alpha";
   paged["limit"] = 2;
@@ -1362,7 +1281,6 @@ TEST(mcp_a_query_matches_a_node_by_its_own_id_and_ranks_the_exact_one_first) {
   CHECK_EQ(ids(body(h.call("find_nodes", paged))["nodes"]),
            (std::vector<std::string>{"gamma", "pre-alpha"}));
 
-  // With no query there is nothing to rank: the tree's own order stands.
   CHECK_EQ(ids(body(h.call("find_nodes", kNoArgs))["nodes"]),
            (std::vector<std::string>{"alpha", "alpha-two", "delta", "gamma", "pre-alpha"}));
 }
@@ -1379,8 +1297,6 @@ TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
   CHECK_FALSE(guilty["diagnosticsClean"].asBool());
   CHECK_EQ(introduced(guilty), (std::vector<std::string>{"dangling edge \"a\" -> \"ghost\""}));
 
-  // The innocent edit on the tree that dirt left behind: the whole-tree flag still says false,
-  // and the receipt says it was not this edit — the round trip to get_diagnostics is gone.
   Json::Value renamed(Json::objectValue);
   renamed["nodeId"] = "a";
   renamed["label"] = "A renamed";
@@ -1388,7 +1304,6 @@ TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
   CHECK_FALSE(innocent["diagnosticsClean"].asBool());
   CHECK_EQ(introduced(innocent), std::vector<std::string>{});
 
-  // A GC only ever removes, so it can never be the culprit — and it ends clean.
   const Json::Value pruned = body(h.call("prune", kNoArgs));
   CHECK(pruned["diagnosticsClean"].asBool());
   CHECK_EQ(introduced(pruned), std::vector<std::string>{});
@@ -1413,14 +1328,12 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
   loop["from"] = "a";
   loop["to"] = "a";
   CHECK_EQ(introduced(body(h.call("connect", loop))),
-           (std::vector<std::string>{"self-edge on \"a\""}));  // the standing cycle is not re-blamed
+           (std::vector<std::string>{"self-edge on \"a\""}));
 
-  // A delete dirties edges it never named: both of b's, reported against the edit that did it.
   const Json::Value deleted = body(h.call("delete_node", with("nodeId", "b")));
   CHECK_EQ(introduced(deleted),
            (std::vector<std::string>{"dangling edge \"a\" -> \"b\"", "dangling edge \"b\" -> \"a\""}));
 
-  // An import is one op over many nodes; its receipt is judged the same way.
   Json::Value orphan = node("c", "C");
   Json::Value prereqs(Json::arrayValue);
   prereqs.append("nowhere");

@@ -19,8 +19,7 @@ namespace wm {
 
 // Ships an uncaught server exception to Sentry as a single envelope POST, over a private event-loop
 // thread so a report never parks a request loop. An empty or malformed DSN makes every capture a
-// no-op (mirroring the ResendEmailSender apiKey_.empty() degradation). Fire-and-forget by contract:
-// reporting a crash must never crash, so the send is async and its own failure is only logged.
+// no-op. Fire-and-forget: the send is async and its own failure is only logged.
 class SentryClient : public FailureReporter {
 public:
   explicit SentryClient(const std::string& dsn, std::string environment = "production",
@@ -30,20 +29,16 @@ public:
                         const std::string& message);
 
   // The handled half (ports/FailureReporter): a failure the user saw that never threw, so drogon's
-  // exception handler never sees it. Same envelope, same cap, level error — a broken feature should
-  // go red here whether or not it took the request down with it.
+  // exception handler never sees it. Same envelope, same cap, level error.
   void report(const std::string& kind, const std::string& where, const std::string& detail) override;
 
-  // The other half of what this project sees: the server's own log lines, as Sentry structured logs
-  // (envelope item type `log`). Buffered rather than shipped one POST per line — a log line is
-  // orders of magnitude more frequent than an exception, and a TLS handshake per line would put the
-  // reporter on the hot path of every request. Flushed on a timer, or early once a batch fills.
+  // The server's own log lines, as Sentry structured logs (envelope item type `log`). Buffered
+  // rather than one POST per line; flushed on a timer, or early once a batch fills.
   enum class Level { trace, debug, info, warn, error, fatal };
   void log(Level level, std::string body, std::string source);
 
   // True on this client's own loop thread. The tee asks before forwarding, so a diagnostic this
-  // client emits about a failed send can never be teed back into the buffer it was reporting on —
-  // no other work runs on that thread, so the test has no false negatives.
+  // client emits about a failed send can never be teed back into the buffer it was reporting on.
   bool onReportingThread() const;
 
 private:
@@ -52,9 +47,8 @@ private:
   void post(std::string body);
   void flushLogs();
 
-  // A per-minute cap: an error storm (a broken endpoint at high RPS) must not mint one outbound TLS
-  // connection per failed request on the single loop thread. Excess reports drop; the DB
-  // server_errors mirror still records every one.
+  // A per-minute cap: an error storm must not mint one outbound TLS connection per failed request
+  // on the single loop thread. Excess reports drop; the DB server_errors mirror still records every one.
   bool allow();
 
   bool enabled_ = false;
@@ -67,9 +61,7 @@ private:
   std::int64_t windowStartMs_ = 0;
   int windowCount_ = 0;
 
-  // One trace for the whole process run, so "every log line this server emitted since it booted" is
-  // one query in Sentry. A per-line trace would be honest too and useless — without real tracing
-  // there is nothing to correlate, and a million one-span traces is not a searchable shape.
+  // One trace for the whole process run, so every log line since boot is one query in Sentry.
   std::string runTraceId_;
   std::shared_ptr<drogon::HttpClient> client_;
   std::mutex logMutex_;

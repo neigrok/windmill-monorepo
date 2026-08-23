@@ -35,9 +35,7 @@ Json::Value userToolResults(const Json::Value& blocks) {
 }
 
 // The static half of every request — the system prompt and the tool catalog — is written to the cache
-// once and read at a tenth the price on every iteration after. The system breakpoint caches
-// tools+system (they render before it); markAgentCachePoint extends the cached prefix through the
-// seed document and the turns so far.
+// once. The system breakpoint caches tools+system; markAgentCachePoint extends the cached prefix.
 Json::Value messagesRequest(const AgentLoopSpec& spec, const Json::Value& tools,
                             const Json::Value& messages) {
   Json::Value systemBlock(Json::objectValue);
@@ -61,8 +59,7 @@ Json::Value messagesRequest(const AgentLoopSpec& spec, const Json::Value& tools,
   return body;
 }
 
-// What the person reads: the text blocks of the final turn, joined. Thinking blocks are skipped —
-// they carry no text on these models and they are not ours to print either way.
+// What the person reads: the text blocks of the final turn, joined. Thinking blocks are skipped.
 std::string finalText(const Json::Value& content) {
   std::string out;
   for (const Json::Value& block : content) {
@@ -148,9 +145,8 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
       report(spec.where, outcome.error);
       return outcome;
     }
-    // COUNTED THE MOMENT A REPLY EXISTS, and above every judgement about what it says. From here the
-    // vendor has answered and billed us; a reply that turns out to be unreadable, or a stop reason
-    // nobody wanted, cost exactly what a good one cost.
+    // Counted the moment a reply exists, above every judgement about what it says: the vendor has
+    // answered and billed us either way.
     ++outcome.modelTurns;
 
     const Json::Value& content = (*reply)["content"];
@@ -166,8 +162,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
     if (stopReason.asString() == "end_turn") {
       outcome.text = trim(finalText(content));
       if (spec.answerRequired && outcome.text.empty()) {
-        // A turn that ended with nothing to read is not an answer. Saying so beats printing a blank
-        // answer and letting the person wonder what it meant.
+        // A turn that ended with nothing to read is not an answer.
         outcome.error = "the model finished without saying anything";
         report(spec.where, outcome.error);
         return outcome;
@@ -177,8 +172,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
     }
 
     if (stopReason.asString() != "tool_use") {
-      // max_tokens, refusal, or any other early stop. A partial answer is a different answer, not a
-      // shorter one.
+      // max_tokens, refusal, or any other early stop. A partial answer is a different answer.
       outcome.error = "the model stopped early (stop_reason: " + stopReason.asString() + ")";
       report(spec.where, outcome.error);
       return outcome;

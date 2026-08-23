@@ -28,7 +28,7 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
     mark.status = parseProgressStatus(row["status"].as<std::string>()).value_or(ProgressStatus::none);
     mark.at = parseHlc(row["hlc"].as<std::string>());  // the stamp that won this register
     // The server's own clock, not the marking device's: the HLC beside it orders writes but
-    // cannot be asserted back to a reader as a time (GRAPH_SYNC_DESIGN.md §12).
+    // cannot be asserted back to a reader as a time.
     mark.markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     progress.record(NodeId{row["node_id"].as<std::string>()}, mark);
   }
@@ -61,9 +61,8 @@ bool PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, con
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
-  // A clear ('none') is a stamped value, not a row delete — so it converges like any status and
-  // a stale mark can never resurrect the node. The upsert is true last-writer-wins: it only
-  // takes effect when the incoming stamp strictly beats the stored one.
+  // A clear ('none') is a stamped value, not a row delete, so a stale mark can never resurrect
+  // the node. The upsert lands only when the incoming stamp strictly beats the stored one.
   pqxx::result result = txn.exec_params(
       "INSERT INTO node_progress (tree_id, user_id, node_id, status, hlc, stamp_ms, stamp_counter, updated_at) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8 / 1000.0)) "

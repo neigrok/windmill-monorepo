@@ -11,27 +11,19 @@
 namespace wm {
 
 // One product's registration at the composition root: the host that serves its tools and the
-// paragraph it wants in the initialize handshake. The product NAME is not repeated here — it rides on
-// each declaration, so there is exactly one place a product is spelled and no way for the two to
-// disagree about which grant reaches a tool. The handshake paragraph rides here and the resource
-// catalog does not, because the paragraph is one document several products must SHARE — someone has
-// to compose it — while resources/list is a plain concatenation the engine already takes by injection.
+// paragraph it wants in the initialize handshake. The product name rides on each declaration instead.
 struct ToolModule {
   ToolHost& host;
   std::string instructions;
 };
 
-// Every connected product's tools behind the single seam McpServer binds — and the gate. This is
-// where a grant is enforced, above the domain and below no one: a name outside the caller's scope is
-// refused here, naming the level that was not granted, and the same scope filters the catalog through
-// ToolHost::listTools, so the tools a connection can see and the tools it can call are one answer.
+// Every connected product's tools behind the single seam McpServer binds — and the grant gate. A
+// name outside the caller's scope is refused here, naming the level that was not granted, and the
+// same scope filters the catalog through ToolHost::listTools, so what a connection can see and what
+// it can call are one answer.
 //
-// Two things it refuses outright. A duplicate tool name across products is a CONSTRUCTION failure,
-// not a runtime coin flip about which product answers a call. And an argument no schema declares is
-// refused before dispatch: every tool publishes `additionalProperties:false` and nothing enforced it,
-// so a misnamed key was dropped in silence and the write answered success — which cost an entire
-// import's edges under a description promising the batch was atomic against malformed input. The
-// composite is the one place holding every schema, so that check is written once for every tool.
+// A duplicate tool name across products is a CONSTRUCTION failure. An argument no schema declares is
+// refused before dispatch: every tool publishes `additionalProperties:false` and this is where it is enforced.
 class CompositeToolHost : public ToolHost {
 public:
   explicit CompositeToolHost(const std::vector<ToolModule>& modules);
@@ -41,8 +33,7 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller) override;
 
-  // The products actually served, in registration order — what `scopes_supported` is derived from,
-  // so the authorization server cannot advertise a grant no tool honours.
+  // The products actually served, in registration order — what `scopes_supported` is derived from.
   const std::vector<std::string>& products() const { return products_; }
   const std::string& instructions() const { return instructions_; }
 
@@ -59,16 +50,10 @@ private:
   std::string instructions_;
 };
 
-// The initialize handshake for a server that speaks for several products. Product-neutral in its
-// frame and product-supplied in its content — the same injection seam the resource catalog already
-// uses — because a handshake describing skill trees to a client connected for its training log is
-// the plainest kind of wrong answer.
-//
-// `build` is the deployed commit (the sha the deploy renders; empty on a laptop). It rides in
-// `serverInfo.version` as semver build metadata and is named in the instructions, because a client
-// session's tools/list outlives a deploy: a scout that read a cached catalog against the repo once
-// concluded prod was stale when only its connection was. One line a reader can compare against
-// `git log` turns that into "reconnect".
+// The initialize handshake for a server speaking for several products: product-neutral frame,
+// product-supplied content.
+// `build` is the deployed commit (empty on a laptop), riding in `serverInfo.version` as semver
+// build metadata and named in the instructions.
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build = "");
 
 }

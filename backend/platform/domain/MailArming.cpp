@@ -10,10 +10,8 @@ MailArming::MailArming(bool enabled, const std::string& allowlistCsv) : enabled(
   while (start <= allowlistCsv.size()) {
     const std::size_t comma = allowlistCsv.find(',', start);
     std::string id = allowlistCsv.substr(start, comma - start);
-    // A uuid pasted from a console arrives with stray spacing and any casing; the column it is
-    // compared against is always lowercase, so meet it there. Trimming alone makes an uppercase id
-    // on the list match nobody, silently, in the one direction an operator cannot see: they name an
-    // account, believe it armed, and it never hears a thing.
+    // Trim and lowercase: ids are compared against a column that is always lowercase, so an
+    // uppercase id on the list would silently match nobody.
     id.erase(0, id.find_first_not_of(" \t\r\n"));
     const std::size_t end = id.find_last_not_of(" \t\r\n");
     if (end != std::string::npos) id.resize(end + 1);

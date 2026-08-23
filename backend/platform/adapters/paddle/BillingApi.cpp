@@ -13,15 +13,13 @@
 namespace wm {
 
 namespace {
-// asString() throws on a non-string node; read every field defensively so a surprising payload
-// degrades to empty rather than throwing inside the handler.
+// asString() throws on a non-string node; read every field defensively.
 std::string asStr(const Json::Value& value) {
   return value.isString() ? value.asString() : std::string();
 }
 
-// custom_data rides in from a checkout anyone can open, so treat it as untrusted input: a value
-// that isn't a UUID would reach a ::uuid bind, throw, and make Paddle redeliver the same poison
-// payload until its retry budget is gone. An unusable id is simply no binding.
+// custom_data rides in from a checkout anyone can open: a value that isn't a UUID would reach a
+// ::uuid bind and throw, making Paddle redeliver forever. An unusable id is simply no binding.
 bool isUuid(const std::string& value) {
   if (value.size() != 36) return false;
   for (std::size_t i = 0; i < value.size(); ++i) {
@@ -36,16 +34,14 @@ bool isUuid(const std::string& value) {
   return true;
 }
 
-// Paddle nests the plan on the first line item, and sets scheduled_change only while a pause or
-// cancel is pending. A hybrid subscription can carry several items; the first is the plan we bill on.
+// Paddle nests the plan on the first line item; scheduled_change is set only while a pause or cancel is pending.
 PaddleSubscription subscriptionFrom(const Json::Value& data, const std::string& occurredAt) {
   PaddleSubscription subscription;
   subscription.subscriptionId = asStr(data["id"]);
   subscription.customerId = asStr(data["customer_id"]);
   subscription.status = asStr(data["status"]);
 
-  // Our checkout stamps the Windmill account on the transaction and Paddle carries it here, so the
-  // binding is something we set rather than something we matched. Absent for a subscription created
+  // Our checkout stamps the Windmill account on the transaction. Absent for a subscription created
   // outside that flow, which the read resolves by email instead.
   const Json::Value& custom = data["custom_data"];
   if (custom.isObject()) {
@@ -76,10 +72,8 @@ BillingApi::BillingApi(SubscriptionRepository& subscriptions, std::shared_ptr<Au
       webhookSecret_(std::move(webhookSecret)), paddle_(std::move(paddle)),
       priceId_(std::move(priceId)) {}
 
-// One click, one checkout. The browser sends nothing but its session: the account's email and id
-// come from the session alone, so there is no field to mistype and no way to open a checkout for
-// anyone else. A fresh transaction each time keeps the link single-use — a stale one can't be
-// handed to another session.
+// One click, one checkout: the account's email and id come from the session alone. A fresh
+// transaction each time keeps the link single-use.
 void BillingApi::startCheckout(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   const std::optional<User> user = callerUserOf(req, *auth_);
   if (!user) {
@@ -115,15 +109,13 @@ void BillingApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   }
   if (webhookSecret_.empty() ||
       !verifyPaddleSignature(body, signature, webhookSecret_, clock_.nowMs())) {
-    // Every non-2xx is retried on the same budget, so refusing here loses nothing: a forged
-    // delivery is harmless, and a rotated secret recovers by itself once the new one is deployed.
+    // Every non-2xx is retried on the same budget: a rotated secret recovers once the new one deploys.
     LOG_ERROR << "paddle webhook rejected: signature did not verify";
     callback(error(drogon::k401Unauthorized, "signature did not verify"));
     return;
   }
 
-  // Only a 2xx marks the event delivered, so anything that throws must answer non-2xx and let
-  // Paddle redeliver rather than silently dropping a billing state change.
+  // Only a 2xx marks the event delivered, so anything that throws must answer non-2xx.
   try {
     std::shared_ptr<Json::Value> event = req->getJsonObject();
     if (!event || !event->isObject()) {
@@ -174,8 +166,7 @@ void BillingApi::mySubscription(const drogon::HttpRequestPtr& req, HttpCallback&
   body["subscriptionId"] = subscription->subscriptionId;
   body["priceId"] = subscription->priceId;
   body["productId"] = subscription->productId;
-  // Present only while a pause or cancel is pending — the UI's cue to say when it takes effect
-  // instead of offering to subscribe.
+  // Present only while a pause or cancel is pending.
   if (!subscription->scheduledChangeAt.empty())
     body["scheduledChangeAt"] = subscription->scheduledChangeAt;
   callback(jsonResponse(body));

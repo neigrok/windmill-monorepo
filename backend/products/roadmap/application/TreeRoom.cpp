@@ -10,9 +10,8 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend l
     : id_(std::move(id)), title_(std::move(title)), graph_(std::move(graph)), legend_(std::move(legend)),
       head_(head), owner_(std::move(owner)), visibility_(visibility), createdAt_(createdAt),
       ops_(ops), bus_(bus), clock_(std::string{kServerActor}) {
-  // Fold every stamp the loaded document already carries — the graph frontier and the title
-  // register — so a fresh mint after restart is always ahead of anything persisted: the
-  // receive rule, applied at load.
+  // Fold every stamp the loaded document already carries — the graph frontier and the title register
+  // — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
     clock_.observe(mark);
   }
@@ -40,9 +39,9 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   legend_.join(incoming.legend);
   markDirty(incoming.graph, incoming.legend);
   ++head_;
-  // Record the headline deed so a browser edit reaches the activity feed exactly as an agent's
-  // does — one op per frame at the seq the frame just took, keyed on the frameId so a re-gossip
-  // never double-counts. A nudge (position only) is not feed-worthy, so nothing is logged.
+  // Record the headline deed so a browser edit reaches the activity feed exactly as an agent's does
+  // — one op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
+  // double-counts. A nudge (position only) is not feed-worthy, so nothing is logged.
   if (std::optional<Command> deed = headline(incoming.graph, incoming.legend))
     ops_.append(id_, AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
   bus_.broadcastSubgraph(id_, head_, incoming);

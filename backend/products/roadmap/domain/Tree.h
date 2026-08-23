@@ -71,10 +71,9 @@ inline std::optional<NodeColor> parseColor(std::string_view name) {
 }
 
 // The six hues as hex, straight from the design tokens (src/skilltree/theme.js → tokens/colors.css).
-// Every server-rendered surface reads the palette from here — the gallery card's bar, the reminder
-// mail's step glyphs — so the legend is one identity everywhere it appears rather than a literal
-// copied per adapter. Also the safe form for a mail: a colour is one of these six literals and
-// never a string that came from a person, which matters where it lands in a style attribute.
+// Every server-rendered surface reads the palette from here. Also the safe form for a mail: a
+// colour is one of these six literals and never a string that came from a person, which matters
+// where it lands in a style attribute.
 inline const char* nodeColorHex(NodeColor color) {
   switch (color) {
     case NodeColor::terracotta: return "#BC6C42";
@@ -116,18 +115,16 @@ struct Edge {
   auto operator<=>(const Edge&) const = default;
 };
 
-// An external reference hung off a node — a doc, a PR, a design. `label` is the display
-// text (empty = show the url); `url` is the href.
+// An external reference hung off a node. `label` is the display text (empty = show the url).
 struct Link {
   std::string label;
   std::string url;
   bool operator==(const Link&) const = default;
 };
 
-// The wire/persist shape of a node: `from -> id` edges live as `prerequisites`.
-// `status` is an opaque authoring-time seed (§2) the server round-trips but never acts
-// on — runtime status is the per-user Progress overlay. `description` and `links` are the
-// node's free annotation: a body of notes and a set of external references.
+// The wire/persist shape of a node: `from -> id` edges live as `prerequisites`. `status` is an
+// opaque authoring-time seed the server round-trips but never acts on — runtime status is the
+// per-user Progress overlay. `description` and `links` are the node's free annotation.
 struct NodeSpec {
   NodeId id;
   std::string label;
@@ -141,9 +138,8 @@ struct NodeSpec {
   std::vector<Link> links;
 };
 
-// A legend entry: a named, described hue. A node's `color` field *is* its kind — it
-// holds the hue — so there is no node→kind foreign key. The legend names and orders the
-// hues; order is generation priority (§F6). `label`/`description` may be empty.
+// A legend entry: a named, described hue. A node's `color` field *is* its kind, so there is no
+// node→kind foreign key. The legend names and orders the hues; order is generation priority.
 struct Kind {
   KindId id;
   NodeColor hue = NodeColor::terracotta;
@@ -158,21 +154,18 @@ struct TreeData {
   std::vector<Kind> kinds;
 };
 
-// One node's mark as the overlay holds it. `at` is the stamp that won this register — minted
-// by whichever replica made the mark, and the only thing that decides what wins. `markedAt` is
-// when the SERVER recorded it, on the server's own clock, and is the only one of the two that
-// may be shown to a person: an HLC's physicalMs is a writing device's clock, which the skew
-// clamp bounds from above and nothing bounds from below (docs/GRAPH_SYNC_DESIGN.md §12).
+// One node's mark as the overlay holds it. `at` is the stamp that won this register, and the only
+// thing that decides what wins. `markedAt` is when the SERVER recorded it, on the server's own
+// clock, and is the only one of the two that may be shown to a person.
 struct ProgressMark {
   ProgressStatus status = ProgressStatus::none;
   Hlc at;
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
 };
 
-// A user's private progress over one tree: a last-writer-wins register per node, plus the
-// three id sets every reader actually asks for. `record` is the only way in, so the sets can
-// never drift from the registers they project. `none` is a VALUE here, not a deletion — that
-// is what makes a clear an ordinary write that converges like any other (§12).
+// A user's private progress over one tree: a last-writer-wins register per node, plus the three id
+// sets every reader asks for. `record` is the only way in, so the sets can never drift from the
+// registers they project. `none` is a VALUE here, not a deletion.
 struct Progress {
   std::map<NodeId, ProgressMark> marks;
   std::set<NodeId> completed;

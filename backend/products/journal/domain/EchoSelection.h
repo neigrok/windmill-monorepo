@@ -19,13 +19,12 @@ struct Vectored {
   std::vector<float> vector;
 };
 
-// Every knob in one struct so a test can vary one and a reader can see the whole policy at once.
-// The defaults are the shipped policy; nothing else in the codebase may hardcode these numbers.
+// Every knob in one struct. The defaults are the policy; nothing else in the codebase may hardcode
+// these numbers.
 struct SelectionRules {
   int minDayGap = 7;              // a page younger than a week is not an echo
-  int shown = 10;                 // the cap on ONE TRIGGER's pairings — not the page's. A page with
-                                  // eight triggering passages is capped by SweepBudget::echoesPerPage,
-                                  // which is the only place a whole page is in view.
+  int shown = 10;                 // the cap on ONE TRIGGER's pairings — a whole page is capped by
+                                  // SweepBudget::echoesPerPage instead
 
   double refrainRadius = 0.80;    // a candidate this close counts toward the crowd
   int refrainCrowd = 5;           // this many neighbours and the trigger is a refrain, not a thought
@@ -37,8 +36,15 @@ struct SelectionRules {
   int maxRecent = 2;              // at most this many shown from the last 30 days
   int maxPerMonth = 2;            // at most this many shown from any one calendar month
 
-  double distanceWeight = 0.15;   // alpha — the card sells distance, so distance must rank
-  double familyPenalty = 0.25;    // beta  — a candidate standing for 30 near-copies is worth less
+  // A word this many of the writer's OWN passages carry is theirs, not an anchor. AnchorVocabulary's
+  // built-in common-word list is English, so without this every word in another language looks rare.
+  double commonShare = 0.40;
+  // Below this many passages a corpus cannot say what is common — one word in three pages means
+  // nothing — so the vocabulary stays empty and only the English list applies.
+  int vocabularyFloor = 8;
+
+  double distanceWeight = 0.15;   // alpha — how much age ranks
+  double familyPenalty = 0.25;    // beta  — a candidate standing for many near-copies is worth less
   double diversityPenalty = 0.50; // gamma — punish similarity to what is already selected
 };
 
@@ -58,57 +64,46 @@ float cosine(const std::vector<float>& a, const std::vector<float>& b);
 // arithmetic (days-from-civil) so a developer's mac and CI's linux cannot disagree.
 long daysBetween(const LocalDate& earlier, const LocalDate& later);
 
-// Do these two passages share at least one low-frequency lexical anchor — a name, a rare content
-// word, something outside the common-word list?
-//
-// This is the enforcement mechanism for "an echo may only assert something the user can CHECK from
-// what is on screen". The case it exists for is two passages that reach near-identical cosine
-// through DIFFERENT words, about different subjects — maximum apparent evidence, and no way at all
-// for the reader to tell whether the pairing is right. Requiring one shared uncommon word means
-// they can always see why two passages were put together. No anchor, no echo, whatever the cosine
-// says.
-//
-// (Two verbatim copies of a pronoun-only line do share words, so they pass — the rule bites on
-// different-words collisions, which is the real failure and the stronger claim.)
+// The writer's own common words, counted rather than guessed. Document frequency over PASSAGES, not
+// occurrences: a word repeated four times in one passage is one passage's word. Under
+// `vocabularyFloor` passages nothing is common.
+struct AnchorVocabulary {
+  std::set<std::string> common;
+
+  static AnchorVocabulary of(const std::vector<Vectored>& corpus, const SelectionRules& rules);
+};
+
+// Do these two passages share at least one word that is uncommon FOR THIS WRITER — a name, a rare
+// content word? No anchor, no echo, whatever the cosine says: it is what lets the reader see why
+// two passages were put together. The two-argument form asks against the English list alone.
 bool sharesAnchor(const std::string& a, const std::string& b);
+bool sharesAnchor(const std::string& a, const std::string& b, const AnchorVocabulary& vocabulary);
 
 // How many passages sit within `refrainRadius` of this trigger, its own row excluded. The count
-// behind `isRefrain`, exposed because the debug door has to show the number the rule read rather
-// than a second count of its own that could disagree with it.
+// behind `isRefrain`, exposed so the debug door shows the number the rule read.
 int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
             const SelectionRules& rules);
 
 // Is this trigger a refrain ("tired again", "long day, nothing to report") rather than a thought?
-// Measured on a real single-author corpus: a refrain has twenty-plus neighbours above
-// `refrainRadius`; every genuine echo trigger has between zero and six. A refrain emits nothing —
-// it is the rule that stops a nightly journal handing someone ten copies of last Tuesday.
+// A refrain emits nothing.
 bool isRefrain(const Vectored& trigger, const std::vector<Vectored>& corpus,
                const SelectionRules& rules);
 
 // The corpus narrowed to what this trigger is judged against: at least `minDayGap` older, then
-// top-`perBand` by cosine from EACH age band — 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+.
-//
-// Banding rather than a flat top-N is what makes the feature's own thesis reachable. "You may have
-// forgotten you ever planned it" is a function of age, so an old passage has to compete against its
-// own era; against a flat top-30 on a dense journal it loses every time to structurally similar
-// prose from last month, and the curator can only reject — it can never rescue what retrieval
-// never surfaced.
+// top-`perBand` by cosine from EACH age band — 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+, so an old passage
+// competes against its own era rather than against last month.
 std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vectored>& corpus,
                                const SelectionRules& rules);
 
-// Collapse near-identical candidates into families (keeping the OLDEST member, which is the one the
-// product's own copy is about), drop restatements, apply the recency and per-month quotas, score,
-// and return at most `shown` pairings ordered by score. The oldest qualifying candidate is
-// guaranteed a slot: the first time someone wrote a thing is the payload, and nothing else in the
-// ranking protects it.
-//
-// Deterministic — the same inputs always yield the same pairings in the same order.
+// Collapse near-identical candidates into families (keeping the OLDEST member), drop restatements,
+// apply the recency and per-month quotas, score, and return at most `shown` pairings ordered by
+// score. The oldest qualifying candidate is guaranteed a slot. Deterministic — the same inputs
+// always yield the same pairings in the same order.
 std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>& candidates,
-                            const SelectionRules& rules);
+                            const SelectionRules& rules, const AnchorVocabulary& vocabulary = {});
 
-// WHAT BECAME OF ONE CANDIDATE, in the order the rules run. The debug door reads these, and they
-// are produced BY the selection itself rather than by a second pass that re-decides the same
-// questions — a reason that can disagree with the behaviour it describes is worse than no reason.
+// What became of one candidate, in the order the rules run. Produced BY the selection itself, never
+// by a second pass that re-decides the same questions.
 enum class Fate {
   selected,
   notRetrieved,    // close enough to be worth reporting, but retrieval never handed it over:
@@ -125,8 +120,7 @@ enum class Fate {
 
 const char* fateText(Fate fate);
 
-// One candidate as the selection saw it. Every number the ranking read, so a knob can be moved
-// against real passages instead of against a guess.
+// One candidate as the selection saw it: every number the ranking read.
 struct CandidateNote {
   std::int64_t spanId = 0;
   LocalDate day;
@@ -163,16 +157,15 @@ struct Selection {
 };
 
 Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& candidates,
-                          const SelectionRules& rules);
+                          const SelectionRules& rules,
+                          const AnchorVocabulary& vocabulary = {});
 
-// A WHOLE PAGE's pairings — the refrain gate, per-trigger selection, the reader's dismissals and
-// the page ceiling, in that order. It lives here rather than in the sweep because it is the last
-// step that is a pure function of passages and rules, and because the debug door has to be able to
-// run exactly what a save runs.
+// A whole page's pairings — the refrain gate, per-trigger selection, the reader's dismissals and the
+// page ceiling, in that order. It is the last step that is a pure function of passages and rules.
 //
-// `nearestReported` buys the near misses: the N closest passages retrieval did NOT hand over,
-// noted as `notRetrieved`. It costs one extra cosine pass over the corpus per trigger, which is the
-// dominant cost of a derivation, so the live path asks for none and only the debug door pays.
+// `nearestReported` buys the near misses: the N closest passages retrieval did NOT hand over, noted
+// as `notRetrieved`. It costs one extra cosine pass over the corpus per trigger, so the live path
+// asks for none and only the debug door pays.
 struct PageSelection {
   std::vector<Pairing> pairings;   // after the page cap, best first
   std::vector<TriggerTrace> traces;

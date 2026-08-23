@@ -14,8 +14,7 @@
 namespace wm {
 
 // Admission bounds, enforced at the edge — by validate() for a single command, and by admit()
-// for a graph that arrives whole — and published as `maxLength` by the surfaces that take them
-// (adapters/mcp), which is why they are stated once, here.
+// for a graph that arrives whole — and published as `maxLength` by the surfaces that take them.
 constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
 constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
 constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
@@ -43,8 +42,7 @@ struct CreateNode {
   std::string description;
   std::vector<Link> links;
 };
-// Set a node's free annotation. Each field is optional: a nullopt leaves that register
-// untouched, so description and links can be set together or one at a time.
+// Set a node's free annotation. Each field is optional: a nullopt leaves that register untouched.
 struct AnnotateNode {
   NodeId id;
   std::optional<std::string> description;
@@ -55,17 +53,14 @@ struct RemoveEdge { NodeId from; NodeId to; };
 struct ReconnectEdge { NodeId oldFrom; NodeId oldTo; NodeId newFrom; NodeId newTo; };
 struct DeleteNode { NodeId id; };
 struct TransitiveReduction {};
-// Drop every edge no valid DAG keeps — self-edges and edges to/from an absent node — in one
-// op. The GC twin of TransitiveReduction: a semantics-preserving cleanup of the loose graph.
+// Drop every edge no valid DAG keeps — self-edges and edges to/from an absent node — in one op.
 struct PruneDangling {};
 
-// Legend (§F6) commands. They ride the same op log / undo / broadcast machinery as the
-// node/edge commands. RecolorKind is atomic: it swaps a kind's hue *and* repaints every
-// node wearing the old hue, in one op and one undo step.
+// Legend commands, on the same op log / undo / broadcast machinery as the node/edge commands.
+// RecolorKind is atomic: it swaps a kind's hue *and* repaints every node wearing the old hue.
 struct RenameKind { KindId id; std::string label; };
 struct DescribeKind { KindId id; std::string description; };
-// A kind's label and description may be seeded inline at creation, so a legend entry lands
-// in one op instead of add + rename + describe.
+// A kind's label and description may be seeded inline at creation, so a legend entry lands in one op.
 struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; };
 struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
@@ -78,19 +73,16 @@ using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNod
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
-// Server-authoritative validation, checked at the edge before a command is admitted to
-// the log. Graph commands are never rejected (nullopt); legend commands may be, because
-// their invariants — hue uniqueness, ≤6 kinds, no in-use removal, length caps — are
-// locally decidable on the authoritative state. The string is a human-readable reason.
+// Server-authoritative validation, checked at the edge before a command is admitted to the log.
+// Graph commands are never rejected (nullopt); legend commands may be, because their invariants —
+// hue uniqueness, ≤6 kinds, no in-use removal, length caps — are locally decidable on the
+// authoritative state. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
 
-// The same bounds, for the arrivals that mint no Command and so were never seen by validate():
-// a whole posted document (POST/PUT /v1/trees), a graft into a live graph (the MCP import), and
-// a client-authored lattice frame (the collab socket). Each of those joins state directly, which
-// is how 15000-node documents and 500000-edge imports once landed on a tree capped at 10000/20000.
-// A refusal names the id, the value and the limit, exactly as validate()'s do — and says which
-// KIND of refusal it is, because an HTTP door owes 413 to a document that is merely too big and
-// 400 to one whose field is malformed, and only the rule knows which bound it hit.
+// The same bounds, for the arrivals that mint no Command and so are never seen by validate(): a
+// whole posted document, a graft into a live graph, and a client-authored lattice frame. A refusal
+// names the id, the value and the limit, and says which KIND of refusal it is — an HTTP door owes
+// 413 to a document that is merely too big and 400 to one whose field is malformed.
 struct Admission {
   enum class Verdict { tooLarge, malformed };
   Verdict verdict;
@@ -98,23 +90,16 @@ struct Admission {
 };
 std::optional<Admission> admit(const TreeData& document);
 // A join: the caps are read off what the graph would HOLD once the arrival lands. The join is
-// performed — the graph's own element-set life for each key, merged with every entry the frame
-// carries for it — never estimated from the arriving stamps alone, which a crafted frame could
-// walk away from the truth one entry at a time.
+// performed, never estimated from the arriving stamps alone.
 std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming);
-// The other two payloads a frame carries, which for a while nobody judged at all: 200 kinds and
-// a 40000-character title both rode a socket write straight into the lattice.
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);
 std::optional<Admission> admitTitle(const std::string& title);
 
-// The single feed-worthy deed a subgraph delta represents — the coarse inverse of merge(),
-// read off which lattice fields the frame sets. A client authors in subgraphs, not commands
-// (§ "only lattice effects cross a replica boundary"), so the activity feed reconstructs the
-// headline here from the effects, then renders it through the one command-based feed vocabulary
-// the agent path already uses. Salience order: a node's own life, then legend deeds (which fan
-// out to node fields), then a node's fields, then edges. A position-only or empty frame is a
-// nudge, not a deed — nullopt.
+// The single feed-worthy deed a subgraph delta represents — the coarse inverse of merge(), read
+// off which lattice fields the frame sets. Salience order: a node's own life, then legend deeds
+// (which fan out to node fields), then a node's fields, then edges. A position-only or empty frame
+// is a nudge, not a deed — nullopt.
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 
 }

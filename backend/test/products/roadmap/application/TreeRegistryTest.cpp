@@ -13,8 +13,6 @@
 using namespace wm;
 using namespace wm::fake;
 
-// The registry with its collaborators: fake repos underneath, a real RoomRegistry so the
-// rename tests exercise the live-room seam exactly as production does.
 struct Setup {
   FakeTreeRepository trees;
   FakeProgressRepository progress;
@@ -62,7 +60,7 @@ TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
   TreeId first = s.registry.create(me, treeData("Kitchen garden", {}));
   TreeId second = s.registry.create(me, treeData("", {}));
   CHECK_FALSE(first.empty());
-  CHECK_FALSE(second == first);  // each plant mints a distinct id
+  CHECK_FALSE(second == first);
 
   std::vector<TreeSummary> rows = s.registry.list(me);
   CHECK_EQ(rows.size(), 2u);
@@ -71,7 +69,7 @@ TEST(create_plants_an_owned_empty_tree_that_shows_up_in_the_list) {
     if (row.id != first) continue;
     found = true;
     CHECK_EQ(row.title, std::string("Kitchen garden"));
-    CHECK_EQ(row.stats.total, 0);  // an empty tree
+    CHECK_EQ(row.stats.total, 0);
     CHECK_EQ(row.stats.done, 0);
   }
   CHECK(found);
@@ -88,7 +86,7 @@ TEST(create_accepts_an_initial_tree_document) {
   REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].id, id);
   CHECK_EQ(rows[0].title, std::string("Frontend"));
-  CHECK_EQ(rows[0].stats.total, 2);  // the posted nodes are planted with the tree
+  CHECK_EQ(rows[0].stats.total, 2);
   CHECK_EQ(rows[0].stats.dominantKind, NodeColor::olive);
 }
 
@@ -102,12 +100,11 @@ TEST(create_with_a_requested_id_plants_an_empty_tree_with_the_default_legend_at_
   CHECK(outcome == TreeRegistry::Creation::created);
   const StoredTree& stored = s.trees.byId["t_00c0ffee00c0ffee"];
   CHECK(stored.owner == std::optional<UserId>(me));
-  CHECK(stored.title == (Lww<std::string>{"Learn woodworking", Hlc{}}));  // the stampless create baseline
+  CHECK(stored.title == (Lww<std::string>{"Learn woodworking", Hlc{}}));
   CHECK_EQ(stored.head, static_cast<Seq>(0));
   CHECK(stored.state == GraphState{});  // a claim-create posts no nodes — the client's CRDT flush brings them
 
-  // The genesis pin: the client seeds these same three kinds at '1:0:genesis' locally, and the
-  // two legends must be byte-equal so the claim flush joins with zero duplication.
+  // The client seeds these same three kinds at '1:0:genesis' locally, so the two legends must be byte-equal.
   const Hlc genesis{1, 0, "genesis"};
   LegendState expected;
   expected.kinds.push_back(KindStateEntry{KindId{"build"}, genesis, Hlc{}, NodeColor::terracotta,
@@ -130,7 +127,7 @@ TEST(create_with_the_same_id_by_its_owner_resumes_without_touching_the_row) {
       s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Different title", {}));
 
   CHECK(outcome == TreeRegistry::Creation::existedYours);
-  CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);  // title, owner, state, head — all untouched
+  CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);
 }
 
 TEST(create_with_an_id_that_is_not_yours_is_taken_and_leaves_the_row_alone) {
@@ -143,8 +140,7 @@ TEST(create_with_an_id_that_is_not_yours_is_taken_and_leaves_the_row_alone) {
         TreeRegistry::Creation::taken);
   CHECK(s.trees.byId["t_00c0ffee00c0ffee"] == before);
 
-  // An unowned tree — the seeded demo, a legacy row; nothing mints one any more — is nobody's
-  // to resume either. It stays ownerless: a create is not a way to claim what nobody owns.
+  // An unowned tree is nobody's to resume: a create is not a way to claim what nobody owns.
   s.trees.byId["t_deadbeefdeadbeef"] = StoredTree{GraphState{}, LegendState{}, {"Unclaimed", {}}, 0, std::nullopt};
   CHECK(s.registry.create(uid("intruder"), TreeId{"t_deadbeefdeadbeef"}, treeData("Claim it", {})) ==
         TreeRegistry::Creation::taken);
@@ -158,10 +154,7 @@ TEST(create_with_your_own_soft_deleted_id_is_retired_not_taken) {
         TreeRegistry::Creation::created);
   CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, me) == TreeRegistry::Removal::deleted);
 
-  // load can't see the deleted row, so the insert runs and the unique index refuses it, and the
-  // reload still sees nothing — the retired row's owner is the only fact left that tells the
-  // caller's own delete apart from a stranger's id. Reading `taken` here is what had the claim
-  // re-plant the tree under a fresh id, resurrecting it once per boot.
+  // load can't see the deleted row, so the insert runs and the unique index refuses it; the retired row's owner is the only fact that tells the caller's own delete from a stranger's id.
   CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Again", {})) ==
         TreeRegistry::Creation::retired);
   CHECK_EQ(s.registry.list(me).size(), 0u);
@@ -175,8 +168,6 @@ TEST(create_with_another_accounts_soft_deleted_id_is_still_taken) {
         TreeRegistry::Creation::created);
   CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, owner) == TreeRegistry::Removal::deleted);
 
-  // Whose delete it was is the owner's business: to everybody else a retired id reads exactly
-  // like a live stranger's tree, and nobody inherits an id by outliving its owner's delete.
   CHECK(s.registry.create(intruder, TreeId{"t_00c0ffee00c0ffee"}, treeData("Mine now", {})) ==
         TreeRegistry::Creation::taken);
   CHECK_EQ(s.registry.list(intruder).size(), 0u);
@@ -222,18 +213,14 @@ TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});  // private by default
 
-  // A stranger cannot read this tree, so the refusal must be the one an absent id gets: a
-  // distinct "not yours" would confirm the id names a real private tree.
   CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notFound);
   CHECK(s.registry.remove(tid("ghost"), uid("owner")) == TreeRegistry::Removal::notFound);
-  CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);  // the refusal left it intact
+  CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
-  // A tree the stranger CAN read is a different matter — nothing is hidden, so it is told why.
   s.trees.byId["t"].visibility = Visibility::unlisted;
   CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notYours);
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
-  // A tree nobody owns is nobody's to delete either — and the outcome says so, not "not yours".
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::nobodysTree);
   CHECK(s.trees.byId.count("t") == 1u);
@@ -246,12 +233,11 @@ TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
 
   CHECK(s.registry.rename(tid("t"), me, "  Autumn plans  ") == TreeRegistry::Renaming::renamed);
 
-  // A closed tree takes the column write, freshly stamped past the (unset) stored register.
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Autumn plans", Hlc{1'700'000'000'000, 0, "srv"}}));
   std::vector<TreeSummary> rows = s.registry.list(me);
   REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].title, std::string("Autumn plans"));
-  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);  // no room was live — nothing to broadcast
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);
 }
 
 TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
@@ -262,7 +248,7 @@ TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
   CHECK(s.registry.rename(tid("ghost"), uid("owner"), "Anything") == TreeRegistry::Renaming::notFound);
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::nobodysTree);
-  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));  // the refusals left the name alone
+  CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
 }
 
 TEST(rename_refuses_a_blank_title_because_a_tree_always_has_a_name) {
@@ -300,15 +286,15 @@ TEST(rename_of_a_live_tree_flows_through_the_room_and_reaches_subscribers) {
   CHECK(s.registry.rename(tid("t"), me, "Second wind") == TreeRegistry::Renaming::renamed);
 
   const Lww<std::string> renamed{"Second wind", Hlc{1'700'000'000'000, 0, "srv"}};
-  CHECK(room.title() == renamed);             // the live room followed, stamped by its clock
-  CHECK(s.trees.byId["t"].title == renamed);  // persisted through the room's save, stamp included
+  CHECK(room.title() == renamed);
+  CHECK(s.trees.byId["t"].title == renamed);
   REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
   const FakeBus::SubgraphBroadcast& broadcast = s.bus.subgraphBroadcasts[0];
   CHECK_EQ(broadcast.tree, std::string("t"));
-  CHECK_EQ(broadcast.seq, room.head());  // a title frame takes a seq like any joined frame
+  CHECK_EQ(broadcast.seq, room.head());
   REQUIRE(broadcast.subgraph.title.has_value());
   CHECK(*broadcast.subgraph.title == renamed);
-  CHECK(broadcast.subgraph.graph.nodes.empty());  // a title-only frame carries no graph
+  CHECK(broadcast.subgraph.graph.nodes.empty());
   CHECK(broadcast.subgraph.legend.kinds.empty());
 }
 
@@ -332,7 +318,7 @@ TEST(a_joined_frame_carrying_a_title_register_renames_by_last_writer_wins) {
   stale.actor = "r_b";
   stale.title = Lww<std::string>{"Older name", Hlc{1500, 0, "r_b"}};
   room.joinSubgraph(stale, me);
-  CHECK(room.title() == (Lww<std::string>{"Client name", Hlc{2000, 0, "r_a"}}));  // the earlier stamp lost
+  CHECK(room.title() == (Lww<std::string>{"Client name", Hlc{2000, 0, "r_a"}}));
 }
 
 TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_loses) {
@@ -346,10 +332,10 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
 
   s.rooms.evict(tid("t"));
   CHECK_FALSE(s.rooms.isOpen(tid("t")));
-  CHECK(s.trees.byId["t"].title == renamed);  // the stamp rode the flush, not just the value
+  CHECK(s.trees.byId["t"].title == renamed);
 
   TreeRoom& reloaded = *s.rooms.open(tid("t"));
-  CHECK(reloaded.title() == renamed);  // the register is seeded from the persisted stamp
+  CHECK(reloaded.title() == renamed);
 
   Subgraph stale;  // the F2 replay: an older-stamped rename arriving only after the restart
   stale.treeId = tid("t");
@@ -357,12 +343,10 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   stale.actor = "r_b";
   stale.title = Lww<std::string>{"Older name", Hlc{1'699'999'999'000, 0, "r_b"}};
   reloaded.joinSubgraph(stale, me);
-  CHECK(reloaded.title() == renamed);  // LWW held across the restart — not arrival order
+  CHECK(reloaded.title() == renamed);
   s.rooms.persist(tid("t"));
   CHECK(s.trees.byId["t"].title == renamed);
 
-  // And the reloaded clock stands on the persisted stamp: with wall time frozen at the same
-  // millisecond, a fresh rename still mints strictly past the old register (counter bumps).
   CHECK(s.registry.rename(tid("t"), me, "Renamed again") == TreeRegistry::Renaming::renamed);
   CHECK(reloaded.title() == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
@@ -372,7 +356,7 @@ TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
   Setup s;
   UserId me = uid("me");
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
-  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // born private
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
         TreeRegistry::VisibilityChange::changed);
@@ -380,7 +364,7 @@ TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::private_) ==
         TreeRegistry::VisibilityChange::changed);
-  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // and back again
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 }
 
 TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
@@ -394,7 +378,7 @@ TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
         TreeRegistry::VisibilityChange::nobodysTree);
-  CHECK(s.trees.byId["t"].visibility == Visibility::private_);  // the refusals left it alone
+  CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 }
 
 TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
@@ -406,8 +390,8 @@ TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
         TreeRegistry::VisibilityChange::changed);
-  CHECK(room.visibility() == Visibility::unlisted);          // the just-shared live room stops 404-ing at once
-  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);  // and it is durable
+  CHECK(room.visibility() == Visibility::unlisted);
+  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
 }
 
 TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
@@ -417,21 +401,16 @@ TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
   s.rooms.open(tid("t"));
   CHECK(s.registry.rename(tid("t"), me, "First name") == TreeRegistry::Renaming::renamed);
 
-  // A second process renames behind this room's back: the stored register is now newer than
-  // the room's cache. The F1 guard — in production the SQL conditional on the trees row in
-  // PgTreeRepository, mirrored by the fake — must let the flush land everything but the title.
+  // The stored register is newer than the room's cache: the F1 guard must let the flush land everything but the title.
   const Lww<std::string> newer{"Newer name", Hlc{1'700'000'060'000, 0, "srv"}};
   s.trees.byId["t"].title = newer;
 
-  s.rooms.persist(tid("t"));  // the stale cache flushes its title alongside its slice
+  s.rooms.persist(tid("t"));
 
-  CHECK(s.trees.byId["t"].title == newer);                 // the newer rename survived
+  CHECK(s.trees.byId["t"].title == newer);
   CHECK_EQ(s.trees.byId["t"].head, static_cast<Seq>(1));   // the rest of the save still landed
 }
 
-// Deleting a tree must reach the LIVE room, not only the row: while a room is resident, every read
-// path decides off it, so a delete that leaves it standing revokes nothing — the socket keeps
-// serving it and open() answers a fresh reader from the cache without ever consulting the row.
 TEST(registry_remove_retires_the_live_room_and_announces_the_change) {
   Setup s;
   seed(s.trees, "t", uid("alice"), 100, {});
@@ -445,10 +424,9 @@ TEST(registry_remove_retires_the_live_room_and_announces_the_change) {
   CHECK_FALSE(s.rooms.isOpen(tid()));
   CHECK_EQ(announced.size(), 1u);
   CHECK_EQ(announced.front(), std::string("t"));
-  CHECK_FALSE(s.rooms.accessOf(tid()).has_value());  // no longer speaks for a deleted tree
+  CHECK_FALSE(s.rooms.accessOf(tid()).has_value());
 }
 
-// A refused delete leaves everything alone — the room included. Only an accepted one retires it.
 TEST(registry_remove_refused_leaves_the_live_room_standing) {
   Setup s;
   seed(s.trees, "t", uid("alice"), 100, {});
@@ -456,7 +434,6 @@ TEST(registry_remove_refused_leaves_the_live_room_standing) {
   s.rooms.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
 
   s.rooms.open(tid());
-  // A stranger is answered "absent" on a private tree, and answering costs the room nothing.
   CHECK(s.registry.remove(tid(), uid("mallory")) == TreeRegistry::Removal::notFound);
   CHECK(s.rooms.isOpen(tid()));
   CHECK(announced.empty());

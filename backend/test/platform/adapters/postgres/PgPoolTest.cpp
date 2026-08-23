@@ -20,19 +20,7 @@
 
 #include <vector>
 
-// The pool is the answer to a machine-level outage, so what it must guarantee is asserted here
-// rather than inferred: it hands the same connection back out instead of opening another, it never
-// opens more than its ceiling no matter how many threads ask at once, a borrower that arrives at a
-// full pool waits for a return rather than opening one anyway, and a connection that comes back
-// broken is dropped instead of pooled.
-//
-// PgSweepMutex is asserted here too, and belongs here: it is the pool's other invariant — the one
-// borrower that must keep ONE connection for longer than a transaction, because a pg advisory lock
-// is session-scoped and the shape it replaced took the lock on one borrow and released it on
-// whatever the pool lent next (SWEEP-1).
-//
-// Every case but the one unreachable-database case needs a live Postgres and skips without
-// WM_PG_TEST, exactly like the repository suites (RUNNING.md §7).
+// Every case but the unreachable-database one needs a live Postgres and skips without WM_PG_TEST.
 using namespace wm;
 
 namespace {
@@ -45,13 +33,10 @@ int oneFromDatabase(PgLease& lease) {
   return txn.exec1("SELECT 1")[0].as<int>();  // exec1, not query_value: CI pins libpqxx 7.x
 }
 
-// A lock key nobody else on this database is using. Advisory locks are database-global and a
-// developer box runs several windmill processes at once, so a fixed key would make these cases
-// assert on someone else's sweep. Positive, so pg_locks reports it as classid 0 / objid key.
+// A lock key nobody else on this database is using. Positive, so pg_locks reports it as classid 0 / objid key.
 std::string testSweepKey() { return std::to_string(900'000'000 + static_cast<long>(getpid())); }
 
-// How many sessions hold that key, asked from a DIFFERENT connection — the only way to tell a lock
-// that was handed back from one that merely left the borrower's sight.
+// How many sessions hold that key, asked from a DIFFERENT connection.
 int advisoryLocksOn(PgPool& pool, const std::string& key) {
   PgLease lease{pool};
   pqxx::work txn{*lease};
@@ -92,9 +77,7 @@ TEST(pg_pool_never_opens_more_than_its_ceiling_under_concurrent_borrowers) {
     });
   for (std::thread& borrower : borrowers) borrower.join();
 
-  // The ceiling is the invariant. How many of the three ever got opened is up to the scheduler, so
-  // asserting it reached exactly three would be asserting a race — but every one that was borrowed
-  // must have come back, which is the leak check and is deterministic.
+  // The ceiling is the invariant; how many were opened is up to the scheduler. Every borrow must have come back.
   CHECK(peak.load() <= static_cast<std::size_t>(3));
   CHECK(pool.openConnections() <= static_cast<std::size_t>(3));
   CHECK_EQ(pool.idleConnections(), pool.openConnections());
@@ -104,8 +87,7 @@ TEST(pg_pool_frees_the_slot_it_claimed_when_the_connection_cannot_be_opened) {
   PgPool pool{"postgresql://127.0.0.1:1/nothing-listens-here", 1,
               std::chrono::milliseconds{120}};
 
-  // A failed connect must give its slot back, or one unreachable database permanently costs the
-  // pool a connection and the ceiling ratchets down to zero.
+  // A failed connect must give its slot back, or one unreachable database ratchets the ceiling down to zero.
   for (int attempt = 0; attempt < 3; ++attempt) {
     bool threw = false;
     try {
@@ -183,8 +165,7 @@ TEST(pg_pool_returns_the_connection_when_the_transaction_throws) {
   } catch (const pqxx::sql_error&) {
   }
 
-  // A failed statement rolls the transaction back but leaves the connection usable, so the pool
-  // keeps it — and with a ceiling of one, this second borrow only succeeds if it came back.
+  // A failed statement rolls the transaction back but leaves the connection usable, so the pool keeps it.
   PgLease next{pool};
   CHECK_EQ(oneFromDatabase(next), 1);
   CHECK_EQ(pool.openConnections(), static_cast<std::size_t>(1));
@@ -208,11 +189,7 @@ TEST(pg_sweep_mutex_hands_the_lock_back_on_the_connection_that_took_it) {
   const bool held = mutex.underSweepLock([&] {
     ran = true;
     CHECK_EQ(advisoryLocksOn(*pool, key), 1);
-    // The pass borrows — an IO thread serving a request mid-sweep does exactly this — and KEEPS the
-    // borrow past the end of the pass, so the connection the pool would hand out next is provably
-    // not the one the lock is on. That is the deterministic form of the race that used to strand
-    // the fleet lock on an idle connection for the life of the process, after which every sweep in
-    // every process on this database answered ran=false and nobody was ever mailed again.
+    // The pass borrows and KEEPS the borrow past the end of the pass, so the connection the pool hands out next is provably not the one the lock is on.
     churn = std::make_unique<PgLease>(*pool);
     CHECK_EQ(oneFromDatabase(*churn), 1);
   });
@@ -255,8 +232,6 @@ TEST(pg_sweep_mutex_hands_the_lock_back_when_the_pass_throws) {
     threw = true;
   }
 
-  // A pass that dies must not take the fleet's mail with it: the throw is the caller's to see, and
-  // the lock is gone by the time they see it.
   CHECK(threw);
   CHECK_EQ(advisoryLocksOn(*pool, key), 0);
 }
@@ -266,11 +241,7 @@ TEST(pg_sweep_mutex_poisons_the_connection_when_the_unlock_itself_fails) {
   auto pool = std::make_shared<PgPool>(testConnString(), 4);
   const std::string key = testSweepKey();
 
-  // A key expression that stops resolving part-way through the pass, which is the deterministic
-  // stand-in for the third failure: not a dead connection and not an unlock that owned nothing, but
-  // a live connection whose unlock STATEMENT fails — a statement timeout, a recovery conflict, a
-  // transient error. Swallowing that would hand a still-locked connection back to the pool and
-  // strand the fleet lock for the life of the process, which is SWEEP-1 again through another door.
+  // A key expression that stops resolving mid-pass: a live connection whose unlock STATEMENT fails. Swallowing that would hand a still-locked connection back to the pool.
   {
     PgLease setup{*pool};
     pqxx::work txn{*setup};
@@ -289,18 +260,12 @@ TEST(pg_sweep_mutex_poisons_the_connection_when_the_unlock_itself_fails) {
     txn.commit();
   });
 
-  // The pass ran and the lock is gone anyway: the connection was closed rather than pooled, and
   // Postgres releases a session-scoped lock with the session.
   CHECK(held);
   CHECK_EQ(advisoryLocksOn(*pool, key), 0);
 }
 
-// The other two platform invariants that live in SQL and nowhere else: what a refresh rotation
-// leaves behind, and what the retention pass takes. Both are here for the same reason PgSweepMutex
-// is — they are one statement each, and a fake can only restate what the statement was meant to do.
-//
-// Every row these plant is prefixed w2-platform / a fixed uuid and deleted again on the way in, so
-// a developer database is left as it was found.
+// Every row these plant is prefixed w2-platform / a fixed uuid and deleted again on the way in.
 namespace {
 const std::string kRetentionUser = "4b2f0000-0000-4000-8000-00000000c0de";
 const std::string kRetentionEmail = "w2-platform-retention@example.com";
@@ -343,19 +308,14 @@ TEST(pg_oauth_rotation_spends_the_row_and_leaves_a_tombstone_reuse_is_recognised
   CHECK_EQ(first.grant->clientId, std::string("w2-platform-client"));
   CHECK_EQ(first.grant->user, UserId{kRetentionUser});
   CHECK_EQ(first.grant->scope, std::string("roadmap:write"));
-  // The access token that shared the row died with it, which is what rotation has always promised.
   CHECK_FALSE(repo.findAccessToken("w2-platform-access")->expiresAt > now);
 
-  // The same string again is REUSE, told apart from noise by the row that is still there.
   const RefreshRotation replay = repo.rotateRefreshToken("w2-platform-refresh", now + 1000);
   CHECK(replay.outcome == RefreshOutcome::reused);
   REQUIRE(replay.grant.has_value());
   CHECK_EQ(replay.grant->clientId, std::string("w2-platform-client"));
-  // The stamp comes back with it: whether this is a thief or the same client's retry is a question
-  // about how long ago the first presentation landed, and the policy for that lives above the row.
   CHECK_EQ(replay.spentMs, now);
 
-  // A string nobody ever issued is not a breach signal and must never revoke anyone.
   const RefreshRotation stranger = repo.rotateRefreshToken("w2-platform-never-issued", now);
   CHECK(stranger.outcome == RefreshOutcome::unknown);
   CHECK_FALSE(stranger.grant.has_value());
@@ -370,9 +330,7 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
-    // Telemetry on both sides of a TEN-YEAR window. The window is absurd on purpose: this case runs
-    // a real sweep against a real database, and a developer box shares that database with everyone
-    // else's local rows — at ten years the only thing old enough to die is the row planted here.
+    // A TEN-YEAR window on purpose: on a shared developer database only the rows planted here are old enough to die.
     w.exec("INSERT INTO events (ts, session_key, name, props) VALUES "
            "(now() - interval '4000 days', 'w2-platform-old', 'page_view', '{}'::jsonb), "
            "(now() - interval '1 day', 'w2-platform-new', 'page_view', '{}'::jsonb)");
@@ -382,7 +340,6 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
     w.exec("INSERT INTO server_errors (ts, method, path, status, message) VALUES "
            "(now() - interval '4000 days', 'GET', '/w2-platform-old', 500, 'boom'), "
            "(now() - interval '1 day', 'GET', '/w2-platform-new', 500, 'boom')");
-    // OAuth rows carry their window in the row, so expiry is the whole test.
     w.exec_params("INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, "
                   "code_challenge, resource, scope, expires_ms) VALUES "
                   "('w2-platform-code-dead', 'w2-platform-client', $1::uuid, 'https://a/cb', 'c', 'r', '', $2), "
@@ -393,7 +350,6 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
                   "('w2-platform-tok-dead', 'w2-platform-ref-dead', 'w2-platform-client', $1::uuid, 'r', '', $2, $2), "
                   "('w2-platform-tok-live', 'w2-platform-ref-live', 'w2-platform-client', $1::uuid, 'r', '', $2, $3)",
                   kRetentionUser, static_cast<long long>(now - 1000), static_cast<long long>(now + 600'000));
-    // A client that never completed an authorization, and one that did — same age.
     w.exec("INSERT INTO oauth_clients (client_id, redirect_uris, client_name, created_at) VALUES "
            "('w2-platform-orphan', '{\"https://a/cb\"}'::text[], '', now() - interval '4000 days'), "
            "('w2-platform-attached', '{\"https://a/cb\"}'::text[], '', now() - interval '4000 days'), "
@@ -412,8 +368,7 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   PgRetentionStore store{pgTestPool()};
   const RetentionReport report = store.purge(windows, now);
 
-  // The counts are >= rather than == because a developer database carries other people's old rows
-  // and this pass takes those too; what each row planted here DID is asserted exactly, below.
+  // The counts are >= because a developer database carries other people's old rows; what each planted row DID is asserted exactly below.
   CHECK(report.ran);
   CHECK(report.events >= 1);
   CHECK(report.feedback >= 1);
@@ -421,7 +376,6 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   CHECK(report.oauthCodes >= 1);
   CHECK(report.oauthTokens >= 1);
   CHECK(report.oauthClients >= 1);
-  // What is inside the window is untouched — including the client someone actually connected.
   CHECK_EQ(countWhere("events WHERE session_key = 'w2-platform-new'"), 1);
   CHECK_EQ(countWhere("events WHERE session_key = 'w2-platform-old'"), 0);
   CHECK_EQ(countWhere("feedback WHERE message = 'w2-platform-new note'"), 1);
@@ -431,13 +385,9 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-attached'"), 1);
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-young'"), 1);
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-orphan'"), 0);
-  // And nothing anybody wrote for themselves: no user, tree, journal page or gym row is reachable
-  // from this pass at all, which is the line it must never cross.
   CHECK_EQ(countWhere("users"), usersBefore);
 
-  // A rotation tombstone is dead the moment it is stamped and is swept on its OWN short window,
-  // not on the thirty-day refresh lifetime it still carries — otherwise every rotation leaves a row
-  // standing for a month.
+  // A rotation tombstone is swept on its OWN short window, not the thirty-day refresh lifetime it still carries.
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
@@ -455,12 +405,10 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   }
   const RetentionReport tombstones = store.purge(windows, now);
   CHECK(tombstones.oauthTokens >= 1);
-  // The old tombstone is gone though its refresh window has a month left; the fresh one — which
-  // reuse detection still needs — stays.
   CHECK_EQ(countWhere("oauth_tokens WHERE token_hash = 'w2-platform-tomb-old'"), 0);
   CHECK_EQ(countWhere("oauth_tokens WHERE token_hash = 'w2-platform-tomb-new'"), 1);
 
-  // A window of zero is an operator saying "keep it all", and the table is then skipped whole.
+  // A window of zero is an operator saying keep it all, and the table is skipped whole.
   RetentionWindows kept;
   kept.eventDays = 0;
   kept.feedbackDays = 0;

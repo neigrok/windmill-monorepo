@@ -78,8 +78,8 @@ void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, c
   for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind);
 }
 
-// Row iteration hands back a dependent row type across libpqxx versions; these accessors
-// pin the .template dance to one place.
+// The row type is libpqxx-version-dependent; these accessors pin the .template dance to one
+// place.
 std::string text(const auto& row, const char* column) { return row[column].template as<std::string>(); }
 Hlc stamp(const auto& row, const char* column) { return parseHlc(text(row, column)); }
 
@@ -156,8 +156,7 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
 PgTreeRepository::PgTreeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
-  // Two columns, one row, no lattice — the whole point is that deciding "may this caller read it?"
-  // costs a primary-key lookup rather than every node, edge and kind the tree owns.
+  // Two columns, one row, no lattice: "may this caller read it?" costs a primary-key lookup.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -173,8 +172,7 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
 }
 
 std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
-  // The mirror of loadAccess: one column off the rows load() refuses to see. Only a deleted row
-  // answers — a live one is load()'s to classify, and an unowned one names nobody.
+  // One column off the rows load() refuses to see: only a deleted row answers.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -190,9 +188,9 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   ForkLineage lineage;
-  // Is this a fork, and may its source be named? The source is named only while it still exists
-  // and is PUBLIC — an unlisted, private or deleted source stays anonymous in the unfurl. (auto
-  // row, never a bound pqxx::row: it is named row_ref on macOS and row on the CI's Linux.)
+  // The source is named only while it still exists and is PUBLIC; an unlisted, private or
+  // deleted source stays anonymous. (auto row, never a bound pqxx::row: it is named row_ref on
+  // macOS and row on CI's Linux.)
   pqxx::result src = txn.exec_params(
       "SELECT t.forked_from IS NOT NULL AS is_fork, "
       "coalesce(s.title, '') AS source_title, coalesce(s.visibility, '') AS source_visibility "
@@ -205,7 +203,6 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
     if (row["source_visibility"].as<std::string>() == "public")
       lineage.sourceTitle = row["source_title"].as<std::string>();
   }
-  // Trees forked FROM this one — the social proof that invites the next fork.
   pqxx::result forks = txn.exec_params(
       "SELECT count(*) AS n FROM trees WHERE forked_from = $1 AND deleted_at IS NULL", tree.str());
   lineage.forkCount = forks[0]["n"].as<int>();
@@ -226,9 +223,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   GraphState state = graphRows(txn, tree);
   LegendState legend = legendRows(txn, tree);
   if (state.nodes.empty() && state.edges.empty() && legend.kinds.empty()) {
-    // A pre-rows tree: its lattice still lives only in the legacy document blob. Parse it
-    // and backfill the rows in this same transaction — a one-time lazy migration; every
-    // later load and save on this tree is row-based. The blob is left behind, stale.
+    // A tree whose lattice lives only in the legacy document blob: parse it and backfill the
+    // rows in this same transaction. The blob is left behind, stale.
     Json::Value document = parse(row["document"].as<std::string>());
     state = graphStateFromJson(document);
     legend = legendStateFromJson(document["kinds"]);
@@ -256,10 +252,9 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
       tree.str(), title.value, toString(title.stamp),
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
       static_cast<long long>(head));
-  // The title register is LWW at the column: it lands only under a dominating stamp, so a
-  // stale room cache in another process can never revert a newer rename. (ms, counter) order
-  // numerically; a tie falls to the canonical text under byte order (COLLATE "C") — its
-  // numeric prefix is equal whenever ms and counter are, so that is exactly the actor tiebreak.
+  // The title register is LWW at the column: it lands only under a dominating stamp, so a stale
+  // room cache in another process cannot revert a newer rename. (ms, counter) order numerically;
+  // a tie falls to byte order (COLLATE "C"), which is exactly the actor tiebreak.
   txn.exec_params(
       "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
@@ -328,20 +323,13 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
 std::vector<ListedTree> PgTreeRepository::listPublic() {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Every listed tree, unbounded: listing is a deliberate, rare owner act, so the candidate set
-  // is small by construction. Ordering and the wall's cap belong to the domain (domain/Gallery.h)
-  // and are deliberately NOT duplicated here — if this set ever grows past one query's worth,
-  // that is a materialized wall, not a silent LIMIT that would quietly change the ranking rule.
-  // The source's title rides the same row as a LEFT JOIN carrying loadForkLineage's privacy rule
-  // in its ON clause — the source is named only while it exists and is public, so an unlisted,
-  // private or deleted source coalesces to '' and the card says nothing. Joined rather than
-  // looked up per card: a wall of sixty would otherwise be sixty extra round trips.
-  // The owner's latest mark rides it the same way, as a lateral. It has to: `updated_at` on this
-  // row moves for a structural edit, a rename or a visibility flip and for NOTHING else, so a
-  // wall ranked on that column alone cannot see a tree being worked on at all — while the flip
-  // that lists a long-dead tree reads to it as freshness. The domain folds the two (lastActiveAt).
-  // The lookup lands on node_progress's primary key, whose (tree_id, user_id) prefix is exactly
-  // this predicate — an index scan per listed tree, not a scan of the marks table.
+  // Every listed tree, unbounded. Ordering and the wall's cap belong to the domain
+  // (domain/Gallery.h) and must NOT be duplicated here: a LIMIT would quietly change the ranking
+  // rule. The source's title rides the same row as a LEFT JOIN carrying loadForkLineage's privacy
+  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The owner's
+  // latest mark rides it as a lateral: `updated_at` moves only for a structural edit, a rename or
+  // a visibility flip, so it alone cannot see a tree being worked on; the domain folds the two
+  // (lastActiveAt). The lookup lands on node_progress's (tree_id, user_id) primary-key prefix.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
@@ -373,8 +361,7 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
 std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // One row per source this user still holds a fork of. A deleted fork drops out: the reader let
-  // that copy go, so the plan is theirs to take again.
+  // One row per source this user still holds a fork of; a deleted fork drops out.
   pqxx::result rows = txn.exec_params(
       "SELECT DISTINCT forked_from FROM trees "
       "WHERE owner_id = $1::uuid AND forked_from IS NOT NULL AND deleted_at IS NULL",
@@ -408,11 +395,8 @@ void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title)
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Deliberately does NOT touch updated_at. The gallery folds that column into last-active, so a
-  // bump here would let anyone flip unlisted->public to vault a long-dead tree up the wall — the
-  // one thing ranking by activity exists to prevent. Nothing is lost by leaving it: the funnel's
-  // W1-return test is a three-way OR over marks, tree edits AND events, and listing a tree already
-  // beacons its own event, so a share flip still counts as a return through that arm.
+  // Deliberately does NOT touch updated_at: the gallery folds that column into last-active, so a
+  // bump here would let a visibility flip vault a long-dead tree up the wall.
   txn.exec_params("UPDATE trees SET visibility = $2 WHERE id = $1 AND deleted_at IS NULL",
                   tree.str(), toString(visibility));
   txn.commit();

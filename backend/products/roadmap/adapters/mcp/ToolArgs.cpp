@@ -39,9 +39,8 @@ std::string joined(const std::string& path, const char* field) {
   return path.empty() ? std::string(field) : path + "." + field;
 }
 
-// The shortest spelling that reads back as the same double. jsoncpp writes 17 significant
-// digits, so a caller who sent 0.1 would be told it sent 0.10000000000000001 — and quoting back
-// what actually arrived is the whole premise of this module.
+// The shortest spelling that reads back as the same double: jsoncpp writes 17 significant
+// digits, so a caller who sent 0.1 would be told it sent 0.10000000000000001.
 std::string shortestNumber(double value) {
   char buffer[32];
   for (int digits : {15, 16, 17}) {
@@ -137,8 +136,6 @@ std::optional<std::string> optionalObjects(const Json::Value& value, const std::
     return path + " has " + std::to_string(value.size()) + " items, max " + std::to_string(limit);
   for (Json::ArrayIndex i = 0; i < value.size(); ++i) {
     if (value[i].isObject()) continue;
-    // The logged defect: a caller following a schema that typed these as strings sent
-    // JSON-encoded objects, and the request died at the parser naming no field.
     const std::string item = at(path, i) + " must be an object, got " + typeName(value[i]);
     if (value[i].isString()) return item + ". Each item is a JSON object, not a JSON-encoded string.";
     return item;
@@ -192,9 +189,8 @@ std::optional<std::string> optionalLinks(const Json::Value& value, const std::st
 
 std::optional<std::string> requireHandle(const Json::Value& args, const Handle& handle,
                                          const std::string& path, std::string& out) {
-  // Guarded here rather than at the call sites: this is the module whose one job is to refuse in
-  // words, so it must never refuse by throwing — jsoncpp does exactly that for a keyed read of a
-  // non-object.
+  // Guarded here, not at the call sites: this module must refuse in words, never by throwing,
+  // and jsoncpp throws on a keyed read of a non-object.
   if (!args.isNull() && !args.isObject())
     return (path.empty() ? std::string("arguments") : path) + " must be an object, got " + typeName(args);
 

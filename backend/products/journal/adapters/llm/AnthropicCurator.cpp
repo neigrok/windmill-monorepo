@@ -41,6 +41,13 @@ constexpr const char* kSystemPrompt =
     "about the writer's own life.\n"
     "  A shared theme is not a shared subject. Work, tiredness, family, money and sleep are themes; "
     "a subject is the specific thing the writer was thinking about.\n"
+    "  A shared STATE is not a subject either, and it is the most common false pairing there is. "
+    "\"a walk helped, good evening\" and \"feeling rested tonight, the ambient is bliss\" are two "
+    "evenings that went well and nothing more — the writer would not say the second is what the "
+    "first was about. Neither is \"migraine today, painkillers did nothing\" an echo of \"saw someone "
+    "about my back, it is fine\": two ailments are two subjects. Feeling good, feeling ill, being "
+    "tired, sleeping badly and being busy are states a life passes through constantly, and pairing "
+    "two of them tells the reader nothing they did not know.\n"
     "\n"
     "speaker_is_self. Is the EARLIER passage the writer's own voice, or something they copied down?\n"
     "  Journals carry pasted messages, song lyrics, quotes from books, and lines somebody else said "
@@ -48,9 +55,18 @@ constexpr const char* kSystemPrompt =
     "and read like any other line. Set speaker_is_self to false when the earlier passage is one of "
     "those, and true when the writer is speaking as themselves.\n"
     "\n"
-    "relation. A number from 0 to 1 saying how strongly the pairing holds, ranked only against the "
-    "other pairings in this same call. It is never compared with any other call. Use 0 for any "
-    "pairing you marked unrelated.\n"
+    "relation. How strongly the pairing holds, 0 to 1, on a FIXED scale — not a ranking against the "
+    "other pairings in this call, and not a comparison with anything else you have been asked. The "
+    "same two passages must score the same number whoever they are sent with.\n"
+    "  0.9-1.0  the same specific thing: the same plan, the same person, the same decision, the "
+    "same worry, named on both sides.\n"
+    "  0.6-0.8  the same thing seen later — the plan acted on, the worry resolved, the person again "
+    "in a different scene. The reader would say \"yes, that is what I meant\".\n"
+    "  0.3-0.5  the same THEME and not the same subject: two illnesses, two tired evenings, two "
+    "money worries, two different things going well. This is the band most pairings that look "
+    "related actually sit in, and it is not an echo.\n"
+    "  0        unrelated, and every pairing you mark unrelated.\n"
+    "Score honestly and low. Something else decides what is shown; your job is the number.\n"
     "\n"
     "Most pairings are not related, and marking every one of them false is a correct and expected "
     "answer. The pairings were chosen by a vector search that is good at finding passages which "
@@ -202,10 +218,11 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
 
 AnthropicCurator::AnthropicCurator(std::shared_ptr<MessagesApi> transport, std::string model,
                                    std::string effort, std::shared_ptr<AiFuse> fuse,
-                                   std::shared_ptr<UsageSink> usage)
+                                   std::shared_ptr<UsageSink> usage, float floor)
     : transport_(std::move(transport)),
       model_(std::move(model)),
       effort_(std::move(effort)),
+      floor_(floor),
       fuse_(std::move(fuse)),
       usage_(std::move(usage)) {}
 
@@ -292,8 +309,16 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
     Verdict verdict;
     verdict.triggerSpanId = pairing.triggerSpanId;
     verdict.matchSpanId = pairing.matchSpanId;
-    verdict.related = item["related"].asBool();
     verdict.relation = std::clamp(item["relation"].asFloat(), 0.0f, 1.0f);
+    // THE FLOOR, applied here because this file defines the scale it reads. `related` was the only
+    // thing consulted until 2026-08-23, and the number beside it was stored and never used —
+    // measured on a real page, the two pairings a reader called false positives came back related
+    // at 0.3 and 0.4 while the pairing they had actually meant came back at 0.9. The model was
+    // grading them correctly and nothing was listening.
+    //
+    // The prompt above defines 0.3-0.5 as "same theme, not same subject", which is precisely what
+    // must not be shown, so the floor sits above that band.
+    verdict.related = item["related"].asBool() && verdict.relation >= floor_;
     verdict.speakerIsSelf = item["speaker_is_self"].asBool();
     curation.verdicts.push_back(verdict);
   }

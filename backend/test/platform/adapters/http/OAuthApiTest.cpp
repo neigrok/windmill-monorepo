@@ -11,18 +11,6 @@
 #include <optional>
 #include <string>
 
-// The OAuth 2.1 authorization server's HTTP edge — the door an MCP client walks through to reach a
-// Windmill account. OAuthServiceTest already pins the grant machinery (PKCE, rotation, audience);
-// this file is about the three things only the edge decides, each of which is a way to hand an
-// account away:
-//
-//   · WHERE an error is allowed to land. An unknown client or an unregistered redirect_uri is
-//     answered on THIS host as plain text, because bouncing the error to the URI would make the
-//     endpoint an open redirector for any string a crafted link supplies (OAuth 2.1 §7.12).
-//   · That the consent DECISION re-validates the client and redirect it is handed, rather than
-//     trusting the query it was called back with — the browser is between /authorize and here, and
-//     everything in the POST body is attacker-controllable.
-//   · That a downgraded or absent PKCE challenge never reaches consent at all.
 using namespace wm;
 using namespace wm::fake;
 
@@ -76,7 +64,6 @@ drogon::HttpRequestPtr postJson(const std::string& path, const std::string& body
   return req;
 }
 
-// GET /oauth/authorize with every parameter the flow carries, so a case can vary exactly one.
 drogon::HttpResponsePtr authorize(Harness& h, const std::string& clientId,
                                   const std::string& redirectUri, const std::string& challenge,
                                   const std::string& method = "S256",
@@ -132,7 +119,6 @@ std::string location(const drogon::HttpResponsePtr& response) {
   return response->getHeader("location");
 }
 
-// The `code` a consent redirect carries, so a case can spend it at the token endpoint.
 std::string codeIn(const std::string& redirect) {
   const std::size_t at = redirect.find("?code=");
   if (at == std::string::npos) return "";
@@ -142,9 +128,6 @@ std::string codeIn(const std::string& redirect) {
 
 }
 
-// Discovery is what an MCP client reads before it does anything else, and two of these lines are
-// promises the rest of this file keeps: S256 is the only challenge method, and a public client
-// authenticates with nothing at all (there is no secret to leak).
 TEST(oauth_discovery_advertises_s256_only_and_a_client_secret_nobody_holds) {
   Harness h;
   drogon::HttpResponsePtr captured;
@@ -164,8 +147,6 @@ TEST(oauth_discovery_advertises_s256_only_and_a_client_secret_nobody_holds) {
   CHECK_EQ(body["grant_types_supported"].size(), 2u);
 }
 
-// A client can only ask for a level it was told about, so the whole vocabulary is published — and it
-// is the vocabulary of the products actually connected, handed in by the composition root.
 TEST(oauth_discovery_publishes_every_scope_the_tool_surface_honours) {
   Harness h;
   drogon::HttpResponsePtr captured;
@@ -223,10 +204,7 @@ TEST(oauth_registration_needs_a_json_body_at_all) {
            std::string("invalid_client_metadata"));
 }
 
-// The open-redirect defense, and the reason this endpoint answers in two different places. Once the
-// redirect_uri is known-registered, an error may ride it back to the client; until then it is a
-// string a crafted link supplied, and bouncing to it would make this host forward a browser
-// anywhere on the internet with our domain in the referrer.
+// Until the redirect_uri is known-registered an error is answered on THIS host: bouncing to it would make this an open redirector (OAuth 2.1 §7.12).
 TEST(oauth_an_unregistered_redirect_is_answered_here_and_never_bounced_to) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -243,15 +221,13 @@ TEST(oauth_an_unregistered_redirect_is_answered_here_and_never_bounced_to) {
   CHECK_EQ(suffixed->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(location(suffixed), std::string(""));
 
-  // ...and an unknown client is the same answer, which is also why it is not an existence oracle.
   const drogon::HttpResponsePtr unknown = authorize(h, "cli_nobody", kRedirect, challenge);
   CHECK_EQ(unknown->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(std::string(unknown->getBody()), std::string("invalid client_id or redirect_uri"));
   CHECK_EQ(location(unknown), std::string(""));
 }
 
-// Loopback is port-agnostic on purpose (RFC 8252 §7.3): a native client binds a fresh ephemeral
-// port each flow, and pinning the port would break every second sign-in.
+// Loopback is port-agnostic (RFC 8252 §7.3): a native client binds a fresh ephemeral port each flow.
 TEST(oauth_a_loopback_client_may_come_back_on_a_different_port_each_flow) {
   Harness h;
   const std::string clientId =
@@ -268,9 +244,6 @@ TEST(oauth_a_loopback_client_may_come_back_on_a_different_port_each_flow) {
            drogon::k400BadRequest);
 }
 
-// Once the redirect is known-registered the error rides it, because the client is the thing that
-// has to learn what went wrong — and the state comes back so the client can match the answer to the
-// request it made.
 TEST(oauth_a_downgraded_or_absent_pkce_challenge_never_reaches_consent) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -300,16 +273,7 @@ TEST(oauth_an_implicit_style_response_type_is_refused_back_to_the_client) {
            kRedirect + "?error=unsupported_response_type&state=the+state+%26+more");
 }
 
-// The validated request is handed to the frontend consent screen with every parameter carried
-// through, so the screen shows the request that was actually checked rather than one a link
-// supplied.
-//
-// Pinned byte-for-byte, and this state carries an ampersand on purpose. `enc` used to be
-// `drogon::utils::urlEncode`, a FORM encoder that escapes `:` but leaves `&` and `=` alone — so the
-// `&` rode through and appended a parameter of its own to the consent URL, making scope, resource
-// and code_challenge substitutable as the screen displayed and re-posted them. (The delivered
-// redirect was safe either way: /v1/oauth/decision re-validates client_id and redirect_uri against
-// the registration.) It is `urlEncodeComponent` now, and these bytes are what says so.
+// Pinned byte-for-byte; the state carries an ampersand on purpose, so the encoder must be `urlEncodeComponent` and not a form encoder.
 TEST(oauth_a_valid_request_reaches_the_consent_screen_with_every_parameter_escaped) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -358,9 +322,6 @@ TEST(oauth_a_consent_decision_from_nobody_is_refused) {
   CHECK(h.oauthRepo.codes.empty());
 }
 
-// The load-bearing re-validation. Between /authorize and here the browser has been through a page,
-// so nothing in this POST body is trustworthy — a signed-in human who is shown a genuine consent
-// screen must not be able to have the code delivered to a redirect the client never registered.
 TEST(oauth_a_decision_re_validates_the_client_and_redirect_it_was_handed) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -381,7 +342,7 @@ TEST(oauth_a_decision_re_validates_the_client_and_redirect_it_was_handed) {
       decide(h, "s-live", decisionBody(clientId, kRedirect, "", true));
   CHECK_EQ(noChallenge->getStatusCode(), drogon::k400BadRequest);
 
-  CHECK(h.oauthRepo.codes.empty());  // not one code was minted
+  CHECK(h.oauthRepo.codes.empty());
 }
 
 TEST(oauth_a_decision_needs_a_json_body_at_all) {
@@ -407,8 +368,6 @@ TEST(oauth_a_refused_consent_sends_the_client_a_denial_and_mints_no_code) {
   CHECK(h.oauthRepo.codes.empty());
 }
 
-// The whole flow through the edge: consent mints a code for the human who approved it, the token
-// endpoint spends it once against the verifier, and the access token resolves to that account.
 TEST(oauth_an_approved_consent_yields_a_code_the_client_spends_once_for_that_account) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -433,24 +392,21 @@ TEST(oauth_an_approved_consent_yields_a_code_the_client_spends_once_for_that_acc
   CHECK_EQ(granted->getStatusCode(), drogon::k200OK);
   const Json::Value body = *granted->getJsonObject();
   CHECK_EQ(body["token_type"].asString(), std::string("Bearer"));
-  CHECK_EQ(body["expires_in"].asInt64(), 3600);  // seconds, never the milliseconds we hold inside
+  CHECK_EQ(body["expires_in"].asInt64(), 3600);
   CHECK(!body["access_token"].asString().empty());
   CHECK(!body["refresh_token"].asString().empty());
   CHECK_EQ(granted->getHeader("Cache-Control"), std::string("no-store"));
-  // The scope the token actually carries, echoed at issue (RFC 6749 §5.1) — a client that asked for
-  // more than it got learns it here rather than from a tool that silently never appears.
+  // The scope the token actually carries, echoed at issue (RFC 6749 §5.1).
   CHECK_EQ(body["scope"].asString(), std::string("roadmap:write"));
 
   const std::optional<ToolCaller> resolved =
       h.oauth->resolveAccessToken(body["access_token"].asString(), kResource);
   REQUIRE(resolved.has_value());
   CHECK_EQ(resolved->user, user);
-  // And it is enforced from here on: the grant the consent screen showed is the reach the token has.
   CHECK(resolved->scope.allows("roadmap", Access::write));
   CHECK_FALSE(resolved->scope.allows("roadmap", Access::read));
   CHECK_FALSE(resolved->scope.allows("roadmap", Access::del));
 
-  // Single-use: the same code again is invalid_grant, and says nothing about why.
   const drogon::HttpResponsePtr replay =
       exchange(h, "authorization_code",
                {{"code", code}, {"client_id", clientId}, {"redirect_uri", kRedirect},
@@ -459,8 +415,6 @@ TEST(oauth_an_approved_consent_yields_a_code_the_client_spends_once_for_that_acc
   CHECK_EQ((*replay->getJsonObject())["error"].asString(), std::string("invalid_grant"));
 }
 
-// Every failed grant is one word, deliberately: a token endpoint that distinguished "wrong
-// verifier" from "unknown code" would tell an attacker which half of the guess was right.
 TEST(oauth_every_failed_grant_is_the_same_invalid_grant_and_carries_no_token) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -503,8 +457,6 @@ TEST(oauth_every_failed_grant_is_the_same_invalid_grant_and_carries_no_token) {
   CHECK_EQ((*none->getJsonObject())["error"].asString(), std::string("unsupported_grant_type"));
 }
 
-// Settings §2 "Connected tools": the list is the account's own, and disconnecting is idempotent —
-// a stale clientId a second tab already dropped is still a clean 204, never a 404 to explain.
 TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_idempotent) {
   Harness h;
   const std::string clientId = h.registerClient();
@@ -526,8 +478,6 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   CHECK_EQ(body["grants"][0]["name"].asString(), std::string("Claude"));
   CHECK_EQ(body["grants"][0]["grantedMs"].asInt64(), static_cast<Json::Int64>(h.clock->now));
   CHECK_EQ(body["grants"][0]["lastUsedMs"].asInt64(), static_cast<Json::Int64>(h.clock->now));
-  // What the tool may do, months after the one screen that said so. Without this the honest answer
-  // to "what did I give this thing" is unavailable to the person who gave it.
   CHECK_EQ(body["grants"][0]["scope"].asString(), std::string("roadmap:read"));
 
   CHECK_EQ((*list("s-theirs")->getJsonObject())["grants"].size(), 0u);
@@ -544,10 +494,10 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   };
 
   CHECK_EQ(disconnect("", clientId)->getStatusCode(), drogon::k401Unauthorized);
-  CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 1u);  // and it changed nothing
+  CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 1u);
 
   CHECK_EQ(disconnect("s-theirs", clientId)->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 1u);  // not theirs to drop
+  CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 1u);
 
   CHECK_EQ(disconnect("s-mine", clientId)->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ((*list("s-mine")->getJsonObject())["grants"].size(), 0u);
@@ -555,10 +505,7 @@ TEST(oauth_the_connected_tools_list_is_the_caller_s_own_and_disconnecting_is_ide
   CHECK_EQ(disconnect("s-mine", "cli_never_existed")->getStatusCode(), drogon::k204NoContent);
 }
 
-// The two refusals are different facts and the door says which. A registration refused because the
-// burst ceiling is full is OUR door being shut, not the caller's metadata being wrong: answering
-// "invalid_redirect_uri" there sends whoever is debugging a dead connect flow to look at a redirect
-// URI that was never the problem, while nothing anywhere says the door is shut.
+// The two refusals are different facts and the door says which: a full burst ceiling is not invalid metadata.
 TEST(oauth_a_registration_over_the_burst_ceiling_is_a_503_and_says_so) {
   Harness h;
   for (int i = 0; i < OAuthPolicy::maxUnattachedClients; ++i) {

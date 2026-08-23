@@ -6,27 +6,14 @@
 
 namespace wm {
 
-// The process-wide spend fuse: a trailing-window accumulator, in memory, guarded by a mutex, with no
-// database behind it at all.
-//
-// Per-user budgets bound what a USER spends. They are structurally blind to what a MACHINE spends —
-// a retry storm, a loop whose termination condition breaks, a cron that overlaps itself, a deploy
-// that fans out. That is the shape that actually bankrupts a small company, and it is the shape that
-// survives a Postgres outage, where failing open means the ledger stops recording and stops
-// enforcing in the same instant. This has no such failure mode, because it has no dependency to fail.
-//
-// Every adapter adds what it spent and asks before it calls. Over the ceiling, refuse the vendor
-// call and report it once through FailureReporter — that report IS the alert. Safe to call from
-// several event-loop threads at once.
+// Process-wide spend fuse: a trailing-window accumulator in memory, with no database behind it.
+// Every adapter adds what it spent and asks before it calls; over the ceiling, refuse the vendor
+// call and report it once through FailureReporter. Safe to call from several loop threads at once.
 class AiFuse {
 public:
   explicit AiFuse(long long ceilingNanos, long long windowMs = 3'600'000);
 
-  // Takes the clock, like spent() and trailingNanos() do, because it MUST prune before it answers.
-  // An allows() that only read the running total was a latch, not a window: spend() is reached only
-  // after allows() passes, so the moment the fuse tripped nothing called spend(), nothing pruned,
-  // and every seam stayed refused until the process restarted — with the alert fired once, hours
-  // before anyone noticed the product was dark.
+  // Takes the clock because it must prune before it answers, or the window latches shut.
   bool allows(long long atMs) const;
   void spent(long long nanos, long long atMs);
   long long trailingNanos(long long atMs) const;
@@ -35,8 +22,8 @@ public:
   bool tripped() const;
 
 private:
-  // Pruning is what makes the window trailing rather than cumulative, and it happens on the read as
-  // well as the write — so the state it touches is mutable, and every entry point holds the mutex.
+  // Pruning happens on reads as well as writes, so the state is mutable and every entry point
+  // holds the mutex.
   void dropOlderThan(long long cutoffMs) const;
 
   mutable std::mutex mutex_;
@@ -47,8 +34,7 @@ private:
   mutable bool tripped_ = false;
 };
 
-// $20 an hour across the whole process. A legitimate hour of real users never comes near it; a
-// runaway loop passes it in minutes, which is the entire point.
+// $20 an hour across the whole process.
 constexpr long long kHourlyFuseNanos = 20'000'000'000;
 
 }

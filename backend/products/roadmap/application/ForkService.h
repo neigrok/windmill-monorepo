@@ -10,9 +10,9 @@
 
 namespace wm {
 
-// Forks a roadmap: copy the source's live authoritative state (socket edits folded in, not
-// just the last snapshot) into a fresh tree owned by the caller. The one Action behind the
-// REST fork endpoint and the pending fork a magic-link verify executes.
+// Forks a roadmap: copy the source's live authoritative state (socket edits folded in, not just the
+// last snapshot) into a fresh tree owned by the caller. The one Action behind the REST fork endpoint
+// and the pending fork a magic-link verify executes.
 class ForkService {
 public:
   ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGenerator& tokens);
@@ -26,9 +26,9 @@ public:
   Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
               const UserId& owner);
 
-  // The source's live face — title and step count — for mail that must name the tree it
-  // will plant. Reads the room's current state under its strand; a source that can't be
-  // opened yields nullopt so the caller can degrade to copy that promises nothing.
+  // The source's live face — title and step count — for mail that must name the tree it will plant.
+  // Reads the room's current state under its strand; a source that can't be opened yields nullopt so
+  // the caller can degrade to copy that promises nothing.
   struct Description {
     std::string title;
     std::size_t steps = 0;

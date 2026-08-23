@@ -18,11 +18,10 @@ struct Smell {
   std::string kind;
 };
 
-// A description of how a LooseGraph currently departs from a valid tree. Errors
-// (cycles, dangling, self-edges) block the SkillTree projection; smells are warnings.
-// `maskedWork` is the "keep more, lose less" repair signal: nodes deleted while a subtree of
-// live children hangs off them (a delete that raced a concurrent build). The delete stands,
-// but the work is only masked — resurrecting the parent re-connects it.
+// A description of how a LooseGraph currently departs from a valid tree. Errors (cycles, dangling,
+// self-edges) block the SkillTree projection; smells are warnings. `maskedWork` is nodes deleted
+// while a subtree of live children hangs off them: the delete stands, but the work is only masked —
+// resurrecting the parent re-connects it.
 struct TreeDiagnostics {
   std::vector<Cycle> cycles;
   std::vector<Edge> dangling;

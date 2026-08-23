@@ -9,9 +9,7 @@ namespace wm {
 
 namespace {
 
-// The properties a tool declares, comma-joined — what a refusal offers instead of the key it just
-// rejected. An agent cannot look at an example and recover the way a person reading docs can, so a
-// refusal that names only the mistake costs a whole round trip.
+// The properties a tool declares, comma-joined — what a refusal offers instead of the key it rejected.
 std::string declaredArguments(const Json::Value& inputSchema) {
   std::string out;
   for (const std::string& property : inputSchema["properties"].getMemberNames()) {
@@ -21,9 +19,8 @@ std::string declaredArguments(const Json::Value& inputSchema) {
   return out.empty() ? "no arguments" : out;
 }
 
-// An argument the schema never declared. `additionalProperties:false` has been published on every
-// tool from the start and enforced by nothing, so this is the promise finally being kept — the
-// misnamed key is named, not dropped.
+// An argument the schema never declared. `additionalProperties:false` is published on every tool
+// and enforced here — the misnamed key is named, not dropped.
 std::optional<std::string> unknownArgument(const Json::Value& inputSchema, const Json::Value& arguments) {
   if (!arguments.isObject()) return std::nullopt;  // the host answers a wrong-shape body, naming its type
   const Json::Value& properties = inputSchema["properties"];
@@ -118,17 +115,15 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
   }
 
   // The one sentence a scoped surface has to carry: a short tools/list is an answer, not a fault.
-  // Without it an agent that was granted read and asked for write reads the missing tool as a broken
-  // server and retries, or invents a workaround, instead of telling its human to reconnect.
+  // Without it an agent granted read that asked for write reads the missing tool as a broken server.
   std::string instructions =
       "Windmill is one account behind several self-growth products. This connection reaches: " +
       (connected.empty() ? std::string("nothing — no product is wired into this server") : connected) +
       ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "
       "surface this connection may use — a tool you cannot see is a level that was not granted, not a "
       "tool that is missing; ask your human to reconnect and approve it.";
-  // The stamp is short the way a human quotes a commit, and it is said in the same breath as the
-  // catalog rule: a tool your session lists that this build no longer declares is a session older
-  // than the deploy, not a server older than the repo.
+  // A tool your session lists that this build no longer declares is a session older than the
+  // deploy, not a server older than the repo.
   const std::string stamp = build.substr(0, 7);
   if (!stamp.empty())
     instructions += " This server is build " + stamp +

@@ -26,9 +26,9 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
     }
   }
 
-  // Load + replay outside the registry lock so one cold/large tree's open can't freeze
-  // every other tree's room operations. open(id) always runs under strandFor(id), so no
-  // second thread builds the same id concurrently; the re-check below covers the general case.
+  // Load + replay outside the registry lock so one cold/large tree's open can't freeze every other
+  // tree's room operations. open(id) always runs under strandFor(id), so no second thread builds the
+  // same id concurrently; the re-check below covers the general case.
   std::optional<StoredTree> stored = repo_.load(id);
   if (!stored) return nullptr;  // no such tree — a benign absence the caller answers, never a throw
 
@@ -95,14 +95,12 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
     }
   }
   // Never under the map lock. evict persists (repository I/O) and every caller that touches a room
-  // holds its strand first, so the sweep takes the strand and only then the map — the one order
-  // this class ever uses, and the reason a sweep can't deadlock against an editor mid-write.
+  // holds its strand first, so the sweep takes the strand and only then the map — the one lock order
+  // this class ever uses.
   for (const TreeId& id : closing) {
     std::lock_guard<std::mutex> strand(strandFor(id));
     evict(id);
   }
-  // Said out loud, because a sweep that quietly does nothing is exactly how the eviction this
-  // header promised went missing for so long: an operator can see it happening.
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
 }
 
@@ -155,8 +153,7 @@ void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
     if (it != rooms_.end()) it->second.room->setVisibility(visibility);
   }
   // Announced outside the lock, because whoever listens re-decides an access question and may go
-  // back to the repository to do it. Re-privating a tree is the owner's only revocation control,
-  // and until this line it revoked nothing already open.
+  // back to the repository to do it.
   if (accessChanged_) accessChanged_(id);
 }
 

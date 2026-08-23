@@ -72,12 +72,9 @@ SentryClient::SentryClient(const std::string& dsn, std::string environment, std:
   loop_.run();
   if (!enabled_) return;
   runTraceId_ = hex32();
-  // One client for the life of the process, not one per envelope. Exceptions are rare enough that
-  // the churn never showed; a log batch every few seconds would have opened a fresh TLS connection
-  // all day for the same host.
+  // One client for the life of the process, not one per envelope.
   client_ = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
-  // The timer is what makes a quiet server still report: a batch that never fills would otherwise sit
-  // in memory until the next busy minute, which is exactly the minute nobody is watching.
+  // The timer is what makes a quiet server still report: a batch that never fills would sit in memory.
   loop_.getLoop()->runEvery(kLogFlushSeconds, [this] { flushLogs(); });
 }
 
@@ -147,8 +144,7 @@ void SentryClient::ship(const std::string& id, const Json::Value& event) {
        "\n" + Json::writeString(builder, event));
 }
 
-// One envelope, one POST. Events and logs differ only in the items above this line — the endpoint,
-// the auth header and the failure contract are the same, so they are written once.
+// One envelope, one POST. Events and logs differ only in the items above this line.
 void SentryClient::post(std::string body) {
   if (!client_) return;
   auto req = drogon::HttpRequest::newHttpRequest();
@@ -187,17 +183,15 @@ void SentryClient::log(Level level, std::string body, std::string source) {
   Json::Value attributes(Json::objectValue);
   attributes["sentry.environment"] = stringAttribute(environment_);
   if (!release_.empty()) attributes["sentry.release"] = stringAttribute(release_);
-  // The file:line trantor appends is metadata, not prose: in the body it would defeat Sentry's own
-  // grouping of a repeated message, and as an attribute it is filterable.
+  // The file:line trantor appends is metadata, not prose: in the body it would defeat Sentry's grouping.
   if (!source.empty()) attributes["code.location"] = stringAttribute(std::move(source));
   item["attributes"] = std::move(attributes);
 
   bool full = false;
   {
     std::lock_guard<std::mutex> lock(logMutex_);
-    // The buffer is a ceiling, not a queue to grow: an unreachable Sentry plus a log storm must cost
-    // bounded memory. What is dropped is counted and confessed on the next flush that lands, because
-    // a gap nobody is told about is worse than the lines themselves.
+    // The buffer is a ceiling, not a queue to grow. What is dropped is counted and confessed on the
+    // next flush that lands.
     if (logItems_.size() >= kLogBufferCap) {
       ++logDropped_;
       return;

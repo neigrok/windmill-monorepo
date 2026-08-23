@@ -52,8 +52,7 @@ TEST(registry_open_unknown_tree_returns_null) {
   FakeBus bus;
   RoomRegistry registry(repo, log, bus);
 
-  // Absence is a nullptr the caller answers, not a throw it must catch — so "no such tree" is
-  // distinguishable from a genuine repository failure, which is the only thing open() still throws.
+  // Absence is a nullptr the caller answers, not a throw; open() throws only on a genuine repository failure.
   CHECK_EQ(registry.open(tid("ghost")), static_cast<TreeRoom*>(nullptr));
   CHECK_FALSE(registry.isOpen(tid("ghost")));  // a missed open materializes no room
 }
@@ -64,8 +63,7 @@ TEST(registry_open_propagates_a_repository_failure_rather_than_nulling_it) {
   FakeBus bus;
   RoomRegistry registry(repo, log, bus);
 
-  // A repository outage is NOT a benign absence: it must throw (for a handler to log + genericize),
-  // never be flattened into the nullptr that means "no such tree" — the two are the whole point.
+  // A repository outage must throw rather than be flattened into the nullptr that means "no such tree".
   bool threw = false;
   try {
     registry.open(tid("t"));
@@ -130,9 +128,6 @@ TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // only the renamed node again
 }
 
-// The registry has no seam that fills in an owner, and writing through a room no longer creates
-// one. An unowned tree is nobody's to write, so a row that reaches the registry ownerless — the
-// seeded demo, a legacy orphan — leaves it ownerless however much is written through it.
 TEST(registry_never_gives_an_unowned_tree_an_owner) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -151,8 +146,6 @@ TEST(registry_never_gives_an_unowned_tree_an_owner) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);    // the write itself did land
 }
 
-// The seam that survived claim's removal, and the reason it exists: a share must reach the LIVE
-// room, or the freshly-shared tree keeps 404-ing until it is evicted and reloaded.
 TEST(registry_set_visibility_flips_the_live_room_and_the_row) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -185,9 +178,6 @@ TEST(registry_evict_persists_and_closes) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }
 
-// The two facts a read decision needs, off the row, with no room built. Every read path asks this
-// first now: open() drags the whole lattice into memory and pins it, so a caller who is about to
-// be refused must never be the reason a private tree is loaded.
 TEST(registry_access_of_answers_without_materializing_a_room) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -208,8 +198,6 @@ TEST(registry_access_of_answers_without_materializing_a_room) {
   CHECK_FALSE(registry.isOpen(tid("ghost")));
 }
 
-// A live room's visibility is the newer of the two while it is open — a share flips the room and
-// the column together, and a room whose flip has not been saved must not answer from a stale row.
 TEST(registry_access_of_reads_the_live_room_before_the_row) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -223,9 +211,6 @@ TEST(registry_access_of_reads_the_live_room_before_the_row) {
   CHECK(registry.accessOf(tid())->visibility == Visibility::public_);
 }
 
-// The header promised idle eviction for a long time while the only evict() caller was a whole-
-// document PUT, so every tree the process ever touched stayed resident. This is that promise,
-// finally executable: persist first, then close.
 TEST(registry_sweep_persists_and_closes_an_idle_room) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -242,8 +227,6 @@ TEST(registry_sweep_persists_and_closes_an_idle_room) {
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 }
 
-// The other half: a room in use is not closed under its readers. Ten minutes is well past a
-// reader's think-time, so an open editor never loses its room mid-session.
 TEST(registry_sweep_keeps_a_room_that_was_just_touched) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -257,9 +240,7 @@ TEST(registry_sweep_keeps_a_room_that_was_just_touched) {
   CHECK_EQ(registry.openRooms(), std::size_t{1});
 }
 
-// Idleness alone is not a bound: an attacker opening trees faster than they go idle keeps every
-// one of them young. The cap is what makes rooms_ finite — the least-recently-touched go first,
-// and the room somebody is actually using stays.
+// Idleness alone is not a bound: the cap is what makes rooms_ finite — least-recently-touched go first.
 TEST(registry_sweep_caps_how_many_rooms_stay_open) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -279,8 +260,6 @@ TEST(registry_sweep_caps_how_many_rooms_stay_open) {
   CHECK(registry.isOpen(tid("t299")));        // the newest stayed
 }
 
-// A share is a revocation as often as it is a grant, and the registry is the one place that knows
-// the flip happened. It announces it so the socket layer can re-decide who may still read.
 TEST(registry_set_visibility_announces_the_change) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -296,9 +275,7 @@ TEST(registry_set_visibility_announces_the_change) {
   CHECK_EQ(announced.front(), std::string("t"));
 }
 
-// A retirement drops the room WITHOUT persisting it: writing a deleted tree's unsaved edits back
-// to the row somebody just deleted is the opposite of the ask. It announces, because whoever is
-// reading the tree has to be re-decided against a repository that no longer returns it.
+// A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
 TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -320,8 +297,6 @@ TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   CHECK_EQ(announced.front(), std::string("t"));
 }
 
-// The reason retire exists: accessOf reads the live room first, so while a room is resident it
-// speaks for a row that may already be gone. After a retirement it falls through to the row again.
 TEST(registry_access_of_stops_speaking_for_a_tree_once_its_room_is_retired) {
   FakeTreeRepository repo;
   FakeOpLog log;

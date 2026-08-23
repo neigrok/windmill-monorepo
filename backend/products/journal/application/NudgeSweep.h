@@ -16,12 +16,11 @@
 
 namespace wm {
 
-// The daily-nudge sweep: platform/application/MailSweep.h's DECIDE → CLAIM → SEND pipeline over
-// journal's own facts — who is due at the instant their device chose, whether they already wrote
-// today, the daily ledger, and the one fixed-line nudge mail. It owns its OWN heartbeat thread
-// (never a drogon request loop, because a send blocks on a libpqxx/HTTP round trip) and holds NO
-// schedule state — a sweep is a pure function of (now, database), so a restart loses nothing.
-// run() is public so the admin endpoint can rehearse it at an arbitrary instant, dry or wet.
+// The daily-nudge sweep: MailSweep's DECIDE -> CLAIM -> SEND pipeline over journal's own facts. It
+// owns its OWN heartbeat thread, never a drogon request loop, because a send blocks on a
+// libpqxx/HTTP round trip, and it holds NO schedule state — a sweep is a pure function of
+// (now, database), so a restart loses nothing. run() is public so the admin endpoint can rehearse
+// it at an arbitrary instant, dry or wet.
 class NudgeSweep : public MailSweep<NudgeDueUser, NudgeDecision> {
 public:
   NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens, Clock& clock,
@@ -29,12 +28,8 @@ public:
 
   void start();                                          // arm the ticker (fixed first tick, then periodic)
 
-  // The pass, queued onto the sweep's OWN loop and answered there. The admin door uses this: a
-  // drogon IO thread serves every other request in flight, and parking one on a sweep would pin it
-  // for the whole batch — up to 200 users of database round trips and outbound Resend calls, with a
-  // pooled connection held across them. Queuing also serialises an operator's sweep behind the
-  // heartbeat's rather than racing it. Roadmap's ReminderSweep::runAsync is the same method for the
-  // same reason; this is journal's half of it, which the mail sweep shipped without.
+  // The pass, queued onto the sweep's OWN loop and answered there, so a drogon IO thread is never
+  // parked for a whole batch. Queuing also serialises an operator's sweep behind the heartbeat's.
   void runAsync(std::uint64_t nowMs, bool dryRun, std::function<void(MailSweepReport)> done);
 
 private:

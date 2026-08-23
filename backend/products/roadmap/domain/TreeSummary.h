@@ -10,9 +10,8 @@
 
 namespace wm {
 
-// The headline stats of one tree: how many nodes, how many the caller has finished, and the
-// hue the tree wears most. A pure projection of a tree + one caller's overlay — the share
-// card computes the same three from the same inputs.
+// The headline stats of one tree: how many nodes, how many the caller has finished, and the hue the
+// tree wears most. A pure projection of a tree + one caller's overlay.
 struct TreeStats {
   int total = 0;
   int done = 0;
@@ -23,26 +22,21 @@ TreeStats treeStats(const TreeData& tree, const Progress& progress);
 
 // When a tree last moved forward. Its freshness lives in two places and neither stands for the
 // other: the trees row moves on a structural edit (and on a rename or a visibility flip), while a
-// progress mark writes only node_progress. A tree whose owner ticks a step every day but never
-// restructures it is the most active tree there is, and reading one column would call it
-// abandoned. Every ordering that means "last active" folds the pair here, so the registry and the
-// public wall can never drift into two answers.
+// progress mark writes only node_progress. Every ordering that means "last active" folds the pair
+// here, so the registry and the public wall can never drift into two answers.
 std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt);
 
-// One glanceable registry row: which tree, its stats, when it was planted, and when it last
-// moved forward. The two timestamps answer different questions — how old the tree is, and how
-// fresh it is — so neither stands in for the other.
+// One glanceable registry row. The two timestamps answer different questions — how old the tree is,
+// and how fresh it is — so neither stands in for the other.
 struct TreeSummary {
   TreeId id;
   std::string title;
-  std::uint64_t createdAt = 0;  // epoch ms; the planting time, fixed for the tree's whole life
+  std::uint64_t createdAt = 0;  // epoch ms; the planting time
   std::uint64_t updatedAt = 0;  // epoch ms; lastActiveAt — a structural edit or a progress mark
   TreeStats stats;
 };
 
-// One owned tree's loaded facts, handed to the domain to summarize. The three timestamps have
-// three provenances — the tree's planting, its last structural save, and the caller's last
-// progress mark.
+// One owned tree's loaded facts, handed to the domain to summarize.
 struct LoadedTree {
   TreeData data;
   std::uint64_t createdAt = 0;     // the trees-row planting timestamp (epoch ms)

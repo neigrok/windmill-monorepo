@@ -47,14 +47,10 @@ TEST(oauth_audience_matches_exact_or_bare_origin) {
   CHECK_FALSE(audienceMatches("https://mcp.example.com/other", server));
 }
 
-// OAUTH-1, both halves of it. The authorization server is the security boundary here, and these
-// are the strings that walked past it: an authority whose userinfo hid the real host, and a public
-// cleartext host that a `localhost` PREFIX test called loopback.
 TEST(oauth_redirect_refuses_a_uri_a_url_parser_would_read_differently) {
   std::vector<std::string> registered = {"http://127.0.0.1/callback", "http://localhost:7777/callback",
                                          "https://app.example/cb"};
-  // The reported attack: every browser sends this to evil.com; the old matcher erased ":80@evil.com"
-  // as a port and matched the honest client's registered loopback.
+  // ":80@evil.com" is userinfo, not a port.
   CHECK_FALSE(redirectRegistered(registered, "http://127.0.0.1:80@evil.com/callback"));
   CHECK_FALSE(redirectRegistered(registered, "http://localhost@evil.com/callback"));
   CHECK_FALSE(redirectRegistered(registered, "https://app.example@evil.com/cb"));
@@ -81,7 +77,6 @@ TEST(oauth_redirect_scheme_allows_only_a_parseable_https_or_exact_loopback_uri) 
   CHECK(redirectSchemeAllowed("http://[::1]:9000/cb"));
   CHECK(redirectSchemeAllowed("http://127.0.0.1/cb"));
   CHECK(redirectSchemeAllowed("https://app.example/cb?next=%2Fhome"));
-  // The two registrations the audit landed, both now refused at the door.
   CHECK_FALSE(redirectSchemeAllowed("http://localhost.evil.com/cb"));
   CHECK_FALSE(redirectSchemeAllowed("http://127.0.0.1.attacker.example/steal"));
   CHECK_FALSE(redirectSchemeAllowed("http://127.0.0.1:80@evil.com/callback"));
@@ -93,8 +88,7 @@ TEST(oauth_redirect_scheme_allows_only_a_parseable_https_or_exact_loopback_uri) 
   CHECK_FALSE(redirectSchemeAllowed(""));
 }
 
-// The IPv6 loopback, whole: RFC 8252 §7.3 names [::1] beside 127.0.0.1, and a native client binds
-// an ephemeral port on it exactly the same way.
+// RFC 8252 §7.3 names [::1] beside 127.0.0.1.
 TEST(oauth_redirect_ipv6_loopback_matches_with_and_without_a_port) {
   std::vector<std::string> registered = {"http://[::1]:1234/cb"};
   CHECK(redirectRegistered(registered, "http://[::1]/cb"));
@@ -105,12 +99,7 @@ TEST(oauth_redirect_ipv6_loopback_matches_with_and_without_a_port) {
   CHECK_FALSE(redirectRegistered(registered, "http://[::1]@evil.com/cb"));
 }
 
-// A control character or a bare space is in no URI (RFC 3986 §2), and this is the case that was
-// missing when it mattered: nothing asserted it anywhere, and `rest` — the path and query — was
-// copied out of the string with no character class at all. /oauth/authorize splices a REGISTERED
-// redirect into a Location header, so a registered CR/LF was HTTP response splitting on the API
-// origin: an attacker registers their own client and hands a victim an authorize link that comes
-// back carrying headers, and a body, of their choosing.
+// A control character or a bare space is in no URI (RFC 3986 §2); a registered CR/LF splices headers into /oauth/authorize's Location.
 TEST(oauth_redirect_refuses_control_characters_anywhere_in_the_uri) {
   const std::string splice = "https://good.example/cb\r\nX-Injected: pwned\r\n\r\n<script>alert(1)</script>";
   CHECK_FALSE(redirectSchemeAllowed(splice));

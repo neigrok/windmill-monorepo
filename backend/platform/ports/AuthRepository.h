@@ -9,8 +9,7 @@
 
 namespace wm {
 
-// A magic link as stored, addressed by its digest: the email it signs in, whether it has
-// been spent, and when it lapses. The raw token is never at rest.
+// Addressed by its digest; the raw token is never at rest.
 struct StoredLink {
   Email email;
   bool consumed = false;
@@ -18,27 +17,20 @@ struct StoredLink {
   std::string forkSource;  // tree to fork into the account this link signs in; empty = plain link
 };
 
-// The link row seen through its OTHER credential: the newest live code-bearing row for an
-// address. linkDigest is the row's primary key — what the attempt bump and the consume address —
-// and forkSource rides along so a pending fork lands whichever credential spends the row.
-// (StoredCode is taken: OAuth's authorization code lives under that name next door.)
+// The link row seen through its code credential; linkDigest is the row's primary key.
 struct StoredSignInCode {
   std::string linkDigest;
   std::string codeDigest;
   std::string forkSource;
 };
 
-// A live session as stored: whose it is and when it lapses (rolled forward on each use).
 struct StoredSession {
   UserId user;
   UnixMs expiresAt = 0;
 };
 
-// One row of the settings §5 "Sessions & devices" list. `id` is the public handle the revoke
-// endpoint addresses; `tokenHash` is the private digest, carried so the service can flag the
-// caller's own current session and never leaves this layer. user_agent/ip are raw (the client
-// formats device/place). lastSeenMs is the raw column — 0 for a pre-migration row, which the
-// service coalesces to createdAtMs.
+// `id` is the public handle the revoke endpoint addresses; `tokenHash` never leaves this layer.
+// userAgent/ip are raw. lastSeenMs 0 means unset — the service coalesces it to createdAtMs.
 struct SessionRow {
   std::string id;
   std::string tokenHash;
@@ -48,8 +40,7 @@ struct SessionRow {
   std::string ip;
 };
 
-// Persistence for accounts, magic links, and sessions — one connection per call, mirroring
-// the other Postgres repositories. Digests, not secrets, are the keys throughout.
+// Digests, not secrets, are the keys throughout.
 struct AuthRepository {
   virtual ~AuthRepository() = default;
 
@@ -57,64 +48,50 @@ struct AuthRepository {
   virtual std::optional<User> findUserById(const UserId& id) = 0;
   virtual User createUser(const Email& email, const std::string& name) = 0;
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
-  // The settings §4 soft close and its undo: stamp / clear users.deleted_at.
   virtual void markUserDeleted(const UserId& userId, UnixMs now) = 0;
   virtual void reviveUser(const UserId& userId) = 0;
-  // The row itself, gone. Reserved for the link merge, whose whole precondition is an account
-  // proven to hold nothing — every other close in the product is the soft one above.
+  // Hard delete; only for the link merge, whose precondition is an account proven empty.
   virtual void deleteUser(const UserId& userId) = 0;
 
-  // Provider doors (backend/AUTH.md, "Identities"). Keyed by the provider's subject, never by an
-  // address, so a rotated relay or a moved primary email still opens the same account.
+  // Keyed by the provider's subject, never by an address.
   virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;
   virtual void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
                             const std::string& emailAtLink) = 0;
-  // The merge: every door of `from` now opens `to`. Called only once `from` is provably empty.
+  // Every door of `from` opens `to` afterwards. Only once `from` is provably empty.
   virtual void moveIdentities(const UserId& from, const UserId& to) = 0;
 
-  // One mint, one row, both credentials: the link token's digest (the key) and its 6-digit code
-  // twin's. Either credential burns the row through the same consumed_ms flip.
+  // One row carries both credentials: the link digest (the key) and its 6-digit code twin's.
+  // Either burns the row through the same consumed_ms flip.
   virtual void insertLink(const std::string& digest, const std::string& codeDigest,
                           const Email& email, UnixMs createdAt, UnixMs expiresAt,
                           const std::string& forkSource) = 0;
   virtual int countRecentLinks(const Email& email, UnixMs since) = 0;
   virtual std::optional<StoredLink> findLink(const std::string& digest) = 0;
-  // The code lookup inverts the key: newest row by ADDRESS, and only while live — unspent,
-  // unexpired, under the attempt cap. `now` and `maxAttempts` arrive from the caller (the
-  // service, out of AuthPolicy), so a spent, lapsed, or guessed-out row is invisible here and a
-  // resend supersedes the code before it.
+  // Newest row by address, and only while live: unspent, unexpired, under maxAttempts.
   virtual std::optional<StoredSignInCode> findLiveCode(const Email& email, UnixMs now,
                                                        int maxAttempts) = 0;
-  // One wrong guess, one atomic increment, gated at the row — UPDATE … attempts = attempts + 1
-  // WHERE … attempts < maxAttempts RETURNING — so no increment is ever lost and the counter can
-  // never climb past the cap, however many verifies race. Returns the new count, or 0 when the
-  // update matched nothing: the row already spent, or already guessed out (dead either way, a
-  // distinction this refusal doesn't need).
+  // Atomic increment gated at the row, so racing verifies cannot lose one or pass the cap.
+  // Returns the new count, or 0 when nothing matched: the row is spent or already guessed out.
   virtual int spendCodeAttempt(const std::string& digest, int maxAttempts) = 0;
-  // Spend the link atomically. Returns true only for the caller that actually flipped it
-  // from unspent to spent — concurrent verifies of the same link get false, so exactly one
-  // can mint a session (the "works once" guarantee, enforced at the row, not by the read).
+  // Returns true only for the caller that flipped it unspent→spent, so exactly one mints a session.
   virtual bool consumeLink(const std::string& digest, UnixMs at) = 0;
 
   virtual void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,
                              const std::string& userAgent, const std::string& ip, UnixMs seenAt) = 0;
   virtual std::optional<StoredSession> findSession(const std::string& digest) = 0;
-  // Roll the window forward on use, stamp last_seen with now, and heal user_agent/ip from the
-  // request when it carries them (empty leaves the stored value) — so a pre-migration row
-  // fills its metadata in the first time it is used.
+  // Rolls the window forward, stamps last_seen, and heals user_agent/ip when non-empty
+  // (empty leaves the stored value).
   virtual void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                               const std::string& userAgent, const std::string& ip) = 0;
   virtual void deleteSession(const std::string& digest) = 0;
 
-  // The settings §5 sessions list, most-recent first.
+  // Most-recent first.
   virtual std::vector<SessionRow> listSessions(const UserId& userId) = 0;
-  // Revoke one of the user's sessions by its public id, scoped to the owner so a foreign id
-  // matches nothing. Returns the deleted row's digest — so the caller can tell it just dropped
-  // its own current session and must clear the cookie — or nullopt when nothing matched (a 404).
+  // Scoped to the owner, so a foreign id matches nothing. Returns the deleted row's digest,
+  // or nullopt when nothing matched.
   virtual std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) = 0;
-  // "Sign out everywhere": drop every session but the one whose digest is kept (the caller's own).
+  // Drops every session but the one whose digest is kept.
   virtual void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) = 0;
-  // Account close: drop every session the user has, this device included.
   virtual void revokeAllSessions(const UserId& userId) = 0;
 };
 

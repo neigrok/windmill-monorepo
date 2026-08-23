@@ -29,22 +29,14 @@ namespace wm {
 
 namespace {
 
-// `status` used to name an imported node's authored baseline, and now names the caller's own
-// mark everywhere else on this surface. A node that carried one where the other was meant would
-// publish a private mark into the document (or lose it) without a word, so the older spelling is
-// refused by name rather than guessed at — exactly as create_node refuses `nodeId`.
+// `status` names the caller's own mark on this surface; a node carrying it where the document's
+// authored baseline was meant is refused by name rather than guessed at.
 constexpr char kSeedStatusMoved[] =
     ".status is your own mark on this surface, not the document's — the authored baseline every "
     "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
 
-// The two refusals that are about who you are rather than what you sent, so they say what to do
-// next instead of naming an argument. The truth is Access.h's, so it cannot drift from what every
-// other surface says; the remedy is this surface's own, because it can name tools. A tree SOMEONE
-// ELSE owns is in that account's list_trees, so naming that tool is a real remedy. A tree NOBODY
-// owns — the seeded demo, a legacy row nothing mints any more — is in no account's list at all
-// (listOwnedBy keys on owner_id), so pointing at list_trees would send the caller looking for
-// something that cannot be there; the path that does exist is to read it, and copy it into a
-// roadmap of your own.
+// The truth is Access.h's; only the remedy is this surface's, because it can name tools. A tree
+// NOBODY owns is in no account's list_trees, so the remedy there is to read it and copy it.
 std::string writeRefusalSentence(WriteRefusal refusal) {
   if (refusal == WriteRefusal::nobodysTree)
     return std::string(truthOf(refusal)) + ". You can still read it with get_tree, and copy it into "
@@ -89,22 +81,20 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
   return std::nullopt;
 }
 
-// The tools whose subject is a node that ALREADY exists — the ones that take `nodeId` (and still
-// read the legacy `id`). create_node is not among them: the id it takes is one it proposes.
+// The tools whose subject is a node that ALREADY exists. create_node is not among them: the id
+// it takes is one it proposes.
 bool namesAnExistingNode(const std::string& tool) {
   return tool == "annotate_node" || tool == "rename_node" || tool == "set_node_color" ||
          tool == "move_node" || tool == "delete_node";
 }
 
-// …and the same question for a legend kind. add_kind is not among them, for the same reason
-// create_node is not among the node tools.
+// …and the same question for a legend kind; add_kind is not among them.
 bool namesAnExistingKind(const std::string& tool) {
   return tool == "rename_kind" || tool == "describe_kind" || tool == "remove_kind" ||
          tool == "recolor_kind";
 }
 
-// A node's free annotation, wherever it is authored: create_node, annotate_node, an import's
-// nodes[]. `prefix` is blank at the top level and "nodes[3]." inside a list.
+// `prefix` is blank at the top level and "nodes[3]." inside a list.
 std::optional<std::string> checkAnnotation(const Json::Value& node, const std::string& prefix) {
   if (std::optional<std::string> bad =
           optionalString(node["description"], prefix + "description", kMaxNodeDescriptionLength))
@@ -112,8 +102,8 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
-// One incoming node of an import. The graft path does not run the domain's validate(), so the
-// caps every other authoring tool obeys are checked right here or not at all.
+// The graft path does not run the domain's validate(), so the caps every other authoring tool
+// obeys are checked here or not at all.
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
@@ -138,23 +128,17 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   return checkAnnotation(node, path + ".");
 }
 
-// What each edit tool requires of its arguments — the one place that contract is written down —
-// and where the node handle is normalized: `nodeId` and the legacy `id` both land on
-// payload["id"], the key commandFromJson reads. Checked BEFORE that decode, because
-// commandFromJson answers a bare yes/no on purpose: it is also the op-log replay decoder
-// (adapters/postgres/PgOpLog) and must stay one there. The domain's validate() remains the
-// authority on what is admitted; this is the authority on what the caller is told.
+// What each edit tool requires of its arguments, and where the node handle is normalized: both
+// `nodeId` and `id` land on payload["id"], the key commandFromJson reads. Checked BEFORE that
+// decode, which answers a bare yes/no because it is also the op-log replay decoder.
 std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& payload) {
   // These checks read a null as "not given"; commandFromJson reads presence with isMember. Left
-  // to disagree, `links: null` reaches AnnotateNode as "replace the set with []" and DESTROYS a
-  // node's links, and `x: null, y: null` reaches CreateNode as the position (0, 0) — a client
-  // that serialises unset optionals as null would stack its whole tree on the origin. Erasing
-  // the nulls once, here, makes the payload say what this layer already believes it says.
+  // to disagree, `links: null` reaches AnnotateNode as "replace the set with []" and `x: null,
+  // y: null` reaches CreateNode as the position (0, 0).
   for (const std::string& key : payload.getMemberNames())
     if (payload[key].isNull()) payload.removeMember(key);
 
-  // Read through the const overload: jsoncpp's mutable operator[] CREATES the member it probes,
-  // and a create_node that merely asked whether "x" was present would grow a position of {0,0}.
+  // Read through the const overload: jsoncpp's mutable operator[] CREATES the member it probes.
   const Json::Value& args = payload;
 
   if (namesAnExistingNode(tool)) {
@@ -237,10 +221,9 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   return std::nullopt;  // tidy takes nothing beyond treeId
 }
 
-// Every room-touching tool holds the tree's strand, opens the room, and turns a "no such tree" into
-// a tool-level error. An absent tree is a nullptr answered here; an infrastructure failure is left
-// to throw past this, up to callTool, which logs the detail and answers a generic sentence — so a
-// pqxx message never rides out on `error.what()` the way it once did.
+// Every room-touching tool holds the tree's strand, opens the room, and turns a "no such tree"
+// into a tool-level error. An infrastructure failure is left to throw past this, to callTool,
+// which logs the detail and answers generically.
 template <typename Fn>
 ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
@@ -249,13 +232,9 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
-// The caller's side of a read — their own progress rows, and the states the tree derives from
-// them — read ONCE per tree read and only when asked for: `status` needs the marks, `state` (as a
-// field or as find_nodes' filter) needs both. The overlay is the same set for every node on the
-// page; an anonymous caller has no marks to look up, and their cascade runs over none — roots
-// available, the rest locked, the truthful reading of a tree you hold no marks on. States are
-// derived over the WHOLE tree, never a page or a match list, because a prerequisite may sit off
-// either — and over the bare node list, so an untidy tree still answers instead of failing.
+// The caller's own progress rows and the states derived from them, read ONCE per tree read and
+// only when asked for. States are derived over the WHOLE tree, never a page or a match list,
+// because a prerequisite may sit off either.
 NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
                                const std::vector<NodeSpec>& nodes, const NodeFields& fields, bool filtersOnState) {
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
@@ -269,8 +248,8 @@ NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, co
 ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                     const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
-    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message: a private tree must not be distinguishable from one
+    // that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
     std::string error;
@@ -309,8 +288,8 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
 
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
-    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message: a private tree must not be distinguishable from one
+    // that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     return ToolResult::json(toJson(room.diagnose()));
   });
@@ -318,8 +297,8 @@ ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std
 
 ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
-    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message: a private tree must not be distinguishable from one
+    // that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (!room.diagnose().clean())
       return ToolResult::failure(
@@ -352,8 +331,8 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
 ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message (withRoom answers a null open the same) — a private
-    // tree must be indistinguishable from one that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message: a private tree must not be distinguishable from one
+    // that does not exist, or the id is an oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
       return ToolResult::failure(*bad);
@@ -376,10 +355,9 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
     std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
     if (!fields) return ToolResult::failure(error);
 
-    // The state filter is the one filter selectNodes does not know: it is per-caller, and
-    // selectNodes is a pure function of (tree, filter) — which is what keeps a cursor valid. So it
-    // is applied here, AFTER the ranked selection (order kept) and BEFORE the page, so `count` and
-    // the cursor speak of the filtered set.
+    // selectNodes is a pure function of (tree, filter), which is what keeps a cursor valid, so the
+    // per-caller state filter runs here: after the ranked selection, before the page, so `count`
+    // and the cursor speak of the filtered set.
     const TreeData data = room.snapshot();
     const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *fields, state.has_value());
     std::vector<NodeSpec> matches = selectNodes(data, filter);
@@ -405,9 +383,8 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // The read gate comes first, and answers exactly as an absent tree does: "belongs to another
-    // account" on a private tree the caller cannot read would confirm the id names something.
-    // Then the write gate, which admits the owner alone — an unowned tree is nobody's to edit.
+    // Read gate first, answering exactly as an absent tree does, then the write gate, which
+    // admits the owner alone — an unowned tree is nobody's to edit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
@@ -428,8 +405,8 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
 
-    // Bracketing the write under the strand is what makes the receipt attributable: whatever the
-    // tree gains between these two reads, this command gained it.
+    // Bracketing the write under the strand makes the receipt attributable: whatever the tree
+    // gains between these two reads, this command gained it.
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
@@ -443,37 +420,30 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
-// The shared write path for both set_progress and an import's carried progress. Under the
-// strand it rejects (or, for a best-effort import, drops) unknown node ids, reads each node's
-// prerequisites, and mints one clock stamp per mark; then applies the batch order-safe (§9)
-// and echoes each mark to the caller's live sessions. Fills `results` with a row per applied
-// mark; returns a failure message only when an unknown id is rejected.
+// The shared write path for both set_progress and an import's carried progress. Fills `results`
+// with a row per applied mark; returns a failure message only when an unknown id is rejected.
 std::optional<std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
     Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
     bool rejectUnknown, Json::Value& results, Json::Value& skipped) {
-  // Both out-params are set at entry, so an early return (absent/private-denied) still leaves them
-  // as empty arrays — a caller that reads them without checking the return (import) sees [], not null.
+  // Both out-params are set at entry, so an early return still leaves them as empty arrays.
   results = Json::Value(Json::arrayValue);
-  skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree; the caller decides what to do with them
+  skipped = Json::Value(Json::arrayValue);  // ids naming no node in the tree
   std::vector<ProgressWrite> marks;
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
-    // Progress is a per-user overlay, not an edit — so it isn't owner-gated — but marking a
-    // node against someone else's PRIVATE tree would confirm which node ids exist (and their
-    // prerequisite shape). Deny it exactly as an absent tree does: private ⇒ owner-only. Both the
-    // absent and the private-denied case leave as a returned error (not a throw), so the caller's
-    // catch is left to mean only a genuine infrastructure failure.
+    // A per-user overlay, so not owner-gated — but a mark against someone else's PRIVATE tree
+    // would confirm which node ids exist, so private is owner-only here too. Both cases leave as a
+    // returned error, never a throw, so the caller's catch means only infrastructure failure.
     if (!room || !canRead(user, room->owner(), room->visibility()))
       return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent/denied message
     for (const auto& [node, status] : requested) {
       if (!room->hasNode(node)) { skipped.append(node.str()); continue; }
       marks.push_back({node, status, room->prerequisitesOf(node), room->nextStamp(clock.nowMs())});
     }
-    // set_progress rejects an unknown id outright (a mark that names nothing is a caller mistake);
-    // an import's carried progress skips it and reports it in `skipped` instead, because the graft
-    // has already landed and a dangling reference is dirt to surface, not a reason to refuse.
+    // set_progress rejects an unknown id outright; an import's carried progress skips it and
+    // reports it in `skipped`, since the graft has already landed.
     if (rejectUnknown && !skipped.empty()) {
       std::string names;
       for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
@@ -484,8 +454,7 @@ std::optional<std::string> applyProgressBatch(
 
   const std::uint64_t receivedAtMs = clock.nowMs();
   std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, marks, receivedAtMs);
-  // One echo for the whole batch — an agent marking a subtree lights the caller's open web
-  // sessions in a single frame instead of one per node.
+  // One echo for the whole batch, not one frame per node.
   Progress recorded;
   for (std::size_t i = 0; i < marks.size(); ++i)
     if (outcomes[i].applied) recorded.record(marks[i].node, ProgressMark{marks[i].status, marks[i].at, receivedAtMs});
@@ -503,7 +472,7 @@ std::optional<std::string> applyProgressBatch(
 ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
                          const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
   // Two shapes, one tool: a single mark or a batch. Both boundary cases are answered here,
-  // before either shape is read, because both messages have to name both routes.
+  // before either shape is read, because both messages name both routes.
   const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
   const bool bulk = !args["updates"].isNull();
   if (!single && !bulk)
@@ -540,9 +509,8 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
   }
 
-  // applyProgressBatch answers an absent/private-denied tree with a returned error string, so what
-  // is left to throw is only an infrastructure failure — left to reach callTool, which logs the
-  // detail and answers generically, rather than caught and echoed back on error.what().
+  // applyProgressBatch answers an absent/private-denied tree with a returned error string, so
+  // what is left to throw is only infrastructure failure — left to reach callTool.
   Json::Value results, skipped;  // set_progress rejects unknowns, so on success `skipped` stays empty
   if (std::optional<std::string> error =
           applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
@@ -555,18 +523,15 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet}
 }
 
-// Every item of an import, checked before treeFromJson reads it. The decoder indexes each item as
-// an object, so a JSON-encoded string in nodes[] used to throw out of the whole request and
-// return a bare transport error naming nothing.
+// Every item of an import, checked before treeFromJson reads it: the decoder indexes each item
+// as an object and throws on anything else.
 std::optional<std::string> checkImport(const Json::Value& args) {
-  // `nodes` stays required — the schema has always said so — but the refusal names the escape,
-  // because a legend-only or progress-only import is a real thing to want.
+  // `nodes` is required, but the refusal names the escape for a legend-only or progress-only
+  // import.
   if (args["nodes"].isNull())
     return "missing required argument \"nodes\". Pass \"nodes\": [] to import only kinds or progress.";
-  // Two incoming rows under one id is malformed, not an upsert: an upsert overwrites a TREE node
-  // (reported in nodeCollisions), but two definitions of the same id WITHIN one batch are ambiguous
-  // — which wins is order-dependent and invisible. So it's named and refused up front, before a
-  // byte is written, naming both the offender and the earlier row it repeats.
+  // Two incoming rows under one id is malformed, not an upsert: which wins is order-dependent,
+  // so it is refused up front, before a byte is written.
   if (std::optional<std::string> bad = optionalObjects(args["nodes"], "nodes")) return bad;
   std::map<std::string, Json::ArrayIndex> nodeIdAt;
   for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i) {
@@ -610,18 +575,16 @@ std::optional<std::string> checkImport(const Json::Value& args) {
       return bad;
   }
 
-  // A preview is a promise not to write, so the flag that asks for one is a boolean and nothing
-  // else: accepting "yes" (and treating every string but "true" as go-ahead) turned a request to
-  // change nothing into a real import.
+  // A preview is a promise not to write, so the flag asking for one is a boolean and nothing
+  // else: a string would read as a go-ahead and turn a preview into a real import.
   if (!args["dryRun"].isNull() && !args["dryRun"].isBool())
     return "argument \"dryRun\" must be a boolean, got " + typeName(args["dryRun"]);
   return std::nullopt;
 }
 
 // The legend's two invariants, checked against the legend the import WOULD leave behind. The
-// graft path never runs the domain's validate(), and a duplicate hue is not merely wrong but
-// unrepairable once it lands: remove_kind refuses any kind whose hue nodes still wear, so the
-// only cure was deleting the tree.
+// graft path never runs the domain's validate(), and a duplicate hue is unrepairable once it
+// lands: remove_kind refuses any kind whose hue nodes still wear.
 std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
                                              const std::vector<Kind>& incoming) {
   std::set<std::string> replaced;
@@ -657,8 +620,8 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   std::optional<TreeData> parsed = treeFromJson(args, tree);  // the get_tree shape: nodes[], kinds[]
   if (!parsed) return ToolResult::failure("this import's nodes or kinds carry a field of the wrong type");
   TreeData incoming = *std::move(parsed);
-  // `seedStatus` is this surface's name for the document's authored baseline — the codec still
-  // reads the older `status`, so the published spelling is folded over it here, by id.
+  // `seedStatus` is this surface's name for the document's authored baseline; the codec reads
+  // `status`, so the published spelling is folded over it here, by id.
   std::map<std::string, std::string> seeds;
   for (const Json::Value& node : args["nodes"])
     if (node["seedStatus"].isString()) seeds[node["id"].asString()] = node["seedStatus"].asString();
@@ -669,19 +632,16 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   const bool dryRun = args["dryRun"].asBool();
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // A read gate before the write gate, and for its own reason: a dry run answers with a
-    // collision list, which would leak this tree's node and kind ids to a non-reader before the
-    // ownership refusal ever ran. Then canWrite — an unowned tree grafts nothing.
+    // Read gate before the write gate: a dry run answers with a collision list, which would leak
+    // this tree's node and kind ids to a non-reader before the ownership refusal ran.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
 
-    // The graph the graft would LEAVE BEHIND, against the tree caps (domain/Command.h). checkImport
-    // above judged the request's shape; this judges the result — and it is the only thing standing
-    // between a write grant and a 30000-node tree, because a graft never mints a Command and so was
-    // never seen by validate(). Asked before the dry-run branch, so a preview refuses what the real
-    // call would refuse.
+    // The graph the graft would LEAVE BEHIND, against the tree caps (domain/Command.h): a graft
+    // mints no Command, so validate() never sees it. Asked before the dry-run branch, so a preview
+    // refuses what the real call would refuse.
     if (std::optional<Admission> refusal = room.admit(incoming))
       return ToolResult::failure(refusal->reason);
 
@@ -698,9 +658,8 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     for (const Kind& k : incoming.kinds)
       if (presentKinds.count(k.id.str())) kindCollisions.append(k.id.str());
 
-    // The receipt counts the EDGES the batch carried, so a graft whose prerequisites never landed —
-    // an agent that put them in a top-level `edges` it borrowed from connect, once, on a live tree —
-    // reads as `edges: 0` on the first call rather than as a tree that quietly has none.
+    // The receipt counts the EDGES the batch carried, so a graft whose prerequisites never landed
+    // reads as `edges: 0` on the first call.
     int edges = 0;
     for (const NodeSpec& n : incoming.nodes) edges += static_cast<int>(n.prerequisites.size());
 
@@ -712,11 +671,10 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     out["kindCollisions"] = kindCollisions;
     out["newNodes"] = static_cast<int>(incoming.nodes.size()) - nodeCollisions.size();
     out["newKinds"] = static_cast<int>(incoming.kinds.size()) - kindCollisions.size();
-    if (dryRun) {  // report what would collide, change nothing (§7 dry-run)
+    if (dryRun) {  // report what would collide, change nothing
       out["dryRun"] = true;
-      // A faithful preview says which carried progress rows won't land: those naming no node the
-      // graft would leave behind (present now, or arriving in this batch). Same set the real run
-      // reports in progressSkipped, computed here before anything is written.
+      // Which carried progress rows won't land: those naming no node the graft would leave
+      // behind. The same set the real run reports in progressSkipped.
       if (args["progress"].isArray()) {
         std::set<std::string> afterGraft = presentNodes;
         for (const NodeSpec& n : incoming.nodes) afterGraft.insert(n.id.str());
@@ -750,15 +708,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     requested.emplace_back(NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()));
   }
   if (!requested.empty()) {
-    // The graft has already committed. A throw from the progress overlay here — the progress store
-    // or the bus failing under it (a concurrent delete now returns a null open, not a throw) — must
-    // not escape to callTool's generic catch, which would answer "nothing was changed": false, the
-    // graft landed. Keep the graft's own receipt honest by catching it; the overlay is best-effort.
+    // The graft has already committed, so a throw from the progress overlay must not escape to
+    // callTool's generic catch, which would answer "nothing was changed". The overlay is
+    // best-effort; the graft's receipt stands.
     try {
       Json::Value results, skipped;
       applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
       grafted.payload["progress"] = results;
-      if (!skipped.empty()) grafted.payload["progressSkipped"] = skipped;  // named, not silently swallowed
+      if (!skipped.empty()) grafted.payload["progressSkipped"] = skipped;
     } catch (const std::exception&) { /* the graft stands; the carried progress simply didn't land */ }
     return ToolResult::json(grafted.payload);
   }
@@ -803,7 +760,7 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const Tr
 
 ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
   TreeData initial;
-  initial.title = title;  // an agent plants a blank tree, then authors it with the edit tools
+  initial.title = title;
   Json::Value out(Json::objectValue);
   out["treeId"] = registry.create(caller, initial).str();
   return ToolResult::json(out);
@@ -839,11 +796,9 @@ RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Cl
 
 std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmapToolCatalog(); }
 
-// Every failure an agent reads names the tool it came from, and it is named exactly once: here,
-// on whatever `dispatch` refused with. A message that arrives in a transcript without its tool is
-// a message the agent has to guess the origin of. The catch is the same promise for a throw:
-// jsoncpp raises on a type-confused read, and a malformed argument must fail its own call rather
-// than the whole request — which is how a bad import item once died as a bare transport error.
+// Every failure an agent reads names the tool it came from, exactly once: here, on whatever
+// `dispatch` refused with. The catch is the same promise for a throw — a malformed argument must
+// fail its own call rather than the whole request.
 ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments,
                                   const ToolCaller& caller) {
   try {
@@ -853,9 +808,8 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die loudly, not answer politely
   } catch (const std::exception& error) {
-    // The detail goes to the log, never into the model's context: what escapes a repository is a
-    // connection string, a host, a role. stderr rather than LOG_ERROR because on the stdio
-    // transport stdout IS the protocol channel (platform/infra/mcp_main.cpp).
+    // The detail goes to the log, never into the model's context. stderr rather than LOG_ERROR
+    // because on the stdio transport stdout IS the protocol channel.
     std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
     return ToolResult::failure(name + ": that call failed inside the server. Nothing was changed; "
                                "the detail is in the server log.");
@@ -863,8 +817,8 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
 }
 
 ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller) {
-  // The outermost shape: everything below reads `arguments` by key, and jsoncpp throws rather
-  // than answers when a key is asked of something that is not an object.
+  // Everything below reads `arguments` by key, and jsoncpp throws when a key is asked of
+  // something that is not an object.
   if (!arguments.isObject())
     return ToolResult::failure("arguments must be a JSON object of this tool's named arguments, got " +
                                typeName(arguments));
@@ -885,8 +839,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
     return ToolResult::failure(*bad);
   TreeId tree{arguments["treeId"].asString()};
 
-  // The MCP caller is an authenticated account (an OAuth token's user over HTTP, the
-  // configured user over stdio); an empty id reads as anonymous for the read gate.
+  // An empty caller id reads as anonymous for the read gate.
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
@@ -904,8 +857,8 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
 
   if (commandKindFor(name)) return applyEdit(registry_, tree, name, arguments, clock_, caller);
 
-  // The whole-server answer belongs to CompositeToolHost, which is the only thing that knows what
-  // else is connected; a name that reaches this far named nothing in the roadmap surface.
+  // A name reaching this far named nothing in the roadmap surface; the whole-server answer
+  // belongs to CompositeToolHost.
   return ToolResult::failure("no such roadmap tool — call tools/list for the surface this connection "
                              "may use.");
 }

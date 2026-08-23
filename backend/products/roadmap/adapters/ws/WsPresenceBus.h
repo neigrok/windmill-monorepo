@@ -13,9 +13,9 @@
 
 namespace wm {
 
-// Tracks which sockets subscribe to which tree and fans a room's ops — and a caller's own progress
-// — out to them. Class C presence is not on this bus: PresenceHub keeps its own roster and
-// coalesces cursors at 20 Hz. In-process for now; a Redis/NATS bus makes this cross-instance (§4).
+// Tracks which sockets subscribe to which tree and fans a room's ops — and a caller's own
+// progress — out to them. Presence is not on this bus: PresenceHub keeps its own roster.
+// In-process only.
 class WsPresenceBus : public PresenceBus {
 public:
   // `user` is the connection's authenticated account (empty for anonymous viewers), remembered
@@ -23,22 +23,17 @@ public:
   void subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user);
   void drop(const drogon::WebSocketConnectionPtr& conn);
 
-  // Whether a subscription is still allowed to receive this tree. Read authorization used to be
-  // granted once, at subscribe, and never asked again: a socket lives for hours, so an owner
-  // re-privating their tree — the product's only revocation control — revoked nothing already
-  // open, and a revoked session kept reading. Every fan-out passes through this gate, and a
-  // connection it refuses is dropped from the tree rather than carried. Collab installs it (it owns
-  // canRead and the session); the bus only obeys it. Installed once at wiring, before any traffic.
+  // Whether a subscription may still receive this tree. Every fan-out passes through it, and a
+  // connection it refuses is dropped from the tree. Installed once at wiring, before any traffic.
   using ReadGate = std::function<bool(const TreeId&, const drogon::WebSocketConnectionPtr&)>;
   void setReadGate(ReadGate gate);
   // Re-run the gate now, with no edit to carry: what a visibility change calls, so a revocation
-  // does not wait for the tree's next broadcast — a tree nobody edits again would never re-check.
+  // does not wait for the tree's next broadcast.
   void resweep(const TreeId& tree);
-  // The same over every tree that has a subscriber: the periodic pass, for the revocations no
-  // single tree's event announces (an idle tree, a revoked session, a presence roster).
+  // The same over every tree that has a subscriber.
   void resweepAll();
-  // Every connection subscribed to anything, deduplicated. A session belongs to a CONNECTION, not
-  // to a tree, so the periodic re-proof walks these once rather than once per tree it reads.
+  // Every connection subscribed to anything, deduplicated: a session belongs to a connection, not
+  // to a tree.
   std::vector<drogon::WebSocketConnectionPtr> connections() const;
 
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
@@ -47,8 +42,7 @@ public:
 private:
   std::set<drogon::WebSocketConnectionPtr> subscribersOf(const TreeId& tree) const;
   // Who may still receive `tree`, with everyone the gate refused already dropped from it. The one
-  // door every fan-out and every resweep goes through, so the check cannot be forgotten in one path
-  // and remembered in another.
+  // door every fan-out and every resweep goes through.
   std::vector<drogon::WebSocketConnectionPtr> admitted(const TreeId& tree);
 
   mutable std::mutex mutex_;

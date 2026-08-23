@@ -161,12 +161,36 @@ long daysBetween(const LocalDate& earlier, const LocalDate& later) {
   return dayNumber(later) - dayNumber(earlier);
 }
 
-bool sharesAnchor(const std::string& a, const std::string& b) {
-  const std::set<std::string> left = anchorsOf(a);
+AnchorVocabulary AnchorVocabulary::of(const std::vector<Vectored>& corpus,
+                                      const SelectionRules& rules) {
+  AnchorVocabulary vocabulary;
+  const int passages = static_cast<int>(corpus.size());
+  if (passages < rules.vocabularyFloor || rules.commonShare <= 0.0) return vocabulary;
+
+  // Document frequency: one passage counts a word once, however often it repeats inside it.
+  std::map<std::string, int> carrying;
+  for (const Vectored& passage : corpus)
+    for (const std::string& token : anchorsOf(passage.text)) ++carrying[token];
+
+  const int threshold = static_cast<int>(std::ceil(rules.commonShare * passages));
+  for (const auto& [token, count] : carrying)
+    if (count >= threshold) vocabulary.common.insert(token);
+  return vocabulary;
+}
+
+bool sharesAnchor(const std::string& a, const std::string& b, const AnchorVocabulary& vocabulary) {
+  std::set<std::string> left;
+  for (const std::string& token : anchorsOf(a))
+    if (vocabulary.common.count(token) == 0) left.insert(token);
   if (left.empty()) return false;
+
   for (const std::string& token : anchorsOf(b))
     if (left.count(token) > 0) return true;
   return false;
+}
+
+bool sharesAnchor(const std::string& a, const std::string& b) {
+  return sharesAnchor(a, b, AnchorVocabulary{});
 }
 
 int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
@@ -237,7 +261,7 @@ std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vector
 }
 
 Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& candidates,
-                          const SelectionRules& rules) {
+                          const SelectionRules& rules, const AnchorVocabulary& vocabulary) {
   Selection selection;
   if (candidates.empty() || rules.shown <= 0) return selection;
 
@@ -286,7 +310,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     }
     // No shared anchor means no way for the reader to check the pairing from what is on screen,
     // whatever the cosine says. This is the whole enforcement of rule 1.
-    if (!sharesAnchor(trigger.text, candidate.passage->text)) {
+    if (!sharesAnchor(trigger.text, candidate.passage->text, vocabulary)) {
       noted(candidate.passage->spanId).fate = Fate::noAnchor;
       continue;
     }
@@ -434,8 +458,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
 }
 
 std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>& candidates,
-                            const SelectionRules& rules) {
-  return selectExplained(trigger, candidates, rules).pairings;
+                            const SelectionRules& rules, const AnchorVocabulary& vocabulary) {
+  return selectExplained(trigger, candidates, rules, vocabulary).pairings;
 }
 
 PageSelection selectForPage(const std::vector<Vectored>& tonight,
@@ -443,6 +467,11 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
                             const std::set<std::pair<std::int64_t, std::int64_t>>& dismissed,
                             const SelectionRules& rules, int echoesPerPage, int nearestReported) {
   PageSelection page;
+  // Counted once for the page, over the WHOLE corpus this writer has — tonight included, because a
+  // word they use every night is theirs whether they used it tonight or last March.
+  std::vector<Vectored> everything = history;
+  everything.insert(everything.end(), tonight.begin(), tonight.end());
+  const AnchorVocabulary vocabulary = AnchorVocabulary::of(everything, rules);
   // Where a pairing's note lives, so the two rules that act on WHOLE-PAGE state — the reader's
   // dismissals and the page ceiling — can stamp the same notes the per-trigger pass filled in.
   std::map<std::pair<std::int64_t, std::int64_t>, std::pair<std::size_t, std::size_t>> noteAt;
@@ -463,7 +492,7 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
     // through a hard month handing back ten copies of last week. It is still traced — what it
     // retrieved and how crowded it was is exactly what someone tuning the gate needs to see.
     if (!trace.refrain) {
-      const Selection selection = selectExplained(trigger, retrieved, rules);
+      const Selection selection = selectExplained(trigger, retrieved, rules, vocabulary);
       trace.mean = selection.mean;
       trace.stddev = selection.stddev;
       trace.notes = selection.notes;

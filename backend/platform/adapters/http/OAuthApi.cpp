@@ -21,16 +21,13 @@ drogon::HttpResponsePtr oauthError(const std::string& error, const std::string& 
   return jsonResponse(body, code);
 }
 
-// urlEncodeCOMPONENT, not urlEncode. drogon's urlEncode is a FORM encoder: it escapes ':' and
-// writes a space as '+', but leaves '&' and '=' alone — and every caller below is building a query
-// string, so an '&' inside state, scope or resource appended a parameter of its own to the URL.
+// urlEncodeCOMPONENT, not urlEncode: drogon's urlEncode is a FORM encoder that leaves '&' and '='
+// alone, and every caller below is building a query string.
 std::string enc(const std::string& value) { return drogon::utils::urlEncodeComponent(value); }
 
-// The second line of defence under an error redirect, where a registered redirect_uri becomes the
-// BASE of a Location header rather than a parameter in one (so enc() would break the URL rather
-// than protect it). Only the bytes that can end a header or a response are escaped: a registered
-// CR/LF used to splice headers and a body of the attacker's choosing onto the API origin. The
-// domain refuses to register such a uri at all now — this is what makes that regression harmless.
+// The second line of defence where a registered redirect_uri becomes the BASE of a Location header
+// rather than a parameter in one (enc() would break such a URL). Only the bytes that can end a
+// header or a response are escaped.
 std::string headerSafe(const std::string& value) {
   static const char* kHex = "0123456789ABCDEF";
   std::string out;
@@ -86,9 +83,7 @@ void OAuthApi::metadata(const drogon::HttpRequestPtr&, HttpCallback&& cb) {
   m["grant_types_supported"] = strArray({"authorization_code", "refresh_token"});
   m["code_challenge_methods_supported"] = strArray({"S256"});
   m["token_endpoint_auth_methods_supported"] = strArray({"none"});
-  // A client cannot ask for a level it was never told about. Omitting a scope it needs is how a
-  // connection ends up with less reach than the person meant to give it, so the whole vocabulary is
-  // published rather than left to be guessed from a tool that is missing.
+  // Publish the whole scope vocabulary: a client cannot ask for a level it was never told about.
   m["scopes_supported"] = strArray(scopesSupported_);
   cb(jsonResponse(m));
 }
@@ -105,9 +100,8 @@ void OAuthApi::registerClient(const drogon::HttpRequestPtr& req, HttpCallback&& 
 
   const OAuthService::Registration registration =
       oauth_->registerClient(std::move(redirectUris), body->get("client_name", "").asString());
-  // Two refusals, two answers. A registration that is over the burst ceiling is OUR door being
-  // briefly shut, not the caller's metadata being wrong — so it says so, and says it loudly here,
-  // because the only symptom anyone else sees is that no new MCP client can connect.
+  // A registration over the burst ceiling is our door being briefly shut, not the caller's metadata
+  // being wrong, so it says so loudly — the only symptom elsewhere is that no new MCP client connects.
   if (registration.error == OAuthService::RegisterError::atCapacity) {
     LOG_ERROR << "oauth registration refused: " << registration.unattachedInWindow
               << " clients registered in the last hour have never completed an authorization — "
@@ -137,8 +131,7 @@ void OAuthApi::registerClient(const drogon::HttpRequestPtr& req, HttpCallback&& 
 }
 
 void OAuthApi::clientInfo(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // The consent screen fetches the registered client by id so it shows a verified name and
-  // redirect, never values a crafted consent link supplied.
+  // The consent screen fetches the registered client by id so it shows a verified name and redirect.
   std::optional<OAuthClient> client = oauth_->describeClient(req->getParameter("client_id"));
   if (!client) {
     cb(oauthError("invalid_client", "unknown client", drogon::k404NotFound));
@@ -182,8 +175,7 @@ void OAuthApi::authorize(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
 
-  // Validated: hand the browser to the frontend consent screen with the request. The
-  // decision endpoint re-validates client + redirect, so passing them through is safe.
+  // The decision endpoint re-validates client + redirect, so passing them through is safe.
   const std::string url = appBaseUrl_ + consentPath_ + "?client_id=" + enc(clientId) +
                           "&redirect_uri=" + enc(redirectUri) + "&code_challenge=" + enc(codeChallenge) +
                           "&code_challenge_method=S256&resource=" + enc(resource) + "&scope=" + enc(scope) +
@@ -251,8 +243,7 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   out["token_type"] = "Bearer";
   out["expires_in"] = static_cast<Json::Int64>(result.tokens->accessLifetimeMs / 1000);
   out["refresh_token"] = result.tokens->refreshToken;
-  // RFC 6749 §5.1: echo the scope the token actually carries. A client that asked for more than it
-  // got learns it here, at issue, instead of from a tool that silently never appears.
+  // RFC 6749 §5.1: echo the scope the token actually carries.
   out["scope"] = result.tokens->scope;
   auto response = jsonResponse(out);
   response->addHeader("Cache-Control", "no-store");  // token responses are never cached
@@ -260,7 +251,6 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // Settings §2 connected tools: the caller's grants, separate from their browser sessions.
   std::optional<UserId> caller = callerOf(req);
   if (!caller) {
     cb(oauthError("login_required", "sign in to see your connected tools", drogon::k401Unauthorized));
@@ -273,9 +263,7 @@ void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     row["name"] = grant.clientName;
     row["grantedMs"] = static_cast<Json::Int64>(grant.grantedMs);
     row["lastUsedMs"] = static_cast<Json::Int64>(grant.lastUsedMs);
-    // What this tool may do, in the wire spelling — '' is the account-wide grant, and the settings
-    // screen renders it as such. Consent is the only place a person is shown this; without it here,
-    // it is a thing they saw once and can never look up again.
+    // What this tool may do, in the wire spelling — '' is the account-wide grant.
     row["scope"] = grant.scope;
     list.append(row);
   }

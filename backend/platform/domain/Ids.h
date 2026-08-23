@@ -30,8 +30,8 @@ using UserId = Id<UserTag>;
 
 using Seq = std::uint64_t;
 
-// Hybrid logical clock stamp. Ordered by (physicalMs, counter, actor) — the default
-// spaceship compares members in that declaration order, which is exactly the HLC order.
+// Ordered by (physicalMs, counter, actor): the default spaceship compares members in declaration
+// order, which is the HLC order.
 struct Hlc {
   std::uint64_t physicalMs = 0;
   std::uint32_t counter = 0;
@@ -43,9 +43,8 @@ struct Hlc {
   bool isSet() const { return physicalMs != 0 || counter != 0 || !actor.empty(); }
 };
 
-// The canonical stamp text, shared by the op log, the subgraph wire, and the golden
-// corpus: "physicalMs:counter:actor". The actor keeps any ':' it contains (everything past
-// the second colon), and the unset sentinel round-trips as "0:0:".
+// "physicalMs:counter:actor". The actor keeps any ':' it contains, and the unset sentinel
+// round-trips as "0:0:".
 inline std::string toString(const Hlc& hlc) {
   return std::to_string(hlc.physicalMs) + ":" + std::to_string(hlc.counter) + ":" + hlc.actor;
 }
@@ -61,10 +60,8 @@ inline Hlc parseHlc(std::string_view text) {
   return hlc;
 }
 
-// One monotone hybrid logical clock per replica (a browser tab, the server, a device). It
-// mints strictly increasing stamps under a fixed actor and folds every remote stamp it
-// sees, so a write minted after observing a tombstone always dominates it — the receive
-// rule that keeps "keep more, lose less" true across replicas.
+// One per replica: mints strictly increasing stamps under a fixed actor and folds every remote
+// stamp it observes, so a write minted after seeing a tombstone dominates it.
 class HlcClock {
 public:
   explicit HlcClock(std::string actor) : actor_(std::move(actor)) {}

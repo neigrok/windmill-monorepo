@@ -14,8 +14,6 @@ std::string lower(std::string text) {
 }
 
 // Why a node matched, and so where it sits in the answer: the enum's own order IS the ranking.
-// An id match is the caller naming the node it already means; a description match is prose that
-// happens to mention the words, which is why the two cannot share a rank.
 enum class Relevance { exactId, idPrefix, label, idSubstring, description, unqueried, none };
 
 Relevance relevanceOf(const NodeSpec& node, const std::string& needle) {  // `needle` already lowered

@@ -12,10 +12,9 @@
 
 namespace wm {
 
-// A causal frontier: the greatest stamp seen from each actor. Two frontiers join by
-// pointwise max; `covers` asks whether a stamp is already accounted for. Keyed by actor
-// string, so distinct replicas (a tab, a device, the server) never alias — which is what
-// makes coverage a safe basis for anti-entropy deltas.
+// A causal frontier: the greatest stamp seen from each actor. Two frontiers join by pointwise max;
+// `covers` asks whether a stamp is already accounted for. Keyed by actor string, so distinct
+// replicas (a tab, a device, the server) never alias.
 struct VersionVector {
   std::map<std::string, Hlc> marks;
 
@@ -25,10 +24,9 @@ struct VersionVector {
   bool operator==(const VersionVector&) const = default;
 };
 
-// Why a subgraph is on the wire. `live` = one gesture, sent now; `flush` = a coalesced
-// offline session; `delta` = an anti-entropy payload computed against a stated vector, the
-// only intent that carries coverage; `graft` = state joined for its own sake (files,
-// imports, device handoff), never advancing coverage.
+// Why a subgraph is on the wire. `live` = one gesture, sent now; `flush` = a coalesced offline
+// session; `delta` = an anti-entropy payload computed against a stated vector, the only intent that
+// carries coverage; `graft` = state joined for its own sake, never advancing coverage.
 enum class SubgraphIntent { live, flush, delta, graft };
 
 // What a user did, carried alongside the writes it produced — for the activity feed,
@@ -40,10 +38,8 @@ struct Gesture {
   bool operator==(const Gesture&) const = default;
 };
 
-// The one envelope every sync scenario shares: a partial, stamped slice of a tree's
-// lattice. Absent sections/entries/fields mean "no information". `coverage` is present only
-// on a `delta` (§ anti-entropy); `title` is optional and unused until the title joins the
-// lattice.
+// The one envelope every sync scenario shares: a partial, stamped slice of a tree's lattice.
+// Absent sections/entries/fields mean "no information". `coverage` is present only on a `delta`.
 struct Subgraph {
   TreeId treeId;
   std::string frameId;

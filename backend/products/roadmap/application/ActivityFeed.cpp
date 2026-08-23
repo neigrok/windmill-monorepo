@@ -25,7 +25,7 @@ std::vector<ActivityEvent> activityFeed(const TreeData& current, const std::vect
   std::map<NodeId, const NodeSpec*> byId;
   for (const NodeSpec& node : current.nodes) byId.emplace(node.id, &node);
 
-  // Branch context (SPEC §9) is available only when the current graph is a clean tree.
+  // Branch context is available only when the current graph is a clean tree.
   std::optional<SkillTree> tree;
   try {
     tree.emplace(current);

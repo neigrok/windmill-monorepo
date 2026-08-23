@@ -7,9 +7,8 @@ AiFuse::AiFuse(long long ceilingNanos, long long windowMs)
 
 bool AiFuse::allows(long long atMs) const {
   std::lock_guard<std::mutex> guard{mutex_};
-  // Prune FIRST. Reading the running total without dropping what has aged out made this a latch:
-  // nothing but spent() pruned, and spent() only runs on a call this gate let through, so one bad
-  // hour disabled every seam permanently.
+  // Prune first: only spent() prunes otherwise, and it runs only on a call this gate let through,
+  // so a tripped fuse would never reopen.
   dropOlderThan(atMs - windowMs_);
   if (trailingNanos_ < ceilingNanos_) return true;
   tripped_ = true;

@@ -9,8 +9,6 @@
 using namespace wm::gym;
 
 namespace {
-// A valid working set every bounds test perturbs one field of — proving the rejection is about
-// that field, not an accident of the fixture.
 Set set(double weightKg, int reps, SetKind kind = SetKind::working,
         std::optional<double> rpe = std::nullopt, std::string note = "",
         std::string id = "set_00000001") {
@@ -31,8 +29,6 @@ Session openSession(std::uint64_t startedAtMs) {
   return Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, startedAtMs};
 }
 }
-
-// ---- codecs: strict on write, clamped on read ---------------------------------------------
 
 TEST(set_kind_round_trips_through_its_codec) {
   CHECK_EQ(toString(SetKind::warmup), std::string("warmup"));
@@ -84,8 +80,6 @@ TEST(equipment_parses_strictly_and_clamps_on_read) {
   CHECK(equipmentFromStored("cable") == Equipment::cable);
 }
 
-// ---- the one id-shape rule ----------------------------------------------------------------
-
 TEST(well_formed_id_is_8_to_64_url_safe_characters) {
   CHECK(wellFormedId("ses_0001"));                        // exactly 8
   CHECK(wellFormedId("set_a1B2-c3_d4"));
@@ -96,8 +90,6 @@ TEST(well_formed_id_is_8_to_64_url_safe_characters) {
   CHECK_FALSE(wellFormedId("ses:0001"));                  // colon
   CHECK_FALSE(wellFormedId(""));
 }
-
-// ---- Set construction: an invalid set cannot exist in memory ------------------------------
 
 TEST(set_construction_accepts_the_full_legal_range) {
   CHECK_EQ(set(82.5, 8).weightKg, 82.5);
@@ -149,8 +141,7 @@ TEST(session_construction_guards_the_id_shape_and_both_instants) {
   CHECK(rejects([] { Session{SessionId{"short"}, wm::UserId{"u1"}, 1}; }));
   CHECK(rejects([] { Session{SessionId{"ses_00000001"}, wm::UserId{""}, 1}; }));
   CHECK(rejects([] { Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, 0}; }));
-  // The instant band: a nanosecond-confused client wraps past what the store can hold, and the
-  // wrapped row is unreadable forever — so the refusal happens before it can become a row.
+  // The instant band: a nanosecond-confused client wraps past what the store can hold.
   CHECK(rejects([] { Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, kMaxInstantMs + 1}; }));
   CHECK(rejects([] {
     Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, 1'700'000'000'000, 0};
@@ -162,11 +153,6 @@ TEST(session_construction_guards_the_id_shape_and_both_instants) {
            kMaxInstantMs);
 }
 
-// ---- the equipment's default step ----------------------------------------------------------
-
-// The numbers the 64 seed rows were written with, in one place a created movement can read them
-// from: a lifter who adds a barbell lift gets the smallest plate pair without being asked, and the
-// client never carries a copy of this table to keep in step.
 TEST(default_step_is_the_equipments_own) {
   CHECK_EQ(defaultStepKg(Equipment::barbell), 2.5);
   CHECK_EQ(defaultStepKg(Equipment::dumbbell), 2.0);
@@ -175,8 +161,6 @@ TEST(default_step_is_the_equipments_own) {
   CHECK_EQ(defaultStepKg(Equipment::bodyweight), 2.5);
   CHECK_EQ(defaultStepKg(Equipment::kettlebell), 4.0);
 }
-
-// ---- Exercise construction: the catalog row -----------------------------------------------
 
 TEST(exercise_construction_guards_the_name_and_the_step) {
   Exercise created{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell,
@@ -189,13 +173,9 @@ TEST(exercise_construction_guards_the_name_and_the_step) {
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 2.5, true};
   }));
-  // A name of nothing but blanks is the empty one in disguise: it used to store, and then rendered
-  // as a movement with no name in its own header, the picker and every log row it appeared on.
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "   ", Pattern::squat, Equipment::barbell, 2.5, true};
   }));
-  // And an ordinary name keeps its middle and loses its ends, so " Bench Press " and "Bench Press"
-  // are one movement in the picker rather than two rows a lifter has to tell apart.
   CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, "\t Front Squat \n", Pattern::squat,
                     Equipment::barbell, 2.5, true)
                .name,
@@ -203,22 +183,17 @@ TEST(exercise_construction_guards_the_name_and_the_step) {
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 0, true};
   }));
-  // Postgres text stops at a NUL and would keep the head of the name as the whole of it — the rule
-  // the set note has always lived under, reaching the display name now that a lifter can create one.
+  // Postgres text stops at a NUL and would keep the head of the name as the whole of it.
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, std::string("Zercher\0Squat", 13), Pattern::squat,
              Equipment::barbell, 2.5, true};
   }));
-  // The 64 seeded slugs are the schema's own and are shorter than any minted id may be, so the
-  // catalog row does NOT carry the one id-shape rule — the wire applies it to a created movement.
+  // The 64 seeded slugs are shorter than a minted id, so a catalog row is not held to the id shape.
   CHECK_EQ(Exercise(ExerciseId{"dip"}, "Dip", Pattern::press, Equipment::bodyweight, 2.5, false).id,
            ExerciseId{"dip"});
 }
 
-// step_kg is numeric(4,2) and both of its ends are the domain's to refuse. Above the ceiling the
-// column raises a numeric overflow that leaves as a 500 — the status the ladder calls retryable, so
-// a flush queue would resend an unstorable body forever — and below 0.01 the value rounds to 0.00,
-// which the next read of that row refuses as a step that is not positive.
+// step_kg is numeric(4,2): above the ceiling the column overflows, below 0.01 it rounds to 0.00.
 TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   const auto stepOf = [](double stepKg) {
     return Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat, Equipment::barbell,
@@ -246,9 +221,6 @@ TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   }));
 }
 
-// The catalog read hands back every movement this account can see on every open of the picker, so
-// an unbounded display name is one that ships on the product's most-fired read forever. Eighty is
-// the ceiling a routine's name already lives under, and they are the same kind of string.
 TEST(exercise_name_is_capped_at_the_same_eighty_a_routine_name_is) {
   CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, std::string(kMaxNameLength, 'x'), Pattern::squat,
                     Equipment::barbell, 2.5, true)
@@ -263,8 +235,6 @@ TEST(exercise_name_is_capped_at_the_same_eighty_a_routine_name_is) {
              Equipment::barbell, 2.5, true};
   }));
 }
-
-// ---- autoCloseAt: every branch ------------------------------------------------------------
 
 TEST(auto_close_leaves_a_finished_session_alone) {
   Session session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, 1'000, 2'000};
@@ -294,8 +264,6 @@ TEST(auto_close_with_sets_closes_at_the_last_set_not_at_notice_time) {
            std::optional<std::uint64_t>(lastSetAt));   // ended at the rep, not the read
 }
 
-// ---- canFinishAt: the explicit end, clock-free -------------------------------------------
-
 TEST(can_finish_at_any_instant_from_the_start_onward) {
   Session session = openSession(1'700'000'000'000);
   CHECK(canFinishAt(session, 1'700'000'000'000));            // a session with one rep in it
@@ -312,9 +280,6 @@ TEST(can_finish_at_refuses_zero_the_ceiling_and_ending_before_beginning) {
   CHECK_FALSE(canFinishAt(session, 18'446'744'073'709'551'615ull));
 }
 
-// A start may sit anywhere in the past — a basement's set carries the instant it happened — and
-// up to five minutes past the log's now, which is the skew an honest clock is allowed. Past that
-// it is a workout in the future, and the trap the header describes.
 TEST(can_start_at_the_past_now_and_an_honest_clocks_skew) {
   const std::uint64_t now = 1'700'000'000'000;
   CHECK(canStartAt(1'600'000'000'000, now));                 // long ago
@@ -328,9 +293,7 @@ TEST(can_start_at_refuses_a_start_past_the_clocks_allowance) {
   CHECK_FALSE(canStartAt(now + 24ull * 60 * 60 * 1000, now)); // "tomorrow"
 }
 
-// A set continues a STALE-closed workout when it sits within four hours of the close — which is
-// that workout's last landed activity — and never continues one the lifter finished by hand, and
-// never one closed before the log kept who closed it (absent reads as finish).
+// A set lands in a STALE close within four hours of it; an absent closedBy reads as a finish.
 TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
   const std::uint64_t t = 1'700'000'000'000;
   Session stale = openSession(t);
@@ -350,9 +313,6 @@ TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
   CHECK_FALSE(lateSetLands(openSession(t), t + 1));                   // open: nothing to continue
 }
 
-// A finish onto a stale close: within four hours of the last activity the lifter's instant is
-// believed (never earlier than the activity that stands); later than that the workout ended at its
-// last activity and only the word changes.
 TEST(finish_after_a_stale_close_is_believed_only_inside_the_window) {
   const std::uint64_t t = 1'700'000'000'000;
   Session stale = openSession(t);
@@ -363,8 +323,6 @@ TEST(finish_after_a_stale_close_is_believed_only_inside_the_window) {
   CHECK_EQ(finishAfterStaleClose(stale, t + 600'000 + kAutoCloseMs + 1), t + 600'000); // five hours on: the last set stands
   CHECK_EQ(finishAfterStaleClose(stale, t + 60'000), t + 600'000);                    // earlier than the set that stands
 }
-
-// ---- corrected: the fix, and what a fix may not reach ---------------------------------------
 
 TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {
   const Set stored = set(82.5, 8, SetKind::working, 8.5, "felt heavy");
@@ -399,8 +357,7 @@ TEST(a_fix_replaces_only_the_fields_it_names) {
   CHECK_EQ(corrected(stored, everything), set(47.5, 5, SetKind::drop, 8.5, "back-off"));
 }
 
-// rpe is the one value a fix can also remove, so it takes two fields: unnamed keeps what is stored,
-// named-and-empty clears it, named-with-a-value replaces it.
+// rpe takes two fields: unnamed keeps what is stored, named-and-empty clears it.
 TEST(a_fix_clears_an_rpe_only_when_it_names_it) {
   const Set stored = set(82.5, 8, SetKind::working, 8.5);
 
@@ -417,8 +374,6 @@ TEST(a_fix_clears_an_rpe_only_when_it_names_it) {
   CHECK_EQ(corrected(stored, replaced).rpe, std::optional<double>(9.5));
 }
 
-// The caption of the whole screen, at the one layer that could break it: the movement, the instant,
-// the number and the session a set was lived in are carried through, whatever a fix says.
 TEST(a_fix_never_moves_the_identity_the_log_is_ordered_by) {
   const Set stored{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 3,
                    82.5, 8, SetKind::working, std::nullopt, "", 1'700'000'000'000};
@@ -439,8 +394,6 @@ TEST(a_fix_never_moves_the_identity_the_log_is_ordered_by) {
   CHECK(fixed.kind == SetKind::failure);
 }
 
-// The correction is a CONSTRUCTION, so every bound a logged set is held to holds here too — and it
-// is refused before the store is ever offered the row, which is the whole reason the rule is pure.
 TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
   const Set stored = set(82.5, 8);
 
@@ -470,8 +423,6 @@ TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
     fix.note = std::string("x") + '\0' + "y";
     corrected(stored, fix);
   }));
-  // Bytes that are not UTF-8, which the column refuses mid-transaction where the answer would be a
-  // retryable 500 on a body that can never land. Refused here, terminally, as a 400.
   CHECK(rejects([&] {
     SetFix fix;
     fix.note = "ok \xED\xA0\x80 bad";
@@ -479,38 +430,28 @@ TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
   }));
 }
 
-// WHAT A `text` COLUMN CAN ACTUALLY HOLD, and it is one rule for every piece of free text this
-// product accepts — a set's note, a movement's name, a routine's name. Postgres stores UTF-8 and
-// refuses anything else as it takes the parameter, so a string that fails here is a string no retry
-// can ever land: the domain owes it a 400 rather than the house 500 that the wire calls retryable.
-// A NUL belongs to the same rule with a quieter failure — `text` stops at one, and the head of a
-// lifter's words would store as if it were the whole of them.
+// One rule for every piece of free text: Postgres takes only UTF-8, and `text` stops at a NUL.
 TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
   CHECK(storableText(""));
   CHECK(storableText("felt heavy"));
-  // Every width the encoding has, and each is ordinary content: an accent, Cyrillic, a CJK glyph and
-  // an emoji off the astral plane.
   CHECK(storableText("Bänkpress · Присед · 懸垂 · 💪"));
   CHECK_FALSE(storableText(std::string("head\0tail", 9)));
   // A continuation byte with no lead, and a lead with no continuations.
   CHECK_FALSE(storableText("\x80"));
   CHECK_FALSE(storableText("\xC3"));
-  // The overlong forms — the same code points spelled in more bytes than they need, which is how a
-  // NUL or a '/' sneaks past a validator that only reads the decoded text.
+  // The overlong forms — a code point spelled in more bytes than it needs.
   CHECK_FALSE(storableText("\xC0\x80"));
   CHECK_FALSE(storableText("\xE0\x80\xAF"));
   CHECK_FALSE(storableText("\xF0\x80\x80\xAF"));
-  // A surrogate half is not a character; UTF-8 has no encoding for one and Postgres takes neither.
+  // A surrogate half is not a character.
   CHECK_FALSE(storableText("\xED\xA0\x80"));
   CHECK_FALSE(storableText("\xED\xBF\xBF"));
   // Past the last plane, U+10FFFF.
   CHECK_FALSE(storableText("\xF4\x90\x80\x80"));
   CHECK_FALSE(storableText("\xF5\x80\x80\x80"));
-  // Truncated at the end of the string, which is what a byte-sliced note arrives as.
+  // Truncated at the end of the string.
   CHECK_FALSE(storableText("ok \xF0\x9F\x92"));
 
-  // And it is the rule the three entities that hold free text are built on, not a predicate sitting
-  // beside them: each refuses the same bytes at construction.
   CHECK(rejects([] {
     Set{SetId{"set_11111111"}, SessionId{"ses_11111111"}, ExerciseId{"bench-press"}, 1, 82.5, 8,
         SetKind::working, std::nullopt, "\xED\xA0\x80", 1'700'000'000'000};

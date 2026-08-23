@@ -34,23 +34,21 @@ struct LegendState {
   bool operator==(const LegendState&) const = default;
 };
 
-// The ordered legend of one tree, kept under the same CRDT discipline as LooseGraph: an
-// add-biased element-set of kinds, each field a last-writer-wins register. Kinds sort by
-// `rank` (then id) — legend order is generation priority (§F6). Every mutation is an
-// unconditional LWW merge; validity (hue uniqueness, ≤6, in-use removal, length caps) is
-// enforced at the edge by validate(), never in here — exactly as the graph is.
+// The ordered legend of one tree, kept under the same CRDT discipline as LooseGraph: an add-biased
+// element-set of kinds, each field a last-writer-wins register. Kinds sort by `rank` (then id), and
+// legend order is generation priority. Every mutation is an unconditional LWW merge; validity (hue
+// uniqueness, ≤6, in-use removal, length caps) is enforced at the edge by validate(), never here.
 class Legend {
 public:
   Legend() = default;
   explicit Legend(const LegendState& state);
   Legend(const std::vector<Kind>& kinds, const Hlc& at);
 
-  // Fold a partial legend state in, under the same element-set + LWW discipline as
-  // LooseGraph::join. The legend converges by the same lattice laws the graph does.
+  // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join.
   void join(const LegendState& state);
 
-  // Build's terracotta, Learn's olive, Milestone's gold — the three a new tree is born
-  // with, in that order (§F6). Never all six.
+  // Build's terracotta, Learn's olive, Milestone's gold — the three a new tree is born with, in
+  // that order. Never all six.
   static Legend seededDefaults(const Hlc& at);
 
   void addKind(const KindId& id, NodeColor hue, const Hlc& at);

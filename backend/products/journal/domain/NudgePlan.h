@@ -8,20 +8,16 @@
 namespace wm {
 
 // The daily nudge decision — a pure, first-match-wins gate pipeline with nothing to reach a clock,
-// a database or a mailer. It mirrors roadmap's Reminders::decide, adapted to Journal: the slot time
-// is the DEVICE's (materialised into slotInstantMs; the server never learns the rhythm), and the
-// only facts are "did they already write today?" and "are they paused right now?". Note what is
-// ABSENT: there is no lapsed/streak branch — the engine never nudges about a gap (canon §7), and
-// the mail is one fixed line, so a decision to send carries no copy to get wrong.
+// a database or a mailer. The slot time is the DEVICE's (materialised into slotInstantMs; the
+// server never learns the rhythm). There is no lapsed/streak branch, and the mail is one fixed
+// line, so a decision to send carries no copy to get wrong.
 
 enum class NudgeOutcome { send, skip };
-// Named NudgeSkipReason, not SkipReason: roadmap's Reminders.h has its own wm::SkipReason, and the
-// composition root (main.cpp) includes both this header and Reminders.h, so the two enums would
-// collide there without the distinct name.
+// Named NudgeSkipReason, not SkipReason: roadmap's Reminders.h declares its own wm::SkipReason and
+// main.cpp includes both headers.
 enum class NudgeSkipReason { none, alreadyWrote, paused, tooLate };
 
-// How late, past the device's chosen instant, we stop bothering: a nudge that missed its moment by
-// this much is silence, not a late knock. (Six hours, the reminder engine's tooLate bound.)
+// How late, past the device's chosen instant, we stop bothering: six hours.
 constexpr std::uint64_t kNudgeTooLateMs = 6ULL * 60 * 60 * 1000;
 
 struct NudgeCandidate {
@@ -38,7 +34,7 @@ struct NudgeDecision {
   NudgeSkipReason reason;
 };
 
-// Gates in order: paused → tooLate → alreadyWrote → else send. Never congratulates, never scolds.
+// Gates in order: paused -> tooLate -> alreadyWrote -> else send.
 NudgeDecision decide(const NudgeCandidate& candidate);
 
 }

@@ -6,15 +6,13 @@ namespace wm {
 
 namespace {
 
-// Every window below is a "how long since", and every stamp can in principle arrive from the
-// future (a clock that stepped back, a hand-written asOf). Unsigned subtraction would wrap that
-// into an eternity, so a stamp ahead of now simply reads as no time passed at all.
+// A stamp ahead of `now` reads as no time passed at all: unsigned subtraction would wrap it into
+// an eternity.
 std::uint64_t elapsed(std::uint64_t nowMs, std::uint64_t sinceMs) {
   return nowMs > sinceMs ? nowMs - sinceMs : 0;
 }
 
-// A withheld week still carries the one number that makes the ledger worth reading: how much was
-// waiting for the person we chose not to write to.
+// A withheld week still carries how much was waiting for the person we chose not to write to.
 ReminderDecision skipped(SkipReason reason, int readyCount) {
   ReminderDecision decision;
   decision.outcome = ReminderOutcome::skip;
@@ -23,9 +21,8 @@ ReminderDecision skipped(SkipReason reason, int readyCount) {
   return decision;
 }
 
-// The featured tree is the one the person was working in most recently, among those that
-// actually have something ready — so the LATEST sorts greatest. Ties fall to the smaller id so
-// the choice never wobbles between two sweeps of the same unchanged account.
+// The featured tree is the one worked in most recently, among those that have something ready, so
+// the LATEST sorts greatest. Ties fall to the smaller id so the choice never wobbles.
 bool earlier(const TreeReadiness* a, const TreeReadiness* b) {
   if (a->lastActivityAtMs != b->lastActivityAtMs) return a->lastActivityAtMs < b->lastActivityAtMs;
   return b->id < a->id;
@@ -34,8 +31,8 @@ bool earlier(const TreeReadiness* a, const TreeReadiness* b) {
 }
 
 ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs) {
-  // First, what is actually waiting. Counted BEFORE any gate, because the ledger's sharpest
-  // question is about the people we held back despite having something to tell them.
+  // First, what is actually waiting. Counted BEFORE any gate, so the ledger records it even for a
+  // week we held back.
   std::vector<const TreeReadiness*> waiting;
   for (const TreeReadiness& tree : candidate.trees)
     if (!tree.ready.empty()) waiting.push_back(&tree);
@@ -45,8 +42,8 @@ ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs)
 
   // Then the gates, first match wins.
   //
-  // The box was down through the slot and is only now catching up. Serving a stale slot would
-  // mail everyone at whatever hour the process came back, so the week is abandoned instead.
+  // The box was down through the slot and is only now catching up. Serving a stale slot would mail
+  // everyone at whatever hour the process came back, so the week is abandoned instead.
   if (elapsed(nowMs, candidate.slotInstantMs) > kMaxLatenessMs)
     return skipped(SkipReason::tooLate, readyCount);
   // Someone who has been here this week already knows what is waiting.
@@ -59,7 +56,6 @@ ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs)
   // The footer's promise, enforced: no ready step anywhere means no mail this week.
   if (!featured) return skipped(SkipReason::noReadySteps, 0);
 
-  // And finally the mail itself.
   ReminderDecision decision;
   decision.outcome = ReminderOutcome::send;
   decision.reason = SkipReason::none;
@@ -86,8 +82,7 @@ const char* skipReasonName(SkipReason reason) {
   return "ok";
 }
 
-// The server owns every plural: the templates have no logic, so "1 steps are ready" is a bug only
-// this file can prevent.
+// The server owns every plural: the templates have no logic.
 std::string readyPhrase(int readySteps) {
   return std::to_string(readySteps) + (readySteps == 1 ? " step" : " steps");
 }
@@ -98,8 +93,7 @@ std::string remainderPhrase(int readySteps) {
   return "…and " + std::to_string(remaining) + " more on this tree";
 }
 
-// The unit is named out loud. The old wording counted TREES and read as steps, which is the one
-// way a quiet line at the bottom of an email can be actively misleading.
+// The unit is named out loud: this counts TREES, not steps.
 std::string otherTreesPhrase(int otherReadyTrees) {
   if (otherReadyTrees <= 0) return "";
   if (otherReadyTrees == 1) return "1 other tree has steps ready";

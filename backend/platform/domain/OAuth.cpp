@@ -14,11 +14,8 @@ std::string originOf(const std::string& canonical) {
   return slash == std::string::npos ? canonical : canonical.substr(0, slash);
 }
 
-// A redirect URI split the way a URL parser splits it. Nothing downstream is allowed to guess
-// where the host ends, because guessing is precisely what OAUTH-1 was: a uri whose authority
-// carries userinfo ("http://127.0.0.1:80@evil.com/cb") points at evil.com in every browser and
-// pointed at 127.0.0.1 here. So a uri that a parser would read differently than a plain scan does
-// is not canonicalized — it is refused, and never becomes a RedirectUri.
+// A redirect URI split the way a URL parser splits it. Nothing downstream may guess where the host
+// ends: a uri a parser would read differently is refused, never canonicalized.
 struct RedirectUri {
   std::string scheme;  // lowercased: "http" or "https"
   std::string host;    // lowercased, no port; an IPv6 literal keeps its brackets
@@ -38,12 +35,9 @@ std::string lowered(const std::string& value) {
 }
 
 std::optional<RedirectUri> parseRedirect(const std::string& uri) {
-  // The whole string first, before anything is split off it. The authority was already checked byte
-  // by byte, but `rest` was copied verbatim — and /oauth/authorize splices a registered redirect
-  // into a `Location:` header, so a registered CR or LF was HTTP response splitting on the API
-  // origin (a header of the attacker's choosing, and a body after it). A control character or a
-  // bare space is not in any URI anyway (RFC 3986 §2), so this is one rule for every field at once
-  // rather than a character class per part.
+  // Check the whole string before splitting: a registered redirect is spliced into a `Location:`
+  // header, so a CR or LF anywhere in it is HTTP response splitting. No control character or bare
+  // space belongs in any URI (RFC 3986 §2).
   for (char c : uri)
     if (static_cast<unsigned char>(c) <= 0x20 || static_cast<unsigned char>(c) == 0x7f) return std::nullopt;
 
@@ -59,10 +53,9 @@ std::optional<RedirectUri> parseRedirect(const std::string& uri) {
       uri.substr(authorityStart, authorityEnd == std::string::npos ? std::string::npos : authorityEnd - authorityStart);
   parsed.rest = authorityEnd == std::string::npos ? "" : uri.substr(authorityEnd);
   if (authority.empty()) return std::nullopt;
-  // Userinfo is the trick itself: everything before an '@' is a credential, not a host.
+  // Userinfo: everything before an '@' is a credential, not a host.
   if (authority.find('@') != std::string::npos) return std::nullopt;
-  // A fragment can never be part of a redirect URI (RFC 6749 §3.1.2), and one here would also mean
-  // the authority we just read is not the one the browser will use.
+  // A fragment can never be part of a redirect URI (RFC 6749 §3.1.2).
   if (parsed.rest.find('#') != std::string::npos) return std::nullopt;
 
   std::string hostPart = authority;
@@ -86,7 +79,7 @@ std::optional<RedirectUri> parseRedirect(const std::string& uri) {
     if (colon != std::string::npos) {
       hostPart = authority.substr(0, colon);
       portPart = authority.substr(colon + 1);
-      // A second colon means the authority is not what it looks like — refuse rather than pick one.
+      // A second colon means the authority is not what it looks like.
       if (portPart.find(':') != std::string::npos) return std::nullopt;
     }
     if (hostPart.empty()) return std::nullopt;
@@ -100,19 +93,17 @@ std::optional<RedirectUri> parseRedirect(const std::string& uri) {
 
   parsed.host = lowered(hostPart);
   parsed.port = portPart;
-  // EXACTLY these three hosts, never a prefix: "localhost.evil.com" is a public cleartext host that
-  // a prefix test called loopback, and registered.
+  // Exactly these three hosts, never a prefix: "localhost.evil.com" is a public cleartext host.
   parsed.loopback = parsed.scheme == "http" &&
                     (parsed.host == "localhost" || parsed.host == "127.0.0.1" || parsed.host == "[::1]");
   return parsed;
 }
 
-// https, or loopback http — the only two a redirect may ever be (OAuth 2.1 §1.5), asked of a
-// parsed uri so the question is about the real host and not about a prefix of the string.
+// https or loopback http, the only two a redirect may be (OAuth 2.1 §1.5), asked of a parsed uri.
 bool allowedTarget(const RedirectUri& uri) { return uri.scheme == "https" || uri.loopback; }
 
-// Same target, by the only rule that is safe to state once: scheme, host and path/query match
-// exactly, and the port may differ only when both sides are loopback (RFC 8252 §7.3).
+// Scheme, host and path/query match exactly; the port may differ only when both sides are
+// loopback (RFC 8252 §7.3).
 bool sameTarget(const RedirectUri& request, const RedirectUri& registered) {
   if (request.scheme != registered.scheme) return false;
   if (request.host != registered.host) return false;
@@ -123,9 +114,7 @@ bool sameTarget(const RedirectUri& request, const RedirectUri& registered) {
 }
 
 bool redirectRegistered(const std::vector<std::string>& registered, const std::string& uri) {
-  // Parse first, and let an unparseable or non-allowed uri fail here rather than in a string
-  // compare: a request uri is attacker-supplied and a registered one is only as good as the day it
-  // was registered, so both sides go through the same door.
+  // Both sides go through the same parse: a registered uri is no more trusted than a presented one.
   const std::optional<RedirectUri> request = parseRedirect(uri);
   if (!request || !allowedTarget(*request)) return false;
   for (const std::string& candidate : registered) {

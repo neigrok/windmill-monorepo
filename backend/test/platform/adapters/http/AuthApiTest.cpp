@@ -10,22 +10,6 @@
 #include <string>
 #include <vector>
 
-// The account perimeter's HTTP edge. AuthServiceTest pins the lifecycle underneath; this file is
-// about the two things only the edge decides, and both are the kind of defect that ships silently:
-//
-//   · WHICH refusal. A caller with no session is 401 everywhere. A caller WITH a session asking
-//     about a row that is not theirs is 404 — never 403 — because a 403 would confirm the row
-//     exists and turn the sessions endpoint into an oracle for other accounts' session ids. The
-//     link and account doors add 410 (spent link) and 409 (a conflict the client must branch on),
-//     and those four are the whole vocabulary.
-//   · The COOKIE, whose attributes are the session's actual security. HttpOnly keeps script off it,
-//     SameSite=Lax is what lets the OAuth callback's top-level navigation carry it back, Secure is
-//     set only where TLS exists, and the clear must repeat every flag or the browser keeps a
-//     second cookie beside the expired one and the user stays signed in after signing out.
-//
-// The Google/Apple exchange itself is not reachable here: GoogleOAuthClient and AppleOAuthClient are
-// concrete classes with no port behind them, so a configured client would make a live HTTPS call.
-// What IS reachable — and is where the CSRF lives — is everything before the exchange.
 using namespace wm;
 using namespace wm::fake;
 
@@ -34,8 +18,6 @@ namespace {
 const std::string kApp = "https://windmill.works";
 const std::string kDomain = ".windmill.works";
 
-// A fork source the platform can describe but knows nothing about, so the fork branches are driven
-// without any product in the test's link graph.
 struct FakeSignupFork : SignupFork {
   std::optional<ForkDescription> description;
   std::optional<std::string> planted;
@@ -62,8 +44,6 @@ struct Harness {
   std::shared_ptr<GoogleOAuthClient> google;
   std::shared_ptr<AuthApi> api;
 
-  // secure + a cookie domain are how production runs, so that is what the cookie cases assert
-  // against; the plain constructor covers a local http origin.
   explicit Harness(bool secure = true, std::string domain = kDomain,
                    std::shared_ptr<GoogleOAuthClient> googleClient = nullptr)
       : google(std::move(googleClient)),
@@ -76,7 +56,6 @@ struct Harness {
     return user.id;
   }
 
-  // A live magic link for `address`, as the mail would have carried it.
   std::string linkFor(const std::string& address, const std::string& forkSource = "") {
     std::string secret;
     auth->requestLink(address, forkSource, fork->description, "",
@@ -84,7 +63,6 @@ struct Harness {
     return secret.substr(secret.rfind('=') + 1);
   }
 
-  // A live 6-digit code for `address`, as the app-door mail would have carried it.
   std::string codeFor(const std::string& address) {
     auth->requestLink(address, "", std::nullopt, "app", [](AuthService::RequestResult) {});
     return email.sent.back().code;
@@ -108,8 +86,6 @@ bool hasCookie(const drogon::HttpResponsePtr& response, const std::string& name)
   return response->cookies().find(name) != response->cookies().end();
 }
 
-// Every attribute the session cookie is set with, asserted together — a cookie that lost one of
-// these still works, which is exactly why nothing else would notice.
 void checkSessionCookie(const drogon::Cookie& cookie, bool secure, const std::string& domain,
                         int maxAge) {
   CHECK(cookie.isHttpOnly());
@@ -138,11 +114,9 @@ const std::string kVerified = R"({"token":")";
 
 }
 
-// Every account endpoint answers the same 401 to a caller with no session — one door, one refusal,
-// so a client never has to learn which route means "sign in" in which shape.
 TEST(auth_every_account_endpoint_refuses_a_caller_with_no_session) {
   Harness h;
-  h.signIn("s-live");  // an account exists; this caller is simply not it
+  h.signIn("s-live");
 
   CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me"))->getStatusCode(),
            drogon::k401Unauthorized);
@@ -161,15 +135,11 @@ TEST(auth_every_account_endpoint_refuses_a_caller_with_no_session) {
            drogon::k401Unauthorized);
   CHECK_EQ(revoke(h, "", "sess1")->getStatusCode(), drogon::k401Unauthorized);
 
-  // A session secret that resolves to nothing is the same refusal as none at all.
   CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-forged"))->getStatusCode(),
            drogon::k401Unauthorized);
-  // And nothing was written on the way.
   CHECK_EQ(h.authRepo.sessions.size(), std::size_t{1});
 }
 
-// /v1/me is the one 401 with no sentence in it: the browser calls it on every load to find out
-// whether anyone is signed in, and "nobody" is an answer rather than an error to render.
 TEST(auth_the_identity_probe_refuses_with_an_empty_body_and_every_other_route_explains_itself) {
   Harness h;
 
@@ -193,10 +163,6 @@ TEST(auth_the_identity_probe_refuses_with_an_empty_body_and_every_other_route_ex
            std::string("sign in to revoke a device"));
 }
 
-// The split the ledger is about. A signed-in caller naming a session id is answered 404 when the id
-// is unknown AND when it belongs to somebody else — identically. A 403 for the second would make
-// this endpoint answer "that id exists, just not for you", which is an oracle for anyone who can
-// guess or harvest an id.
 TEST(auth_a_session_id_that_is_not_yours_is_a_404_and_never_a_403) {
   Harness h;
   const UserId mine = h.signIn("s-mine", "sam@example.com");
@@ -210,17 +176,13 @@ TEST(auth_a_session_id_that_is_not_yours_is_a_404_and_never_a_403) {
   const drogon::HttpResponsePtr foreign = revoke(h, "s-mine", theirId);
   CHECK_EQ(foreign->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ((*foreign->getJsonObject())["error"].asString(), std::string("no such session"));
-  CHECK_EQ(std::string(foreign->getBody()), std::string(unknown->getBody()));  // byte-identical
+  CHECK_EQ(std::string(foreign->getBody()), std::string(unknown->getBody()));
 
-  // And the other account's session is untouched — a 404 that had revoked it would be worse still.
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-theirs")), std::size_t{1});
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-mine")), std::size_t{1});
   CHECK_EQ(h.authRepo.listSessions(mine).size(), std::size_t{1});
 }
 
-// The other refusals in the vocabulary, each a status the client branches on rather than a sentence
-// it parses: a spent or unknown link is 410 (it is gone, not malformed), and a link door refused
-// because the caller's account holds data is 409 with the code that names why.
 TEST(auth_a_spent_link_is_gone_and_a_non_empty_account_is_a_conflict) {
   Harness h;
   const std::string token = h.linkFor("sam@example.com");
@@ -236,14 +198,12 @@ TEST(auth_a_spent_link_is_gone_and_a_non_empty_account_is_a_conflict) {
   CHECK_EQ(gone["error"].asString(), std::string("That link has expired"));
   CHECK_EQ(gone["detail"].asString(), std::string("Links work once and last 15 minutes."));
   CHECK_EQ(gone["code"].asString(), std::string("expired"));
-  CHECK_FALSE(hasCookie(replay, "wm_session"));  // a refusal mints nothing
+  CHECK_FALSE(hasCookie(replay, "wm_session"));
 
-  // A token that never existed is the same 410 — never a 404 that would say which tokens are real.
   CHECK_EQ(call(h, &AuthApi::verify,
                 request(drogon::Post, "/v1/auth/verify", R"({"token":"never-minted"})"))
                ->getStatusCode(),
            drogon::k410Gone);
-  // No token at all is a 400: the request is malformed, not the link.
   CHECK_EQ(call(h, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", "{}"))
                ->getStatusCode(),
            drogon::k400BadRequest);
@@ -251,8 +211,6 @@ TEST(auth_a_spent_link_is_gone_and_a_non_empty_account_is_a_conflict) {
                ->getStatusCode(),
            drogon::k400BadRequest);
 
-  // The link door on an account that holds something of its own: 409, and the code the client
-  // branches on to say so rather than reading the sentence.
   const UserId caller = h.signIn("s-live", "ada@example.com");
   h.footprint.withData.insert(caller.str());
   const std::string second = h.linkFor("sam@example.com");
@@ -271,9 +229,6 @@ TEST(auth_the_link_door_refuses_a_request_carrying_no_token_before_it_spends_any
   CHECK_EQ((*response->getJsonObject())["error"].asString(), std::string("missing token"));
 }
 
-// The session cookie's whole security, in one place. Nothing else in the codebase asserts these,
-// and every one of them is invisible when wrong: without HttpOnly any injected script reads the
-// session; without SameSite the cookie rides a cross-site POST; without Secure it rides plain http.
 TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   Harness h;
   const std::string token = h.linkFor("sam@example.com");
@@ -287,14 +242,11 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   CHECK(!cookie.getValue().empty());
   checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days
 
-  // The cookie's value is the live session: it authenticates on the very next request.
   const drogon::HttpResponsePtr me =
       call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", cookie.getValue()));
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 
-  // A local http origin drops Secure and the domain, and keeps everything else — a Secure cookie on
-  // http is simply never stored, which is a dev environment that cannot sign in at all.
   Harness local(false, "");
   const std::string localToken = local.linkFor("sam@example.com");
   const drogon::HttpResponsePtr insecure = call(
@@ -304,9 +256,6 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   checkSessionCookie(insecure->getCookie("wm_session"), false, "", 7776000);
 }
 
-// The clear has to repeat every attribute the set used. A browser keys a cookie on
-// (name, domain, path), so an expiry that forgets the domain writes a SECOND cookie and leaves the
-// original standing — the user is told they signed out and is still signed in.
 TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   Harness h;
   h.signIn("s-live");
@@ -318,12 +267,10 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   CHECK_EQ(response->getCookie("wm_session").getValue(), std::string(""));
   checkSessionCookie(response->getCookie("wm_session"), true, kDomain, 0);
 
-  CHECK(h.authRepo.sessions.empty());  // and the row is gone, not merely the cookie
+  CHECK(h.authRepo.sessions.empty());
   CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-live"))->getStatusCode(),
            drogon::k401Unauthorized);
 
-  // Signing out with no session at all is still a clean 204 that clears the cookie — a browser
-  // holding a dead secret must be able to drop it without a refusal to handle.
   const drogon::HttpResponsePtr anonymous =
       call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout"));
   CHECK_EQ(anonymous->getStatusCode(), drogon::k204NoContent);
@@ -332,8 +279,6 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   checkSessionCookie(anonymous->getCookie("wm_session"), true, kDomain, 0);
 }
 
-// Closing an account clears this device's cookie too, because the close already dropped every
-// session row — leaving the cookie would show the browser a signed-in shell over a dead session.
 TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_ends) {
   Harness h;
   h.signIn("s-live");
@@ -353,8 +298,6 @@ TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_en
   CHECK(h.authRepo.sessions.empty());
 }
 
-// Revoking a device is 204 either way, and only the caller's OWN revocation touches the cookie —
-// clearing it on every revoke would sign the user out of the very tab they are managing devices in.
 TEST(auth_only_revoking_your_own_session_clears_your_own_cookie) {
   Harness h;
   const UserId mine = h.signIn("s-mine", "sam@example.com");
@@ -377,7 +320,6 @@ TEST(auth_only_revoking_your_own_session_clears_your_own_cookie) {
   CHECK(h.authRepo.sessions.empty());
 }
 
-// "Sign out everywhere" keeps the caller signed in, so the cookie is deliberately left alone.
 TEST(auth_signing_out_everywhere_leaves_this_device_s_cookie_standing) {
   Harness h;
   const UserId mine = h.signIn("s-mine", "sam@example.com");
@@ -392,8 +334,6 @@ TEST(auth_signing_out_everywhere_leaves_this_device_s_cookie_standing) {
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-phone")), std::size_t{0});
 }
 
-// The §5 device list is the caller's own, with their current session flagged — the flag is what the
-// UI needs to not offer "sign out this device" as if it were a remote one.
 TEST(auth_the_device_list_is_the_caller_s_own_with_this_device_flagged) {
   Harness h;
   const UserId mine = h.signIn("s-mine", "sam@example.com");
@@ -416,9 +356,6 @@ TEST(auth_the_device_list_is_the_caller_s_own_with_this_device_flagged) {
   CHECK_EQ(current, 1);
 }
 
-// A Bearer token is the same credential by another route — the iOS app holds the session in the
-// Keychain and has no cookie jar. Both must resolve to the same account, or the app and the browser
-// would be two different perimeters.
 TEST(auth_a_bearer_token_opens_the_same_door_the_cookie_does) {
   Harness h;
   h.signIn("s-live");
@@ -429,15 +366,12 @@ TEST(auth_a_bearer_token_opens_the_same_door_the_cookie_does) {
   bearer->addHeader("authorization", "Bearer s-live");
   CHECK_EQ(call(h, &AuthApi::me, bearer)->getStatusCode(), drogon::k200OK);
 
-  // Only the Bearer scheme — a raw secret in the header, or another scheme, is nobody.
   auto raw = drogon::HttpRequest::newHttpRequest();
   raw->setMethod(drogon::Get);
   raw->setPath("/v1/me");
   raw->addHeader("authorization", "s-live");
   CHECK_EQ(call(h, &AuthApi::me, raw)->getStatusCode(), drogon::k401Unauthorized);
 
-  // The cookie wins when both are present, which is what keeps a stale header on a browser request
-  // from acting as somebody else.
   h.signIn("s-other", "ada@example.com");
   auto both = request(drogon::Get, "/v1/me", "", "s-live");
   both->addHeader("authorization", "Bearer s-other");
@@ -445,8 +379,6 @@ TEST(auth_a_bearer_token_opens_the_same_door_the_cookie_does) {
            std::string("sam@example.com"));
 }
 
-// The profile edit is the one field an account can change about itself, and a refused name is a 400
-// with the sentence the settings screen prints — never a silent no-op that looks like it saved.
 TEST(auth_a_blank_or_oversized_name_is_refused_and_a_good_one_comes_back_applied) {
   Harness h;
   h.signIn("s-live");
@@ -465,15 +397,12 @@ TEST(auth_a_blank_or_oversized_name_is_refused_and_a_good_one_comes_back_applied
     CHECK_EQ((*refused->getJsonObject())["error"].asString(),
              std::string("That name's blank, or too long — 80 characters at most."));
   }
-  // ...and the good name is still the one on the account.
   CHECK_EQ((*call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-live"))
                  ->getJsonObject())["user"]["name"]
                .asString(),
            std::string("Ada Lovelace"));
 }
 
-// The one door in, and the copy it answers with — the address is parsed at the edge, so a request
-// with no address at all never reaches the rate limiter or the mail sender.
 TEST(auth_a_request_with_no_address_never_reaches_the_sender) {
   Harness h;
 
@@ -490,14 +419,12 @@ TEST(auth_a_request_with_no_address_never_reaches_the_sender) {
   CHECK(h.email.sent.empty());
   CHECK(h.authRepo.links.empty());
 
-  // An address the domain refuses is the same answer, decided one layer in.
   CHECK_EQ(call(h, &AuthApi::requestLink,
                 request(drogon::Post, "/v1/auth/magic-link", R"({"email":"sam@"})"))
                ->getStatusCode(),
            drogon::k400BadRequest);
   CHECK(h.email.sent.empty());
 
-  // A good address is a "sent", and the link row exists even though nothing has been spent yet.
   const drogon::HttpResponsePtr sent = call(
       h, &AuthApi::requestLink,
       request(drogon::Post, "/v1/auth/magic-link", R"({"email":"sam@example.com"})"));
@@ -507,8 +434,6 @@ TEST(auth_a_request_with_no_address_never_reaches_the_sender) {
   CHECK_EQ(h.authRepo.links.size(), std::size_t{1});
 }
 
-// A mail that could not be sent still leaves the link row standing, and says so in a status the
-// client can act on — "nothing you've written is lost" is a promise this endpoint has to keep.
 TEST(auth_a_send_that_could_not_reach_the_provider_is_reported_and_loses_no_link) {
   Harness h;
   h.email.failNext = true;
@@ -521,12 +446,9 @@ TEST(auth_a_send_that_could_not_reach_the_provider_is_reported_and_loses_no_link
   const Json::Value body = *response->getJsonObject();
   CHECK_EQ(body["code"].asString(), std::string("unreachable"));
   CHECK_EQ(body["detail"].asString(), std::string("Nothing you've written is lost."));
-  CHECK_EQ(h.authRepo.links.size(), std::size_t{1});  // the link row survived the failed send
+  CHECK_EQ(h.authRepo.links.size(), std::size_t{1});
 }
 
-// A fork rides the link, and the platform never learns what it planted: it forwards two opaque
-// strings to the port and hands back the id the port returns. A deployment with no forkable product
-// injects nothing and the same request is an ordinary sign-in.
 TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs_in_plainly) {
   Harness h;
   h.fork->description = ForkDescription{"Open a bakery", "12 steps"};
@@ -542,7 +464,6 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link-fork"));
   CHECK_EQ(h.email.sent.back().sourceTitle, std::string("Open a bakery"));
 
-  // A source the port could not plant degrades to a plain sign-in — the fork never blocks the door.
   h.fork->planted = std::nullopt;
   const std::string second = h.linkFor("ada@example.com", "t_gone");
   const drogon::HttpResponsePtr plain = call(
@@ -551,7 +472,6 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
   CHECK_FALSE((*plain->getJsonObject()).isMember("forkedTree"));
   REQUIRE(hasCookie(plain, "wm_session"));
 
-  // And a deployment with no forkable product at all: the same link, no port, no fork key.
   Harness bare;
   bare.api = std::make_shared<AuthApi>(bare.auth, nullptr, true, kDomain);
   const std::string third = bare.linkFor("sam@example.com", "t_source");
@@ -561,9 +481,6 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
   CHECK_FALSE((*noProduct->getJsonObject()).isMember("forkedTree"));
 }
 
-// The app door's landing: the typed code mints the SAME session cookie the link door does — every
-// flag, byte for byte — and the secret is never in the body. Both apps lift it from Set-Cookie,
-// so this parity is what lets sendCapturingSession work unchanged on either door.
 TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
   Harness h;
   const std::string code = h.codeFor("sam@example.com");
@@ -576,23 +493,19 @@ TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   const Json::Value body = *response->getJsonObject();
   CHECK_EQ(body["user"]["email"].asString(), std::string("sam@example.com"));
-  CHECK_FALSE(body.isMember("session"));  // the secret rides ONLY in the cookie — deliberate
+  CHECK_FALSE(body.isMember("session"));
 
   REQUIRE(hasCookie(response, "wm_session"));
   const drogon::Cookie& cookie = response->getCookie("wm_session");
   CHECK(!cookie.getValue().empty());
-  checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days, same flags as /verify
+  checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days
 
-  // The cookie's value is the live session: it authenticates on the very next request.
   const drogon::HttpResponsePtr me =
       call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", cookie.getValue()));
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 }
 
-// The collapse is a security property: wrong code, unknown address, a spent row, an exhausted row
-// — one byte-identical 410, no cookie, so the endpoint can't be probed for which addresses hold
-// pending codes or accounts.
 TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   Harness h;
   const std::string code = h.codeFor("sam@example.com");
@@ -606,16 +519,15 @@ TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   CHECK_EQ(gone["error"].asString(), std::string("That code has expired"));
   CHECK_EQ(gone["detail"].asString(), std::string("Codes work once and last 15 minutes."));
   CHECK_EQ(gone["code"].asString(), std::string("expired"));
-  CHECK_FALSE(hasCookie(wrong, "wm_session"));  // a refusal mints nothing
+  CHECK_FALSE(hasCookie(wrong, "wm_session"));
 
   const drogon::HttpResponsePtr unknown =
       call(h, &AuthApi::verifyCode,
            request(drogon::Post, "/v1/auth/verify-code",
                    R"({"email":"nobody@example.com","code":"999999"})"));
   CHECK_EQ(unknown->getStatusCode(), drogon::k410Gone);
-  CHECK_EQ(std::string(unknown->getBody()), std::string(wrong->getBody()));  // byte-identical
+  CHECK_EQ(std::string(unknown->getBody()), std::string(wrong->getBody()));
 
-  // Spend the code, then replay it: the burned row answers the very same brick.
   CHECK_EQ(call(h, &AuthApi::verifyCode,
                 request(drogon::Post, "/v1/auth/verify-code",
                         R"({"email":"sam@example.com","code":")" + code + "\"}"))
@@ -628,7 +540,6 @@ TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   CHECK_EQ(replay->getStatusCode(), drogon::k410Gone);
   CHECK_EQ(std::string(replay->getBody()), std::string(wrong->getBody()));
 
-  // And exhaustion: five wrong guesses kill a fresh row, the right code included — same brick.
   const std::string second = h.codeFor("ada@example.com");
   for (int guess = 0; guess < 5; ++guess)
     call(h, &AuthApi::verifyCode,
@@ -642,8 +553,6 @@ TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   CHECK_EQ(std::string(exhausted->getBody()), std::string(wrong->getBody()));
 }
 
-// A request missing either half is malformed, not a dead code — a 400 the client fixes, never
-// the 410 it retries with a resend.
 TEST(auth_a_code_request_missing_its_email_or_code_is_a_400) {
   Harness h;
   for (const std::string& body :
@@ -657,10 +566,9 @@ TEST(auth_a_code_request_missing_its_email_or_code_is_a_400) {
     CHECK_EQ(out["error"].asString(), std::string("Missing code"));
     CHECK_EQ(out["code"].asString(), std::string("bad_request"));
   }
-  CHECK(h.authRepo.sessions.empty());  // nothing was minted on the way
+  CHECK(h.authRepo.sessions.empty());
 }
 
-// The mint's door field routes the mail: "app" carries the code, absence carries today's link.
 TEST(auth_the_mint_door_picks_the_code_mail_and_absence_keeps_the_link) {
   Harness h;
   const drogon::HttpResponsePtr coded = call(
@@ -678,10 +586,8 @@ TEST(auth_the_mint_door_picks_the_code_mail_and_absence_keeps_the_link) {
   CHECK_EQ(h.email.sent.back().templateId, std::string("magic-link"));
 }
 
-// Apple's native door, at the two points reachable without a live call to Apple: an unconfigured
-// deployment keeps the route shut, and a request with no code never reaches the exchange.
 TEST(auth_the_apple_door_stays_shut_until_it_is_configured) {
-  Harness h;  // no Apple client injected
+  Harness h;
 
   const drogon::HttpResponsePtr unconfigured = call(
       h, &AuthApi::apple, request(drogon::Post, "/v1/auth/apple", R"({"authorizationCode":"c"})"));
@@ -691,9 +597,6 @@ TEST(auth_the_apple_door_stays_shut_until_it_is_configured) {
   CHECK(h.authRepo.identities.empty());
 }
 
-// Google's door, at the two points reachable without a live call to Google. Unconfigured, /start
-// bounces into the app rather than beginning a flow that cannot finish — a stray click before the
-// secrets land is a no-op, not an error page.
 TEST(auth_the_google_door_bounces_into_the_app_until_it_is_configured) {
   Harness h;
 
@@ -711,8 +614,6 @@ TEST(auth_the_google_door_bounces_into_the_app_until_it_is_configured) {
   CHECK_FALSE(hasCookie(callback, "wm_session"));
 }
 
-// The CSRF nonce: /start stashes an unguessable state in a short-lived HttpOnly cookie and echoes
-// it in the authorize URL, and the callback accepts a code only when the two match.
 TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
   Harness h(true, kDomain,
             std::make_shared<GoogleOAuthClient>("cli", "secret", kApp + "/v1/auth/google/callback"));
@@ -727,21 +628,17 @@ TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
   CHECK(state.isHttpOnly());
   CHECK(state.isSecure());
   CHECK_EQ(state.getPath(), std::string("/"));
-  CHECK(state.getSameSite() == drogon::Cookie::SameSite::kLax);  // rides the top-level nav back
+  CHECK(state.getSameSite() == drogon::Cookie::SameSite::kLax);
   CHECK_EQ(state.getDomain(), kDomain);
-  CHECK_EQ(state.getMaxAge(), std::optional<int>(600));  // ten minutes to finish consenting
+  CHECK_EQ(state.getMaxAge(), std::optional<int>(600));  // ten minutes
   CHECK(start->getHeader("location").find("state=" + state.getValue()) != std::string::npos);
-  CHECK_FALSE(hasCookie(start, "wm_session"));  // starting a flow signs nobody in
+  CHECK_FALSE(hasCookie(start, "wm_session"));
 
-  // Two starts never mint the same nonce.
   const drogon::HttpResponsePtr again =
       call(h, &AuthApi::googleStart, request(drogon::Get, "/v1/auth/google/start"));
   CHECK(again->getCookie("wm_oauth_state").getValue() != state.getValue());
 }
 
-// The forced-logout CSRF, and the one line that stops it. A callback that fails — forged, bounced,
-// or simply stale — expires ONLY wm_oauth_state. If it cleared wm_session too, any page on the
-// internet could sign a Windmill user out by pointing an image at this URL.
 TEST(auth_a_failed_google_callback_expires_only_the_state_and_never_the_session) {
   Harness h(true, kDomain,
             std::make_shared<GoogleOAuthClient>("cli", "secret", kApp + "/v1/auth/google/callback"));
@@ -765,7 +662,7 @@ TEST(auth_a_failed_google_callback_expires_only_the_state_and_never_the_session)
     CHECK_EQ(bounced->getHeader("location"), kApp + "/#/?signin=google_failed");
     REQUIRE(hasCookie(bounced, "wm_oauth_state"));
     CHECK_EQ(bounced->getCookie("wm_oauth_state").getMaxAge(), std::optional<int>(0));
-    CHECK_FALSE(hasCookie(bounced, "wm_session"));  // the signed-in user stays signed in
+    CHECK_FALSE(hasCookie(bounced, "wm_session"));
   }
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-live")), std::size_t{1});
 }

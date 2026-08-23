@@ -13,82 +13,56 @@
 
 namespace wm {
 
-// When a saved page is derived, and how often it is allowed to be. Every number here is a spend
-// decision wearing a latency costume, which is why they sit together where a reader can see the
-// whole policy at once.
+// When a saved page is derived, and how often it is allowed to be.
 struct LiveDerivationRules {
-  // Quiet time. Someone writing a paragraph saves every few seconds; deriving on each of those
-  // would buy the same page eight times and hand back the first version's echoes seven times too
-  // early. Eight seconds is long enough to be past a sentence and short enough that a writer who
-  // puts the phone down still sees the mark before they have closed the app.
+  // Quiet time. Someone writing a paragraph saves every few seconds, and deriving on each would buy
+  // the same page eight times and answer about a version already replaced.
   std::uint64_t quietMs = 8'000;
 
-  // …unless enough new text arrived to be worth answering about on its own. A long evening's
-  // writing is not one thought, and making it wait for a pause that never comes is the failure
-  // mode a pure debounce has. Roughly a paragraph.
+  // ...unless enough new text arrived to be worth answering about on its own — roughly a paragraph.
   std::size_t materialBytes = 400;
 
   // What one page may cost in one rolling day. Past it the page is not derived and not failed — it
-  // is simply left owed, and the repair pass takes it. This is the brake on the pathological case:
-  // a page edited all day, every edit a paragraph long, otherwise buys a curator call each time.
+  // is left owed, and the repair pass takes it.
   int perPageDaily = 4;
   std::uint64_t dailyWindowMs = 24ull * 60 * 60 * 1000;
 
-  // WHAT ONE ACCOUNT MAY HOLD IN THE QUEUE AT ONCE. The queue is keyed by (user, day) and every
-  // date is a valid page, so without this one account writing a thousand distinct days owns a
-  // thousand entries and the single drain thread walks them while everybody else's page waits. Five
-  // is a writer touching this week; past it a save is not queued at all — the repair pass owes that
-  // page either way, so nothing is lost, only postponed.
+  // What one account may hold in the queue at once. The queue is keyed by (user, day) and every
+  // date is a valid page, so without this one account can own the single drain thread. Past it a
+  // save is not queued at all; the repair pass owes that page either way.
   std::size_t pendingPerUser = 5;
 
-  // …and what one account may BUY in a rolling day, counted per USER rather than per page. The
-  // per-page cap above never bounded an account, because a page is free to invent: a flood of
-  // distinct days pays the embedder's CPU on every one of them before `sweepAllowanceFor` — which
-  // meters the CURATOR's dollars — has anything to say. Forty derivations is a heavy day of real
-  // writing and a wall for a flood.
+  // ...and what one account may BUY in a rolling day, counted per USER rather than per page: the
+  // per-page cap never bounded an account, because a flood of distinct days pays the embedder's CPU
+  // on every one of them before `sweepAllowanceFor` meters the curator's dollars.
   int perUserDaily = 40;
 };
 
-// What one drain did. `deferred` is the honest one to watch: it is not an error, it is the cap
-// handing work to the repair pass, and a number that climbs says the cap is too tight for how
-// people actually write.
+// What one drain did. `deferred` is not an error — it is the cap handing work to the repair pass.
 struct EchoLiveReport {
   int derived = 0;
   int failed = 0;
-  // The vendor declined to judge the page. Counted apart from `failed` for the same reason the sweep
-  // counts it apart — a failure comes back and this does not — and charged to the daily cap all the
-  // same, because it was bought.
+  // The vendor declined to judge the page. Counted apart from `failed` because a failure comes back
+  // and this does not, and charged to the daily cap all the same.
   int refused = 0;
   int deferred = 0;
   int skippedOverBudget = 0;
   int alreadyDerived = 0;
   // Saves that never entered the queue because their account already held `pendingPerUser` pages.
-  // Watched for the same reason as `deferred`: it is the fairness bound speaking, and a number that
-  // climbs for ordinary writers says the bound is too tight.
   int queueFull = 0;
 };
 
-// The delivery path's scheduler: it turns saves into derivations, and it is the only thing in the
-// product that knows a page was written recently rather than merely written.
+// The delivery path's scheduler: it turns saves into derivations. PageService tells it a page was
+// saved, and seconds later the page is derived on this object's own thread.
 //
-// Echoes used to arrive on a six-hourly ticker, so a page written tonight waited between zero and
-// six hours for the reaching-back that is the whole feature. They are computed on write now. This
-// class is the "when": PageService tells it a page was saved, and seconds later the page is
-// derived on this object's own thread.
+// It is also the fairness seam, being the only place that sees every account's saves at once. One
+// drain thread walks the queue, so whatever the queue holds is what everybody else waits behind:
+// the two bounds in LiveDerivationRules cap what one account may hold and buy, and the drain deals
+// round-robin across accounts rather than walking the queue as it lies.
 //
-// IT IS ALSO THE FAIRNESS SEAM, because it is the only place that sees every account's saves at
-// once. One drain thread walks the queue, so whatever the queue holds is what everybody else waits
-// behind: a single account enqueuing fifteen pages measurably delayed another writer's derivation by
-// twenty seconds, strictly serially. Two bounds answer that and they are both in LiveDerivationRules
-// — how many pages one account may hold in the queue, and how many derivations it may buy in a day —
-// and the drain deals round-robin across accounts rather than walking the queue as it lies.
-//
-// TWO THINGS IT MUST NEVER DO, and they are the same thing said twice. It must never derive on the
-// request thread — drogon has one handler thread per core and a curator call is 1.5–8 seconds, so a save
-// that waited for its echoes would take one of them out of service for that long; `pageSaved` therefore
-// does map bookkeeping under a short mutex and returns. And it must never make the writer wait for
-// anything: there is no pending state, no progress route and no spinner, because the journal does
-// not speak on its own initiative and the client re-reads on its own.
+// It must never derive on the request thread — drogon has one handler thread per core and a curator
+// call is seconds long — so `pageSaved` does map bookkeeping under a short mutex and returns. And
+// it must never make the writer wait: there is no pending state, no progress route and no spinner.
 class EchoDerivations : public PageWatcher {
 public:
   EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationRules rules);
@@ -96,20 +70,17 @@ public:
   void start();
 
   // A page was saved. Coalescing lives here: the first save opens a pending entry and every save
-  // after it pushes the entry's ready instant out again, so ten minutes of typing is one derivation
-  // rather than ten — unless the text has grown by `materialBytes` since the entry opened, which
-  // makes it ready now.
+  // after it pushes the entry's ready instant out again, unless the text has grown by
+  // `materialBytes` since the entry opened, which makes it ready now.
   void pageSaved(const UserId& user, const LocalDate& day, std::size_t bodyBytes) override;
 
-  // Derive everything that has gone quiet. Public and taking its own `now` because that is what
-  // makes the policy testable without a thread: the heartbeat below is one caller of it and a test
-  // with a fake clock is another.
+  // Derive everything that has gone quiet. Takes its own `now` so the policy is testable without a
+  // thread; the heartbeat below is one caller and a test with a fake clock is another.
   EchoLiveReport drain(std::uint64_t nowMs);
 
 private:
   // A page waiting for its writer to stop. `openedBytes` is the size at the save that opened this
-  // entry — which is the size the last derivation saw, since a derivation is what closes one — so
-  // the distance from it is genuinely new material and not just a big page.
+  // entry — the size the last derivation saw — so the distance from it is genuinely new material.
   struct Pending {
     UserId user;
     LocalDate day;
@@ -118,8 +89,7 @@ private:
   };
 
   // One page's spend inside a rolling day. The window opens at the first derivation rather than at
-  // midnight: nobody's writing day starts at midnight, and a window nobody has to name a timezone
-  // for cannot disagree with the device about which day it is.
+  // midnight, so it never has to name a timezone.
   struct Spent {
     int derivations = 0;
     std::uint64_t windowStartMs = 0;
@@ -129,8 +99,8 @@ private:
   Clock& clock_;
   LiveDerivationRules rules_;
   std::mutex lock_;
-  // Keyed "user|day" and therefore ORDERED BY USER, which is what makes both bounds cheap: the
-  // entries one account holds are one contiguous range.
+  // Keyed "user|day" and therefore ORDERED BY USER: the entries one account holds are one
+  // contiguous range.
   std::map<std::string, Pending> pending_;
   std::map<std::string, Spent> spent_;       // per page
   std::map<std::string, Spent> userSpent_;   // per account — the one the flood meets
