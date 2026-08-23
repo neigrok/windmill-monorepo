@@ -1,9 +1,10 @@
 import SwiftUI
 
-// The app frame, built to the resolved shell in the Design project
-// (`templates/superapp-shell/SuperappShell.dc.html` — "S1 hub + S3 capsule").
+// The app frame, built to the resolved shell — "S1 hub + S3 capsule", now the
+// Shell page of the Windmill · Design System Figma file, with its contract in
+// `docs/design/guidelines/superapp-shell.md`.
 //
-// The contract, verbatim from that board, is the whole reason this file is small:
+// The contract, verbatim, is the whole reason this file is small:
 //
 //   The shell owns   the hub and the order its cards take · the capsule (38pt, top-left, one lane
 //                    every app reserves) · tap = switcher, edge-swipe right = home, nothing else ·

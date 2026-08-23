@@ -1,9 +1,11 @@
 /* ============================================================
    ROOM PALETTES — one block per product, per skin
    ------------------------------------------------------------
-   Mirrors the design canon's `themes/brands.css` (Design project
-   a8e8995c, decided 2026-08-07); the reasoning behind each value
-   is on the `Room Palettes` card there. This file is the whole
+   Mirrors the design canon's per-product brand blocks (decided
+   2026-08-07); the reasoning behind each value is in
+   `docs/design/guidelines/system-architecture.md` §4a, and the
+   swatches are the Foundations page of the Windmill · Design
+   System Figma file. This file is the whole
    colour API for a product: to restyle a room, edit ITS block and
    nothing else — the blocks are literal hex, not derivations of
    each other, so no room can drift when a sibling changes.

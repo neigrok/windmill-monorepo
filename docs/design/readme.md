@@ -40,6 +40,31 @@ for the reasoning behind a call and find only the call.
 | `marketing/` | The landing-family briefs (00–03), the pricing story, the transactional-email spec. |
 | `AUTHORING.md` | Two rules that bind anyone drawing a Windmill screen: phone reach, and entering a product room by scope rather than by value. |
 | `brand-identity-brief.html` | The logo brief. **No logo has ever been drawn** — every mark is still the Baloo wordmark. |
+| `design-system-readme.md` | The Design System project's own readme, carried whole. Its brand foundations (voice, colour behaviour, type, iconography, the no-invented-logo policy) are canon; its *layout* sections describe the retired project and are history. |
+
+## Reading a citation — these files point at a project that is gone
+
+**These 54 files were carried verbatim, so their internal citations were not rewritten.** There
+are ~174 of them and they name paths that exist nowhere in this repo. That is deliberate —
+editing canon while moving it is how you lose it — but it means you have to know how to resolve
+a reference. Use this table.
+
+| A doc says | It means | Resolves to |
+|---|---|---|
+| `templates/…/X.dc.html` · `journal/…dc.html` | a design board | the matching page in that product's **Figma file** |
+| `guidelines/*.card.html` | a token/type/motion specimen card | the **Foundations** page of the Figma library |
+| `explorations/*.html` | an exploration | **gone** — dropped on purpose (see above). The citation is dead; the ruling it produced is usually in the `guidelines/` doc beside it |
+| `tokens/*.css` · `../tokens/` | the token source | `web/src/styles/tokens/` |
+| `themes/brands.css` | the per-product brand blocks | `web/src/styles/tokens/palettes.css` |
+| `components/…` · `../components/` | the component kit | `web/src/design-system/` |
+| `roadmap/components/tree/…` | the tree components | `web/src/products/roadmap/ui/tree/` |
+| `ui_kits/marketing/*.html` | the shipped static pages | `web/public/` |
+| `ui_kits/email/*` | the mail templates | `web/emails/` |
+| `_ds_kit.js` · `_ds_bundle.js` · `MOVED.md` | project plumbing | **gone**, and nothing replaces them |
+| `19f67675…` `99259a8c…` `7f9591c1…` `5b6ff5b3…` | the four pre-2026-07-31 satellite projects | dead, and dead before this move |
+
+**In every case the repo is the truth and Figma is the picture.** A citation is a pointer to
+intent, not evidence that something exists.
 
 ## Read a brief for intent, not for status
 
@@ -62,4 +87,5 @@ marks entirely. Requirement phrasing is what tells the build side a line is load
 
 The same rule carries the standing one from the root `CLAUDE.md`: **a line that stops being true
 is fixed in the wave that made it false.** That is why moving these files also meant correcting
-twelve pointers across nine other files in the repo.
+fourteen pointers across eleven other files in the repo — including two the first sweep missed,
+because it only searched `.md` and `.txt` and the stragglers were in a `.css` and a `.swift`.
