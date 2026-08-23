@@ -89,13 +89,11 @@ void Collab::reproveReaders() {
 }
 
 void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
-  // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed, and a
-  // client that states none is untouched.
+  // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed.
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !allowedOrigins_.count(origin)) {
     LOG_WARN << "ws upgrade refused: origin " << origin << " is not allow-listed";
-    // A context first, then the close: drogon may still deliver a queued frame, and every
-    // handler reads the Principal unchecked.
+    // Set a context before closing: drogon may still deliver a queued frame, and handlers read it unchecked.
     conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
     conn->forceClose();
     return;
@@ -108,8 +106,7 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
     if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
   }
   std::optional<User> user = auth_.authenticate(secret);
-  // Keep the digest, never the secret, so a write can re-prove the session. Built in place: a
-  // Principal holds atomics and cannot be copied.
+  // Keep the digest, never the secret, so a write can re-prove the session.
   if (user) {
     conn->setContext(std::make_shared<Principal>(user->id, true, sharableName(*user),
                                                  auth_.digestOf(secret), clock_.nowMs()));
@@ -148,7 +145,6 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
     Json::Value frame = parse(text);
     if (!frame.isObject()) return;
     std::string type = frame.get("t", "").asString();
-    // Heartbeat: connection-scoped, no tree lookup and no auth.
     if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
     std::string treeId = frame.get("treeId", "").asString();
     if (type == "subscribe") return subscribe(conn, treeId, frame);
@@ -160,7 +156,6 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
   }
 }
 
-// Ship only what the client's version vector lacks, with the server's frontier as coverage.
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& request) {
   const Principal& principal = principalOf(conn);
 
@@ -177,9 +172,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      // Gate the read before the room is materialized and before joining the bus or presence,
-      // re-proving the session first on this frame's own thread. An absent tree and a
-      // private-denied one answer identically — no existence leak.
+      // Gate the read before the room is materialized; absent and private-denied answer identically.
       stillAuthorized(conn);
       if (!mayRead(conn, TreeId{treeId})) {
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
@@ -198,14 +191,12 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       delta.treeId = TreeId{treeId};
       delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
-      // Unset title stamps carry nothing; the stated coverage owns the stamp, so the client
-      // never flushes it back.
       if (!clientVector.covers(room->title().stamp)) delta.title = room->title();
       if (delta.coverage) delta.coverage->observe(room->title().stamp);
       frame = toJson(delta);
       frame["seq"] = static_cast<Json::Int64>(room->head());
     } catch (const std::exception& error) {
-      // An infrastructure failure is never the socket's to relay: log it, reject generically.
+      // An infrastructure failure is never the socket's to relay.
       LOG_ERROR << "collab join " << treeId << " failed: " << error.what();
       send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
       return;
@@ -213,22 +204,18 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   }
   send(conn, frame);
 
-  // Both lanes re-graft on every subscribe. Read OUTSIDE the strand — a room's lock is never
-  // held across a database call.
-  // Gate on `authenticated`, never on a non-empty user: a guest connection carries a real guest
-  // identity, and this lane serves one account its own private marks or nothing.
+  // Read OUTSIDE the strand — a room's lock is never held across a database call.
+  // Gate on `authenticated`, never on a non-empty user: a guest carries a real guest identity.
   if (!principal.authenticated) return;
   Json::Value graft = toJson(progress_.progressOf(TreeId{treeId}, principal.user));
   graft["t"] = "progress";
   graft["treeId"] = treeId;
-  // `graft`, not an echo: the receiver may re-baseline its coverage on it. An empty graft is
-  // still sent — it states that the server holds nothing, which re-flushes the replica.
+  // `graft`, not an echo: the receiver may re-baseline its coverage on it, and an empty graft still ships.
   graft["intent"] = "graft";
   send(conn, graft);
 }
 
-// A socket authenticates once and can live for hours, so every write re-proves its session,
-// throttled to one lookup a minute.
+// Every write re-proves the session, throttled to one lookup a minute.
 bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal || !principal->authenticated) return false;
@@ -267,8 +254,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     return;
   }
 
-  // A frame we cannot decode is refused by code: a throw answers nothing and strands the
-  // client's in-flight entry for this frameId.
+  // Refuse by code, never by throw: a throw strands the client's in-flight entry for this frameId.
   Subgraph incoming;
   try {
     incoming = subgraphFromJson(frame);
@@ -300,10 +286,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
-    // Both gates decide off the stored access row, before the room is materialized. Read gate
-    // first: a private tree is answered "no such tree", byte-identical to an absent one, so a
-    // rejected write never confirms the id names something. canWrite then admits the owner and
-    // nobody else — an unowned tree is nobody's to write.
+    // Both gates decide off the stored access row, before the room is materialized. Read gate first:
+    // a private tree answers "no such tree", byte-identical to an absent one.
     const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
     std::optional<WriteRefusal> refusal =
         access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
@@ -336,9 +320,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   send(conn, ack);
 }
 
-// The private per-user lane: refused whole or applied whole, joins no op log, and is echoed only
-// to the SAME account's other sessions — never to the tree's collaborators.
-// The client mints the stamp; the server records the receipt instant beside each register.
+// The private per-user lane: refused whole or applied whole, joins no op log, and is echoed only to
+// the same account's other sessions. The client mints the stamp; the server records the receipt instant.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId,
                       const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
@@ -384,8 +367,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      // Absent and private-denied both answer "no such tree", decided off the stored row so the
-      // mark never materializes a tree the caller cannot read.
+      // Absent and private-denied both answer "no such tree", decided off the stored row.
       const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
       if (!access || !canRead(principal.user, access->owner, access->visibility))
         return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
@@ -400,9 +382,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   const std::vector<ProgressOutcome> outcomes =
       progress_.setStatuses(TreeId{treeId}, principal.user, writes, nowMs);
 
-  // The echo carries registers back exactly as recorded, in the frame shape the graft serves,
-  // and reaches the sender too. Only what LANDED is announced; a frame where nothing landed is
-  // still ACKED.
+  // Only what landed is echoed; a frame where nothing landed is still acked.
   Progress recorded;
   for (std::size_t i = 0; i < writes.size(); ++i)
     if (outcomes[i].applied) recorded.record(writes[i].node, ProgressMark{writes[i].status, writes[i].at, nowMs});

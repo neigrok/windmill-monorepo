@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Journal Wave 2 — nudges, end-to-end against the LIVE local stack. It drives the heartbeat through
-# the admin sweep at the REAL clock (the device pushes a knock time in the past) and asserts the
-# decision ledger per-user via psql, which is deterministic on a shared dev db.
+# Journal nudges, end-to-end against the live local stack. The sweep runs at the REAL clock (the
+# device pushes a knock time in the past) and the decision ledger is asserted per-user via psql.
 #
 # Prereqs: schema applied; server running with the admin token AND armed for the e2e user — the
 # settings PATCH below is refused for anyone the arming gate does not name. Run it once to mint the
@@ -70,10 +69,7 @@ sweep '{"dryRun":true}' >/dev/null
 DRY="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U' and slot_day='$TODAY'")"
 check "$DRY" "0" "a dry run claims nothing"
 
-# ── a wet time-travelling sweep: refused while armed, forced dry while dark ──────────────────────
-# Which rule answers depends on how the server was started, so each is asserted by its own evidence:
-# the prereq above arms the server, so a normal run takes the 409 branch, while the dry branch is
-# what a dark server (with a seeded row) answers.
+# A wet time-travelling sweep: 409 while the server is armed, forced dry while it is dark.
 ARMED="$(j "$BASE/v1/journal/nudge" | field "['armed']")"
 TRAVEL_BODY="$(mktemp)"
 TRAVEL="$(curl -s -o "$TRAVEL_BODY" -w '%{http_code}' -H "X-Admin-Token: $ADMIN" -X POST \

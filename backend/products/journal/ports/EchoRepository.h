@@ -12,43 +12,37 @@
 
 namespace wm {
 
-// A candidate user for a repair pass: someone with recent page activity.
 struct EchoUser {
   UserId user;
 };
 
-// A page owed a derivation. `attempts` is how many passes in a row have failed on it WITHOUT
-// settling it; a refusal settles the page (`isSettled` below), so it never counts up here.
+// `attempts` counts consecutive failures that did not settle the page; a refusal settles.
 struct DuePage {
   LocalDate day;
   std::string body;
   std::uint64_t bodyStampMs = 0;
   int attempts = 0;
-  // A body that moved has to be cut into idea units again, which is a vendor call; a corpus that
-  // moved under an unchanged body reads its units back from storage. Never derived counts as moved.
+  // True re-cuts the body (a vendor call); false reads its units back from storage. Never derived
+  // counts as moved.
   bool bodyMoved = true;
 };
 
-// Which pipeline derived a page: one derived by an older segmenter or embedder is stale in a way
-// its own body and its own corpus cannot reveal. Two strings rather than one stamp — a moved
-// segmenter means the page has to be CUT again, a moved embedder only that it is re-embedded.
+// A moved `segment` means the page has to be CUT again, a moved `embed` only re-embedded.
 struct PipelineVersions {
   std::string segment;
   std::string embed;
-  // The curator's prompt and effort, plus a digest of the selection knobs — everything that decides
-  // WHICH pairings are kept rather than how the page is cut or embedded.
+  // The curator's prompt and effort, plus a digest of the selection knobs.
   std::string judge;
 };
 
-// `spanId` of 0 means storage mints a fresh identity; anything else is one the caller carried
-// forward. `passage` is exactly what segmentation produced, so [lo, hi) still indexes its body.
+// `spanId` of 0 means storage mints a fresh identity. `passage` is what segmentation produced, so
+// [lo, hi) still indexes its body.
 struct SpanWrite {
   std::int64_t spanId = 0;
   Passage passage;
   std::vector<float> vector;
 };
 
-// Storage resolves the pairs a reader has waved away through content hashes.
 struct SpanPair {
   std::int64_t triggerSpanId = 0;
   std::int64_t matchSpanId = 0;
@@ -63,36 +57,24 @@ struct EchoRow {
   bool matchIsSelf = true;
 };
 
-// The version rides the whole call because one curate call produced every row in it, and
-// `Curator::version` already folds the prompt's digest into itself.
 struct CuratedEchoes {
   std::string curatorVersion;
   std::vector<EchoRow> rows;
-  // Pairings this pass PUT TO THE CURATOR AND WAS REFUSED. Persistence is additive — a row the pass
-  // did not return is kept, because the curator is not deterministic and a typo fix must not
-  // silently destroy a chain the reader has walked — and until 2026-08-23 that made a stored
-  // pairing PERMANENT. A reader reported two false positives, the prompt was fixed, the floor was
-  // added, the archive was re-judged at 0.4 against a floor of 0.6, and both echoes stayed on the
-  // page: nothing in the pipeline could ever un-say something.
-  //
-  // So the additive rule keeps its reason and loses its corollary. What is retracted is exactly
-  // what was ASKED AGAIN and answered no — never a pairing this pass did not raise, which is the
-  // non-determinism the rule was written for.
+  // Persistence is additive: a pairing this pass did not raise is kept. `refused` is what it did
+  // raise and the curator answered no — the only thing a pass removes.
   std::vector<SpanPair> refused;
 };
 
-// `emptyOk` is a page that genuinely had nothing to reach back to — done, not owed a retry.
-// Everything after it is a FAILURE and must never be stored as an empty result.
+// `emptyOk` is a page that genuinely had nothing to reach back to. Everything after it is a
+// FAILURE and must never be stored as an empty result.
 enum class CurationStatus { ok, emptyOk, transport, rateLimited, truncated, schemaInvalid, refused };
 
-// Did the page get an answer it can keep? Only this decides what the reader is served.
 inline bool isSuccess(CurationStatus status) {
   return status == CurationStatus::ok || status == CurationStatus::emptyOk;
 }
 
-// Is the page's pass OVER — the only question the stamps answer to. Success settles a page and so
-// does a refusal, which is an answer ABOUT that text and the same answer every night. Both stamps
-// advance, so a corpus moving under a refused page does not reopen it; only an edit to it does.
+// A refusal settles the page like a success does: both stamps advance, so a corpus moving under a
+// refused page does not reopen it; only an edit to it does.
 inline bool isSettled(CurationStatus status) {
   return isSuccess(status) || status == CurationStatus::refused;
 }
@@ -104,19 +86,14 @@ struct CurationOutcome {
   std::uint64_t bodyStampMs = 0;
   std::uint64_t corpusStamp = 0;
   std::string error;
-  // Recorded on a SETTLED pass and read back by the two due-ness queries; a failed pass leaves them.
   PipelineVersions versions;
 };
 
-// One echo as the reader's page receives it. Both passages travel as TEXT: the client re-locates the
-// quote in the live body and shows it only if it is still there, so a redaction propagates without a
-// delete reaching the browser. `daysEarlier` is measured from the trigger day, never from today.
-//
-// `matchOccurrenceHint` is WHICH occurrence of `matchText` the passage is, 0 for the first — not the
-// byte offset storage holds, because C++ counts bytes and JavaScript slices UTF-16 code units. It
-// stays a HINT: -1 says the server has nothing honest to offer, and the text check decides.
-//
-// `markedUseful` is served rather than remembered by the device, so the next device knows it too.
+// Both passages travel as TEXT: the client re-locates the quote in the live body and shows it only
+// if it is still there, so a redaction propagates without a delete reaching the browser.
+// `daysEarlier` is measured from the trigger day, never from today. `matchOccurrenceHint` is WHICH
+// occurrence of `matchText` the passage is, 0 for the first, and -1 says the server has nothing
+// honest to offer — not a byte offset, because C++ counts bytes and JavaScript slices UTF-16.
 struct EchoView {
   LocalDate triggerDay;
   std::int64_t triggerSpanId = 0;
@@ -131,7 +108,6 @@ struct EchoView {
   bool markedUseful = false;
 };
 
-// `opened` is the walk back to the older page, `useful` is the reader saying so outright, and
 // `notUseful` is a dismissal: the pair is retired AND it was wrong, recorded in two places.
 enum class EchoSignal { opened, useful, notUseful };
 
@@ -144,9 +120,7 @@ inline const char* signalText(EchoSignal kind) {
   return "opened";
 }
 
-// Which occurrence of `text` the passage sitting at byte offset `lo` is; -1 when no hit begins
-// there. Server-side and client-side scans agree because the search is over whole occurrences of
-// the same string, so bytes here and UTF-16 code units there land on the same one.
+// Which occurrence of `text` the passage sitting at byte offset `lo` is; -1 when no hit begins there.
 inline int occurrenceAt(const std::string& body, const std::string& text, int lo) {
   if (text.empty() || lo < 0) return -1;
   int occurrence = 0;
@@ -163,69 +137,60 @@ inline int occurrenceAt(const std::string& body, const std::string& text, int lo
 // one account. No page is refused for it, and nothing is deleted.
 constexpr int kCorpusSpans = 20'000;
 
-// Storage for the echo pipeline. Owner-scoped throughout. Entitlement is NOT asked here, and not by
-// the sweep either: the sweep derives for everyone and the READ layer decides how much of a passage
-// a reader is handed.
+// Owner-scoped throughout. Entitlement is NOT asked here and not by the sweep: the READ layer
+// decides how much of a passage a reader is handed.
 struct EchoRepository {
   virtual ~EchoRepository() = default;
 
   virtual std::vector<EchoUser> activeSince(std::uint64_t sinceMs) = 0;
 
-  // The newest passage stamp anywhere in this user's corpus. Read ONCE at the top of a pass and
-  // carried through it, or a page derived halfway records a stamp covering spans it never saw.
+  // Read ONCE at the top of a pass and carried through it, or a page derived halfway records a
+  // stamp covering spans it never saw.
   virtual std::uint64_t corpusStamp(const UserId& user) = 0;
   virtual std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp,
                                         const PipelineVersions& versions) = 0;
 
-  // One named page, if it is owed anything. Nothing owed reads as nullopt.
+  // Nullopt when nothing is owed.
   virtual std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
                                          std::uint64_t corpusStamp,
                                          const PipelineVersions& versions) = 0;
 
-  // One page as it stands, owed anything or not: a page holding an echo into a page that just moved
-  // is NOT due by any of duePages' questions yet has to be re-derived against text that still
-  // exists. Nullopt is a day the writer has no page on.
+  // One page as it stands, owed anything or not. Nullopt is a day the writer has no page on.
   virtual std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) = 0;
 
-  // EVERY page this writer has, owed anything or not — the operator's re-judge. The three version
-  // strings reopen an archive when a prompt, a model or a knob moves, and nothing reopens one when
-  // the selection ALGORITHM itself changes: no string moves for a code change. That is not a
-  // hypothetical. A retraction rule shipped, no page was due, and the false positives it existed to
-  // remove stayed on the page until this door existed.
-  //
-  // `bodyMoved` is false throughout: a re-judge asks what tonight REACHES, never what it says, so
-  // no page is cut again and the expensive vendor call is not re-bought.
+  // EVERY page this writer has, owed anything or not — the operator's re-judge. `bodyMoved` is
+  // false throughout: a re-judge asks what tonight REACHES, never what it says, so no page is cut
+  // again.
   virtual std::vector<DuePage> allPages(const UserId& user) = 0;
 
   virtual std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
 
   // Hands back exactly what it stored, minted ids and all, so a warm corpus can be UPDATED rather
-  // than dropped when a page is re-derived.
+  // than dropped.
   virtual std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                              const std::vector<SpanWrite>& spans,
                                              const std::string& embedVersion,
                                              std::uint64_t bodyStampMs) = 0;
 
-  // The user's passages, without a single page body attached. One embedding version only: cosine
-  // across two spaces is meaningless. AT MOST kCorpusSpans of them, the most recent, oldest-first.
+  // One embedding version only: cosine across two spaces is meaningless. AT MOST kCorpusSpans of
+  // them, the most recent, oldest-first.
   virtual std::vector<Vectored> corpusOf(const UserId& user, const std::string& embedVersion) = 0;
 
   virtual std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) = 0;
 
-  // One pairing, named the way the reader named it: two DAYS. Storage keys the dismissal on the two
-  // passages' content, because an ordinal shifts the moment a sentence is inserted.
+  // Keyed on the two passages' content, not an ordinal, which shifts the moment a sentence is
+  // inserted.
   virtual void dismissPair(const UserId& user, const LocalDate& triggerDay,
                            const LocalDate& matchDay) = 0;
 
-  // "Not useful" is panel-level on the surface — one tap retires the whole page.
+  // Panel-level: one tap retires the whole page.
   virtual void dismissPage(const UserId& user, const LocalDate& triggerDay) = 0;
 
-  // "Not now" — the reader declined the UPGRADE OFFER on this page; their echoes and their honest cut
-  // are untouched. Keyed on the day: the offer belongs to the page, so re-deriving leaves it standing.
+  // Keyed on the day, so re-deriving leaves it standing.
   virtual void dismissOffer(const UserId& user, const LocalDate& day) = 0;
 
-  // Written beside the retrieval score and the curator's version. Idempotent: a button pressed twice
-  // is one row, and a pairing with no echo row behind it records nothing.
+  // Idempotent: a button pressed twice is one row, and a pairing with no echo row behind it records
+  // nothing.
   virtual void recordSignal(const UserId& user, const LocalDate& triggerDay,
                             const LocalDate& matchDay, EchoSignal kind) = 0;
   virtual void recordPageSignal(const UserId& user, const LocalDate& triggerDay,
@@ -234,27 +199,22 @@ struct EchoRepository {
   virtual void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                              const CuratedEchoes& curated) = 0;
 
-  // Everything this page reaches back to, gone. The ONE caller is a vendor refusal, which ECHOES.md
-  // has always said leaves the page "carrying no echoes at all" — and which was written as
-  // `replaceEchoes` with an empty set, a call that under additive persistence keeps every row it
-  // was meant to remove. The guarantee is a safety one (a body the vendor declined is not a body to
-  // hang the reader's own past under), so it gets an operation that actually says it.
+  // Everything this page reaches back to, gone. Under additive persistence `replaceEchoes` with an
+  // empty set does not remove anything.
   virtual void clearEchoes(const UserId& user, const LocalDate& triggerDay) = 0;
   virtual void recordCuration(const UserId& user, const LocalDate& day,
                               const CurationOutcome& outcome) = 0;
 
-  // The trigger days holding an echo into this page. The caller budgets the walk across nights.
+  // The trigger days holding an echo into this page.
   virtual std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& matchDay) = 0;
 
   virtual std::vector<EchoView> echoesFor(const UserId& user, const LocalDate& from,
                                           const LocalDate& to) = 0;
 
-  // The days in this range whose offer the reader already declined — one answer per PAGE.
+  // One answer per PAGE.
   virtual std::vector<LocalDate> retiredOffers(const UserId& user, const LocalDate& from,
                                                const LocalDate& to) = 0;
 
-  // How many pages the user has actually written on. The surface owes the reader nothing below a
-  // ~20-page corpus floor.
   virtual int pagesWritten(const UserId& user) = 0;
 };
 

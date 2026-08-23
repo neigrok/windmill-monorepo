@@ -95,10 +95,10 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
 // One tool-loop turn: request body in, parsed reply out, nullopt on any transport or parse failure.
 using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
 
-// Wrap a tool loop's model call so every turn is metered. `frame` carries who/product/operation/run;
-// the wrapper adds the iteration number (it is invoked exactly once per turn), the outcome, and the
-// `usage` the raw reply carries. Over the fuse it refuses without calling and answers nullopt, and
-// reports the first trip through `report` under "ai.fuse", once.
+// Wrap a tool loop's model call so every turn is metered; it must be invoked exactly once per turn.
+// `frame` carries who/product/operation/run and the wrapper adds the iteration number, the outcome
+// and the reply's `usage`. Over the fuse it refuses without calling, answers nullopt, and reports
+// the first trip through `report` under "ai.fuse", once.
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string& where, const std::string& detail)> report);

@@ -64,8 +64,7 @@ std::optional<std::string> kindFieldBounds(const KindId& id, const std::string& 
 }
 
 // The two whole-tree ceilings, read off the totals the arrival would leave behind, and stated after
-// the field bounds. A ceiling refuses GROWTH, not size: trees already past the caps exist, and
-// freezing one would leave its owner unable to rename, retire or thin it back down.
+// the field bounds. A ceiling refuses GROWTH, not size.
 std::optional<Admission> growthWithin(std::size_t nodesBefore, std::size_t nodesAfter,
                                       std::size_t edgesBefore, std::size_t edgesAfter) {
   if (nodesAfter > kMaxNodes && nodesAfter > nodesBefore)
@@ -265,9 +264,8 @@ std::optional<Admission> admit(const TreeData& document) {
   for (const Kind& kind : document.kinds)
     if (std::optional<std::string> bad = kindFieldBounds(kind.id, kind.label, kind.description))
       return Admission{Admission::Verdict::malformed, *bad};
-  // A posted document IS the whole tree it describes, so it is judged as a graft into an empty one.
-  // The tree it lands ON is judged separately, by the caller holding that graph: a save GROWS a
-  // lattice rather than replacing it.
+  // A posted document is judged as a graft into an empty tree; the tree it lands on is judged
+  // separately by the caller holding that graph. A save grows a lattice rather than replacing it.
   return admit(LooseGraph{}, document);
 }
 
@@ -291,9 +289,8 @@ std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming
 }
 
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming) {
-  // Run the element-set join itself instead of reading each entry's stamps and trusting them: an
-  // estimate lets a losing tombstone subtract from a count it never lowered, and a repeated id
-  // subtract once per repetition.
+  // Run the element-set join itself rather than trusting each entry's stamps: an estimate lets a
+  // losing tombstone or a repeated id subtract from a count it never lowered.
   std::map<NodeId, ElementSet> nodeLives;
   for (const NodeStateEntry& node : incoming.nodes) {
     if (std::optional<std::string> bad =

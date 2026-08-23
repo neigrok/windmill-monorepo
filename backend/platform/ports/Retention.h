@@ -16,8 +16,7 @@ struct RetentionWindows {
   int batch = 5000;
 };
 
-// `ran` is false when another process held the sweep lock: nothing was looked at, which is not
-// the same as nothing being due.
+// `ran` is false when another process held the sweep lock: nothing was looked at.
 struct RetentionReport {
   bool ran = false;
   int events = 0;

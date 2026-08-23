@@ -12,8 +12,8 @@
 namespace wm {
 
 namespace {
-// The floor of the trailing window. No Clock is injected: the ledger's rows are stamped by
-// Postgres `now()`, and a second settable clock would only let the two disagree.
+// The floor of the trailing window; the ledger's rows are stamped by Postgres `now()`, so no Clock
+// is injected.
 long long windowFloorMs() {
   const auto since = std::chrono::system_clock::now().time_since_epoch();
   return std::chrono::duration_cast<std::chrono::milliseconds>(since).count() - kAiWindowMs;
@@ -24,8 +24,7 @@ Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageReposit
                            std::string owners)
     : subscriptions_(subscriptions), usage_(usage), owners_(std::move(owners)) {}
 
-// The repository resolves which subscription decides this account; this applies the access rule to
-// whatever it returns. No mirrored subscription is no access.
+// No mirrored subscription is no access.
 bool Entitlements::isOwner(const std::string& email) const {
   if (owners_.empty() || email.empty()) return false;
 
@@ -52,7 +51,7 @@ bool Entitlements::isOwner(const std::string& email) const {
 }
 
 bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) const {
-  // The owner list first: it is the only grant here that is not a subscription.
+  // The owner list is the only grant here that is not a subscription.
   if (isOwner(email)) return true;
 
   const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(user, email);
@@ -67,7 +66,7 @@ AiAllowance Entitlements::aiAllowanceFor(const UserId& user, const std::string& 
 }
 
 // Keyed by PRODUCT, the grain the ledger records, so this bucket holds everything that product
-// spent for the account. That is enough to keep a background pass from starving a foreground one.
+// spent for the account.
 AiAllowance Entitlements::sweepAllowanceFor(const UserId& user) const {
   return AiAllowance{kSweepMonthlyAiNanos, usage_.spentSinceNanos(user, "journal", windowFloorMs())};
 }

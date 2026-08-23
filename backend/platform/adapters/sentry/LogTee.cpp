@@ -33,7 +33,7 @@ TrantorLine parseTrantorLine(const char* msg, std::size_t len) {
   std::string_view line(msg, len);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.remove_suffix(1);
 
-  // Unparsed is not unsent: an unrecognised shape keeps the whole line as the body at info.
+  // An unrecognised shape keeps the whole line as the body, at info.
   TrantorLine parsed{SentryClient::Level::info, std::string(line), std::string()};
 
   const std::size_t horizon = std::min(line.size(), kPrefixSearchLimit);

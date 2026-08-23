@@ -120,8 +120,7 @@ int envDays(const char* name, int fallback) {
 int main() {
   using namespace wm;
 
-  // Also sizes the database pool: every IO thread can hold a connection at once, and a pool ceiling
-  // below the thread count turns into waits and 500s rather than queueing.
+  // Also sizes the database pool: a pool ceiling below the thread count turns into waits and 500s.
   const unsigned int ioThreads = std::max(4u, std::thread::hardware_concurrency());
 
   const char* url = std::getenv("DATABASE_URL");
@@ -163,8 +162,8 @@ int main() {
   auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(pool);
   auto mcpKeyService = std::make_shared<McpKeyService>(*mcpKeyRepo, *tokens, *systemClock);
 
-  // The one precondition on the link door: does this account hold anything. EVERY product must
-  // appear — one missing reports an account empty that is not, and the door then deletes real data.
+  // Does this account hold anything. EVERY product must appear: one missing reports an account
+  // empty that is not, and the link door then deletes real data.
   auto accountFootprint = std::make_shared<PgAccountFootprint>(
       pool, std::vector<OwnedTable>{
                 {"trees", "owner_id"},                // roadmap
@@ -178,13 +177,11 @@ int main() {
                 {"gym_session_shares", "user_id"},    // gym
                 {"gym_ask_threads", "user_id"},       // gym
                 {"gym_ask_turns", "user_id"},         // gym
-                // gym — created_by, not user_id: the catalog seeds carry it NULL, and a probe that
-                // matched them would report every account on the server non-empty.
+                // created_by is null on the catalog seeds, so they match no account.
                 {"gym_exercises", "created_by"},
                 {"gym_exercise_names", "user_id"},    // gym
                 {"gym_exercise_aliases", "user_id"},  // gym
-                // gym_preferences is deliberately absent: settings are not data an account holds,
-                // and a client that writes them on first paint would make every account non-empty.
+                // gym_preferences is absent on purpose: settings are not data an account holds.
                 {"paddle_subscriptions", "user_id"},  // platform
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
@@ -229,8 +226,8 @@ int main() {
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // The spend ledger the ceilings read back; the Amplitude mirror below is only the eyes.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
-  // One in-process trailing-hour ceiling over every vendor call, holding no database, so it still
-  // bounds spend when Postgres is down and the ledger has stopped enforcing.
+  // One in-process trailing-hour ceiling over every vendor call; holds no database, so it still
+  // bounds spend when Postgres is down.
   auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
 
   // Every paid feature gates through this one seam. WINDMILL_OWNER_EMAILS is a comma-separated
@@ -282,9 +279,8 @@ int main() {
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
 
-  // The one sweep that deletes. Windows are read from the environment so an operator can change
-  // one without a deploy; 0 or less on any of them means keep forever. No product table is
-  // reachable from it.
+  // The one sweep that deletes; no product table is reachable from it. 0 or less on any window
+  // means keep forever.
   RetentionWindows retention;
   retention.eventDays = envDays("WINDMILL_EVENTS_RETENTION_DAYS", retention.eventDays);
   retention.feedbackDays = envDays("WINDMILL_FEEDBACK_RETENTION_DAYS", retention.feedbackDays);
@@ -364,7 +360,6 @@ int main() {
                                                   *gymProgramService, appBaseUrl);
 
   // With no ANTHROPIC_API_KEY there is no AskService, so gym::registerRoutes never mounts the path.
-  // The narrowing that makes this safe is AskTools (AskService.h), not the ToolScope.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   std::shared_ptr<gym::AskService> gymAsk;
   if (gymAskAgent->configured())
@@ -386,8 +381,7 @@ int main() {
       roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
 
-  // Built here, after the composite, so `scopes_supported` is derived from the tool surface rather
-  // than written down a second time.
+  // After the composite, so `scopes_supported` is derived from the tool surface.
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
                                              "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
@@ -423,8 +417,8 @@ int main() {
   app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
                                                  std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
     const std::string method = loggableField(req->getMethodString());
-    // Redacted: this path reaches stdout, a retained server_errors column, and Sentry — and a path
-    // like /v1/gym/shared/{token} carries a live credential.
+    // Redacted: this path reaches stdout, a retained server_errors column and Sentry, and some
+    // paths carry a live credential.
     const std::string path = loggableField(redactedPath(req->getPath()));
     std::string message = e.what();
     if (message.size() > 500) {                            // bound the column, cutting on a UTF-8 boundary
@@ -497,8 +491,8 @@ int main() {
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        // The vendor webhooks verify an HMAC before doing anything, and both deliver bursts from a
-        // small egress pool that collapses onto one bucket here — a 429 would burn a vendor retry.
+        // Vendor webhooks verify an HMAC first and burst from a small egress pool onto one bucket
+        // here: a 429 burns a retry.
         if (path == "/v1/paddle/webhook" || path == "/v1/resend/webhook") return nullptr;
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
@@ -764,11 +758,9 @@ int main() {
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
-  // PageService is built below, after the echo stack: a save triggers a derivation, so the write
-  // path needs the thing that receives one.
+  // PageService is built after the echo stack, because a save triggers a derivation.
   // JOURNAL_NUDGE_ENABLED must say so AND the user be named in JOURNAL_NUDGE_ALLOWLIST before any
-  // mail leaves; both gates are read at send time. The knock time is the device's, so the server
-  // holds no rhythm and needs no timezone.
+  // mail leaves; both gates are read at send time.
   const char* journalNudgeEnabledEnv = std::getenv("JOURNAL_NUDGE_ENABLED");
   const std::string journalNudgeEnabledFlag = journalNudgeEnabledEnv ? journalNudgeEnabledEnv : "";
   const char* journalNudgeAllowlistEnv = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
@@ -781,9 +773,8 @@ int main() {
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
   // Either boundary unwired makes any echo pass a no-op: NullEmbedder and NullCurator both answer
-  // configured() false. The sweep is entitlement-blind — it derives for every user, and EchoApi
-  // decides how much of a passage a reader is served. The sidecar runs the same bge-small weights
-  // the browser downloads, so a server vector and an on-device one are interchangeable.
+  // configured() false. The sidecar must run the same bge-small weights the browser downloads, or a
+  // server vector and an on-device one stop being interchangeable.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
   if (embedderUrlEnv && *embedderUrlEnv)
@@ -799,8 +790,7 @@ int main() {
         aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
-  // The page is cut into idea units by the same Anthropic key the curator uses; without it, the
-  // line-and-sentence rule.
+  // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
   std::shared_ptr<Segmenter> journalSegmenter;
   if (anthropicKeyEnv && *anthropicKeyEnv)
     journalSegmenter = std::make_shared<AnthropicSegmenter>(
@@ -809,8 +799,8 @@ int main() {
   else
     journalSegmenter = std::make_shared<RuleSegmenter>();
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
-  // One warm corpus in front of storage: the live path, the repair pass and the read layer hold
-  // this one object, so none of them can hold a second, staler copy.
+  // The live path, the repair pass and the read layer must all hold this one object, or one of them
+  // reads a staler copy.
   auto journalEchoes = std::make_shared<WarmEchoRepository>(*journalSpans, *systemClock);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter,
@@ -818,18 +808,15 @@ int main() {
                                                       *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
-  // The PageWatcher the write path announces to, deriving on its own thread — never a request
-  // thread, of which drogon has one per core and a curator call is seconds long.
+  // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
   auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get());
-  // Writes nothing. It holds the same corpus, embedder and curator the live path does, so what it
-  // explains is what a save would decide.
+  // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
-  // Voice: OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, NullTranscriber otherwise, which
-  // makes the endpoint answer 503. Either way it gates on the same Windmill One entitlement.
+  // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
   if (openaiKeyEnv && *openaiKeyEnv)
@@ -846,8 +833,6 @@ int main() {
                                    .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);
 
-  // Its collaborators were built above with the MCP surface, because gym's tools ride the same
-  // services these routes do.
   gym::GymDeps gymDeps{.trainingService = gymTrainingService,
                        .catalogService = gymCatalogService,
                        .programService = gymProgramService,

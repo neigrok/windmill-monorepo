@@ -274,7 +274,6 @@ void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
 
 void OAuthApi::disconnectGrant(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                                const std::string& clientId) {
-  // Settings §2 disconnect: drop this tool's access immediately; its content is untouched.
   std::optional<UserId> caller = callerOf(req);
   if (!caller) {
     cb(oauthError("login_required", "sign in to disconnect a tool", drogon::k401Unauthorized));

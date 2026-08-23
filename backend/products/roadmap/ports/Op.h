@@ -7,10 +7,8 @@
 
 namespace wm {
 
-// One merged command as it lands in the op log and on the wire: a per-tree sequence
-// number, the client's idempotency id, the command, its HLC, and who issued it.
-// `createdAtMs` is the log's wall-clock stamp (epoch ms); 0 on the write path (the DB
-// assigns it), populated when read back for the activity feed.
+// One merged command as it lands in the op log and on the wire. `createdAtMs` is the log's
+// wall-clock stamp (epoch ms); 0 on the write path (the DB assigns it), populated when read back.
 struct AppliedOp {
   Seq seq = 0;
   std::string opId;

@@ -69,7 +69,6 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
 
-  // Fire and forget, so reporting the outcome is the only way a batch that stopped arriving is noticed.
   VendorCall call("amplitude", "forward");
   client->sendRequest(
       req,

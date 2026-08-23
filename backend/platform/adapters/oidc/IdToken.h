@@ -7,10 +7,9 @@
 
 namespace wm {
 
-// The claims inside an id_token, or nullopt if the token is malformed. The signature is NOT checked:
-// both providers are driven through a server-side code exchange, so the TLS connection this process
-// opened to the provider's token endpoint is the proof of origin. A token handed to us by a client
-// carries no such proof and must never reach this function.
+// The claims inside an id_token, or nullopt if it is malformed. The signature is NOT checked — the
+// TLS connection this process opened to the provider's token endpoint is the proof of origin, so a
+// token handed to us by a client must never reach this function.
 std::optional<Json::Value> idTokenClaims(const std::string& idToken);
 
 // A string claim, or "" for anything that isn't one. asString() throws on a non-string node and a

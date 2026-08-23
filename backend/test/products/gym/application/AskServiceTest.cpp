@@ -149,7 +149,7 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   CHECK_FALSE(holds(offered, "discard_session"));
   CHECK_FALSE(holds(offered, "revoke_share"));
 
-  // `mintsProposal` is a NAME PREFIX, so any future `propose_*` tool joins this list.
+  // `mintsProposal` is a name prefix, so any future `propose_*` tool joins this list.
   std::vector<std::string> names;
   for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
   std::sort(names.begin(), names.end());

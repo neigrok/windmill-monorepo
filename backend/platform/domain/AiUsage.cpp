@@ -6,8 +6,7 @@
 namespace wm {
 namespace {
 
-// Nanos per token: the per-MTok USD rate times a thousand, so $5/MTok is 5000 nanos and nothing
-// here needs a division to be exact.
+// Nanos per token: the per-MTok USD rate times a thousand, so $5/MTok is 5000 nanos.
 struct ModelRate {
   const char* model;
   long long inputNanos;

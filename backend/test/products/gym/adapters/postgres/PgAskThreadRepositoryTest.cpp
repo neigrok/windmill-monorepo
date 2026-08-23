@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-// Ask's threads (§O) against a real server.
+// Ask's threads against a real server.
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
@@ -78,7 +78,7 @@ TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
   REQUIRE(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000002"}).has_value());
 }
 
-// THE LIST: newest asked first, each row carrying the routine's name AS IT NOW STANDS.
+// The list: newest asked first, each row carrying the routine's name as it now stands.
 TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -181,7 +181,7 @@ TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin
   CHECK_EQ(exported[0].changes, std::string(""));
 }
 
-// A THREAD WITH NO TURNS IS IN THE FILE, WITH THE TURN COLUMNS EMPTY: the join is a LEFT one.
+// A thread with no turns is in the file with the turn columns empty: the join is a LEFT one.
 TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

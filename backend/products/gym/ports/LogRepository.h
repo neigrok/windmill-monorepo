@@ -12,8 +12,7 @@
 
 namespace wm::gym {
 
-// The heaviest working set of a whole session, ties broken by more reps — never by volume. Warmups,
-// drops and failures cannot be a session's top.
+// Heaviest working set of a session, ties broken by more reps. Warmups, drops and failures excluded.
 struct TopWorkingSet {
   double weightKg;
   int reps;
@@ -21,24 +20,14 @@ struct TopWorkingSet {
   bool operator==(const TopWorkingSet&) const = default;
 };
 
-// One row of the training log read: the session plus what the list says about it without loading
-// its sets.
-//
-// setCount is every set of every kind; workingSetCount only the working ones.
-//
-// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over the working sets: band-assisted work logs a
-// negative load, so the clamp keeps it from subtracting. Zero means "nothing here moved a measurable
-// load", never "no work" — surfaces draw nothing rather than `0.0 t`.
-//
-// workingMarks is the session's working sets collapsed to one row per (movement, load) carrying the
-// best reps at it, grouped by movement and heaviest first inside each, dated by the SESSION's start;
-// both implementations hand back the same vector. The row's e1RM is Epley's maximum over these rows,
-// not over topSet, and the gold PR dot reads them per movement. Loads at or below zero ride along
-// unfiltered — which of them Epley is defined for is the domain's rule.
-//
-// closedItself reads `closed_by`, falling back for rows written without it to autoCloseAt's own
-// signature: finished_at exactly at the last set's instant, or at started_at for a session holding
-// none. Both implementations read it the same way.
+// setCount counts every kind; workingSetCount only the working ones.
+// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over working sets — a negative (band-assisted)
+// load must not subtract. Zero means nothing measurable moved, never "no work".
+// workingMarks: working sets collapsed to one row per (movement, load) carrying the best reps at it,
+// grouped by movement, heaviest first inside each, dated by the SESSION's start. Loads at or below
+// zero ride along unfiltered.
+// closedItself reads `closed_by`, falling back to autoCloseAt's signature: finished_at exactly at
+// the last set's instant, or at started_at for a session holding none.
 struct SessionSummary {
   Session session;
   int setCount;
@@ -52,10 +41,9 @@ struct SessionSummary {
   bool operator==(const SessionSummary&) const = default;
 };
 
-// One page of the log plus `standing`: the marks that stood before the OLDEST row on it, which is
-// what makes a record judgeable from a page alone. Bounded by the page's own movements and by
-// distinct loads, ordered by movement and heaviest load first, so both implementations hand back the
-// same vector. An empty page has empty `standing`.
+// `standing` is the marks that stood before the OLDEST row on the page, bounded by the page's own
+// movements and by distinct loads, ordered by movement then heaviest load first. An empty page has
+// empty `standing`.
 struct LogPage {
   std::vector<SessionSummary> sessions;   // newest first
   std::vector<PriorMark> standing;
@@ -64,9 +52,8 @@ struct LogPage {
 };
 
 // The most recent FINISHED session holding a non-warmup set of the movement, and its sets of that
-// movement in set_number order. Most recent is the session's own (startedAt, id) — the log read's
-// sort key. `sets` is never empty. routineName is the name frozen in the session's plan snapshot
-// ("" when ad-hoc), never the routine's name today.
+// movement in set_number order; most recent is (startedAt, id). `sets` is never empty. routineName
+// is the name frozen in the session's plan snapshot ("" when ad-hoc), never the routine's name today.
 struct LastTime {
   Session session;
   std::string routineName;
@@ -75,10 +62,8 @@ struct LastTime {
   bool operator==(const LastTime&) const = default;
 };
 
-// The picker's meta line for one movement: `LastTime`'s LAST row, the one the prefill dials off, so
-// the two reads name the same set. atMs is the SESSION's start, never the set's own completed_at,
-// which is the device's wall clock. The vector is SPARSE — one row per movement this account has
-// worked, and absence is `never logged`.
+// `LastTime`'s LAST row, the one the prefill dials off. atMs is the SESSION's start, never the set's
+// own completed_at. The vector is SPARSE — one row per movement worked; absence is `never logged`.
 struct LastSet {
   ExerciseId exercise;
   double weightKg;
@@ -105,11 +90,11 @@ struct LogCursor {
   int limit;
 };
 
-// Every refusal an insertSet can make, each crossing the port as a value rather than an exception.
-// idTaken: the id is spent on a row this session does not hold, never whose. unknownExercise: no
-// movement this account's catalog holds. finished: the session was already closed when the write
-// took its lock. deleted: the id belongs to a set the lifter deleted — kept apart from idTaken
-// because minting a fresh id and resending, the repair for idTaken, would undo that deletion.
+// Every insertSet refusal crosses as a value, never an exception. idTaken: the id is spent on a row
+// this session does not hold, never whose. unknownExercise: no movement this account's catalog
+// holds. finished: the session was already closed when the write took its lock. deleted: the id
+// belongs to a set the lifter deleted — never conflate with idTaken, whose repair (mint a fresh id
+// and resend) would undo the deletion.
 enum class SetInsertError { none, idTaken, unknownExercise, finished, deleted };
 
 struct SetInsertOutcome {
@@ -117,9 +102,8 @@ struct SetInsertOutcome {
   SetInsertError error;
 };
 
-// One line of the export: text end to end, instants ISO-8601 UTC, numerics at their column's own
-// scale (72.5 kg is "72.50"), an absent rpe an empty cell rather than a zero. Flat, with the
-// session and the movement's name repeated beside every set.
+// Text end to end, instants ISO-8601 UTC, numerics at their column's own scale (72.5 kg is "72.50"),
+// an absent rpe an empty cell rather than a zero.
 struct ExportedSet {
   std::string sessionId;
   std::string startedAt;
@@ -139,9 +123,8 @@ struct ExportedSet {
   bool operator==(const ExportedSet&) const = default;
 };
 
-// The coach share, a row of its own table rather than a column on the session, so no owner-scoped
-// read is widened by it. The token is minted server-side, never accepted from a client, and the
-// session id is resolved against the caller's own log before a share is built from it.
+// The token is minted server-side, never accepted from a client; the session id is resolved against
+// the caller's own log before a share is built from it.
 struct SessionShare {
   SessionId session;
   UserId user;
@@ -151,8 +134,7 @@ struct SessionShare {
   bool operator==(const SessionShare&) const = default;
 };
 
-// The whole of what a coach sees: no account, no ids of any kind, no frozen plan. The movement
-// travels as its display name — a coach holds no catalog to resolve a slug against.
+// What a coach sees: no account, no ids, no frozen plan; the movement travels as its display name.
 struct SharedSet {
   std::string exercise;
   int setNumber;
@@ -175,16 +157,14 @@ struct SharedSession {
   bool operator==(const SharedSession&) const = default;
 };
 
-// The log's door to gym storage: sessions, their sets, what corrections left behind, and the coach
-// share, which goes with the session when the session goes. Every read and write is owner-scoped by
-// the UserId it carries; absent is byte-identical to forbidden. Writes are idempotent by
-// client-minted id: insertSession and insertSet no-op on conflict and answer with the row that is
-// stored, and one open session per user is a partial unique index, never a guard flag. The two
-// writes that CHANGE a stored set are idempotent by shape instead — a correction assigns absolute
-// values, and a delete of an already-gone set is a delete.
-//
+// Sessions, their sets, what corrections left behind, and the coach share, which goes with the
+// session. Every read and write is owner-scoped by the UserId it carries; absent is byte-identical
+// to forbidden. insertSession and insertSet are idempotent by client-minted id: they no-op on
+// conflict and answer with the row that is stored, and one open session per user is a partial unique
+// index, never a guard flag. The two writes that CHANGE a stored set are idempotent by shape —
+// a correction assigns absolute values, and a delete of an already-gone set is a delete.
 // A set id is spent once and for good: insertSet refuses an id gym_set_revisions holds as deleted,
-// with `deleted` rather than `idTaken`, or a replayed append would re-create a deleted set.
+// with `deleted` rather than `idTaken`.
 struct LogRepository {
   virtual ~LogRepository() = default;
 
@@ -193,26 +173,20 @@ struct LogRepository {
   virtual std::optional<Set> setOf(const UserId& user, const SetId& id) = 0;
   virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
   virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
-  // Lands on an open session and records who closed. A lifter's finish is final — a replay or a
-  // race keeps whichever landed first. A stale close is revisable: by a late set (lateSetLands), and
-  // by the lifter's own finish, which upgrades closed_by to finish and moves finished_at as
+  // Lands on an open session and records who closed. A lifter's finish is final: a replay or a race
+  // keeps whichever landed first. A stale close is revisable — by a late set (lateSetLands), and by
+  // the lifter's own finish, which upgrades closed_by to finish and moves finished_at as
   // finishAfterStaleClose says.
   virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
-  // Assigns the set number and returns the stored row; every refusal is decided here and nowhere
-  // above. A replay is resolved earlier, by `TrainingService::append` through `setOf`, so this
-  // answers `finished` for every write arriving after the locked row closed — except the one
-  // lateSetLands admits, a set continuing a STALE-closed workout, which lands and moves that
-  // workout's finish forward to it in the same transaction. An id held as deleted is refused before
-  // either.
+  // Assigns the set number and returns the stored row; every refusal is decided here. Answers
+  // `finished` for every write arriving after the locked row closed, except the one lateSetLands
+  // admits — a set continuing a STALE-closed workout lands and moves that workout's finish forward
+  // to it in the same transaction. An id held as deleted is refused before either.
   virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
 
-  // The two writes that change a stored set: what they replace is appended to gym_set_revisions, so
-  // gym_sets keeps one row per set that currently stands and every read above recomputes off it.
-  //
+  // What these replace is appended to gym_set_revisions; gym_sets keeps one row per set that stands.
   // `updateSet` takes the WHOLE corrected row, never a patch to merge, and answers with the stored
-  // row so a retry reads back the same values. Absent is the one answer for no such set, another
-  // account's, and one this session does not hold alike.
-  //
+  // row. Absent covers no such set, another account's, and one this session does not hold alike.
   // `deleteSet` answers nothing, so a lost reply is repaired by sending the same delete again.
   // Neither write is refused for a finished session.
   virtual std::optional<Set> updateSet(const UserId& user, const Set& corrected) = 0;
@@ -226,31 +200,28 @@ struct LogRepository {
   // Ordered by movement id, the key the caller joins it onto its catalog by.
   virtual std::vector<LastSet> lastSets(const UserId& user) = 0;
 
-  // The finish read: everything the review rules need that this session does not hold, in one pass —
-  // the marks of the movements it works, and the earlier session it stands against with its sets.
+  // Everything the review rules need that the session does not hold, in one pass: the marks of the
+  // movements it works, and the earlier session it stands against with its sets.
   virtual SessionHistory historyFor(const UserId& user, const Session& session) = 0;
   // The sets go with the row (`on delete cascade`).
   virtual bool deleteSession(const UserId& user, const SessionId& id) = 0;  // false = nothing to remove
 
-  // One movement's whole page in one pass. Nothing here computes an e1RM, picks a record or windows
-  // a chart; the store hands over orderings and the pure rule does the rest.
+  // One movement's whole page in one pass; the store hands over orderings only, no e1RM.
   virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;
 
-  // The statistics read, in one pass. `tops` come back grouped by movement, oldest first within each
-  // group, so the rule assembles a line by appending; no e1RM is computed here.
+  // `tops` come back grouped by movement, oldest first within each group; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
   // Every set this account holds, oldest first, including the workout still open.
   virtual std::vector<ExportedSet> exportedSets(const UserId& user) = 0;
 
-  // The mint is idempotent ON THE SESSION: a second call while a share is live hands back the same
-  // token; an expired share is replaced rather than returned. Absent, another account's, and
+  // Idempotent ON THE SESSION: a second call while a share is live hands back the same token; an
+  // expired share is replaced rather than returned. Absent, another account's, and
   // already-shared-by-someone-else are one answer.
   virtual std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                                   std::uint64_t nowMs) = 0;
   virtual bool revokeShare(const UserId& user, const SessionId& id) = 0;   // false = nothing to revoke
-  // The one read here with no owner behind it: the token IS the credential. Expiry is decided
-  // against the instant the caller passes, never the database's clock. Revoked, expired and
-  // never-existed all answer the same nothing.
+  // No owner behind it: the token IS the credential. Expiry is decided against the instant the
+  // caller passes, never the database's clock. Revoked, expired and never-existed answer alike.
   virtual std::optional<SharedSession> sharedSession(const std::string& token,
                                                      std::uint64_t nowMs) = 0;
 };

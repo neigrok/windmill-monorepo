@@ -96,9 +96,8 @@ inline std::vector<std::string> supportedScopes(const std::vector<std::string>& 
   return tokens;
 }
 
-// The credential's own identity, not the account it acts for: over OAuth the client id and its
-// registered name, over an MCP key the key's public id and name. Both empty means no connection
-// stands behind the call at all, never an identity we failed to look up.
+// The credential's own identity, not the account it acts for. Both fields empty means no
+// connection stands behind the call, never an identity that failed to resolve.
 struct ToolConnection {
   std::string id;
   std::string name;

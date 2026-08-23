@@ -6,10 +6,9 @@
 
 namespace wm {
 
-// Whether one provider event ends every stream Windmill writes to a mailbox; which streams stop is
-// each product's answer (platform/ports/MailSuppression.h). Resend speaks SES's bounce taxonomy:
-// only `Permanent` stops mailing. `Transient`, `Undetermined`, an absent severity and an
-// unrecognised event type are all not evidence. A complaint stops mailing with no severity at all.
+// Whether one provider event ends every stream Windmill writes to a mailbox. Resend speaks SES's
+// bounce taxonomy: only `Permanent` stops mailing. `Transient`, `Undetermined`, an absent severity
+// and an unrecognised event type are all not evidence. A complaint stops mailing with no severity.
 enum class MailVerdict { keepMailing, stopMailing };
 
 struct MailFeedback {

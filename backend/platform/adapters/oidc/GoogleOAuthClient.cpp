@@ -33,9 +33,8 @@ std::string urlEncode(const std::string& in) {
 }
 
 // The verified identity inside a Google id_token, or nullopt if it's malformed, not for us, or the
-// email isn't Google-verified. The signature is not re-checked (see the header); aud/iss/verified
-// are the trust gate. `sub` is the durable half — it is what binds the door to an account, so a
-// token without one is refused rather than resolved by its address alone.
+// email isn't Google-verified. aud/iss/verified are the trust gate. `sub` binds the door to an
+// account; a token without one is refused rather than resolved by its address alone.
 std::optional<ProviderIdentity> identityFromIdToken(const std::string& idToken, const std::string& clientId) {
   const std::optional<Json::Value> claims = idTokenClaims(idToken);
   if (!claims) return std::nullopt;

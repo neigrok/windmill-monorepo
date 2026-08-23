@@ -73,15 +73,14 @@ using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNod
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
-// Server-authoritative validation, at the edge before a command is admitted to the log. Graph
-// commands are never rejected (nullopt); legend commands may be, because their invariants — hue
-// uniqueness, ≤6 kinds, no in-use removal, length caps — are locally decidable. The string is a
-// human-readable reason.
+// Server-authoritative validation before a command is admitted to the log. Graph commands are never
+// rejected (nullopt); legend commands may be — hue uniqueness, ≤6 kinds, no in-use removal, length
+// caps. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
 
-// The same bounds for the arrivals that mint no Command and so are never seen by validate(). A
-// refusal names the id, the value and the limit, and says which KIND it is — an HTTP door owes 413
-// to a document merely too big and 400 to one whose field is malformed.
+// The same bounds for arrivals that mint no Command and so are never seen by validate(). A refusal
+// names the id, the value, the limit, and its KIND: 413 for a document merely too big, 400 for a
+// malformed field.
 struct Admission {
   enum class Verdict { tooLarge, malformed };
   Verdict verdict;

@@ -70,9 +70,8 @@ inline std::optional<NodeColor> parseColor(std::string_view name) {
   return std::nullopt;
 }
 
-// The six hues as hex, straight from the design tokens (src/skilltree/theme.js → tokens/colors.css).
-// Also the safe form for a mail: a colour is one of these six literals and never a string that came
-// from a person, which matters where it lands in a style attribute.
+// The six hues as hex, from the design tokens (src/skilltree/theme.js → tokens/colors.css). A colour
+// is one of these six literals and never a person-supplied string — it lands in a style attribute.
 inline const char* nodeColorHex(NodeColor color) {
   switch (color) {
     case NodeColor::terracotta: return "#BC6C42";

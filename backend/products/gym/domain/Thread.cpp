@@ -4,10 +4,8 @@ namespace wm::gym {
 
 namespace {
 
-// Every proposal in one state, folded into the outcome that names it: the count is what those
-// proposals moved, and the routine is named only where they all landed on the same one. The loop
-// runs to the end whatever it meets — meeting a second routine costs the NOUN and nothing else, so
-// the noun is decided at the end rather than mid-walk.
+// The count is what those proposals moved; the routine is named only where they all landed on the
+// same one, so the noun is decided at the end rather than mid-walk.
 ThreadOutcome foldedInto(ThreadOutcomeKind kind, const AskThread& thread, ProposalState state) {
   ThreadOutcome outcome{kind};
   std::optional<RoutineId> landedOn;

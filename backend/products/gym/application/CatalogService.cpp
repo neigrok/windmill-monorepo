@@ -9,7 +9,7 @@ std::vector<Exercise> CatalogService::catalog(const UserId& user) {
 }
 
 // The one site that applies the equipment's default step. Every created movement is custom by
-// construction — the seeds are the schema's, and nothing on the wire can mint one.
+// construction; the seeds are the schema's.
 ExerciseInsertOutcome CatalogService::createExercise(const UserId& user,
                                                      const ExerciseWrite& incoming) {
   return catalog_.insertExercise(
@@ -17,8 +17,7 @@ ExerciseInsertOutcome CatalogService::createExercise(const UserId& user,
                      incoming.stepKg.value_or(defaultStepKg(incoming.equipment)), true});
 }
 
-// The entity's constructor is the whole validation and the store's answer the whole refusal. The
-// construction happens inside the store, where the stored row and the new name are both in hand: a
+// The entity's constructor is the whole validation and the store's answer the whole refusal. A
 // rename moves the name and nothing else — not the pattern, not the step, not the id.
 std::optional<Exercise> CatalogService::renameExercise(const UserId& user, const ExerciseId& id,
                                                        const std::string& name) {

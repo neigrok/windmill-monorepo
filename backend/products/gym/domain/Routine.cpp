@@ -17,8 +17,7 @@ RoutineEntry::RoutineEntry(int position, ExerciseId exercise, std::optional<int>
   if (!targetSets && (targetReps || targetWeightKg))
     throw InvalidTraining("an open entry names no sets, so it names no reps and no weight either");
   // The same bounds the columns carry, refused here so a routine that cannot be stored is never
-  // built; the rest band is the pair the global dial reads too (Training.h). A named rep target keeps
-  // its band; naming none is `max`, and naming no sets is `open`.
+  // built. A named rep target keeps its band; naming none is `max`, and naming no sets is `open`.
   if (targetSets && (*targetSets < 1 || *targetSets > 20))
     throw InvalidTraining("target sets out of range");
   if (targetReps && (*targetReps < 1 || *targetReps > 100))
@@ -48,9 +47,8 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
   // The document's own size, bounded so one transaction cannot hold as many INSERTs as a body names.
   if (this->entries.size() > static_cast<std::size_t>(kMaxRoutineEntries))
     throw InvalidTraining("a routine holds too many movements");
-  // Dense and 1-based, checked against arrival order: one rule refusing a gap, a duplicate and a
-  // shuffle at once. The vector's order is the routine's order and position is what the store keys
-  // on, so the two may never disagree.
+  // Dense and 1-based, checked against arrival order. The vector's order is the routine's order and
+  // position is what the store keys on, so the two may never disagree.
   for (std::size_t at = 0; at < this->entries.size(); ++at)
     if (this->entries[at].position != static_cast<int>(at) + 1)
       throw InvalidTraining("routine positions run 1..n in order");

@@ -9,8 +9,7 @@
 
 namespace wm {
 
-// The vendor's four buckets, kept apart because cache reads and writes are priced differently
-// from fresh input.
+// The vendor's four buckets; cache reads and writes are priced differently from fresh input.
 struct TokenUse {
   long long input = 0;
   long long output = 0;
@@ -52,8 +51,7 @@ struct AiOutcome {
   static constexpr const char* schemaInvalid = "schema_invalid";
 };
 
-// One account's AI budget for the window; the service loads `spent`, the domain answers. A fuse,
-// not a wall, and no dollar figure is ever shown to anybody but us.
+// One account's AI budget for the window; the service loads `spent`, the domain answers.
 struct AiAllowance {
   long long limitNanos = 0;
   long long spentNanos = 0;

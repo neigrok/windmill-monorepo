@@ -11,19 +11,17 @@
 namespace wm {
 
 // One product's registration at the composition root: the host that serves its tools and the
-// paragraph it wants in the initialize handshake. The product name rides on each declaration instead.
+// paragraph it wants in the initialize handshake.
 struct ToolModule {
   ToolHost& host;
   std::string instructions;
 };
 
-// Every connected product's tools behind the single seam McpServer binds — and the grant gate. A
+// Every connected product's tools behind the single seam McpServer binds, and the grant gate: a
 // name outside the caller's scope is refused here, naming the level that was not granted, and the
-// same scope filters the catalog through ToolHost::listTools, so what a connection can see and what
-// it can call are one answer.
-//
-// A duplicate tool name across products is a CONSTRUCTION failure. An argument no schema declares is
-// refused before dispatch: every tool publishes `additionalProperties:false` and this is where it is enforced.
+// same scope filters the catalog through ToolHost::listTools.
+// A duplicate tool name across products is a construction failure. An argument no schema declares is
+// refused before dispatch — every tool publishes `additionalProperties:false`, enforced here.
 class CompositeToolHost : public ToolHost {
 public:
   explicit CompositeToolHost(const std::vector<ToolModule>& modules);
@@ -50,8 +48,6 @@ private:
   std::string instructions_;
 };
 
-// The initialize handshake for a server speaking for several products: product-neutral frame,
-// product-supplied content.
 // `build` is the deployed commit (empty on a laptop), riding in `serverInfo.version` as semver
 // build metadata and named in the instructions.
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build = "");

@@ -4,10 +4,9 @@
 
 namespace wm {
 
-// Fleet-wide work lock a periodic sweep takes for one pass, so two processes on one database do not
-// duplicate the work; it is not a correctness mechanism — the sweep's committed claim is. One scoped
-// verb only: a Postgres advisory lock is session-scoped, so lock and unlock must stay on the same
-// connection for the pass's whole life.
+// Fleet-wide work lock a periodic sweep takes for one pass, so two processes do not duplicate the
+// work; not a correctness mechanism. One scoped verb only: a Postgres advisory lock is
+// session-scoped, so lock and unlock must stay on the same connection for the pass's whole life.
 struct SweepMutex {
   virtual ~SweepMutex() = default;
 

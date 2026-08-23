@@ -280,7 +280,6 @@ TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
-// Omitted is the join, so a caller written before the field keeps meaning what it meant.
 TEST(gym_start_without_the_field_still_joins_the_open_session) {
   Harness h;
   UserId me = h.signIn("s-live");

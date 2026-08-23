@@ -16,14 +16,9 @@
 
 namespace wm {
 
-// The reminder engine's one action, and the heartbeat that drives it. The pipeline — DECIDE →
-// CLAIM → SEND, the fleet lock, the arming gate, the pause credential, the counters — is
-// platform/application/MailSweep.h; this supplies who is due, the readiness decision, the weekly
-// ledger, and the reminder mail.
-//
-// Every schedule fact lives in Postgres, so a sweep is a pure function of (now, database): do not
-// put a schedule in the timer. The thread is the sweep's OWN event loop, never a drogon request
-// loop — those serve HTTP and must not block on libpqxx. Exceptions never escape it.
+// Supplies the halves MailSweep drives: who is due, the readiness decision, the weekly ledger, and
+// the reminder mail. A sweep is a pure function of (now, database) — never put a schedule in the
+// timer. Runs on the sweep's own event loop, never a drogon request loop; exceptions never escape it.
 class ReminderSweep : public MailSweep<DueUser, ReminderDecision> {
 public:
   ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail, TokenGenerator& tokens,

@@ -8,8 +8,6 @@ OAuthService::OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock&
 OAuthService::Registration OAuthService::registerClient(std::vector<std::string> redirectUris,
                                                         std::string name) {
   if (redirectUris.empty()) return {RegisterError::invalidMetadata, std::nullopt, 0};
-  // Registration is open to anyone, so bound the size and the count here rather than in the rate
-  // limiter.
   if (redirectUris.size() > OAuthPolicy::maxRedirectUris)
     return {RegisterError::invalidMetadata, std::nullopt, 0};
   for (const std::string& uri : redirectUris) {
@@ -17,15 +15,14 @@ OAuthService::Registration OAuthService::registerClient(std::vector<std::string>
       return {RegisterError::invalidMetadata, std::nullopt, 0};
     if (!redirectSchemeAllowed(uri)) return {RegisterError::invalidMetadata, std::nullopt, 0};
   }
-  // Counts only clients that never completed an authorization inside the rolling window, so it
-  // sees a burst and not a table. Reported as our refusal, never as invalid metadata.
+  // Counts only clients that never completed an authorization inside the rolling window.
   const UnixMs now = clock_.nowMs();
   const int unattached = repo_.unattachedClientsSince(now - OAuthPolicy::unattachedClientWindowMs);
   if (unattached >= OAuthPolicy::maxUnattachedClients)
     return {RegisterError::atCapacity, std::nullopt, unattached};
 
-  // This name becomes the consent screen's headline and anyone may register one, so clamp the
-  // length and drop control characters. The redirect host remains the real trust anchor.
+  // This name becomes the consent screen's headline and anyone may register one: clamp the length
+  // and drop control characters.
   std::string safeName;
   for (char c : name) {
     if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) continue;
@@ -77,8 +74,7 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
   // The token stays bound to the resource the code was issued for; a repeated one must match, an
   // omitted one falls back to that binding.
   if (!resource.empty() && !audienceMatches(resource, stored->resource)) return {GrantError::badResource, std::nullopt};
-  // Record the grant apart from the rotating token rows, scope included, so the settings row can
-  // still say what a connected tool may do after the tokens have rotated.
+  // Record the grant apart from the rotating token rows so it survives rotation, scope included.
   repo_.recordGrant(stored->user, stored->clientId, now, stored->scope);
   return {GrantError::ok, mintPair(stored->clientId, stored->user, stored->resource, stored->scope, now)};
 }
@@ -86,12 +82,11 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
 OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken, const std::string& clientId) {
   const UnixMs now = clock_.nowMs();
   const RefreshRotation rotation = repo_.rotateRefreshToken(tokens_.digestOf(refreshToken), now);
-  // A refresh token presented twice means two parties hold it and neither can be told from the
-  // thief, so the whole grant goes and the person re-consents (OAuth 2.1 §4.14.2).
+  // A refresh token presented twice revokes the whole grant and forces re-consent
+  // (OAuth 2.1 §4.14.2).
   if (rotation.outcome == RefreshOutcome::reused) {
-    // ...unless the same client presents it again within moments of its own rotation: a retry
-    // after a lost response is indistinguishable from theft inside that window. Outside it, and
-    // for any other client, reuse is reuse and the grant goes.
+    // ...unless the same client presents it again inside the rotation grace, where a retry after a
+    // lost response cannot be told from theft.
     const bool ownRetry = rotation.grant && rotation.grant->clientId == clientId &&
                           now - rotation.spentMs <= OAuthPolicy::refreshReplayGraceMs;
     if (!ownRetry && rotation.grant) repo_.revokeGrant(rotation.grant->user, rotation.grant->clientId);
@@ -112,8 +107,7 @@ std::optional<ToolCaller> OAuthService::resolveAccessToken(const std::string& ac
   if (!token || token->expiresAt <= now) return std::nullopt;
   if (!audienceMatches(token->resource, serverResource)) return std::nullopt;
   repo_.touchGrantUsed(token->user, token->clientId, now, OAuthPolicy::grantTouchThrottleMs);
-  // The connection is the client: its id from the token, its name from the client row. A missing
-  // client row costs the name and nothing else.
+  // A missing client row costs the name and nothing else.
   const std::optional<OAuthClient> client = repo_.findClient(token->clientId);
   return ToolCaller{token->user, parseToolScope(token->scope),
                     ToolConnection{token->clientId, client ? client->name : ""}};

@@ -9,10 +9,9 @@
 
 namespace wm {
 
-// A read-side filter over a tree's present nodes. Every set criterion must match (AND):
-// `color` pins a hue; `kind` pins a hue too, resolved from the legend (an id absent from the
-// legend selects nothing); `query` is a case-insensitive substring tested against a node's
-// id, label and description. An all-empty filter selects every node.
+// A read-side filter over a tree's present nodes; every set criterion must match (AND). `kind` is
+// resolved from the legend — an id absent from the legend selects nothing. `query` is a
+// case-insensitive substring over a node's id, label and description. An all-empty filter selects all.
 struct NodeFilter {
   std::optional<NodeColor> color;
   std::optional<KindId> kind;
@@ -21,7 +20,7 @@ struct NodeFilter {
 
 // The nodes of `tree` the filter admits, BEST FIRST: an exact id, then an id prefix, then a label
 // hit, then an id substring, then a description-only hit; ties keep the tree's own node order.
-// Without a query the tree's order stands. A pure projection, which is what makes a resume cursor safe.
+// Without a query the tree's order stands. A pure projection.
 std::vector<NodeSpec> selectNodes(const TreeData& tree, const NodeFilter& filter);
 
 }

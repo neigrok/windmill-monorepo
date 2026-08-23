@@ -15,8 +15,7 @@ namespace wm::gym {
 
 namespace {
 
-// The properties a tool publishes, comma-joined — what a refusal offers instead of the key it just
-// rejected.
+// The properties a tool publishes, comma-joined, for a refusal message.
 std::string declaredArguments(const Json::Value& inputSchema) {
   std::string declared;
   for (const std::string& property : inputSchema["properties"].getMemberNames()) {
@@ -26,9 +25,8 @@ std::string declaredArguments(const Json::Value& inputSchema) {
   return declared.empty() ? "no arguments" : declared;
 }
 
-// Every gym tool publishes `additionalProperties: false`, and Ask's door enforces it too: over MCP
-// the check belongs to CompositeToolHost, which Ask does not pass through. It is the composite's
-// sentence word for word, so an unknown key is refused identically on both doors.
+// Every gym tool publishes `additionalProperties: false`. Ask does not pass through
+// CompositeToolHost, so the check is repeated here word for word and refuses identically.
 std::optional<std::string> unknownArgument(const Json::Value& inputSchema,
                                            const Json::Value& arguments) {
   if (!arguments.isObject()) return std::nullopt;  // the host answers a wrong-shape body, naming its type
@@ -40,8 +38,7 @@ std::optional<std::string> unknownArgument(const Json::Value& inputSchema,
   return std::nullopt;
 }
 
-// A question refills at this rate, and after this long idle any bucket is full whatever it held —
-// which is when it can be forgotten, a full bucket and an unseen account answering identically.
+// After this long idle any bucket is full whatever it held, so it can be forgotten.
 constexpr double kQuestionsPerSecond = kAskPerDay / 86400.0;
 constexpr double kRefilledSeconds = kAskBackToBack / kQuestionsPerSecond;
 constexpr std::size_t kMaxAccountsHeld = 100000;
@@ -103,15 +100,13 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
     return ToolResult::failure(name + ": no such tool — call tools/list for what Ask may do.");
   }
   if (declared->access != Access::read && !mintsProposal(name))
-    // Asked FIRST, before the grant below, so a tool this door never offers is answered with Ask's
-    // own sentence at every grant there is.
+    // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
+    // every grant.
     return ToolResult::failure(name +
                                ": Ask reads the log and proposes; it cannot change what a lifter "
                                "logged. Tell them that one is theirs to change, and name the workout "
                                "and the movement so they can find it.");
-  // The grant, checked where the CALL is and not only where the catalog is, so narrowing the scope
-  // takes a tool away in fact. It is the composite's sentence over MCP, said here for the door that
-  // does not pass through it.
+  // The grant, checked where the CALL is and not only where the catalog is.
   if (!caller.scope.allows(declared->product, declared->access))
     return ToolResult::failure(name + ": this connection was not granted " + declared->product + ":" +
                                toString(declared->access) + ", so it cannot run this tool.");
@@ -150,10 +145,9 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
     done(AskReply{AskRefusal::questionTooLong});
     return;
   }
-  // The one text rule, and this question becomes a thread TITLE. A NUL stops a `text` column, and
-  // non-UTF-8 bytes are refused by Postgres mid-transaction — `openThread` runs outside this method's
-  // only try, so that would leave as a retryable 500 on a body that can never land. Both are
-  // wire-reachable: jsoncpp decodes \u0000 and a lone surrogate escape into exactly these bytes.
+  // A NUL stops a `text` column, and non-UTF-8 bytes are refused by Postgres mid-transaction;
+  // `openThread` runs outside this method's only try, so that would leave as a retryable 500 on a
+  // body that can never land. Both are wire-reachable through jsoncpp escapes.
   if (!storableText(question)) {
     done(AskReply{AskRefusal::questionUnstorable});
     return;
@@ -162,9 +156,8 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
     done(AskReply{AskRefusal::notConfigured});
     return;
   }
-  // Never mid-session, enforced here rather than in three clients. It sits above the ceilings so a
-  // lifter between sets hears that and not something about the day's questions; the read settles a
-  // stale workout on its way past.
+  // Never mid-session, enforced here rather than in three clients, and above the ceilings so a
+  // lifter between sets hears that first. The read settles a stale workout on its way past.
   if (training_.openSession(caller)) {
     done(AskReply{AskRefusal::sessionOpen});
     return;
@@ -174,13 +167,13 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
     done(AskReply{AskRefusal::outOfBudget});
     return;
   }
-  // Opened BEFORE the model runs, because a proposal minted mid-conversation points at the row. A run
-  // that never answers is undone below by `discardEmptyThread`. The title is this question, verbatim,
-  // and only on a thread that did not exist.
+  // Opened BEFORE the model runs, because a proposal minted mid-conversation points at the row. A
+  // run that never answers is undone below by `discardEmptyThread`. The title is this question,
+  // verbatim, and only on a thread that did not exist.
   const ThreadOpenOutcome opened = threads_.openThread(caller, thread, question);
   if (opened.error == ThreadOpenError::idTaken || !opened.thread) {
-    // No thread and no named error is the two-accounts-one-id race, and it answers the same: an id
-    // somebody else holds, refused here where a refusal still costs nothing.
+    // No thread and no named error is the two-accounts-one-id race: read it as an id somebody else
+    // holds.
     done(AskReply{AskRefusal::threadTaken});
     return;
   }
@@ -204,10 +197,8 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
 
   workers_.getNextLoop()->queueInLoop(
       [this, caller, thread, turns = std::move(turns), done = std::move(done)]() mutable {
-        // Ask acts as the signed-in account, and the three levels are named one by one rather than
-        // taken as `everything()`, so a fourth level or a second product never rides along. It is not
-        // the lock — `AskTools` below is — but AskTools reads this scope, so narrowing it here takes
-        // tools away for real.
+        // The three levels are named one by one rather than taken as `everything()`, so a fourth
+        // level or a second product never rides along. AskTools reads this scope.
         const ToolCaller actor{caller, ToolScope({{"gym", Access::read},
                                                   {"gym", Access::write},
                                                   {"gym", Access::del}})};
@@ -219,20 +210,19 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
           throw;  // not an answer that failed: an exhausted process must die loudly (GymTools.cpp)
         } catch (const std::exception& failed) {
           // Nothing sits above a worker loop: an exception leaving this lambda takes the process
-          // down and answers nobody.
+          // down.
           LOG_ERROR << "gym ask run threw: " << failed.what();
           reply.answer = AskAnswer{false, "", failed.what(), {}};
         }
         // The test is whether the run COST anything, never whether it answered: `modelTurns == 0`
-        // gives the question back — a fuse trip, a wedged vendor, a log we could not open. A failure
-        // that spent turns is charged. A run that THREW is given back whatever it spent, the count
-        // having died with the stack.
+        // gives the question back. A failure that spent turns is charged. A run that THREW is given
+        // back whatever it spent, the count having died with the stack.
         if (reply.answer.modelTurns == 0) perAccount_.giveBack(caller.str());
         reply.read = hands.read().tally();
         reply.proposals = hands.proposals();
         // The conversation is written only once it has an answer, both halves together, so a failed
-        // ask leaves the thread as it found it and a retry appends the question once. A proposal the
-        // dead run minted keeps its row and loses its thread link.
+        // ask leaves the thread as it found it. A proposal the dead run minted keeps its row and
+        // loses its thread link.
         if (!reply.answer.ok) {
           threads_.discardEmptyThread(caller, thread);
           done(std::move(reply));

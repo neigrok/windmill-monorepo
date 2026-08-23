@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-// §I · the settings row, against the real column checks.
+// The settings row, against the real column checks.
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 

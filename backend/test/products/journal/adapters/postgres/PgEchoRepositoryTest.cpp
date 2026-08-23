@@ -231,9 +231,7 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, false);
 
-  // A new judge — the curator's prompt, or a selection threshold — is the third way, and it is the
-  // one that was missing: two false positives were fixed, the fix deployed, and every page kept
-  // carrying them because nothing about a verdict makes a page due. It re-cuts nothing.
+  // A new judge — curator prompt or selection threshold — makes the page due but re-cuts nothing.
   const PipelineVersions rejudge{"segmenter-v1", "embedder-v1", "judge-v2"};
   owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, rejudge);
   REQUIRE(owed.has_value());
@@ -607,9 +605,6 @@ TEST(pg_echo_a_dismissed_pairing_stays_dismissed_when_its_passages_move) {
   CHECK_EQ(left[1].matchDay.iso(), std::string("2024-03-01"));
 }
 
-// Persistence is additive, and until 2026-08-23 that made a stored pairing permanent — a false
-// positive survived every later prompt, floor and threshold. What is retracted now is exactly what
-// was put to the curator again and refused; silence about a row still leaves it standing.
 TEST(pg_echo_a_refused_pairing_is_retracted_and_an_unasked_one_is_not) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -647,9 +642,7 @@ TEST(pg_echo_a_refused_pairing_is_retracted_and_an_unasked_one_is_not) {
   CHECK_EQ(left[0].matchSpanId, old[1].spanId);
 }
 
-// A vendor refusal ends the page carrying NOTHING, which ECHOES.md has always promised and which
-// additive persistence had quietly made impossible: `replaceEchoes` with an empty set keeps every
-// row. It is a safety guarantee, so it gets an operation that means it.
+// `replaceEchoes` with an empty set keeps every row, so clearing a page needs its own operation.
 TEST(pg_echo_clearing_a_page_leaves_it_carrying_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

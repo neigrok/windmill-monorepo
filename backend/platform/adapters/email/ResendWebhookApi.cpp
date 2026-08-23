@@ -22,8 +22,7 @@ std::string asStr(const Json::Value& value) {
   return value.isString() ? value.asString() : std::string();
 }
 
-// Resend names the recipient in data.to. Every mail goes to exactly one address, so the first entry
-// is the whole answer; a bare string is accepted beside the array.
+// Resend names the recipient in data.to — one address per mail, as an array or a bare string.
 std::string recipientOf(const Json::Value& data) {
   const Json::Value& to = data["to"];
   if (to.isString()) return to.asString();

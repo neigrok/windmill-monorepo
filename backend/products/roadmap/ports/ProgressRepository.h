@@ -14,12 +14,10 @@ struct ProgressDigest {
   std::uint64_t lastMarkedAt = 0;  // epoch ms of the caller's latest mark on this tree, 0 if none
 };
 
-// A user's private, per-tree progress overlay (last-writer-wins by HLC). Never part of the shared
-// op log or the tree document. `none` is a stamped VALUE, not a row delete.
-//
-// `at` is the stamp the marking replica minted and the ONLY input to the merge. `receivedAtMs` is
-// when this server took delivery, on its own clock; it is passed in rather than taken as `now()`
-// inside the statement, so a write's row and the echo that announces it cannot disagree.
+// A user's private, per-tree progress overlay, last-writer-wins by HLC. Never part of the shared op
+// log or the tree document. `none` is a stamped VALUE, not a row delete. `at` is the stamp the marking
+// replica minted and the only input to the merge; `receivedAtMs` is when this server took delivery,
+// on its own clock, passed in rather than taken as now() inside the statement.
 struct ProgressRepository {
   virtual ~ProgressRepository() = default;
   virtual Progress load(const TreeId& tree, const UserId& user) = 0;

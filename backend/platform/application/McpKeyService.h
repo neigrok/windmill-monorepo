@@ -34,8 +34,7 @@ class McpKeyService {
 public:
   McpKeyService(McpKeyRepository& repo, TokenGenerator& tokens, Clock& clock);
 
-  // A blank name is stored as "MCP key", an over-long one capped to 60 characters. The returned
-  // token is the only copy the user will ever see.
+  // A blank name is stored as "MCP key", an over-long one capped to 60 characters.
   MintedKey mint(const UserId& user, const std::string& name);
 
   // Newest first, never the token.

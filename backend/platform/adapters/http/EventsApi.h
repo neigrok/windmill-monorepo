@@ -14,12 +14,10 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The funnel telemetry intake: anonymous and signed-in beacons alike POST small event batches.
-// Boundary-only — parse, drop what's malformed entry by entry, resolve the caller, append; a bad
-// entry never rejects its siblings. Accepted events also forward to Amplitude (nullptr when unconfigured).
-//
-// The intake is anonymous, so it is bounded: 50 events a call, 1KB of props each, and a ceiling on
-// what one browser session may write in a day (429 past it).
+// The funnel telemetry intake: anonymous and signed-in beacons alike POST small event batches. A
+// malformed entry is dropped without rejecting its siblings. Accepted events also forward to
+// Amplitude (nullptr when unconfigured). The intake is anonymous, so it is bounded: 50 events a
+// call, 1KB of props each, and a ceiling on what one browser session may write in a day (429 past it).
 class EventsApi {
 public:
   EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,

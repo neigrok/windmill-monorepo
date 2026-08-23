@@ -114,16 +114,12 @@ ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string&
     connected += product;
   }
 
-  // The one sentence a scoped surface has to carry: a short tools/list is an answer, not a fault.
-  // Without it an agent granted read that asked for write reads the missing tool as a broken server.
   std::string instructions =
       "Windmill is one account behind several self-growth products. This connection reaches: " +
       (connected.empty() ? std::string("nothing — no product is wired into this server") : connected) +
       ". Your grant is per product and per level (read, write, delete), so tools/list is the whole "
       "surface this connection may use — a tool you cannot see is a level that was not granted, not a "
       "tool that is missing; ask your human to reconnect and approve it.";
-  // A tool your session lists that this build no longer declares is a session older than the
-  // deploy, not a server older than the repo.
   const std::string stamp = build.substr(0, 7);
   if (!stamp.empty())
     instructions += " This server is build " + stamp +

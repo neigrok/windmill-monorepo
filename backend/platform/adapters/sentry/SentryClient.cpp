@@ -190,8 +190,7 @@ void SentryClient::log(Level level, std::string body, std::string source) {
   bool full = false;
   {
     std::lock_guard<std::mutex> lock(logMutex_);
-    // The buffer is a ceiling, not a queue to grow. What is dropped is counted and confessed on the
-    // next flush that lands.
+    // The buffer is a ceiling: what is dropped is counted and reported on the next flush.
     if (logItems_.size() >= kLogBufferCap) {
       ++logDropped_;
       return;

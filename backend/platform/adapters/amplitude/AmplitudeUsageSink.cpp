@@ -10,8 +10,7 @@
 namespace wm {
 namespace {
 
-// One constant device for everything this process sends: Amplitude needs a device_id or a user_id,
-// and a server has neither. The insert_id seed, not this, keeps two spends in the same millisecond apart.
+// Amplitude needs a device_id or a user_id, and a server has neither.
 constexpr const char* kServerDevice = "windmill-backend";
 
 std::string propsOf(const AiSpend& spend) {
@@ -32,8 +31,7 @@ std::string propsOf(const AiSpend& spend) {
   const std::optional<long long> cost = costNanos(spend.model, spend.tokens);
   props["priced"] = cost.has_value();
   props["cost_usd"] = cost ? static_cast<double>(*cost) / 1'000'000'000.0 : 0.0;
-  // What the CEILINGS were charged, which for an unpriced model is a conservative floor rather than
-  // the zero the chart above would otherwise imply. Both numbers, because they answer different questions.
+  // What the ceilings were charged: an unpriced model gets a conservative floor, not zero.
   props["cost_floor_usd"] = static_cast<double>(floorCostNanos(spend.model, spend.tokens)) / 1'000'000'000.0;
 
   Json::StreamWriterBuilder builder;

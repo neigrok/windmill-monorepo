@@ -6,17 +6,14 @@
 
 namespace wm {
 
-// The LLM escalation behind paste-import: pasted prose in, a markdown plan in the deterministic
-// paste grammar out. The composer only ever produces text — the client re-parses the plan with the
-// same parser as a hand-typed paste, so the model is never the door into the tree. configured() is
-// false when no upstream is wired. compose is asynchronous: done gets the plan, or nullopt on
-// upstream error or timeout, and may fire on a different thread than the caller's.
-//
-// composeStream is the live twin: onDelta fires once per verbatim model text delta, then onDone
-// exactly once — true only after a clean end_turn finish; upstream error, deadline, or truncation is
-// false even when deltas already flowed. Both may fire on the composer's own loop thread. The
-// returned cancel functor is callable any number of times, from any thread; after cancel, onDone
-// fires at most once and never with true.
+// Pasted prose in, a markdown plan in the paste grammar out; the client re-parses that plan with the
+// same parser as a hand-typed paste. configured() is false when no upstream is wired. compose is
+// asynchronous: done gets the plan, or nullopt on upstream error or timeout, and may fire on a
+// different thread than the caller's. composeStream: onDelta once per verbatim model text delta, then
+// onDone exactly once — true only after a clean end_turn finish, false on upstream error, deadline or
+// truncation even when deltas already flowed. Both may fire on the composer's own loop thread. The
+// returned cancel functor is callable any number of times from any thread; after cancel onDone fires
+// at most once and never with true.
 struct PlanComposer {
   virtual ~PlanComposer() = default;
   virtual bool configured() const = 0;

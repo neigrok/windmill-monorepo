@@ -37,11 +37,10 @@ inline UnixMs codeExpiry(UnixMs now) { return now + OAuthPolicy::codeLifetimeMs;
 inline UnixMs accessExpiry(UnixMs now) { return now + OAuthPolicy::accessLifetimeMs; }
 inline UnixMs refreshExpiry(UnixMs now) { return now + OAuthPolicy::refreshLifetimeMs; }
 
-// Exact match for https (OAuth 2.1 §7.12: no prefix, no wildcard), port-agnostic for loopback http
-// (RFC 8252 §7.3). Answer from a PARSED uri, never a string scan: a uri a parser would read
-// differently is refused rather than canonicalized — no userinfo, one colon in the authority, no
-// fragment, and the loopback host exactly localhost / 127.0.0.1 / [::1]. This is the security
-// boundary; the consent screen's own check is never the gate.
+// The security boundary; the consent screen's own check is never the gate. Exact match for https
+// (OAuth 2.1 §7.12: no prefix, no wildcard), port-agnostic for loopback http (RFC 8252 §7.3).
+// Answer from a PARSED uri, never a string scan: no userinfo, one colon in the authority, no
+// fragment, and the loopback host exactly localhost / 127.0.0.1 / [::1].
 bool redirectRegistered(const std::vector<std::string>& registered, const std::string& uri);
 
 // HTTPS or loopback http only (OAuth 2.1 §1.5), and only when it parses by the rule above.

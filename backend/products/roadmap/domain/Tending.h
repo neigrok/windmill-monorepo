@@ -8,9 +8,8 @@
 
 namespace wm {
 
-// One sentence someone told their tree, and what became of it. A run is a JOB, not a stream: its
-// state lives in Postgres and its edits land through the tree's room and op log exactly as a
-// person's do, so nothing about it depends on the client staying connected.
+// A run is a JOB, not a stream: its state lives in Postgres and its edits land through the tree's
+// room and op log exactly as a person's do, independent of the client staying connected.
 enum class TendStatus {
   running,   // the loop is working; edits may already be landing
   done,      // finished cleanly, `summary` is the receipt

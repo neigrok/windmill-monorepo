@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Journal echoes, end-to-end against the LIVE local stack. With no embedder or curator wired
-# locally every pass is a quiet no-op; this drives everything downstream of it over real Postgres
-# rows. The embed→select→curate compute path is unit-covered (EchoSweepTest).
-#
-# The rows below are planted the way a finished pass would have left them: journal_span carries the
-# passage text and the sha256 of its NORMALISED form, and journal_echo names two span ids.
+# Journal echoes, end-to-end against the live local stack. Rows are planted as a finished pass
+# would leave them: journal_span carries the passage text and the sha256 of its NORMALISED form.
 #
 # Prereqs: schema applied; server running with the echo admin token, e.g.:
 #   set -a && . ./.env && set +a && JOURNAL_ECHO_ADMIN_TOKEN=e2e-echo ./build/windmill_server

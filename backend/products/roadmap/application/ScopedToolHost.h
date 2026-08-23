@@ -8,12 +8,8 @@
 
 namespace wm {
 
-// A tend edits ONE existing tree, so the agent is pinned to it: every tool call has its `treeId`
-// forced to the scope, and the tools that reach ACROSS trees are dropped from the catalog and
-// refused if named anyway. Even a hijacked run can only touch the tree it was asked to tend.
-//
-// NOT the grant gate: CompositeToolHost narrows by what a CREDENTIAL was granted, this by what a RUN
-// was asked to do. A tend is wired to roadmap's host directly, never to the composite.
+// Pins a tend's agent to one tree: every tool call's `treeId` is forced to the scope, and tools that
+// reach across trees are dropped from the catalog and refused if named anyway.
 class ScopedToolHost : public ToolHost {
 public:
   ScopedToolHost(ToolHost& inner, TreeId scope);

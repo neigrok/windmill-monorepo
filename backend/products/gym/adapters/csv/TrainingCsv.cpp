@@ -6,11 +6,8 @@
 namespace wm::gym {
 
 namespace {
-// A spreadsheet RUNS a cell that opens with =, + or @ instead of showing it, and the author of a
-// cell is not always the reader of the file. Those cells carry a leading apostrophe — the one edit
-// this file makes.
-// A negative number is NOT one of them: loads are kg and negative is legal, so a leading sign is a
-// formula only when what follows is not a plain number. `-20.00` travels untouched, `-1+1` does not.
+// A leading + or - is a formula only when what follows is not a plain number: negative loads are
+// legal kilograms.
 bool runsAsFormula(std::string_view value) {
   if (value.empty()) return false;
   const char first = value.front();
@@ -28,8 +25,6 @@ bool runsAsFormula(std::string_view value) {
   return false;
 }
 
-// Quoted only where the framing needs it: a weight, a rep count and a movement name go through
-// untouched.
 std::string field(std::string_view value) {
   if (runsAsFormula(value)) return field("'" + std::string(value));
   if (value.find_first_of(",\"\r\n") == std::string_view::npos) return std::string(value);
@@ -42,9 +37,8 @@ std::string field(std::string_view value) {
   return quoted;
 }
 
-// The header goes through this too, so names and rows are framed by one rule. The separator rides
-// on a flag rather than on "is the line empty yet": an empty first cell would otherwise swallow the
-// comma after it and shift every column of that row by one.
+// The separator rides on a flag, not on emptiness: an empty first cell would swallow the comma
+// after it and shift the row by one column.
 std::string line(std::initializer_list<std::string_view> values) {
   std::string out;
   bool first = true;

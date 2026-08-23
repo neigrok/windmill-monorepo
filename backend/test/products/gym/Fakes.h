@@ -1063,7 +1063,7 @@ private:
     }
   }
 
-  // The partial unique index's rule: ONE PENDING PROPOSAL PER (routine, door, connection).
+  // The partial unique index's rule: one pending proposal per (routine, door, connection).
   void supersedeFromDoor(const RoutineProposal& incoming) {
     for (RoutineProposal& held : db.proposalRows) {
       if (!(held.head.user == incoming.head.user) ||

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Journal Wave 1 — end-to-end against the LIVE local stack (windmill_server on :$PORT + Postgres).
+# Journal, end-to-end against the live local stack (windmill_server on :$PORT + Postgres).
 #
 # Prereqs: schema applied (psql windmill -f db/schema.sql) and the server running with .env:
 #   set -a && . ./.env && set +a && ./build/windmill_server

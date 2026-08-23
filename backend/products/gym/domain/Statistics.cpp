@@ -6,8 +6,7 @@
 namespace wm::gym {
 
 namespace {
-// The two standing bests of one movement: the mark with the largest Epley, and the mark with the
-// heaviest load. A load may legally be zero or negative, so "no mark yet" is an absent optional.
+// A load may legally be zero or negative, so "no mark yet" is an absent optional.
 std::optional<Best> bestByE1rm(const std::vector<PriorMark>& marks, const ExerciseId& exercise) {
   // A defined estimate is always above zero, so zero stands in for "nothing yet".
   std::optional<Best> best;
@@ -34,9 +33,8 @@ std::optional<Best> bestByLoad(const std::vector<PriorMark>& marks, const Exerci
 }
 
 Statistics statistics(const TrainingLog& log) {
-  // One walk over the tops, which arrive grouped by movement and oldest first, so a line is
-  // assembled by appending and never by sorting. The last point of a run is the last time that
-  // movement was trained.
+  // The tops arrive grouped by movement and oldest first, so a line is assembled by appending. The
+  // last point of a run is the last time that movement was trained.
   std::vector<MovementProgress> movements;
   for (const MovementTop& top : log.tops) {
     if (movements.empty() || !(movements.back().exercise == top.exercise))

@@ -6,9 +6,8 @@
 namespace wm::gym {
 
 namespace {
-// One session as one point: its best estimate over every working set of the movement, and the load
-// that earned it. It goes through `topE1rmOf`'s rule — the best estimate is not the estimate of the
-// heaviest set.
+// The best estimate over every working set of the movement, and the load that earned it — not the
+// estimate of the heaviest set.
 std::optional<RecordPoint> pointOf(const MovementSession& session) {
   std::optional<double> top = topE1rmOf(session.loads);
   if (!top) return std::nullopt;
@@ -34,9 +33,8 @@ std::optional<Best> heaviestOf(const std::vector<MovementSession>& sessions) {
 
 MovementRecord movementRecord(const Exercise& exercise, const MovementHistory& history,
                               std::uint64_t nowMs) {
-  // One walk, oldest first, answering the bar per windowed session, the ladder, and the standing
-  // best. A record needs a mark to have been passed, so the first estimate a movement earned sets
-  // `bestE1rm` and enters no ladder.
+  // One walk, oldest first. A record needs a mark to have been passed, so the first estimate a
+  // movement earned sets `bestE1rm` and enters no ladder.
   const std::uint64_t floorMs = nowMs > kRecordWindowMs ? nowMs - kRecordWindowMs : 0;
   MovementRecord record{exercise,
                         history.routines,

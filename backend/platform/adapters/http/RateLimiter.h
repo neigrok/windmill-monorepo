@@ -56,14 +56,12 @@ private:
   std::unordered_map<std::string, Bucket> buckets_;
 };
 
-// The real client IP. Behind Cloudflare that is CF-Connecting-IP: the edge sets it to the original
-// visitor and overwrites any client-sent copy, so we trust it first. That trust holds only while the
-// origin refuses traffic that did not come through Cloudflare, enforced in exactly two places: the
-// `(cloudflare_only)` gate in deploy/Caddyfile and the CF-only firewall rules in deploy/README.md §1.
-// Break either and every per-IP ceiling below becomes advisory.
-// Absent that header, fall back to the LAST X-Forwarded-For entry, the peer the proxy actually
-// observed, so a client-prepended forgery sits to its left and is ignored. Empty means no proxy
-// header at all — internal traffic (health checks, sibling services), left unlimited.
+// The real client IP. CF-Connecting-IP is trusted first, and that trust holds only while the origin
+// refuses traffic that did not come through Cloudflare — the `(cloudflare_only)` gate in
+// deploy/Caddyfile and the CF-only firewall rules in deploy/README.md. Break either and every per-IP
+// ceiling below becomes advisory. Absent that header, fall back to the LAST X-Forwarded-For entry,
+// the peer the proxy actually observed, so a client-prepended forgery sits to its left and is
+// ignored. Empty means no proxy header at all — internal traffic, left unlimited.
 inline std::string clientIp(const drogon::HttpRequestPtr& request) {
   const std::string& connecting = request->getHeader("cf-connecting-ip");
   if (!connecting.empty()) return connecting;

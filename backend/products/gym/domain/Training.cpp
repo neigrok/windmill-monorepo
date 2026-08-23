@@ -102,9 +102,8 @@ bool wellFormedId(std::string_view id) {
   return true;
 }
 
-// One pass, reading the lead byte for the length and every continuation for its shape, refusing an
-// overlong encoding and a surrogate half by the code point they decode to — the same well-formedness
-// Postgres applies, applied here where the answer is still a 400.
+// The same well-formedness Postgres applies, applied here where the answer is still a 400: overlong
+// encodings and surrogate halves are refused by the code point they decode to.
 bool storableText(std::string_view text) {
   for (std::size_t at = 0; at < text.size();) {
     const unsigned char lead = static_cast<unsigned char>(text[at]);
@@ -157,8 +156,7 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
       equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
-  // Trimmed first, so a name of nothing but blanks is refused here, and so renaming a seed back to
-  // its own name with a stray space still clears the override.
+  // Trimmed first, so a name of nothing but blanks is refused here.
   if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
   // A NUL truncates a name to its own head; non-UTF-8 bytes are refused by Postgres mid-transaction,
@@ -203,8 +201,7 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
     throw InvalidTraining("a set completes at an instant");
 }
 
-// One construction rather than a run of assignments, so the fields a correction may NOT move are
-// visibly copied from the stored row.
+// Constructed rather than assigned, so the fields a correction may NOT move are visibly copied.
 Set corrected(const Set& stored, const SetFix& fix) {
   return Set{stored.id,
              stored.session,

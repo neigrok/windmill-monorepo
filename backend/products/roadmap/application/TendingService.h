@@ -17,12 +17,9 @@
 
 namespace wm {
 
-// Starts and carries a tend run (domain/Tending.h). A run is a JOB, not a stream: `start` validates,
-// persists, and hands the agent loop to a private worker thread, so the request returns while the
-// loop carries on server-side. A phone that comes back reads the finished run off `TendRunRepository`.
-//
-// Runs execute on a small POOL of private trantor event-loop threads, never on a drogon request
-// loop. An exception escaping a worker becomes a `failed` run, never a crash.
+// `start` validates and persists, then hands the agent loop to a private worker thread and returns;
+// the result is read back off `TendRunRepository`. Runs execute on private trantor loop threads,
+// never a drogon request loop; an exception escaping a worker becomes a `failed` run.
 class TendingService {
 public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,

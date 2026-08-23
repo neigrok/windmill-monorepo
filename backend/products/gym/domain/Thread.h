@@ -10,8 +10,7 @@
 
 namespace wm::gym {
 
-// A thread's title is the lifter's first message verbatim, stored as sent and never touched again;
-// nothing here or behind it summarises what a lifter typed.
+// A thread's title is the lifter's first message verbatim, stored as sent and never touched again.
 
 // One turn, stored as sent, byte for byte.
 struct ThreadTurn {
@@ -22,8 +21,7 @@ struct ThreadTurn {
   bool operator==(const ThreadTurn&) const = default;
 };
 
-// One proposal this conversation minted, projected to what an outcome is made of: it needs the
-// routine's NAME, which a ProposalHead does not carry, and needs no diff, base revision or summary.
+// One proposal this conversation minted, carrying the routine's NAME, which a ProposalHead does not.
 struct ThreadProposal {
   ProposalId id;
   ProposalState state;
@@ -48,8 +46,7 @@ struct AskThread {
   bool operator==(const AskThread&) const = default;
 };
 
-// What came of a thread, and every word here is something the server OBSERVED — never why a lifter
-// dismissed a proposal, which nothing observes and this product does not ask.
+// Every word here is something the server OBSERVED.
 enum class ThreadOutcomeKind { readOnly, proposed, applied, dismissed, superseded };
 
 // The word, the count of changes it is about, and the routine they landed on where there is exactly
@@ -72,9 +69,8 @@ ThreadOutcome outcomeOf(const AskThread& thread);
 // What a thread may weigh, in turns; it bounds the prompt the server assembles.
 constexpr std::size_t kMaxThreadTurns = 8;
 
-// How many threads the LIST read hands over, newest first; the export reads every thread there is
-// (`allThreads`). The reply carries no total, so a client may state a count only while it holds
-// FEWER rows than this, and must say nothing about how many once it holds exactly this many.
+// How many threads the LIST read hands over, newest first; the export reads every thread there is.
+// The reply carries no total, so a client may state a count only while it holds FEWER rows than this.
 constexpr int kThreadList = 200;
 
 }

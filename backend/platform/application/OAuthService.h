@@ -13,14 +13,14 @@
 
 namespace wm {
 
-// The OAuth 2.1 authorization server fronting the MCP resource server. Consent lives at the HTTP
-// edge; this service is handed an already-authenticated UserId when a code is issued.
+// Consent lives at the HTTP edge; this service is handed an already-authenticated UserId when a
+// code is issued.
 class OAuthService {
 public:
   OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock& clock);
 
-  // Dynamic Client Registration (RFC 7591). The two refusals are different facts: invalidMetadata
-  // is the caller's to fix, atCapacity is the door briefly shut on everyone.
+  // Dynamic Client Registration (RFC 7591). atCapacity is a global refusal, invalidMetadata the
+  // caller's own.
   enum class RegisterError { ok, invalidMetadata, atCapacity };
   struct Registration {
     RegisterError error = RegisterError::ok;
@@ -64,8 +64,8 @@ public:
   // answering invalid_grant.
   TokenResult refresh(const std::string& refreshToken, const std::string& clientId);
 
-  // The account a valid, unexpired, audience-matching access token acts as and the grant it
-  // carries, or nullopt. A resolved token advances its grant's last-used stamp (throttled).
+  // The account a valid, unexpired, audience-matching access token acts as, or nullopt. A resolved
+  // token advances its grant's last-used stamp (throttled).
   std::optional<ToolCaller> resolveAccessToken(const std::string& accessToken,
                                                const std::string& serverResource);
 

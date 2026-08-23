@@ -255,14 +255,11 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   const int judged = curator.calls;
   sweep.run(kNow - kDay);
 
-  // Never PROPOSED again — the pairing is dropped before the curator, so the vendor is not asked a
-  // second time about something the reader has already answered.
+  // A dismissed pairing is dropped before the curator, so the vendor is not asked about it again.
   CHECK_EQ(curator.calls, judged);
-  // And never SERVED again, which is the promise that matters: the reader told it to fade.
+  // And never served again.
   CHECK_EQ(echoes.echoesFor(uid("u1"), ld(kOldDay), ld(kNewDay)).empty(), true);
-  // The row itself stays, deliberately. Persistence is additive, and a dismissal is not a refusal:
-  // journal_echo is where the quality signal copies the pairing's score and curator version from
-  // (ECHOES.md, "Dismissals"), so deleting it would throw the dataset away with the echo.
+  // The row stays: the quality signal reads the pairing's score and curator version off it.
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 }
 
@@ -444,10 +441,6 @@ TEST(a_unit_the_model_invented_never_becomes_a_passage_of_the_writers) {
   CHECK_EQ(echoes.spansOf(uid("u1"), ld(kNewDay))[0].text, kNewLine);
 }
 
-// RETRACTION. Persistence is additive so a re-derivation cannot destroy a chain the reader has
-// walked — and until 2026-08-23 that made a stored pairing permanent. A reader reported two false
-// positives, the curator's prompt was fixed and a floor added, the archive was re-judged, and both
-// echoes stayed on the page: nothing in the pipeline could un-say anything.
 TEST(a_pairing_the_curator_now_refuses_is_taken_off_the_page) {
   FakeEchoRepository echoes;
   FakeSegmenter segmenter;
@@ -461,7 +454,7 @@ TEST(a_pairing_the_curator_now_refuses_is_taken_off_the_page) {
   sweep.run(kNow - kDay);
   REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 
-  // The same page, asked again of a curator that now says no — a fixed prompt, a raised floor.
+  // The same page, asked again of a curator that now refuses.
   curator.keepEverything = false;
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
   sweep.run(kNow - kDay);
@@ -469,9 +462,7 @@ TEST(a_pairing_the_curator_now_refuses_is_taken_off_the_page) {
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }
 
-// The other half, and the reason the additive rule exists: a pairing this pass never RAISED is not
-// a pairing this pass rejected. The curator is not deterministic and retrieval's candidate set
-// moves, so silence about a row must never read as a refusal of it.
+// A pairing this pass never raised is not one it rejected: silence must never read as a refusal.
 TEST(a_pairing_this_pass_never_asked_about_survives_it) {
   FakeEchoRepository echoes;
   FakeSegmenter segmenter;
@@ -486,15 +477,15 @@ TEST(a_pairing_this_pass_never_asked_about_survives_it) {
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(first.size(), std::size_t{1});
 
-  // A pairing from an older night, aimed at a passage that still exists but that tonight's
-  // retrieval no longer surfaces: nobody asks about it, so nobody may retract it.
-  // Deliberately shares no anchor with tonight, so selection never raises it and the curator is
-  // never asked — which is exactly the silence the additive rule protects.
-  const std::string unrelated = "the piano needed tuning again";
-  echoes.plantSpan(uid("u1"), ld("2025-01-01"), 77, unrelated, embedder.embed({unrelated})[0]);
+  // A passage RETRIEVAL never hands over: inside minDayGap, so no rule ever looks at it and no fate
+  // is recorded for it. That is the silence the additive rule protects — unlike "selection examined
+  // it and said no", which is a judgement and does retract.
+  const std::string recent = "kotlin again, only three days ago";
+  echoes.plantSpan(uid("u1"), ld("2026-04-29"), 77, recent, embedder.embed({recent})[0]);
+  REQUIRE(daysBetween(ld("2026-04-29"), ld(kNewDay)) < SelectionRules{}.minDayGap);
   CuratedEchoes standing;
   standing.curatorVersion = "fake-curator-v1";
-  standing.rows.push_back(EchoRow{first[0].triggerSpanId, ld("2025-01-01"), 77, 0.7f, 0.8f, true});
+  standing.rows.push_back(EchoRow{first[0].triggerSpanId, ld("2026-04-29"), 77, 0.7f, 0.8f, true});
   echoes.replaceEchoes(uid("u1"), ld(kNewDay), standing);
 
   curator.keepEverything = false;
@@ -506,9 +497,6 @@ TEST(a_pairing_this_pass_never_asked_about_survives_it) {
   CHECK_EQ(after[0].matchSpanId, std::int64_t{77});
 }
 
-// The operator's re-judge. Three version strings reopen an archive when a prompt, a model or a knob
-// moves; nothing reopens one when the code that judges it changes, and a retraction rule that
-// nothing re-runs removes nothing.
 TEST(a_rejudge_takes_every_page_and_re_cuts_none_of_them) {
   FakeEchoRepository echoes;
   FakeSegmenter segmenter;
@@ -539,5 +527,34 @@ TEST(a_rejudge_takes_every_page_and_re_cuts_none_of_them) {
   // And re-cut none of them: a re-judge asks what a page reaches, never what it says.
   CHECK_EQ(segmenter.calls, cuts);
   // Which is what finally retracts the pairing the curator now refuses.
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}
+
+// Selection can refuse a pairing the curator is never asked about: no shared uncommon word, or the
+// same sentence said again.
+TEST(a_pairing_selection_itself_now_refuses_is_taken_off_the_page) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  echoes.plantPage(uid("u1"), ld(kOldDay), kOldLine);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+  REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
+
+  // The same night, with the older passage rewritten to share no uncommon word with tonight. The
+  // pairing is now dropped at the anchor rule, so the curator is never asked about it.
+  const std::string bland = "the piano needed tuning again";
+  echoes.spans[uid("u1").str()].clear();
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, bland, embedder.embed({bland})[0]);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+  const int judged = curator.calls;
+  sweep.run(kNow - kDay, true);
+
+  CHECK_EQ(curator.calls, judged);   // nothing was proposed, so nothing was sent
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }

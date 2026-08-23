@@ -76,7 +76,7 @@ TendRun TendingService::refuse(const TreeId& tree, const UserId& caller, const s
 
 std::optional<TendRun> TendingService::runFor(const std::string& id, const UserId& caller) {
   const std::optional<TendRun> run = runs_.find(id);
-  if (!run || run->user != caller) return std::nullopt;  // absent and not-yours are one answer
+  if (!run || run->user != caller) return std::nullopt;
   return run;
 }
 
@@ -90,9 +90,8 @@ TendingSummary TendingService::summaryFor(const UserId& caller, const std::strin
   return summary;
 }
 
-// The plan (a live subscription grants Pro, everything else is Free) and this calendar month's
-// spend, then the pure domain budget over them. Takes the instant so a single caller reads its meter
-// and its ledger against one month, never straddling a roll between two clock reads.
+// Takes the instant so the meter and the ledger are read against one calendar month, never
+// straddling a roll between two clock reads.
 TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::string& email,
                                              std::uint64_t nowMs) {
   const Plan plan = entitlements_.hasWindmillOne(caller, email) ? Plan::pro : Plan::free;

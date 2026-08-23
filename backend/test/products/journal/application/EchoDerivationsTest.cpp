@@ -133,9 +133,7 @@ TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
   CHECK_EQ(stack.curator.calls, 5);
 }
 
-// ---- fairness: one account can no longer own the drain thread -----------------------------
-
-// Every date is a valid page, so one account writing distinct days could enqueue as many entries as it liked.
+// Every date is a valid page, so the queue is capped per account.
 TEST(an_account_may_hold_only_a_few_pages_in_the_queue_at_once) {
   LiveStack stack;
   stack.echoes.addUser(uid("u1"));

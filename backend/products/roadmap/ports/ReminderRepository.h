@@ -36,10 +36,9 @@ struct ReminderSettings {
 // whose process died between the claim and the mail.
 enum class WeekOutcome { held, delivered, refused };
 
-// The ordering the implementation must honour is DECIDE → CLAIM → SEND: `claimWeek` commits the
-// ledger row that is the permission slip to perform I/O, and only a claim that returned true may be
-// followed by a mail. The inherited SweepMutex is a fleet-wide work lock, deliberately not the
-// correctness mechanism (the claim is), so the sweep stays correct with the lock a no-op.
+// Ordering the implementation must honour: DECIDE → CLAIM → SEND. Only a claim that returned true
+// may be followed by a mail. The inherited SweepMutex is a fleet-wide work lock, not the correctness
+// mechanism — the claim is.
 struct ReminderRepository : MailSuppression, SweepMutex {
   // Whose slot has arrived, oldest first, capped. One indexed range scan on `next_due_at <= now`.
   virtual std::vector<DueUser> dueNow(std::uint64_t nowMs, int limit) = 0;
@@ -52,8 +51,7 @@ struct ReminderRepository : MailSuppression, SweepMutex {
 
   // Insert this week's ledger row and advance the pointer past THIS slot, in ONE committed
   // transaction. False means another sweep already owns this week: fall silent without mailing.
-  // `slotDate` names the slot on both halves, so a sweep that lost the race cannot advance a pointer
-  // the winner already moved.
+  // `slotDate` names the slot on both halves.
   virtual bool claimWeek(const UserId& user, const std::string& slotDate,
                          const ReminderDecision& decision) = 0;
   // Never retried: a claimed row that never reaches here is indistinguishable from one whose mail

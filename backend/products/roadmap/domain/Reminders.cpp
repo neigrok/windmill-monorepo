@@ -39,8 +39,6 @@ ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs)
   const int readyCount = featured ? static_cast<int>(featured->ready.size()) : 0;
 
   // Then the gates, first match wins.
-  //
-  // Serving a slot this stale would mail everyone at whatever hour the process came back.
   if (elapsed(nowMs, candidate.slotInstantMs) > kMaxLatenessMs)
     return skipped(SkipReason::tooLate, readyCount);
   // Someone who has been here this week already knows what is waiting.

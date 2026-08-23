@@ -72,9 +72,8 @@ void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&&
     cb(error(drogon::k400BadRequest, "expected json"));
     return;
   }
-  // Catches ONLY InvalidTraining, the client's mistake: a storage failure must ride past to the
-  // house 500, the status a flush queue retries where 400 is the one it drops the set on.
-  // The reply is always the RESOLVED session — a replay is handed its own row back.
+  // Catches ONLY InvalidTraining: a storage failure must ride past to the house 500. The reply is
+  // always the RESOLVED session — a replay is handed its own row back.
   StartOutcome outcome{std::nullopt, StartError::none};
   try {
     outcome = training_->start(*caller, parseSessionStart(*json));
@@ -83,21 +82,18 @@ void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&&
     return;
   }
   if (outcome.error == StartError::idTaken) {
-    // The id is spent — by this account or another, the client is never told which. The repair is
-    // to mint a new one.
+    // The id is spent — by this account or another, the client is never told which.
     cb(error(drogon::k409Conflict, "that session id is taken", "session-id-taken"));
     return;
   }
   if (outcome.error == StartError::unknownRoutine) {
-    // The same one fact every absent thing gets: this account cannot read that routine, and whether
-    // it never existed or belongs to someone else is not said.
+    // This account cannot read that routine; never-existed and someone else's are one answer.
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
   if (outcome.error == StartError::clockAhead) {
-    // A workout that began in the server's future is refused rather than stored (Training.h,
-    // canStartAt). The sentence names the gap because the fix is on the device, and it carries its
-    // own code because a flush queue treats every 400 as terminal.
+    // A workout that began in the server's future is refused rather than stored. Its own code,
+    // because a flush queue treats every 400 as terminal.
     cb(error(drogon::k400BadRequest,
              "this device's clock is " + std::to_string((outcome.clockAheadMs + 59'999) / 60'000) +
                  " minutes ahead of the log — a workout cannot start in the future. Check the "
@@ -106,9 +102,7 @@ void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&&
     return;
   }
   if (outcome.error == StartError::alreadyOpen) {
-    // Only a caller that sent `joinOpenSession: false` reaches this. Its repair is neither of the
-    // other 409s': a fresh id changes nothing while a session is open, so the open workout is
-    // finished (or auto-closes at four hours) and the same body is sent again — hence its own code.
+    // Only a caller that sent `joinOpenSession: false` reaches this.
     cb(error(drogon::k409Conflict, "another session is already open", "session-already-open"));
     return;
   }
@@ -140,37 +134,32 @@ void TrainingApi::appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     return;
   }
   if (outcome.error == AppendError::finished) {
-    // Terminal for the flush queue: this set will never land here. A set that ALREADY landed
-    // replays 200 with its stored row even now.
+    // Terminal for the flush queue. A set that ALREADY landed replays 200 with its stored row.
     cb(error(drogon::k409Conflict, "that session is finished", "session-finished"));
     return;
   }
   if (outcome.error == AppendError::idTaken) {
-    // The id names a row outside this session; whose is never said. The repair is to mint a new id
-    // and send the set again, which is why it carries its own code.
+    // The id names a row outside this session; whose is never said.
     cb(error(drogon::k409Conflict, "that set id is already used", "set-id-taken"));
     return;
   }
   if (outcome.error == AppendError::unknownExercise) {
-    // A set naming a movement no catalog holds is the client's fact and a permanent one: terminal
-    // 400 with its own word.
+    // A set naming a movement no catalog holds is a terminal 400 with its own word.
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
   }
   if (outcome.error == AppendError::deleted) {
-    // The id names a set this lifter DELETED, so this append is a replay: drop it. Deliberately NOT
-    // `set-id-taken`, whose repair is "mint a fresh id and send the set again" — the one move that
-    // would put a deleted set back in the log.
+    // The id names a set this lifter DELETED, so this append is a replay: drop it. Not
+    // `set-id-taken`, whose repair would put a deleted set back in the log.
     cb(error(drogon::k409Conflict, "that set was deleted", "set-deleted"));
     return;
   }
   cb(jsonResponse(toJson(*outcome.set)));
 }
 
-// The one write in gym that changes a row a lifter already made. PATCH and not PUT: a fix names the
-// number that was wrong and nothing else (adapters/json/TrainingJson.h lists the fields it refuses).
-// It answers the STORED row, so a retry whose reply was lost reads back the same values rather than
-// compounding a change. It never touches the session's frozen plan or the routine it came from.
+// PATCH and not PUT: a fix names the number that was wrong and nothing else. It answers the STORED
+// row, so a retry whose reply was lost reads back the same values rather than compounding a change.
+// It never touches the session's frozen plan or the routine it came from.
 void TrainingApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
                     const std::string& setId) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -187,14 +176,14 @@ void TrainingApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, c
   try {
     fixed = training_->fixSet(*caller, SessionId{id}, SetId{setId}, parseSetFix(*json));
   } catch (const InvalidTraining&) {
-    // One word for every way a correction can be unreadable: no retry of these bytes helps. A
-    // storage failure is NOT this and rides past the catch to the house 500, which a queue retries.
+    // One word for every way a correction can be unreadable. A storage failure is NOT this and
+    // rides past the catch to the house 500.
     cb(error(drogon::k400BadRequest, "could not read that fix", "fix-unreadable"));
     return;
   }
   if (!fixed) {
     // Gone, never this account's, or in a different workout — one answer for all three, byte for
-    // byte, so a set id cannot be probed for existence. Terminal for a queue.
+    // byte, so a set id cannot be probed for existence.
     cb(error(drogon::k404NotFound, "no such set", "set-not-found"));
     return;
   }
@@ -202,9 +191,8 @@ void TrainingApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, c
 }
 
 // Refuses NOTHING: a set that was never here does not stand either, so a client whose reply was lost
-// sends the same request again and gets the same 204.
-// The row moves whole into the revisions table, and there is no door that reads it — no trash, no
-// recovery. Nothing on screen may promise it back.
+// sends the same request again and gets the same 204. The row moves whole into the revisions table
+// and no door reads it back.
 void TrainingApi::deleteSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
                        const std::string& setId) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -230,8 +218,7 @@ void TrainingApi::finishSession(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k400BadRequest, "expected json"));
     return;
   }
-  // Inside the catch, like the sibling writes: an instant this session cannot end at is a 400,
-  // never a 500 a flush queue would read as "retry forever".
+  // Inside the catch: an instant this session cannot end at is a 400, never a 500.
   FinishOutcome outcome{std::nullopt, FinishError::none};
   try {
     outcome = training_->finish(*caller, SessionId{id}, parseFinish(*json));
@@ -306,11 +293,10 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
-  // The mirror's freshness tag: WEAK, because it certifies the facts a poll acts on rather than
-  // byte equality of a body this handler never compared. Three terms — the session's own two
-  // instants, and a fold over the sets as this reply renders them. startedAt leads, so a session
-  // discarded and recreated under the same id is a new representation and never a 304 echo of the
-  // dead workout. Only the two success paths carry the tag.
+  // WEAK: it certifies the facts a poll acts on rather than byte equality of a body this handler
+  // never compared. Three terms — the session's own two instants, and a fold over the sets as this
+  // reply renders them. startedAt leads, so a session discarded and recreated under the same id is
+  // never a 304 echo of the dead workout. Only the two success paths carry the tag.
   const Json::Value sets = toJson(detail->sets);
   const std::string tag = "W/\"" + std::to_string(detail->session.startedAtMs) + "-" +
                           std::to_string(detail->session.finishedAtMs.value_or(0)) + "-" +
@@ -332,8 +318,7 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
   cb(response);
 }
 
-// A pure read, computed from the stored rows on every call and kept nowhere, so a set that arrives
-// late from a flush queue is counted the next time it is asked for.
+// Computed from the stored rows on every call and kept nowhere.
 void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                            const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -349,7 +334,6 @@ void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&
   cb(jsonResponse(toJson(*review)));
 }
 
-// Takes the session and its sets together and answers with nothing.
 void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                             const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -363,8 +347,6 @@ void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
   if (outcome == DiscardOutcome::open) {
-    // Its own code, because its repair is unlike every other 409's: nothing re-minted or re-sent
-    // helps. The workout is finished (or the four-hour auto-close fires) and the discard sent again.
     cb(error(drogon::k409Conflict, "that session is still running", "session-open"));
     return;
   }
@@ -373,8 +355,7 @@ void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback
   cb(response);
 }
 
-// The prefill: what this account did the last time it trained this movement, which is the number
-// the logger puts on screen before the lifter touches anything.
+// The prefill: what this account did the last time it trained this movement.
 //
 //   { "exerciseId": "bench-press",
 //     "session": { "id", "startedAt", "finishedAt", … },   omitted when there is no last time
@@ -382,9 +363,7 @@ void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback
 //     "sets":    [ … ] }                                   omitted with the session; never empty
 //
 // The movement is echoed back so a reply arriving after the lifter has moved on is discardable. A
-// first-ever movement is answered 200 with the movement and nothing else, and the client draws
-// "First time logging this" from the absence. A movement no catalog holds is the one fault here and
-// keeps the write path's word.
+// first-ever movement is answered 200 with the movement and nothing else.
 void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -411,10 +390,8 @@ void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   cb(jsonResponse(body));
 }
 
-// The picker's meta, in ONE read: what this lifter last did of each movement they have trained, and
-// when. A second read rather than columns on the catalog row, which is read on nearly every screen
-// and by `list_exercises`. It carries a line only for the movements that have one — a movement
-// absent here is the picker's `never logged`.
+// The picker's meta in ONE read: what this lifter last did of each movement they have trained, and
+// when. A movement absent here is the picker's `never logged`.
 void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -435,8 +412,7 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   cb(jsonResponse(toJson(training_->statistics(*caller))));
 }
 
-// Every set this account holds: one shape, no parameters, no pagination, nothing omitted. The
-// filename is fixed rather than stamped with a date.
+// Every set this account holds: one shape, no parameters, no pagination, nothing omitted.
 void TrainingApi::exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -451,9 +427,8 @@ void TrainingApi::exportSets(const drogon::HttpRequestPtr& req, HttpCallback&& c
   cb(response);
 }
 
-// The coach share, minted. Owner-scoped, and idempotent on the SESSION rather than on a
-// client-minted id: tapping Share twice answers with the link already live. An expired share is
-// replaced, which is why the reply always carries the instant the link it handed over ends at.
+// Owner-scoped, and idempotent on the SESSION rather than on a client-minted id. An expired share
+// is replaced, so the reply always carries the instant the link it handed over ends at.
 void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -492,10 +467,9 @@ void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& 
   cb(response);
 }
 
-// The one route in gym that resolves no caller: the token in the path is the whole credential. It
-// touches auth not at all and never writes, not even the four-hour close every signed-in read takes.
-// Revoked, expired and never-minted answer this ONE 404, byte for byte. The body names no account
-// and holds no id at any depth.
+// Resolves no caller: the token in the path is the whole credential. It touches auth not at all and
+// never writes. Revoked, expired and never-minted answer this ONE 404, byte for byte. The body names
+// no account and holds no id at any depth.
 void TrainingApi::sharedSession(const drogon::HttpRequestPtr&, HttpCallback&& cb,
                            const std::string& token) {
   std::optional<SharedSession> shared = training_->shared(token);

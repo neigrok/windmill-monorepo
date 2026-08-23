@@ -10,13 +10,12 @@
 
 namespace wm {
 
-// Windmill as an OAuth client to Apple, NATIVE flow: the app posts an authorization code, this
-// client redeems it at Apple's token endpoint and reads the identity out of the id_token.
-// Apple's client_secret is a short-lived ES256 JWT signed with the team's .p8 key, minted per
-// exchange here. Unconfigured (any of client id / team / key id / key missing) → configured() is false.
-// The email may be a Hide My Email relay — verified, stable for this app, and unable to name the
-// human elsewhere (domain/Auth.h's AddressTrust). The NAME never appears in the id_token: Apple
-// hands it to the app once, on the very first authorization, so it reaches us through the body or not at all.
+// Windmill as an OAuth client to Apple, native flow: the app posts an authorization code, redeemed
+// here at Apple's token endpoint with the identity read out of the id_token. Apple's client_secret
+// is a short-lived ES256 JWT signed with the team's .p8 key, minted per exchange. Any of client id /
+// team / key id / key missing → configured() is false. The email may be a Hide My Email relay —
+// verified and stable for this app only (domain/Auth.h's AddressTrust). The name never appears in
+// the id_token; it reaches us through the request body or not at all.
 class AppleOAuthClient {
 public:
   AppleOAuthClient(std::string clientId, std::string teamId, std::string keyId, std::string privateKeyPem);

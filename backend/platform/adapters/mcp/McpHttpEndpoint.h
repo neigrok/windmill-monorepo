@@ -24,14 +24,12 @@ using McpHttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // Parse a comma-separated allow-list (e.g. WINDMILL_MCP_ALLOWED_ORIGINS), trimming spaces.
 std::set<std::string> parseOriginList(const std::string& csv);
 
-// How the endpoint authenticates a request into a caller. `oauth` (when set) validates a
-// per-user OAuth access token bound to `resource`; `mcpKeys` (when set) validates a per-user
-// personal API key — the OAuth-less static-token fallback; `fallbackToken` is an optional shared
-// bearer that acts as `fallbackUser` (CI/agents). With none configured, requests run
-// unauthenticated as `fallbackUser` (local/stdio-style, and the tests). `resourceMetadataUrl`
-// is advertised in the 401 WWW-Authenticate challenge.
-// `fallbackScope` is what the two credential-less doors carry; it has no default, so a root that
-// omits it gets a caller who can do nothing.
+// How the endpoint authenticates a request into a caller. `oauth` validates a per-user OAuth
+// access token bound to `resource`; `mcpKeys` validates a per-user personal API key;
+// `fallbackToken` is a shared bearer acting as `fallbackUser`, and with none configured requests
+// run unauthenticated as `fallbackUser`. `resourceMetadataUrl` is advertised in the 401
+// WWW-Authenticate challenge. `fallbackScope` is what the two credential-less doors carry; it has
+// no default, so a root that omits it gets a caller who can do nothing.
 struct McpAuth {
   OAuthService* oauth = nullptr;
   std::string resource;
@@ -42,14 +40,10 @@ struct McpAuth {
   ToolScope fallbackScope;
 };
 
-// The MCP Streamable-HTTP transport (spec 2025-06-18): one endpoint, three verbs.
-//   POST   — the request body is a single JSON-RPC message; a request gets its JSON-RPC
-//            response, a notification/response gets 202. `initialize` mints a session id
-//            returned in the Mcp-Session-Id header and required on every later call.
-//   GET    — would open a server→client SSE stream; we have none, so 405.
-//   DELETE — ends a session.
-// The Origin header is validated to block DNS-rebinding. This class is pure transport —
-// framing, sessions, and headers — over the transport-agnostic McpServer engine.
+// The MCP Streamable-HTTP transport (spec 2025-06-18). POST carries one JSON-RPC message: a
+// request gets its response, a notification/response gets 202, and `initialize` mints the session
+// id returned in Mcp-Session-Id and required on every later call. GET is 405; DELETE ends a
+// session. The Origin header is validated to block DNS-rebinding.
 class McpHttpEndpoint {
 public:
   McpHttpEndpoint(McpServer& server, std::set<std::string> allowedOrigins, McpAuth auth = {});

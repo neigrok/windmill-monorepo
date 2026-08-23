@@ -9,13 +9,10 @@
 
 namespace wm {
 
-// The weekly reminder, already rendered: every field is a finished string or number, so the mailer
-// only binds them to template variables. `readyPhrase`, `moreOnTree` and `moreReady` are each empty
-// when they have nothing to say.
-//
-// The step slots are FIXED rather than a list the provider iterates; an empty label is an unused
-// slot. `colorHex` is rendered server-side because it lands inside a style attribute where markup
-// stripping does not protect it.
+// Every field is a finished string or number; the mailer only binds them to template variables.
+// `readyPhrase`, `moreOnTree` and `moreReady` are empty when they have nothing to say. Step slots are
+// fixed, not a list: an empty label is an unused slot. `colorHex` is rendered server-side because it
+// lands inside a style attribute where markup stripping does not protect it.
 struct ReminderMail {
   struct Step {
     std::string label;

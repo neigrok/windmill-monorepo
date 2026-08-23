@@ -11,12 +11,9 @@
 namespace wm {
 
 // The thread a product's periodic pass runs on. The loop runs from CONSTRUCTION, not from start(),
-// so work can be queued onto a heartbeat that was never armed. The trigger holds no schedule: a
-// pass is a pure function of (now, database). Exceptions never escape the loop.
-//
-// Callers must declare the Heartbeat LAST in their class, so it is destroyed FIRST: its destructor
-// quits the loop and joins the thread, which must happen while a running pass's collaborators are
-// still alive.
+// so work can be queued onto a heartbeat that was never armed. Exceptions never escape the loop.
+// Declare the Heartbeat LAST in the owning class, so it is destroyed FIRST: its destructor joins
+// the thread, which must happen while a running pass's collaborators are still alive.
 class Heartbeat {
 public:
   explicit Heartbeat(std::string name) : name_(std::move(name)), thread_(name_ + "-ticker") {

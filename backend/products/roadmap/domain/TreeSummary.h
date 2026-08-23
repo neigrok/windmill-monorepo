@@ -21,7 +21,7 @@ TreeStats treeStats(const TreeData& tree, const Progress& progress);
 
 // When a tree last moved forward. The trees row moves on a structural edit, a rename or a visibility
 // flip; a progress mark writes only node_progress. Every ordering that means "last active" folds the
-// pair here, so the registry and the public wall can never drift into two answers.
+// pair here.
 std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt);
 
 // The two timestamps answer different questions — how old the tree is, and how fresh it is.

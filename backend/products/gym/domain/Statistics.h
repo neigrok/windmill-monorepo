@@ -9,22 +9,14 @@
 
 namespace wm::gym {
 
-// The statistics engine, a read over values this product has already decided. There is no
-// statistics SURFACE: `GET /v1/gym/stats` and the `get_stats` tool are its only readers, so do not
-// clean this up as unreachable code.
-//
-// No volume as a metric — `weight × reps` does not rise with getting stronger, band-assisted work
-// logging a negative load — and e1RM is the headline instead. Tonnage as a CAPTION is allowed
-// (the log's week dividers and rows; the sum is the store's) with the negative case handled: an
-// assisted or bodyweight set contributes zero, and a zero tonnage shows NOTHING rather than `0.0 t`.
-//
-// No muscle-group anything: pattern is the only classification gym has, single-valued. No streak, no
-// cardio, no duration axis, and no grades.
+// There is no statistics SURFACE: `GET /v1/gym/stats` and the `get_stats` tool are its only readers,
+// so do not clean this up as unreachable code.
+// e1RM is the headline, never volume. Tonnage as a caption clamps a negative load to zero, and a
+// zero tonnage shows nothing rather than `0.0 t`.
 
-// What one movement did in one session. The instant is the SESSION's own start and never a set's
-// `completed_at`, which is the device's wall clock. The set is the movement's TOP working set there
-// — TopSet's rule. The selection is an ORDERING, so the store makes it; the estimate on top is a
-// FORMULA, so the domain makes it, and Epley never reaches the database.
+// The instant is the SESSION's own start, never a set's `completed_at`. The set is the movement's
+// TOP working set there. The store makes the selection; the domain makes the estimate, and Epley
+// never reaches the database.
 struct MovementTop {
   ExerciseId exercise;
   std::uint64_t startedAtMs;
@@ -34,9 +26,8 @@ struct MovementTop {
   bool operator==(const MovementTop&) const = default;
 };
 
-// One week of training, counted in Postgres. Weeks run Monday to Monday in UTC; the instant crosses
-// as epoch-ms and the client renders it in the reader's own zone. A week with no training is present
-// and zero, never missing.
+// Weeks run Monday to Monday in UTC; the instant crosses as epoch-ms. A week with no training is
+// present and zero, never missing.
 struct TrainingWeek {
   std::uint64_t startedAtMs;
   int sessions;
@@ -45,10 +36,8 @@ struct TrainingWeek {
   bool operator==(const TrainingWeek&) const = default;
 };
 
-// Everything the rule below needs that it cannot compute, in one value the port fills. `tops` arrive
-// grouped by movement and oldest first within each, `marks` are the review's per-(movement, load)
-// projection over this account's whole finished log, and `weeks` are the counts Postgres made. Only
-// FINISHED sessions feed any of the three.
+// `tops` arrive grouped by movement and oldest first within each; `marks` are the per-(movement,
+// load) projection over this account's whole finished log. Only FINISHED sessions feed any of these.
 struct TrainingLog {
   std::vector<MovementTop> tops;
   std::vector<PriorMark> marks;
@@ -57,8 +46,7 @@ struct TrainingLog {
   bool operator==(const TrainingLog&) const = default;
 };
 
-// One point of a movement's line. `e1rm` is absent exactly where Epley is undefined — at and below
-// zero — so those movements draw a line of loads with no estimate over it.
+// `e1rm` is absent exactly where Epley is undefined — at and below zero.
 struct MovementPoint {
   std::uint64_t atMs;
   double weightKg;
@@ -68,10 +56,8 @@ struct MovementPoint {
   bool operator==(const MovementPoint&) const = default;
 };
 
-// A movement's standing best and the set that holds it, read off the marks by the same two scans
-// the finish's record rules make (domain/Review.cpp). The third record rule has no standing form and
-// is deliberately absent. atMs is the mark's, dated by the SESSION it was set in — the same instant
-// MovementTop carries.
+// A movement's standing best and the set that holds it, read off the marks. atMs is dated by the
+// SESSION the mark was set in.
 struct Best {
   double weightKg;
   int reps;
@@ -81,8 +67,8 @@ struct Best {
   bool operator==(const Best&) const = default;
 };
 
-// One movement's whole line. `bestE1rm` is chosen BY having an estimate, so its own is always
-// there; `heaviest` is chosen by load, so a bodyweight movement's carries none.
+// `bestE1rm` is chosen BY having an estimate, so its own is always there; `heaviest` is chosen by
+// load, so a bodyweight movement's carries none.
 struct MovementProgress {
   ExerciseId exercise;
   std::uint64_t lastTrainedAtMs;
@@ -101,7 +87,7 @@ struct Statistics {
   bool operator==(const Statistics&) const = default;
 };
 
-// Computed on every read and stored nowhere.
+// Stored nowhere.
 Statistics statistics(const TrainingLog& log);
 
 }

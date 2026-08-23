@@ -16,11 +16,10 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The REST surface for auth: one door in, one link out, a session cookie back. The app door asks
-// the same mint for a 6-digit code (`door: "app"` on /magic-link) and types it back at /verify-code.
-// Google is a second door onto the same `wm_session`; Apple is the third and native one — the app
-// posts an authorization code rather than being redirected. The session rides in an HttpOnly
-// `wm_session` cookie; a Bearer token is also honoured for API and test callers.
+// The REST surface for auth. The app door asks the same mint for a 6-digit code (`door: "app"` on
+// /magic-link) and types it back at /verify-code. Google and Apple are further doors onto the same
+// `wm_session`; Apple is native — the app posts an authorization code rather than being redirected.
+// The session rides in an HttpOnly `wm_session` cookie; a Bearer token is also honoured.
 class AuthApi {
 public:
   AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,

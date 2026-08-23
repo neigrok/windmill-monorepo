@@ -25,9 +25,8 @@ struct NodeRecord {
   Lww<std::vector<Link>> links;            // external references, the list as one register
 };
 
-// The redundant-edge pass walks a transitive closure whose inner loop is a sum of squared degrees,
-// so the budget counts the WORK: nodes, edges, and their product. Over budget the pass is skipped
-// and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
+// The budget counts the redundant-edge pass's work: nodes, edges, and their product. Over budget the
+// pass is skipped and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
 bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
 
 // The authoritative, possibly-invalid state of one tree. Every command merges into it;

@@ -16,7 +16,6 @@ struct TrantorLine {
   std::string source;  // "file.cc:42" when trantor appended one
 };
 
-// Split a formatted trantor line. Exposed for its own test.
 TrantorLine parseTrantorLine(const char* msg, std::size_t len);
 
 // One trantor message as ONE physical line: any embedded CR/LF escaped, and exactly one trailing

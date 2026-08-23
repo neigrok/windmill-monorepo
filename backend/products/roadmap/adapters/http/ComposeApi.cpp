@@ -10,7 +10,6 @@
 namespace wm {
 
 namespace {
-// The spend ceiling is the rate limiter's job, not a stingy input cap.
 constexpr std::size_t kMaxTextBytes = 24576;
 constexpr double kHeartbeatSeconds = 15.0;
 
@@ -30,10 +29,8 @@ std::string sseEvent(const char* name, const std::string& data) {
   return std::string("event: ") + name + "\ndata: " + data + "\n\n";
 }
 
-// One live SSE reply. Every write goes through the mutex, so the composer's loop and the
-// heartbeat timer never interleave a frame. drogon offers no disconnect callback on a streaming
-// response — a failed send is the only sign the client hung up — so the first dead write cancels
-// the upstream call.
+// drogon has no disconnect callback on a streaming response, so the first failed send cancels
+// the upstream call. Every write goes through the mutex.
 class SseReply {
 public:
   explicit SseReply(drogon::ResponseStreamPtr stream) : stream_(std::move(stream)) {}
@@ -67,8 +64,6 @@ public:
     if (ok) {
       stream_->send(sseEvent("done", "{}"));
     } else {
-      // Mid-stream failure after deltas leaves the partial text with the client; the fail event
-      // is its failure line.
       stream_->send(sseEvent("fail", R"({"code":"compose-failed"})"));
     }
     stream_->close();
@@ -109,9 +104,6 @@ void heartbeatWhileWaiting(const std::shared_ptr<SseReply>& reply) {
 ComposeApi::ComposeApi(std::shared_ptr<PlanComposer> composer) : composer_(std::move(composer)) {}
 
 void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // parse → empty 400 → too-long 400 → no-key 503 → then branch on the stream flag. Every guard
-  // answers plain JSON: SSE begins only once the request is known good, so pre-stream failures
-  // keep their codes.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   if (!json || !json->isObject() || !(*json)["text"].isString() ||
       isBlank((*json)["text"].asString())) {
@@ -141,14 +133,12 @@ void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     return;
   }
 
-  // 200 + SSE headers go on the wire immediately, so from here every outcome — even an upstream
-  // error before the first byte — arrives as an SSE event. The stream callback fires once drogon
-  // starts writing the response on the connection's own IO thread.
+// The 200 + SSE headers go out immediately, so from here every outcome is an SSE event.
   auto composer = composer_;
   auto response = drogon::HttpResponse::newAsyncStreamResponse(
       [composer, text](drogon::ResponseStreamPtr stream) {
         auto reply = std::make_shared<SseReply>(std::move(stream));
-        heartbeatWhileWaiting(reply);  // the model can think a while before its first delta
+        heartbeatWhileWaiting(reply);
         reply->attachCancel(composer->composeStream(
             text,
             [reply](const std::string& delta) { reply->delta(delta); },
@@ -157,7 +147,7 @@ void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callb
       true /* disable the kickoff timeout: the first delta can be minutes away */);
   response->setContentTypeString("text/event-stream");
   response->addHeader("cache-control", "no-cache");
-  response->addHeader("x-accel-buffering", "no");  // event-stream is respected, but be explicit
+  response->addHeader("x-accel-buffering", "no");
   callback(response);
 }
 

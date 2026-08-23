@@ -32,8 +32,7 @@ inline bool canRead(const std::optional<UserId>& caller, const std::optional<Use
   return caller && owner && *caller == *owner;
 }
 
-// The one write-authorization decision every write path calls: a resource is its owner's to change
-// and nobody else's, and an unowned resource is nobody's to write. Visibility widens reads only and
+// The one write-authorization decision every write path calls. Visibility widens reads only and
 // must stay out of this signature.
 inline bool canWrite(const std::optional<UserId>& caller, const std::optional<UserId>& owner) {
   return caller && owner && *caller == *owner;

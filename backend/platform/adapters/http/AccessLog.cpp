@@ -23,7 +23,6 @@ std::string accessLine(const std::string& method, const std::string& path, int s
   // Every caller-steered field goes through the hygiene in LogFormat before it is concatenated.
   std::string line = "http " + loggableField(method) + " " + loggableField(redactedPath(path)) +
                      " " + std::to_string(status) + " " + tookMs(micros) + "ms";
-  // Anonymous is a fact worth logging, not an absence to omit.
   line += " caller=" + (caller.empty() ? std::string("anon") : loggableField(caller));
   return line;
 }

@@ -5,10 +5,8 @@
 
 namespace wm {
 
-// The store behind per-tree share cards (og-tree-cards): one rendered 1200×630 PNG per tree,
-// keyed by tree id. The client renders the card and uploads it; this is the only place its
-// bytes live. Upsert replaces any prior card; get returns the bytes, or nullopt when a tree
-// has never had one — the read path serves the generic fallback in that case.
+// One rendered 1200×630 PNG per tree, keyed by tree id; the client renders the card and uploads it.
+// Upsert replaces any prior card; get returns nullopt when a tree has never had one.
 struct OgImageRepository {
   virtual ~OgImageRepository() = default;
   virtual void put(const std::string& treeId, const std::string& pngBytes) = 0;

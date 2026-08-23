@@ -8,15 +8,11 @@
 
 namespace wm::gym {
 
-// What a read tool served, counted by the server as it handed the rows over and carried in the
-// tool's own reply.
-//
-// Three buckets, each counted by IDENTITY so two overlapping reads count once. A read that serves a
-// summary contributes what it actually named: a page of `list_sessions` names twenty workouts and
-// hands over no sets, so it adds twenty sessions and no set. The tally is a FLOOR and never claims a
-// row it did not hand over. `get_stats` is the limit: its points carry no session id, only the
-// session's start instant, which two workouts can tie on, so it contributes its weeks and no
-// sessions or sets at all.
+// What a read tool served, counted by the server as it handed the rows over.
+// Three buckets, each counted by IDENTITY so two overlapping reads count once. A read contributes
+// only what it actually named, so the tally is a FLOOR and never claims a row it did not hand over.
+// `get_stats` points carry no session id, only a start instant two workouts can tie on, so it
+// contributes its weeks and no sessions or sets.
 
 struct ReadTally {
   int sets = 0;

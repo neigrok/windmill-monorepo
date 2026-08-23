@@ -24,10 +24,9 @@ public:
   // A blank tree (all-empty `initial`) is born with the default legend. Returns the minted id.
   TreeId create(const UserId& owner, const TreeData& initial);
 
-  // The claim seam: plant under a client-minted id, create-if-absent under the tree's strand.
-  // `existedYours` is the idempotent resume. `retired` is the caller's OWN soft-deleted id, whose row
-  // still spoke for it — answering `taken` there would send the claim path to re-plant under a fresh
-  // id and resurrect a tree its owner deliberately deleted. `taken` is only ever somebody else's.
+  // Plant under a client-minted id, create-if-absent under the tree's strand. `existedYours` is the
+  // idempotent resume; `retired` is the caller's own soft-deleted id; `taken` is only ever somebody
+  // else's.
   enum class Creation { created, existedYours, retired, taken };
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
 

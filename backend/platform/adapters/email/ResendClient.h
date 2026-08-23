@@ -27,9 +27,8 @@ Json::Value resendEmailBody(const std::string& from, const std::string& to,
 Json::Value reminderUnsubscribeHeaders(const std::string& unsubscribeUrl);
 
 // The neutral Resend transport: POST a rendered template (a template id, its variables, and its
-// message headers) to Resend's HTTP API. Owns a private event-loop thread carrying the outbound
-// HTTPS call, so request loops are never parked; `done` fires from that loop — true on a 2xx, false
-// on any failure or timeout.
+// message headers) to Resend's HTTP API on a private event-loop thread. `done` fires from that
+// loop — true on a 2xx, false on any failure or timeout.
 class ResendClient {
 public:
   ResendClient(std::string apiKey, std::string from);

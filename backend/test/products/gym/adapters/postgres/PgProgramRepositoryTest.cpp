@@ -400,7 +400,7 @@ TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unsee
             .error == ProposalMintError::none);
 }
 
-// A REFUSED MINT SPENDS NOTHING: the supersede runs INSIDE the mint's transaction and rolls back with it.
+// A refused mint spends nothing: the supersede runs inside the mint's transaction and rolls back with it.
 TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -431,7 +431,7 @@ TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
            static_cast<std::size_t>(1));
 }
 
-// The one question that decides whether a card dies: did the document or the name actually move?
+// A card dies only when the document or the name actually moved.
 TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_proposal) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -468,7 +468,7 @@ TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_
            ProposalState::superseded);
 }
 
-// THE TAP against real rows: one transaction, the whole document, the revision moved and the row dated.
+// The tap against real rows: one transaction, the whole document, the revision moved and the row dated.
 TEST(pg_gym_applying_a_proposal_writes_the_document_moves_the_revision_and_dates_the_record) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

@@ -8,17 +8,16 @@
 
 namespace wm::gym {
 
-// The one refusal in gym that carries a machine word out beside its sentence, naming which of a
-// settings document's independent values was wrong. It is an InvalidTraining, so existing handlers
-// catch it unchanged.
+// Carries a machine word beside its sentence, naming which value was wrong. An InvalidTraining, so
+// existing handlers catch it unchanged.
 struct InvalidPreference : InvalidTraining {
   std::string code;
 
   InvalidPreference(std::string code, const std::string& said);
 };
 
-// The unit a lifter reads in: a display transform at the very edge. Kilograms are the only load
-// this product stores, so this value reaches no write and no read that computes anything.
+// A display transform at the very edge. Kilograms are the only load this product stores, so this
+// value reaches no write and no read that computes anything.
 enum class Unit { kg, lb };
 
 std::string toString(Unit units);
@@ -27,9 +26,8 @@ std::string toString(Unit units);
 Unit parseUnit(std::string_view text);        // throws InvalidPreference
 Unit unitFromStored(std::string_view text);
 
-// One settings row per ACCOUNT, never per device. The confirmation pair records the lifter's intent
-// and each surface honours what it can. An absent restSeconds means the lifter runs no timer — it is
-// not a zero and no client draws it as one.
+// One settings row per ACCOUNT, never per device. An absent restSeconds means the lifter runs no
+// timer — it is not a zero and no client draws it as one.
 struct GymPreferences {
   UserId user;
   Unit units;

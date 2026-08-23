@@ -54,23 +54,21 @@ struct ToolDeclaration {
   std::string name() const { return descriptor.get("name", "").asString(); }
 };
 
-// A tool name the product no longer declares, with the answer an agent calling it should read.
-// `replacement` is empty when nothing took over.
+// A retired tool name and the answer an agent calling it should read; `replacement` is empty when
+// nothing took over.
 struct ToolRetirement {
   std::string name;
   std::string replacement;
   std::string sentence;
 };
 
-// A module declares its whole surface and never its own gate: the gate is taken above every module
-// by CompositeToolHost, which is what McpServer binds.
+// A module declares its whole surface and never its own gate: CompositeToolHost gates above it.
 struct ToolHost {
   virtual ~ToolHost() = default;
 
   virtual std::vector<ToolDeclaration> declareTools() const = 0;
 
-  // `caller` is the account the transport authenticated plus what that credential was granted;
-  // every edit acts as the account, within the grant.
+  // Every edit acts as `caller`'s account, within the grant that account's credential carries.
   virtual ToolResult callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) = 0;
 
@@ -83,8 +81,7 @@ struct ToolHost {
     return std::nullopt;
   }
 
-  // Filtered from the same declarations the dispatcher gates on, so the catalog can never
-  // advertise a tool the next call would refuse.
+  // Filtered from the same declarations the dispatcher gates on.
   Json::Value listTools(const ToolCaller& caller) const {
     Json::Value tools(Json::arrayValue);
     for (const ToolDeclaration& tool : declareTools())

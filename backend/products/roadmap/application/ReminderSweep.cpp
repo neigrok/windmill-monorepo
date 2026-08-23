@@ -101,13 +101,11 @@ void ReminderSweep::send(const DueUser& due, const ReminderDecision& decision,
   // The OWNER's own tree at #/app/:id — NOT the public /t/:id share page.
   mail.treeUrl = appBaseUrl_ + "/#/app/" + content.treeId.str();
   mail.settingsUrl = appBaseUrl_ + "/#/settings";  // the app is hash-routed; a bare /settings is a 404
-  // The token rides in the FRAGMENT, so the secret never reaches OUR logs, and the page pauses only
-  // from a button the reader presses — a bare GET must never pause anyone, because corporate link
-  // scanners and Outlook prefetch every URL in an email.
+  // The token rides in the FRAGMENT: the secret stays out of our logs, and a bare GET (link
+  // scanners, mail prefetch) must never pause anyone — the page pauses only on a button press.
   mail.pauseUrl = appBaseUrl_ + "/pause.html#t=" + pauseSecret;
-  // The same secret on the machine door: a mail client POSTs this itself, so it cannot ride a
-  // fragment — it goes in the query of a real endpoint, registered POST-only so a scanner's GET can
-  // never unsubscribe anyone. Gmail and Yahoo require List-Unsubscribe one-click on bulk mail.
+  // The same secret on the machine door: a mail client POSTs this itself, so it rides the query of a
+  // real endpoint, registered POST-only so a scanner's GET can never unsubscribe anyone.
   mail.unsubscribeUrl = appBaseUrl_ + "/v1/reminders/unsubscribe?t=" + pauseSecret;
   mail.done = content.done;
   mail.total = content.total;

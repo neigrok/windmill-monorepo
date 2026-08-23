@@ -83,7 +83,7 @@ Seq TreeRoom::importTree(const TreeData& incoming, std::uint64_t nowMs, const Us
   frame.treeId = id_;
   frame.frameId = "srv-import-" + toString(at);
   frame.actor = at.actor;
-  frame.intent = SubgraphIntent::graft;  // state joined for its own sake — an import (§ Subgraph)
+  frame.intent = SubgraphIntent::graft;
   frame.graph = LooseGraph(incoming, at).exportState();
   if (!incoming.kinds.empty()) frame.legend = Legend(incoming.kinds, at).exportState();
   return joinSubgraph(frame, actor).value_or(head_);

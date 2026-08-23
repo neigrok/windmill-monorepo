@@ -8,8 +8,7 @@
 
 namespace wm::gym {
 
-// A movement a lifter created. stepKg is the one optional: omitted, the equipment decides it
-// (defaultStepKg). It is stored and served and nothing steps a weight by it — see Training.h.
+// stepKg omitted means the equipment decides it (defaultStepKg).
 struct ExerciseWrite {
   ExerciseId id;
   std::string name;
@@ -18,10 +17,8 @@ struct ExerciseWrite {
   std::optional<double> stepKg;
 };
 
-// The application seam over the catalog of movements: the seeds plus this lifter's own, and the two
-// writes a lifter has. Every refusal is the store's own fact, handed straight back. A movement's
-// RECORD is a read of the log and lives on TrainingService, though CatalogApi mounts it under the
-// movement's path.
+// The seeds plus this lifter's own movements, and the two writes a lifter has. Every refusal is the
+// store's own fact, handed straight back. A movement's RECORD lives on TrainingService.
 class CatalogService {
 public:
   explicit CatalogService(CatalogRepository& catalog);

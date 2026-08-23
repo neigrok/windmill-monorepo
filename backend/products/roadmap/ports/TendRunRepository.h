@@ -24,8 +24,7 @@ struct TendRunRepository {
   // this ledger and the meter's `used` count agree on what a tending is.
   virtual std::vector<TendRun> recentForUser(const UserId& user, std::uint64_t sinceMs, int limit) = 0;
 
-  // Run once at startup: any run still marked `running` when the process boots was orphaned by a
-  // restart and will never finish on its own. Marks every one `failed` and returns how many were
+  // Run once at startup: marks every run still `running` as `failed` and returns how many were
   // reaped. Single-instance only — revisit when the server scales out.
   virtual int failOrphanedRuns() = 0;
 };

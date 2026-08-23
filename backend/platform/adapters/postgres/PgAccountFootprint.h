@@ -10,7 +10,7 @@
 namespace wm {
 
 // One product's answer to "does this account hold anything": the table its rows live in and the
-// column that owns them. Products are named at the composition root, never here.
+// column that owns them.
 struct OwnedTable {
   std::string table;
   std::string ownerColumn;

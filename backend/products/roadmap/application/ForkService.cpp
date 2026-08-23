@@ -22,9 +22,8 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
     try {
-      // Gated on the stored access row BEFORE a room is built, so a forker who cannot read the source
-      // never causes its whole lattice to be loaded and pinned. An absent source and one the forker
-      // can't read are indistinguishable: noSource → 404. An infrastructure failure is masked the same way.
+      // Gated on the stored access row BEFORE a room is built. An absent source, one the forker can't
+      // read, and an infrastructure failure are indistinguishable: noSource → 404.
       const std::optional<TreeAccess> access = registry_.accessOf(source);
       if (!access || !canRead(std::optional<UserId>(owner), access->owner, access->visibility))
         return {Outcome::noSource, {}};
@@ -67,10 +66,8 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
 std::optional<ForkService::Description> ForkService::describe(const TreeId& source) {
   std::lock_guard<std::mutex> lock(registry_.strandFor(source));
   try {
-    // The one caller (the magic-link fork invite) is UNAUTHENTICATED, so a source is named only when
-    // it is readable by id; an absent or private tree stays undescribed. The verdict comes off the
-    // stored row first: a stranger with no account at all chooses which ids the server materializes,
-    // and a room built for a refusal still costs the whole lattice.
+    // The caller is unauthenticated: name a source only when it is readable by id, and take the
+    // verdict off the stored row before materializing anything.
     const std::optional<TreeAccess> access = registry_.accessOf(source);
     if (!access || !canRead(std::nullopt, access->owner, access->visibility)) return std::nullopt;
     TreeRoom* room = registry_.open(source);

@@ -6,9 +6,8 @@ namespace wm {
 
 namespace {
 // Days since 1970-01-01 for a civil (y,m,d), and its inverse — Howard Hinnant's public-domain
-// algorithms (howardhinnant.github.io/date_algorithms.html). Pure integer math: no <ctime>, no
-// timezone, no dependence on the platform's <chrono> calendar, so the month window is byte-identical
-// on the mac dev box and on CI Linux.
+// algorithms. Pure integer math: no <ctime>, no timezone, so the month window is identical on the mac
+// dev box and on CI Linux.
 constexpr std::int64_t kMsPerDay = 86'400'000;
 
 std::int64_t daysFromCivil(std::int64_t y, unsigned m, unsigned d) {

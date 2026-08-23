@@ -6,9 +6,8 @@
 
 namespace wm {
 
-// Process-wide spend fuse: a trailing-window accumulator in memory, with no database behind it.
-// Every adapter adds what it spent and asks before it calls; over the ceiling, refuse the vendor
-// call and report it once through FailureReporter. Safe to call from several loop threads at once.
+// Process-wide trailing-window spend accumulator, in memory only. Every adapter adds what it spent
+// and asks before it calls. Safe to call from several loop threads at once.
 class AiFuse {
 public:
   explicit AiFuse(long long ceilingNanos, long long windowMs = 3'600'000);

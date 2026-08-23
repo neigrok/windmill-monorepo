@@ -10,8 +10,7 @@ namespace wm {
 
 // The platform's sign-in mail over Resend: the 'magic-link' template for a plain sign-in,
 // 'magic-link-fork' when the link also plants a copy of something, 'magic-code' when the app door
-// asked to type a code instead. It binds each template's variables and hands the send to the shared
-// ResendClient, which carries the HTTPS call on its private loop and answers there with the outcome.
+// asked to type a code instead.
 class ResendEmailSender : public EmailSender {
 public:
   explicit ResendEmailSender(ResendClient& client);

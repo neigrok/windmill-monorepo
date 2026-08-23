@@ -550,10 +550,7 @@ public:
     for (const EchoRow& row : it->second.rows) recordSignal(user, triggerDay, row.matchDay, kind);
   }
 
-  // ADDITIVE, exactly as the SQL is. This used to assign the new set over the old, which made the
-  // fake more destructive than production and hid a real defect for as long as it existed: a
-  // pairing the curator stopped returning vanished here and was permanent there. What goes is a
-  // row whose spans are gone, or one this pass put to the curator again and was refused.
+  // Additive, as the SQL is: a row goes only if its spans are gone or this pass refused it again.
   void replaceEchoes(const UserId& user, const LocalDate& day,
                      const CuratedEchoes& curated) override {
     const auto lives = [&](std::int64_t spanId) {

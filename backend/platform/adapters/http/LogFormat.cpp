@@ -17,8 +17,7 @@ constexpr std::string_view kSecretSegmentAfter[] = {"/v1/gym/shared/"};
 // one: the coach token is 43 base64 characters, so 35 of them stay unsaid.
 constexpr std::size_t kKeptSecretPrefix = 8;
 
-// A logged field is a debugging aid, not a transcript. A path is caller-supplied and unbounded, and
-// this line is teed to Sentry as an event body. What is cut is said out loud.
+// A path is caller-supplied and unbounded, and this line is teed to Sentry as an event body.
 constexpr std::size_t kMaxLoggedField = 1024;
 constexpr std::string_view kTruncated = "~truncated";
 }

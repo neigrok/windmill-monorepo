@@ -18,17 +18,16 @@
 namespace wm {
 
 namespace {
-// The repair cadence. It carries the work no save triggers: inbound reverse edges a live
-// derivation deliberately does not chase, pages made stale by a corpus that moved under them,
-// pages a vendor blip failed, and the derivations a per-page daily cap deferred. Re-deriving an
-// unchanged page is prevented by its stamps, not by the cadence.
+// The repair cadence: inbound reverse edges a live derivation does not chase, pages made stale by a
+// corpus that moved under them, pages a vendor blip failed, and derivations a per-page daily cap
+// deferred. Re-deriving an unchanged page is prevented by its stamps, not by the cadence.
 constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 
-// Every SelectionRules value in eight characters — FNV-1a over the knobs, in a fixed order. Not a
-// security hash, a change detector: it is what makes a threshold change reopen the pages it would
-// judge differently. Add a knob to SelectionRules and add it here, or the knob ships silently.
+// Every SelectionRules value in eight characters — FNV-1a over the knobs, in a fixed order. It is
+// what makes a threshold change reopen the pages it would judge differently. Add a knob to
+// SelectionRules and add it here, or the knob ships silently.
 std::string rulesTag(const SelectionRules& rules) {
   const double values[] = {
       static_cast<double>(rules.minDayGap),  static_cast<double>(rules.shown),
@@ -62,7 +61,7 @@ CurationStatus statusFor(const std::string& failure) {
 }
 
 // Three disjoint counters over one status: work delivered, work still owed, and work that will
-// never be delivered and is no longer owed.
+// never be delivered.
 void countPage(EchoSweepReport& report, CurationStatus status) {
   if (isSuccess(status)) ++report.pagesDerived;
   else if (status == CurationStatus::refused) ++report.pagesRefused;
@@ -114,9 +113,7 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
 
 PipelineVersions EchoSweep::versions() const {
   // The judging half is the curator's identity AND the selection knobs: both decide which pairings
-  // survive, and neither is visible in a page's own body or corpus. The knobs are folded to eight
-  // characters, so a threshold changed in a deploy re-judges the archive rather than applying only
-  // to pages written afterwards.
+  // survive, and neither is visible in a page's own body or corpus.
   return PipelineVersions{segmenter_.version(), embedder_.version(),
                           curator_.version() + "/" + rulesTag(rules_)};
 }
@@ -146,8 +143,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
   EchoSweepReport report;
-  // Any boundary missing makes the whole pass a quiet no-op rather than an error: no user is
-  // scanned and no row is written.
+  // Any boundary missing makes the whole pass a quiet no-op rather than an error.
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
 
   for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
@@ -173,7 +169,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
     }
 
     // A page derived this pass may have moved text that other pages reach into, so those pages'
-    // stored quotes can no longer locate. Walk that reverse edge in the same pass, budgeted.
+    // stored quotes cannot locate. Walk that reverse edge in the same pass, budgeted.
     std::set<std::string> queued;
     for (const DuePage& page : pages) queued.insert(page.day.iso());
 
@@ -182,8 +178,8 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
       const CurationOutcome outcome = derive(user, page, corpusStamp, report);
       echoes_.recordCuration(user, page.day, outcome);
       countPage(report, outcome.status);
-      // The reverse edge is walked on SETTLED, not on success: a refused page still replaced its own
-      // spans at step 3, so the pages reaching into it still hold quotes that have moved.
+      // Walked on SETTLED, not on success: a refused page still replaced its own spans at step 3,
+      // so the pages reaching into it still hold quotes that have moved.
       if (!isSettled(outcome.status)) continue;
 
       int enqueued = 0;
@@ -210,17 +206,16 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   CurationOutcome outcome;
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
-  // Recorded on every settled pass, so the next build can tell what derived this page.
   outcome.versions = versions();
 
   // 1 — cut the page into idea units. A vendor call, so it is made only when the BODY moved: a
   // corpus that moved under unchanged text changes what this page REACHES, never what it SAYS, and
-  // re-cutting risks a different answer churning every span id on the page.
+  // re-cutting churns every span id on the page.
   const std::vector<KnownSpan> stored = echoes_.spansOf(user, page.day);
   std::vector<Passage> fresh;
   if (!page.bodyMoved && !stored.empty()) {
-    // Located rather than trusted, exactly as a model's units are, so a page whose stamp lied cannot
-    // produce a passage that is not there.
+    // Located rather than trusted, so a page whose stamp lied cannot produce a passage that is not
+    // there.
     std::vector<std::string> texts;
     texts.reserve(stored.size());
     for (const KnownSpan& span : stored) texts.push_back(span.text);
@@ -234,8 +229,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
       outcome.status = statusFor(cut.failure);
       outcome.error = "segmenter: " + cut.failure;
       // A refusal settles the page here exactly as it does at the curator, so the page ends carrying
-      // NOTHING rather than whatever an earlier body's pass left standing. The spans are left alone:
-      // they still describe the text that produced them and nothing has replaced it.
+      // NOTHING. The spans are left alone: they still describe the text that produced them.
       if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
       return outcome;
     }
@@ -265,7 +259,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   report.passagesEmbedded += static_cast<int>(fresh.size());
 
   // 3 — reconcile, so a passage whose text is unchanged keeps its identity however far down the
-  // page it moved. This is what stops an inserted sentence re-pointing every inbound echo.
+  // page it moved.
   const std::vector<IdentifiedPassage> carried = reconcile(stored, fresh);
   std::vector<SpanWrite> writes;
   writes.reserve(carried.size());
@@ -288,28 +282,39 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     waved.insert({pair.triggerSpanId, pair.matchSpanId});
 
   // 5 — select, for the page. The refrain gate, each trigger's ranking, the reader's dismissals and
-  // the page ceiling are one domain call (EchoSelection.h, selectForPage) — the same call the debug
-  // door runs. `nearestReported` 0: the near misses cost another corpus scan and only that door pays.
+  // the page ceiling are one domain call (EchoSelection.h, selectForPage). `nearestReported` 0: the
+  // near misses cost another corpus scan and only the debug door pays it.
   const PageSelection selection =
       selectForPage(tonight, history, waved, rules_, budget_.echoesPerPage, 0);
   report.pagesSkippedRefrain += selection.refrains;
   const std::vector<Pairing>& proposed = selection.pairings;
 
-  // The candidate passages the curator is handed, gathered once by identity so a passage two
-  // triggers both reached back to is sent once.
+  // WHAT THIS PASS ACTIVELY REFUSED, before the curator is asked anything. A stored pairing can only
+  // be retracted by a judgement about THAT PAIR — never by silence, because retrieval's candidate
+  // set moves and a pairing nobody raised is not a pairing anybody rejected. Only the two fates that
+  // are properties of the pair itself belong here: no shared uncommon word, and the same sentence
+  // said again. A quota, a family, the page cap and a refrain are contingent on the other candidates
+  // that night, so they retract nothing.
+  std::vector<SpanPair> structural;
+  for (const TriggerTrace& trace : selection.traces)
+    for (const CandidateNote& note : trace.notes)
+      if (note.fate == Fate::noAnchor || note.fate == Fate::restatement)
+        structural.push_back(SpanPair{trace.spanId, note.spanId});
+
+  // Gathered once by identity, so a passage two triggers both reached back to is sent once.
   std::map<std::int64_t, Vectored> offered;
   for (const Vectored& span : history)
     for (const Pairing& pairing : proposed)
       if (pairing.matchSpanId == span.spanId) offered.emplace(span.spanId, span);
 
   if (proposed.empty()) {
-    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
+    echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}, structural});
     outcome.status = CurationStatus::emptyOk;
     return outcome;
   }
 
-  // 6 — curate. `ok == false` is a failed CALL, not the same as finding nothing, which is why the
-  // page can be retried tomorrow instead of lost tonight.
+  // 6 — curate. `ok == false` is a failed CALL, not the same as finding nothing, so the page can be
+  // retried tomorrow instead of lost tonight.
   std::vector<Vectored> candidates;
   candidates.reserve(offered.size());
   for (const auto& [spanId, span] : offered) candidates.push_back(span);
@@ -318,7 +323,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     outcome.status = statusFor(curation.failure);
     outcome.error = curation.failure;
     // A refusal settles the page, so it leaves it in a DEFINITE state. Step 3 has already replaced
-    // this page's spans, and echoes aimed from here at span ids that no longer exist record nothing.
+    // this page's spans, and echoes aimed from here at span ids that are gone record nothing.
     if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
     return outcome;
   }
@@ -326,13 +331,14 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   // 7 — persist what the curator kept.
   CuratedEchoes curated;
   curated.curatorVersion = curator_.version();   // already encodes the prompt identity
+  curated.refused = structural;
   std::map<std::pair<std::int64_t, std::int64_t>, float> cosines;
   for (const Pairing& pairing : proposed)
     cosines[{pairing.triggerSpanId, pairing.matchSpanId}] = pairing.cosine;
 
   for (const Verdict& verdict : curation.verdicts) {
     // A refusal is recorded as well as a keep. Without it a pairing stored by an earlier prompt
-    // survives every later judgement, and a false positive is permanent.
+    // survives every later judgement.
     if (!verdict.related) {
       curated.refused.push_back(SpanPair{verdict.triggerSpanId, verdict.matchSpanId});
       continue;

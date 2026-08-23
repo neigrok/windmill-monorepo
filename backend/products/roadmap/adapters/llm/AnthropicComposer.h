@@ -14,21 +14,14 @@
 
 namespace wm {
 
-// The prompt forbids code fences, but a model that wraps its reply in them anyway must not leak
-// them into the plan the client re-parses: strip a leading ``` / ```markdown line and a trailing
-// ``` line, trim the edges, and touch nothing else.
+// Strip a leading ``` / ```markdown line and a trailing ``` line, trim the edges, touch nothing else.
 std::string strippedPlan(const std::string& reply);
 
-// Incremental decoder for the streaming Messages reply, fed raw HTTP/1.1 response bytes
-// (status line, headers, chunked or plain body) exactly as they land on the socket. Only
-// text_delta content reaches onDelta — thinking deltas never leave the adapter. onDone
-// fires exactly once: true only for a clean end_turn stop; a non-200 status, a garbled
-// frame, a close before message_stop (report via finish), or a truncating stop_reason is
-// false. After onDone every further byte is ignored.
+// Incremental decoder for the streaming Messages reply, fed raw HTTP/1.1 response bytes as they land.
+// Only text_delta reaches onDelta. onDone fires exactly once, true only for a clean end_turn stop;
+// after it every further byte is ignored.
 class AnthropicStreamParser {
 public:
-  // onFailure names the reason a stream came apart: an upstream error code, a truncating stop
-  // reason.
   using Reporter = std::function<void(const std::string& where, const std::string& detail)>;
 
   AnthropicStreamParser(std::function<void(const std::string&)> onDelta,
@@ -37,10 +30,9 @@ public:
   void feed(const char* data, std::size_t length);
   void finish();
   bool done() const { return phase_ == Phase::Done; }
-  // What the reply's head said, or 0 while none has landed.
+  // 0 while no reply head has landed.
   int status() const { return status_; }
-  // What the stream has cost so far: the decoder is the only thing that sees `message_start` and
-  // `message_delta`. State to be read at the end, never a second callback.
+  // State to be read at the end, never a second callback.
   TokenUse tokens() const { return tokens_; }
 
 private:
@@ -65,20 +57,13 @@ private:
   TokenUse tokens_;
 };
 
-// Composes plans through Anthropic's Messages API: the raw paste rides as the user turn under a
-// system prompt that pins the paste grammar. Owns a private event-loop thread that carries the
-// outbound HTTPS call, so the server's request loops are never parked waiting on the model.
-// compose buffers the whole reply (done fires once it, or the 40s timeout, lands); composeStream
-// speaks the wire itself — a raw trantor TLS connection, because drogon's HttpClient only ever
-// delivers a fully buffered response — under a 90s whole-stream deadline.
+// Composes plans through Anthropic's Messages API, on a private event-loop thread so the server's
+// request loops never park on the model. compose buffers the whole reply under a 40s timeout;
+// composeStream speaks HTTP/1.1 itself over a raw trantor TLS connection, under a 90s deadline.
 class AnthropicComposer : public PlanComposer {
 public:
-  // The reporter, the fuse and the sink are all optional (null = do nothing), so tests and local
-  // runs stay silent.
-  //
-  // This seam sits on an UNAUTHENTICATED door: the paste is capped and the fuse is asked before
-  // the call, and over either of them the birth canvas falls back to its deterministic parser —
-  // never a 503.
+  // The reporter, the fuse and the sink are optional (null = do nothing).
+  // This seam sits on an unauthenticated door: the paste is capped and the fuse asked before the call.
   explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                              std::shared_ptr<AiFuse> fuse = nullptr,
                              std::shared_ptr<UsageSink> usage = nullptr);
@@ -91,8 +76,7 @@ public:
                                       std::function<void(bool)> onDone) override;
 
 private:
-  // The reporter owns everything it needs: a compose call settles long after the caller may be
-  // gone, so nothing it holds may reach back through the composer.
+  // Owns everything it needs: a compose call settles long after the caller may be gone.
   AnthropicStreamParser::Reporter reporter() const;
 
   std::string apiKey_;

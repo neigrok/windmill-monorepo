@@ -255,13 +255,20 @@ same function, so an operator is shown what a save did rather than a second opin
 
 **Outbound.** When a page's body changes, its passages and echoes are recomputed and replace the
 previous set, never appended. The replacement is additive: `replaceEchoes` deletes rows whose trigger
-or match passage no longer exists, plus the pairings this pass **put to the curator again and was
-refused** (`CuratedEchoes::refused`). A pairing this pass never raised is kept, which is the whole
-point of the rule — the curator is not deterministic and retrieval's candidate set moves, so silence
-about a row must never read as a refusal of it.
+or match passage no longer exists, plus the pairings this pass **actively refused**
+(`CuratedEchoes::refused`). Two things refuse: the curator, asked again and answering no; and
+selection, for a reason intrinsic to the pair — `no_anchor` (no uncommon word in common) or
+`restatement` (the same sentence again). Both hold whatever else is in the corpus that night.
+
+Everything else is kept. A quota, a family, the page cap and a refrain are contingent on the OTHER
+candidates that night, and a pairing retrieval never handed over was never looked at — silence about
+a row must never read as a refusal of it, because the curator is not deterministic and the candidate
+set moves under it.
 
 The retraction half arrived on 2026-08-23 and the reason is worth keeping: without it a stored
-pairing was **permanent**. A reader reported two false positives, the prompt was fixed, a floor was
+pairing was **permanent**. It took two goes: retracting only what the CURATOR refused still left a
+false positive standing, because the anchor rule had stopped proposing it and so the vendor was
+never asked — a pairing can be refused before anyone spends a token on it. A reader reported two false positives, the prompt was fixed, a floor was
 added, the archive was re-judged at 0.4 against a floor of 0.6 — and both echoes stayed on the page,
 because additive meant nothing could ever be un-said. The fake made it invisible for months by
 assigning the new set over the old, so it was *more* destructive than production and every test

@@ -10,7 +10,6 @@ namespace wm {
 // The safety-net sink: persist one uncaught exception that escaped an HTTP/WS handler. method and
 // path are best-effort context; status is the response the client got (500). actor is omitted —
 // the exception handler often can't resolve a caller.
-// Concrete on purpose: its one consumer is the drogon exception handler, which holds it by value.
 class PgServerErrorRepository {
 public:
   explicit PgServerErrorRepository(std::shared_ptr<PgPool> pool);

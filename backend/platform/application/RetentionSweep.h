@@ -12,8 +12,7 @@
 
 namespace wm {
 
-// The pass that makes the database forget. It logs its windows when armed and what each pass
-// removed, per table. It takes the fleet lock to avoid duplicated work, not for correctness.
+// The one pass that deletes. It takes the fleet lock to avoid duplicated work, not for correctness.
 class RetentionSweep {
 public:
   RetentionSweep(RetentionStore& store, SweepMutex& mutex, Clock& clock, RetentionWindows windows)

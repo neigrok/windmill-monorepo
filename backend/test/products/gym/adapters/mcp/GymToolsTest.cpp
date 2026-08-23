@@ -174,7 +174,7 @@ TEST(gym_names_the_two_tools_that_only_propose_and_the_one_that_writes) {
             std::string::npos);
 }
 
-// APPLY IS NOT A CAPABILITY: there is no tool for it at any level, and the dispatcher answers no such call.
+// Apply is not a capability: there is no tool for it at any level, and the dispatcher answers no such call.
 TEST(gym_publishes_no_tool_that_applies_or_dismisses_a_proposal) {
   Harness h;
 
@@ -224,7 +224,7 @@ TEST(gym_the_retired_routine_tools_name_what_replaced_them) {
   CHECK(gymInstructions().find("propose_routine_change") != std::string::npos);
 }
 
-// NO AGENT MAY EDIT OR DELETE A LOGGED SET, at any level: the rule is about the verb, not the grant.
+// No agent may edit or delete a logged set at any level: the rule is about the verb, not the grant.
 TEST(gym_publishes_no_tool_that_edits_or_deletes_a_logged_set) {
   Harness h;
 
@@ -239,7 +239,7 @@ TEST(gym_publishes_no_tool_that_edits_or_deletes_a_logged_set) {
     CHECK(name != "delete_set");
     CHECK(name != "remove_set");
   }
-  // And the dispatcher answers no such call under any of those names either, whatever a client
+  // The dispatcher answers no such call under any of those names either.
   for (const char* name : {"fix_set", "edit_set", "update_set", "delete_set"})
     CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
 }
@@ -704,8 +704,7 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, 5, 5, 82.5, 3600); }));
 }
 
-// The rule every tool publishes and CompositeToolHost enforces one level down: a key an entry never
-// declared is REFUSED, never dropped.
+// A key an entry never declared is refused, never dropped.
 TEST(gym_a_proposal_names_a_misspelled_entry_key_rather_than_dropping_it) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
@@ -735,7 +734,7 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   const ToolResult listed = h.call("list_routines", Json::Value(Json::objectValue));
   REQUIRE(!listed.isError);
   Json::Value document = body(listed)["routines"][0];
-  CHECK_EQ(document["entries"][0]["position"].asInt(), 1);   // the key that used to be fatal
+  CHECK_EQ(document["entries"][0]["position"].asInt(), 1);
   document["entries"][0]["targetWeightKg"] = 85.0;
 
   const ToolResult minted = h.propose("prop_00000001", "rt_00000001", document["entries"]);
@@ -821,8 +820,7 @@ TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_nam
            std::string("Claude Desktop"));
 }
 
-// One pending proposal per (routine, door, CONNECTION): two agents each hold their own, and the same
-// agent proposing twice still replaces its own.
+// One pending proposal per (routine, door, connection): two agents each hold their own, and the same agent proposing twice replaces its own.
 TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_connection_holds_one) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
@@ -887,7 +885,7 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
            std::optional<EntryTargets>(EntryTargets{5, 3, 87.5, std::nullopt}));
 }
 
-// Every field list_routines puts on a routine survives a read-and-send-back, proved through the COMPOSITE
+// Every field list_routines puts on a routine survives a read-and-send-back.
 TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_routine) {
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
@@ -895,9 +893,9 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_rou
   h.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", 5, 3, 87.5));
 
   Json::Value document = body(h.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
-  REQUIRE_EQ(document["revision"].asInt(), 1);            // the two keys that used to be fatal
+  REQUIRE_EQ(document["revision"].asInt(), 1);
   REQUIRE(document.isMember("pendingProposal"));
-  document["id"] = "rt_00000002";                        // the duplicate is a NEW day, on a new id
+  document["id"] = "rt_00000002";
   document["name"] = "Push B";
 
   const ToolResult duplicated =
@@ -995,7 +993,7 @@ TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
     }
 }
 
-// Refused at the MINT, not at the tap: a proposal a lifter reads and cannot apply is worse than none.
+// Refused at the mint, not at the tap.
 TEST(gym_a_proposal_naming_no_movement_is_refused_before_it_is_ever_minted) {
   Harness h;
   h.repo.db.routineRows.push_back(pushA());
@@ -1164,7 +1162,7 @@ TEST(gym_a_removal_proposal_counts_the_sets_each_line_keeps) {
   CHECK_EQ(body(minted)["proposal"]["changes"][0]["loggedSets"].asInt(), 2);
 }
 
-// NO AGENT MAY READ OR WRITE A LIFTER'S SETTINGS, at any level: the rule is about the verb, not the grant.
+// No agent may read or write a lifter's settings at any level: the rule is about the verb, not the grant.
 TEST(gym_publishes_no_tool_that_reads_or_writes_a_lifters_settings) {
   Harness h;
 
@@ -1196,7 +1194,7 @@ TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
   CHECK(refused.isError);
   CHECK(message(refused).find("retired on 2026-08-13") != std::string::npos);
   CHECK(message(refused).find("nothing replaced it") != std::string::npos);
-  // Never the false reason. The level WAS granted; the tool is gone.
+  // The level was granted; the tool is gone.
   CHECK(message(refused).find("granted") == std::string::npos);
   CHECK_EQ(h.tools.retirement("get_preferences")->replacement, std::string(""));
 }
@@ -1234,7 +1232,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
   CHECK_EQ(h.preferences.preferences(uid()).restSeconds, std::optional<int>(120));
 }
 
-// `gym:read` CANNOT MINT A PROPOSAL, and the gate is the composite's rather than gym's, so it is called through it.
+// `gym:read` cannot mint a proposal, and the gate is the composite's rather than gym's, so it is called through it.
 TEST(gym_read_alone_cannot_mint_a_proposal) {
   Harness h;
   CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});

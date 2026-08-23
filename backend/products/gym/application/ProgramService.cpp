@@ -19,9 +19,8 @@ std::vector<RoutineEvent> ProgramService::routineHistory(const UserId& user, con
   return program_.routineHistory(user, id);
 }
 
-// The entity's constructor is the entire validation (throwing InvalidTraining, which the wire turns
-// into a 400) and the store's outcome the entire refusal set. Neither write reads before it writes:
-// the create's idempotency is the id, not a lookup.
+// The entity's constructor is the entire validation (throwing InvalidTraining) and the store's
+// outcome the entire refusal set. The create's idempotency is the id, not a lookup.
 RoutineWriteOutcome ProgramService::createRoutine(const UserId& user, const RoutineWrite& incoming,
                                                   std::optional<ProposalDoor> byAgent) {
   return program_.insertRoutine(
@@ -47,10 +46,8 @@ std::optional<RoutineProposal> ProgramService::proposal(const UserId& user, cons
   return program_.proposal(user, id);
 }
 
-// Load the routine this is about, build the document it would become, diff it against what stands,
-// store the diff against that revision. The document goes through the Routine constructor and is
-// thrown away: its only job is to refuse what a plan cannot hold, at the mint rather than at the
-// tap. Nothing here writes to the program.
+// The document goes through the Routine constructor and is thrown away: its only job is to refuse
+// what a plan cannot hold, at the mint rather than at the tap. Nothing here writes to the program.
 ProposalMintOutcome ProgramService::propose(const UserId& user, const ProposalWrite& incoming) {
   std::optional<Routine> base = program_.routine(user, incoming.routine);
   if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
@@ -59,9 +56,8 @@ ProposalMintOutcome ProgramService::propose(const UserId& user, const ProposalWr
   const Routine becomes{base->id, base->user, name, base->position, incoming.entries};
   std::vector<RoutineChange> changes = changesBetween(base->entries, becomes.entries);
   const int counted = countedChanges(base->entries, changes, base->name, becomes.name);
-  // A document identical to what the routine already says proposes nothing. Identical means
-  // identical top to bottom: the same lines in a different ORDER is a change, and the count knows
-  // it.
+  // A document identical to what the routine already says proposes nothing; the same lines in a
+  // different ORDER is a change.
   if (counted == 0) return {std::nullopt, ProposalMintError::noChange};
   const ProposalHead head{incoming.id,
                           base->id,
@@ -77,8 +73,7 @@ ProposalMintOutcome ProgramService::propose(const UserId& user, const ProposalWr
       RoutineProposal{head, base->revision, base->name, becomes.name, std::move(changes)});
 }
 
-// The same pipeline with no document to build: the whole plan leaves, so every line of it is a
-// removed row.
+// No document to build: the whole plan leaves, so every line of it is a removed row.
 ProposalMintOutcome ProgramService::proposeRemoval(const UserId& user, const ProposalId& id,
                                                    const RoutineId& routine,
                                                    const std::string& summary,
@@ -101,10 +96,9 @@ ProposalMintOutcome ProgramService::proposeRemoval(const UserId& user, const Pro
       RoutineProposal{head, base->revision, base->name, base->name, std::move(changes)});
 }
 
-// Load the proposal, load the routine it is about, let the domain say what the routine becomes, and
-// write that; the store's own revision check refuses the whole apply if the routine moved between
-// the load and the write. A removal has no document to compute and takes the store's other verb.
-// The intent is read off the proposal, never off the caller.
+// The store's own revision check refuses the whole apply if the routine moved between the load and
+// the write. A removal has no document to compute and takes the store's other verb. The intent is
+// read off the proposal, never off the caller.
 ProposalSettleOutcome ProgramService::apply(const UserId& user, const ProposalId& id) {
   std::optional<RoutineProposal> held = program_.proposal(user, id);
   if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
@@ -116,8 +110,7 @@ ProposalSettleOutcome ProgramService::apply(const UserId& user, const ProposalId
   if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
   // Every remaining decision is the STORE's, under its own lock: a proposal already settled (a
   // replayed tap reads back what it did; the other decision is refused), and a base that has moved
-  // since the mint (superseded). The document is computed from the base for the one case that writes
-  // it and is not read in any other.
+  // since the mint (superseded).
   return program_.applyRevision(user, id, appliedTo(*base, *held), nowMs);
 }
 
