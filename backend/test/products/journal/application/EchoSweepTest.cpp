@@ -252,9 +252,18 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
 
   echoes.plantDismissal(uid("u1"), first[0].triggerSpanId, first[0].matchSpanId);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+  const int judged = curator.calls;
   sweep.run(kNow - kDay);
 
-  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+  // Never PROPOSED again — the pairing is dropped before the curator, so the vendor is not asked a
+  // second time about something the reader has already answered.
+  CHECK_EQ(curator.calls, judged);
+  // And never SERVED again, which is the promise that matters: the reader told it to fade.
+  CHECK_EQ(echoes.echoesFor(uid("u1"), ld(kOldDay), ld(kNewDay)).empty(), true);
+  // The row itself stays, deliberately. Persistence is additive, and a dismissal is not a refusal:
+  // journal_echo is where the quality signal copies the pairing's score and curator version from
+  // (ECHOES.md, "Dismissals"), so deleting it would throw the dataset away with the echo.
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 }
 
 TEST(a_page_within_the_gap_is_too_near_to_echo) {
@@ -433,4 +442,66 @@ TEST(a_unit_the_model_invented_never_becomes_a_passage_of_the_writers) {
   CHECK_EQ(report.unitsDiscarded, 1);
   REQUIRE_EQ(echoes.spansOf(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
   CHECK_EQ(echoes.spansOf(uid("u1"), ld(kNewDay))[0].text, kNewLine);
+}
+
+// RETRACTION. Persistence is additive so a re-derivation cannot destroy a chain the reader has
+// walked — and until 2026-08-23 that made a stored pairing permanent. A reader reported two false
+// positives, the curator's prompt was fixed and a floor added, the archive was re-judged, and both
+// echoes stayed on the page: nothing in the pipeline could un-say anything.
+TEST(a_pairing_the_curator_now_refuses_is_taken_off_the_page) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+  REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
+
+  // The same page, asked again of a curator that now says no — a fixed prompt, a raised floor.
+  curator.keepEverything = false;
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+  sweep.run(kNow - kDay);
+
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}
+
+// The other half, and the reason the additive rule exists: a pairing this pass never RAISED is not
+// a pairing this pass rejected. The curator is not deterministic and retrieval's candidate set
+// moves, so silence about a row must never read as a refusal of it.
+TEST(a_pairing_this_pass_never_asked_about_survives_it) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+  const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(first.size(), std::size_t{1});
+
+  // A pairing from an older night, aimed at a passage that still exists but that tonight's
+  // retrieval no longer surfaces: nobody asks about it, so nobody may retract it.
+  // Deliberately shares no anchor with tonight, so selection never raises it and the curator is
+  // never asked — which is exactly the silence the additive rule protects.
+  const std::string unrelated = "the piano needed tuning again";
+  echoes.plantSpan(uid("u1"), ld("2025-01-01"), 77, unrelated, embedder.embed({unrelated})[0]);
+  CuratedEchoes standing;
+  standing.curatorVersion = "fake-curator-v1";
+  standing.rows.push_back(EchoRow{first[0].triggerSpanId, ld("2025-01-01"), 77, 0.7f, 0.8f, true});
+  echoes.replaceEchoes(uid("u1"), ld(kNewDay), standing);
+
+  curator.keepEverything = false;
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+  sweep.run(kNow - kDay);
+
+  const std::vector<EchoRow> after = echoes.rowsOn(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(after.size(), std::size_t{1});
+  CHECK_EQ(after[0].matchSpanId, std::int64_t{77});
 }

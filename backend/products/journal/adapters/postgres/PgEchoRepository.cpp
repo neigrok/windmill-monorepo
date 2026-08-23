@@ -425,8 +425,10 @@ void PgEchoRepository::recordPageSignal(const UserId& user, const LocalDate& tri
 
 void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                                      const CuratedEchoes& curated) {
-  // Replace, additively. What goes is only what can no longer be shown; a row the curator did not
-  // return this time is KEPT, because the curator is not deterministic. created_at survives too.
+  // Replace, additively. What goes is what can no longer be shown — and, since 2026-08-23, what was
+  // put to the curator again and refused. A row this pass never raised is still KEPT, because the
+  // curator is not deterministic and a typo fix must not destroy a chain the reader has walked.
+  // created_at survives either way.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -436,6 +438,16 @@ void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trigge
       "OR NOT EXISTS (SELECT 1 FROM journal_span s "
       "WHERE s.user_id = e.user_id AND s.span_id = e.match_span_id))",
       user.str(), triggerDay.iso());
+
+  // The retraction. One statement per refused pairing rather than an array literal: the list is
+  // bounded by what one page proposed (SweepBudget::echoesPerPage), and a page's whole curation is
+  // one transaction either way.
+  for (const SpanPair& pair : curated.refused)
+    txn.exec_params(
+        "DELETE FROM journal_echo WHERE user_id = $1::uuid AND trigger_span_id = $2 "
+        "AND match_span_id = $3",
+        user.str(), static_cast<long long>(pair.triggerSpanId),
+        static_cast<long long>(pair.matchSpanId));
 
   for (const EchoRow& echo : curated.rows)
     txn.exec_params(
@@ -450,6 +462,14 @@ void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trigge
         echo.matchDay.iso(), static_cast<long long>(echo.matchSpanId), echo.cosine, echo.relation,
         echo.matchIsSelf, curated.curatorVersion);
 
+  txn.commit();
+}
+
+void PgEchoRepository::clearEchoes(const UserId& user, const LocalDate& triggerDay) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params("DELETE FROM journal_echo WHERE user_id = $1::uuid AND trigger_day = $2::date",
+                  user.str(), triggerDay.iso());
   txn.commit();
 }
 

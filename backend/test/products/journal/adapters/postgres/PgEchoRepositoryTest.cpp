@@ -606,3 +606,75 @@ TEST(pg_echo_a_dismissed_pairing_stays_dismissed_when_its_passages_move) {
   CHECK_EQ(left[0].matchDay.iso(), std::string("2024-01-01"));
   CHECK_EQ(left[1].matchDay.iso(), std::string("2024-03-01"));
 }
+
+// Persistence is additive, and until 2026-08-23 that made a stored pairing permanent — a false
+// positive survived every later prompt, floor and threshold. What is retracted now is exactly what
+// was put to the curator again and refused; silence about a row still leaves it standing.
+TEST(pg_echo_a_refused_pairing_is_retracted_and_an_unasked_one_is_not) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  const std::string older = "2026-01-01";
+  writePage(kMine, day, "tonight.");
+  writePage(kMine, older, "january.");
+  PgEchoRepository repo{pgTestPool()};
+
+  repo.replaceSpans(UserId{kMine}, LocalDate{day},
+                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", 1);
+  const std::vector<Vectored> old = repo.replaceSpans(
+      UserId{kMine}, LocalDate{older},
+      {SpanWrite{0, Passage{0, 0, 8, "january."}, {1.0f, 0.0f}},
+       SpanWrite{0, Passage{1, 0, 8, "january."}, {0.0f, 1.0f}}}, "e1", 1);
+  const std::int64_t trigger = repo.spansOf(UserId{kMine}, LocalDate{day}).front().spanId;
+  REQUIRE_EQ(old.size(), std::size_t{2});
+
+  CuratedEchoes both;
+  both.curatorVersion = "c1";
+  both.rows.push_back(EchoRow{trigger, LocalDate{older}, old[0].spanId, 0.8f, 0.9f, true});
+  both.rows.push_back(EchoRow{trigger, LocalDate{older}, old[1].spanId, 0.7f, 0.8f, true});
+  repo.replaceEchoes(UserId{kMine}, LocalDate{day}, both);
+  REQUIRE_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day}).size(), std::size_t{2});
+
+  // A pass that raised the first pairing again and was refused, and never mentioned the second.
+  CuratedEchoes second;
+  second.curatorVersion = "c2";
+  second.refused.push_back(SpanPair{trigger, old[0].spanId});
+  repo.replaceEchoes(UserId{kMine}, LocalDate{day}, second);
+
+  const std::vector<EchoView> left =
+      repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day});
+  REQUIRE_EQ(left.size(), std::size_t{1});
+  CHECK_EQ(left[0].matchSpanId, old[1].spanId);
+}
+
+// A vendor refusal ends the page carrying NOTHING, which ECHOES.md has always promised and which
+// additive persistence had quietly made impossible: `replaceEchoes` with an empty set keeps every
+// row. It is a safety guarantee, so it gets an operation that means it.
+TEST(pg_echo_clearing_a_page_leaves_it_carrying_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  const std::string older = "2026-01-01";
+  writePage(kMine, day, "tonight.");
+  writePage(kMine, older, "january.");
+  PgEchoRepository repo{pgTestPool()};
+  repo.replaceSpans(UserId{kMine}, LocalDate{day},
+                    {SpanWrite{0, Passage{0, 0, 8, "tonight."}, {1.0f, 0.0f}}}, "e1", 1);
+  const std::vector<Vectored> old =
+      repo.replaceSpans(UserId{kMine}, LocalDate{older},
+                        {SpanWrite{0, Passage{0, 0, 8, "january."}, {1.0f, 0.0f}}}, "e1", 1);
+  const std::int64_t trigger = repo.spansOf(UserId{kMine}, LocalDate{day}).front().spanId;
+
+  CuratedEchoes stored;
+  stored.curatorVersion = "c1";
+  stored.rows.push_back(EchoRow{trigger, LocalDate{older}, old[0].spanId, 0.8f, 0.9f, true});
+  repo.replaceEchoes(UserId{kMine}, LocalDate{day}, stored);
+  REQUIRE_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day}).size(), std::size_t{1});
+
+  // The old spelling of this guarantee, which does nothing at all.
+  repo.replaceEchoes(UserId{kMine}, LocalDate{day}, CuratedEchoes{"c2", {}, {}});
+  CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day}).size(), std::size_t{1});
+
+  repo.clearEchoes(UserId{kMine}, LocalDate{day});
+  CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day}).empty(), true);
+}

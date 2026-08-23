@@ -126,4 +126,5 @@ share/gallery pages, and all of journal's and gym's routes, each in its product'
 | GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }`, a human feed from `tree_ops` |
 
 Every row is gated by `canRead`/`canWrite` (`platform/domain/Access.h`): a private tree is owner-only
-and answers `404` to everyone else; unlisted and public read alike.
+and answers `404` to everyone else; unlisted and public read alike. Planting, listing, writing,
+deleting and forking need a session — an anonymous caller gets `401`.

@@ -68,6 +68,17 @@ struct EchoRow {
 struct CuratedEchoes {
   std::string curatorVersion;
   std::vector<EchoRow> rows;
+  // Pairings this pass PUT TO THE CURATOR AND WAS REFUSED. Persistence is additive — a row the pass
+  // did not return is kept, because the curator is not deterministic and a typo fix must not
+  // silently destroy a chain the reader has walked — and until 2026-08-23 that made a stored
+  // pairing PERMANENT. A reader reported two false positives, the prompt was fixed, the floor was
+  // added, the archive was re-judged at 0.4 against a floor of 0.6, and both echoes stayed on the
+  // page: nothing in the pipeline could ever un-say something.
+  //
+  // So the additive rule keeps its reason and loses its corollary. What is retracted is exactly
+  // what was ASKED AGAIN and answered no — never a pairing this pass did not raise, which is the
+  // non-determinism the rule was written for.
+  std::vector<SpanPair> refused;
 };
 
 // `emptyOk` is a page that genuinely had nothing to reach back to — done, not owed a retry.
@@ -212,6 +223,13 @@ struct EchoRepository {
 
   virtual void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                              const CuratedEchoes& curated) = 0;
+
+  // Everything this page reaches back to, gone. The ONE caller is a vendor refusal, which ECHOES.md
+  // has always said leaves the page "carrying no echoes at all" — and which was written as
+  // `replaceEchoes` with an empty set, a call that under additive persistence keeps every row it
+  // was meant to remove. The guarantee is a safety one (a body the vendor declined is not a body to
+  // hang the reader's own past under), so it gets an operation that actually says it.
+  virtual void clearEchoes(const UserId& user, const LocalDate& triggerDay) = 0;
   virtual void recordCuration(const UserId& user, const LocalDate& day,
                               const CurationOutcome& outcome) = 0;
 

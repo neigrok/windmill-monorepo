@@ -234,8 +234,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
       // A refusal settles the page here exactly as it does at the curator, so the page ends carrying
       // NOTHING rather than whatever an earlier body's pass left standing. The spans are left alone:
       // they still describe the text that produced them and nothing has replaced it.
-      if (outcome.status == CurationStatus::refused)
-        echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
+      if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
       return outcome;
     }
     fresh = cut.passages;
@@ -318,8 +317,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     outcome.error = curation.failure;
     // A refusal settles the page, so it leaves it in a DEFINITE state. Step 3 has already replaced
     // this page's spans, and echoes aimed from here at span ids that no longer exist record nothing.
-    if (outcome.status == CurationStatus::refused)
-      echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
+    if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
     return outcome;
   }
 
@@ -331,7 +329,12 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     cosines[{pairing.triggerSpanId, pairing.matchSpanId}] = pairing.cosine;
 
   for (const Verdict& verdict : curation.verdicts) {
-    if (!verdict.related) continue;
+    // A refusal is recorded as well as a keep. Without it a pairing stored by an earlier prompt
+    // survives every later judgement, and a false positive is permanent.
+    if (!verdict.related) {
+      curated.refused.push_back(SpanPair{verdict.triggerSpanId, verdict.matchSpanId});
+      continue;
+    }
     const auto match = offered.find(verdict.matchSpanId);
     const auto cosine = cosines.find({verdict.triggerSpanId, verdict.matchSpanId});
     // A verdict naming a pairing nobody proposed is dropped rather than trusted.

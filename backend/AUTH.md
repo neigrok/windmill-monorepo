@@ -180,10 +180,9 @@ only while signed out.
 
 ### The link door
 
-The app's home carries one dismissible line — *"Already use Windmill on the web? Link this
-account."* — which runs the ordinary magic-link flow inside the app and posts the token to
-`POST /v1/auth/link` while still holding the new account's session. The server resolves the token to
-user A and compares it with caller B:
+The app offers it on `created && privateEmail`: the person emails themselves a link from the web and
+pastes it in, and the app posts that token to `POST /v1/auth/link` while still holding the new
+account's session. The server resolves the token to user A and compares it with caller B:
 
 | Case | Outcome |
 |---|---|

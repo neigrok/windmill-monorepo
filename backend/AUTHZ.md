@@ -5,9 +5,8 @@ session gates the tree, WebSocket and MCP surfaces.
 
 ## The model
 
-Visibility-gated read, owner-only write, per-user progress. Three decisions, and the middle one is
-the narrowest. The two predicates are `canRead` and `canWrite` in `platform/domain/Access.h`, and
-every surface calls those and no parallel copy.
+Visibility-gated read, owner-only write, per-user progress. The two predicates are `canRead` and
+`canWrite` in `platform/domain/Access.h`, and every surface calls those and no parallel copy.
 
 - **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence, MCP `get_tree`) gate
   on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by

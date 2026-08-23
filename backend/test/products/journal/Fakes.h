@@ -541,10 +541,41 @@ public:
     for (const EchoRow& row : it->second.rows) recordSignal(user, triggerDay, row.matchDay, kind);
   }
 
+  // ADDITIVE, exactly as the SQL is. This used to assign the new set over the old, which made the
+  // fake more destructive than production and hid a real defect for as long as it existed: a
+  // pairing the curator stopped returning vanished here and was permanent there. What goes is a
+  // row whose spans are gone, or one this pass put to the curator again and was refused.
   void replaceEchoes(const UserId& user, const LocalDate& day,
                      const CuratedEchoes& curated) override {
-    echoesByPage[pageKey(user, day)] = curated;
+    const auto lives = [&](std::int64_t spanId) {
+      for (const StoredSpan& stored : spans[user.str()])
+        if (stored.write.spanId == spanId) return true;
+      return false;
+    };
+    const auto refused = [&](const EchoRow& row) {
+      for (const SpanPair& pair : curated.refused)
+        if (pair.triggerSpanId == row.triggerSpanId && pair.matchSpanId == row.matchSpanId)
+          return true;
+      return false;
+    };
+
+    CuratedEchoes kept;
+    kept.curatorVersion = curated.curatorVersion;
+    for (const EchoRow& row : echoesByPage[pageKey(user, day)].rows) {
+      if (!lives(row.triggerSpanId) || !lives(row.matchSpanId) || refused(row)) continue;
+      bool replaced = false;
+      for (const EchoRow& fresh : curated.rows)
+        if (fresh.triggerSpanId == row.triggerSpanId && fresh.matchSpanId == row.matchSpanId)
+          replaced = true;
+      if (!replaced) kept.rows.push_back(row);
+    }
+    for (const EchoRow& row : curated.rows) kept.rows.push_back(row);
+    echoesByPage[pageKey(user, day)] = kept;
   }
+  void clearEchoes(const UserId& user, const LocalDate& day) override {
+    echoesByPage.erase(pageKey(user, day));
+  }
+
   // A SETTLED pass advances the page's stamps; a failure that will clear on its own writes the error and leaves both stamps, so the page stays owed.
   void recordCuration(const UserId& user, const LocalDate& day,
                       const CurationOutcome& outcome) override {

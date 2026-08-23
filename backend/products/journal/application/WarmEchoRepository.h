@@ -57,6 +57,7 @@ public:
   void recordPageSignal(const UserId& user, const LocalDate& triggerDay, EchoSignal kind) override;
   void replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                      const CuratedEchoes& curated) override;
+  void clearEchoes(const UserId& user, const LocalDate& triggerDay) override;
   void recordCuration(const UserId& user, const LocalDate& day,
                       const CurationOutcome& outcome) override;
   std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& matchDay) override;

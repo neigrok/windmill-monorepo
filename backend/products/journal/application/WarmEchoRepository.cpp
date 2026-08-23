@@ -136,6 +136,10 @@ void WarmEchoRepository::replaceEchoes(const UserId& user, const LocalDate& trig
                                        const CuratedEchoes& curated) {
   storage_.replaceEchoes(user, triggerDay, curated);
 }
+void WarmEchoRepository::clearEchoes(const UserId& user, const LocalDate& triggerDay) {
+  storage_.clearEchoes(user, triggerDay);
+}
+
 void WarmEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
                                         const CurationOutcome& outcome) {
   storage_.recordCuration(user, day, outcome);

@@ -76,7 +76,7 @@ create table if not exists gym_exercises (
                 ('squat','hinge','press','pull','carry','core','isolation')),
   equipment   text not null check (equipment in
                 ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
-  step_kg     numeric(4,2) not null default 2.5,  -- reserved; read by nothing today
+  step_kg     numeric(4,2) not null default 2.5,  -- the increment; seeded and on the wire
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
   created_at  timestamptz not null default now()
 );
@@ -87,7 +87,7 @@ create table if not exists gym_exercise_names (      -- what THIS account calls 
   updated_at  timestamptz not null default now(),
   primary key (user_id, exercise_id)
 );
-create table if not exists gym_exercise_aliases (    -- what it USED to call it
+create table if not exists gym_exercise_aliases (    -- prior names this account gave it
   user_id     uuid not null references users(id) on delete cascade,
   exercise_id text not null references gym_exercises(id) on delete cascade,
   name        text not null,
@@ -98,14 +98,14 @@ create table if not exists gym_exercise_aliases (    -- what it USED to call it
 
 - **A seed row is GLOBAL**, so never `UPDATE gym_exercises SET name` on one: a seed rename takes a
   per-account line in `gym_exercise_names`, and every read of a movement name coalesces that over the
-  seed's. Renaming back to the seed's own name DELETES the line. A movement the lifter created
-  renames in place. The id never moves either way.
+  seed's. Renaming back to the seed's own name DELETES the line; a movement the lifter created renames
+  in place; the id never moves either way.
 - Aliases are what the picker searches beside the current name. The name is part of the key, so
-  renaming BACK deletes one row; the rename caps the list at `kMaxAliases` (5), and the set ships on
-  the catalog read.
-- The seed is **64 movements** across the seven patterns, `ON CONFLICT DO NOTHING`. Steps by
-  equipment: barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5, bodyweight 2.5, kettlebell 4.0.
-  `dip`, `pull-up` and `muscle-up` are distinct ids; "weighted" is load, not identity.
+  renaming BACK deletes one row; the rename caps the list at `kMaxAliases` (5) and the set ships on the
+  catalog read.
+- The seed is **64 movements** across the seven patterns, `ON CONFLICT DO NOTHING`. Steps by equipment:
+  barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5, bodyweight 2.5, kettlebell 4.0. `dip`, `pull-up`
+  and `muscle-up` are distinct ids; "weighted" is load, not identity.
 
 ### 3.2 Sessions and sets
 
@@ -142,7 +142,7 @@ create index if not exists gym_sets_history on gym_sets (user_id, exercise_id, c
 ```
 
 - **One open session per user**, enforced by the partial unique index, never by application memory.
-  Starting while another is open JOINS it, unless the caller states it will not (§11.2).
+  Starting while another is open JOINS it, unless the caller states it will not (§11.4).
 - `started_at` / `finished_at` / `completed_at` are client wall-clock instants: offline logging makes
   the device's clock the only honest one.
 - **One row per set that currently stands.** A correction rewrites the row; a delete moves it to
@@ -234,17 +234,15 @@ create table if not exists gym_session_shares (
 );
 ```
 
-- **A table and not a `visibility` column.** A column would put a stance on every session row and turn
-  every `WHERE user_id = :caller` query into a place a gate can be forgotten. No existing query names
-  this table, so sharing is unreachable by accident, and the feature is three port methods.
+- **A table and not a `visibility` column**, so no owner-scoped query has a gate that can be
+  forgotten. No other query names this table; the feature is three port methods.
 - **`session_id` is the primary key**, which makes the mint idempotent. An expired share is replaced
   rather than returned, and the guard on that `DO UPDATE` reads the instant the caller passed, never
   the database clock.
 - **The token is server-minted** (the platform `TokenGenerator`), never accepted from a client, and
   stored **in the clear rather than as a digest**, because the mint must hand back the same link on a
-  repeat. Lifetime is `kShareLifetimeMs` (30 days).
-- **Revocation is deleting the row.** The row rides the session's cascade and is in
-  `PgAccountFootprint`'s owned list.
+  repeat. Lifetime is `kShareLifetimeMs` (30 days). **Revocation is deleting the row**; it rides the
+  session's cascade and is in `PgAccountFootprint`'s owned list.
 
 ### 3.5 Set revisions
 
@@ -270,16 +268,14 @@ create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, r
 
 - **A correction UPDATEs the set row and appends the prior version here; a delete moves the row here
   whole, marked `deleted`.** `gym_sets` keeps its one meaning and every read stays correct by
-  construction.
-- **Nothing shows this table to a lifter.** There is no trash and no recovery route, and no copy may
-  promise a set back.
-- **One write reads it, and it reads one column**: an append asks whether the id it carries names a
-  set this account DELETED, so a delete survives a replay of the POST that logged the set.
-- **`set_id` carries no foreign key** because a deleted set's row is gone from `gym_sets`.
-  `session_id` and `user_id` keep theirs, so closing an account takes these rows and discarding a
-  workout takes its revisions.
-- **No CHECKs on the copied columns**: a constraint tightened on `gym_sets` later must never make the
-  history of a set unwritable.
+  construction. **Nothing shows this table to a lifter**: there is no trash and no recovery route, and
+  no copy may promise a set back.
+- **One write reads it, and it reads one column**: an append asks whether the id it carries names a set
+  this account DELETED, so a delete survives a replay of the POST that logged the set.
+- **`set_id` carries no foreign key** because a deleted set's row is gone from `gym_sets`. `session_id`
+  and `user_id` keep theirs, so closing an account takes these rows and discarding a workout takes its
+  revisions. **No CHECKs on the copied columns**: a constraint tightened on `gym_sets` later must never
+  make the history of a set unwritable.
 - **Each write keeps its copy in the same statement that moves the row** (`PgLogRepository`): the
   delete's `DELETE … RETURNING` feeds the `INSERT`, and the correction's data-modifying CTE copies the
   row beside the `UPDATE` under an `IS DISTINCT FROM` guard, so a resent identical fix keeps nothing.
@@ -303,15 +299,15 @@ create table if not exists gym_preferences (
 
 - **Units are a display transform and nothing else.** No conversion, no `lb` column: switching to `lb`
   changes what a screen prints.
-- **Defaults live on the columns AND in `domain/Preferences.h`, and must agree.** A lifter with no row
-  is served the domain's copy — kg, the rest timer **off**, confirmation on wherever a platform has
-  one. `PgPreferencesRepositoryTest` pins the two copies together.
-- `rest_seconds` NULL means "no timer"; its band is the routine line's band, from one pair of
-  constants (`kMinRestSeconds` / `kMaxRestSeconds`, `domain/Training.h`).
+- **Defaults live on the columns AND in `domain/Preferences.h`, and must agree** —
+  `PgPreferencesRepositoryTest` pins the two copies together. A lifter with no row is served the
+  domain's copy: kg, the rest timer **off**, confirmation on wherever a platform has one.
+  `rest_seconds` NULL means "no timer"; its band is the routine line's, from one pair of constants
+  (`kMinRestSeconds` / `kMaxRestSeconds`, `domain/Training.h`).
 - **Not in `PgAccountFootprint`'s owned list.** That list decides whether the link door may delete an
   account, so a table on it must be data the account holds; settings are how a room is set up.
 - **The write is a whole-document `PUT`**; omitted fields take their default, and the later of two
-  writes holds the whole document — the ordering the claim replay wants (§11.4). Every refusal carries
+  writes holds the whole document — the ordering the claim replay wants (§11.6). Every refusal carries
   a `code` (`preferences-unreadable` · `unknown-unit` · `rest-target`), raised by the entity.
 
 ### 3.7 The proposal ledger
@@ -435,9 +431,9 @@ reps?, weightKg?, restSeconds? — an absent sets is `open`, an absent reps is `
 ### 4.1 Construction bounds
 
 - **Every instant is bounded to `(0, kMaxInstantMs]`**, `kMaxInstantMs = 253402300799000`
-  (9999-12-31T23:59:59Z, the furthest a `timestamptz` holds). A device serializing an int64 `-1` as a
-  uint64 wraps to a negative epoch and commits a row every later read of that account throws on. The
-  Postgres mapper also clamps every instant it reads.
+  (9999-12-31T23:59:59Z, the furthest a `timestamptz` holds). An int64 `-1` serialized as a uint64
+  wraps to a negative epoch and stores a row every later read of that account throws on. The Postgres
+  mapper also clamps every instant it reads.
 - **Every free text goes through `storableText`**: no NUL (Postgres `text` stops at one) and
   well-formed UTF-8 only (Postgres refuses the rest mid-transaction, which would otherwise leave as
   the retryable house 500).
@@ -482,8 +478,7 @@ instant → `autoCloseAt` → persist. **No cron, no sweep, no heartbeat**: gym 
 Between finishes `close` is first-writer-wins, so the first finish that lands is the session's end
 forever — only a STALE close yields. The lifter's own finish landing on a stale close **upgrades** it
 (`finishAfterStaleClose`): the word becomes `finish`, and the instant moves to the finish when it sits
-within four hours of the last activity, staying at that activity when the tap came later. A row closed
-before `closed_by` existed reads as a finish.
+within four hours of the last activity, staying at that activity when the tap came later.
 
 ### 4.3 The review (`domain/Review.h`)
 
@@ -516,73 +511,66 @@ before `closed_by` existed reads as a finish.
 Five services, one per port, none holding another: `TrainingService` (`LogRepository&`, plus
 `ProgramRepository&` for the one write that freezes a plan, the clock and the token mint),
 `CatalogService`, `ProgramService` (+ clock), `ThreadService` (+ clock), `PreferencesService`. Each
-HTTP adapter and `GymTools` takes only the services it reads.
-
-Each write answers with a small outcome — `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a
-resolved row plus a typed refusal. **Flow control never travels as a throw**; `InvalidTraining` is
-reserved for malformed input.
+HTTP adapter and `GymTools` takes only the services it reads. Each write answers with a small outcome
+— `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a resolved row plus a typed refusal. **Flow
+control never travels as a throw**; `InvalidTraining` is reserved for malformed input.
 
 **`start`** — auto-close any stale open session → **resolve what the store already holds for this
-caller**: their own row under that id, else whichever session is open for them, decided by their
-stated intent → and only when it holds nothing they are entitled to, **freeze the plan** if the start
+caller** (their own row under that id, else whichever session is open for them, decided by their
+stated intent) → and only when it holds nothing they are entitled to, **freeze the plan** if the start
 named a routine (loaded owner-scoped; absent or another account's → `unknownRoutine` → 404) → insert
-with a bare `ON CONFLICT DO NOTHING` (**deliberately untargeted**: it must no-op on either arbiter —
-the PK replay and the one-open partial unique index; `ON CONFLICT (id)` would raise on the double-tap)
-→ resolve the same two reads again, because the insert may have lost a race.
+with a bare `ON CONFLICT DO NOTHING` → resolve the same two reads again, because the insert may have
+lost a race.
 
-- A replayed POST returns the same session, open or finished; a double-tap that minted two ids returns
-  the first tap's session. When nothing of this caller's resolves and nothing is open, the insert
-  no-oped on another account's row: `idTaken` → 409. The service never invents a session the store did
-  not accept.
-- **The routine is loaded only on the path that creates a session.** Freezing at the top of the call
-  made a replay and a join answer `404 no such routine` for a session sitting in the store — terminal
-  by the ladder, so a flush queue dropped a start that had landed.
+- The conflict clause is **untargeted on purpose**: it must no-op on either arbiter, the PK replay and
+  the one-open partial unique index. `ON CONFLICT (id)` would raise on the double-tap.
+- **Load the routine only on the path that creates a session.** A replay and a join must not be able
+  to answer `404 no such routine` for a session sitting in the store; that 404 is terminal by the
+  ladder, so a flush queue drops a start that in fact landed.
 - **The join is the caller's intent, stated on the wire** (`joinOpenSession`, default `true`). A
   caller that says it will not join and finds another session open gets `alreadyOpen` → 409. Its own
   id still answers first, so a replay is idempotent in both modes.
-- **Pressing Start cannot re-plan a running workout**: both branches that answer with a session the
-  store already holds answer with ITS stored snapshot, whatever `routineId` the call carried.
+- Both branches that answer with a session the store already holds answer with ITS stored snapshot,
+  whatever `routineId` the call carried: pressing Start cannot re-plan a running workout.
+- When nothing of this caller's resolves and nothing is open, the insert no-oped on another account's
+  row: `idTaken` → 409. The service never invents a session the store did not accept.
 
 **`append`** — load the session (absent or another's → not found) → construct the domain `Set` (throws
-→ 400) → **resolve the replay before any refusal** via owner-scoped `setOf(user, id)`. A row stored
-under that id *in this session* is the answer, whatever state the session is in now; a row under it in
-a **different** session is `idTaken` → 409. Only a genuinely new id reaches the insert, and **the
-insert is where every remaining refusal is decided**: `FOR UPDATE` on the session row, then `max+1` in
-the next statement, `ON CONFLICT (id) DO NOTHING`, then a read-back scoped to **(id, session_id)**.
+→ 400) → **resolve the replay before any refusal** via owner-scoped `setOf(user, id)` → insert. A row
+stored under that id *in this session* is the answer, whatever state the session is in now; a row
+under it in a **different** session is `idTaken` → 409.
 
-- One fact must not be decided in two layers: a service-side `finished` check answered `finished` for
-  an id the store would have answered `deleted` for, telling a queue that a set it had logged never
-  reached the log.
+- **Every remaining refusal is decided by the insert**, not a second time by the service: `FOR UPDATE`
+  on the session row, then `max+1` in the next statement, `ON CONFLICT (id) DO NOTHING`, then a
+  read-back scoped to **(id, session_id)**.
+- **A set id is spent once and for good.** `setOf` reads the rows that STAND, so a deleted set falls
+  through to the insert; the insert therefore asks `gym_set_revisions`, under the session's lock and
+  scoped to its owner, whether the id names a deleted set — **before** the `finished` refusal, and
+  under its own word (`deleted` → 409 `set-deleted`) rather than `idTaken`, because the repairs are
+  opposite: a re-mint is exactly how a deleted set would come back.
+- **Check visibility on the WRITE, not from the FK.** Every write naming an exercise id carries the
+  catalog read's own predicate — `id = $1 AND (created_by IS NULL OR created_by = $2)` — inside the
+  open transaction, resolved against the owner read off the locked session row (or off the routine,
+  for a plan entry). Otherwise a set can name another account's private movement, and the log, the
+  export and the coach share print that account's private name.
 - **Drain oldest-first.** Into a session closed as STALE a set lands only within four hours of the
-  close's last activity, and each landing moves that activity forward, so a queue draining
-  newest-first can hand its newest set a terminal 409 before the sets that would have made room.
-- **A set id is spent once and for good.** `setOf` reads the rows that STAND, so a deleted set resolves
-  to nothing and would fall through to the insert. The insert therefore asks `gym_set_revisions`, under
-  the session's lock and scoped to its owner, whether the id names a deleted set — **before** the
-  `finished` refusal, and under its own word rather than `idTaken`, because the repairs are opposite: a
-  spent id is repaired by minting a fresh one, which is exactly how a deleted set would come back.
-- **Visibility is checked on the WRITE, not inferred from the FK.** Every write naming an exercise id
-  carries the catalog read's own predicate — `id = $1 AND (created_by IS NULL OR created_by = $2)` —
-  inside the open transaction, resolved against the owner read off the locked session row (or off the
-  routine, for a plan entry). Without it a set could name another account's private movement, and the
-  log, the export and the coach share would print that account's private name.
+  close's last activity, and each landing moves that activity forward.
 - **The finish boundary.** A set that already landed lands again; a set that never landed may not land
-  after the session is closed (409). The contract for the device is **flush before you finish**.
+  after the session is closed (409). The device contract is **flush before you finish**.
 
 **`finish`** — load → `canFinishAt` or `badInstant` → 400 → set `finished_at` if null; a replay returns
-the stored session unchanged. The read-back after the close is checked like the load before it: an
-empty one is `notFound`, which is what actually happened — a discard from another device won the race.
+the stored session unchanged. Check the read-back like the load before it: an empty one is `notFound`,
+which is what actually happened — a discard from another device won the race.
 
 **`fixSet` / `deleteSet`** — load the stored row owner-scoped (`setOf`) → hand it to the pure rule
 (`corrected(stored, fix)`) → write what the rule returned. The rule refuses a value the store cannot
 hold, and is where *what a fix may not change* is stated once: the movement, the instant, the set
 number and the session are copied across by construction.
 
-- **The session in the path has to hold the set.** Absent, another account's, and this account's set in
-  a different workout are one empty reply → `404 set-not-found`, terminal for a queue.
-- **Nothing is refused for a finished session** — a lifter reads the log after the workout, which is
-  when they see the 4 they meant to log as a 5. Neither write settles staleness, and neither touches
-  `gym_sessions.plan` or a routine entry.
+- **The session in the path has to hold the set.** Absent, another account's, and this account's set
+  in a different workout are one empty reply → `404 set-not-found`, terminal for a queue.
+- **Nothing is refused for a finished session** — a lifter reads the log after the workout. Neither
+  write settles staleness, and neither touches `gym_sessions.plan` or a routine entry.
 - **The delete answers nothing at all**, so a client whose reply was lost resends and gets the same
   204. Two devices correcting one set leave the second one's values standing; every version either
   replaced is kept.
@@ -650,8 +638,8 @@ grouping in first-performed order, assembled client-side from numbered sets.
   undefined. **The wire's doubles are doubles**: it is rounded to one decimal as a *value*, the JSON
   text is not, so `20.7` can cross as `20.699999999999999`. Every surface parses and formats; nothing
   prints the raw token, re-rounds, or re-derives the estimate.
-- `closedItself` reads `closed_by`, falling back to the auto-close signature
-  (`finished_at = coalesce(max(completed_at), started_at)`) for rows closed before the column existed.
+- `closedItself` reads `closed_by`, falling back where it is NULL to the auto-close signature
+  (`finished_at = coalesce(max(completed_at), started_at)`).
 - **The cursor is the previous page's last row, both halves**, because `started_at` alone is not unique
   and an instant-only cursor puts one of two same-millisecond sessions in no page, ever. `beforeId`
   without `before` names no row and is a bad cursor. Movement names come back one row per movement,
@@ -662,9 +650,9 @@ the exercise, and its sets in order.
 
 - **The locator walks SESSIONS, newest first** over `gym_sessions_log`, `LIMIT 1` at the first finished
   session holding a non-warmup set of the movement, on the same `(started_at, id)` key the log pages
-  on, so the two reads cannot name a different newest session. Walking SETS by `completed_at` — the
-  device's wall clock — let one future-stamped set pin "last time" to a stale session. Both indexes
-  still do work; the planner picks by selectivity.
+  on, so the two reads cannot name a different newest session. **Never walk SETS by `completed_at`**:
+  it is the device's wall clock, and one future-stamped set pins "last time" to a stale session. Both
+  indexes still do work; the planner picks by selectivity.
 - **Finished, never open — and this read settles nothing.** It fires on every movement change, and the
   only open session it could reach is the caller's own live workout.
 - **Warmups are not history.** The block is the session's non-warmup sets, and every consumer excludes
@@ -681,13 +669,11 @@ and not four columns on the catalog row**, because the catalog is 64 rows read o
 and `list_exercises` hands the same row to an agent; it is **sparse**, and a movement with no line is
 the picker's `never logged`.
 
-Measured on local Postgres 14 at `work_mem = 4MB`: the plan hash-joins the account's sets to its
-sessions and sorts every qualifying row once — 1 600 sets ~2 ms, 19 000 ~23 ms, 38 000 ~53 ms with a
-3 MB spill to disk. The plan shape never changes; the sort crosses `work_mem` in the low twenty
-thousands of working sets. **Do not drive it off the catalog**: the same rule as a `LATERAL` per
-catalog row measured 0.72–1.37 s at that size, because proving "never logged" for an untrained
-movement walks every session the account ever ran. Driven off the movements the account has *touched*
-the same `LATERAL` measures ~9 ms, and is the noted fallback if the spill starts to matter.
+The plan hash-joins the account's sets to its sessions and sorts every qualifying row once, spilling
+to disk above roughly twenty thousand working sets. **Do not drive it off the catalog**: the same rule
+as a `LATERAL` per catalog row is orders of magnitude slower, because proving "never logged" for an
+untrained movement walks every session the account ever ran. The fallback, if this read ever needs
+one, is that `LATERAL` driven off the movements the account has *touched*.
 
 **The plan** (`routines` + `routine`) — most recently trained first, never-trained after them. The sort
 instant is read off the log (`max(started_at)` per routine), not out of a column; ties fall back to
@@ -716,8 +702,8 @@ the record would vanish on the first read. Nothing is stored; the review is reco
 which keeps it right when a set arrives late from a flush queue, and is why there is no `ReviewService`.
 
 **The statistics engine** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, no parameters.
-**It is an engine and not a room**: no client draws a statistics surface, and its readers are the
-record page's rules and any agent asking the long question, so do not clean this read up as orphaned.
+**It is an engine and not a room**: no client draws a statistics surface, its readers are the record
+page's rules and any agent asking the long question, and it must not be cleaned up as orphaned.
 Three statements in one transaction:
 
 - The **series** is `DISTINCT ON (exercise_id, started_at, id)` over the working sets of finished
@@ -894,16 +880,15 @@ refusal a client must branch on carries a machine word under `code`
   **own** id: a replayed create of a session, set, routine or movement reads back what landed.
   `409 session-finished` answers **new** ids only.
 - The 400s are the client's and terminal; the 500 is the server's and retryable, which is why the write
-  handlers catch **only** `InvalidTraining` — a `catch (const std::exception&)` around the same call
-  told a queue that a five-second lock wait was a malformed set.
+  handlers catch **only** `InvalidTraining`: a broader catch reports a lock wait as a malformed set.
 - There are no admin doors, nothing sweeps and nothing mails.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares, `adapters/mcp/GymTools` dispatches. Sixteen tools: `tools/list`
-is the biggest fixed cost of a connection, so a tool a parameter on another tool could serve does not
-get a slot. **The level is declared beside the description**, in the same `ToolDeclaration` the gate
-reads, so a tool cannot be described as one thing and gated as another.
+`adapters/mcp/GymToolCatalog` declares, `adapters/mcp/GymTools` dispatches. Sixteen tools; a tool a
+parameter on another tool could serve does not get a slot, because `tools/list` is the fixed cost of
+every connection. **The level is declared beside the description**, in the same `ToolDeclaration` the
+gate reads, so a tool cannot be described as one thing and gated as another.
 
 | `gym:read` | `gym:write` | `gym:delete` |
 |---|---|---|
@@ -933,10 +918,9 @@ in-process); `gymInstructions()` carries the same retirement in the connect hand
   `GET /v1/gym/export` has no tool because `list_sessions` + `get_session` + `get_stats` already give
   an agent those numbers in a shape it reads.
 - **Every tool goes through a service, never the repository** — `TrainingService`, `CatalogService`,
-  `ProgramService`. No tool reads a thread or the settings. The tools are a second *door on the same
-  core*, not a second client of the HTTP API.
-- **Every tool acts as the caller.** The `ToolCaller`'s `UserId` scopes every read and write, exactly
-  as `callerOf(req, auth)` scopes the handlers. An agent is never an admin.
+  `ProgramService`; no tool reads a thread or the settings. The tools are a second *door on the same
+  core*, not a second client of the HTTP API. **Every tool acts as the caller**: the `ToolCaller`'s
+  `UserId` scopes every read and write, exactly as `callerOf(req, auth)` scopes the handlers.
 - **The refusals are the HTTP ones in words a model can act on**, each naming the tool that answers the
   question it should ask next. The domain's `InvalidTraining` sentence is forwarded **verbatim** here,
   where the browser edge flattens every one into `could not read that set`.
@@ -946,8 +930,7 @@ in-process); `gymInstructions()` carries the same retirement in the connect hand
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
   `list_routines` and sending it back under a fresh id, so `position`, `lastTrainedAt`, `revision` and
   `pendingProposal` are declared on `create_routine` and ignored. `additionalProperties: false` is
-  enforced by `CompositeToolHost`, and strictness that refuses the document we ourselves emitted is an
-  outage.
+  enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
   write-classified name.
@@ -973,10 +956,10 @@ tool name **at boot**.
   the other. `appBaseUrl` exists to turn a minted share token into a URL; `*tokens` exists to mint that
   token from the same mint that makes a session cookie. Tending is deliberately NOT given the
   composite. Gym arms no ticker, reads no env var and contributes nothing to the mail list.
-- **`PgAccountFootprint`'s owned list** carries `gym_sessions`, `gym_sets`, `gym_routines`,
-  `{"gym_session_shares", "user_id"}`, `{"gym_exercises", "created_by"}`,
-  `{"gym_exercise_names", "user_id"}`, `{"gym_exercise_aliases", "user_id"}`, the two proposal tables
-  and the two thread tables. The exercise column is `created_by` and **not** `user_id` precisely
+- **`PgAccountFootprint`'s owned list** carries `gym_sessions`, `gym_sets`, `gym_set_revisions`,
+  `gym_routines`, `gym_proposals`, `gym_proposal_changes`, `gym_session_shares`, `gym_ask_threads`,
+  `gym_ask_turns` and `gym_exercise_names` / `gym_exercise_aliases` on `user_id`, plus
+  `gym_exercises` on `created_by`. That last column is `created_by` and **not** `user_id` precisely
   because the 64 seeds carry it NULL — a probe matching the seeds would report every account non-empty
   and break the delete door. `gym_preferences` is deliberately off the list.
 - **Tests** live in `test/products/gym/` mirroring the tree, with full assertions. `GymToolsTest` rides
@@ -998,20 +981,24 @@ a decision about where the product puts a control, **not a rule on the wire**: e
 tool stays owner-scoped and surface-blind, because `tools/lift-import` writes sets over the same public
 API and the MCP tools write through the same services.
 
+### 11.1 Who owns what
+
 | | Phone | Web |
 |---|---|---|
 | owns | the **open** session | everything retrospective and prospective |
 | | workout mode, keypad, ladder, sticky carry-forward, rest timer, wake lock, the flush queue | the log, progression, the routines editor, export, MCP connect, settings, backfill |
 | writes | `gym_sessions` · `gym_sets` | `gym_routines` · `gym_routine_entries`, and past sessions only |
 
-**The mirror.** Web renders the live session as it happens (`web/src/products/gym/Today.jsx`) off the
+### 11.2 The mirror
+
+Web renders the live session as it happens (`web/src/products/gym/Today.jsx`) off the
 shared read hook's poll (`useTrainingLog.js`). With no session open the slot says so in words —
 *"Not training now."* over *"Workouts start on your phone."* — never a greyed-out control. It carries no
 install door: neither phone room has a store listing. **The mirror never says "resting"**: the rest
 target is device-local, so the server cannot know whether 1:47 is a rest running or a rest over, and
 the band says the digits under a label it can stand behind — *last set 1:47 ago*.
 
-### 11.1 Sync
+### 11.3 Sync
 
 1. **Phone → server (the write).** Client-minted `set_<hex>`, offline queue, replay in any order any
    number of times, `ON CONFLICT DO NOTHING`, flush before finish. The living statements are
@@ -1035,23 +1022,20 @@ the band says the digits under a label it can stand behind — *last set 1:47 ag
    minting a phantom. Carry-forward and the rest countdown are device-local, so a handoff resumes the
    log and not the timer — which the receiving device should say rather than fake.
 
-### 11.2 Backfill
+### 11.4 Backfill
 
 Web keeps one write door with different vocabulary: **"Add a past workout"**, never *Start*. It mints a
 session with `startedAt` in the past, finishes it in the same flow, and appends sets with past
 `completedAt`. Same routes, no new contract, no live session ever opened on a laptop.
 
 **Backfill is refused while a session is open**, and the rule is on the wire rather than in a client,
-because `lift-import` writes over the same public API and `start_session` writes through the service:
+because `lift-import` and `start_session` write through the same service:
 **`{"joinOpenSession": false}` on the start, and 409 `session-already-open` when another session is
-open.** **The join stays, and stays the default**, because the handoff is built on it; what the flag
-fixes is that two callers meaning opposite things used to send byte-identical requests.
+open.** **The join stays, and stays the default** — the handoff is built on it. Any surface may state
+either intent; the intent is never inferred from `startedAt`, which is indistinguishable from clock
+skew, and never from the id that comes back, since a differing id is precisely the handoff.
 
-Three things this rule is deliberately not: **not a surface gate** (any surface may state either
-intent), **not a heuristic on `startedAt`** (a past instant looks exactly like clock skew), and **not
-"refuse when the id that comes back is not the one I sent"** (ids differing is precisely the handoff).
-
-### 11.3 Two rules that follow
+### 11.5 Two rules that follow
 
 **Web does not Finish a live session.** There is no web logger and no web Finish button, so no laptop
 can close a session over a phone holding unflushed sets. The web's one destructive door is the
@@ -1066,7 +1050,7 @@ just below its **magnitude**, `bump(−w, −direction, big) == −bump(w, direc
 is half away from zero** in every language, because `round(−x)` must equal `−round(x)` and half-up does
 not. The server stores only what was logged plus each exercise's default step.
 
-### 11.4 The claim replay
+### 11.6 The claim replay
 
 The phone rooms open signed out: a lifter trains against local routines and a local log, and sign-in
 **claims** what the device holds. The claim is pure client-side replay over the ordinary routes — no
@@ -1097,9 +1081,9 @@ The undo window is 9000 ms on every surface. Copy may change; the verdict codes 
 `ports/AskAgent.h` · `application/AskService` · `adapters/llm/AnthropicAsk` · `adapters/http/AskApi` ·
 `domain/ReadReceipt` · `domain/Thread` · `platform/adapters/llm/AgentLoop.h`
 
-A lifter with Claude connects it and asks. A lifter without one opens **Ask**, which asks the same
-questions of the same tools. One system, two doors, differing in transport, prompt and who pays. It is
-not a coach, and that word appears on no surface a lifter reads; the coach *share* is a different
+A lifter with an agent of their own connects it over MCP; a lifter without one opens **Ask**, which
+asks the same questions of the same tools. Two doors, one core, differing in transport, prompt and who
+pays. **The word *coach* appears on no surface a lifter reads** — the coach *share* is a different
 object and keeps its name.
 
 ### 12.1 The narrowing
@@ -1112,16 +1096,15 @@ Ask can read the log and hand the lifter a diff, and cannot log a set, finish a 
 create a movement or discard anything.
 
 The scope `AskService::ask` states — `ToolCaller{caller, ToolScope({{"gym", read}, {"gym", write},
-{"gym", del}})}` — is honest wiring, not a second layer: it names who Ask acts as, one level at a time,
-so a fourth level or a second product never rides along. `AskTools` reads it in `callTool` as well as
+{"gym", del}})}` — names who Ask acts as, one level at a time, so a fourth level or a second product
+never rides along. `AskTools` reads it in `callTool` as well as
 in `listTools`, which is what makes narrowing it later take tools away in fact rather than merely
 hiding them. Underneath sits the structural rule: **no tool at any level edits or deletes a logged
 set**, so Ask's most important refusal is not a sentence in its prompt.
 
-`AskTools` also enforces `additionalProperties: false` itself, because Ask does not pass through the
-composite; without it `get_stats {"exerciseID": …}` answered with every movement while the model
-believed it had asked about one. The check is written twice today; the standing request is to hang it
-off `ToolDeclaration`, where both doors would read one copy.
+`AskTools` enforces `additionalProperties: false` itself, because Ask does not pass through the
+composite: without it a misspelled argument is dropped and the tool answers a wider question than the
+model asked. The check is written twice, once per door.
 
 ### 12.2 Bounds
 
@@ -1141,14 +1124,13 @@ off `ToolDeclaration`, where both doors would read one copy.
 
 Every answer states what it read, and **that count is printable only because the server served those
 rows**, so it lives in the tool response envelope: every gym read that hands over log rows answers with
-`"read": {sets, sessions, weeks}`, counted by `domain/ReadReceipt` as the rows go out. A lifter's own
-Claude over MCP reads exactly the accounting the app prints.
+`"read": {sets, sessions, weeks}`, counted by `domain/ReadReceipt` as the rows go out — the same
+accounting a lifter's own Claude reads over MCP.
 
 Four rules keep it honest: it counts by **identity**, so one workout read twice is one workout; a read
 that serves a SUMMARY claims only what it NAMED; a REFUSED read counts nothing; and a reply that served
 no log rows says nothing at all rather than `read 0 sets`. The run's total is merged inside `GymTools`,
-where the ids are — a layer above could only have summed the replies, and a sum counts the same set
-twice.
+where the ids are — a layer above could only sum the replies, and a sum counts the same set twice.
 
 **The line is a FLOOR.** Sets are claimed by `get_session` and `last_time` alone; `list_sessions` names
 workouts and hands over no set rows; `get_stats` serves a projection whose points carry no session id,
@@ -1157,22 +1139,18 @@ so it claims its weeks and nothing else. The proposals in the reply are observed
 
 ### 12.4 Shapes it refuses
 
-- **No streaming.** One reply per ask does not earn a second consumer of the SSE parser.
-- **No blocking the request loop.** `AskAgent::answer` blocks for as long as the vendor takes;
-  `AskService` owns a two-thread pool and the handler hands its callback over, because four handler
-  threads parked on a model is a training log that stops answering everybody. The run is guarded on
-  that thread — nothing sits above a worker loop, and an exception leaving it would take down every
-  product on the box. It becomes the same 502 a dead upstream gets, and the day's question is given
-  back, because the turn count died with the stack.
-- **No second loop.** The tool loop is `platform/adapters/llm/AgentLoop.h`. What stays in gym is the
-  prompt and what the answer is made of; no domain code knows an Anthropic API exists.
+- **No streaming**, and **no second loop**: the tool loop is `platform/adapters/llm/AgentLoop.h`, and
+  what stays in gym is the prompt and what the answer is made of. No domain code knows an Anthropic
+  API exists.
+- **Never block the request loop.** `AskAgent::answer` blocks for as long as the vendor takes, so
+  `AskService` owns a two-thread pool and the handler hands its callback over. The run is guarded on
+  that thread — nothing sits above a worker loop — and a crash becomes the same 502 a dead upstream
+  gets, with the day's question given back, since the turn count died with the stack.
 - **It does not speak first** — no personality, no encouragement, no streaks, no daily check-in, no
   unread badge. The prompt bans a grade as firmly as the finish screen does.
 
-Ask prints **which tools each answer came from**, in call order, and **what those tools served**.
-Without that pair this would be a chatbot claiming to know things. The empty state points at the free
-door — *if you already use Claude or ChatGPT, connect them instead: it is free, and it is better,
-because it knows the rest of your life.*
+Ask prints **which tools each answer came from**, in call order, and **what those tools served**. The
+empty state points at the MCP door.
 
 ### 12.5 Threads
 
@@ -1193,8 +1171,7 @@ because it knows the rest of your life.*
 - **A question nobody answered is not a turn.** The thread row lands before the model runs, the turns
   land only once an answer has, and a run that never answered takes its own empty thread back — so a
   retry appends the question once rather than twice.
-- **The question meets `storableText`** before a thread is opened, because it becomes the title we
-  promised is the lifter's words byte for byte.
+- **The question meets `storableText`** before a thread is opened: it becomes the title, byte for byte.
 - **Threads are in the CSV export** at `GET /v1/gym/export/threads`: one row per turn, the outcome
   stamped on by the service rather than rendered in SQL. The outcomes are stamped from `allThreads` and
   not from the list read, which stops at `kThreadList`; the turns join is a LEFT one, so a thread
