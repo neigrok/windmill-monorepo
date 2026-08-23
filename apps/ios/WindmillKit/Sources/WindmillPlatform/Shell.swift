@@ -1,21 +1,5 @@
 import SwiftUI
 
-// The app frame, built to the resolved shell — "S1 hub + S3 capsule", now the
-// Shell page of the Windmill · Design System Figma file, with its contract in
-// `docs/design/guidelines/superapp-shell.md`.
-//
-// The contract, verbatim, is the whole reason this file is small:
-//
-//   The shell owns   the hub and the order its cards take · the capsule (38pt, top-left, one lane
-//                    every app reserves) · tap = switcher, edge-swipe right = home, nothing else ·
-//                    the You seat, last slot in every app's bar, past a hairline · You and Pro,
-//                    always clay, and Pro reachable only from You.
-//   Each app owns    its nav bar, its tabs, its gestures below the capsule · its skin, including a
-//                    dark default · its own settings · the one line it lends the hub.
-//
-// The previous tab bar is gone. It spent the one piece of screen furniture every product needs for
-// itself on the switch between them, which is exactly what the capsule exists to avoid.
-
 @MainActor
 public struct SuperappView: View {
     private let products: [any ProductModule]
@@ -40,9 +24,6 @@ public struct SuperappView: View {
 
     public var body: some View {
         ZStack {
-            // The one question is the first screen, once ever. Not the hub: a hub of three empty
-            // rooms is a chore list, and an empty state is the worst first impression a superapp
-            // can make (guidelines/superapp-shell.md §9).
             if !journey.asked {
                 EntryQuestionView(products: products,
                                   onPick: { journey.answeredFirstQuestion(); enter($0) },
@@ -69,11 +50,8 @@ public struct SuperappView: View {
             goHome: { leave() }
         ))
         .tint(WindmillColor.neutral900)
-        // The shell's appearance, said TWICE on purpose. `preferredColorScheme` travels up to the
-        // window — which flips the UIKit traits, and with them every adaptive token — but it does
-        // NOT write `\.colorScheme` back into the subtree that declared it. So a room reading the
-        // environment would still see the system's answer, which is exactly how the journal stayed
-        // night with Light selected. The environment override is what actually reaches the rooms.
+        // Both are needed: `preferredColorScheme` flips window traits without writing `\.colorScheme`
+        // into this subtree.
         .preferredColorScheme(chosenScheme)
         .modifier(SchemeOverride(scheme: chosenScheme))
         .sheet(isPresented: $switcherUp) {
@@ -85,21 +63,13 @@ public struct SuperappView: View {
         .sheet(isPresented: $youUp) { YouScreen(auth: auth, products: products) }
         .sheet(isPresented: $houseUp) { house }
         .sheet(isPresented: $doorUp) { SignInDoor(auth: auth, refusal: doorRefusal) }
-        // A magic link that opens the app rather than the browser. The shell takes it because a
-        // universal link can land on any screen, including a cold launch with no door open at all —
-        // and a link that arrives is a sign-in, which is the shell's business and no product's.
         .onOpenURL { url in Task { await arrived(from: url) } }
-        // The seat resolves once on launch. Until it answers, products run signed out — a real
-        // state, not a loading state, so nothing is blocked while it happens. A launch the log never
-        // answered leaves the seat UNVERIFIED — signed in off the user this device last read — and
-        // every return to the foreground asks again until the log confirms or refuses it.
+        // Until the seat resolves, products run signed out.
         .task { await auth.restore() }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, case .unverified = auth.status else { return }
             Task { await auth.restore() }
         }
-        // Launch reopens the last room you stood in, not the hub — the hub is a place you go, never
-        // a toll gate. Only after the one question has been answered; before that it owns the screen.
         .onAppear { if journey.asked { openRoom = journey.lastRoom } }
     }
 
@@ -109,12 +79,10 @@ public struct SuperappView: View {
         Account(api: auth.api, user: auth.status.user, verified: auth.status.verified)
     }
 
-    // Rooms sit lowest in the switcher, so the sheet is only as tall as its rows need.
     private var switcherHeight: CGFloat {
         CGFloat(products.count) * 64 + 96
     }
 
-    // Something live in an app you are not in — the one fact the capsule is allowed to carry.
     private func runningElsewhere(than here: String?) -> Bool {
         products.contains { $0.id != here && $0.hubLine(account).running }
     }
@@ -126,14 +94,6 @@ public struct SuperappView: View {
         journey.stood(in: id)
     }
 
-    // A URL the app was opened with. Anything that is not a magic link answers nil and is ignored
-    // rather than guessed at — the app claims one shape of link and has nothing to say about the rest.
-    //
-    // A success needs no screen: the seat, the hub and every room already read `auth.status`, and a
-    // door that happened to be open watches `auth.arrival` and closes itself. A REFUSAL does need
-    // one — an expired link that woke a closed app would otherwise be a launch that silently did
-    // nothing — so the shell opens the door with the sentence already in it, unless another sheet is
-    // up, in which case the door inside it is the one holding the person's attention.
     private func arrived(from url: URL) async {
         guard let arrival = await auth.arrived(from: url) else { return }
         guard case .refused(let line) = arrival, !switcherUp, !youUp, !houseUp else { return }
@@ -145,12 +105,9 @@ public struct SuperappView: View {
         switcherUp = false
         houseUp = false
         openRoom = nil
-        journey.stood(in: nil)   // going home is itself an answer: the hub is where they chose to be
+        journey.stood(in: nil)
     }
 
-    // A capsule tap opens the switcher — except for the one tap that comes after the first real
-    // thing exists, which introduces the house instead. See Journey.shouldIntroduceHouse for why
-    // the two triggers the board describes are really one.
     private func tappedCapsule() {
         guard let here = openRoom, let product = products.first(where: { $0.id == here }),
               journey.shouldIntroduceHouse(madeSomething: !product.holdings(account).isEmpty,
@@ -175,9 +132,7 @@ public struct SuperappView: View {
     }
 }
 
-// Applies the chosen scheme to the subtree, and nothing at all under "System" — where the absence
-// of an override IS the setting, and forcing a value would quietly make System mean "whatever it
-// was when the app launched".
+// Under "System" the absence of an override is the setting.
 private struct SchemeOverride: ViewModifier {
     let scheme: ColorScheme?
 
@@ -190,13 +145,8 @@ private struct SchemeOverride: ViewModifier {
     }
 }
 
-// A room, with the two seats the shell reserves in it: the capsule top-left, and the edge-swipe
-// that takes you home.
-//
-// The gesture is hand-rolled rather than a NavigationStack pop because each app hides the
-// navigation bar to own its own chrome, and hiding the bar is exactly what disables the system's
-// interactive pop. It is bound to the leading edge only, so a canvas that scrolls, a stepper that
-// drags and a slider that slides all keep their gestures — the shell takes 20pt and nothing more.
+// The home swipe is hand-rolled — a hidden navigation bar disables the system pop — and bound to the
+// leading 20pt only, so a room keeps every other gesture.
 private struct RoomHost<Room: View>: View {
     let elsewhereRunning: Bool
     let goHome: () -> Void
@@ -211,13 +161,8 @@ private struct RoomHost<Room: View>: View {
 
     var body: some View {
         room
-            // A safe-area inset rather than an overlay, because the contract says the capsule gets
-            // "one lane every app reserves" — and a lane reserved by the SHELL cannot be forgotten
-            // by an app, where an overlay just lands on top of whatever was already there.
-            // Read the room's skin BEFORE the capsule is added, not after. A preference reduces
-            // over the whole observed subtree, so with the inset inside it the capsule's own
-            // default (light) lands last and clobbers the room's answer — which is exactly how a
-            // night canvas ended up wearing a daylight capsule.
+            // Read the room's skin before the capsule is added: a preference reduces over the whole
+            // observed subtree, so an inset inside it would land last.
             .onPreferenceChange(RoomChromePreference.self) { chrome = $0 }
             .safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
                 CapsuleButton(elsewhereRunning: elsewhereRunning)
@@ -242,8 +187,7 @@ private struct RoomHost<Room: View>: View {
     }
 }
 
-// The capsule — 38pt, top-left, in the one lane every app reserves. Tap opens the switcher. It
-// wears a dot when another app has something running.
+// 38pt, top-left, in the lane every app reserves.
 public struct CapsuleButton: View {
     private let elsewhereRunning: Bool
 
@@ -261,17 +205,13 @@ public struct CapsuleButton: View {
                 .foregroundStyle(scheme == .dark ? Color.white : WindmillColor.neutral900)
                 .frame(minWidth: 38)
                 .frame(height: 38)
-                // The board's `backdrop-filter: blur(12px)` — a material, not a flat fill. It is
-                // what lets one capsule sit legibly over a night canvas, a steel log and a clay
-                // list without the shell knowing anything about what is underneath it.
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(
                     Capsule().strokeBorder(
                         scheme == .dark ? Color.white.opacity(0.13) : WindmillColor.borderSubtle,
                         lineWidth: 1)
                 )
-                // The dot is the only thing the capsule ever says: another app has something
-                // running. It is never a count and never a badge with a number.
+                // The dot says only that another app has something running; never a count.
                 .overlay(alignment: .topTrailing) {
                     if elsewhereRunning {
                         Circle()
@@ -286,8 +226,7 @@ public struct CapsuleButton: View {
     }
 }
 
-// The shared account seat — the last slot in every app's own bar, past a hairline so it reads as
-// the shell's and not the app's. A product places this; it never builds its own.
+// The shared account seat: the last slot in every app's own bar.
 public struct YouSeat: View {
     private let initial: String
 
@@ -312,8 +251,6 @@ public struct YouSeat: View {
     }
 }
 
-// The initial, or the ghost seat when nobody has signed in. One drawing, used on the hub, in the
-// switcher's own header and at the end of every app's bar.
 struct AvatarDot: View {
     var initial: String = ""
     var size: CGFloat = 30
@@ -336,8 +273,6 @@ struct AvatarDot: View {
     }
 }
 
-// The switcher. Rooms sit lowest — the most-tapped thing lands under the thumb — and Home is the
-// small line above them. Pro is not here at all: the switcher stays about rooms, never billing.
 private struct SwitcherSheet: View {
     let products: [any ProductModule]
     let account: Account
@@ -413,9 +348,7 @@ private struct SwitcherRow: View {
     }
 }
 
-// A product that is real, but not on this phone yet. One line about where it works today and a door
-// to it — never a mock screen, and never a "coming soon" that counts nobody's interest. All three
-// products are shipping as rooms here; this is what one looks like before its room is built.
+// For a product with no room on this phone: where it works today, and a door to it.
 public struct ElsewhereRoom: View {
     private let product: any ProductModule
 
@@ -454,8 +387,6 @@ public struct ElsewhereRoom: View {
             .padding(WindmillSpace.x8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(WindmillColor.surfaceCanvas)
-            // Even a room that isn't built keeps the shell's seat: the account is reachable from
-            // every app's bar, at the same right edge, whatever the app's chrome.
             .overlay(alignment: .bottomTrailing) {
                 YouSeat().padding(.trailing, WindmillSpace.x5).padding(.bottom, WindmillSpace.x5)
             }

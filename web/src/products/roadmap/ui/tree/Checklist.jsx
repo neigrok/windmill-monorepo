@@ -1,9 +1,5 @@
-// The step's sub-task list: round kind-hued checkboxes over a single/double-click
-// grammar — a click anywhere on a row toggles it, a double-click on the text edits
-// it. Checked text goes tertiary (no strikethrough); the × is hover-revealed. The
-// trailing "+ Add a sub-task" row owns an add-run: Enter commits and opens the next
-// empty row, Esc or an empty Enter closes it. All editing state is local; the parent
-// owns the data through onToggle / onEdit / onDelete / onAdd.
+// A click anywhere on a row toggles it, a double-click on the text edits it. In the add-run,
+// Enter commits and opens the next empty row; Esc or an empty Enter closes it.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
@@ -25,8 +21,8 @@ export function Checklist({ items, hue, autoStartAdd = false, onToggle, onEdit, 
   const done = items.filter((item) => item.done).length;
   const chkVars = { '--chk-base': hue.base, '--chk-ring': hue.ring };
 
-  // Single/double grammar: a lone click schedules the toggle; a double-click on the
-  // text cancels that pending toggle and drops into an edit caret instead.
+  // Single/double grammar: a lone click schedules the toggle; a double-click on the text cancels
+  // that pending toggle and drops into an edit caret instead.
   const scheduleToggle = (id) => {
     if (clickTimer.current) return;
     clickTimer.current = setTimeout(() => { clickTimer.current = null; onToggle(id); }, 200);

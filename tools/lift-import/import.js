@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-// lift-import — carry the author's real training history out of Lift and into the Windmill gym log.
-//
-//   node tools/lift-import/import.js --export lift-export.json --token <session> [--dry-run]
-//
-// One-shot, re-runnable, and it adds no backend surface: every write goes through the public API
-// with an id derived from the Lift UUID, so a second run replays onto the same rows and changes
-// nothing. Read the README beside this file for the why.
+// A Lift export into the Windmill gym log. Every write carries an id derived from the Lift UUID, so
+// a second run replays onto the same rows.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve as resolvePath } from 'node:path';
@@ -77,9 +72,7 @@ async function main() {
   if (catalog.length === 0) throw new ImportRefusal('the catalog came back empty — wrong server, or the seed never ran');
   const { resolved, unresolved } = resolveNames(distinctExerciseNames(document), catalog, overrides);
 
-  // The one decision the whole corpus's integrity rests on, and the tool does not take it. An
-  // unmatched or ambiguous name stops the run with nothing written, hands the human a file with the
-  // candidates that were considered, and honors what they write there on the next pass.
+  // An unmatched or ambiguous name stops the run with nothing written.
   if (unresolved.length > 0) {
     const mapping = mappingDocument(document, catalog, resolved, unresolved, overrides);
     if (!args.dryRun) await writeFile(args.mappingPath, `${JSON.stringify(mapping, null, 2)}\n`);
@@ -114,8 +107,7 @@ async function readMapping(path) {
   } catch (failure) {
     throw new ImportRefusal(`${path} is not readable json: ${failure.message}`);
   }
-  // A hand-written file with the map at the top level would silently resolve nothing, and the run
-  // would stop on names the human believes they already mapped. Say so instead.
+  // A map written at the top level would silently resolve nothing, so refuse it by name.
   if (typeof parsed?.exercises !== 'object' || parsed.exercises === null)
     throw new ImportRefusal(`${path} has no "exercises" object — that is where the names are mapped`);
   return parsed.exercises;
@@ -127,8 +119,8 @@ function mappingDocument(document, catalog, resolved, unresolved, overrides) {
   const exercises = {};
   const candidates = {};
   for (const name of distinctExerciseNames(document)) {
-    // A human's mapping is kept even when the catalog cannot honor it — retyping a corrected id
-    // beats retyping the whole line — and it keeps its candidate list until it resolves.
+    // A human's mapping is kept even when the catalog cannot honor it, and keeps its candidates
+    // until it resolves.
     exercises[name] = resolved.get(name) ?? overrides[name] ?? null;
     if (exercises[name] === null || stillOpen.has(name))
       candidates[name] = nearestMovements(normalizeName(name), index);
@@ -144,9 +136,8 @@ function mappingDocument(document, catalog, resolved, unresolved, overrides) {
   };
 }
 
-// Per session: start it, append its sets in completedAt order, then close it. The order is the
-// contract — a set must be appended while the session is open, because appending a NEW set to a
-// finished session is refused 409 by design.
+// Start, append sets in completedAt order, then close: a set appended to a finished session is
+// refused 409.
 async function writeCorpus(client, sessions) {
   const written = { sessions: 0, sets: 0, setsReplayed: 0, sessionsReplayed: 0, failures: [] };
   for (const session of sessions) {
@@ -157,9 +148,8 @@ async function writeCorpus(client, sessions) {
       written.failures.push({ label: session.label, at: 'start', reason: describe(failure), lostSets: session.sets.length });
       continue;
     }
-    // A start while another session is open JOINS the open one — so a reply naming a different
-    // session means this account has a workout in progress, and every set here would land in it.
-    // That is a corpus-corrupting write, so the run stops rather than guesses.
+    // A reply naming a different session means a workout is in progress and every set here would
+    // land in it, so stop.
     if (started?.id !== session.id)
       throw new ImportRefusal(
         `the account has an open session (${started?.id}) — starting an import session joined it instead.\n`
@@ -257,8 +247,7 @@ function reportWritten(written) {
       + `${failure.lostSets > 0 ? ` (${failure.lostSets} sets not written)` : ''}\n`);
 }
 
-// Run only when this file IS the command — so the arg parsing above stays importable by a test
-// without the import firing as a side effect of loading it.
+// Run only when this file IS the command, so a test can import parseArgs without firing the import.
 if (process.argv[1] === fileURLToPath(import.meta.url))
   main()
     .then((code) => process.exit(code))

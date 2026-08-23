@@ -1,8 +1,3 @@
-// The OG card builder (brief #12) is pure — it takes a RenderModel + score and returns the
-// unfurl SVG string. These pin the fit (glow-inclusive box + 8% pad, the clamp that keeps a
-// sparse tree sane) and the frame's contract (2400×1260, title, n/m readout, watermark, one
-// element per node, dominant-kind tint) so a refactor can't quietly drop a piece.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOgCardSvg, paddedGlowBox, clampViewBox } from '../../../../src/products/roadmap/share/ogCard.js';
@@ -50,12 +45,9 @@ test('the steady box measures every node as if lit, so progress can never move a
   ];
   const at = (doneCount) => modelOf(plan.map((node, i) => ({ ...node, state: i < doneCount ? 'complete' : 'locked' })));
 
-  // The as-drawn box swells as the tree fills — right for a one-off unfurl, fatal for a series.
   assert.notDeepEqual(paddedGlowBox(at(1)), paddedGlowBox(at(3)));
-  // The steady box is the same box at every point in the plan.
   assert.deepEqual(paddedGlowBox(at(0), { steady: true }), paddedGlowBox(at(3), { steady: true }));
   assert.deepEqual(paddedGlowBox(at(1), { steady: true }), paddedGlowBox(at(3), { steady: true }));
-  // …and it is exactly the footprint of the finished tree, which contains every earlier one.
   assert.deepEqual(paddedGlowBox(at(1), { steady: true }), paddedGlowBox(at(3)));
 });
 

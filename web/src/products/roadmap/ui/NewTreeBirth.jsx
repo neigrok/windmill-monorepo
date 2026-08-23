@@ -1,14 +1,3 @@
-// New-tree birth (F1·F2 §6) — one bud, one name. Not a dialog: a single bud waits at
-// canvas center, the name is typed in place, and ↵ plants it. The name is the
-// confirmation — no toast. Signed in, the registry (POST /v1/trees) plants it; signed
-// out, the tree is born locally (anon-first-tree §01) — client-minted id, lattice-born,
-// IndexedDB-persisted — and the editor opens exactly the same. No sign-in door here:
-// the seat menu stays the product's only unprompted mention of sign-in.
-//
-// paste-import (F3) adds a HANDLE, never a surface: raw ⌘V anywhere (and a dropped
-// .md/.txt) opens the composer already filled and parsed, docked where the StepPanel
-// lives while the bud dims but never leaves. Esc returns to the bud, draft kept.
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
@@ -23,8 +12,7 @@ import { stampBorn } from '../persistence/ViewPrefs.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
-// Every birth exits through here: stamp the tree so its first open is the canvas —
-// the birth/arrival ceremony plays there — before the list takes over on return (X8 L1).
+// Stamp the tree so its first open is the canvas, where the arrival ceremony plays.
 function openBorn(treeId) {
   stampBorn(treeId);
   window.location.hash = `#/app/${treeId}`;
@@ -40,7 +28,6 @@ export function NewTreeBirth() {
   const [phase, setPhase] = useState('naming'); // naming | planting | error
   const [draft, setDraft] = useState('');       // the composer's text — survives Esc
   const [draftKinds, setDraftKinds] = useState(DEFAULT_KINDS);
-  // The shelf's "Paste a plan" door lands on #/app/new?compose — the composer opens with it.
   const [composerOpen, setComposerOpen] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.hash.split('?')[1] ?? '').has('compose'));
   const [dropHot, setDropHot] = useState(false);
@@ -53,9 +40,7 @@ export function NewTreeBirth() {
     [composerOpen, draft, draftKinds],
   );
 
-  // Raw ⌘V anywhere on the canvas opens the composer already filled and parsed —
-  // capture-phase, mounted ONLY while the composer is closed, so the composer's own
-  // textarea pastes stay ordinary. Images and empty clipboards fall through untouched.
+  // Capture-phase, and mounted ONLY while the composer is closed, so its own textarea pastes stay ordinary.
   useEffect(() => {
     if (composerOpen) return undefined;
     const onPaste = (event) => {
@@ -69,11 +54,7 @@ export function NewTreeBirth() {
     return () => window.removeEventListener('paste', onPaste, true);
   }, [composerOpen]);
 
-  // A dropped .md/.txt/text file is the same door — and it stays open: with the
-  // composer up, a plan file simply replaces the well text (the parse follows live).
-  // Every drop is neutralized, plan or not — the browser must never navigate away to
-  // a file and take the draft with it. The welcome hint lights only for drags that
-  // plausibly carry text (file names are hidden mid-drag, so the item type decides).
+  // Every file drop is neutralized, plan or not, or the browser navigates away and takes the draft with it.
   useEffect(() => {
     const planFile = (file) => file && (/\.(md|txt)$/i.test(file.name) || file.type.startsWith('text/'));
     const onDragOver = (event) => {
@@ -90,8 +71,7 @@ export function NewTreeBirth() {
       const file = [...event.dataTransfer.files].find(planFile);
       if (!file) return;
       file.text().then((content) => {
-        // Synchronously retire any in-flight AI stream BEFORE the draft lands, or a
-        // pending stream flush (rAF fires ahead of React effects) overwrites the drop.
+        // Retire any in-flight AI stream BEFORE the draft lands: a pending flush would overwrite the drop.
         window.dispatchEvent(new Event('wm-draft-replaced'));
         setDraft(content);
         setComposerOpen(true);
@@ -113,9 +93,6 @@ export function NewTreeBirth() {
     const title = name.trim();
     try {
       if (status === 'signed-in') {
-        // Plant the named bud as the tree's first node — its root — so the new tree opens on the
-        // very node you just named rather than an empty canvas (F1·F2 §6: naming the root names the
-        // tree). It's born in the default 'Build' kind; the server seeds the matching legend.
         const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
         const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
         const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
@@ -125,8 +102,7 @@ export function NewTreeBirth() {
       }
       openBorn(await plantLocally(title));
     } catch (err) {
-      // A signed-in plant the server refuses for want of a session falls back to the
-      // local birth — the worst case of auth is the product's normal signed-out state.
+      // A signed-in plant the server refuses for want of a session falls back to the local birth.
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
           openBorn(await plantLocally(title));
@@ -137,9 +113,6 @@ export function NewTreeBirth() {
     }
   }
 
-  // The composer's Plant: the parsed subgraph through the same two roads — the registry
-  // when signed in (it seeds structure, statuses and legend from the post), the local
-  // soil otherwise or when the server can't answer.
   async function plantImported(plan) {
     if (phase === 'planting') return;
     setPhase('planting');
@@ -189,8 +162,6 @@ export function NewTreeBirth() {
     <div style={shell}>
       <style>{CSS}</style>
 
-      {/* The plaque mirrors the typing — naming the root names the tree. The wordmark is a
-          home link on every viewport, so there's always an on-screen way back to #/app. */}
       <div style={plaque}>
         <a href="#/app" style={plaqueLink}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: 'var(--color-brand-soft)', color: 'var(--color-brand-hover)' }}>
@@ -237,7 +208,6 @@ export function NewTreeBirth() {
         )}
       </div>
 
-      {/* The ghost skeleton grows on the stage as the plan is typed — cut on phone. */}
       {composerOpen && parse && breakpoint !== 'phone' && (
         <div className={`birth-ghost-stage${breakpoint === 'desktop' ? '' : ' birth-ghost-stage--wide'}`}>
           <GhostSkeleton nodes={parse.nodes} />

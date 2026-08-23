@@ -1,8 +1,5 @@
-// The install offer, stashed where it can't be missed. Chrome fires beforeinstallprompt once
-// per page load, right after the manifest makes the page installable — which is before React
-// has mounted the lazy shell route the chip lives in. So the capture is armed at module scope
-// from main.jsx at boot and the chip only ever reads it: an event missed here is missed for the
-// whole session, because the browser never fires it again.
+// beforeinstallprompt fires once per page load, so the capture is armed at module scope from
+// main.jsx at boot; an event missed here is missed for the whole session.
 
 let captured = null;
 const watchers = new Set();
@@ -20,8 +17,7 @@ export function watchInstallPrompt(watcher) {
   return () => { watchers.delete(watcher); };
 }
 
-// Cleared the moment the offer is taken or refused — the chip goes down synchronously, so a
-// second tap can never reach the same event twice (the browser rejects a replayed prompt()).
+// Cleared synchronously when the offer is taken or refused, so a second tap finds nothing.
 export function forgetInstallPrompt() {
   captured = null;
   announce();
@@ -29,7 +25,7 @@ export function forgetInstallPrompt() {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();  // the browser's own banner stays down; the quiet chip is the offer
+    event.preventDefault();  // keep the browser's own banner down
     captured = event;
     announce();
   });

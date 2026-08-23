@@ -1,14 +1,3 @@
-// SkillTree validates the DAG once, in its constructor, and then answers every graph question from
-// indices built there. Nine other suites construct one and none of them assert what happens when
-// the data is bad — yet the constructor is the *only* structural guard in the product. Every
-// structural edit re-enters it (syncStructure rebuilds a SkillTree from the projection), so these
-// five throws are what stands between a malformed lattice materialisation and an infinite layout
-// loop. Their messages are asserted verbatim: they are what a user sees in the error boundary and
-// what we read in a bug report.
-//
-// The positive control matters just as much — a diamond is legal. A guard that rejected a node
-// with two prerequisites would also pass a suite that only checked the throws.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

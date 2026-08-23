@@ -1,5 +1,5 @@
 {
-  "note": "THE WEIGHT LADDER — the contract every Windmill surface answers to. Lift pasted this rule into three targets and let them drift; here it is written down once, and web, iOS and Android each run this file as a test. See README.md for the rule in prose. RETIERED 2026-08-11: the fine step IS the program step and the coarse step is a plate change.",
+  "note": "The weight ladder. Web, iOS and Android each run this file as a test. The fine step is the program step; the coarse step is a plate change.",
   "grid": 0.01,
   "bands": [
     { "under": 20, "small": 1, "large": 2.5 },

@@ -1,6 +1,4 @@
-// The settings page's shared visual language: a titled block, and the small set of style
-// tokens every section lays its rows out with. One home for the look so the account's own
-// sections and the ones each product registers read as one page rather than as several.
+// A titled block plus the style tokens every settings section lays its rows out with.
 
 import React from 'react';
 
@@ -42,8 +40,6 @@ export const styles = {
   },
 };
 
-// The quiet × on a session/grant row — a small icon button that warms on hover, never a
-// brick. Shared so every revoke affordance in settings looks identical.
 export function QuietX({ label, onClick, disabled = false }) {
   const [hover, setHover] = React.useState(false);
   return (

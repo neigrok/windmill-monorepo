@@ -1,9 +1,4 @@
-// Settings §02 · Connected tools (F17's connections list). The LLM grants this account
-// has handed out — a list separate from browser sessions with a revoke all its own, so
-// pulling a tool's key never signs a device out. One row per client: a monogram, its
-// name, what its grant reaches, when it was granted and when it last acted. Disconnect asks
-// once, acts immediately, and toasts quietly. A dashed row leads to /connect; an empty
-// account gets a calm line and the same door.
+// The LLM grants this account has handed out; revoking one never signs a device out.
 
 import React, { useEffect, useState } from 'react';
 import { Avatar, Button, Toast } from '../../design-system';
@@ -66,9 +61,6 @@ export function ConnectedToolsSection() {
           <Avatar name={grant.name} size={30} />
           <div style={styles.rowMain}>
             <div style={styles.primaryText}>{grant.name}</div>
-            {/* What this tool may do, not just when it last did it. Consent is a single screen seen
-                once, so without this line the answer to "what did I give this thing" is unavailable
-                to the person who gave it — and disconnecting is the decision it informs. */}
             <div style={styles.metaText}>{summarizeScope(grant.scope)}</div>
             <div style={styles.metaText}>
               Granted {shortDate(grant.grantedMs)}

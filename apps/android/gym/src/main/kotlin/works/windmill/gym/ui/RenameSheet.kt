@@ -36,18 +36,6 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// RENAMING A MOVEMENT (§N, screen 32) — the record page's sheet. It used to serve the routine's
-// header too; the 13 Aug wave retired that door (R2: renaming a routine is editing the inline name
-// in the one editor), so a movement's record is the one screen left that opens this.
-//
-// A NAME IS A LABEL ON A STABLE ID. Renaming is not destructive and never forks a record: every set,
-// every routine line and every frozen plan snapshot still points at the same movement afterwards,
-// because none of them stores a name. The block below is that promise with the numbers behind it, and
-// every one of those numbers is a READ — a constant on the one screen whose whole job is proof would
-// be the product asserting something it did not check.
-//
-// `from` IS WHAT THE THING IS CALLED NOW, and the button is dead until the field disagrees with it:
-// a rename that changes nothing is not a rename, and the sheet has nothing to send for it.
 @Composable
 fun RenameSheet(
     title: String,
@@ -63,9 +51,6 @@ fun RenameSheet(
     val keyboard = LocalSoftwareKeyboardController.current
     val changed = Program.renamed(from, value) != null
 
-    // The keyboard is up on arrival for the reason it is up on screen 28: there is exactly one thing
-    // to do here, and a sheet that made a lifter tap the field first would be asking them to find
-    // the question.
     LaunchedEffect(Unit) {
         focus.requestFocus()
         keyboard?.show()
@@ -105,8 +90,6 @@ fun RenameSheet(
             )
         }
 
-        // A rename that did not land is said where the field is, in alarm ink — which fires on a
-        // write that failed and on nothing else in this room.
         refused?.let { Text(it, style = GymType.numeral(12), color = GymSkin.alarmInk) }
 
         if (proof.isNotEmpty()) ProofBlock(proof)
@@ -139,9 +122,6 @@ fun RenameSheet(
     }
 }
 
-// `✓ Everything follows the name`, and then the reads that make it true. Each row is a label and a
-// fact, and a row with nothing behind it was already dropped by the domain — so what is drawn here
-// is exactly what this account's log could answer.
 @Composable
 private fun ProofBlock(proof: List<Record.Proof>) {
     Column(

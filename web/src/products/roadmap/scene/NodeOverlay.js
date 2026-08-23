@@ -1,9 +1,4 @@
-// DOM overlays above the GPU canvas: a fixed pool (never one element per node)
-// placed on the nodes nearest the viewport center and LOD-gated by zoom — crisp
-// at any zoom and cheap. LabelOverlay is captions below the node; IconOverlay is
-// live SVG glyphs on the node that take over from the baked atlas once you zoom
-// in far enough that the raster would soften. Both share one placement skeleton;
-// each overrides only the element, its visibility band, and how it's drawn.
+// Pooled DOM overlays above the GPU canvas, placed on the nodes nearest the viewport centre and LOD-gated by zoom. Subclasses override the element, visibility band and render.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
@@ -13,17 +8,15 @@ const POOL_SIZE = 64;
 const LABEL_ZOOM_THRESHOLD = 0.5;
 export const ICON_DOM_START = 2.0;
 export const ICON_DOM_FULL = 3.0;
-const ICON_NODE_FRACTION = 0.44; // glyph share of the node diameter; matches the atlas inset
-const LABEL_FONT_FRACTION = 0.23; // caption height as a share of the node diameter (~13px at zoom 1)
+const ICON_NODE_FRACTION = 0.44; // glyph share of node diameter; matches the atlas inset
+const LABEL_FONT_FRACTION = 0.23; // caption height as a share of node diameter
 
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 }
 
-// Mirrors the node shader's glyph so the high-zoom live glyph matches the baked
-// one: a saturated node (available/activated) shows the bright `soft` tint of its
-// kind; an unavailable node a muted mix of the kind toward the cream canvas.
+// Must match the node shader's glyph tint.
 function rgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

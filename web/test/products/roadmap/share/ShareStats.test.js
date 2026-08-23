@@ -1,7 +1,3 @@
-// The share "score" and its dominant kind — the tint the OG card (brief #12) carries. The
-// dominant kind is the most common kind among DONE nodes, ties resolving to terracotta so the
-// frame never picks an arbitrary winner. These pin exactly that rule.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ShareStats } from '../../../../src/products/roadmap/share/ShareStats.js';

@@ -1,14 +1,6 @@
 import Foundation
 
-// The device's hybrid logical clock — the mirror of backend platform/domain/Ids.h and of
-// web/src/products/journal/hlc.js. It lives in the platform, not in a product, for the same reason
-// it lives in platform/domain on the backend: a stamp orders any edit from any device, and knows
-// nothing about what was edited.
-//
-// A stamp is "physicalMs:counter:actor". The counter breaks ties inside one millisecond; the actor
-// is a stable per-device id, so two devices can never collide on (ms, counter). Comparison is
-// exactly the server's: milliseconds, then counter, then actor as the last resort — which makes
-// the winner of a two-device race a fact both sides compute identically rather than a negotiation.
+// A stamp is "physicalMs:counter:actor", ordered by milliseconds, then counter, then actor.
 
 public struct Hlc: Comparable, Hashable, Sendable, Codable, CustomStringConvertible {
     public let milliseconds: Int64
@@ -21,9 +13,7 @@ public struct Hlc: Comparable, Hashable, Sendable, Codable, CustomStringConverti
         self.actor = actor
     }
 
-    // Anything unparseable reads as the zero stamp rather than throwing: a stamp arrives from
-    // storage and from the wire, and a page whose stamp got corrupted must still be readable —
-    // it simply loses every race, which is the safe direction to fail in.
+    // Unparseable text reads as the zero stamp, which loses every race.
     public init(_ text: String) {
         let parts = text.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
         guard parts.count == 3, let ms = Int64(parts[0]), let count = Int(parts[1]) else {
@@ -53,9 +43,7 @@ public struct Hlc: Comparable, Hashable, Sendable, Codable, CustomStringConverti
     }
 }
 
-// Mints this device's stamps. Monotonic by construction: a clock that jumps backwards (a timezone
-// change, an NTP correction) can never mint a stamp that loses to one already sent, because the
-// last minted millisecond is the floor.
+// Monotonic: the last minted millisecond is the floor, so a backwards clock jump still mints forward.
 public final class HlcClock: @unchecked Sendable {
     private let actor: String
     private let now: @Sendable () -> Int64
@@ -77,8 +65,7 @@ public final class HlcClock: @unchecked Sendable {
         }
     }
 
-    // The device's own id, minted once and kept. Two installs must never share one, so it is
-    // random rather than derived from anything the OS might hand two apps alike.
+    // Random: two installs must never share a device id.
     public static func deviceActor(defaults: UserDefaults = .standard, key: String = "wm.device.actor") -> String {
         if let existing = defaults.string(forKey: key) { return existing }
         let minted = "d-" + UUID().uuidString.prefix(8).lowercased()

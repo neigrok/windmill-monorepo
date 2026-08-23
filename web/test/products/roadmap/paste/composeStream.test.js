@@ -1,6 +1,4 @@
-// The compose stream contract (F3): SSE frames decode incrementally — chunk boundaries
-// land anywhere (mid-frame, mid-multibyte-glyph), heartbeats are ':' comment lines —
-// and the reader hands deltas over verbatim, in order, until done / fail / a silent end.
+// SSE frames decode incrementally: chunk boundaries land anywhere, heartbeats are ':' comment lines.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

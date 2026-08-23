@@ -3,16 +3,6 @@ import { GalleryCard } from '../share/GalleryCard.jsx';
 import { cardMark } from './galleryIndex.js';
 import { portraitUrl } from './GalleryClient.js';
 
-// One listed tree on the in-product wall: the same X2 #12 card the public wall shows —
-// portrait, kind rule, title, n/m — with the three things only a surface that knows you
-// can add. It wears your relationship to the tree ("Listed by you" · "Forked"), it names
-// the tree it was forked from (canon §6 — the tree, never the person), and it carries the
-// fork itself: one click, on the card, no page in between.
-//
-// The fork is revealed on hover where there is a pointer and pinned open below 1024 where
-// there isn't (canon §8) — but its slot is always drawn, so nothing on the card moves when
-// it appears, and a keyboard tab brings it out the same way a hover does.
-
 export function BrowseCard({ entry, forking, failed, onFork }) {
   const mark = cardMark(entry);
 
@@ -40,10 +30,6 @@ export function BrowseCard({ entry, forking, failed, onFork }) {
   );
 }
 
-// What the card says about itself under the readout: the forks it inspired — shown only
-// once it has any, so a new tree reads as new rather than as unwanted — and, last, the
-// tree it came from. The server leaves the source unnamed unless it is still public, so
-// there is nothing here to gate.
 function lineageOf(entry) {
   const phrases = [];
   if (entry.forks > 0) phrases.push(`forked ${entry.forks} ${entry.forks === 1 ? 'time' : 'times'}`);
@@ -57,8 +43,7 @@ export const BROWSE_CARD_CSS = `
                            border-color var(--duration-base) var(--ease-soft);
                 animation:wm-br-arrive 150ms linear both; }
   .wm-br-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-md); }
-  /* Arrival (canon §4): a flat 150ms cross-fade — no rise, no pop, and no stagger, so a
-     page of trees lands as one page rather than as a cascade. */
+  /* Arrival: a flat 150ms cross-fade — no rise, no pop, no stagger, so a page lands as one page. */
   @keyframes wm-br-arrive { from { opacity:0; } to { opacity:1; } }
 
   .wm-br-lineage { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;

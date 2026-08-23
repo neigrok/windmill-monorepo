@@ -1,14 +1,7 @@
 <!--
-  Windmill transactional email — magic link (FIRST-TIME SIGN-UP) · X7
-  From:      Windmill <sign-in@windmill.works>
-  Subject:   Welcome to Windmill — your sign-in link
-  Preheader: One tap creates your account. No password — works once, lasts 15 minutes.
-  Plain-text pair: magic-link-signup.txt
-
-  Template variable: {{magic_link}} (button href + raw fallback). Same shell as
-  magic-link.html; only the wording differs (one door, X6 §1: "your account is created
-  the first time"). The server picks sign-in vs sign-up by whether the address is new.
-  See guidelines/email.md / emails/README.md.
+  Unsent shell: ResendEmailSender calls only `magic-link`, `magic-link-fork` and `magic-code`,
+  and a first-time address gets the same `magic-link` a returning one does. Not shipping copy.
+  Plain-text twin magic-link-signup.txt.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">

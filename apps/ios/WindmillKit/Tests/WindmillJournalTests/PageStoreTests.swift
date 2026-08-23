@@ -2,10 +2,6 @@ import XCTest
 @testable import WindmillJournal
 @testable import WindmillPlatform
 
-// What has to be true for someone's writing to survive: it is on the device before the network is
-// consulted, it stays there when the network refuses, and signing in claims it rather than asking
-// for it again. These are the paths that lose words if they are wrong.
-
 @MainActor
 final class PageStoreTests: XCTestCase {
     private var directory: URL!
@@ -49,8 +45,6 @@ final class PageStoreTests: XCTestCase {
         )
     }
 
-    // Signed out is a supported state, not a degraded one (auth canon §2 — no walls). Writing works
-    // and the page is on the device the moment it is typed.
     func testWritingSignedOutLandsOnTheDeviceAndSaysSo() async {
         let store = makeStore()
         await store.connect(to: account(signedIn: false))
@@ -64,8 +58,6 @@ final class PageStoreTests: XCTestCase {
                        "the house is quiet")
     }
 
-    // The claim (auth canon §4): everything written before there was an account goes up on sign-in,
-    // additively, without anyone being asked to choose between local and cloud.
     func testSigningInClaimsWhatWasWrittenBeforeThereWasAnAccount() async {
         let store = makeStore()
         await store.connect(to: account(signedIn: false))
@@ -81,8 +73,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertTrue(device(of: nil).pages.isEmpty, "and the anonymous file is emptied once it has")
     }
 
-    // A write that cannot reach the server is not a lost write. It stays on the device, still owed,
-    // and the surface says exactly that rather than showing an error.
     func testAWriteThatCannotLandStaysOwedAndSaysOffline() async {
         let server = FakeSync()
         server.online = false
@@ -97,7 +87,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(device(of: "u1").pending.map(\.body), ["no signal here"])
     }
 
-    // ...and the moment it can reach the server, the same words go up. Nothing needs retyping.
     func testTheOwedWriteGoesUpOnceTheNetworkReturns() async {
         let server = FakeSync()
         server.online = false
@@ -126,8 +115,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertTrue(device(of: "u1").pending.isEmpty)
     }
 
-    // The canvas is what you wrote, not a calendar with holes in it: a day nobody wrote is not
-    // drawn at all. Unwritten days used to appear as a marker and the words "nothing written".
     func testOnlyTheDaysThatWereWrittenAreDrawn() async {
         let server = FakeSync()
         server.seed(day: "2026-07-16", body: "monday")
@@ -141,7 +128,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertFalse(store.days.contains { $0.day.iso == "2026-07-20" }, "today is the draft, never history")
     }
 
-    // A page carrying only a mood is still a day someone showed up for, so it is still drawn.
     func testADayWithOnlyAMoodIsStillDrawn() async {
         let server = FakeSync()
         server.seed(day: "2026-07-18", body: "", mood: .m3)
@@ -152,8 +138,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(store.days.map(\.day.iso), ["2026-07-18"])
     }
 
-    // Today's page comes down into the draft so a second device continues the same page rather than
-    // opening a blank one over it.
     func testTodaysPageFromTheAccountBecomesTheDraft() async {
         let server = FakeSync()
         server.seed(day: "2026-07-20", body: "started on my other phone", mood: .m4)
@@ -165,8 +149,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(store.mood, .m4)
     }
 
-    // The race the adopt rule exists for: a reply must never overwrite a field the writer has moved
-    // since the write went out.
     func testAServerReplyDoesNotOverwriteWhatIsStillBeingTyped() async {
         let server = FakeSync()
         server.rewriteBodyOnPut = "what the server had"
@@ -177,7 +159,7 @@ final class PageStoreTests: XCTestCase {
         await store.flushPendingWrite()
         XCTAssertEqual(store.body, "what the server had", "unmoved, so the winner is adopted")
 
-        store.type("second sentence")           // the writer moved on before the next reply
+        store.type("second sentence")
         server.rewriteBodyOnPut = "stale reply"
         await store.flushPendingWrite()
         XCTAssertEqual(store.body, "stale reply", "the write it answers is the one just sent")
@@ -197,11 +179,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(store.energy, .none)
     }
 
-
-    // MOBILE-1, and it is the whole of why this store carries a seat. A handed-over phone: A signs
-    // in and writes, signs out, and the next person signs in with their own account. Every line of
-    // this used to fail — the canvas kept A's days, the composer kept A's sentence, and B's first
-    // keystroke PUT A's prose into B's account on the log.
     func testTheNextAccountSeesNoneOfThePreviousOnesPagesAndSendsNoneOfThem() async {
         let logOfA = FakeSync()
         logOfA.seed(day: "2026-07-19", body: "A's private page from yesterday")
@@ -229,9 +206,6 @@ final class PageStoreTests: XCTestCase {
                        "and nothing of B's was written into A's account either")
     }
 
-    // The path no hook covers: the app is killed rather than signed out, and the next launch opens
-    // for somebody else. A cold launch runs no cleanup at all, which is exactly why the seat is in
-    // the file name rather than in a sign-out that has to remember to run.
     func testAColdLaunchUnderANewSeatDrawsNothingOfTheOldOne() async {
         let logOfA = FakeSync()
         let asA = makeStore(servers: ["u-a": logOfA])
@@ -246,10 +220,6 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.body, "")
     }
 
-    // A seat the log has not confirmed THIS launch reads its OWN file — a basement is not a
-    // sign-out, and a signed-in writer opening the canvas on a plane to a blank page would be the
-    // product breaking its own promise. What it may not do is ADOPT: taking the anonymous pages is
-    // irreversible, so it waits until the log says who is holding the phone.
     func testAnUnconfirmedSeatReadsItsOwnFileButAdoptsNothing() async {
         let log = FakeSync()
         let asA = makeStore(servers: ["u-a": log])
@@ -257,7 +227,6 @@ final class PageStoreTests: XCTestCase {
         asA.type("A's own words")
         await asA.flushPendingWrite()
 
-        // A page written on this device before anybody signed in, waiting for whoever does.
         let anonymous = device(of: nil)
         anonymous.store(Page(day: LocalDay(iso: "2026-07-19")!, body: "written before anybody signed in",
                              stamp: Hlc("50:0:d-test")), needsPush: true)
@@ -275,9 +244,6 @@ final class PageStoreTests: XCTestCase {
                        ["A's own words", "written before anybody signed in"])
     }
 
-    // A security fix that loses somebody's words is a worse bug than the one it closes. The seat
-    // changes with the debounce still armed — the sentence has been typed and not yet saved — and
-    // it has to land in the file of the person who typed it, unsent.
     func testWhatTheDepartingWriterTypedIsKeptInTheirOwnFile() async {
         let logOfA = FakeSync()
         logOfA.online = false
@@ -297,17 +263,12 @@ final class PageStoreTests: XCTestCase {
                        "and goes up when A comes back")
     }
 
-    // A CLAIM THAT COULD NOT LAND MUST NOT DESTROY WHAT IT WAS CARRYING. The arriving seat's file
-    // is the only other copy of an anonymous page, so the anonymous one is emptied only once that
-    // file has taken the bytes AND SAID SO — a full disk or a refused write leaves the writing
-    // exactly where it was, for the next attempt.
     func testARefusedFlushDoesNotDestroyTheAnonymousPages() async {
         let ghost = makeStore()
         await ghost.connect(to: account(userId: nil))
         ghost.type("the only copy of this sentence")
         await ghost.flushPendingWrite()
 
-        // A directory where the arriving seat's file belongs: every write to it is refused.
         try? FileManager.default.createDirectory(
             at: directory.appendingPathComponent(PageCache.fileName(forSeat: "u-a")),
             withIntermediateDirectories: true)
@@ -320,8 +281,6 @@ final class PageStoreTests: XCTestCase {
                        "the device that refused the bytes is still holding them")
     }
 
-    // The reply to a write that was in the air when the seat changed. It carries the departing
-    // person's page, and the file it would be filed into is now somebody else's.
     func testAReplyThatOutlivedItsSeatSettlesNothing() async {
         let logOfA = FakeSync()
         let phone = makeStore(servers: ["u-a": logOfA, "u-b": FakeSync()])
@@ -363,8 +322,6 @@ final class PageCacheTests: XCTestCase {
         XCTAssertEqual(reopened.pending.count, 1, "an unsent page is still owed after a relaunch")
     }
 
-    // A remote page arriving settles the debt only if it BEATS what we were holding. If our unsent
-    // page still wins, it is still unsent — losing this flag would silently drop the write.
     func testAnOlderRemotePageDoesNotSettleAnUnsentWrite() {
         let (cache, url) = makeCache()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -389,9 +346,6 @@ final class PageCacheTests: XCTestCase {
         XCTAssertTrue(cache.pending.isEmpty, "a superseded write is not still owed")
     }
 
-    // The reply to a write is not a receipt for every write. If the writer typed again while the
-    // first PUT was in flight, the second page is still owed when the first one's answer lands —
-    // clearing it there would drop the newest words on the floor if the app died next.
     func testAReplyToAnEarlierWriteLeavesANewerOneOwed() {
         let (cache, url) = makeCache()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -429,11 +383,6 @@ final class PageCacheTests: XCTestCase {
                        "a claim replays in the order it was lived")
     }
 
-
-    // THE UNKEYED FILE every build before 2026-08-22 wrote, retired on a phone that STILL HOLDS a
-    // session. The device knows who was writing when it upgraded — the Keychain says so — and the
-    // unsent pages are theirs: they land in their file, still owed, and the next connect sends them.
-    // Nobody is asked anything, and nobody loses the page they wrote on a plane.
     func testTheLegacyStoreGoesToTheAccountTheDeviceIsHolding() {
         let directory = legacyDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -448,9 +397,6 @@ final class PageCacheTests: XCTestCase {
             atPath: directory.appendingPathComponent("windmill-journal-pages.json").path))
     }
 
-    // And on a phone holding NO session, where the same bytes cannot be attributed to anybody:
-    // "nobody is signed in now" is not "nobody wrote this", and handing them to the next account is
-    // the leak itself. They go to a name no seat opens.
     func testTheLegacyStoreIsQuarantinedWhenTheDeviceHoldsNobody() {
         let directory = legacyDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -468,7 +414,6 @@ final class PageCacheTests: XCTestCase {
                        "and it is retired for good")
     }
 
-    // One unkeyed file: a page read back from somebody's account, and a page never sent.
     private func legacyDirectory() -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("journal-\(UUID().uuidString)")
@@ -485,10 +430,6 @@ final class PageCacheTests: XCTestCase {
         return directory
     }
 
-    // The seat's id is a path component, so it may only ever name a file in this directory — and an
-    // account's id is written under `u.`, so it cannot name a RESERVED one either. Without the
-    // prefix, a seat called `anon` or `unclaimed` opened the anonymous file or the quarantine, and
-    // the only thing stopping it was that account ids happen to be uuids.
     func testASeatNameCannotReachOutOfItsOwnDirectoryOrIntoAReservedFile() {
         XCTAssertEqual(PageCache.fileName(forSeat: nil), "windmill-journal-pages-anon.json")
         XCTAssertEqual(PageCache.fileName(forSeat: "0f8e-4b2a"), "windmill-journal-pages-u.0f8e-4b2a.json")
@@ -498,8 +439,6 @@ final class PageCacheTests: XCTestCase {
         XCTAssertEqual(PageCache.fileName(forSeat: "unclaimed"), "windmill-journal-pages-u.unclaimed.json")
     }
 
-    // The un-prefixed per-seat file, written by builds from inside this wave: carried over rather
-    // than orphaned, because a file nothing opens is somebody's pages that nothing opens.
     func testTheUnprefixedPerSeatFileIsCarriedOver() {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("journal-\(UUID().uuidString)")
@@ -527,13 +466,6 @@ final class PageCacheTests: XCTestCase {
     }
 }
 
-// A server that is entirely under the test's control: it can be offline, it can already hold pages,
-// and it can hand back a different winner than it was sent.
-// ── Midnight, on a canvas nobody closed ─────────────────────────────────────────────────────────
-//
-// The day was fixed when the canvas opened, so a phone held past midnight kept writing into
-// yesterday — the web had the same bug and the same fix.
-
 extension PageStoreTests {
     func testMidnightDropsYesterdayIntoTheHistoryAndOpensTonightBlank() async {
         let server = FakeSync()
@@ -552,8 +484,6 @@ extension PageStoreTests {
         XCTAssertEqual(store.days.map(\.body), ["written before midnight"])
     }
 
-    // The beat still in the debounce belongs to the day it was typed on — carried into the new day
-    // it would land on a page nobody wrote.
     func testTheUnsavedBeatIsKeptUnderTheDayItWasTypedOn() async {
         let server = FakeSync()
         let store = makeStore(sync: server)
@@ -567,8 +497,6 @@ extension PageStoreTests {
         XCTAssertEqual(store.body, "")
     }
 
-    // Tonight's page may already exist — written on the laptop before the phone was picked up — so
-    // the turn-over reads the account's window around the NEW day rather than only changing a key.
     func testTheTurnOverReadsTheWindowAroundTheNewToday() async {
         let server = FakeSync()
         server.seed(day: "2026-07-21", body: "already written on the laptop")
@@ -580,7 +508,6 @@ extension PageStoreTests {
         XCTAssertEqual(store.body, "already written on the laptop")
     }
 
-    // The room says it on every return to .active, so the same day arrives over and over.
     func testTheSameDayAgainIsNothingAtAll() async {
         let server = FakeSync()
         let store = makeStore(sync: server)
@@ -595,7 +522,6 @@ extension PageStoreTests {
         XCTAssertTrue(store.days.isEmpty)
     }
 
-    // What the canvas waits on: the writer's own midnight, and never a zero wait.
     func testUntilTomorrowIsTheWritersOwnMidnight() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Lisbon")!
@@ -606,7 +532,6 @@ extension PageStoreTests {
                        86_400, accuracy: 0.5)
     }
 }
-
 
 final class FakeSync: PageSyncing, @unchecked Sendable {
     var online = true
@@ -634,8 +559,6 @@ final class FakeSync: PageSyncing, @unchecked Sendable {
     }
 }
 
-// The hub reads the device too — and used to read it unscoped, so a signed-out front door reported
-// the previous account's word count before anybody had opened a room.
 @MainActor
 final class JournalModuleTests: XCTestCase {
     private var directory: URL!
@@ -674,7 +597,6 @@ final class JournalModuleTests: XCTestCase {
         XCTAssertEqual(module.holdings(account("u-b")).count, 0)
     }
 
-    // The hub of a phone with no signal is still that person's hub: it reads their own file.
     func testASeatTheLogCouldNotConfirmStillCountsItsOwnPages() {
         let module = JournalModule(device: directory)
 

@@ -49,29 +49,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// §I — GYM'S SETTINGS SECTION. Everything in it changes how the room behaves AT THE RACK: what a
-// weight is read in, how long the rest is, how a logged set confirms itself. It
-// restates no account screen — there is no appearance control, no notification row for pushes this
-// product does not send, no plan and no account row of any kind. Appearance is chosen once, in You,
-// and this room only answers it.
-//
-// EVERY ROW WRITES ON THE TAP. There is no Save button and no dirty state: the document is held on
-// the device before the log is consulted, so the logger's rest clock obeys the new value on the
-// next frame whether or not there is an account behind it. What the log refuses is
-// SAID through the room's own note; what the log never answers is kept and carried by the claim.
-//
-// ONE OF §I'S ROWS IS STILL NOT HERE, and it is absent rather than faked: `Export` needs a route
-// that answers CSV rather than JSON, which this app's one API client cannot read. A row that opened
-// nothing would be the exact dishonest control this section was written to refuse, so the closing
-// note says where it lives instead.
-//
-// `CONNECTED LOG` IS HERE NOW (W8), and what it draws is the honest half of §D screen 13: what a
-// connected tool may do to this log, what it may not, and a door onto the account's own list of
-// connections, which is where Disconnect lives. What it does NOT draw is the design's named clients
-// each wearing
-// `connected · read 2h ago` — those connections belong to the ACCOUNT, gym does not read them, and a
-// row inventing a freshness it never observed is the same defect as a receipt counting rows it never
-// served. The row says it names none, which is the true version of the same sentence.
+// Every row writes on the tap: no Save button and no dirty state.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -136,11 +114,7 @@ private fun BackRow(label: String, onBack: () -> Unit) {
     }
 }
 
-// ROW 1 — the display transform, and the promise under it. Storage is kilograms and stays
-// kilograms: nothing this toggle does reaches a write, and no history is rewritten by it. What the
-// second line adds is this surface's own truth — the choice is kept and travels, and this phone
-// does not yet draw it. It does not say "your account", because this room is anonymous-first and a
-// lifter who has not signed in has none: the choice is on the device until a sign-in claims it.
+// A display transform only: storage is kilograms and nothing this toggle does reaches a write.
 @Composable
 private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
     SettingCard {
@@ -179,9 +153,7 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
     }
 }
 
-// ROW 2 — the dial the whole product's rest clock reads, and its first position is off. Off is not
-// a missing value: the clock still counts the gap between two sets, it simply counts UP, against
-// nothing, and makes no sound at all.
+// Off is not a missing value: the clock still counts the gap between two sets, upward, and silently.
 @Composable
 private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggleSound: () -> Unit) {
     SettingCard {
@@ -216,25 +188,13 @@ private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggl
             }
         }
         ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
-        // THE ONE WAY TO BE COUNTED DOWN WITHOUT ASKING, said where the dial is rather than left
-        // for a lifter to discover mid-set. A routine may carry its own rest against a movement,
-        // and that line outranks this dial, `off` included. It arrives written into a routine an
-        // agent created, or through a proposal the lifter applied — never from an agent reaching
-        // into a routine that already stands. Nothing on this screen edits it, so the honest move
-        // is to name it.
+        // A routine's own rest against a movement outranks this dial, `off` included.
         Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only a change to that routine can move it.")
-        // The honest half, and it says only what this build actually does. The room holds the
-        // screen awake for the whole workout (GymRoom's FLAG_KEEP_SCREEN_ON), and the chime is a
-        // sleep inside the app scheduled against the instant the set landed. NOTHING here books an
-        // alarm with the system — no AlarmManager, no notification, no wake lock — so the app going
-        // away takes the chime with it, and the row says that rather than promising otherwise.
+        // The chime is a sleep inside the app: no AlarmManager, no notification, no wake lock.
         Caption("Windmill holds the screen awake while you train, and the chime is scheduled inside the app. It is not a system alarm — close Windmill and it goes with it.")
     }
 }
 
-// ROW 4 — how a logged set says so without being looked at. The design's own note is per-surface,
-// so this one is written for the surface it is drawn on: this phone has a haptic, and the toggle
-// under it is the tone the web falls back to.
 @Composable
 private fun ConfirmRow(
     preferences: GymPreferences,
@@ -249,32 +209,10 @@ private fun ConfirmRow(
     }
 }
 
-// ROW 5 — THE CONNECTED LOG, and the only row in this section that changes nothing at the rack. It
-// is here because §I puts it here and because this is where a lifter comes looking for it: both
-// verbs the design hangs on it, connecting and disconnecting, happen on the web, so the row is what
-// gym has to say about a grant it does not own, plus the door.
-//
-// THE DOOR GOES TO THE CONNECTIONS LIST AND NOT TO THE SETUP PAGE, because that is where the two
-// things a lifter opens this row for actually are: what is connected right now, and Disconnect. §D
-// sends them to "Settings → Gym → Connected log" for that, and no such control exists on any
-// surface — the list is the SHELL's, in account settings, since a grant belongs to the account
-// rather than to one product. Setting a NEW one up is the invitation's door (ConnectInvitation), and
-// the page this one opens carries its own way there.
-//
-// NOTHING ON IT IS SOLD. There is no price, no tier, no lock and no checkout behind the chevron —
-// no entitlement gates a tool, a screen or a tap in this product (the plan is read once, under Ask,
-// and only to size a ceiling — ConnectedLog says where), so a row implying one would advertise
-// something the code does not do. `ConnectedLog` holds every sentence and says which line of the
-// server's tool catalog each one was read off.
-//
-// SIGNED OUT IT IS STILL DRAWN, and it gains one line rather than losing the rest. What a connected
-// tool can and cannot do is a fact about this product either way; what changes is that there is no
-// account log to reach yet, and this room is anonymous-first, so that is said plainly instead of
-// left for a lifter to discover on a page that asks them to sign in.
+// The door goes to the CONNECTIONS LIST and not the setup page: that list is the shell's, in account
+// settings, since a grant belongs to the account rather than to one product.
 @Composable
 private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
-    // Told to fail QUIETLY, as every other door onto the web in this room is: a phone with no
-    // browser is the only way this misses, and everything the row says is still true without it.
     val web = LocalUriHandler.current
     SettingCard {
         Row(
@@ -329,15 +267,7 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
     }
 }
 
-// THE ROW THAT IS USUALLY NOT THERE — what this phone is holding for nobody. A build from before
-// gym filed its shelf under a seat wrote one shelf with no name on it, and nothing on disk says
-// whether it was this phone's owner or the person who held it before them. So it is not handed to
-// whoever opens the app, and it is not deleted behind their back either: it waits here for a human
-// to answer the only question that can settle it.
-//
-// IT NAMES NOTHING IT HOLDS. The count and the days, and no movement, no routine and no numbers —
-// whoever is reading this screen may not be who lifted them, and a row that listed `Front Squat
-// 102.5` would be the leak it exists to close.
+// What this phone is holding for nobody: a shelf with no name on it, neither handed over nor deleted.
 @Composable
 private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -384,8 +314,6 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
                     .clickable {
-                        // Two taps, because nothing here has landed on any log: this is the last
-                        // copy of somebody's training, and one mistap would be the whole of it.
                         if (!confirmingDiscard) {
                             confirmingDiscard = true
                             return@clickable
@@ -407,16 +335,11 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
         }
         Caption(
             if (isSignedIn) "Claiming adds it to the account you are signed in as."
-            // Not a hurdle for its own sake: only the person whose account it is can say this is
-            // theirs, and letting a signed-out phone say it would hand the training to whoever
-            // signs in next — which is exactly what quarantining it refuses to do.
             else "Sign in first to claim it. Nobody signed in can say whose training this is, " +
                 "and it will not be handed to the next account on its own.")
     }
 }
 
-// Counts, in the product's own words and never a bare number with a noun after it: a phone holding
-// one workout and nothing else must not read "1 workouts · 0 routines · 0 movements".
 private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
     val parts = buildList {
         if (live) add("a workout that was still open")
@@ -429,9 +352,6 @@ private fun heldLine(held: LocalLog.Unattributed, live: Boolean): String {
 
 private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
-// WHERE THE THINGS THIS SECTION DOES NOT HOLD ACTUALLY ARE — two facts of wayfinding, and no longer
-// the paragraph around them. That gym does not restate the account screens and owns no theme switch
-// is an argument for how this section is built; a lifter hunting for Delete needs the address.
 @Composable
 private fun ClosingNote() {
     Column(
@@ -447,9 +367,7 @@ private fun ClosingNote() {
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkFaint,
         )
-        // THE CONNECTED LOG CAME OUT OF THIS SENTENCE IN W8 and into a row of its own, so what is
-        // left is the export — still a web page, because this app's one API client reads JSON and
-        // the export route answers CSV. It is named rather than drawn as a door that opens nothing.
+        // The export is a web page: this app's one API client reads JSON and that route answers CSV.
         Text(
             "Your CSV export is on the web — this phone has no screen for it yet.",
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
@@ -477,8 +395,6 @@ private fun Caption(line: String) {
     Text(line, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
 }
 
-// The whole row is the target and not the switch alone — a 46dp pill beside a sentence is the one
-// thing a chalked thumb will miss.
 @Composable
 private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
     Row(
@@ -514,8 +430,6 @@ private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
     }
 }
 
-// The dial's own spelling, and the one place `off` is a word rather than a blank — a timer nobody
-// set is a decision and must read like one.
 private fun restLabel(seconds: Int?): String {
     if (seconds == null) return "off"
     return Readout.clock(seconds * 1000L)

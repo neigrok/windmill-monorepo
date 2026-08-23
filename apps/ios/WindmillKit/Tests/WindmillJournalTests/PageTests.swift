@@ -2,9 +2,6 @@ import XCTest
 @testable import WindmillJournal
 @testable import WindmillPlatform
 
-// The journal's domain: the writer's calendar, and the one rule that decides which of two devices
-// wrote the page you end up reading.
-
 final class LocalDayTests: XCTestCase {
     func testOnlyAWellFormedDayIsADay() {
         XCTAssertNotNil(LocalDay(iso: "2026-07-20"))
@@ -13,8 +10,6 @@ final class LocalDayTests: XCTestCase {
         }
     }
 
-    // The ISO shape sorts lexicographically into true date order — the property the canvas relies
-    // on to draw oldest-first without parsing anything.
     func testTextOrderIsDateOrder() {
         let days = ["2026-07-09", "2025-12-31", "2026-01-01", "2026-07-10"].compactMap { LocalDay(iso: $0) }
         XCTAssertEqual(days.sorted().map(\.iso),
@@ -27,15 +22,11 @@ final class LocalDayTests: XCTestCase {
         XCTAssertEqual(LocalDay(iso: "2024-03-01")!.advanced(by: -1).iso, "2024-02-29", "2024 is a leap year")
     }
 
-    // The window the canvas loads is "today back sixty days", and it must be sixty days whichever
-    // side of a month end — and a year end — today falls on.
     func testTheSixtyDayWindowIsSixtyDays() {
         XCTAssertEqual(LocalDay(iso: "2026-01-15")!.advanced(by: -60).iso, "2025-11-16")
         XCTAssertEqual(LocalDay(iso: "2026-03-01")!.advanced(by: -60).iso, "2025-12-31")
     }
 
-    // A day is the device's calendar day, and a page opened at 23:04 or 00:10 is not the same page.
-    // Nothing here may drift with the hour.
     func testTheDayIsTheCalendarDayNotAnInstant() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
@@ -64,8 +55,6 @@ final class PageConvergenceTests: XCTestCase {
         XCTAssertEqual(Page.winner(of: incoming, and: nil), incoming)
     }
 
-    // The same write arriving twice — by a PUT reply and by a window read — must not look like a
-    // change, or the canvas would flicker on every reconnect.
     func testAnIdenticalStampKeepsTheIncumbent() {
         let held = page("2026-07-20", "held", stamp: "100:0:d-a")
         let echo = page("2026-07-20", "echo", stamp: "100:0:d-a")
@@ -75,13 +64,10 @@ final class PageConvergenceTests: XCTestCase {
     func testAWrittenDayIsAnyDaySomeoneShowedUpFor() {
         XCTAssertFalse(Page(day: LocalDay(iso: "2026-07-20")!).isWritten)
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, body: "a line").isWritten)
-        // A mood with no words is still a day that was lived, and is still drawn.
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, mood: .m3).isWritten)
         XCTAssertTrue(Page(day: LocalDay(iso: "2026-07-20")!, energy: .e1).isWritten)
     }
 
-    // Out-of-range values clamp to unset: a bad number can only narrow what it says, never invent
-    // a mood someone did not choose.
     func testOutOfRangeScalesClampToUnset() {
         XCTAssertEqual(Mood(clamping: 9), .none)
         XCTAssertEqual(Mood(clamping: -1), .none)
@@ -109,8 +95,6 @@ final class PageConvergenceTests: XCTestCase {
         XCTAssertEqual(again, page)
     }
 
-    // The backend answers a never-written day with 404, and a sparse page omits fields. Neither is
-    // an error the canvas should ever see.
     func testASparsePageDecodesToItsDefaults() throws {
         let page = try JSONDecoder().decode(Page.self, from: Data(#"{"day":"2026-07-20"}"#.utf8))
         XCTAssertEqual(page.body, "")

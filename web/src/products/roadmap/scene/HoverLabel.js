@@ -1,12 +1,8 @@
-// The hover name tip (editing-spec v2 §1.1): hovering a node shows only its
-// label on a dark bark pill just below the disc — never structural chrome.
-// A scene overlay repositioned from the render loop, like AffordanceLayer;
-// styled inline so it owns no CSS. Hidden when nothing is hovered or the
-// hovered node has no name yet.
+// Hover name tip: a pill below the hovered node, repositioned from the render loop.
 import { NODE_SIZE } from '../theme.js';
 
 const NODE_RADIUS = NODE_SIZE * 0.42;
-const LABEL_GAP = 10; // screen px between the node's rim and the pill
+const LABEL_GAP = 10; // screen px
 
 export class HoverLabel {
   constructor(canvas) {

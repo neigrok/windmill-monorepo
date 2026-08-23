@@ -4,9 +4,6 @@ import assert from 'node:assert/strict';
 import { SearchIndex } from '../../../../src/products/journal/search/searchIndex.js';
 import { contentWords } from '../../../../src/products/journal/search/tokenize.js';
 
-// A deterministic stand-in for a real embedder: a passage becomes a unit vector over a fixed content
-// vocabulary, so cosine is just shared-content-word overlap — enough to pin the index's ranking, its
-// batching, and its stamp-dedup without loading a model. It records every embedAll batch it's handed.
 const VOCAB = ['calm', 'lake', 'felt', 'deadline', 'anxious', 'passed', 'walk', 'quiet'];
 
 class FakeEmbedder {

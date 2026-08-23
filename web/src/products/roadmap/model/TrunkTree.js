@@ -1,28 +1,14 @@
-// Elects one "trunk" (primary) parent per node — a spanning arborescence over
-// the DAG — and derives each node's sector: branch root, trunk depth, leaf
-// weight. Same-kind parents win; ties go to the shallowest, then smallest id.
-// Trunk children keep sibling order (cmpOrder — fractional-index key, then
-// creation time, then id), so a layout over the trunk is stable no matter how
-// the underlying node list happens to be ordered (HTTP load vs lattice).
-// A branch starts wherever the trunk crosses a color boundary or hangs off the
-// center, so sectors are affinity runs (topological runs when uncolored).
-// Pure — no WebGL, no React.
+// Elects one trunk parent per node, then derives each node's branch root, trunk depth and
+// leaf weight.
 
-// The total, stable order of two siblings — the whole layout's sort key, shared by the trunk
-// children here and the roots in RadialLayoutEngine. Lexicographic over (order, createdAt, id):
-// a node's fractional-index `order` decides first (an empty '' sorts before any assigned key,
-// so un-ordered migration data lands ahead of anything explicitly placed); ties and the all-''
-// case fall back to the creation stamp, then id. Identical data ⇒ identical order on every
-// device — the determinism contract. A node projected without these fields (a non-lattice
-// TreeData) simply sorts by id, exactly as before.
+// Sibling order is lexicographic over (order, createdAt, id); an empty `order` sorts first.
 const ZERO_STAMP = { ms: 0, counter: 0, actor: '' };
 
 export function cmpOrder(a, b) {
   const orderA = a.order ?? '';
   const orderB = b.order ?? '';
   if (orderA !== orderB) return orderA < orderB ? -1 : 1;
-  // A missing createdAt (a non-lattice TreeData node) is compared as the zero stamp, not skipped —
-  // skipping made the compare non-transitive when stamped and un-stamped siblings mixed in one set.
+  // A missing createdAt compares as the zero stamp; skipping it makes the compare non-transitive.
   const stampA = a.createdAt ?? ZERO_STAMP;
   const stampB = b.createdAt ?? ZERO_STAMP;
   if (stampA.ms !== stampB.ms) return stampA.ms < stampB.ms ? -1 : 1;
@@ -66,7 +52,6 @@ export class TrunkTree {
 
       this.primaryParentById.set(id, elected.id);
       this.trunkDepthById.set(id, this.trunkDepthById.get(elected.id) + 1);
-      // a branch starts where the trunk crosses a color boundary or hangs off the center
       const cutsBranch = elected.id === this.centerNodeId || elected.color !== node.color;
       this.branchRootById.set(id, cutsBranch ? id : this.branchRootById.get(elected.id));
       this.trunkChildrenById.get(elected.id).push(id);

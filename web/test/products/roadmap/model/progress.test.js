@@ -1,10 +1,3 @@
-// The three-state machine and the milestone sentence, lifted out of SkillTreeView by Wave 17.
-// Two properties carry the whole extraction: the progress handed in comes back untouched (the
-// component keeps rendering off the old sets until React swaps them, so an in-place mutation
-// would paint the new state a frame early and persist a set nobody chose), and every transition
-// clears the stamps it invalidates — a step walked back to "not started" that keeps its
-// completedAt reads as done to the share card's period math, hours later, silently.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

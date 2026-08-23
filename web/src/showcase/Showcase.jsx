@@ -18,17 +18,12 @@ import {
   Toast,
   Tabs,
 } from '../design-system/index.js';
-// A product's specimens arrive through the one module it declares them in — never by reaching
-// into its files. The boundary test enforces exactly that shape: this surface may import
-// products/<p>/showcase.js and nothing else out of a product.
+// A product's specimens arrive only through products/<p>/showcase.js; the boundary test enforces
+// that this surface imports nothing else out of a product.
 import { SkillNode, SkillConnector, ProgressBar, GalleryCard, ShareStats } from '../products/roadmap/showcase.js';
 
-/* ------------------------------------------------------------------ *
- * Skill-tree demo — the signature Windmill metaphor.
- * Nodes are positioned by their circle-center (cx, cy); a SkillNode of
- * size S has its circle center at (S/2 + 20, S/2 + 12) from its top-left,
- * so we back that out to place the absolute node and align connectors.
- * ------------------------------------------------------------------ */
+/* Skill-tree demo. Nodes are positioned by their circle-center (cx, cy); a SkillNode of size S has
+   its circle center at (S/2 + 20, S/2 + 12) from its top-left, which is backed out here. */
 const NODE_SIZE = 56;
 
 const TREE_NODES = [

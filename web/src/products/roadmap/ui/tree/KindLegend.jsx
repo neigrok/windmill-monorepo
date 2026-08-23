@@ -1,12 +1,4 @@
-// The on-canvas color key that is also its own editor (F6). A kind names one of six
-// hues; a node's color IS its hue. The parent docks this card bottom-left in screen
-// space and supplies each kind's `count` — we never read nodes or compute counts, we
-// only render what we're given. Collapsed we're a pill of the in-use dots; expanded
-// we're a row per kind. At rest a row is just swatch + name; on card-hover the
-// "working face" surfaces — counts, remove ×, "+ Add a kind", the collapse chip.
-// Single-click a row highlights that kind; double-click the label opens the plaque
-// (label + "what belongs here?" description). The swatch opens a six-hue popover with
-// the taken hues disabled. Read-only (no edit handlers) drops all of that chrome.
+// A kind names one of six hues; a node's color IS its hue. The parent supplies each kind's `count`.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
@@ -43,8 +35,7 @@ export function KindLegend({
   const inUse = kinds.filter((k) => k.count > 0);
   const takenHues = new Set(kinds.map((k) => k.hue));
   const freeHue = NODE_COLOR_NAMES.find((h) => !takenHues.has(h)) || null;
-  // Editing shows every kind (so empties can be recoloured or removed); a read-only
-  // legend only voices the hues actually on the canvas.
+  // Editing shows every kind so empties can be recoloured or removed; read-only voices only the hues in use.
   const rows = editable ? kinds : inUse;
 
   useEffect(() => {
@@ -54,8 +45,7 @@ export function KindLegend({
     input?.select();
   }, [editingId]);
 
-  // Click-away closes whichever floating layer is open: an editing plaque commits, a
-  // swatch popover just dismisses.
+  // Click-away: an editing plaque commits, a swatch popover just dismisses.
   useEffect(() => {
     if (editingId === null && swatchId === null) return;
     const onDown = (event) => {
@@ -71,8 +61,7 @@ export function KindLegend({
     onOpenChange?.(next);
   };
 
-  // Single/double grammar borrowed from the checklist: a lone click schedules the
-  // highlight; a double-click on the label cancels it and opens the plaque instead.
+  // A lone click schedules the highlight; a double-click on the label cancels it and opens the plaque.
   const scheduleHighlight = (id) => {
     if (clickTimer.current) return;
     clickTimer.current = setTimeout(() => {
@@ -205,7 +194,6 @@ export function KindLegend({
               cursor: editing ? 'default' : 'pointer',
             }}
           >
-            {/* swatch — opens the six-hue popover when recolouring is on offer */}
             <div ref={swatchId === k.id ? swatchRef : undefined} style={{ position: 'relative', flexShrink: 0, marginTop: editing ? 3 : 0 }}>
               <button
                 type="button"
@@ -269,7 +257,6 @@ export function KindLegend({
               )}
             </div>
 
-            {/* body — the plaque when editing, otherwise the label voice */}
             {editing ? (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }} onClick={(e) => e.stopPropagation()}>
                 {onRename ? (
@@ -345,7 +332,6 @@ export function KindLegend({
               </span>
             )}
 
-            {/* trailing working face — a count for in-use kinds, a remove × for empties */}
             {!editing && hover && (
               k.count > 0 ? (
                 <span style={{ flexShrink: 0, fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
@@ -375,7 +361,6 @@ export function KindLegend({
         );
       })}
 
-      {/* "+ Add a kind" — hover-revealed, only while a free hue remains to hand out */}
       {hover && onAdd && freeHue && (
         <button
           type="button"

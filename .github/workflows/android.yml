@@ -1,15 +1,6 @@
 name: Android CI
 
-# Monorepo: the Android superapp lives under apps/android. Path-filtered to apps/android and
-# packages/api-contract: the weight ladder's truth is packages/api-contract/gym-ladder.json and the
-# Kotlin copy of the rule runs it as a test — the same drift gate as ios.yml and web.yml, so editing
-# the golden now fires all three workflows and a rule changed in one language fails in the others.
-#
-# Two jobs share this file. build-and-test arms on every push and pull_request that touches the
-# app; release arms only on an android-v* tag, because an APK handed to a person is a claim about a
-# version — "this is 0.2.0" — and a branch head makes no such claim. The tag is the claim; the
-# workflow just makes it installable. (GitHub does not evaluate the paths filter for tag pushes, so
-# the paths list below gates branch pushes only — the tags line is not shadowed by it.)
+# GitHub does not evaluate the paths filter for tag pushes: the paths list gates branch pushes only.
 
 on:
   push:
@@ -45,21 +36,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The runner image ships the Android SDK with licenses pre-accepted, so only the JDK needs
-      # picking. cache: gradle keys on the gradle build files, sparing the dependency downloads.
+      # The runner image ships the Android SDK with licenses pre-accepted; only the JDK needs picking.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
-      # `build` assembles every module and runs the whole unit-test suite, including the ladder
-      # against packages/api-contract/gym-ladder.json. That test finds the golden by walking up
-      # from the project directory, so the whole repo must be checked out — never a bundled copy.
+      # The ladder test finds packages/api-contract/gym-ladder.json by walking up from the project
+      # directory, so the whole repo must be checked out.
       - run: ./gradlew build
 
-  # needs: the release APK must come from a run whose full suite is green — a tag push re-proves
-  # the commit even when the same sha already passed as a branch push.
   release:
     if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'
     needs: build-and-test
@@ -91,16 +78,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # Release signing is armed by four repo secrets; when none are set, app/build.gradle.kts
-      # falls back to the DEBUG key on its own and this workflow must not fail for it. A
-      # debug-signed APK is sideload-ready and honest about what it is: not a store identity, and
-      # not updatable in place once the real key exists. Arm the real key once with:
-      #   gh secret set WINDMILL_ANDROID_KEYSTORE_B64 --body "$(base64 -i windmill.keystore)"
-      #   gh secret set WINDMILL_ANDROID_KEYSTORE_PASSWORD
-      #   gh secret set WINDMILL_ANDROID_KEY_ALIAS
-      #   gh secret set WINDMILL_ANDROID_KEY_PASSWORD
-      # Some-but-not-all set is a misconfiguration, not a choice — that fails loudly rather than
-      # quietly shipping a debug-signed build that looks intentional.
+      # With no keystore secrets set, app/build.gradle.kts falls back to the debug key.
       - name: Arm signing
         env:
           KEYSTORE_B64: ${{ secrets.WINDMILL_ANDROID_KEYSTORE_B64 }}
@@ -129,8 +107,7 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Signing: **release keystore**" >> "$GITHUB_STEP_SUMMARY"
 
-      # run_number as versionCode: monotonic across every run of this workflow, so a later tag can
-      # never ship a smaller code than an earlier one.
+      # run_number as versionCode: monotonic, so a later tag never ships a smaller code.
       - name: Assemble the release APK
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -147,8 +124,6 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: gh release create "$GITHUB_REF_NAME" "windmill-$VERSION.apk" --verify-tag --generate-notes
 
-      # The dispatch path is a rehearsal: same build, same signing decision, but the APK lands as
-      # an actions artifact — a release without a tag would be a lie.
       - name: Upload the dry-run APK
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v5

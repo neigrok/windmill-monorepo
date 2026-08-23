@@ -49,22 +49,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// THE END OF A SESSION — three facts, at most one line of meaning, and the movement-by-movement
-// comparison under it. Everything here RENDERS the `Review` the domain computed and nothing here
-// computes one: no e1RM, no record decision, no matching of one session against another. A second
-// opinion drawn on the phone would be the product arguing with itself in its own loudest pixel.
-//
-// THE EMPTY SLOT IS A DECISION. On the ~190 sessions in 200 that earn nothing the record line is
-// simply absent and nothing takes its place: no encouragement, no streak, no score. The comparison
-// is a fact with a DIRECTION and never a grade, which is why nothing in it is a percentage and
-// nothing in it is coloured.
-//
-// The one thing under the review is the coach share, and it is not a share SHEET: no social
-// targets, no image, nothing discoverable. It mints one revocable, expiring link to this one
-// workout. It is not drawn over a session that ended early — screen 11's question there is
-// keep-or-discard, and a second offer beside a delete button competes with it.
-//
-// The native twin of web/src/products/gym/review.js.
+// Everything here RENDERS the `Review` the domain computed and nothing here computes one.
 object Finish {
     data class Head(val title: String, val subtitle: String, val at: String)
 
@@ -74,9 +59,6 @@ object Finish {
 
     data class Comparison(val title: String, val rows: List<Row>)
 
-    // A short session is not a failure and is not congratulated either — it is asked about, and the
-    // word above it is the only thing that changes. Whether one came before it is a question about
-    // the LOG, not about this session, which is why `first` is handed in.
     fun head(startedAtMs: Long, finishedAtMs: Long, routine: String?, slight: Boolean, first: Boolean): Head =
         Head(
             title = if (slight) "Ended early" else "Session finished",
@@ -84,20 +66,15 @@ object Finish {
             at = "${Readout.day(startedAtMs)} · ${Readout.time(startedAtMs)} – ${Readout.time(finishedAtMs)}",
         )
 
-    // A session with no LOADED working set has no honest one-rep estimate — a chin-up at zero and a
-    // band-assisted pull-up at −20 have none — so the tile says nothing with a dash rather than
-    // printing a zero nobody lifted.
+    // A session with no LOADED working set has no honest one-rep estimate, so the tile says nothing
+    // with a dash rather than printing a zero nobody lifted.
     fun tiles(stats: ReviewStats): List<Tile> = listOf(
         Tile(Readout.duration(stats.durationMs), "Duration"),
         Tile(stats.workingSets.toString(), "Working sets"),
         Tile(stats.topE1rm?.let(Readout::weight) ?: "—", "Top e1RM"),
     )
 
-    // The rare loud line. The mark that was passed is named beside the one that passed it, because
-    // a record with nothing to compare against is a first entry, and a first entry is not a record.
-    //
-    // A kind this build has never heard of draws NOTHING. The slot is allowed to be empty, and a
-    // sentence assembled out of a rule we do not know is the one thing it may not hold.
+    // A kind this build has never heard of draws NOTHING; the slot is allowed to be empty.
     fun recordSentence(record: PersonalRecord?, catalog: List<Exercise>): String? {
         if (record == null) return null
         val previous = record.previous ?: return null
@@ -112,8 +89,6 @@ object Finish {
         }
     }
 
-    // "Against last Legs" — the same routine, the last time it ran, in the order this session
-    // performed its movements.
     fun comparison(against: Against?, catalog: List<Exercise>): Comparison? {
         if (against == null) return null
         return Comparison(
@@ -128,21 +103,9 @@ object Finish {
         )
     }
 
-    // Which reference the arrow points from: the PLAN when the session had one for that movement,
-    // and last time when it did not — the plan is what the lifter agreed to and the log is what
-    // happened. The one row that is not an arrow is the one that fell short: "planned 3×12 · did
-    // 3×10" says the thing an arrow cannot.
-    //
-    // WHAT MAY BE CALLED SHORT is narrow, and it is review.js `detailOf`'s predicate exactly.
-    // `now.sets` is not what a reader assumes: it counts only the sets at the TOP LOAD, so a
-    // session that ramped 100·105·110·110·110 through every one of five planned sets arrives as
-    // `sets: 3`, and a set-count term told a lifter who finished the workout that they did not.
-    // Reps are the only axis this wire can be read short on — and only when the bar did not go up,
-    // because heavier for fewer is a different session rather than a smaller one.
-    //
-    // AN OPEN ROW IS NOT A PLAN and is never drawn as one: a routine that declined to name a target
-    // froze as an absence, so the arrow points from last time — the same reference a movement no
-    // plan named at all gets — rather than from a `3 × max` this session was never asked for.
+    // Which reference the arrow points from: the PLAN when the session had one for that movement, and
+    // last time when it did not. `now.sets` counts only the sets at the TOP LOAD, so reps are the only
+    // axis this wire can be read short on.
     private fun detail(movement: AgainstMovement): String {
         val planned = movement.planned
         val sets = planned?.sets
@@ -159,16 +122,12 @@ object Finish {
         return "${top(sets, planned.reps, planned.weightKg)} → ${top(movement.now)}"
     }
 
-    // Spaced when the target is absent and tight when it is named — `3 × max` beside `5×5` — which
-    // is review.js `countLabel`'s own spelling, so one comparison row reads the same on both
-    // surfaces. A movement taken to max never fell short of a rep target it does not have.
     private fun count(sets: Int, reps: Int?): String {
         if (reps == null) return "$sets × ${Readout.repTarget(null)}"
         return "$sets×$reps"
     }
 
-    // Zero is not a load, it is the absence of one: a chin-up reads `3×8`, and a band-assisted
-    // pull-up at −20 still reads its load, because that is a real point on the number line here.
+    // Zero is not a load, it is the absence of one; a band-assisted −20 still reads its load.
     private fun top(sets: Int, reps: Int?, weightKg: Double?): String {
         if (weightKg == null || weightKg == 0.0) return count(sets, reps)
         return "${count(sets, reps)} @ ${Readout.weight(weightKg)}"
@@ -177,9 +136,7 @@ object Finish {
     private fun top(effort: Effort): String = top(effort.sets, effort.reps, effort.weightKg)
 }
 
-// A session that has just closed, held by the room until the lifter is done reading it. The sets
-// travel with it because the log has let go of them by now — the queue drops a delivered row the
-// moment its session closes — and "Keep this as a routine" is composed from exactly those sets.
+// The sets travel with it because the log has let go of them by now.
 data class FinishedSession(
     val session: Session,
     val sets: List<TrainingSet>,
@@ -189,20 +146,11 @@ data class FinishedSession(
     val routine: String? get() = session.plan?.routine
     val slight: Boolean get() = review?.slight ?: false
 
-    // The offer belongs to a session that had nothing written down for it — a session started FROM
-    // a routine already has one. Nothing is created until the tap, declining costs nothing, and the
-    // offer comes back next session.
-    //
-    // NEVER OVER A SLIGHT SESSION. Screen 11 wins: a session too slight to say anything about is
-    // too slight to be worth keeping as a routine, and drawing both would ask the lifter to name a
-    // program and throw it away in the same scroll — two primary buttons and two different "keep"s.
+    // Offered only for a session that had nothing written down for it, and never over a slight one.
     val offersRoutine: Boolean
         get() = !slight && session.routineId == null && sets.any { it.kind == SetKind.Working }
 }
 
-// ONE DRAWING OF A REVIEW, used by the screen a session ends on and by the screen it is revisited
-// from. The three facts, the rare record line and the comparison are one readout, and two copies of
-// it would be two chances for the product to say the same session two ways.
 @Composable
 fun ReviewReadout(review: Review?, catalog: List<Exercise>) {
     Column(
@@ -214,9 +162,6 @@ fun ReviewReadout(review: Review?, catalog: List<Exercise>) {
     }
 }
 
-// The two things the domain says about a session that its three facts do not. Split out because a
-// session read back later states those three facts in its own head (§G17), and a second copy of
-// `58m` underneath would be two answers to one question.
 @Composable
 fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
     Column(
@@ -224,8 +169,6 @@ fun ReviewRemarks(review: Review?, catalog: List<Exercise>) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         if (review == null) {
-            // The read did not come back, and nothing takes its place — drawing no record where a
-            // record may have happened is why this sentence is here rather than a blank.
             Text(
                 "the log didn’t answer — the session is saved",
                 style = GymType.numeral(13),
@@ -264,8 +207,6 @@ private fun Tiles(tiles: List<Finish.Tile>) {
     }
 }
 
-// The only loud thing in the product, and at most one per session. Gold is a KIND of moment here,
-// never a state — nothing else on this screen is allowed to borrow it.
 @Composable
 private fun RecordLine(sentence: String) {
     Column(
@@ -316,9 +257,6 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
 fun FinishScreen(
     finished: FinishedSession,
     catalog: List<Exercise>,
-    // Whether the routine WAS kept, answered by the room after the log said so. Held outside this
-    // screen on purpose: a screen that hid the offer on the tap would be telling the lifter their
-    // program had changed on the strength of a request that may not have landed.
     kept: Boolean,
     coach: CoachDoors,
     onKeepRoutine: (String) -> Unit,
@@ -356,9 +294,6 @@ fun FinishScreen(
             KeepAsRoutine(finished, catalog, routineName, { routineName = it }, onKeepRoutine, onDone)
         }
 
-        // Not over a session that ended early: that screen is asking whether to keep the workout at
-        // all, and offering to send it to somebody in the same breath is two questions where the
-        // design allows one.
         if (!finished.slight) {
             CoachShareCard(coach, finished.session.id)
         }
@@ -445,9 +380,7 @@ private fun KeepAsRoutine(
     }
 }
 
-// A WHOLE WORKOUT DESTROYED, and it sits here because a three-set session is usually a phone left
-// running rather than a workout. It deletes for good: nothing on this screen may suggest it can be
-// got back — and nothing anywhere else in this product does either, §G18's `Delete set` included.
+// It deletes for good: nothing on this screen may suggest it can be got back.
 @Composable
 private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
     if (finished.slight) {

@@ -41,21 +41,7 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// FIX A SET — §G18, over the session read back. The same three controls the logger has, in the same
-// order and at the same sizes, because a lifter who has learned one geometry should not have to
-// learn a second to repair what it produced. THE LADDER IS THE LOGGER'S OWN (`Ladder`): a second
-// copy of the step rule would be a screen where 82.5 and 85 are one tap apart on one surface and two
-// on another.
-//
-// NOTHING HERE PROMISES RECOVERY. There is no trash, no "recoverable for 30 days" and no Settings
-// destination — `Delete set` takes the row off the log, and the only way back is the window this
-// sheet's caller holds open for a few seconds afterwards. The line beside it is about the program
-// and not about the set: fixing what was lifted never moves what the routine asks for next week.
-//
-// The sheet's own dial is `remember` and not `rememberSaveable`, deliberately: an activity recreated
-// mid-edit closes the sheet with nothing sent, so the only thing lost is a number that had not been
-// saved — and the alternative, half-restoring an editor over a set the lifter can no longer see, is
-// the shape that saves the wrong row.
+// The dial is `remember` and not `rememberSaveable`: a recreation closes the sheet with nothing sent.
 @Composable
 fun FixSheet(
     set: TrainingSet,
@@ -80,9 +66,8 @@ fun FixSheet(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Text("Fix this set", style = WindmillFont.display(22), color = GymSkin.ink)
             Spacer(Modifier.weight(1f))
-            // Which set, in the log's own numbering where the log has spoken for it — a delete
-            // leaves a gap and the numbers after it do not close up, so the position in the list is
-            // only ever the fallback for a session no account has numbered yet.
+            // The log's own numbering where it has spoken — a delete leaves a gap — and the list
+            // position is only the fallback.
             Text("$movement · set $setNumber", style = GymType.numeral(11), color = GymSkin.inkFaint)
         }
 
@@ -91,8 +76,7 @@ fun FixSheet(
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // A −102.5 is the widest thing this readout ever holds; it shrinks rather than
-            // truncating, exactly as the logger's does — half a weight is worse than a small one.
+            // −102.5 is the widest this readout holds; it shrinks rather than truncating.
             BasicText(
                 Readout.weight(weightKg),
                 maxLines = 1,
@@ -121,8 +105,6 @@ fun FixSheet(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    // The fine step is the one a program is written in, so it reads a shade louder
-                    // than the plate change either side of it — §G18 draws exactly that.
                     Text(
                         label,
                         style = GymType.numeral(if (index == 0 || index == 3) 15 else 16, FontWeight.SemiBold),
@@ -139,8 +121,6 @@ fun FixSheet(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // The floor is a CLAMP INTO the range and never a hold at the value, and it is
-                // `Ladder`'s rule rather than this screen's: the golden pins one answer per language.
                 RepStep("−") { reps = Ladder.bumpReps(reps, direction = -1) }
                 Text(reps.toString(), style = GymType.numeral(22, FontWeight.Bold), color = GymSkin.ink,
                      modifier = Modifier.widthIn(min = 42.dp))
@@ -162,8 +142,6 @@ fun FixSheet(
                         .clickable { kind = entry },
                     contentAlignment = Alignment.Center,
                 ) {
-                    // A warmup is drawn in the ink that says it counts toward nothing, whether or
-                    // not it is the one chosen — the segment names a kind, not a state.
                     Text(
                         entry.wire,
                         style = GymType.numeral(12, if (chosen) FontWeight.Bold else FontWeight.SemiBold),
@@ -194,15 +172,9 @@ fun FixSheet(
                 Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onDelete),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                // Alarm ink, which in this room means a write that failed — and a delete, which is
-                // the one gesture that costs something. It is a word and not a button: the primary
-                // action above is where the thumb lands, and this is not on the way to it.
                 Text("Delete set", style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.alarmInk)
             }
             Spacer(Modifier.weight(1f))
-            // THE CAPTION OF THE WHOLE SCREEN, said where the destructive gesture is: the log moves
-            // and the routine does not. A session nobody planned has no program to reassure anyone
-            // about, so the line is absent rather than addressed to a routine that does not exist.
             routine?.let {
                 Text("$it keeps its own numbers", style = GymType.numeral(12), color = GymSkin.inkFaint)
             }
@@ -224,10 +196,6 @@ private fun RepStep(glyph: String, onTap: () -> Unit) {
     }
 }
 
-// The row that stands where a deleted set was, for as long as it can still be taken back. The set
-// is named because this is its last copy while the window is open — "47.5 × 4 deleted" is
-// unrecoverable without knowing what was in it — and the offer disappears the moment the log is
-// told, never as a button that would have to apologise.
 @Composable
 fun WithheldRow(set: TrainingSet, onUndo: () -> Unit) {
     Row(

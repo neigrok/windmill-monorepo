@@ -58,8 +58,7 @@ test('reorderPlan: null when there is nothing to reorder against', () => {
   assert.equal(reorderPlan([], { x: 1, y: 0 }), null);
 });
 
-// An equal-key run (a concurrent-create collision) would make keyBetween throw; the plan must land
-// the node just past the run instead of splitting it.
+// An equal-key run would make keyBetween throw, so the plan lands just past the run.
 test('reorderPlan: an equal-key run is stepped over, never split', () => {
   const sibs = [sib(k[0], ring[0]), sib(k[1], ring[1]), { id: 'dup', order: k[1], x: Math.cos(ring[2]), y: Math.sin(ring[2]) }, sib(k[3], ring[3])];
   const plan = reorderPlan(sibs, { x: Math.cos(Math.PI), y: Math.sin(Math.PI) }); // lands between the two equal keys
@@ -73,9 +72,7 @@ test('reorderPlan: an equal-key run at the tail appends past it without throwing
   assert.ok(plan.key > k[1], `expected ${plan.key} > ${k[1]}`);
 });
 
-// Un-ordered siblings (order '', the lattice default for migrated / MCP / doc-seeded nodes) are not
-// valid fractional keys — keyBetween throws on them directly. reorderPlan must treat '' as an open
-// bound so the first reorder on such a tree never crashes.
+// Order '' is not a valid fractional key, so reorderPlan treats it as an open bound.
 const valid = (key) => typeof key === 'string' && key.length > 0;
 
 test('reorderPlan: an all-empty sibling ring never throws and mints a valid key', () => {

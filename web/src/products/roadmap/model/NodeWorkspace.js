@@ -1,9 +1,5 @@
-// The per-node workspace (F13 — Node workspace): the sub-tasks, a free note, and
-// the saved links that hang off a single step. A pure domain module — every op
-// takes a workspace and returns a NEW one, so callers stay immutable and the
-// persistence layer + arc feed always read a fresh value. No I/O lives here.
-//
-//   workspace: { subtasks: [{ id, label, done }], note: '', links: [{ id, url, title, domain }] }
+// workspace: { subtasks: [{ id, label, done }], note: '', links: [{ id, url, title, domain }] }
+// Every op returns a new workspace.
 
 export function emptyWorkspace() {
   return { subtasks: [], note: '', links: [] };
@@ -51,7 +47,7 @@ export function deleteLink(ws, linkId) {
   return { ...ws, links: ws.links.filter((link) => link.id !== linkId) };
 }
 
-// The gauge behind the node: done/total when there are sub-tasks, else no arc.
+// null when there are no sub-tasks.
 export function arcFraction(ws) {
   const total = ws.subtasks.length;
   if (total === 0) return null;
@@ -59,9 +55,7 @@ export function arcFraction(ws) {
   return done / total;
 }
 
-// Parse a pasted link into { url, title, domain }. A bare host with no scheme
-// gets https:// prepended; the domain is the hostname without www.; the title
-// defaults to that domain. An unparseable string yields no link.
+// A bare host with no scheme gets https:// prepended; null when unparseable.
 function parseLink(rawUrl) {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;

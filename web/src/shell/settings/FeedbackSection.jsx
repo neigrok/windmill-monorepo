@@ -1,6 +1,3 @@
-// Settings §05 · Feedback. The one-line door out to the team, so a signed-in account that
-// hits something rough can say so without leaving the page. Same FeedbackDialog the landing
-// footer opens — this section just owns its open state.
 
 import React, { useState } from 'react';
 import { Button } from '../../design-system';

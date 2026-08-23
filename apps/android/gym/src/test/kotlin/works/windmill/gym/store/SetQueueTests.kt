@@ -11,10 +11,6 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
 
-// What has to be true for a set somebody lifted to survive the queue itself: it comes back from
-// disk, an unreadable file opens empty instead of taking the session down, the walk keeps the
-// server's own order, and every door — delivered, remint, close, forget — moves exactly what it
-// says and nothing else. These are the paths that lose training.
 class SetQueueTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -59,7 +55,6 @@ class SetQueueTests {
             listOf("set_a", "set_b", "set_c"), queue.pending.map { it.set.id })
     }
 
-    // A jammed lane is skipped, not the queue. Every other movement keeps moving.
     @Test
     fun testABlockedLaneIsSteppedOverAndTheNextMovementIsOffered() {
         val queue = SetQueue(queueFile())
@@ -71,8 +66,6 @@ class SetQueueTests {
         assertEquals("set_b", queue.nextOwed(skipping = setOf(first!!.lane), readyAt = null)?.set?.id)
     }
 
-    // The log holding the row IS delivery, however the news arrived — a reply to our own write, or
-    // a read that found it there.
     @Test
     fun testAServerRowArrivingForAnOwedSetSettlesIt() {
         val queue = SetQueue(queueFile())
@@ -94,8 +87,6 @@ class SetQueueTests {
         assertEquals("the log numbered it, so it is the log's now",
             listOf(1), queue.sets.map { it.setNumber })
 
-        // The row comes back under the id that went out — always — and clearing the SENT key
-        // anyway is what stops a reply that ever disagreed from leaving the set owed forever.
         queue.store(aSet("set_b", at = 1_200), sessionId = "ses_1", needsPush = true)
         queue.delivered(aSet("set_c", at = 1_200).copy(setNumber = 2), id = "set_b", sessionId = "ses_1")
         assertEquals(emptyList<SetQueue.Entry>(), queue.pending)
@@ -117,9 +108,6 @@ class SetQueueTests {
             queue.pending.single().isHeld(at = 1_000))
     }
 
-    // Closing keeps what is owed and lets go of what is on the log. An owed set is dropped by
-    // nobody quietly — it waits for the log to answer for it, and that answer is what tells the
-    // lifter.
     @Test
     fun testClosingASessionLetsGoOfTheDeliveredRowsAndKeepsTheOwedOne() {
         val queue = SetQueue(queueFile())
@@ -133,8 +121,6 @@ class SetQueueTests {
         assertEquals(listOf("set_owed"), queue.sets("ses_1").map { it.id })
     }
 
-    // Discard is the one case where an owed set has nowhere left to go: the session id no longer
-    // names anything, so keeping it would re-send it against nothing, forever.
     @Test
     fun testForgettingADiscardedSessionTakesTheOwedSetsWithIt() {
         val queue = SetQueue(queueFile())
@@ -159,8 +145,6 @@ class SetQueueTests {
             "set_held", queue.nextOwed(skipping = emptySet(), readyAt = null)?.set?.id)
     }
 
-    // The claim's repair for a live session whose id another account spent: the same workout under
-    // a fresh session id, every owed set re-pointed — and the set ids themselves do not move.
     @Test
     fun testRemappingTheSessionMovesTheWorkoutWholeToTheFreshId() {
         val queue = SetQueue(queueFile())
@@ -176,8 +160,6 @@ class SetQueueTests {
         assertTrue(queue.owed("ses_spent").isEmpty())
     }
 
-    // ...and for a locally minted movement: the id changes in the sets, the walk order and the
-    // live plan's own lines, because a movement is a stable id everywhere except on screen.
     @Test
     fun testRemappingAMovementReachesTheSetsTheOrderAndThePlan() {
         val queue = SetQueue(queueFile())
@@ -211,13 +193,6 @@ class SetQueueTests {
             emptyList<String>(), queue.order)
     }
 
-    // R2 — WHETHER THE LIVE SESSION IS THE LOG'S IS WRITTEN TO DISK, per session: held false by
-    // every caller the server answered, true by the on-device start, false again by the claim's
-    // landed start for the same id, and gone with the session. A file from a build before the bit
-    // existed reads as UNCLAIMED — that build re-sent every live start on every connect, so its
-    // file says nothing about the log, and one idempotent start replay is the cheap side of that
-    // doubt; reading it as claimed could forget a device-composed workout as "gone" on its first
-    // 404.
     @Test
     fun testTheUnclaimedBitIsPerSessionOnDiskAndAbsentReadsAsUnclaimed() {
         val file = queueFile()
@@ -252,10 +227,6 @@ class SetQueueTests {
             "about whether the log ever answered", fromBefore.sessionIsUnclaimed)
     }
 
-    // THE SEAT IS THE KEY — the whole of MOBILE-3's queue half. A live workout and its owed sets
-    // belong to the seat that composed them: the next account to hold this phone is never drawn
-    // that workout and never re-sends those sets under its own bearer, and the first lifter finds
-    // both exactly where they left them.
     @Test
     fun testALiveSessionIsNeverDrawnForTheNextSeatAndItsOwedSetsAreNotLost() {
         val file = queueFile()
@@ -281,10 +252,6 @@ class SetQueueTests {
             listOf("set_a"), relaunched.pending.map { it.set.id })
     }
 
-    // The anonymous-first door on the queue: a workout begun with nobody signed in rides onto the
-    // account that claims it — but only onto a seat with nothing live of its own, because a live
-    // workout is one slot and the arriving lifter's own unclaimed session wins. Nothing is dropped
-    // for that: it waits under its own key.
     @Test
     fun testAnAnonymousWorkoutRidesOntoAFreeSeatAndWaitsForATakenOne() {
         val file = queueFile()
@@ -310,16 +277,11 @@ class SetQueueTests {
         assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
     }
 
-    // WHO A QUEUE FROM BEFORE THE SEATS BELONGS TO — branch one: the phone was SIGNED IN when it
-    // upgraded, so the workout it was holding is that account's and the lifter is put back under
-    // their own bar rather than sent hunting for a settings row.
     @Test
     fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatTheDeviceWasHolding() {
         val file = queueFile()
         file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
 
-        // The device was holding A's session when this file was opened — that, and never the
-        // account the room is later connected for, is what names the owner.
         val queue = SetQueue(file, deviceOwner = "alice")
         assertEquals("ses_old", queue.session?.id)
         assertNull("no door is needed and none is offered", queue.unattributedSession)
@@ -335,8 +297,6 @@ class SetQueueTests {
         assertEquals("ses_old", queue.session?.id)
     }
 
-    // Branch two, and the decision is spent on the FIRST seat this room opens for: a phone holding
-    // no session at the upgrade quarantines, and signing in afterwards does not undo that.
     @Test
     fun testAQueueFromBeforeTheSeatsOnASignedOutDeviceStaysQuarantined() {
         val file = queueFile()
@@ -353,8 +313,6 @@ class SetQueueTests {
         assertEquals("ses_old", queue.session?.id)
     }
 
-    // The queue's half of the same rule: the decision is written before anything else happens, or
-    // the legacy file is still on disk for the next launch to hand to somebody.
     @Test
     fun testASignedOutMigrationIsWrittenDownAtOnce() {
         val file = queueFile()
@@ -367,9 +325,6 @@ class SetQueueTests {
         assertEquals("ses_before", later.unattributedSession?.id)
     }
 
-    // The other half of the same refusal, and the one a live session cannot state: a seat that
-    // still OWES SETS with no workout standing over them is not an empty slot either, and a release
-    // that landed the shelf's half and quietly dropped this one would lose a workout.
     @Test
     fun testAQuarantineIsNotReleasedOntoASeatThatStillOwesSets() {
         val file = queueFile()
@@ -385,7 +340,6 @@ class SetQueueTests {
         assertTrue("and nothing was taken out of quarantine", queue.hasUnattributed)
     }
 
-    // A remembered identity may paint; it may not adopt. The carry waits for the answer.
     @Test
     fun testAnUnconfirmedSeatDoesNotClaimTheAnonymousWorkout() {
         val queue = SetQueue(queueFile())

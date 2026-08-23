@@ -1,43 +1,9 @@
 name: Deploy to VPS
 
-# Renders the complete ~/windmill/.env on the VPS from GitHub secrets + variables — the full render the
-# deploy README/.env.example describe — then ships the current compose + Caddyfile, pulls the published
-# image, and brings the stack up. Each value comes from exactly one source:
-#   secrets  → POSTGRES_PASSWORD, the service API keys, the admin bearers, WINDMILL_MCP_TOKEN
-#   variables→ DOMAIN_APP, DOMAIN_API, ACME_EMAIL, PADDLE_ENV, PADDLE_PRICE_ID, …
-#   fetched  → CF_IPS, live from api.cloudflare.com at render time (see the render step)
-#
-# ADDING A KEY IS TWO EDITS, and skipping either one fails quietly in a different way. The `env:` block
-# below carries the value into the job; the hand-maintained key list in the render loop decides what
-# actually reaches the .env. A key in `env:` but not in the list is NEVER WRITTEN — it is unsettable
-# from GitHub no matter what the operator configures, and the compose default silently stands in for
-# it forever. (A key in the list but not in `env:` is the loud failure: `set -u` aborts the run.) That
-# is not hypothetical: REMINDERS_* shipped unreachable from here until 2026-08-02, and JOURNAL_NUDGE_*
-# and JOURNAL_ECHO_ADMIN_TOKEN until 2026-08-05 — the echo bearer readable in compose the whole time
-# and settable by nobody. JOURNAL_EMBEDDER_URL is deliberately absent from both: compose defaults it
-# to the sidecar's compose-network name, which is the production value.
-#
-# Anything left unset is written empty and the compose `${VAR:-default}` fallbacks take over — safe only
-# where the fallback is genuinely production-worthy, which is the judgement to make per key rather than
-# assume. The handful whose emptiness would break the site, the database, or the front door
-# (DOMAIN_*, ACME_EMAIL, POSTGRES_PASSWORD, RESEND_FROM) are GUARDED below and fail the run before it
-# touches the host.
-#
-# AUTOMATIC since 2026-08-11: every backend commit on main that goes green deploys itself. The
-# trigger is `workflow_run` on Backend CI/CD rather than `push`, and that is the whole safety
-# property — Backend CI/CD is what runs ctest and what publishes the image, so waiting for its
-# SUCCESS means a red suite never reaches the VPS and the tag being pulled is guaranteed to exist.
-# A `push` trigger would race the image build and deploy a tag that is not there yet.
-#
-# It deploys the exact commit that passed (`workflow_run.head_sha`), never `latest`: two pushes in
-# quick succession would otherwise both pull whatever `latest` pointed at by then, and the older run
-# would silently ship the newer binary. The same sha is the checkout ref — under `workflow_run`,
-# actions/checkout defaults to the branch head rather than the triggering commit, so without it the
-# compose file and Caddyfile shipped could be from a different commit than the image.
-#
-# workflow_dispatch stays, for deploying a chosen tag by hand and for rolling back to an older sha.
-# The prior .env is backed up and restored if the rendered file won't validate against compose — a
-# bad render can't outlive the job.
+# Renders the whole ~/windmill/.env on the VPS, ships compose + Caddyfile, pulls the image, brings
+# the stack up. Adding a key is TWO edits: the `env:` block below AND the key list in the render
+# loop. A key in `env:` but absent from that list is never written and the compose default stands in
+# silently; a key in the list but not in `env:` aborts the run under `set -u`.
 
 on:
   workflow_run:
@@ -55,11 +21,8 @@ concurrency:
 
 jobs:
   deploy:
-    # Three conditions on the automatic path, and each one is a way the image might not be there.
-    # SUCCESS: a red ctest never ships. MAIN: no branch build deploys. PUSH: a pull_request run of
-    # Backend CI/CD skips its own build-and-push job entirely, so its "success" describes a tag that
-    # was never published. A workflow_dispatch of THIS file has no workflow_run at all and passes on
-    # the first clause.
+    # The push clause matters: a pull_request run of Backend CI/CD skips build-and-push, so its
+    # success describes a tag that was never published.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -69,8 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # The commit that passed, not the branch head — see the header. Empty on workflow_dispatch,
-          # where checkout's default (the branch this run was dispatched from) is what is wanted.
+          # Under workflow_run, checkout defaults to the branch head, not the triggering commit.
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Render .env + deploy the stack
         env:
@@ -87,16 +49,12 @@ jobs:
           WINDMILL_MCP_TOKEN: ${{ secrets.WINDMILL_MCP_TOKEN }}
           # Service API keys (compose defaults them empty ⇒ that feature stays dark):
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          # Resend's Svix signing secret for the delivery webhook (hard bounce / spam complaint ⇒
-          # reminders suppressed). Empty ⇒ the endpoint refuses every delivery, so it is dark rather
-          # than forgeable — the same stance PADDLE_WEBHOOK_SECRET takes.
+          # Resend's Svix signing secret. Empty ⇒ the webhook endpoint refuses every delivery.
           RESEND_WEBHOOK_SECRET: ${{ secrets.RESEND_WEBHOOK_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          # Not secrets: which environment the events land in, how much log volume is forwarded, and
-          # the commit they came from. The release is the sha so a regression names the deploy.
           SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT || 'production' }}
           SENTRY_LOG_LEVEL: ${{ vars.SENTRY_LOG_LEVEL || 'info' }}
           SENTRY_RELEASE: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -104,13 +62,9 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
           PADDLE_WEBHOOK_SECRET: ${{ secrets.PADDLE_WEBHOOK_SECRET }}
-          # Bearer for POST /v1/admin/reminders/sweep. Unset ⇒ that route 404s, which is the
-          # resting state — the sweep runs on its own heartbeat and this only forces one by hand.
+          # Bearer for POST /v1/admin/reminders/sweep. Unset ⇒ that route 404s.
           REMINDERS_ADMIN_TOKEN: ${{ secrets.REMINDERS_ADMIN_TOKEN }}
-          # Journal's two rehearsal bearers, for POST /v1/admin/journal/nudge/sweep and
-          # /v1/admin/journal/echo/sweep. Unset ⇒ each route 403s, which is its resting state; both
-          # heartbeats run without them. Neither name reached this render until 2026-08-05, so
-          # JOURNAL_ECHO_ADMIN_TOKEN was settable in compose and unsettable from here.
+          # Bearers for POST /v1/admin/journal/{nudge,echo}/sweep. Unset ⇒ each route 403s.
           JOURNAL_NUDGE_ADMIN_TOKEN: ${{ secrets.JOURNAL_NUDGE_ADMIN_TOKEN }}
           JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
           WINDMILL_OWNER_EMAILS: ${{ vars.WINDMILL_OWNER_EMAILS }}
@@ -120,40 +74,25 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
           # Retention windows for the telemetry tables (days; <=0 keeps a table forever and skips it).
-          # Unset here would not be silent — the binary's own defaults stand — but the operator could
-          # not CHANGE one without editing this file, which is the omission the reminder/nudge pairs
-          # already taught us to stop repeating.
           WINDMILL_EVENTS_RETENTION_DAYS: ${{ vars.WINDMILL_EVENTS_RETENTION_DAYS }}
           WINDMILL_FEEDBACK_RETENTION_DAYS: ${{ vars.WINDMILL_FEEDBACK_RETENTION_DAYS }}
           WINDMILL_SERVER_ERROR_RETENTION_DAYS: ${{ vars.WINDMILL_SERVER_ERROR_RETENTION_DAYS }}
           TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
-          # The reminder engine's arming pair. It has shipped dark since wave 1 and until now could
-          # not be armed AT ALL from here — neither name reached the container, so the allowlist was
-          # unreachable rather than merely empty. Both stay unset until the owner arms it; empty
-          # allowlist still means NOBODY, which is the designed resting state, not a misconfiguration.
+          # The reminder engine's arming pair: an empty allowlist means NOBODY, so ENABLED alone
+          # arms no account.
           REMINDERS_ENABLED: ${{ vars.REMINDERS_ENABLED }}
           REMINDERS_ALLOWLIST: ${{ vars.REMINDERS_ALLOWLIST }}
-          # Journal's nudge arming pair, dark by the same rule and unreachable here until
-          # 2026-08-05 for the same reason. EMPTY ALLOWLIST MEANS NOBODY: ENABLED alone arms no
-          # account, so the two are order-independent and neither on its own launches the feature.
-          # Naming an id is also what reveals journal's nudge settings panel to that account.
+          # Same rule for nudges; naming an id also reveals journal's nudge settings panel to that account.
           JOURNAL_NUDGE_ENABLED: ${{ vars.JOURNAL_NUDGE_ENABLED }}
           JOURNAL_NUDGE_ALLOWLIST: ${{ vars.JOURNAL_NUDGE_ALLOWLIST }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
-          # The sha Backend CI/CD tagged the image with, so the deploy names the commit it is
-          # shipping. `latest` is only ever the hand-dispatched default.
           IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
-          # Cloudflare's edge ranges, fetched live so the origin gate is current at the moment it is
-          # shipped — until 2026-08-22 this was a static GitHub variable while the Caddyfile claimed it
-          # was fetched here, and the variable was in fact unset, so the gate ran on compose's allow-all
-          # default. The fallback is READ OUT OF the committed compose default rather than retyped,
-          # because two copies of an IP list is two chances to leave a stale one standing. Either branch
-          # yields a non-empty list, and the guard below treats an empty one like a missing domain: an
-          # empty remote_ip matcher does not stop Caddy, it makes Caddy 403 every request including
-          # Cloudflare's, which is a whole-site outage rather than a visible misconfiguration.
+          # Cloudflare's edge ranges, fetched live, falling back to the committed compose default
+          # rather than a second copy of the list. Must never render empty: an empty remote_ip matcher
+          # makes Caddy 403 every request, Cloudflare's included.
           cf_default=$(sed -n 's/^ *CF_IPS: "\${CF_IPS:-\(.*\)}"$/\1/p' backend/deploy/docker-compose.yml)
           if [ -z "$cf_default" ]; then
             echo "Refusing to render — cannot read the committed CF_IPS default out of backend/deploy/docker-compose.yml"
@@ -168,17 +107,10 @@ jobs:
             echo "CF_IPS: fetch failed — falling back to the committed list in docker-compose.yml"
           fi
 
-          # Guard: refuse before touching the host if anything whose emptiness would break prod is unset.
-          # (WINDMILL_MCP_TOKEN is NOT here on purpose: /mcp is still gated by OAuth + per-user MCP keys,
-          # so an empty shared token disables only the static-token shortcut, it does not open the endpoint.)
-          #
-          # RESEND_FROM is here because its compose fallback is the one default that LOOKS safe and is not:
-          # `onboarding@resend.dev` is Resend's shared test sender, and Resend refuses it for every
-          # recipient except the account owner. An empty value therefore does not disable sign-in mail, it
-          # narrows it to one address — the owner's — so the deploy stays green, every probe the owner
-          # runs passes, and only strangers are locked out. That is the failure this render already caused
-          # once: it overwrites ~/windmill/.env wholesale (only POSTGRES_PASSWORD is preserved), so an
-          # unset variable silently reverted a working sender and no one but the owner could sign up.
+          # This render overwrites ~/windmill/.env wholesale (only POSTGRES_PASSWORD is preserved), so
+          # refuse before touching the host if anything whose emptiness would break prod is unset.
+          # RESEND_FROM is guarded because its compose fallback `onboarding@resend.dev` is Resend's
+          # shared test sender: it delivers to the account owner and to nobody else.
           missing=
           for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD RESEND_FROM CF_IPS; do
             [ -n "${!key}" ] || missing="$missing $key"
@@ -190,8 +122,7 @@ jobs:
             exit 1
           fi
 
-          # Render the full .env with printf so values are written literally (no shell interpretation of
-          # a '\$' or space inside a key). Optional keys write empty and let compose defaults apply.
+          # printf so values are written literally. Optional keys write empty; compose defaults apply.
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
@@ -223,9 +154,8 @@ jobs:
 
           $SSH "$SSH_USER@$SSH_HOST" 'bash -seu' <<'REMOTE'
           cd ~/windmill
-          # The DB password is bound to the initialized Postgres volume — a deploy must never rotate it.
-          # If the host already has one, it wins over whatever GitHub rendered (the rendered value is only
-          # the fallback for a first-time bring-up on an empty volume).
+          # The DB password is bound to the initialized Postgres volume: a host value wins over the
+          # rendered one, which is only the fallback for a first bring-up on an empty volume.
           prior_pg=
           [ -f .env ] && prior_pg=$(grep -E '^POSTGRES_PASSWORD=' .env | head -1 | cut -d= -f2- || true)
           [ -f .env ] && cp .env .env.bak || true
@@ -242,8 +172,7 @@ jobs:
           fi
           docker compose pull
           docker compose up -d
-          # The Caddyfile is bind-mounted, so `up -d` won't recreate caddy when only the file's content
-          # changed — reload it explicitly so routing edits (e.g. try_files) take effect this deploy.
+          # The Caddyfile is bind-mounted, so `up -d` won't recreate caddy on a content-only change.
           docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || docker compose restart caddy
           rm -f .env.bak
           echo "deployed: .env rendered (DB password preserved), image pulled, stack up + caddy reloaded"

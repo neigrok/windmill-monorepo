@@ -1,15 +1,3 @@
-// THE LIFTER'S SIDE OF THE COACH SHARE — mint, read, copy, revoke, on the finish screen and on a
-// session read whole. Four states and no fifth: nothing here, a link being made, a link live, and a
-// link being taken back.
-//
-// IT MINTS ON A TAP AND NEVER ON A RENDER. There is no GET beside the POST — the POST is idempotent
-// on the session and answers with the live link when there is one — so opening a session cannot
-// create a capability the lifter did not ask for. That is why the closed state says what the button
-// will do rather than showing a link somebody has to notice is already out there.
-//
-// The terms are on screen before the link can be copied, and they are the honest description of what
-// the tap made (share.js). The word "public" is not one of them, because it would not be true.
-
 import React, { useState } from 'react';
 import { failureReason, gymApi } from '../gymApi.js';
 import { expiryLine, SHARE_OFFER, SHARE_OFFER_LINE, SHARE_TERMS, shareLink } from './share.js';
@@ -32,8 +20,7 @@ export function CoachShare({ sessionId }) {
     setBusy(false);
   };
 
-  // A revoke that finds nothing to revoke (404) comes back as revoked, not as a failure — gymApi
-  // answers it null — so "still live" is only ever said over a link the store still holds.
+  // A revoke that finds nothing (404) answers null, not an error.
   const revoke = async () => {
     if (busy) return;
     setBusy(true);
@@ -62,9 +49,6 @@ export function CoachShare({ sessionId }) {
     );
   }
 
-  // The link is a real, selectable field and not a line of text with a button beside it: a clipboard
-  // the browser refuses is a normal outcome, and when it happens the way through has to be there
-  // already rather than appear as an apology.
   const link = shareLink(share.token, typeof window === 'undefined' ? '' : window.location.origin);
   return (
     <section className="gym-share">
@@ -97,10 +81,6 @@ export function CoachShare({ sessionId }) {
   );
 }
 
-// The clipboard, and the way through when the browser refuses it — a permission prompt declined, an
-// insecure origin, an older engine. Both paths answer whether the text actually landed, because
-// "Copied" over a clipboard that stayed empty is the app lying about the one thing the lifter is
-// about to rely on.
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);

@@ -1,7 +1,3 @@
-// Settings §Tending: this account's monthly allowance and the receipts behind it — the meter the
-// pricing page shows, now filled with your own numbers. Present only when tending is armed (the
-// summary's `enabled`): until then there is nothing to meter, so the section simply isn't there.
-
 import React from 'react';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { relativeTime, shortDate } from '../../../shell/settings/format.js';
@@ -22,8 +18,7 @@ export function TendingSection() {
     return () => { alive = false; };
   }, []);
 
-  // A dark server, a signed-out read, or a failed one all mean the same thing: tending isn't a
-  // thing here yet, so there is no meter to show.
+  // A dark server, a signed-out read and a failed one all mean the same thing: there is no meter.
   if (loading || !data || !data.enabled) return null;
 
   const { plan, limit, used, remaining, resetAtMs, runs = [] } = data;

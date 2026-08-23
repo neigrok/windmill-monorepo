@@ -1,21 +1,11 @@
-// The step's workspace body (F13 §1,2,5): a sub-task checklist, a markdown note, and
-// a flat list of links — plus the "+ Add to this step" bootstrap that offers only the
-// sections a node is still missing. Absence is the empty state: a section that has no
-// content simply doesn't render. All editing UI (which menu is open, the note buffer,
-// the link paste field) is local here; the parent owns the data through the shared
-// F13 handlers, each keyed by nodeId.
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../../design-system/Icon.jsx';
 import { Checklist } from './Checklist.jsx';
 
-// The small note dialect: bold **…**, italic *…*, [text](url) links, and "- " lists.
-// Headings/tables/images are out. React escapes all text for us; we only need to keep
-// link hrefs to safe schemes so a note can't smuggle in a javascript: URL.
+// Note dialect: **bold**, *italic*, [text](url), "- " lists. Link hrefs are kept to safe schemes
+// so a note can't smuggle in a javascript: URL.
 export const SAFE_URL = /^(https?:|mailto:)/i;
 
-// One link row, two homes: the workspace's editable list (with onDelete) and the
-// read-only annotation links in StepPanel.
 export function LinkRow({ url, title, domain, onDelete }) {
   const host = domain || url.replace(/^\w+:\/\//, '').replace(/[/?#].*$/, '');
   return (

@@ -1,297 +1,111 @@
-// The one place the gym frontend talks to the backend it was built against. Every call is
-// cookie-credentialed (the wm_session the shell already holds) and same-origin in production; in
-// dev it points at the local windmill_server. The wire shapes match the backend exactly:
-//   GET  /v1/gym/exercises               -> { exercises: [{id, name, pattern, equipment, stepKg,
-//                                           custom, aliases?}] }. `aliases` is what THIS account
-//                                           used to call the movement, newest first, at most five,
-//                                           and OMITTED when there are none — never `[]`, so an
-//                                           account that has renamed nothing reads exactly as it
-//                                           always did. The picker matches the name AND the aliases
-//                                           (logger/movements.js): a rename moves a label over a
-//                                           stable id, and the old name has to keep finding the
-//                                           movement or muscle memory stops working. They are not
-//                                           drawn as a second name on a row unless the match came
-//                                           through one
-//   GET  /v1/gym/exercises/last          -> { movements: [{exerciseId, weightKg, reps, at}] } — what a
-//                                           picker row says under the name (§B7). SPARSE: one entry
-//                                           per movement THIS account has a LAST TIME for and NO
-//                                           entry for any other, so a movement missing from the list
-//                                           is the picker's `no last time`, said by saying nothing.
-//                                           Absent is not "never trained": the open workout and
-//                                           warmups are out (below), so a movement being lifted this
-//                                           minute is missing too. There is
-//                                           no sentinel, no null and no zero row, and `movements` is
-//                                           always present — `[]` for a lifter with no finished
-//                                           block yet. Ordered by `exerciseId`, which is a JOIN key
-//                                           order and not a draw order: join it onto the catalog
-//                                           above and draw in the catalog's. The set is the LAST set
-//                                           of that movement's last-time block — the same set
-//                                           GET /v1/gym/last answers last, never the heaviest — and
-//                                           `at` is that SESSION's start, which is what "3 days ago"
-//                                           is counted from. Warmups are excluded and an open session
-//                                           is never a last time, both being `last`'s own rules
-//   POST /v1/gym/exercises               -> {id, name, pattern, equipment, stepKg?} in; the stored
-//                                           movement out. A movement a lifter created behaves like
-//                                           every other one; an id already spent is 409
-//   PATCH /v1/gym/exercises/:id          -> {name} in — ONE field, and any other key is 400 — the
-//                                           stored movement out, under the SAME id, carrying its NEW
-//                                           `aliases`: the name it was called a moment ago is now
-//                                           one of them, and renaming back removes the alias it just
-//                                           became. A movement this account created renames in
-//                                           place; a seeded one gets a per-account display name over
-//                                           it, so renaming Back Squat renames nobody else's. `name`
-//                                           is what THIS account calls it, everywhere a name is read
-//   GET  /v1/gym/exercises/:id/record    -> one movement's page (§H), whole and in one read:
-//                                           { exercise, routineCount, routines?, sessionCount,
-//                                             bestE1rm?, heaviest?, e1rmSeries?, records?,
-//                                             recentDays? }.
-//                                           `routines` is the NAMES of the routines that hold this
-//                                           movement, in program order, and `routineCount` is
-//                                           exactly its length — the rename sheet's proof needs the
-//                                           names and the subhead needs the count, and both come off
-//                                           THIS read rather than a second one (§N screen 32).
-//                                           The counts are always there and a zero is a real answer;
-//                                           EVERY LIST IS OMITTED WHEN EMPTY, so a movement nobody
-//                                           has worked answers 200 with two zeros and nothing else.
-//                                           `bestE1rm`, `e1rmSeries` and `records` are absent
-//                                           TOGETHER where Epley is undefined — every load at or
-//                                           below zero — and the page draws no tile and no chart for
-//                                           that rather than a dash in a chart frame (record.js).
-//                                           `e1rmSeries` is oldest first over the server's last
-//                                           twelve weeks, one point per session; `records` is newest
-//                                           first over the whole log; `recentDays` is newest first,
-//                                           at most ten days, warmups excluded. THE COUNT AND THE
-//                                           DAYS COUNT DIFFERENT THINGS: `sessionCount` is the
-//                                           sessions it was WORKED in, `recentDays` every day it was
-//                                           trained in bar a warmup — so a movement logged only as a
-//                                           drop set answers a zero beside a day of sets, and a page
-//                                           reading the count alone says nobody has worked it over
-//                                           the sets they did (record.js). Or null on 404 —
-//                                           absent and another account's private movement alike
-//   POST /v1/gym/sessions                -> {id, startedAt, routineId?} in; the OPEN session out —
-//                                           idempotent, a replayed or double-tapped start joins the
-//                                           open session; an id another account already minted is 409
-//   POST /v1/gym/sessions/:id/sets       -> {id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?} in;
-//                                           the STORED set out {id, exerciseId, setNumber, weightKg,
-//                                           reps, kind, rpe?, note, completedAt}
-//   PATCH /v1/gym/sessions/:id/sets/:setId
-//                                        -> THE CORRECTION (§G18). Every field is OPTIONAL and an
-//                                           omitted one is left exactly as stored: {weightKg?,
-//                                           reps?, kind?, rpe?, note?}. `rpe` is the one field that
-//                                           takes a null and that null CLEARS it; "" clears a note;
-//                                           `{}` is legal and changes nothing. Any other key is
-//                                           refused BY NAME rather than ignored — `exerciseId`,
-//                                           `completedAt`, `setNumber`, `id` — because a set logged
-//                                           against the wrong movement is a different repair. The
-//                                           STORED set out, the same bare shape the POST above
-//                                           answers, so the same body sent twice answers
-//                                           byte-identically. Two refusals: 400 `fix-unreadable`
-//                                           (a field a fix may not carry, a wrong type, a value the
-//                                           store cannot hold) and 404 `set-not-found` (absent,
-//                                           another account's, already deleted, or this account's
-//                                           set in a DIFFERENT workout — one answer, byte-identical
-//                                           for all four). A FINISHED SESSION IS NOT A REFUSAL: a
-//                                           lifter reads the log after the workout, which is when
-//                                           they see the typo, so there is no `session-finished`
-//                                           and no 409 on this route at all
-//   DELETE /v1/gym/sessions/:id/sets/:setId
-//                                        -> 204, nothing back. Idempotent by design: a set already
-//                                           gone, a set that never existed and another account's
-//                                           are all 204, so absent stays byte-identical to
-//                                           forbidden and a lost reply is safe to retry. NO 400, NO
-//                                           404, NO 409 — 401 and 500 are the only other answers.
-//                                           Set numbers are never reissued: delete set 2 of 3 and
-//                                           1 and 3 stand with a gap, and the next set is 4
-//   POST /v1/gym/sessions/:id/finish     -> {finishedAt} in; the session out, idempotent
-//   GET  /v1/gym/sessions?before=&beforeId=&limit=
-//                                        -> { sessions: [{...session, setCount, workingSetCount,
-//                                           tonnageKg, exercises, topSet?, topE1rm?, closedItself}] }
-//                                           newest first, keyset-paged on (startedAt, id). THE LIST
-//                                           CARRIES NO SETS, so everything a §G16 row draws is
-//                                           answered where the sets are and none of it is derivable
-//                                           from a set COUNT: `setCount` is every set of every kind
-//                                           and `workingSetCount` only the working ones; `tonnageKg`
-//                                           sums working weight × reps with an assisted set clamped
-//                                           to zero, and is always present — a zero is a real answer
-//                                           and the client draws nothing for it; `topSet` is
-//                                           {weightKg, reps}, the heaviest WORKING set with ties to
-//                                           more reps, OMITTED when the session holds none, and
-//                                           `topE1rm` is the domain's best Epley over EVERY working
-//                                           set rather than over that one (domain/Review.h: 100 × 5
-//                                           beats a back-off 95 × 10 on the bar and loses on the
-//                                           estimate), omitted where Epley is undefined — no working
-//                                           set at all, or none of them loaded, so a bodyweight
-//                                           session carries `topSet` and no `topE1rm`. The web
-//                                           computes no estimate of its own (review.js).
-//                                           `closedItself` says the four-hour rule closed the
-//                                           session rather than a tap, and `record` — always
-//                                           present — says a personal record happened in there,
-//                                           judged against the log AS IT IS NOW and never frozen at
-//                                           the finish (log.js). False on ~190 rows in 200
-//   GET  /v1/gym/sessions/:id            -> { session, sets } — or null on 404 (absent and
-//                                           another's are the same byte). Every 200 carries a weak
-//                                           ETag — opaque bytes this client only ever echoes; a
-//                                           poll that sends it back as If-None-Match is answered
-//                                           304 with no body while the workout is what it was. The
-//                                           tag covers what the sets SAY and not only how many
-//                                           there are, so a set corrected at the desk moves it and
-//                                           the mirror reads the workout again
-//   DELETE /v1/gym/sessions/:id          -> 204, nothing back — the discard offered at the finish
-//                                           screen. A session still running is refused, 409
-//   GET  /v1/gym/sessions/:id/review     -> Review — the finish screen read whole
-//   GET  /v1/gym/last?exercise=          -> { exerciseId, session?, routine?, sets? } — the prefill:
-//                                           the newest FINISHED session holding that movement and
-//                                           its working sets in order, warmups excluded
-//   POST /v1/gym/sessions/:id/share      -> {token, expiresAt} — the coach link, minted or the live
-//                                           one handed back. Idempotent on the SESSION: there is no
-//                                           id for a client to mint here, so tapping Share twice is
-//                                           one capability and not two
-//   DELETE /v1/gym/sessions/:id/share    -> 204, nothing back. Revoked is deleted; a 404 is nothing
-//                                           to revoke, and reads as revoked here (null)
-//   GET  /v1/gym/shared/:token           -> { startedAt, finishedAt?, routine?, sets: [{exercise,
-//                                           setNumber, weightKg, reps, kind, rpe?, note,
-//                                           completedAt}] } — or null on 404. THE ONE
-//                                           UNAUTHENTICATED READ, and the token is the whole
-//                                           credential; revoked, expired and never-minted are one
-//                                           byte, so a null here says nothing about which
-//   POST /v1/gym/ask                     -> { thread, question } in — ONE question into ONE thread,
-//                                           the id CLIENT-MINTED ('thr_<hex>', and a fresh one opens
-//                                           a conversation) — and { answer, steps: [{tool, failed}],
-//                                           read: {sets, sessions, weeks}, proposals: [id…],
-//                                           thread } out (§L, §O). `steps`
-//                                           is the tools the MODEL asked for, in call order — Ask's
-//                                           own opening read of your newest workouts is not one of
-//                                           them. `read` is ALWAYS present and is SERVER-COUNTED
-//                                           over the rows it actually served, deduped by id across
-//                                           the whole exchange: nothing on this surface may sum,
-//                                           compute or infer it. `proposals` is the ids minted
-//                                           during the exchange, in mint order and possibly empty —
-//                                           each opens through GET /v1/gym/proposals/:id above and
-//                                           applies on the same all-or-none tap as any other.
-//                                           THE ONE ROUTE THAT MAY NOT EXIST: a deployment with no
-//                                           model wired never mounts it, so a bare 404 means there
-//                                           is no Ask here at all. Open to every account, with a
-//                                           plainly-worded cap: 429 `ask-daily-limit` is the pace
-//                                           brake and 429 `ask-out-of-budget` the rolling 30-day AI
-//                                           ceiling — neither is a purchase, and nothing on this
-//                                           wire offers one. 409 `ask-session-open` while a workout
-//                                           is running, 409 `ask-thread-taken` for an id another
-//                                           account holds, 409 `ask-thread-full` at eight stored
-//                                           turns, 400 for a malformed thread id, a blank question
-//                                           or one over 1000 BYTES. A 502 STORED NOTHING: the same
-//                                           thread and the same question sent again land exactly
-//                                           once
-//   GET  /v1/gym/threads                 -> { threads: [Thread…] }, newest `askedAt` first, at most
-//                                           200, and NO other key — there is no unread count on this
-//                                           wire and nothing here may invent one (§O)
-//   GET  /v1/gym/threads/:id             -> one Thread, carrying `turns` — the only read that does
-//                                           — or null on 404, absent and another account's alike
-//   DELETE /v1/gym/threads/:id           -> 204, nothing back. It deletes the CONVERSATION and not
-//                                           its consequence: a proposal it minted keeps its
-//                                           `source.door: 'ask'` in the routine's history and simply
-//                                           loses `source.thread`, because an applied change is a
-//                                           fact about a program rather than a message (§O)
-// A Thread is {id, title, createdAt, askedAt, outcome, proposals: [head-ish…], turns?}. `title` is
-// the lifter's FIRST MESSAGE, VERBATIM — written once when the thread opened and never rewritten, so
-// no surface may summarise, truncate to an ellipsis or otherwise improve it. `outcome` is DERIVED by
-// the server from the proposals riding with the thread — {kind: 'read-only'|'proposed'|'applied'|
-// 'dismissed'|'superseded', changes, routineId?, routine?} — where `changes` is always present and a
-// 0 is real, and the routine pair is OMITTED TOGETHER when the changes spanned more than one. Every
-// row of `proposals` is {id, state, changeCount, routineId, routine, createdAt}; a `turn` is
-// {from: 'lifter'|'ask', text, at}, stored as it was sent
-//   GET  /v1/gym/preferences             -> the settings document (§I). NEVER 404s: an account with
-//                                           no row stored is served the defaults, so every caller
-//                                           gets a whole document on the first read and the store
-//                                           never invents one
-//   PUT  /v1/gym/preferences             -> the WHOLE document in, the STORED document out — draw
-//                                           what comes back, not what was sent, because the server
-//                                           clamps an unknown unit. Every field is optional and an
-//                                           omitted one takes its DEFAULT rather than its stored
-//                                           value: this is a replace and not a merge. `restSeconds`
-//                                           ABSENT is the only way to say the rest timer is off —
-//                                           there is no 0 and no false — which is exactly why the
-//                                           route is not a PATCH. Three refusals, all 400 and all
-//                                           carrying a code: preferences-unreadable, unknown-unit,
-//                                           rest-target. Nothing lands on a refusal. The sentence
-//                                           beside each names the band ("a rest target runs from 15
-//                                           to 900 seconds") and is what a lifter is shown; nothing
-//                                           here branches on the code.
-//                                           UNITS ARE DISPLAY ONLY: every weight on every other
-//                                           route above is kilograms whatever this says
-//   GET  /v1/gym/routines                -> { routines: [Routine…] }, most-recently-trained first,
-//                                           and carrying NO history: that is one section of one
-//                                           screen and rides the single read below
-//   POST /v1/gym/routines                -> the write document in; the stored Routine out —
-//                                           idempotent on the client-minted id, 409 when it is spent
-//   GET  /v1/gym/routines/:id            -> Routine — or null on 404, for the session's own reason.
-//                                           THE ONLY READ THAT CARRIES `history`: rows newest first,
-//                                           each either {kind:'created', at, by?, movements?} or
-//                                           {kind:'proposal', at, proposal}. The created row is
-//                                           always present and always last — it never falls off the
-//                                           newest-20 window the proposal rows sit in. `by` ABSENT
-//                                           is the lifter's own hand and is what `created by you` is
-//                                           drawn from; PRESENT it names the door an agent came
-//                                           through, and no surface may say "by you" over one.
-//                                           `movements` is how many lines the routine was CREATED
-//                                           with and is ABSENT for every routine written before that
-//                                           column existed — the row then carries no count at all,
-//                                           and never today's (routines.js `builtLabel`)
-//   PUT  /v1/gym/routines/:id            -> the write document in; the stored Routine out. A WHOLE
-//                                           document replace, so every edit is a read-modify-write
-//   DELETE /v1/gym/routines/:id          -> 204, nothing back
-//   GET  /v1/gym/proposals[?routineId=&state=pending]
-//                                        -> { proposals: [head…] }, newest first — the whole ledger,
-//                                           past the twenty the routine read carries. `state`
-//                                           recognises the literal
-//                                           "pending" and nothing else; any other value is
-//                                           unfiltered, so a client that guessed a word gets the
-//                                           whole ledger rather than an empty one
-//   GET  /v1/gym/proposals/:id           -> one whole proposal — the head plus `baseRevision`,
-//                                           `baseName`, `name` and the `changes` rows — or null on
-//                                           404, absent and another account's alike
-//   POST /v1/gym/proposals/:id/apply     -> { proposal, routine? } — THE ONLY THING IN THIS PRODUCT
-//                                           THAT MOVES A ROUTINE AN AGENT WROTE TO, and it happens
-//                                           on a lifter's tap. Atomic: all of the document or none
-//                                           of it, against the frozen `baseRevision`. `routine` is
-//                                           ABSENT when the intent was `remove` — there is nothing
-//                                           left to send back
-//   POST /v1/gym/proposals/:id/dismiss   -> { proposal } — settled, kept, dated
-// Both settlements REPLAY: asking for the decision already taken answers 200 with the settled
-// proposal rather than an error, so a lost reply is safe to send again. The three refusals are 409
-// `proposal-superseded` (the routine moved after the diff was written — terminal, redraw the routine
-// as it now stands), 409 `proposal-settled` (the OTHER decision was already taken — terminal,
-// re-read) and a bare 404 for a proposal that is absent or another account's. A 404 answering your
-// own apply of an intent=remove proposal is a SUCCESS: the routine went and its ledger went with it.
-// Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms
-// numbers, weights are numbers in kg, and ids are client-minted ('ses_<hex>' / 'set_<hex>' /
-// 'rt_<hex>', and 'ex_<hex>' for a movement a lifter mints — the catalog's own are slugs); a
-// proposal's id is minted by whoever wrote it ('prop_<hex>' from our own agents) and never by this
-// client, which decides nothing here and only reads and settles.
+// The gym frontend's calls to the backend. Cookie-credentialed, same-origin.
+//   GET   /v1/gym/exercises -> {exercises: [{id, name, pattern, equipment, stepKg, custom, aliases?}]};
+//         `aliases` is omitted when there are none, never [].
+//   GET   /v1/gym/exercises/last -> {movements: [{exerciseId, weightKg, reps, at}]}; sparse — no entry
+//         is the "no last time". The open session and warmups are excluded. The entry is the LAST set
+//         of that movement's last-time block, not the heaviest; `at` is that session's start.
+//   POST  /v1/gym/exercises -> {id, name, pattern, equipment, stepKg?} in, the stored movement out;
+//         409 on a spent id.
+//   PATCH /v1/gym/exercises/:id -> {name} in, any other key 400; the stored movement out under the
+//         same id with its new `aliases`.
+//   GET   /v1/gym/exercises/:id/record -> {exercise, routineCount, routines?, sessionCount, bestE1rm?,
+//         heaviest?, e1rmSeries?, records?, recentDays?}, or null on 404. Counts are always present
+//         and a zero is real; lists are omitted when empty. `bestE1rm`, `e1rmSeries` and `records` are
+//         absent together where Epley is undefined. `e1rmSeries` is oldest first over twelve weeks,
+//         one point per session; `records` and `recentDays` newest first, warmups excluded.
+//   POST  /v1/gym/sessions -> {id, startedAt, joinOpenSession?, routineId?} in, the open session out;
+//         idempotent, a replayed start joins the open session, 409 for another account's id.
+//         joinOpenSession:false is refused 409 `session-already-open` while a workout is running.
+//         `routineId` asks the server to freeze that routine onto the session as its plan.
+//   POST  /v1/gym/sessions/:id/sets -> {id, exerciseId, weightKg, reps, completedAt, kind?, rpe?,
+//         note?} in; {id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt} out.
+//         A replay answers 200 with the stored row, finished session or not.
+//   PATCH /v1/gym/sessions/:id/sets/:setId -> {weightKg?, reps?, kind?, rpe?, note?}; an omitted field
+//         is left as stored, a null `rpe` clears it, "" clears a note, {} is legal. Any other key 400.
+//         400 `fix-unreadable`; 404 `set-not-found` for absent, another account's, deleted, or this
+//         account's set in a different workout.
+//   DELETE /v1/gym/sessions/:id/sets/:setId -> 204, for a set already gone and another account's
+//         alike. Set numbers are never reissued: a delete leaves a gap.
+//   POST  /v1/gym/sessions/:id/finish -> {finishedAt} in, the session out, idempotent.
+//   GET   /v1/gym/sessions?before=&beforeId=&limit= -> {sessions: [{...session, setCount,
+//         workingSetCount, tonnageKg, exercises, topSet?, topE1rm?, closedItself, record}]}, newest
+//         first, keyset-paged on (startedAt, id) — both or neither. The list carries no sets.
+//         `tonnageKg` sums working weight × reps with assisted sets clamped to zero, always present;
+//         `topSet` is {weightKg, reps}, the heaviest working set with ties to more reps, omitted when
+//         there is none; `topE1rm` is the best Epley over every working set. `closedItself` says the
+//         four-hour rule closed the session; `record` is judged against the log as it is now.
+//   GET   /v1/gym/sessions/:id -> {session, sets}, or null on 404. Carries a weak ETag; echoing it as
+//         If-None-Match is answered 304 with no body.
+//   DELETE /v1/gym/sessions/:id -> 204; a session still running is refused 409 `session-open`.
+//   GET   /v1/gym/sessions/:id/review -> Review.
+//   GET   /v1/gym/last?exercise= -> {exerciseId, session?, routine?, sets?}: the newest FINISHED
+//         session holding that movement and its working sets in order, warmups excluded. Always an
+//         object — `session` is what says whether there is history.
+//   POST  /v1/gym/sessions/:id/share -> {token, expiresAt}, minted or the live one handed back;
+//         idempotent on the session, no client-minted id.
+//   DELETE /v1/gym/sessions/:id/share -> 204; a 404 is nothing to revoke and reads as revoked.
+//   GET   /v1/gym/shared/:token -> {startedAt, finishedAt?, routine?, sets: [{exercise, setNumber,
+//         weightKg, reps, kind, rpe?, note, completedAt}]}, or null on 404. The one unauthenticated
+//         read; revoked, expired and never-minted answer the same byte.
+//   POST  /v1/gym/ask -> {thread, question} in, the thread id client-minted ('thr_<hex>', a fresh one
+//         opening a conversation); {answer, steps: [{tool, failed}], read: {sets, sessions, weeks},
+//         proposals: [id…], thread} out. `steps` is the tools the model asked for, in call order;
+//         `read` is server-counted and may not be summed or inferred here; `proposals` is the ids
+//         minted during the exchange, in mint order. A bare 404 means no Ask on this
+//         deployment. 429 `ask-daily-limit` and `ask-out-of-budget`; 409 `ask-session-open`,
+//         `ask-thread-taken`, `ask-thread-full` at eight stored turns; 400 for a malformed thread id,
+//         a blank question or one over 1000 bytes. A 502 stored nothing.
+//   GET   /v1/gym/threads -> {threads: [Thread…]}, newest `askedAt` first, at most 200.
+//   GET   /v1/gym/threads/:id -> one Thread carrying `turns`, the only read that does, or null on 404.
+//   DELETE /v1/gym/threads/:id -> 204. A proposal it minted keeps `source.door: 'ask'` and loses
+//         `source.thread`.
+//   GET   /v1/gym/preferences -> the settings document; never 404s, an account with no row is served
+//         the defaults.
+//   PUT   /v1/gym/preferences -> the whole document in, the stored document out. A replace and not a
+//         merge: an omitted field takes its DEFAULT. An absent `restSeconds` is the only way to say
+//         the rest timer is off. 400 preferences-unreadable, unknown-unit, rest-target, and nothing
+//         lands on a refusal. Units are display only; every weight on every route is kilograms.
+//   GET   /v1/gym/routines -> {routines: [Routine…]}, most-recently-trained first, carrying no history.
+//   POST  /v1/gym/routines -> the write document in, the stored Routine out; idempotent on the
+//         client-minted id, 409 when it is spent.
+//   GET   /v1/gym/routines/:id -> Routine, or null on 404. The only read carrying `history`: rows
+//         newest first, each {kind:'created', at, by?, movements?} or {kind:'proposal', at, proposal}.
+//         The created row is always present and always last. `by` absent is the lifter's own hand,
+//         present it names an agent's door. `movements` is how many lines the routine was created
+//         with, absent where none was stored.
+//   PUT   /v1/gym/routines/:id -> the write document in, the stored Routine out; a whole-document
+//         replace, so every edit is a read-modify-write and a rename is this route.
+//   DELETE /v1/gym/routines/:id -> 204.
+//   GET   /v1/gym/proposals[?routineId=&state=pending] -> {proposals: [head…]}, newest first. `state`
+//         recognises the literal "pending" and nothing else; any other value is unfiltered.
+//   GET   /v1/gym/proposals/:id -> the head plus `baseRevision`, `baseName`, `name` and the `changes`
+//         rows, or null on 404.
+//   POST  /v1/gym/proposals/:id/apply -> {proposal, routine?}; atomic against the frozen
+//         `baseRevision`, all of the document or none. `routine` is absent when the intent was
+//         `remove`, and a 404 answering an apply of one is a success — the routine and its ledger went.
+//   POST  /v1/gym/proposals/:id/dismiss -> {proposal}.
+// Both settlements replay: the decision already taken answers 200 with the settled proposal. The
+// refusals are 409 `proposal-superseded`, 409 `proposal-settled` and a bare 404.
+// A Thread is {id, title, createdAt, askedAt, outcome, proposals: [head-ish…], turns?}. `title` is the
+// lifter's first message verbatim; no surface may summarise it. `outcome` is server-derived
+// {kind: 'read-only'|'proposed'|'applied'|'dismissed'|'superseded', changes, routineId?, routine?},
+// where the routine pair is omitted together when the changes spanned more than one. A `proposals` row
+// is {id, state, changeCount, routineId, routine, createdAt}; a turn is {from: 'lifter'|'ask', text, at}.
+// Sessions serialize as {id, startedAt, finishedAt?, routineId?, plan?}; instants are epoch-ms numbers,
+// weights are kg, and ids are client-minted ('ses_<hex>' / 'set_<hex>' / 'rt_<hex>', 'ex_<hex>' for a
+// lifter's own movement — the catalog's are slugs). A proposal's id ('prop_<hex>') is never minted here.
 // Routines serialize as {id, name, position, revision, lastTrainedAt?, pendingProposal?, history?,
-// entries: [{position, exerciseId, targetSets?, targetReps?, targetWeightKg?, restSeconds?}]}, and a
-// write sends that document with no `position` on an entry — the entry ORDER is the routine's order
-// and the server renumbers from it.
-// AN ENTRY WITH NO `targetSets` IS OPEN: it asks at the rack, the absence is the whole state in both
-// directions, and there is no zero and no flag — a 0 would be a target of nothing. An open entry
-// carries NO `targetReps` and NO `targetWeightKg` or the write is refused 400 `could not read that
-// routine`; `restSeconds` is allowed on one, being how long you wait rather than what you are asked
-// to do. Bounds when named: sets 1–20, reps 1–100, weight ±500 kg, rest 15–900 s, and a routine is
-// between one and fifty entries.
-// NO `lastTrainedAt` IS `untested` — there is no second field for it, nothing stores one, and the
-// store's own aggregate over the log is what says a routine has been trained (log.js `isUntested`).
-// `revision` is the store's to move and is what a proposal is frozen
-// against: the human's own PUT moves it and supersedes whatever was pending, which is what stops a
-// mid-session save from destroying a diff's base — and is also why a routine RENAME is that same
-// whole-document PUT and not a route of its own. `pendingProposal` is a proposal HEAD — {id,
-// routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
-// connection?, agent?, thread?}} — present only while one is waiting, and it is how the card on
-// Today and the dot on the routines list are drawn in the read those screens were already making.
-// `source.thread` is the conversation this diff was written in and it is OFFERED ONLY WHEN PRESENT:
-// absent means there is nothing to open — the MCP door, or a thread the lifter deleted — and the row
-// still says `door: 'ask'` either way, because the change came from Ask whether or not the
-// conversation about it still exists (§O).
-// A Review is {stats: {durationMs, workingSets, topE1rm?}, slight, record?, against?}. Every
-// optional above is OMITTED when it has no value, never null.
+// entries: [{position, exerciseId, targetSets?, targetReps?, targetWeightKg?, restSeconds?}]}; a write
+// sends no `position` on an entry and the server renumbers from the entry order.
+// An entry with no `targetSets` is open: it must carry no `targetReps` and no `targetWeightKg` or the
+// write is refused 400, and `restSeconds` is allowed on one. Bounds when named: sets 1–20, reps 1–100,
+// weight ±500 kg, rest 15–900 s, one to fifty entries per routine. No `lastTrainedAt` is `untested`.
+// `revision` is the store's to move and is what a proposal is frozen against. `pendingProposal` is a
+// head — {id, routineId, intent, state, summary, changeCount, createdAt, settledAt?, source: {door,
+// connection?, agent?, thread?}} — present only while one is waiting; `source.thread` is offered only
+// when present.
+// A Review is {stats: {durationMs, workingSets, topE1rm?}, slight, record?, against?}. Every optional
+// is omitted when it has no value, never null.
 
 import { API_BASE } from '../../shell/apiBase.js';
 
@@ -307,23 +121,13 @@ async function call(path, options = {}) {
 }
 
 async function json(response) {
-  // 204 is the one success with nothing to read — both deletes answer it — and asking for bytes
-  // that were never sent would turn a success into a parse error.
   if (response.status === 204) return null;
   if (response.ok) return response.json();
   const body = await response.json().catch(() => null);
   throw new GymError(response.status, body?.error ?? '', body?.code ?? '');
 }
 
-// A refusal answers with a sentence for a human under "error" and — for the twelve reasons a client
-// must branch on — a machine word under "code". The code is the contract and the sentence is prose
-// that may be reworded any day, so every flag below reads the code. The map is the courtesy: it
-// recovers the code from the sentence a refusal shipped with, so classification never depends on
-// which of the two fields the server it reached happened to fill in. The first four are the ones
-// that ran on servers deployed before the codes existed, and they are why this map is here at all.
-// The correction's two and the proposal's two are deliberately absent: they shipped WITH their
-// codes, so a server that speaks them at all speaks them under `code`, and an entry here would be a
-// courtesy to a deployment that never existed.
+// Recovers the machine code from the sentence, for servers that send only the sentence.
 const codeForSentence = new Map([
   ['that session is finished', 'session-finished'],
   ['that set id is already used', 'set-id-taken'],
@@ -335,47 +139,13 @@ const codeForSentence = new Map([
   ['another session is already open', 'session-already-open'],
 ]);
 
-// The flush queue's whole retry policy, in one type.
-//   400  unreadable or unstorable as written: a bad field, a malformed id, an instant out of
-//        bounds, a movement no catalog holds. Terminal — retrying never makes it readable.
-//   409  a conflict. Terminal too, and each of the three has its own repair.
-//   5xx  the store failed — a dropped connection, a statement timeout, a deadlock. Retryable.
-//        A request that never produced a response rejects before this class exists, so a throw
-//        that is not a GymError is retryable for the same reason.
-//   401 waits for a sign-in, 404 for a session to exist; neither is terminal nor retryable by
-//        status. `setNotFound` is the one 404 a caller drops its pending write on instead of
-//        waiting — the row it names is not coming back.
-// Terminal and retryable never both hold, and neither follows from the other's absence — a queue
-// that reads "not retryable" as "lost" throws away a set that was only waiting for a sign-in.
-//
-// Each code raises the flag that spells it (session-finished → sessionFinished), and each asks the
-// caller for a different repair — no English is read to decide which:
-//   sessionFinished  409  this set will never land in that session; a new set needs a new session.
-//   setIdTaken       409  that set id already names another session's set; mint a fresh id, retry.
-//   sessionIdTaken   409  another account minted that session id first; mint a fresh id, retry.
-//   unknownExercise  400  no catalog holds that movement; reload the catalog — this body never lands.
-//   routineIdTaken   409  that routine id is already spent; mint a fresh id, send the same document.
-//   exerciseIdTaken  409  that movement id is already spent; the same repair, on the same terms.
-//   sessionOpen      409  the workout is still running. Nothing to repair and nothing to retry now:
-//                         only the device holding the offline queue knows every set landed, so a
-//                         discard waits for the close rather than destroying sets still in flight.
-//   sessionAlreadyOpen 409 a start that said `joinOpenSession: false` — a backfill or an import —
-//                         reached a live workout. Nothing to repair either: the past workout waits
-//                         for the close rather than filing its sets into today's session.
-//   fixUnreadable    400  the store read the correction and would not take it — a field a fix may
-//                         not carry, a wrong type, a value it cannot hold. Terminal: those bytes
-//                         never land, and the repair is a different fix rather than the same one.
-//   setNotFound      404  no such set in that workout — absent, another account's, already deleted,
-//                         or this account's set in a different session, one byte for all four. The
-//                         edit is dropped and the session is read again; the log moved underneath.
-//   proposalSuperseded 409 the routine moved after the diff was written, so the diff on screen is of
-//                         a routine that no longer exists. Terminal, and there is nothing to repair:
-//                         the proposal is settled `superseded` and the routine stands as it is now.
-//   proposalSettled  409  the OTHER decision was already taken — applied on another tab, dismissed
-//                         on a phone. Terminal too, and the repair is a read: whatever happened is
-//                         what the proposal now says.
-// Replaying a set that already landed is not a conflict at all: it answers 200 with the stored row
-// even after the session is finished, so a flush queue can never drop a durable set.
+// The flush queue's retry policy: 400 and 409 are terminal, 5xx retryable, and 401 and 404 neither.
+// Repairs, decided off the code and never off the sentence: setIdTaken / sessionIdTaken /
+// routineIdTaken / exerciseIdTaken — mint a fresh id and retry the same body; unknownExercise —
+// reload the catalog; sessionFinished — a new set needs a new session; sessionOpen and
+// sessionAlreadyOpen — wait for the open workout to close; fixUnreadable — those bytes never land;
+// setNotFound — drop the pending edit and read the session again; proposalSuperseded and
+// proposalSettled — re-read.
 export class GymError extends Error {
   constructor(status, detail = '', code = '') {
     super(detail || `gym request failed: ${status}`);
@@ -400,14 +170,6 @@ export class GymError extends Error {
   }
 }
 
-// Why a write did not land, in the half-sentence every surface finishes its own way. A 400 or a 409
-// is the store REFUSING the document — it read it and would not take it — and telling a lifter with
-// full signal to try again when they have some is the app blaming the network for its own answer,
-// on a retry that fails identically forever. A 401 is a sign-in that lapsed, and the repair is the
-// door, not the signal; a 404 is the thing the write was about no longer being in the log — a
-// session discarded, a routine removed on the phone — and no retry brings it back either. Only
-// what is left, a store that failed or a request that never got an answer, is the log not
-// answering, where retrying is the whole of the repair.
 export function failureReason(error) {
   if (error?.terminal) return 'the log wouldn’t take it as written';
   if (error?.status === 401) return 'you’re signed out. Sign in and try again';
@@ -415,9 +177,7 @@ export function failureReason(error) {
   return 'the log didn’t answer. Try again when you have signal';
 }
 
-// What a 304 hands back: the workout is exactly what the caller already holds. A sentinel rather
-// than null — null already means "no such session" on the same read — and a symbol rather than a
-// shape so nothing downstream can half-read it as a detail.
+// What a 304 hands back; null already means "no such session" on the same read.
 export const UNCHANGED = Symbol('gym-session-unchanged');
 
 export const gymApi = {
@@ -425,41 +185,14 @@ export const gymApi = {
     return (await json(await call('/exercises'))).exercises;
   },
 
-  // EVERY MOVEMENT'S LAST SET, IN ONE READ — the meta under a picker row (§B7). It is `lastTime`
-  // below asked of the whole catalog rather than sixty-two calls to it, which is the N+1 the log
-  // read already refused once; and it is a SECOND read rather than four more columns on the catalog,
-  // because the catalog is read on nearly every screen while this is drawn on one, and for most
-  // lifters most of those columns would be empty.
-  //
-  // THE ABSENCE IS THE ANSWER, AND IT IS A NARROW ONE. The reply carries nothing at all for a
-  // movement with no last time, so a caller fills no hole in with a zero — and no caller may read
-  // that silence as "never trained", because `last`'s own two exclusions live in it: the workout
-  // running right now is not a last time, and a ramp-up single is not what you did last time. A
-  // caller that has not had the reply yet draws no meta whatsoever, the same rule reached from the
-  // other side — every sentence here is about a lifter's own training, and none of them may be said
-  // over bytes that have not arrived (logger/movements.js).
-  //
-  // It is asked once, when the picker opens. The live filter runs over the list already in hand, so
-  // no keystroke asks it again.
   async lastSets() {
     return (await json(await call('/exercises/last'))).movements;
   },
 
-  // A movement the catalog does not hold, minted by the lifter who wanted it in two questions
-  // (§N screen 31): what they call it, and how it is loaded. It is a stable identity from the moment
-  // it exists, which is the whole reason the picker creates one instead of letting a typed string
-  // into a set: a name typed twice is two movements with no history between them. The four
-  // equipments the creation screen offers are a subset of the six the schema holds — `cable` and
-  // `kettlebell` stay valid on every read, and a creation screen is not a taxonomy.
   async createExercise(exercise) {
     return json(await call('/exercises', { method: 'POST', body: JSON.stringify(exercise) }));
   },
 
-  // THE NAME MOVES AND THE IDENTITY DOES NOT — which is the whole of what §H's record page is for.
-  // The id comes back unchanged, so every set, routine entry and frozen plan snapshot still points
-  // at the same movement; the store decides whether that means an update in place (a movement this
-  // account created) or a display name of this account's own over a seeded one, and no client may
-  // guess, because a naive update would rename Back Squat for every lifter on the server.
   async renameExercise(exerciseId, name) {
     return json(await call(`/exercises/${encodeURIComponent(exerciseId)}`, {
       method: 'PATCH',
@@ -467,36 +200,12 @@ export const gymApi = {
     }));
   },
 
-  // ONE MOVEMENT'S PAGE, whole and in one read (§H). There is no window parameter and no second
-  // route per block: every number in it is the domain's, and a client that could ask for a
-  // different window would be a client that could ask for a different answer.
-  //
-  // Null on 404, for the session read's reason: absent and another account's private movement are
-  // one fact on this wire, and a read that resolves to null is that fact.
-  //
-  // GET /v1/gym/stats is still mounted and is deliberately not called from here. It is the ENGINE
-  // the agent reads through `get_stats` — "how has my squat moved" is the product's thesis — and
-  // what was retired is the ROOM the browser used to draw off it (§H: there is no dashboard in this
-  // product). Nothing on this surface should reach for it again.
   async record(exerciseId) {
     const response = await call(`/exercises/${encodeURIComponent(exerciseId)}/record`);
     if (response.status === 404) return null;
     return json(response);
   },
 
-  // The client mints the id and the id IS the idempotency key. Two Starts share this route and they
-  // differ only in what the caller means, which is why the caller has to say it: the default JOINS
-  // whatever session is open, so a lost race and a borrowed second device both land in the live
-  // workout in one round trip (ARCHITECTURE §11.3 — the handoff is free because of this). Pass
-  // joinOpenSession: false to mean "create exactly this session, which is not now" — backfill and
-  // the Lift import — and a live workout refuses it 409 `session-already-open` instead of handing
-  // back today's session for a past workout's sets to be filed into.
-  //
-  // `routineId` asks the SERVER to freeze that routine onto the session as its plan snapshot. The
-  // client never composes the snapshot: a client-composed copy freezes whatever that client last
-  // read, which is exactly the staleness the snapshot exists to prevent. A start that joins an
-  // already-open session comes back with that session's own snapshot whatever was asked for —
-  // pressing Start cannot re-plan a workout that is already running.
   async startSession({ id, startedAt, joinOpenSession = true, routineId }) {
     const body = {
       id,
@@ -507,16 +216,10 @@ export const gymApi = {
     return json(await call('/sessions', { method: 'POST', body: JSON.stringify(body) }));
   },
 
-  // Converges on exactly one row per minted id — a replay returns the stored set, byte-identical,
-  // with its server-assigned number, whether or not the session has since been finished.
   async appendSet(sessionId, set) {
     return json(await call(`/sessions/${sessionId}/sets`, { method: 'POST', body: JSON.stringify(set) }));
   },
 
-  // A CORRECTION, AND ONLY OF WHAT MOVED (§G18). The fix carries the fields that changed and
-  // nothing else, because an omitted field is left as stored — which is how a set's rpe and its
-  // note survive a sheet that never draws them (fix.js builds the document). The stored set comes
-  // back, so a screen redraws off the store's answer rather than off what it hoped it sent.
   async fixSet(sessionId, setId, fix) {
     return json(await call(`/sessions/${sessionId}/sets/${setId}`, {
       method: 'PATCH',
@@ -524,10 +227,6 @@ export const gymApi = {
     }));
   },
 
-  // The set no longer stands. THERE IS NO TRASH BEHIND THIS and no route back: the store keeps what
-  // it took out where nothing reads it, so nothing a lifter logged is destroyed — but no screen may
-  // offer that as a recovery, because there is none to offer. 204 for a set already gone as readily
-  // as for one just removed, which is what makes a retry after a lost reply safe.
   async deleteSet(sessionId, setId) {
     return json(await call(`/sessions/${sessionId}/sets/${setId}`, { method: 'DELETE' }));
   },
@@ -536,9 +235,6 @@ export const gymApi = {
     return json(await call(`/sessions/${sessionId}/finish`, { method: 'POST', body: JSON.stringify({ finishedAt }) }));
   },
 
-  // Paging hands back the last row's startedAt AND its id: two sessions can share an instant, and
-  // an instant alone would repeat one across the boundary or skip it. The pair travels together —
-  // an id with no instant is a half cursor the server refuses.
   async sessions({ before, beforeId, limit } = {}) {
     const query = new URLSearchParams();
     if (before !== undefined) query.set('before', String(before));
@@ -548,10 +244,6 @@ export const gymApi = {
     return (await json(await call(`/sessions${suffix ? `?${suffix}` : ''}`))).sessions;
   },
 
-  // The mirror's poll rides the server's freshness tag: the last reply's `etag` goes back up as
-  // If-None-Match, and while the workout is what it was the answer is UNCHANGED — no body to parse,
-  // no state to replace. The tag is attached to the reply only when the server sent one, so a read
-  // against an older deployment is exactly the read it always was.
   async session(id, { etag } = {}) {
     const response = await call(`/sessions/${id}`, etag ? { headers: { 'if-none-match': etag } } : {});
     if (response.status === 404) return null;
@@ -561,34 +253,18 @@ export const gymApi = {
     return tag ? { ...detail, etag: tag } : detail;
   },
 
-  // The finish screen, computed by the store: three facts, at most one record, and the comparison
-  // against the last time this routine ran, movement by movement. Every number in it is the
-  // domain's — the client renders and decides nothing, so web and iOS cannot disagree about which
-  // line is the loud one.
   async review(sessionId) {
     return json(await call(`/sessions/${sessionId}/review`));
   },
 
-  // The one destructive action in the product, and it is offered only after the close: a session
-  // still running is refused 409 `session-open`, because only the device holding the offline queue
-  // knows every set landed and deleting a workout somebody is still logging into would destroy
-  // sets that are in flight.
   async discardSession(id) {
     return json(await call(`/sessions/${id}`, { method: 'DELETE' }));
   },
 
-  // HOW THIS ROOM BEHAVES AT THE RACK (§I) — units, the rest target, and what a logged set does to
-  // confirm itself. One read, and it always answers: a lifter
-  // with nothing stored is served the defaults rather than a 404, so no caller has to know whether
-  // this account has ever opened the screen.
   async preferences() {
     return json(await call('/preferences'));
   },
 
-  // A WHOLE-document replace, like a routine's PUT and for a sharper reason: an omitted field takes
-  // its DEFAULT, and an absent `restSeconds` is how "no timer" is spelled. Sending half a document
-  // therefore resets the other half. The stored document comes back — an unknown unit clamped — and
-  // it is what the screen redraws off.
   async savePreferences(document) {
     return json(await call('/preferences', { method: 'PUT', body: JSON.stringify(document) }));
   },
@@ -597,7 +273,6 @@ export const gymApi = {
     return (await json(await call('/routines'))).routines;
   },
 
-  // Absent and another account's read the same here as they do for a session — one fact, not two.
   async routine(id) {
     const response = await call(`/routines/${id}`);
     if (response.status === 404) return null;
@@ -608,9 +283,6 @@ export const gymApi = {
     return json(await call('/routines', { method: 'POST', body: JSON.stringify(routine) }));
   },
 
-  // A WHOLE-document replace: what is sent is what the routine becomes, so an edit is a read, a
-  // change and a write of everything that came back. Sending only the changed entry deletes the
-  // rest of the program (routines.js keeps the modify half of that pure).
   async replaceRoutine(id, routine) {
     return json(await call(`/routines/${id}`, { method: 'PUT', body: JSON.stringify(routine) }));
   },
@@ -619,16 +291,6 @@ export const gymApi = {
     return json(await call(`/routines/${id}`, { method: 'DELETE' }));
   },
 
-  // THE WHOLE PROPOSAL LEDGER. Every proposal ever written, newest first, settled and pending alike
-  // — the ledger supersedes rather than deletes, so nothing an agent proposed disappears and nothing
-  // it proposed happened on its own.
-  //
-  // NO SCREEN READS IT ANY MORE, and that is deliberate rather than an oversight. The three places a
-  // proposal reaches a lifter each ride a read that was already being made: the card on Today and
-  // the dot on the routines list off `pendingProposal`, and the routine's own History section off
-  // the single routine read, which carries the newest twenty AND the day the routine was created —
-  // a row this route has never been able to answer. What is left here is the ledger past that
-  // window, unfiltered by routine, for a caller that wants all of it.
   async proposals({ routineId, state } = {}) {
     const query = new URLSearchParams();
     if (routineId !== undefined) query.set('routineId', routineId);
@@ -637,134 +299,59 @@ export const gymApi = {
     return (await json(await call(`/proposals${suffix ? `?${suffix}` : ''}`))).proposals;
   },
 
-  // One proposal, whole: the head plus the base it was written against and the change rows. Absent
-  // and another account's are one fact here as they are everywhere else in this file.
   async proposal(id) {
     const response = await call(`/proposals/${encodeURIComponent(id)}`);
     if (response.status === 404) return null;
     return json(response);
   },
 
-  // THE TAP. Nothing an agent can call reaches this route — there is no apply tool at any level,
-  // because applying is not a capability, it is a human act — and nothing else in this client moves
-  // a routine an agent wrote to. It is atomic against the frozen base revision, so the two 409s are
-  // both "the world moved" rather than "your request was wrong", and neither leaves half a program
-  // behind: `proposal-superseded` means the routine changed under the diff and `proposal-settled`
-  // means the other decision was already taken. Replaying the decision already taken is a 200.
-  //
-  // There is no body. The proposal IS the document, frozen when it was written, and a client that
-  // could send fields here would be a client that could apply something the lifter never read.
   async applyProposal(id) {
     return json(await call(`/proposals/${encodeURIComponent(id)}/apply`, { method: 'POST' }));
   },
 
-  // No reason is asked for and none is sent. The proposal is settled, dated and kept on the routine.
   async dismissProposal(id) {
     return json(await call(`/proposals/${encodeURIComponent(id)}/dismiss`, { method: 'POST' }));
   },
 
-  // The prefill, resolved by the store: the whole history is behind this one read, so the answer
-  // never depends on how far the page of sessions in hand happens to reach back.
-  //
-  // A movement trained for the first time is answered 200 with the movement and nothing else — a
-  // fact, not a fault — so the reply is always an object and its `session` is what says whether
-  // there is history. Which leaves an absent reply free to mean the only other thing it can: the
-  // log has not answered. The one refusal is 400 `unknown-exercise`, the same word the write path
-  // uses, and a client that read its ids out of the catalog cannot reach it.
-  //
-  // The movement is echoed back because a capture surface re-reads this on every movement change,
-  // and a reply that lands after the lifter has moved on has to be discardable.
   async lastTime(exerciseId) {
     return json(await call(`/last?exercise=${encodeURIComponent(exerciseId)}`));
   },
 
-  // The coach link, minted. There is no GET beside this: the POST is idempotent on the session and
-  // answers with the live link when there is one, so "show me the link" and "make me a link" are
-  // one round trip. That also means it is never called on a render — a read that writes is not a
-  // read, and this one is on the lifter's own tap (share/CoachShare.jsx).
   async shareSession(id) {
     return json(await call(`/sessions/${id}/share`, { method: 'POST' }));
   },
 
-  // Revoked is 204, and a 404 is "nothing to revoke" (§6) — the link is not live either way, so
-  // both answer null and neither is a failure the lifter is told about. A revoke that 404s and was
-  // read as a failure kept a link drawn on screen that no reader could open.
   async revokeShare(id) {
     const response = await call(`/sessions/${id}/share`, { method: 'DELETE' });
     if (response.status === 404) return null;
     return json(response);
   },
 
-  // The coach's read, and the only one in this file that means anything without an account. The
-  // cookie still rides along because every call here carries it — the handler resolves no caller at
-  // all, so it changes nothing, and a lifter opening their own link sees exactly what they sent.
-  //
-  // Null is the one answer for revoked, expired and never-minted alike. Nothing above may spell it
-  // three ways: the server deliberately answers one byte so a token cannot be probed for existence,
-  // and a client that guessed which would be inventing the difference back.
   async sharedSession(token) {
     const response = await call(`/shared/${encodeURIComponent(token)}`);
     if (response.status === 404) return null;
     return json(response);
   },
 
-  // ASK (§L, §O): ONE question into ONE thread, and out one answer, the tools the model called, the
-  // count of rows the server served it, and any proposal it minted.
-  //
-  // W7 SENT THE WHOLE CONVERSATION EVERY TIME, because the server kept none of it. §O reversed that
-  // — a conversation about your bench plateau is worth more in six weeks than it was that evening —
-  // so the thread is STORED, this call carries the id and the new question alone, and the server
-  // assembles the prompt from what it holds. Which is the honest shape as well as the smaller one:
-  // the conversation a lifter reads back in Threads is the one the model actually saw, rather than
-  // whatever a client chose to resend. The caps (eight stored turns, a thousand bytes a question)
-  // are the server's, and ask.js predicts the first of them so the composer retires before a send
-  // can fail.
-  //
-  // IT IS ABOUT THE LOG AND NOT ABOUT ONE WORKOUT, which is why no session id travels with it: the
-  // questions worth asking are "how has my bench moved", and the tools behind this are the same
-  // catalog a lifter's own Claude drives over MCP.
-  //
-  // It is the ONE call in this file that may not exist. A deployment with no model wired never
-  // mounts the route, so a bare 404 is "no Ask on this deployment"; ask.js's askFailure is the one
-  // place that is read, and the room retires on it rather than offering a retry. The three thread
-  // doors below are mounted whatever the model situation is, so a conversation stays readable,
-  // exportable and deletable on a deployment that can no longer answer a question.
   async ask(thread, question) {
     return json(await call('/ask', { method: 'POST', body: JSON.stringify({ thread, question }) }));
   },
 
-  // EVERY CONVERSATION, newest first — the list §O's screen 33 is made of. It is a plain read of all
-  // of them: there is no page, no filter and no query, because a threads screen with a search box is
-  // the inbox this one is deliberately not.
   async threads() {
     return (await json(await call('/threads'))).threads;
   },
 
-  // One conversation, whole — the only read that carries `turns`. Null on 404, absent and another
-  // account's alike, exactly as every other read in this file spells that one fact.
   async thread(id) {
     const response = await call(`/threads/${encodeURIComponent(id)}`);
     if (response.status === 404) return null;
     return json(response);
   },
 
-  // THE MESSAGES GO AND THE CONSEQUENCE STAYS. A change applied from this conversation is still in
-  // the routine's history afterwards — its row still says it came from Ask — because that is a fact
-  // about a program and not a message. 204 for a thread already gone as readily as for one deleted
-  // just now, so a retry after a lost reply is safe.
   async deleteThread(id) {
     return json(await call(`/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
 };
 
-// Every set this account holds, as a file. Not a method: nothing is fetched, parsed or held in
-// memory — the browser follows the link, the server answers with a Content-Disposition, and a log
-// too big to sit in a tab's heap still lands. Same-origin in production, so the session cookie
-// rides the navigation the way it rides every other request here.
+// Links the browser follows, not methods; the session cookie rides the navigation.
 export const EXPORT_HREF = `${base}/export`;
-
-// AND EVERY CONVERSATION, AS A SECOND FILE (§O). One row per turn, parameterless, nothing omitted —
-// deliberately dull, because that is the whole trust argument for a log somebody keeps for years:
-// what Ask was told and what it said are yours on the same terms your sets are. A second file rather
-// than more columns on the first, since a set and a sentence are not one shape.
 export const EXPORT_THREADS_HREF = `${base}/export/threads`;

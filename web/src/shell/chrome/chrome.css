@@ -1,10 +1,4 @@
-/* The /app shell chrome. Tokens only — the scope swap (data-brand/data-theme on .wm-shell)
-   re-points every colour, so a literal here would refuse to tint with the room.
-
-   Two pieces of furniture, both quiet: the room switcher centred at the head and the account
-   seat opposite it. Nothing is bordered and nothing is filled — a divider or a tinted bar would
-   put a line between the shell and the room, and there isn't one. The same chrome serves every
-   width, so there is no second mobile shell to keep in step with this one. */
+/* The /app shell chrome. Tokens only: the scope swap on .wm-shell re-points every colour. */
 
 .wm-shell {
   font-family: var(--font-body);
@@ -28,7 +22,6 @@
   padding: 0 16px;
 }
 
-/* The way back out of the app, and the only mark the shell wears. */
 .wm-head-mark {
   position: absolute;
   left: 16px;
@@ -71,8 +64,6 @@ a.wm-head-mark:hover {
   transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
 
-/* The room you are in wears the pill; the pill is the card surface, so it reads as a raised
-   seat on the room's own ground rather than as a colour the shell chose. */
 .wm-switch-btn[aria-current='page'] {
   background: var(--surface-card);
   color: var(--text-primary);
@@ -106,10 +97,7 @@ a.wm-switch-btn:hover {
   position: relative;
   display: flex;
   flex-direction: column;
-  /* The room IS the viewport for whatever mounts inside: containment makes this element the
-     containing block for position:fixed product roots (.st-root, .journal-root, their sheets)
-     and a stacking boundary, so a full-bleed product fills the room — never the head — without
-     the shell ever naming a product class. */
+  /* Containment makes this the containing block for position:fixed product roots. */
   contain: layout paint;
 }
 
@@ -118,20 +106,13 @@ a.wm-switch-btn:hover {
   min-height: 0;
 }
 
-/* A room that has not arrived is its own ground and nothing else. There was a centred 800-weight
-   wordmark here until 2026-08-23: a splash screen, and the second full-viewport repaint of every
-   cold start — the ground the boot script had just painted, covered by a brand mark nobody asked
-   to read. The mark still belongs on the public auth routes, where a visitor really has left the
-   app; inside the app it only said "still here" more loudly than the wait deserved. */
 .wm-room-fallback {
   position: absolute;
   inset: 0;
   background: var(--surface-canvas);
 }
 
-/* ---- Home room — one centred column. The room owns its width, the shell owns the centring;
-        860px is the wider of the canon's two column widths, and the one that still holds three
-        product doors side by side. ---- */
+/* ---- Home room ---- */
 
 .wm-home {
   width: 100%;
@@ -146,8 +127,6 @@ a.wm-switch-btn:hover {
   margin: 0 0 18px;
 }
 
-/* 240px, not 260: three doors across the 812px the column leaves is 756 — at 260 the third wraps
-   and the row stands with a hole in it, which reads as a missing product rather than a layout. */
 .wm-home-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -213,9 +192,7 @@ a.wm-switch-btn:hover {
   color: var(--text-link);
 }
 
-/* ---- Narrow: the same chrome, tightened. The switcher was already centred and the head was
-        already the whole frame, so a phone gets no second shell — only smaller gaps, so four
-        room names still fit across a 360px screen without a scroller. ---- */
+/* ---- Narrow ---- */
 
 @media (max-width: 480px) {
   .wm-head {

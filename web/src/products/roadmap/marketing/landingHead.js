@@ -1,15 +1,4 @@
-// The crawlable shell /roadmap wears: the <head> copy, the structured data, and the words a
-// visitor without JavaScript is served. It lives here, beside the landing it describes, for the
-// same reason the landing does — a page's words are its product's, and the shell must not hold a
-// sentence about roadmaps. The shell composes these off the registry (shell/marketing/landingHeads.js).
-//
-// Pure data, no imports: scripts/build-landing-shells.mjs reads this chain in plain Node, with no
-// bundler, so nothing here may reach for a .jsx or a browser global.
-//
-// `module` is this landing's own source file. The build script looks it up in Vite's manifest and
-// preloads that chunk from the shell, so the request goes out with the HTML instead of waiting for
-// the entry chunk to download, parse and discover it — one serial round trip the visitor watches.
-// It names a sibling of this file, which is why it is stated here and not on the shell side.
+// scripts/build-landing-shells.mjs reads this chain in plain Node: no .jsx imports, no browser globals.
 
 import { SITE_ORIGIN } from '../../../shell/marketing/siteIdentity.js';
 
@@ -60,14 +49,7 @@ export const roadmapLandingHead = {
         'Sign in once and your trees sync across phone and desktop',
         'Nine authored starter quests; three of the developer paths adapted from roadmap.sh (CC BY-SA)',
       ],
-      // One offer, because there is one thing a crawler can truthfully be told is available.
-      // Windmill One had an Offer here at $12 with availability InStock — a machine-readable
-      // claim that it can be bought now, which feeds price and shopping surfaces. It cannot:
-      // paidPlansOpen() is false (shell/billing/checkout.js) and the server answers every
-      // checkout 503 while PADDLE_PRICE_ID is unset. No availability token says "announced,
-      // till shut" — PreOrder, PreSale and BackOrder all mean orderable, OutOfStock means a
-      // supply that ran out — so the honest structured statement is the absence of the offer.
-      // Put it back in the same wave that opens paid plans.
+      // Only an offer that is actually orderable belongs here.
       'offers': [
         {
           '@type': 'Offer',

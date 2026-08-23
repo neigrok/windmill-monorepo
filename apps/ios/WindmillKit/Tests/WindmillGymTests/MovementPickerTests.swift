@@ -1,10 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// Three different silences, and they must not share a sentence. A lifter who typed a letter the
-// catalog does not hold was once told their signal was out — the app reporting a failure that had
-// not happened, and pointing them at the wrong thing to fix.
-
 final class PickerOptionsTests: XCTestCase {
     private let catalog = [
         Exercise(id: "bench-press", name: "Bench Press"),
@@ -20,25 +16,17 @@ final class PickerOptionsTests: XCTestCase {
         XCTAssertNil(options.create, "there is something to pick, so there is nothing to mint")
     }
 
-    // A movement already in the session is not offered again: the picker adds movements, and the
-    // jump sheet is where a lifter goes back to one.
     func testAMovementAlreadyInTheSessionIsNotOffered() {
         let options = PickerOptions.matching(query: "squat", catalog: catalog, taken: ["back-squat"])
         XCTAssertEqual(options.matches.map(\.id), ["zercher-squat"])
     }
 
-    // Only an EMPTY catalog may mention signal — and it offers no door, because what is missing is
-    // the read and not the movement. Matched to web/src/products/gym/logger/movements.js line for
-    // line: two surfaces disagreeing about which silence has a way out is the drift this file exists
-    // to catch.
     func testOnlyAnEmptyCatalogBlamesTheNetworkAndItOffersNoDoor() {
         let options = PickerOptions.matching(query: "bench", catalog: [], taken: [])
         XCTAssertEqual(options.empty, "The catalog didn’t load. It comes back when you have signal.")
         XCTAssertNil(options.create)
     }
 
-    // A catalog already entirely in the session is answered by the jump sheet, not by minting a
-    // second copy of a movement that is already being logged.
     func testACatalogEntirelyInTheSessionSaysThatAndOffersNoDoor() {
         let taken = catalog.map(\.id)
         let options = PickerOptions.matching(query: "", catalog: catalog, taken: taken)
@@ -46,30 +34,23 @@ final class PickerOptionsTests: XCTestCase {
         XCTAssertNil(options.create)
     }
 
-    // The one silence a NAME can answer, and the only one with a door.
     func testAQueryThatMatchesNothingSaysOnlyThatAndOffersToMintIt() {
         let options = PickerOptions.matching(query: " zottman ", catalog: catalog, taken: [])
         XCTAssertEqual(options.empty, "No movement by that name.")
         XCTAssertEqual(options.create, "Create “zottman”")
     }
 
-    // The sentence never echoes the query back: the button holds it, and holding it twice would be
-    // the same words in the same breath.
     func testTheSentenceDoesNotRepeatWhatTheButtonAlreadySays() {
         let options = PickerOptions.matching(query: "zottman", catalog: catalog, taken: [])
         XCTAssertFalse(options.empty?.contains("zottman") ?? true)
     }
 
-    // The list is cut so the sheet never becomes a catalog browser — typing is the filter.
     func testTheListIsCutToWhatAThumbCanRead() {
         let long = (0..<20).map { Exercise(id: "ex_\($0)", name: "Press \($0)") }
         XCTAssertEqual(PickerOptions.matching(query: "press", catalog: long, taken: []).matches.count,
                        PickerOptions.shown)
     }
 
-    // THE SIX (§J22) lead an unfiltered list, in their own order and never the catalog's, and they
-    // are not repeated below it. They are a client constant: this product is for a lifter on a
-    // written barbell program, and these are the six that program is made of.
     func testTheSixLeadAnUnfilteredListAndAreNotRepeatedInIt() {
         let options = PickerOptions.matching(query: "", catalog: DeviceCatalog.seeded, taken: [])
         XCTAssertEqual(options.six.map(\.id), PickerOptions.six)
@@ -81,8 +62,6 @@ final class PickerOptionsTests: XCTestCase {
         XCTAssertNil(options.empty)
     }
 
-    // One already in the session drops out of the section for the same reason it drops out of the
-    // list: the picker adds movements, and the assembly list is where a lifter goes back to one.
     func testASixAlreadyInTheSessionIsNotOfferedAgain() {
         let options = PickerOptions.matching(query: "", catalog: DeviceCatalog.seeded,
                                              taken: ["bench-press", "deadlift"])
@@ -90,17 +69,12 @@ final class PickerOptionsTests: XCTestCase {
                        ["back-squat", "overhead-press", "barbell-row", "chin-up"])
     }
 
-    // Typing is a question about the whole catalog, so the section steps aside — a pinned six over a
-    // search result would be answering something nobody asked.
     func testTypingPutsTheSixAwayAndFiltersEverything() {
         let options = PickerOptions.matching(query: "squat", catalog: DeviceCatalog.seeded, taken: [])
         XCTAssertTrue(options.six.isEmpty)
         XCTAssertEqual(options.matches.first?.id, "back-squat")
     }
 
-    // THE META, and its silence is the point. The read is sparse, so an absent movement has never
-    // been trained — but only once the read has landed. Nil says nothing at all, because telling a
-    // lifter of ten years they have never squatted is the product lying in the pixel this exists for.
     func testTheMetaSaysNothingUntilTheLogHasAnswered() {
         let quiet = PickerOptions.matching(query: "bench", catalog: catalog, taken: [])
         XCTAssertEqual(quiet.matches.map(\.meta), [nil, nil])
@@ -114,8 +88,6 @@ final class PickerOptionsTests: XCTestCase {
         XCTAssertEqual(answered.matches.map(\.meta), ["last 82.5 × 5 · 3 days ago", "never logged"])
     }
 
-    // A movement the lifter minted is tagged so they can recognise their own, and behaves
-    // identically in every other respect.
     func testAMintedMovementIsTaggedYours() {
         let options = PickerOptions.matching(query: "squat", catalog: catalog, taken: [])
         XCTAssertEqual(options.matches.map(\.yours), [false, true])

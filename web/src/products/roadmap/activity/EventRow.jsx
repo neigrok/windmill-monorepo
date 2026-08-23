@@ -1,8 +1,3 @@
-// One activity row — actor, verb-sentence, and a relative timestamp. Reused by
-// the docked feed and the step panel's History, so the two read identically.
-// Hovering a row lights its node on the graph; clicking glides the camera there
-// (the shell wires those). A row whose node is gone is inert — nothing to link.
-
 import React from 'react';
 import { ActorAvatar, EventSentence, relativeTime } from './grammar.jsx';
 

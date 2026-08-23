@@ -1,31 +1,9 @@
 import SwiftUI
 import WindmillPlatform
 
-// THE LOG — every session that happened, newest first, and the second of the room's three tabs
-// (§G16). It is not a calendar: a month grid answers "which days did I train", which this lifter
-// answers with a program. There is no adherence percentage either — a number that scores somebody
-// against a plan they already changed on purpose.
-//
-// The week is the client's own fold over the page it already holds; there is no week endpoint and
-// there must not be one, because the fold is presentation. What it may say about a week it can only
-// say when the week is WHOLE, which is the one honesty rule paging puts on it: reading is
-// newest-first, so a week states its tonnage only when it sits above the oldest instant the SERVER
-// has answered for. Not "every week but the last on screen" — this device's own unclaimed sessions
-// are merged into the list at any age and one of them can sit below the served page.
-//
-// THE GOLD DOT MEANS A RECORD HAPPENED IN THERE (§G16), and the log does not decide that — the
-// domain does, against the log AS IT IS NOW rather than frozen at the finish — so a correction
-// (§G18) moves a record and moves the dot with it. A row this device is the only home for never
-// wears one: the three record rules are claims against a history the device does not hold, and no
-// dot there is an omission rather than the assertion a wrong dot would be.
-
-// The rows of the log, grouped into the weeks they were lived in. Pure: it takes the summaries the
-// store is holding and answers what is on screen, so the fold, the tonnage rule and the four facts
-// of a row are all readable without a phone.
+// Weeks are folded on the client over the page it holds; there is no week endpoint.
 enum LogWeeks {
-    // A session as the row states it. Every field is optional exactly where the fact may be missing,
-    // and a missing one draws NOTHING — never a dash, never a zero standing in for a read that did
-    // not happen.
+    // A missing fact draws nothing — never a dash, never a zero.
     struct Row: Equatable, Identifiable {
         let summary: SessionSummary
         let title: String
@@ -49,9 +27,6 @@ enum LogWeeks {
             e1rm = summary.topE1rm.map { "e1RM \(Readout.weight($0))" }
         }
 
-        // `today · 18:44` while it is still today, and the day itself after that. A session is read
-        // back on the day it happened far more often than on any other, and the clock is what tells
-        // two of those apart; a week later the clock is noise and the day is the fact.
         static func when(_ ms: Int64, now: Int64) -> String {
             guard Readout.daysAgo(ms, now: now) > 0 else { return "today · \(Readout.time(ms))" }
             return Readout.day(ms)
@@ -67,17 +42,11 @@ enum LogWeeks {
         var label: String { "week of \(Readout.date(startedAtMs))" }
     }
 
-    // HOW FAR THE LOG HAS BEEN READ, which is the only thing that decides whether a week may state
-    // its own tonnage.
     enum Reach: Equatable {
-        case whole                      // the bottom: nothing older exists to arrive
-        case served(oldest: Int64?)     // the oldest instant the SERVER has answered for, if any
+        case whole  // the bottom: nothing older exists to arrive
+        case served(oldest: Int64?)  // the oldest instant the SERVER has answered for, if any
 
-        // A week may be captioned only when nothing older than it can still land in it. That floor
-        // is the SERVED one and it is not "every week but the last on screen": this device's own
-        // unclaimed sessions are merged in at ANY age, so a single old one sits below the served
-        // page and pushes the genuinely partial week up out of last place — where it would then be
-        // captioned with a number that silently changes on the next tap of `Load older`.
+        // A week may be captioned only when nothing older can still land in it, and that floor is the served one.
         func holds(_ monday: Int64) -> Bool {
             guard case .served(let oldest) = self else { return true }
             guard let oldest else { return false }
@@ -88,9 +57,7 @@ enum LogWeeks {
     static func fold(_ summaries: [SessionSummary], deviceOnly: Set<String>,
                      reach: Reach, now: Int64) -> [Week] {
         var weeks: [Week] = []
-        // Kept beside the weeks rather than inside them because a week whose sum is unknowable must
-        // print nothing rather than a total that is quietly short: one session with no tonnage on it
-        // takes the whole week's caption with it.
+        // One session with no tonnage takes the whole week's caption with it.
         var kilos: [Double?] = []
 
         for summary in summaries.sorted(by: { $0.session.startedAtMs > $1.session.startedAtMs }) {
@@ -116,18 +83,12 @@ enum LogWeeks {
         }
     }
 
-    // What is on screen, counted off what is on screen — and NOTHING until something is: a log still
-    // being read has not answered `0 sessions`, and every other number here omits rather than
-    // zeroes. "Loaded" does real work in that sentence; it is a claim about this list and never
-    // about the log, which goes back further than anybody has asked for.
     static func loaded(sessions: Int, weeks: Int) -> String? {
         guard sessions > 0 else { return nil }
         return "\(Readout.sessionCount(sessions)) · \(weeks == 1 ? "1 week" : "\(weeks) weeks") loaded"
     }
 
-    // Monday, in the zone the lifter trained in. This fold is over a page the client already holds,
-    // and a week a session belongs to is the week that person lived it in — nothing here is a UTC
-    // bucket, because nothing here was cut by the server.
+    // Monday in the lifter's own zone, never a UTC bucket.
     static func weekStart(of ms: Int64) -> Int64 {
         var calendar = Calendar.current
         calendar.firstWeekday = 2
@@ -143,8 +104,6 @@ struct LogScreen: View {
 
     @Environment(\.gymSkin) private var skin
 
-    // The fold happens once per frame and everything on screen reads it, including the count in the
-    // head — a second call would be a second answer to "how many weeks is this".
     var body: some View {
         let weeks = LogWeeks.fold(store.recent, deviceOnly: store.deviceOnly,
                                   reach: store.logFoot == .bottom
@@ -222,18 +181,12 @@ struct LogScreen: View {
                         .font(WindmillFont.body(16, .bold))
                         .foregroundStyle(skin.ink)
                         .lineLimit(1)
-                    // A filled gold dot: a personal record happened in this workout. It is the one
-                    // loud mark in the log and there are ~10 of them in 200 rows — the finish screen
-                    // said it once, and this is where it stays sayable.
                     if row.record {
                         Circle()
                             .fill(skin.prInk)
                             .frame(width: 8, height: 8)
                             .accessibilityLabel("a personal record happened here")
                     }
-                    // A hollow ring, and on this surface it is REAL: the room is anonymous-first, so
-                    // a session lives on the device until an account claims it, and the lifter it
-                    // belongs to deserves to know which of these rows only this phone has.
                     if row.deviceOnly {
                         Circle()
                             .strokeBorder(skin.unsyncedInk, lineWidth: 1.5)
@@ -265,9 +218,6 @@ struct LogScreen: View {
             .foregroundStyle(skin.inkDim)
     }
 
-    // THE FOUR STATES OF THE FOOT, in the order a scroll meets them. There is no spinner and there
-    // are no skeleton rows pretending to be sessions: the box that was offering the page is the box
-    // that says it is fetching it, one shade quieter.
     @ViewBuilder
     private var foot: some View {
         switch store.logFoot {
@@ -287,9 +237,6 @@ struct LogScreen: View {
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
         case .bottom:
-            // The bottom is a DATE and not an empty box — it is the one fact worth arriving at, and
-            // it is drawn off the oldest row actually on screen rather than off any claim about how
-            // far back the log goes.
             if let first = store.recent.last {
                 Text("first session · \(Readout.dateWithYear(first.session.startedAtMs))")
                     .font(GymType.numeral(12.5))
@@ -297,8 +244,6 @@ struct LogScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
             }
         case .failed:
-            // Alarm ink marks three things in this product and no others: a failed read, a failed
-            // write, and §G18's one destructive control. Never a missed rep, never a short session.
             Button { Task { await store.loadOlder() } } label: {
                 box("That read failed · retry", ink: skin.alarmInk, edge: skin.alarmInk)
             }

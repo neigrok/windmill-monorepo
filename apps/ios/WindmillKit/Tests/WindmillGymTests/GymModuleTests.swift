@@ -2,10 +2,6 @@ import XCTest
 @testable import WindmillGym
 @testable import WindmillPlatform
 
-// The hub asks these two questions on every render, and both must be answerable off the DEVICE — the
-// hub is the first frame of a cold launch, and a front door that waited for a round trip would be a
-// front door you wait at. `running` is the one answer that reorders the hub.
-
 @MainActor
 final class GymDeviceTests: XCTestCase {
     private var queueURL: URL!
@@ -38,8 +34,6 @@ final class GymDeviceTests: XCTestCase {
         XCTAssertEqual(summary().sessions, 0)
     }
 
-    // A workout in progress is the one thing that sinks gym to the bottom of the hub, under the
-    // thumb, and puts the dot on the capsule from every other room.
     func testAnOpenSessionNamesItsRoutineAndCountsItsSets() {
         let held = queue()
         held.hold(Session(id: "ses_1", startedAtMs: 1_000,
@@ -54,8 +48,6 @@ final class GymDeviceTests: XCTestCase {
         XCTAssertEqual(summarised.sessions, 1)
     }
 
-    // A session with no routine is still a session, and the hub says what it is rather than leaving
-    // the headline blank.
     func testAnAdHocSessionStillNamesItself() {
         let held = queue()
         held.hold(Session(id: "ses_1", startedAtMs: 1_000))
@@ -63,8 +55,6 @@ final class GymDeviceTests: XCTestCase {
         XCTAssertEqual(summary().routine, "Logging without a routine")
     }
 
-    // The local shelf is a real home now: a finished session nobody has claimed counts toward what
-    // gym is holding here, which is what signed-out You states and the house trigger waits on.
     func testUnclaimedFinishedSessionsCountTowardWhatIsOnThisDevice() {
         let kept = LocalLog(url: localURL, deviceHolds: nil)
         kept.keep(Session(id: "ses_done", startedAtMs: 1_000, finishedAtMs: 2_000),
@@ -80,8 +70,6 @@ final class GymDeviceTests: XCTestCase {
         XCTAssertEqual(summary().sessions, 2, "the live session counts beside the kept one")
     }
 
-    // The cache answers from the files' own modification stamps. What must never happen is a hub
-    // that goes on naming a workout the device has let go of.
     func testTheSummaryFollowsTheFilesRatherThanItsOwnMemory() {
         let held = queue()
         held.hold(Session(id: "ses_1", startedAtMs: 1_000,
@@ -109,8 +97,6 @@ final class GymModuleTests: XCTestCase {
                 user: User(id: "u1", email: "lifter@windmill.works", name: "Lifter"))
     }
 
-    // The room is HERE now. `presence` is the platform's default, and a module that still overrode it
-    // would be telling the switcher the log lives somewhere else.
     func testGymIsPresentOnThisPhone() {
         guard case .here = module.presence else {
             return XCTFail("gym has a room on this device")
@@ -120,13 +106,10 @@ final class GymModuleTests: XCTestCase {
         XCTAssertEqual(module.entry.verb, "Log a workout")
     }
 
-    // The noun is the PRODUCT's vocabulary and nothing else may choose it: a gym counts sessions.
     func testGymCountsSessions() {
         XCTAssertEqual(module.holdings(account).noun, "session")
     }
 
-    // Nothing running is the resting state, and it is said without a claim about a log this frame has
-    // not read — the device knows whether a session is open and nothing else.
     func testTheHubLineRestsOnWhatTheDeviceKnows() {
         let line = module.hubLine(signedIn)
         XCTAssertEqual(line.eyebrow, "Today")
@@ -135,9 +118,6 @@ final class GymModuleTests: XCTestCase {
         XCTAssertFalse(line.running)
     }
 
-    // THE WALL IS GONE. The room is anonymous-first: a fresh signed-out phone reads exactly like a
-    // signed-in one at rest, because there is no precondition to warn about — Today's claim offer is
-    // the only account sentence gym carries, and it lives inside the room, under the work.
     func testSignedOutAFreshDeviceReadsLikeAnyRestingGym() {
         let line = module.hubLine(account)
         XCTAssertEqual(line.eyebrow, "Today")
@@ -146,8 +126,6 @@ final class GymModuleTests: XCTestCase {
         XCTAssertFalse(line.running)
     }
 
-    // A door that opens straight onto work carries no caveat — nil is the promise, and gym now
-    // keeps it: sessions open against the device's own log before there is an account.
     func testTheFirstRunCardCarriesNoCaveat() {
         XCTAssertNil(module.entry.caveat)
         XCTAssertNil(module.caveat, "gym's room is HERE and opens signed out — nothing to warn about")

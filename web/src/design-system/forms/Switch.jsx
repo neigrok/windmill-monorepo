@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 
-// A real checkbox under the paint. The input carries focus, the space key, and the on/off state
-// a screen reader announces; the track and knob are drawn beside it, and the wrapping label makes
-// the whole control one hit target. The earlier version painted the same pixels with a span and an
-// onClick — identical to look at, and unreachable by a keyboard, which is not a thing to hand
-// someone a consent decision on.
+// A real checkbox under the paint: the input carries focus, the space key and the state a screen
+// reader announces, and the wrapping label makes the whole control one hit target.
 export function Switch({ checked, onChange, label }) {
   const [ring, setRing] = useState(false); // keyboard focus only — a pointer press draws no ring
 

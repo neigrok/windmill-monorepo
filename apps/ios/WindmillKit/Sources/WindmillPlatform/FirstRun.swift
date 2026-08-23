@@ -1,21 +1,10 @@
 import SwiftUI
 
-// The journey — everything that happens once and then never again
-// (`guidelines/superapp-shell.md` §9, from `templates/superapp-flow`).
-//
-//   cold launch → one question → straight into that app → the first real thing → the house, once
-//
-// It lives in one file because it is one feature: three pieces of device-local state and the two
-// screens that spend them. All of it is deliberately device-local — the whole point is that none
-// of this waits for an account, so none of it may live in one.
-
-// A value, not an object: three flags and where they are kept. Being a struct is what lets the
-// shell hold it in @State and read it on the very first frame — an observable object would have to
-// load asynchronously, and a returning writer would see the one question flash before the room.
+// Device-local: none of it waits for an account.
 public struct Journey {
-    public private(set) var asked: Bool           // the one question has been answered
-    public private(set) var lastRoom: String?     // where they stood; nil means the hub
-    public private(set) var houseShown: Bool      // the other rooms have been introduced
+    public private(set) var asked: Bool
+    public private(set) var lastRoom: String?     // nil means the hub
+    public private(set) var houseShown: Bool
 
     private let defaults: UserDefaults
 
@@ -37,8 +26,7 @@ public struct Journey {
         defaults.set(true, forKey: Key.asked)
     }
 
-    // Where they stood, remembered so the next launch reopens it. Going home is itself an answer —
-    // the hub is where they chose to be — so it clears rather than keeping the last room.
+    // nil clears the remembered room.
     public mutating func stood(in room: String?) {
         lastRoom = room
         if let room {
@@ -53,18 +41,11 @@ public struct Journey {
         defaults.set(true, forKey: Key.houseShown)
     }
 
-    // The house fires on the first capsule tap that happens AFTER something real exists, and never
-    // again. This resolves the board's own contradiction — its map says the first capsule tap
-    // reveals the other rooms, its screen caption says it fires after the first real thing — by
-    // making both true at once, and it needs no polling and no channel out of a room: the shell
-    // already has to answer a capsule tap, so it asks the products then.
     public func shouldIntroduceHouse(madeSomething: Bool, otherRooms: Int) -> Bool {
         !houseShown && madeSomething && otherRooms > 0
     }
 }
 
-// The one question — the whole of onboarding at the shell level. Not the hub: a hub of three empty
-// rooms is a chore list, and an empty state is the worst first impression a superapp can make.
 struct EntryQuestionView: View {
     let products: [any ProductModule]
     let onPick: (String) -> Void
@@ -79,7 +60,6 @@ struct EntryQuestionView: View {
 
             Spacer(minLength: WindmillSpace.x6)
 
-            // The question and the doors sit low, in thumb reach — the same rule the hub follows.
             Text("What do you want to do first?")
                 .font(WindmillFont.display(27, .heavy))
                 .foregroundStyle(WindmillColor.textPrimary)
@@ -109,14 +89,6 @@ struct EntryQuestionView: View {
     }
 }
 
-// A door, in plain verbs and in its product's own skin — so the card already tells you which room
-// it opens onto, before you have ever seen one.
-//
-// AND WHAT IT NEEDS, IF IT NEEDS ANYTHING. Two of the three rooms this app mounts do not open
-// straight onto work — roadmap's canvas is on the web, and gym's log is kept on an account — and a
-// first screen that offered all three as equals gave a fresh phone a two-in-three chance of walking
-// into a wall. The caveat is drawn in mono, under the product's own sentence, so it reads as a fact
-// about the room rather than as more of its pitch.
 private struct EntryCard: View {
     let product: any ProductModule
 
@@ -179,7 +151,6 @@ private struct EntrySkin {
     }
 }
 
-// The house, once. Introduced, never sold — and dismissing it returns you to work.
 struct HouseSheet: View {
     let madeIn: any ProductModule
     let others: [any ProductModule]
@@ -222,9 +193,7 @@ struct HouseSheet: View {
     }
 }
 
-// What the shell looks like — hub, switcher, You, Windmill One, and every sheet. NOT what a room
-// looks like: a product owns its own skin, and journal's night-or-day choice stays in journal
-// (`guidelines/superapp-shell.md` §5). Device-local, like everything else the shell remembers.
+// Shell chrome only — a product owns its own skin.
 public enum Appearance: String, CaseIterable {
     case light, dark, system
 
@@ -246,7 +215,7 @@ public enum Appearance: String, CaseIterable {
         }
     }
 
-    // nil hands the choice back to the OS, which is what "System" means — not a third palette.
+    // nil hands the choice back to the OS.
     public var scheme: ColorScheme? {
         switch self {
         case .light: return .light

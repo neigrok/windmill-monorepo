@@ -1,18 +1,6 @@
-// The gym's /app home cell (shell contract §HomeCards) — the training log's one line on the home
-// grid. Everything it says it reads off the auth status the shell has already resolved: no fetch
-// and no storage look at all — this cell is drawn in the first frame after sign-in, and a training
-// log is a read the log itself is a better place to wait for.
-
 import React from 'react';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 
-// Two answers, one door each. The signed-in line says what web gym IS — the phone captures, this
-// surface holds the log — and claims nothing about a workout this browser cannot know about: live
-// state lives on the phone and on the server, and the log is where both are read.
-//
-// A ghost is told about the account BEFORE the tap rather than after it. #/gym answers a visitor
-// with no account with a sign-in pitch and nothing else, so a cell reading "Open the log →" would
-// be an ambush; the log being kept on an account is the honest first fact about this product.
 function cell({ signedIn }) {
   if (signedIn) return { body: 'Workouts start on your phone and land here — the log, the routines, the long line of showing up.', link: 'Open the log →' };
   return { body: 'Sets, weights, and what you lifted last time — kept on your account.', link: 'Sign in to open your log →' };
@@ -20,8 +8,6 @@ function cell({ signedIn }) {
 
 export function HomeCard() {
   const { status } = useAuth();
-  // 'loading' reads as signed out on purpose — the same face a first-ever visitor gets. A returning
-  // signed-in tab never sees it: AuthProvider seeds itself from its own hint on the first frame.
   const { body, link } = cell({ signedIn: status === 'signed-in' });
 
   return (
@@ -41,9 +27,6 @@ export function HomeCard() {
 
 export default HomeCard;
 
-// The dot's fallback restates the design system's --kind-sky for scopes that have not loaded the
-// palette — the token wins wherever it exists. Steel is gym's hue everywhere else in the product,
-// and the home grid is scoped to clay, so the ramp token is read directly rather than --color-brand.
 const CSS = `
   .wm-ghc { display:flex; flex-direction:column; gap:8px; text-align:left; box-sizing:border-box;
             background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-xl);

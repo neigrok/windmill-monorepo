@@ -1,22 +1,8 @@
 name: iOS CI
 
-# Monorepo: the native superapp lives under apps/ios. Build and test only — this workflow ships
-# nothing; App Store delivery is a later wave. Path-filtered to apps/ios and packages/api-contract:
-# the weight ladder's truth is packages/api-contract/gym-ladder.json and all three copies of the
-# rule (Swift, web and Kotlin) run it as a test, so editing the golden fires this workflow AND
-# web.yml AND android.yml — web.yml's `npm run build` runs the JS suite first. That is the drift
-# gate doing its job — a rule changed in one language fails in the others. All three arm on push
-# and on pull_request, so no language can be the only one watching.
-#
-# This one briefly ran on push only. macos runners bill at 10x, that was most of the Actions spend
-# on a private repo, and the account hit its quota — so the PR half was cut to stop paying twice per
-# commit for a gate that ships nothing. The repo went public on 2026-08-12 and GitHub-hosted minutes
-# became free, which removed the reason, so the trigger is back. Worth knowing if this workflow ever
-# looks expensive again: push-only is the cheap half-measure, and it costs pre-merge iOS drift.
-#
-# This runs xcodebuild against a simulator rather than `swift build`: the package is iOS-only (see
-# apps/ios/README.md), and building the app target is a far stronger gate than compiling the
-# libraries was — it proves project.yml, the generated Info.plist and the module wiring too.
+# Build and test only; ships nothing. Editing packages/api-contract/gym-ladder.json fires this
+# workflow, web.yml and android.yml: all three languages run the ladder rule against that golden.
+# xcodebuild against a simulator rather than `swift build` — the package is iOS-only.
 
 on:
   push:
@@ -46,19 +32,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Printed so a red build can be read against the exact toolchain that produced it.
       - run: xcodebuild -version
 
-      # Windmill.xcodeproj is generated, never committed — a pbxproj nobody can review is a merge
-      # conflict waiting to happen. project.yml is the reviewable half.
+      # Windmill.xcodeproj is generated, never committed; project.yml is the checked-in half.
       - name: Generate the project from project.yml
         run: |
           brew install xcodegen
           xcodegen generate
 
-      # Resolve a simulator by capability rather than by name: the runner image's device list moves
-      # with every Xcode release, and a hard-coded "iPhone 16" is a build that breaks on a date
-      # nobody chose.
+      # Resolve a simulator by capability, never by name: the runner image's device list moves with
+      # every Xcode release.
       - name: Pick a simulator
         id: sim
         run: |
@@ -67,17 +50,14 @@ jobs:
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices available | grep -m1 iPhone
 
-      # The app target: proves project.yml, the generated Info.plist and the module wiring.
       - name: Build the app
         run: |
           xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
             -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO
 
-      # The suites, including the ladder against packages/api-contract/gym-ladder.json. That test
-      # reads the golden out of the checkout by walking up from #filePath, so the whole repo must be
-      # present — never a bundled resource copy.
-      # Run from the package directory: WindmillKit-Package is the package's own implicit scheme and
-      # does not exist in Windmill.xcodeproj.
+      # The ladder test reads packages/api-contract/gym-ladder.json by walking up from #filePath, so
+      # the whole repo must be checked out. Run from the package directory: WindmillKit-Package is
+      # the package's implicit scheme and does not exist in Windmill.xcodeproj.
       - name: Test WindmillKit
         working-directory: apps/ios/WindmillKit
         run: |

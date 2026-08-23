@@ -12,12 +12,7 @@ import works.windmill.gym.store.Verdict
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
-// The two seams GymHttp owns beyond the routes: the adapter that strips the platform's exception
-// down to the facts the verdicts read, and the Json every body crosses through. VerdictTests proves
-// the verdicts from bare facts; this file proves the wire reaches those facts and those verdicts.
 class GymHttpTests {
-    // The iOS twin's name — there the store maps WindmillApiError.offline/.malformed straight to
-    // .retry; here the same rule crosses the RefusalFacts adapter first.
     @Test
     fun testAStorageFailureAndATransportFailureAreBothRetries() {
         assertEquals(RefusalFacts(offline = true), RefusalFacts(WindmillApiException.Offline))
@@ -27,9 +22,6 @@ class GymHttpTests {
         assertNull(Verdict.refusing(RefusalFacts(WindmillApiException.Offline)).terminalReason(afterRemints = 0))
     }
 
-    // The wire form, through the transport's own Json. WindmillJson does not encode defaulted
-    // values, so a default on pattern/equipment would VANISH from the wire and the server would
-    // refuse the movement — this pins that both are stated.
     @Test
     fun testAnExerciseWriteStatesPatternAndEquipmentOnTheWire() {
         val encoded = WindmillJson.encodeToString(
@@ -51,12 +43,6 @@ class GymHttpTests {
         assertEquals("""{"id":"ses_probe","startedAt":1000}""", encoded)
     }
 
-    // §G18's correction, at the values a defaulted field would hide behind. The same rule bites
-    // harder here than anywhere else on this wire: a field missing from a PATCH body reads on the
-    // server as "leave what is stored", so a `SetFix` that dropped an empty bar or a zero rep count
-    // would silently correct nothing. All three ride, always — and the three that may NOT ride are
-    // absent by construction, because the type has no field for exerciseId, completedAt or
-    // setNumber at all.
     @Test
     fun testASetFixStatesAllThreeFieldsEvenAtTheValuesADefaultWouldHide() {
         val encoded = WindmillJson.encodeToString(

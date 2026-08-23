@@ -1,14 +1,4 @@
-// Settings §Reminders: the weekly nudge, and the whole rule that governs it. One switch, and an
-// honest sentence under it — including the two clauses that keep most weeks quiet, because a
-// person with ready steps who never gets mail should recognise the reason here rather than
-// conclude the thing is broken. The mail names the tree and its steps, so the copy says that
-// out loud before anyone decides.
-//
-// Turning it ON carries this browser's IANA timezone with the PATCH. The server never marks a
-// user due without one, so an enable that can't name a zone is refused here rather than saved as
-// a switch that reads "on" and sends nothing. A read that doesn't land — dark server, failed
-// fetch — renders nothing at all, the same as every other section whose feature isn't a thing
-// here yet.
+// An enable that cannot name an IANA zone is refused here: the server never marks a user due without one.
 
 import React from 'react';
 import { Switch } from '../../../design-system';
@@ -33,19 +23,14 @@ export function ReminderSection() {
     return () => { alive = false; };
   }, []);
 
-  // "Saved." is an acknowledgement, not a state: it clears itself so it can't sit under the
-  // switch for the rest of the session, long outliving the change it described.
+  // "Saved." is an acknowledgement, not a state: it clears itself.
   React.useEffect(() => {
     if (phase !== 'saved') return undefined;
     const settle = setTimeout(() => setPhase('idle'), 2400);
     return () => clearTimeout(settle);
   }, [phase]);
 
-  // Nothing while the read is in flight, nothing if it missed, and nothing unless a reminder
-  // could actually land in THIS person's inbox — `armed` means deliverable to you (the engine
-  // is on AND you are inside its rollout), `enabled` means you asked for it. Offering a switch
-  // that promises a weekly email no sweep will send is the one dishonest thing this section
-  // could do.
+  // `armed` means a reminder could reach this inbox; `enabled` means this person asked for one.
   if (loading || !settings || !settings.armed) return null;
 
   const toggle = async (next) => {
@@ -64,8 +49,7 @@ export function ReminderSection() {
       setError("Couldn't save just now — try again.");
       return;
     }
-    // Over a suppressed row the enable is also the lift, and only the server knows whether the flag
-    // cleared — so read it back rather than guess, and the ordinary face returns on its own.
+    // Only the server knows whether the enable lifted the suppression, so read it back.
     if (settings.suppressed) {
       const fresh = await fetchReminders();
       setSettings(fresh ?? { ...settings, enabled: next, timezone: patch.timezone ?? settings.timezone });
@@ -76,19 +60,7 @@ export function ReminderSection() {
     setPhase('saved');
   };
 
-  // We will not send, and the person did not ask us to stop. That is the one thing this section
-  // must say out loud — a switch still reading "on" over a stream that no longer runs is the
-  // dishonest version of this state. The switch is gone rather than disabled because flipping it
-  // would change a stored preference and nothing a reader could observe. What clears the flag is
-  // the owner turning reminders back on — the button below runs the ordinary enable, which the
-  // server reads over a suppressed row as "this address works now" — and we never retry on our
-  // own; being wrong costs one more bounce, which suppresses again.
-  //
-  // The copy says "can't send", never "stopped sending", because suppression can reach an account
-  // that never turned reminders on: the webhook writes the row if it is missing, and the bounce
-  // may have been a magic link rather than a reminder. "We stopped sending" would then be a lie
-  // told to someone who never got one. Kept BELOW the `armed` guard for the same reason — while
-  // the engine cannot reach them there is nothing to explain.
+  // Turning reminders back on is what clears suppression; nothing here retries on its own.
   if (settings.suppressed) {
     return (
       <Section title="Reminders">
@@ -135,8 +107,6 @@ export function ReminderSection() {
           along in ordinary email — and can surface on a lock screen.
         </p>
 
-        {/* There is no enabled-but-no-timezone branch: the API refuses that write and is the
-            only writer, so the row cannot exist. The guard below is a belt, not a state. */}
         {settings.enabled && settings.timezone && (
           <p style={styles.metaText}>
             Sending on {settings.timezone} time. Every reminder carries a one-tap pause.

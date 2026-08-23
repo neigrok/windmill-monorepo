@@ -3,27 +3,15 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-// The pages in public/ are plain HTML — they never enter Vite's module graph, so nothing the SPA
-// entry pulls in ever reaches them. That cost them both of the things a page needs before it is
-// recognisably Windmill: the @fontsource faces src/styles/fonts.js imports (every page declared
-// --font-display: 'Baloo 2' and rendered in a system fallback), and the family chrome (every page
-// carried its own pasted copy, under a comment admitting they had to be edited together). This
-// plugin serves the two sheets they link instead — /fonts.css cut from the very packages the SPA
-// imports, /chrome.css authored beside this file — by middleware in dev and emitted into dist at
-// build. No binaries in the source tree, and one geometry that cannot drift.
-//
-// Only the faces those pages actually paint: Baloo 2 600/700/800 (pricing's meter count and price
-// sit at 800), Nunito 400/700/800, JetBrains Mono 400/600/700 (pricing's eyebrow, connect's
-// snippet labels). Mono is ASCII-only here, so it needs no latin-ext.
+// Serves the two sheets the plain HTML pages in public/ link — /fonts.css cut from @fontsource,
+// /chrome.css beside this file — by middleware in dev and emitted into dist at build.
 const FONTS = [
   { pkg: 'baloo-2', subsets: ['latin', 'latin-ext'], weights: [600, 700, 800] },
   { pkg: 'nunito', subsets: ['latin', 'latin-ext'], weights: [400, 700, 800] },
   { pkg: 'jetbrains-mono', subsets: ['latin'], weights: [400, 600, 700] },
 ];
 
-// pricing-preview.html is a meta-refresh stub with two lines of body — the one page in public/
-// with no chrome to wear. Every other page must link both sheets, or it silently drops off the
-// family the moment someone adds it.
+// Every page in public/ but the undressed ones must link both sheets.
 const PAGES = new URL('../public/', import.meta.url);
 const UNDRESSED = ['pricing-preview.html'];
 
@@ -33,8 +21,7 @@ export function staticPageAssets() {
 
   for (const font of FONTS) {
     for (const weight of font.weights) {
-      // The per-weight aggregate sheet is the one carrying unicode-range; fontsource's per-subset
-      // entry files omit it, which would let latin-ext shadow latin for the whole alphabet.
+      // Read the per-weight aggregate sheet: the per-subset entry files omit unicode-range.
       const sheet = fs.readFileSync(require.resolve(`@fontsource/${font.pkg}/${weight}.css`), 'utf8');
       for (const subset of font.subsets) {
         const file = `${font.pkg}-${subset}-${weight}-normal.woff2`;
@@ -72,12 +59,6 @@ export function staticPageAssets() {
       throw new Error(`public/${page} does not link ${missing.map((s) => `/${s}`).join(' or ')} — it would render outside the family`);
     }
 
-    // The head a crawler and a chat window read. Two rules, both about the same drift: a page
-    // that names no canonical cannot be put in the sitemap (which is generated from these
-    // canonicals — scripts/build-landing-shells.mjs), and og/twitter must keep saying exactly
-    // what <title> and the description say, or the link unfurls as a page we stopped shipping.
-    // A noindex page (404, pause, the pricing stub) is exempt from the unfurl half: it is not a
-    // destination, it is what a visitor gets instead of one.
     const canonical = /<link rel="canonical" href="([^"]+)"/.exec(html)?.[1];
     const noindex = /<meta name="robots" content="[^"]*noindex/.test(html);
     if (!canonical && !noindex) {

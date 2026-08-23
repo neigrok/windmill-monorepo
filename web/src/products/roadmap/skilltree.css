@@ -1,5 +1,4 @@
-/* Skill-tree view — full-viewport GPU canvas with a floating overlay UI
-   (top controls, minimap, node detail panel) built from the design system. */
+/* Skill-tree view — full-viewport GPU canvas with a floating overlay UI. */
 
 .st-root {
   position: fixed;
@@ -48,8 +47,7 @@
   .st-load-error { font-size: var(--text-lg); }
 }
 
-/* The load-error dead-end, given its own reachable surface: pointer-events auto so its
-   Try-again / Your-trees affordances are clickable (the loading veil is inert). */
+/* The load-error dead-end: pointer-events auto so its buttons are clickable (the loading veil is inert). */
 .st-load-error {
   position: absolute;
   inset: 0;
@@ -133,8 +131,6 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
-/* A whitespace-only rename commit: the old name restores under a gold inset flash —
-   the in-between hue, no message, no error state (rename-tree spec §01.3). */
 .st-switcher-flash {
   animation: wm-switcher-flash 700ms var(--ease-standard);
 }
@@ -147,8 +143,6 @@
     animation: none;
   }
 }
-/* A registry tag flipping ("on this device" → "synced") lands as one 150ms cross-fade —
-   deliberately the same beat under reduced motion (anon-first-tree §02). */
 .st-switcher-tag {
   animation: wm-switcher-tag 150ms var(--ease-soft);
 }
@@ -317,7 +311,7 @@
 .st-step-swatch--current:hover {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
-/* The ghost "+" swatch (F6): opens the legend — kinds are managed in one place */
+/* The ghost "+" swatch: opens the legend */
 .st-step-swatch--add {
   border: 1.5px dashed var(--neutral-400);
   box-shadow: none;
@@ -336,7 +330,7 @@
   box-shadow: none;
 }
 
-/* Delete: the lone destructive control, isolated at the very bottom */
+/* Delete: isolated at the very bottom */
 .st-step-danger {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-3);
@@ -433,10 +427,10 @@
   color: #fff;
 }
 
-/* ---- Toast: the single status beat — Undo pill + ceremony summary; enter fade-rise, exit fade ---- */
+/* ---- Toast: Undo pill + ceremony summary; enter fade-rise, exit fade ---- */
 .st-toast {
   position: absolute;
-  z-index: 50; /* the undo snackbar floats above the z-40 mobile surfaces (sheet/aim/remove/bulk) — M6 */
+  z-index: 50; /* the undo snackbar floats above the z-40 mobile surfaces (sheet/aim/remove/bulk) */
   left: 50%;
   bottom: var(--space-8);
   transform: translateX(-50%);
@@ -478,8 +472,6 @@
   color: var(--accent-gold-200);
 }
 
-/* The receipt row (message + Why?/Undo) and its reveal-on-tap reasoning (tending §4). A plain toast
-   has only the row, so it reads exactly as before; a tend receipt can expand into a calm card. */
 .st-toast-row {
   display: flex;
   align-items: center;
@@ -511,12 +503,7 @@
   text-align: left;
 }
 
-/* On a phone the bottom toast lane lands right on the working surface — the verb rail, the fork
-   and recenter chips, and your thumbs — so a status beat or an undo snackbar covers what you're
-   reaching for. Move the transient toasts to the TOP, below the mobile chrome's title plaque row
-   (its top edge is MobileChrome's SAFE_TOP + 8px; ~72px of plaque clears at +88), and let them
-   fade in place (no 8px rise, which reads as rising-from-below at the top). The selection bar
-   stays at the bottom: it's a tool you act on, not a beat you read. (M-toast) */
+/* Phone: transient toasts move to the top, below the chrome's plaque row, and fade in place. The selection bar stays at the bottom. */
 @media (max-width: 743px) {
   .st-toast {
     top: calc(max(env(safe-area-inset-top, 0px), 44px) + 88px);
@@ -672,9 +659,6 @@
   top: 0;
   width: 0;
   height: 0;
-  /* A neutral TOOL, not a brand block (brief #10): a bark dashed rectangle over a whisper of
-     brand-soft fill — honest that it's picking, not committed. Touched nodes take the preview
-     bark ring (NodeBatch); release promotes them to full members. */
   border: 1.5px dashed var(--color-bark);
   background: color-mix(in srgb, var(--color-brand-soft) 60%, transparent);
   border-radius: 3px;
@@ -685,9 +669,7 @@
   opacity: 1;
 }
 
-/* ---- Angular-reorder slot (editing spec v2 §07): a bark dashed ring over a whisper of brand-soft
-   fill, marking the gap a dragged node will drop into. A thin sibling of the marquee overlay —
-   editor-only, purely visual, screen-positioned by the scene each pointer-move. */
+/* ---- Angular-reorder slot: marks the gap a dragged node will drop into; screen-positioned by the scene each pointer-move. ---- */
 .st-reorder-layer {
   position: absolute;
   inset: 0;
@@ -711,11 +693,7 @@
   opacity: 1;
 }
 
-/* ---- Multi-select action card (brief #10): a light, persistent card (not a dark transient toast)
-   that replaces the single StepPanel while a set is live. Count anchors LEFT (margin-right:auto pushes
-   the rest right); recolor swatches · Mark all done · the brick Delete cluster grow leftward from the
-   far right, so Delete keeps its place as the card widens. Bark/cream tool chrome — only the swatches
-   wear kind hue. Floats bottom-centre in the toast lane, above the ControlBar. ---- */
+/* ---- Multi-select action card: the count anchors left, the action cluster grows leftward, so Delete keeps its place as the card widens. ---- */
 .st-selection-bar {
   position: absolute;
   left: 50%;
@@ -742,8 +720,6 @@
   font-weight: 700;
   white-space: nowrap;
 }
-/* Mark all done — a calm bark text button (a tool, not a brand action); the brick Delete beside it
-   carries the destructive weight. */
 .st-selection-done {
   padding: var(--space-2) var(--space-3);
   font-family: var(--font-body);
@@ -765,16 +741,12 @@
   display: inline-flex; /* wraps the brick Delete Button so the card can drive its cost-preview hover */
 }
 @media (prefers-reduced-motion: reduce) {
-  /* the card appears in place — no fade-rise (brief #10 §5) */
   .st-selection-bar {
     animation: none;
   }
 }
 
-/* ---- Keyboard-shortcuts reference (brief #14): a wide two-column scanning card.
-   Keycaps read as raised, mono keys (real cap depth via a 2.5px bottom border);
-   gesture pills read as soft, sunken, body-font pointer moves — so a glance tells
-   a key from a gesture, in both themes. All colour is token-driven. ---- */
+/* ---- Keyboard-shortcuts reference ---- */
 .st-sc-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -901,7 +873,7 @@
   animation: wm-fade-in-up var(--duration-base) var(--ease-soft);
 }
 
-/* ---- Activity feed: the docked event log (design option A) ---- */
+/* ---- Activity feed: the docked event log ---- */
 .st-activity {
   height: 100%;
   display: flex;
@@ -932,7 +904,7 @@
   border-radius: var(--radius-full);
   padding: 1px 7px;
 }
-/* The stacked dock's second section head: ACTIVITY follows NEXT UP (whats-next-panel §01) */
+/* The stacked dock's second section head: ACTIVITY follows NEXT UP */
 .st-activity-head--section {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
@@ -956,7 +928,7 @@
   color: var(--text-tertiary);
 }
 
-/* Day separators carry the calendar so rows don't have to */
+/* Day separators */
 .st-daysep {
   display: flex;
   align-items: center;
@@ -975,7 +947,7 @@
   background: var(--border-subtle);
 }
 
-/* One row = actor · verb-sentence · time — rows share one silhouette, scan by badge */
+/* One row = actor · verb-sentence · time */
 .st-event {
   display: flex;
   align-items: flex-start;
@@ -1067,8 +1039,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Next up: the dock's senior tenant (design: whats-next-panel) — up to three
-   ready rows + an in-place expander leading the activity feed ---- */
+/* ---- Next up: up to three ready rows + an in-place expander, leading the activity feed ---- */
 .st-nextup {
   flex: none;
   display: flex;
@@ -1152,8 +1123,7 @@
   color: var(--text-secondary);
 }
 
-/* The two empty states (whats-next-panel §05): all done — crown, mono tally, two
-   quiet links — and nothing-unlocked with its ember blockers. Never a dead end. */
+/* The two empty states: all done, and nothing-unlocked with its ember blockers. */
 .st-nextup--empty {
   padding: var(--space-2) var(--space-4) var(--space-3);
   gap: 2px;
@@ -1208,8 +1178,7 @@
   color: var(--color-brand-hover);
 }
 
-/* ---- Step panel: the state block — correction chip + menu, the one forward
-   action, and a calm timestamp line — plus a per-node History section ---- */
+/* ---- Step panel: the state block — correction chip + menu, the forward action, a timestamp line, and per-node History ---- */
 .st-step-state {
   display: flex;
   flex-direction: column;
@@ -1255,8 +1224,7 @@
   color: var(--text-tertiary);
 }
 
-/* Glyph dot: the same three tiers the tree wears — a hue ring when available, a
-   glowing ember while active, a solid fill once complete; a lock when it's locked */
+/* Glyph dot: a hue ring when available, a glowing ember while active, a solid fill once complete, a lock when locked */
 .st-state-dot {
   width: 9px;
   height: 9px;
@@ -1335,7 +1303,6 @@
   color: var(--text-tertiary);
 }
 
-/* The one forward action(s) for the phase */
 .st-state-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1370,7 +1337,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Activity ticker: transient arrival toasts, bottom-center (design C) ---- */
+/* ---- Activity ticker: transient arrival toasts, bottom-center ---- */
 .st-ticker {
   position: absolute;
   left: 50%;
@@ -1410,7 +1377,7 @@
   border-color: transparent;
 }
 
-/* ---- Activity chip: the toolbar summon (design A″ — closed by default) ---- */
+/* ---- Activity chip: the toolbar summon ---- */
 .st-activity-chip {
   display: inline-flex;
   align-items: center;
@@ -1438,8 +1405,7 @@
   border-color: var(--accent-terracotta-400);
 }
 
-/* Tending's discoverable front door (desktop): brand-tinted so the star action reads as inviting,
-   not just another grey tool. Only rendered for an owner of an armed tree. */
+/* Tending's front door (desktop). Only rendered for an owner of an armed tree. */
 .st-tend-chip {
   display: inline-flex;
   align-items: center;
@@ -1483,7 +1449,7 @@
   50% { box-shadow: 0 0 0 5px var(--color-brand-soft); }
 }
 
-/* Pin toggles persistent docking (= option A); × dismisses the summoned feed */
+/* Pin toggles persistent docking; × dismisses the summoned feed */
 .st-activity-pin {
   display: inline-flex;
   align-items: center;
@@ -1521,8 +1487,7 @@
   }
 }
 
-/* ---- Step panel: a pinned head (header + state) over a scrolling workspace body.
-   The panel is content-sized up to 70vh; past that only the body scrolls. ---- */
+/* ---- Step panel: a pinned head over a scrolling body; content-sized up to 70vh, past that only the body scrolls. ---- */
 .st-step-pinned {
   display: flex;
   flex-direction: column;
@@ -1538,8 +1503,7 @@
   overflow-y: auto;
 }
 
-/* ---- Workspace body (F13): the "+ Add to this step" bootstrap. It offers only the
-   sections a node is still missing, and disappears once all three exist. ---- */
+/* ---- Workspace body: the "+ Add to this step" bootstrap — only the sections a node is still missing, gone once all three exist. ---- */
 .st-ws-add {
   position: relative;
 }
@@ -1601,7 +1565,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Checklist (§2): round kind-hued checkboxes on a single/double-click grammar ---- */
+/* ---- Checklist: round kind-hued checkboxes on a single/double-click grammar ---- */
 .st-check-head {
   display: flex;
   align-items: center;
@@ -1716,7 +1680,7 @@
   background: var(--surface-hover);
 }
 
-/* ---- Annotation: the node's shared description + links, read-only authored intent ---- */
+/* ---- Annotation: the node's shared description + links ---- */
 .st-step-annotation {
   display: flex;
   flex-direction: column;
@@ -1750,7 +1714,7 @@
   color: var(--text-secondary);
 }
 
-/* ---- Note (§5.1): rendered markdown at rest, a bordered box while editing ---- */
+/* ---- Note: rendered markdown at rest, a bordered box while editing ---- */
 .st-note-body {
   padding: 4px 6px;
   margin: 0 -6px;
@@ -1809,7 +1773,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Links (§5.2): a flat list of letter-tiled rows; row click opens in a new tab ---- */
+/* ---- Links: a flat list of letter-tiled rows; row click opens in a new tab ---- */
 .st-links {
   display: flex;
   flex-direction: column;
@@ -1929,19 +1893,14 @@
   color: var(--text-tertiary);
 }
 
-/* ============================================================================
-   X5 — Read-only & mobile: the responsive reflow around the read-only shell.
-   The mobile chrome (WS-B, `.st-mobile-chrome`) self-positions in screen space;
-   here we give it the panning fade, the tablet side panel, and the phone hides.
-   ============================================================================ */
+/* ---- Read-only & mobile: the responsive reflow. The mobile chrome self-positions in screen space. ---- */
 
-/* Chrome yields while panning (§chrome): the mobile chrome fades to a whisper so
-   the tree reads clean under the finger, then eases back ~200ms after the pan. */
+/* Chrome yields while panning: it fades to a whisper, then eases back ~200ms after the pan. */
 .st-mobile-chrome {
   transition: opacity 200ms var(--ease-soft);
 }
 
-/* The wordmark chip is a real link home (§06): hover surface + focus ring. */
+/* The wordmark chip is a real link home: hover surface + focus ring. */
 .st-wordmark-link {
   background: var(--surface-card);
   transition: background var(--duration-fast) var(--ease-standard);
@@ -1957,8 +1916,7 @@
   opacity: 0.35;
 }
 
-/* Tablet node detail (§S7): a 320px card docked top-right, capped at 70% height
-   with its own inner scroll — the desktop dock, tightened for the narrower frame. */
+/* Tablet node detail: a 320px card docked top-right, capped at 70% height with its own inner scroll. */
 .st-detail-panel--tablet {
   top: 104px;
   right: 16px;
@@ -1967,16 +1925,14 @@
   max-height: 70%;
 }
 
-/* Small screens: the minimap retires — Recenter is the nav aid now — and on tablet
-   the Fork pill owns the bottom-left corner. */
+/* Small screens: the minimap retires; on tablet the Fork pill owns the bottom-left corner. */
 @media (max-width: 1023px) {
   .st-minimap {
     display: none;
   }
 }
 
-/* Phone (§breakpoints <744): full-bleed canvas, desktop chrome gone; only the
-   mobile chrome and the bottom sheet remain. */
+/* Phone (<744): full-bleed canvas, only the mobile chrome and the bottom sheet remain. */
 @media (max-width: 743px) {
   .st-topbar,
   .st-legend-dock {
@@ -1990,15 +1946,7 @@
   }
 }
 
-/* ============================================================================
-   X8 — The phone list view: a second view over the same model. The list layer
-   fades over the still-mounted canvas (the scene keeps its camera) and back —
-   one 240ms opacity cross-fade. The hidden layer is inert to pointer input, and
-   the list stays mounted once shown so its scroll survives every flip. Phone
-   only; the layer classes are never applied above 743px. The pill's own look
-   and fixed placement live in list.css (Agent A). The cross-fade is already the
-   reduced-motion-friendly form, so it is kept there too.
-   ============================================================================ */
+/* ---- The phone list view: the list layer cross-fades over the still-mounted canvas and stays mounted once shown. Phone only — the layer classes are never applied above 743px. ---- */
 .st-canvas--layer {
   transition: opacity 240ms var(--ease-standard);
 }
@@ -2007,9 +1955,7 @@
   inset: 0;
   z-index: 18; /* above the canvas, below the mobile chrome (z20) */
 }
-/* The hidden list keeps opacity 0 through the fade, then goes visibility:hidden so nothing in it
-   (rows, chips, the sign-in link) stays focusable or hit-testable under the canvas. The delay
-   holds it visible for the 240ms fade-out; on activate visibility flips at 0s so it fades in live. */
+/* The hidden list goes visibility:hidden after the fade so nothing in it stays focusable or hit-testable; the delay holds it visible for the 240ms fade-out. */
 .st-view-layer--list {
   opacity: 0;
   visibility: hidden;
@@ -2023,9 +1969,7 @@
   pointer-events: auto;
   transition: opacity 240ms var(--ease-standard), visibility 0s 0s;
 }
-/* The cross-fade IS the reduced-motion form (a fade, not movement), so re-assert it past the
-   global reduce rule that would otherwise collapse every transition to 0.001ms — including the
-   visibility delay, or the hidden layer would flip focusable on the wrong beat. */
+/* Re-assert the cross-fade past the global reduce rule, the visibility delay included, or the hidden layer flips focusable on the wrong beat. */
 @media (prefers-reduced-motion: reduce) {
   .st-canvas--layer {
     transition: opacity 240ms var(--ease-standard) !important;
@@ -2038,8 +1982,7 @@
   }
 }
 
-/* ---- Tend bar: the working-state breathing dot (X6 gold), the one motion the composer needs.
-   A calm pulse, never a spinner; reduced motion holds it as a steady dot. ---- */
+/* ---- Tend bar: the working-state breathing dot; reduced motion holds it as a steady dot. ---- */
 @keyframes wmTendBreathe {
   0%, 100% { transform: scale(0.82); box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.45); }
   50%      { transform: scale(1);    box-shadow: 0 0 0 5px rgba(201, 154, 46, 0); }
@@ -2048,8 +1991,7 @@
   [style*="wmTendBreathe"] { animation: none !important; }
 }
 
-/* ---- Paste-import composer (F3): borrows the StepPanel dock seat on the birth canvas.
-   The bud dims but never leaves; Esc hands the seat back with the draft kept. ---- */
+/* ---- Paste-import composer: borrows the StepPanel dock seat on the birth canvas. Esc hands the seat back with the draft kept. ---- */
 .birth-composer {
   position: absolute;
   top: var(--space-6);
@@ -2100,9 +2042,7 @@
   color: var(--text-secondary);
 }
 
-/* The well: a mirror div in flow gives the height and the per-line offsets; the
-   textarea overlays it 1:1; the gutter paints the parse at those offsets. All three
-   scroll together inside .pc-well. */
+/* The well: a mirror div in flow gives the height and the per-line offsets, the textarea overlays it 1:1, and the gutter paints the parse at those offsets; all three scroll together inside .pc-well. */
 .pc-well {
   flex: 1;
   min-height: 0;
@@ -2186,10 +2126,7 @@
   font-weight: 700;
 }
 
-/* Paste is where a tree is born, and on a phone that means the keyboard. iOS zooms the page into
-   any focused input under 16px, so the well and the plant-name field are floored at 16px on a phone.
-   The hidden mirror that measures the auto-growing well must match the text exactly — it moves with
-   it, or the well would mis-size. Desktop keeps var(--text-sm). */
+/* iOS zooms the page into any focused input under 16px, so the well and the plant-name field are floored at 16px on a phone; the hidden measuring mirror must match that text exactly. */
 @media (max-width: 743px) {
   .pc-mirror,
   .pc-text,
@@ -2276,9 +2213,7 @@
   font-weight: 700;
   color: var(--accent-gold-600);
 }
-/* The shape zone: one gold voice for the AI escalation — a quiet handle + honesty
-   disclosure at rest, a live status while writing, and outcomes that always say where
-   the text is. No red, ever; the well's own preview is the confirmation. */
+/* The shape zone: one gold voice for the AI escalation. */
 .pc-shape {
   display: flex;
   flex-direction: column;
@@ -2462,8 +2397,7 @@
   opacity: 0.75;
 }
 
-/* Phone/tablet: the composer rides the X5 sheet — the 216px peek shows title,
-   readout, chip and Plant; the well and legend live in the expanded reach. */
+/* Phone/tablet: the composer rides the sheet — the 216px peek shows title, readout, chip and Plant. */
 .pc--sheet {
   height: auto;
   border: none;
@@ -2492,8 +2426,7 @@
   padding-right: 0;
   border-top: none;
 }
-/* The shape zone rides the sheet: rows may wrap to one column and every tappable door
-   grows to a 44px touch target. */
+/* The shape zone rides the sheet: rows may wrap to one column and every tappable door grows to a 44px target. */
 .pc--sheet .pc-shape-offer,
 .pc--sheet .pc-shape-status,
 .pc--sheet .pc-shape-doors {
@@ -2511,8 +2444,7 @@
   align-items: center;
 }
 
-/* The ghost skeleton (F3 §02): dashed kind-tinted buds on dormant edges, growing on
-   the birth stage beside the text. Structural only — and cut on phone. */
+/* The ghost skeleton: dashed kind-tinted buds on dormant edges. Structural only, and cut on phone. */
 .birth-ghost-stage {
   position: absolute;
   top: 72px;
@@ -2556,11 +2488,7 @@
   }
 }
 
-/* ---- The playable demo (F4) ------------------------------------------------
-   The coach chip: a StepPanel-grade card with an arrow tab pointing back at the
-   ready node. The card is vertically centred on the node (translateY(-50%)), so
-   the arrow at the card's mid-height lines up with the node. The tab flips sides
-   when the card would run off-screen. */
+/* ---- The playable demo. The coach chip is centred on its node (translateY(-50%)) so the arrow tab lines up; the tab flips sides when the card would run off-screen. ---- */
 .wm-coach-arrow {
   position: absolute;
   top: 50%;
@@ -2579,8 +2507,6 @@
   border-left: 8px solid var(--wm-coach-arrow);
 }
 
-/* The Fork CTA echo (§04): +120ms after the unlock toast settles the button takes
-   the pulse waveform once — the handoff from node → toast → button. */
 .wm-cta-echo {
   animation: wm-cta-echo var(--duration-glow) var(--ease-glow) 1;
 }

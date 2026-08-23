@@ -43,8 +43,6 @@ test('since — an id completed at the prior visit but since undone is not repla
 });
 
 test('since — a step completed live this session is not replayed on a same-session reload', () => {
-  // The baseline is advanced as work lands (persistProgress), so a completion this device made
-  // is already recorded when the tab reloads — no "welcome back" for work you just did.
   const completed = new Set(['a', 'b']);
   const prior = { completed: ['a', 'b'], at: 999 }; // baseline advanced the moment b was completed
   const states = statesOf([['a', 'complete'], ['b', 'complete']]);

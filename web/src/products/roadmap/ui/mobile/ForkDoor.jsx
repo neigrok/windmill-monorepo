@@ -1,9 +1,5 @@
-// The fork "door" (X5 §S4) — the one place the share page's single verb resolves. On
-// phone it rises as a bottom-edge sheet over a scrim; on tablet it is the app's centered
-// Dialog. The X4 "one door": a signed-in visitor forks instantly — one button, straight
-// into the copy — and signed out the email decides: the magic link carries the pending
-// fork and the backend completes it when the link is claimed. Held to the SignInDialog
-// standard: validated address, guarded sends, every failure ends in a next step.
+// A signed-in visitor forks instantly; signed out, the magic link carries the pending fork and the
+// backend completes it when the link is claimed.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Dialog } from '../../../../design-system';
@@ -43,8 +39,7 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  // Never dismiss mid-fork: the fork is already committed server-side and the
-  // navigation lands in a beat — closing here would teleport the user later.
+  // Never dismiss mid-fork: the fork is already committed server-side.
   const close = () => {
     if (!busy) onClose?.();
   };
@@ -97,13 +92,10 @@ export function ForkDoor({ open, tablet = false, treeId, signedIn = false, demo 
     forkTree(treeId)
       .then(({ treeId: forkedId }) => {
         track('fork_claim', { mode: 'instant' });
-        // Forking from the demo (F4 §05): leave a one-shot note so the fresh copy's arrival
-        // re-plant speaks "Forked — 17 steps planted" — now you're the actor, so it toasts.
+        // Leave a one-shot note so the fresh copy's arrival re-plant speaks "Forked — n steps planted".
         if (demo) { try { sessionStorage.setItem(FORKED_FROM_DEMO_KEY, '1'); } catch { /* ignore */ } }
-        // A fork crosses the read-only → editor boundary; land in the copy on a clean
-        // page load so the scene is born in editor mode, not retrofitted into it. When the
-        // share opened at the /t/:id PATH, a bare hash set would leave the pathname pinned
-        // read-only — so rewrite the URL to the hash route first, then reload the editor fresh.
+        // Rewrite the URL to the hash route, then reload: a /t/:id pathname would stay pinned read-only,
+        // and the scene must be born in editor mode.
         window.history.replaceState(null, '', `/#/app/${forkedId}`);
         window.location.reload();
       })

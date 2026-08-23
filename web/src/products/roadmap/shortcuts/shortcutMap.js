@@ -1,9 +1,4 @@
-// The canonical map of every editor shortcut — the one source that feeds both the
-// ShortcutsDialog reference panel and the ControlBar button tooltips. Every row maps
-// to a shipped gesture (SkillTreeView's keydown/paste handlers, the scene tools). A row
-// carries alternatives (chords), and each chord is an ordered list of tokens: a keycap
-// (a key you press) or a gesture (a thing you do with the pointer). Modifiers lead, the
-// letter lands. Nothing here fires an action; it only names what already exists.
+// The canonical map of editor shortcuts, feeding both the ShortcutsDialog and the ControlBar tooltips. A chord is an ordered token list: modifiers lead, the letter lands.
 
 const key = (label) => ({ kind: 'key', label });
 const gesture = (label) => ({ kind: 'gesture', label });
@@ -54,7 +49,7 @@ export const SHORTCUT_GROUPS = [
   },
 ];
 
-// The map is authored Mac-style; Windows swaps only the four keys that differ by platform.
+// Authored Mac-style; Windows swaps only these keys.
 const WINDOWS_KEYS = { '⌘': 'Ctrl', '⌥': 'Alt', '⌫': 'Delete', '⏎': 'Enter' };
 
 export function keyLabel(label, platform) {
@@ -62,7 +57,6 @@ export function keyLabel(label, platform) {
   return WINDOWS_KEYS[label] ?? label;
 }
 
-// Mac-first: only a detected Windows box swaps the map; everything else defaults to Mac.
 export function detectPlatform() {
   if (typeof navigator === 'undefined') return 'mac';
   const raw = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
@@ -70,15 +64,11 @@ export function detectPlatform() {
   return 'mac';
 }
 
-// Read-only trees (X5) can't edit or select, so those groups drop out — only the two
-// pointer/view groups survive.
 export function visibleGroups(readOnly) {
   if (!readOnly) return SHORTCUT_GROUPS;
   return SHORTCUT_GROUPS.filter((group) => group.title === 'Navigate' || group.title === 'View');
 }
 
-// The compact key hint a ControlBar tooltip appends, e.g. "?" or "A" — read from the same
-// map so a shortcut is defined once and its label can never drift out of sync.
 export function keyHint(rowLabel) {
   for (const group of SHORTCUT_GROUPS) {
     const row = group.rows.find((candidate) => candidate.label === rowLabel);

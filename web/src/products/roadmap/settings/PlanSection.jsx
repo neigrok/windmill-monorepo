@@ -1,10 +1,4 @@
-// Settings §Plan: what this account is on, and the one button that changes it.
-//
-// The state comes from our own database (the Paddle webhook mirrors it there), so this renders
-// without touching Paddle. Upgrading asks the server for a checkout — the browser never names a
-// price, an email, or an account — and opens it in place. The product registry only lists this
-// section while paid plans are open (roadmap/routes.js), so reaching here means there is a plan
-// to be on — no second gate needed.
+// Upgrading asks the server for a checkout: the browser never names a price, an email or an account.
 
 import React from 'react';
 import { Button } from '../../../design-system';

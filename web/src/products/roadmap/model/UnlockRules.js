@@ -1,6 +1,4 @@
-// The single place that decides a node's NodeState from a tree + a user's
-// progress. Every state transition in the app should route through here —
-// nothing else is allowed to hand-set a node state.
+// The only place that derives NodeState; nothing else may hand-set a node state.
 
 export class UnlockRules {
   static derive(tree, progress) {

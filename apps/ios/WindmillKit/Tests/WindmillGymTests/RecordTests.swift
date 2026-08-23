@@ -1,17 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// WHAT A MOVEMENT'S RECORD IS ALLOWED TO DRAW, and what it must refuse to invent. Two halves: the
-// wire shape exactly as the server writes it — every optional OMITTED and never null, every empty
-// list left out entirely — and the rules that turn it into §H's page on a phone with no scrub and no
-// hover.
-//
-// The line under all of it: where Epley is undefined there is no e1RM anything. Not a zero, not a
-// dash in a chart frame, not an empty axis — no tile and no chart at all.
-//
-// A DATE IN AN EXPECTED STRING IS SPELLED BY `Readout` ITSELF and the instants are built through the
-// calendar, so these assertions pin the SENTENCE and the rule rather than the simulator's zone.
-
 final class RecordTests: XCTestCase {
     private func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12) -> Int64 {
         var parts = DateComponents()
@@ -30,9 +19,6 @@ final class RecordTests: XCTestCase {
         try JSONDecoder().decode(MovementRecord.self, from: Data(json.utf8))
     }
 
-    // The reply as the server writes it, with the absences that mean something and the id that
-    // never moves. `at` is the SESSION's start on every mark, which is why the chart's bars and the
-    // record rows line up on the same instant.
     func testTheWireShapeDecodesWithEveryAbsenceIntact() throws {
         let record = try decoded("""
         {"exercise":{"id":"back-squat","name":"Back Squat","pattern":"squat",
@@ -61,9 +47,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(record.recentDays.first?.sets.map(\.reps), [5])
     }
 
-    // A movement in the catalog nobody has ever lifted: two zeros and nothing else. It is a real and
-    // common case rather than a failed read, so the page says so plainly — no tiles, no chart, no
-    // empty frame with a name over it.
     func testAMovementNobodyHasLiftedIsTwoZerosAndAPlainSentence() throws {
         let record = try decoded("""
         {"exercise":{"id":"back-squat","name":"Back Squat","pattern":"squat",
@@ -85,7 +68,6 @@ final class RecordTests: XCTestCase {
         XCTAssertNil(page.chart)
     }
 
-    // §H's own head, to the character.
     func testTheSubheadNamesTheEquipmentTheRoutinesAndTheSessions() {
         let page = Record.page(MovementRecord(exercise: squat, routineCount: 2, sessionCount: 34),
                                now: at(2026, 8, 10))
@@ -103,7 +85,6 @@ final class RecordTests: XCTestCase {
                        "an equipment the catalog does not carry is omitted, never blanked")
     }
 
-    // The two tiles, and the second one is §H's own copy: the load, then `kg · for 5`.
     func testTheTilesCarryTheValueAndTheSetThatMadeIt() {
         let today = at(2026, 8, 10)
         let page = Record.page(
@@ -118,9 +99,6 @@ final class RecordTests: XCTestCase {
                                                   under: "kg · for 5"))
     }
 
-    // EPLEY IS UNDEFINED AT OR BELOW ZERO LOAD. A chin-up at 0 kg and a band-assisted pull-up at −20
-    // have no honest one-rep estimate, so the server omits all three e1RM halves — and the page
-    // draws the heaviest tile and the sets and NOTHING where the estimate would go.
     func testABodyweightMovementHasNoBestTileAndNoChart() {
         let today = at(2026, 8, 10)
         let page = Record.page(
@@ -141,14 +119,6 @@ final class RecordTests: XCTestCase {
         XCTAssertFalse(page.neverLogged, "it has been lifted; it just has no estimate")
     }
 
-    // A MOVEMENT WORKED ONLY IN DROP SETS is in the days and in no count — the two lists count
-    // different things on purpose (domain/Record.h), because every number in this product is over
-    // working sets and a list of what you did that dropped a drop set would not be one.
-    //
-    // So the page may not say `never logged` over the sets it is printing, may not draw a tile lane
-    // with nothing in it, and may not blame the BAR for an estimate it does not have: a 40 kg drop
-    // set has a load above zero, and "this movement has none" two lines above `40 × 12` is the page
-    // contradicting itself.
     func testAMovementWorkedOnlyInDropSetsIsNeverCalledNeverLogged() {
         let today = at(2026, 8, 10)
         let page = Record.page(
@@ -168,10 +138,6 @@ final class RecordTests: XCTestCase {
                        "and the kind rides with the set, so a back-off never reads as work")
     }
 
-    // A STANDING BEST WITH NOTHING INSIDE THE WINDOW is a fact about twelve weeks and not about the
-    // lift: the bests are lifetime and only the chart is windowed (the server cuts the series with
-    // `kRecordWindowMs`), so a movement nobody has trained since spring keeps its tile and loses its
-    // chart. Saying "no e1RM" under a tile printing one would be the page contradicting itself.
     func testAStandingBestWithNothingRecentBlamesTheWindowAndNotTheLift() {
         let spring = at(2026, 3, 2)
         let page = Record.page(
@@ -186,9 +152,6 @@ final class RecordTests: XCTestCase {
                                               under: "2 Mar · 105 × 5"))
     }
 
-    // ONE BAR PER SESSION, oldest first, and each end of the axis carries its DATE AND ITS VALUE —
-    // this surface has no hover, and the chart's baseline is not zero, so a bar whose scale is
-    // nowhere on screen would mean nothing at all.
     func testTheChartIsOneBarPerSessionWithBothEndsNamed() {
         let opened = at(2026, 5, 19)
         let closed = at(2026, 8, 10)
@@ -206,9 +169,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(chart.closed, "10 Aug · 122.5")
     }
 
-    // The floor is a third of the window's own span below its lowest session: the quietest week
-    // still draws a quarter of a bar, and the peak fills the frame. Measuring an e1RM series from
-    // ZERO is what makes a whole training block one flat wall.
     func testBarsAreMeasuredFromAFloorBelowTheLowestSessionRatherThanFromZero() {
         let chart = charted([(at(2026, 6, 1), 100), (at(2026, 7, 1), 105), (at(2026, 8, 1), 110)])
         XCTAssertEqual(chart.bars.count, 3)
@@ -217,8 +177,6 @@ final class RecordTests: XCTestCase {
         }
     }
 
-    // A movement that has never moved is drawn down the middle rather than pinned to an edge by a
-    // divide-by-nothing — and one session is one bar, because a chart of a single point is honest.
     func testAFlatSeriesAndASinglePointAreBothDrawnHonestly() {
         let flat = charted([(at(2026, 7, 1), 100), (at(2026, 8, 1), 100)])
         XCTAssertEqual(flat.bars.map(\.height), [0.5, 0.5])
@@ -228,9 +186,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(alone.opened, alone.closed, "one session opens and closes the window")
     }
 
-    // THREE TINTS AND EACH ONE IS A FACT: the session holding the standing best is gold, a session
-    // that passed every session before it is lit, and the rest are the room's own stone. The marks
-    // come off the RECORD LADDER the server sent — nothing here re-derives what a record was.
     func testABarIsMarkedByWhetherItPassedEverySessionBeforeIt() {
         let may = at(2026, 5, 19)
         let july = at(2026, 7, 13)
@@ -248,10 +203,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(page.chart?.bars.map(\.mark), [.ordinary, .passed, .best])
     }
 
-    // TWO SESSIONS CAN SHARE A START INSTANT and the page has to survive it: `start_session` takes a
-    // client-supplied instant, so an agent filing two workouts on one moment is an ordinary use of
-    // this product's own thesis. A bar and a record row are therefore identified by their PLACE, not
-    // by the instant — two rows sharing an id in a `ForEach` is undefined behaviour.
     func testBarsAndRecordRowsAreIdentifiedByPlaceSoASharedInstantCannotCollide() {
         let same = at(2026, 8, 10)
         let page = Record.page(
@@ -268,8 +219,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(page.records.map(\.id), [0, 1])
     }
 
-    // Newest first, lifetime, and the first row IS the standing best. A mark with no estimate prints
-    // its effort and its day and no e1RM clause — the absence is never filled in.
     func testThePersonalRecordsReadNewestFirstWithTheirEstimates() {
         let today = at(2026, 8, 10)
         let july = at(2026, 7, 27)
@@ -284,8 +233,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(page.records.map(\.when), ["today", "27 Jul"])
     }
 
-    // Grouped by the day they were lived in, newest first, and a day with nothing in it is dropped
-    // rather than drawn as an empty row under a date.
     func testTheRecentDaysReadAsTheirSetsInPerformedOrder() {
         let today = at(2026, 8, 10)
         let before = at(2026, 8, 3)
@@ -306,8 +253,6 @@ final class RecordTests: XCTestCase {
         XCTAssertEqual(page.days.map(\.sets), ["105 × 5 · 105 × 5 · 105 × 4", "102.5 × 5"])
     }
 
-    // A zero load is not a load but the ABSENCE of one, so a chin-up's mark reads as its reps —
-    // `Readout.target`'s own rule about a target of zero, and one spelling of a set on one page.
     func testAMarkAtNoLoadReadsAsItsReps() {
         let today = at(2026, 8, 10)
         let page = Record.page(

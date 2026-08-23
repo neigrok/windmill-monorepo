@@ -1,14 +1,3 @@
-// The quest shelf (F5) — nine calm doors and a dashed one; the inventory is the pitch.
-// First run's gallery route (#/app/start) renders it full-bleed: wordmark, "Start a
-// quest", the dev wedge row, the breadth row with the bring-your-own card pinned last.
-// A card is a seed packet — kind rule, the quest's real layout, a humble readout — and
-// clicking ANYWHERE plants it through the birth canvas's two roads (registry when
-// signed in, local soil otherwise). Ceremony #04, approximated: the shelf yields 150ms,
-// the picked thumbnail IS the seed and eases to viewport center over 600ms while the
-// plant request runs in parallel; the root crowns at ~90% settle, and the arrival
-// (ceremony #3 proper) plays on the other side of the navigation. Nothing here animates
-// at rest but the crown's one resting breath.
-
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { createTree } from '../persistence/TreeRegistry.js';
@@ -22,8 +11,8 @@ import { ROSTER } from './roster/index.js';
 
 const PLANTED_QUEST_KEY = 'windmill:planted-quest';
 const SEED_EASE_MS = 600;
-const CROSSFADE_MS = 280;   // canon §06's reduced-motion beat — the navigation waits for it
-const MINT_TIMEOUT_MS = 10000;  // past this the server isn't answering; fail loud, not blank
+const CROSSFADE_MS = 280;   // the reduced-motion beat
+const MINT_TIMEOUT_MS = 10000;  // past this the server isn't answering
 
 const reduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -38,9 +27,6 @@ export function QuestShelf() {
   const thumbRefs = useRef(new Map());
   const pickingRef = useRef(false);  // the plant guard — synchronous, unlike the state it mirrors
 
-  // The two roads, mirroring the birth canvas's plantImported: the registry seeds
-  // structure + legend from the post when signed in; the local soil bears it otherwise
-  // or when the server can't answer. The root arrives crowned (icon like any birth).
   async function mintTree(quest) {
     const plan = {
       title: quest.title,
@@ -61,10 +47,6 @@ export function QuestShelf() {
     return treeId;
   }
 
-  // Card → plant (canon §04, documented approximation): the shelf fades 150ms, the
-  // thumbnail eases 600ms to center while the mint runs in PARALLEL, and we navigate
-  // when both have landed — the arrival ceremony picks up the seed on the far side.
-  // Reduced motion: one simultaneous 280ms cross-fade, navigate the moment the id exists.
   async function plant(quest) {
     if (pickingRef.current) return;  // a ref, not state: two clicks in one tick must never mint twice
     pickingRef.current = true;
@@ -84,19 +66,18 @@ export function QuestShelf() {
       });
     }
     setPickedId(quest.id);
-    // Both beats are floors, not races: a local plant lands in ~20ms, and navigating on it
-    // would cut the reduced-motion cross-fade off ~10% in — the hard cut §06 exists to prevent.
+    // Both beats are floors, not races: a local plant lands in ~20ms.
     const ease = new Promise((resolve) => setTimeout(resolve, reduced() ? CROSSFADE_MS : SEED_EASE_MS));
     try {
       const [treeId] = await Promise.all([mint, ease]);
       try { sessionStorage.setItem(PLANTED_QUEST_KEY, '1'); } catch { /* the toast just says Roadmap */ }
-      stampBorn(treeId); // a quest's first open is the canvas — the arrival cascade plays there (X8 L1)
+      stampBorn(treeId); // a quest's first open is the canvas
       window.location.hash = `#/app/${treeId}`;
     } catch {
       setSeed(null);
       setPickedId(null);
       pickingRef.current = false;
-      setFailed(true); // both roads refused — the cards fade back and the quiet line speaks
+      setFailed(true); // both roads refused
     }
   }
 
@@ -139,8 +120,6 @@ export function QuestShelf() {
     );
   };
 
-  // The bring-your-own card (canon §05): dashed — the bud's not-yet-a-tree language —
-  // last but full-size, a peer. Narrow racks collapse it to one door that splits on click.
   const ghost = (
     <div className="quest-card quest-card--ghost">
       <span className="quest-ghost-bud" aria-hidden="true" />
@@ -159,9 +138,6 @@ export function QuestShelf() {
     <div className={shelfClass}>
       <style>{CSS}</style>
 
-      {/* The plaque is the way out: bare #/app resolves to your newest tree, or back to
-          this shelf when you have none — so a visitor who lands here with trees (the
-          landing page links straight in) is never stranded on a one-way door. */}
       <a className="quest-shelf-plaque" href="#/app" title="Your trees">
         <span className="quest-shelf-glyph">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 20v-8" /><path d="M12 12c0-3 2-5 6-5 0 3-2 5-6 5z" /><path d="M12 14c0-2.5-1.7-4-5-4 0 2.5 1.7 4 5 4z" /></svg>
@@ -238,12 +214,11 @@ const CSS = `
   .quest-card-dots span { width:7px; height:7px; border-radius:50%; }
   .quest-card-chrome { transition:opacity 150ms var(--ease-standard); }
 
-  /* The crown's one resting breath — the only thing on the shelf that moves at rest.
-     hue.glow carries α .5, so opacity .56 reads as the canonical α .28 peak. */
+  /* The crown's one resting breath. hue.glow carries α .5, so opacity .56 reads as an α .28 peak. */
   .quest-thumb-halo { opacity:.56; animation:quest-halo-breathe var(--duration-glow) var(--ease-glow) infinite; }
   @keyframes quest-halo-breathe { 0%,100% { opacity:.28; } 50% { opacity:.56; } }
 
-  /* Ceremony §04: the shelf yields, the picked card sheds its chrome, the thumb is the seed. */
+  /* The shelf yields, the picked card sheds its chrome, the thumb is the seed. */
   .quest-shelf--planting .quest-card { pointer-events:none; }
   .quest-shelf--planting .quest-card:not(.quest-card--picked) { opacity:0; }
   .quest-card--picked { z-index:10; background:transparent; border-color:transparent; box-shadow:none; }
@@ -252,7 +227,7 @@ const CSS = `
   .quest-seed .quest-thumb-halo { animation:quest-crown-wake 180ms var(--ease-standard) ${Math.round(SEED_EASE_MS * 0.9)}ms forwards; }
   @keyframes quest-crown-wake { to { opacity:1; } }
 
-  /* Reduced motion (canon §06): one simultaneous cross-fade; crown frozen at α .28. */
+  /* Reduced motion: one simultaneous cross-fade; crown frozen at α .28. */
   .quest-shelf--crossfade .quest-card { pointer-events:none; animation:quest-fade-out var(--duration-base) var(--ease-standard) forwards; }
   @keyframes quest-fade-out { to { opacity:0; } }
 

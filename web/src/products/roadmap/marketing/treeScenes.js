@@ -1,12 +1,3 @@
-// Marketing tree scenes — the live moat. Physics + staging lifted from the F4 playable
-// demo. Motion cites motion-language.md: arrival = #14 (#3's constants, no toast),
-// self-play unlock = #4 verbatim, reset = a downward change (plain 280ms dim, no beat).
-// Ported from the design system's ui_kits/marketing/tree-scenes.js: the IIFE/window.WMScenes
-// wrapper became ES exports, and the hero Fork CTA points at the real read-only demo route.
-// Every mount hands back a teardown that puts the container back the way React rendered it —
-// empty, unstyled, unclassed. This landing is lazily routed now, so a scene that outlives its
-// page is an observer, a timer chain and a world left running for the rest of the session.
-
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const KIND = {
   gold:       { f: '#C4972F', r: '#A17822', g: '196,151,47'  },
@@ -39,7 +30,7 @@ function mkKit() {
   return K;
 }
 
-// ---------- the sail tree (X5 world 780×940), staged per F4 ----------
+// ---------- the sail tree (world 780×940) ----------
 const ND = {
   r:  { name: 'Learn to sail',       k: 'terracotta', x: 390, y: 490, ring: 0, crown: true },
   a:  { name: 'Knots & lines',       k: 'olive',      x: 282, y: 375, ring: 1 },
@@ -137,13 +128,7 @@ function travel(K, E, dur, onArrive) {
 }
 function unlight(E) { E.base.setAttribute('stroke', EDGE_DORMANT); E.base.setAttribute('stroke-width', 1.5); E.base.style.opacity = .8; }
 
-// ============================================================
-//    HERO — the live moat. Arrival on load (#14, no toast), then
-//    a calm self-playing loop: unlock #4 (with toast — the moment
-//    being sold) → quiet un-do (plain dim) → idle → again.
-//    Chrome (plaque, wordmark chip, Fork CTA, scrims, toast) sits
-//    UNSCALED on the wrap; only the world scales (X5 floors).
-// ============================================================
+// ---------- HERO: arrival on load, then a self-playing loop — unlock → dim → idle → again. ----------
 const HW = 980, HH = 560;
 export function mountHero(wrap) {
   const K = mkKit();
@@ -155,25 +140,23 @@ export function mountHero(wrap) {
   const stage = el('div', 'heroStage', wrap);
   stage.style.cssText = `width:${HW}px; height:${HH}px;`;
 
-  // unscaled chrome — X5's pieces on the hosted surface
+  // unscaled chrome
   el('div', 'scrim-t', wrap); el('div', 'scrim-b', wrap);
   const plq = el('div', 'plq', wrap,
     '<span class="kdot"></span><span><div class="tn">Learn to sail</div><div class="by"><b>Windmill demo</b> · <span class="ct">6</span>/17 done</div></span>');
   el('div', 'wmk', wrap, 'Windmill');
   const fcta = el('a', 'fcta', wrap, FORK_IC + '<span>Fork this tree</span>');
   fcta.href = '#/demo';
-  fcta.tabIndex = -1;   // hero is aria-hidden; keep this injected link out of the tab order (the visible "Try the live demo" CTA covers it)
+  fcta.tabIndex = -1;   // hero is aria-hidden; keep this link out of the tab order
   const toast = el('div', 'toastp', wrap, 'Step unlocked: Rig the mast · <b>2 steps opened</b>');
   const ct = plq.querySelector('.ct');
 
-  // scale-to-fit: world only; labels hide < 0.8× (X5 §5)
+  // scale-to-fit: world only; labels hide below 0.8×
   const fit = () => {
     const w = wrap.clientWidth || HW;
     const s = Math.min(Math.max(w / HW, .60), 1.08);
     stage.style.transform = `translateX(-50%) scale(${s})`;
-    // Phones floor the world at .60×, where the tree fills the moat right down to where the
-    // Fork CTA floats — its lowest branch reads as stuck to the button. Give the button a clear
-    // band below the tree (matched in roadmapLanding.css's 743px reserve so mounting doesn't shift).
+    // Below 744px reserve a band below the world (matched by roadmapLanding.css's 743px reserve).
     const pad = w < 744 ? 72 : 0;
     wrap.style.height = Math.round(HH * s + pad) + 'px';
     wrap.classList.toggle('labels-off', s < 0.8);
@@ -189,7 +172,7 @@ export function mountHero(wrap) {
     W.nodes.b.addEventListener('click', () => fire());
     ct.textContent = '6';
   }
-  function fire() {                                   // ceremony #4, verbatim constants
+  function fire() {
     if (unlocked || document.hidden) return; unlocked = true;
     clearTimeout(cycleT);
     const eB1 = W.edges['b-b1'], eB2 = W.edges['b-b2'];
@@ -230,7 +213,7 @@ export function mountHero(wrap) {
       fn();
     }, ms);
   }
-  function arrival() {                                // #14 — #3's constants, no toast
+  function arrival() {
     build(true);
     K.T(200, () => {
       W.nodes.r.classList.remove('pre'); W.nodes.r._label && W.nodes.r._label.classList.remove('pre');
@@ -246,13 +229,13 @@ export function mountHero(wrap) {
       for (const k in W.edges) { if (W.edges[k].ring === d) K.T(T0 - 60, () => W.edges[k].base.style.opacity =
         W.edges[k].base.getAttribute('stroke') === EDGE_LIT ? .9 : .8); }
     }
-    schedule(4600, fire);                             // settle, breathe, then the moment
+    schedule(4600, fire);
   }
 
   if (PRM) {                                          // reduced: no cascade, no loop; click still works
     build(false); plq.classList.add('in');
   } else {
-    K.T(500, arrival);                                // the settle before the cascade — K owns it, so teardown can cancel it
+    K.T(500, arrival);                                // K owns the timer, so teardown can cancel it
   }
   return {
     setAutoplay(b) {
@@ -261,8 +244,7 @@ export function mountHero(wrap) {
       else if (!unlocked) schedule(2400, fire);
       else schedule(6000, reset);
     },
-    // The loop is self-rescheduling, so silencing it takes both: stop the cycle from booking its
-    // next turn, then cancel the one already booked.
+    // The loop is self-rescheduling: stop the cycle from booking its next turn, then cancel the booked one.
     teardown() {
       autoplay = false;
       clearTimeout(cycleT);
@@ -275,13 +257,10 @@ export function mountHero(wrap) {
   };
 }
 
-// ============================================================
-//    HOW-IT-WORKS beats — three small worlds, one beat each.
-//    Play on scroll-into-view, replay on click. Finite always.
-// ============================================================
+// ---------- HOW-IT-WORKS beats — three small worlds, one beat each ----------
 const BEAT_W = 320, BEAT_H = 190;
 const beatDefs = {
-  plant: {  // ceremony #3 in miniature: rings enter on the cadence
+  plant: {  // rings enter on the cadence
     nodes: {
       r:  { name: '', k: 'terracotta', x: 160, y: 96, ring: 0, crown: true },
       a:  { name: '', k: 'olive', x: 92,  y: 52,  ring: 1 }, b: { name: '', k: 'sky',  x: 228, y: 50,  ring: 1 },
@@ -350,9 +329,8 @@ export function mountBeat(stage, kind) {
               sizes: [24, 19, 15, 13], labelSizes: [11.5, 11.5, 11, 11],
               labels: defs.labels || 'none' };
   stage.style.cssText += `position:relative; width:${BEAT_W}px; height:${BEAT_H}px;`;
-  // Scale the fixed BEAT_W world down to the card's column when it's narrower (phones),
-  // so the scene shrinks instead of cropping. zoom (not transform) so the layout box
-  // shrinks too and the card never overflows. Mirrors the hero's fit().
+  // Scale the fixed BEAT_W world down to a narrower column with zoom (not transform), so the layout
+  // box shrinks too and the card never overflows.
   const frame = stage.parentElement;
   const fitBeat = () => { stage.style.zoom = Math.min(1, frame.clientWidth / BEAT_W); };
   const ro = new ResizeObserver(fitBeat); ro.observe(frame); fitBeat();
@@ -387,11 +365,7 @@ export function mountBeat(stage, kind) {
   };
 }
 
-// ============================================================
-//    QUEST THUMBS — seed packets (F5 §2): the quest's layout,
-//    fresh tiers — root haloed + first ring lit, the rest dim.
-//    Static; nothing on the shelf animates at rest.
-// ============================================================
+// ---------- QUEST THUMBS — static: root haloed, first ring lit, the rest dim ----------
 const TH_W = 236, TH_H = 128;
 function mkQuestWorld(seed, r1, r2, hues) {
   const nodes = { r: { name: '', k: hues[0], x: TH_W / 2, y: TH_H / 2, ring: 0, halo: true } };
@@ -430,8 +404,7 @@ export function mountThumb(stage, quest) {
   stage.style.cssText += `position:relative; width:${TH_W}px; height:${TH_H}px;`;
   buildWorld(stage, { w: TH_W, h: TH_H, s: 1, ox: 0, oy: 0, nodes: w.nodes, edges: w.edges,
     states: w.states, sizes: [15, 10, 7, 6], labels: 'none' });
-  // Nothing on the shelf moves, so the packet is one world and one teardown: unbuild it. Without
-  // this a remount stacked a second world on top of the first, and every thumb drew twice.
+  // One world, one teardown: unbuild it, or a remount stacks a second world on the first.
   return () => { stage.innerHTML = ''; stage.removeAttribute('style'); };
 }
 

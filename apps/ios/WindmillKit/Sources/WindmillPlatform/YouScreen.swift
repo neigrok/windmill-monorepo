@@ -1,28 +1,5 @@
 import SwiftUI
 
-// You & Pro — the shell's own two screens, and the only two it has besides the hub.
-//
-// Always clay, whatever room you came from, and always one tap away: the avatar on the hub, or the
-// You seat at the end of any app's bar. Windmill One lives INSIDE You and nowhere else, so the
-// switcher stays about rooms and never about billing.
-//
-// Three deliberate departures from the board, all toward honesty:
-//
-//  · It says "Windmill Pro". The name was settled as **Windmill One** on 2026-08-02 (the design
-//    project's own consistency ledger, entry 0 — the backend and every legal surface were
-//    renamed). The board is behind; the name here is the settled one.
-//  · The board shows a plan meter. This client has no entitlements call, so it is not drawn — a
-//    meter that invented a number would be worse than the gap.
-//  · The board's plan screen buys. This one cannot: there is no StoreKit and no checkout call
-//    anywhere in this app, and the web it links to keeps paid plans closed (paidPlansOpen() in
-//    web/src/shell/billing/checkout.js returns false). So the screen states the price and then
-//    says plainly that it is not on sale.
-//
-// Appearance IS drawn, and it works: the shell's role tokens are aliases onto an adaptive ramp
-// (Tokens.swift), so choosing Dark actually darkens the hub, the switcher, this screen and every
-// sheet. It was left out while that was untrue, on the rule that a control which changes nothing is
-// worse than an absent one.
-
 struct YouScreen: View {
     @ObservedObject var auth: AuthStore
     let products: [any ProductModule]
@@ -64,9 +41,6 @@ struct YouScreen: View {
                     Text("Windmill is free. One buys the AI — tending in Roadmap, Talk and echoes in Journal, the coach in Gym. It is not on sale yet.")
                 }
 
-                // The honest version of a save-your-work nudge: it states what is actually at
-                // stake, once, where someone came to look — instead of interrupting to say it.
-                // Only while signed out; once there is an account the pages are in it.
                 if auth.status.user == nil, !held.isEmpty {
                     Section("On this device") {
                         ForEach(held, id: \.0) { label, holdings in
@@ -124,8 +98,6 @@ struct YouScreen: View {
         .tint(WindmillColor.neutral900)
     }
 
-    // Only products that actually hold something appear — a row reading "0 pages" would be the app
-    // telling someone their empty room is at risk.
     private var held: [(String, Holdings)] {
         products.compactMap { product in
             let holdings = product.holdings(Account(api: auth.api, user: auth.status.user,
@@ -146,11 +118,6 @@ struct YouScreen: View {
     }
 }
 
-// Windmill One — the superapp's only paywall, and what it gates is the AI: tending in Roadmap,
-// Talk and echoes in Journal, the coach in Gym. The two allowances below are the backend's
-// (roadmap/domain/Tending.h — 30 free, 300 paid, and they meter tending alone; Talk, echoes and
-// the coach are boolean gates with no allowance at all). Nothing here can be bought — see the
-// third note at the top of this file — so the copy says so rather than implying otherwise.
 struct ProScreen: View {
     @Environment(\.dismiss) private var dismiss
 

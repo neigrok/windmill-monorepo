@@ -1,8 +1,5 @@
-// The per-tree, per-device view preferences: which view a tree opens in, which sections it keeps
-// folded (X8 L1/L2), and how its progress card names itself (brief #20 — "Week 3" or "Day 17", and
-// whether the card carries its ledger). One localStorage slot each, every one a plain
-// { [treeId]: value } map. Mirrors PlaceStore — best-effort, storage errors are never fatal, a
-// broken slot reads as empty. None of it ever syncs: these are choices about this screen.
+// Per-tree, per-device view preferences. One localStorage slot each, a { [treeId]: value } map;
+// a broken slot reads as empty. None of it syncs.
 
 import { WEEK_UNIT, DAY_UNIT } from '../share/progressPeriod.js';
 
@@ -38,7 +35,6 @@ export class ViewPrefs {
     this.writeMap(FOLDED_KEY, map);
   }
 
-  // The progress card's period label: weeks by default, days for anyone whose hashtag counts days.
   cardUnit(treeId) {
     return this.readMap(CARD_UNIT_KEY)[treeId] === DAY_UNIT ? DAY_UNIT : WEEK_UNIT;
   }
@@ -49,8 +45,7 @@ export class ViewPrefs {
     this.writeMap(CARD_UNIT_KEY, map);
   }
 
-  // Whether the card carries its ledger. Default ON: it is the single element that makes a series
-  // read as a series. Off is a real choice, though — it publishes the quiet weeks too.
+  // Defaults on when the slot is absent.
   cardLedger(treeId) {
     return this.readMap(CARD_LEDGER_KEY)[treeId] !== false;
   }
@@ -74,15 +69,12 @@ export class ViewPrefs {
     try {
       this.storage.setItem(key, JSON.stringify(map));
     } catch {
-      // storage full or unavailable
     }
   }
 }
 
-// Who lands where (X8 L1): a saved choice wins on return, except an empty tree is always the
-// bud canvas (tree) and a tree you just planted opens on the canvas once — birth and arrival
-// are canvas ceremonies; the list takes over when you come back to work. With no saved choice,
-// the owner comes back to work (list) and a visitor meets the portrait first (tree).
+// A saved choice wins on return, except an empty or just-planted tree always opens on the canvas.
+// With no saved choice the owner gets the list and a visitor the tree.
 export function initialView({ saved, owner, empty, born = false }) {
   if (born) return 'tree';
   if (empty) return 'tree';
@@ -90,18 +82,14 @@ export function initialView({ saved, owner, empty, born = false }) {
   return owner ? 'list' : 'tree';
 }
 
-// The one-shot birth stamp: every planting door (birth canvas, pasted plan, quest) stamps the
-// tree it just made; the view decision peeks at it during render (a pure read, safe under
-// StrictMode's double-invoke) and clears it from an effect once the decision has landed.
-// Session-scoped so it can't leak past the tab, and never fatal — a lost stamp only costs
-// the ceremony.
+// Session-scoped one-shot birth stamp: a planting door stamps the tree it made, the view decision
+// peeks and clears it.
 const BORN_KEY = 'windmill:born';
 
 export function stampBorn(treeId, storage = globalThis.sessionStorage) {
   try {
     storage.setItem(BORN_KEY, treeId);
   } catch {
-    // no session storage — the tree just opens on the owner's default view
   }
 }
 
@@ -117,6 +105,5 @@ export function clearBorn(treeId, storage = globalThis.sessionStorage) {
   try {
     if (storage.getItem(BORN_KEY) === treeId) storage.removeItem(BORN_KEY);
   } catch {
-    // nothing to clear
   }
 }

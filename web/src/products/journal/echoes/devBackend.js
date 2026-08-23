@@ -1,9 +1,5 @@
-// A journal server made of fixtures, for looking at echoes with your own eyes.
-//
-// The states this feature has are states of a corpus — nine matches reaching back two and a half
-// years, a page floor, an entitlement — and none of them can be seen by reading the code. So this
-// answers the journal's own reads from `fixtures.js` and leaves every other request alone. It is dev
-// only: `EchoLab` is the only importer, and the lab route is compiled out of a production build.
+// Answers the journal's own reads from `fixtures.js` and leaves every other request alone. Dev only —
+// `EchoLab` is the only importer, and that route is compiled out of a production build.
 
 import { scenarioById } from './fixtures.js';
 

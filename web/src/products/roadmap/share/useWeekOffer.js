@@ -1,20 +1,8 @@
-// The share director (briefs #12 and #20): the two things this product publishes, and the conduct
-// of the one that asks. The tree's unfurl card is drawn and uploaded when its owner shares a link;
-// the period's progress card is offered once per period, on the open that earned it, and drawn
-// again from the share sheet. Both take their pixels from the same model + layout the canvas
-// paints, and both write the same ledger — which is why they are one hook and not two.
-//
-// The offer's conduct is the part worth naming. It is armed during the load, fires on the tail of
-// whatever ceremony closes that open (the welcome-back recap, or the arrival standing in for it),
-// and is dropped outright when a milestone lands in the same window — one pride moment per open,
-// the ask never queued behind it. The cap is a safety net, not a schedule: it closes when no
-// ceremony is coming — and it ASKS before it closes, because a phone opening into the list still
-// gets its arrival spoken once, from a scene that paused after scheduling it, and an ask that toast
-// replaces is an ask spent unread. The policy itself is `weekOfferGate.js`; this hook only pulls it.
-//
-// What is NOT here: the Share dialog's own open flag, and the tree's share stats. Both have other
-// tenants (the control bar, the action lane, the milestone beat, every mobile plaque), so they
-// stay where every surface can reach them and arrive here as arguments.
+// The share director: the tree's unfurl card, drawn and uploaded when its owner shares a link, and
+// the period's progress card, offered once per period and drawn again from the share sheet. Both
+// take their pixels from the same model + layout the canvas paints, and both write the same ledger.
+// The offer is armed during the load, fires on the tail of the ceremony that closes that open, and
+// is dropped when a milestone lands in the same window.
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildOgCardSvg } from './ogCard.js';
@@ -34,34 +22,31 @@ export function useWeekOffer({
   treeMine, shared, demo, demotion, demotedRef,
   showToast, setShareOpen, ceremonyBusy,
 }) {
-  const plantedAtRef = useRef(0);            // when this tree was planted (epoch ms, 0 unrecorded) — the period clock
-  const cardCacheRef = useRef({ key: '', png: null }); // the last progress card rasterized, so the sheet opens onto a drawn one
-  const ceremonyBusyRef = useRef(ceremonyBusy); // latest probe — the gate is built once and outlives every render
-  const weekOfferGateRef = useRef(null);       // the armed week offer's timing (weekOfferGate.js), built on first use
-  const openWeekSheetRef = useRef(null);     // latest openWeekSheet — the offer's toast outlives its render
-  const publishOgImageRef = useRef(null);    // same hazard on the milestone beat, which predates it
+  const plantedAtRef = useRef(0);            // epoch ms, 0 unrecorded — the period clock
+  const cardCacheRef = useRef({ key: '', png: null }); // the last progress card rasterized
+  const ceremonyBusyRef = useRef(ceremonyBusy); // the gate is built once and outlives every render
+  const weekOfferGateRef = useRef(null);       // built on first use
+  const openWeekSheetRef = useRef(null);     // the offer's toast outlives the render that built it
+  const publishOgImageRef = useRef(null);    // the milestone beat has the same hazard
 
   ceremonyBusyRef.current = ceremonyBusy;
   if (!weekOfferGateRef.current) weekOfferGateRef.current = new WeekOfferGate(() => ceremonyBusyRef.current?.() ?? false);
   const armWeekOffer = useCallback((run) => weekOfferGateRef.current.arm(run), []);
 
-  // A milestone in the same window WINS the lane, and the week's offer is dropped rather than
-  // queued behind it: one pride moment per open. It costs nothing — the ask was never committed,
-  // so it comes back next period.
+  // A milestone in the same window wins the lane: the offer is dropped, never queued behind it,
+  // and comes back next period because the ask was never committed.
   const dropWeekOffer = useCallback(() => weekOfferGateRef.current.drop(), []);
 
-  // Every ceremony's closing beat comes through the scene's one toast sink, which is what makes it
-  // the seam the week's offer waits on: it FOLLOWS that beat by 120ms instead of racing it, so the
-  // ask lands on a tree that has finished moving.
+  // The offer follows the ceremony's closing beat rather than racing it.
   const followCeremony = useCallback(() => weekOfferGateRef.current.follow(), []);
 
   useEffect(() => () => weekOfferGateRef.current?.drop(), []);
 
-  // The tree being left behind takes its period clock with it: never count a new tree's weeks
-  // from an old one's planting.
+  // The tree being left behind takes its period clock with it: never count a new tree's weeks from
+  // an old one's planting.
   const forgetPeriod = useCallback(() => { plantedAtRef.current = 0; }, []);
 
-  // …and the seed that lands sets it. Another tree, another card, so the cache empties with it.
+  // The seed that lands sets it; another tree, another card, so the cache empties with it.
   const openPeriod = useCallback((plantedAt) => {
     plantedAtRef.current = plantedAt;
     cardCacheRef.current = { key: '', png: null };
@@ -69,21 +54,15 @@ export function useWeekOffer({
 
   const clearShareLedger = useCallback((id) => shareLedger.clear(id), []);
 
-  // Every share moves the baseline the NEXT progress card is "since" (brief #20): the completed
-  // set as it stands right now, the moment, and the share's ordinal. Written here and only here —
-  // never on a completion — because a baseline that survives your own work is the only honest way
-  // to say "since you last shared" without per-node timestamps from the server. `delta` is what the
-  // card being posted stamped, so every later card's ledger row agrees with the picture this one
-  // published; a link share carries no such claim and lets the ledger take the set difference.
+  // Every share moves the baseline the next progress card is "since": the completed set as it
+  // stands, the moment, and the share's ordinal. Written on a share, never on a completion.
+  // `delta` is what the card being posted stamped; a link share carries no claim and passes null.
   const recordShare = useCallback((delta = null) => {
     const prior = shareLedger.load(treeId);
     shareLedger.save(treeId, { completed: completedRef.current, at: Date.now(), count: (prior?.count ?? 0) + 1, delta });
   }, [treeId, completedRef]);
 
-  // When the owner shares, publish the tree's unfurl card (brief #12): build the SVG from the
-  // same model + layout the canvas draws, rasterize it, and upload it — all best-effort, off
-  // the copy interaction. Owner-only (treeMine), and every step is guarded so a failed card
-  // (bad raster, offline, no DOM) stays silent and the backend's generic image covers it.
+  // Owner-only; every step is guarded so a failed card stays silent behind the generic image.
   const publishOgImage = useCallback(async () => {
     if (!treeMine || !tree || !shareStats) return;
     recordShare();
@@ -98,11 +77,8 @@ export function useWeekOffer({
       };
       const png = await svgToPngBlob(buildOgCardSvg(card));
       if (png) await uploadOgImage(treeId, png);
-      // The motion companion (#19): kicked off AFTER the poster is up, un-awaited, so the share
-      // link is ready instantly and the ~3s encode + upload lands a beat later. Best-effort — a
-      // failed or unsupported encode just leaves the poster, never blocks or breaks sharing. The
-      // encoder (and its heavy WebCodecs/mux library) is loaded on demand here so it never weighs
-      // down the initial page — only an owner who actually shares ever pays for it.
+      // The motion companion goes after the poster, un-awaited, so the share link is ready at once.
+      // The encoder and its mux library load on demand.
       import('./captureShareVideo.js')
         .then(({ captureShareVideo }) => captureShareVideo(card))
         .then((mp4) => { if (mp4) uploadOgVideo(treeId, mp4); })
@@ -110,14 +86,8 @@ export function useWeekOffer({
     } catch { /* the unfurl artifacts are best-effort — never break sharing */ }
   }, [treeMine, tree, states, shareStats, layoutPositions, treeId, recordShare]);
 
-  // The progress card's pixels (brief #20). The share sheet owns the settings; this owns the
-  // drawing — the same model + layout the canvas paints, rasterized by the same rasterizer the
-  // unfurl card uses. The tree's own og:image is deliberately untouched: the unfurl is the tree's
-  // identity, this is a post the user makes.
-  //
-  // One card is cached, keyed by everything that can change it, because canon asks for the card to
-  // be drawn BEFORE the sheet opens: the offer renders it while the toast is still up, and the
-  // sheet's first frame is a cache hit rather than a hole where the post should be.
+  // The progress card's pixels; the tree's own og:image is untouched. One card is cached, keyed by
+  // everything that can change it.
   const renderProgressCard = useCallback(async ({ lit, period, since, ledger }) => {
     if (!tree || !shareStats || !lit?.length) return null;
     const key = `${[...lit].sort().join(',')}|${period}|${since ?? ''}|${ledger ? ledger.join('·') : 'off'}`
@@ -125,8 +95,7 @@ export function useWeekOffer({
     if (cardCacheRef.current.key === key) return cardCacheRef.current.png;
     try {
       const model = tree.toRenderModel(layoutPositions(tree), states);
-      // No dominant kind is passed: the card takes its hue from the steps that lit THIS period,
-      // which is what keeps two consecutive posts from being the same picture.
+      // No dominant kind is passed: the card takes its hue from the steps that lit this period.
       const png = await svgToPngBlob(buildProgressCardSvg({
         model,
         title: tree.title,
@@ -140,14 +109,12 @@ export function useWeekOffer({
       cardCacheRef.current = { key, png };
       return png;
     } catch {
-      return null; // best-effort like every other share artifact — the sheet shows no preview, nothing breaks
+      return null; // the sheet shows no preview; nothing breaks
     }
   }, [tree, states, shareStats, layoutPositions]);
 
-  // What this period holds, and everything the sheet's second segment needs to post it. It is
-  // derived, not stored: the offer and the share menu are two doors onto the SAME facts, and a
-  // second copy of them behind the offer's door is how the two would eventually disagree.
-  // Owner-and-editable, exactly like the milestone beat — a phone owner is who shares.
+  // What this period holds, and everything the sheet's second segment needs to post it. Derived,
+  // never stored.
   const weekSegment = useMemo(() => {
     if (!treeMine || shared || demo || demotion || !tree) return null;
     const prior = shareLedger.load(treeId);
@@ -163,13 +130,11 @@ export function useWeekOffer({
       prefs: viewPrefs,
       week: { lit, sinceAt, plantedAt: period.plantedAt, ordinal: period.ordinal, ledger: ledgerDeltas({ history: prior?.history ?? [], period }) },
       renderCard: (options) => renderProgressCard({ lit, ...options }),
-      onShared: () => recordShare(lit.length), // the card states its own stamp, so the ledger can never outrun it
+      onShared: () => recordShare(lit.length), // the card states its own stamp; the ledger cannot outrun it
     };
   }, [treeMine, shared, demo, demotion, tree, treeId, viewPrefs, completed, states, completedAt, renderProgressCard, recordShare]);
 
-  // Taking the offer: draw the card, THEN open the sheet onto it — canon asks for a sheet that
-  // opens onto the post, never onto a hole where the post will be. Accepting also clears the
-  // decline count: someone who posts is not someone the offer should retire.
+  // Taking the offer: draw the card, then open the sheet onto it. Accepting clears the declines.
   const openWeekSheet = useCallback(async (offer) => {
     offer.accept();
     const ledger = ledgerDeltas({ history: shareLedger.load(treeId)?.history ?? [], period: offer.period });
@@ -182,20 +147,13 @@ export function useWeekOffer({
     setShareOpen(true);
   }, [renderProgressCard, treeId, viewPrefs, setShareOpen]);
 
-  // The offer's toast is built at the open that earned it and tapped a beat later, after `states`
-  // and the tree have moved on. Going through the ref means the card draws the tree as it actually
-  // stands when the sheet opens.
+  // The toast is built at the open that earned it and tapped a beat later, after `states` and the
+  // tree have moved on; going through the ref draws the tree as it stands when the sheet opens.
   openWeekSheetRef.current = openWeekSheet;
-  // The milestone beat has always had the same stale-closure hazard, and it mattered more: its
-  // toast could say "Tree complete — 22/22" while the card it published drew 21/22, because the
-  // completion that earned the crown had not reached `states` in the render that built the action.
   publishOgImageRef.current = publishOgImage;
 
-  // The week's offer (brief #20, reconciled to canon): the first open after a period closes,
-  // riding the tail of the welcome-back recap. It is armed here and fired by the ceremony —
-  // never mid-session, never on a timer, never twice in a period, and never for anyone but the
-  // owner of an editable tree (the same gate the milestone beat uses: a phone owner is exactly
-  // who posts). Two declines in a row and considerProgressShare stops answering, for good.
+  // The week's offer: the first open after a period closes, armed here and fired by the ceremony.
+  // Never mid-session, never twice in a period, and only for the owner of an editable tree.
   const considerWeekOffer = useCallback((seed, progress) => {
     if (!seed.mine || shared || demo || demotedRef.current) return;
     const weekOffer = considerProgressShare({
@@ -208,10 +166,7 @@ export function useWeekOffer({
     });
     if (!weekOffer.offer) return;
     armWeekOffer(() => {
-      // The ask is spent the moment it goes out, and counts as declined until taken. Every
-      // surface that can make the offer now carries a standing Share door — the control bar
-      // on desktop, the action lane's right slot below it (X8 §10) — so a toast left to fade
-      // is a refusal everywhere, and retirement can never strand an owner.
+      // The ask is spent the moment it goes out and counts as declined until taken.
       weekOffer.commit({ countsAsDecline: true });
       const count = weekOffer.lit.length;
       showToast(`${weekOffer.period.label} · ${count} step${count === 1 ? '' : 's'} lit`, {

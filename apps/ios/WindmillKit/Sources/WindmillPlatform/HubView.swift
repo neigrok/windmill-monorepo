@@ -1,15 +1,5 @@
 import SwiftUI
 
-// The hub — where you arrive, and where a fourth sibling would slot in.
-//
-// The rule that shapes every measurement here: **the doors sit low, in thumb reach**. The greeting
-// can be out of reach; the doors can't. So the stack is bottom-aligned and reads bottom-up, which
-// makes the reach order the priority order. The one thing that ever reorders it is live work — a
-// running session sinks to the BOTTOM so its CTA lands right under the thumb, because unfinished
-// work outranks planned work.
-//
-// No plan meter on this screen: billing lives in You, and nowhere else.
-
 struct HubView: View {
     let products: [any ProductModule]
     let account: Account
@@ -46,8 +36,6 @@ struct HubView: View {
         }
     }
 
-    // The doors, stacked bottom-up. A product with something running is moved to the end of the
-    // list — the only rank change the hub ever makes.
     private var doors: some View {
         VStack(spacing: WindmillSpace.x3) {
             Text(Self.today())
@@ -65,10 +53,7 @@ struct HubView: View {
         }
     }
 
-    // Bottom-up, and that is the whole rule. The registry is written most-important-first (the
-    // composition root's order), and the hub renders it REVERSED so the most important door lands
-    // lowest, under the thumb. Anything running then sinks past all of them: unfinished work
-    // outranks planned work, and it is the only thing that ever changes a card's rank.
+    // Registry order is most-important-first; rendered reversed, so it lands lowest. Running sinks past all.
     private var ordered: [any ProductModule] {
         let lines = products.reversed().map { ($0, $0.hubLine(account)) }
         return lines.filter { !$0.1.running }.map(\.0) + lines.filter { $0.1.running }.map(\.0)
@@ -82,7 +67,6 @@ struct HubView: View {
         return String(first)
     }
 
-    // Sentence case, second person, no exclamation — the house voice. The clock is the device's.
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         let partOfDay = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
@@ -100,8 +84,6 @@ struct HubView: View {
     }
 }
 
-// A living front door, in its own skin — the product's own colour, not the shell's, because the
-// card is the product speaking. It shows the one line that decides whether you go in.
 private struct HubCard: View {
     let product: any ProductModule
     let line: HubLine
@@ -145,9 +127,6 @@ private struct HubCard: View {
     private var skin: HubSkin { HubSkin.of(product.id) }
 }
 
-// Each app's card wears that app's skin — clay, dusk, steel — so the front door already tells you
-// which room you are about to walk into. Journal's dusk is the night canvas's own surface, so the
-// card and the room it opens are the same colour.
 private struct HubSkin {
     let surface: Color
     let border: Color

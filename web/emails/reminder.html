@@ -1,50 +1,16 @@
 <!--
-  Windmill transactional email — frontier reminder · X7
-  From:      Windmill <reminders@windmill.works>
-  Reply-To:  hello@windmill.works
-  Subject:   {{{ready_phrase}}} ready · {{{tree_name}}}
-  Preheader: Your frontier is waiting — finish one and the next branch unlocks.
-  Plain-text pair: reminder.txt
-
-  Every variable is TRIPLE-braced: substitution is raw, with no escaping tier, so URLs keep
-  their & = ? intact and a hex colour lands inside a style attribute unmangled. The values that
-  can carry user text ({{{tree_name}}}, the step labels) are sanitised server-side; the colours
-  are the six-hue enum rendered to hex, never anything a person typed.
-
-  Template variables:
-    {{{tree_name}}}     display name of the tree            e.g. "Frontend path"
-    {{{tree_url}}}      deep link to the OWNER's tree       e.g. https://windmill.works/#/app/t_1a2b3c
-    {{{done}}} {{{total}}}  progress counters               e.g. 9 / 24
-    {{{ready_phrase}}}  the count already worded by the server — "1 step" / "3 steps", so the
-                        subject and lede never read "1 steps". Same trick as the fork mail's
-                        tree_meta; the server owns the plural, the template never guesses.
-    {{{pause_url}}}     one-click pause page                e.g. https://windmill.works/pause.html#t=<secret>
-    {{{more_on_tree}}}     the in-tree remainder, already worded — "and 4 more on this tree" — or ''
-                        when the three slots below already show everything ready in THIS tree
-    {{{more_ready}}}    the other-trees line, already worded — "2 other trees have steps ready" —
-                        or '' when this is the only one. The number counts TREES, so the server
-                        names the unit in the sentence; a reader must never have to guess whether
-                        a bare "+2" means steps or trees
-    {{{settings_url}}}  account settings                    https://windmill.works/#/settings
-    {{{step_1_label}}} {{{step_1_color}}} … {{{step_3_*}}}  up to three ready steps
-
-  Both remainder lines are finished sentences from the server: the template counts nothing,
-  pluralises nothing and compares nothing. Empty is the ordinary case — an empty {{{more_on_tree}}}
-  leaves a cell with no content and so no height, an empty {{{more_ready}}} leaves only its 14px
-  of padding. The two facts differ (steps left in THIS tree vs other trees waiting), so they are
-  two slots and never one line.
-
-  The steps are THREE FIXED SLOTS, never a provider-side repeat — the engine caps at three, and
-  fixed slots drop any dependence on iteration. An unused slot is the empty string in both
-  fields: the label renders as nothing and `background:;` is an invalid declaration the client
-  drops, so the dot is transparent and the row collapses to the 8px the dot occupies. Row height
-  is line-height, never padding, precisely so an unused slot costs almost nothing.
-
-  {{{settings_url}}} must carry the hash — the app is hash-routed, so a bare /settings path falls
-  through to the SPA root and lands the reader on the landing page instead of their account.
-
-  Unlike the auth mail, reminders ALWAYS carry the pause link and the once-a-week promise line in
-  the footer (emails/README.md, compliance). Keep both when you edit.
+  Resend template `reminder`; plain-text twin reminder.txt.
+  Every variable is triple-braced and substitutes raw, with no escaping tier: URLs keep their
+  & = ?, and a hex colour lands inside a style attribute unmangled. The values that can carry user
+  text ({{{tree_name}}}, the step labels) are sanitised server-side; {{{step_1_color}}} and its
+  siblings are the six-hue enum rendered to hex by the server and are never user text.
+  {{{ready_phrase}}}, {{{more_on_tree}}} and {{{more_ready}}} arrive as finished sentences — the
+  template counts nothing and pluralises nothing — and the last two are empty strings when there is
+  nothing to say. {{{more_on_tree}}} is what the three step slots did not fit in THIS tree;
+  {{{more_ready}}} counts OTHER trees.
+  {{{settings_url}}} must carry the hash — https://windmill.works/#/settings — because the app is
+  hash-routed and a bare /settings path falls through to the SPA root.
+  Reminders always carry the pause link and the once-a-week promise line in the footer.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -100,7 +66,6 @@
                 </td>
               </tr>
 
-              <!-- sunken frontier panel -->
               <tr>
                 <td>
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="wm-sunken" bgcolor="#F9F5EB" style="background:#F9F5EB; border:1px solid #F1EADA; border-radius:16px;">
@@ -125,7 +90,7 @@
                           </tr>
                         </table>
 
-                        <!-- three fixed slots; an empty slot draws a transparent dot and no text -->
+                        <!-- three fixed slots, never a provider-side repeat; an empty slot draws a transparent dot and no text -->
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                           <tr>
                             <td width="20" valign="middle" style="width:20px;">
@@ -151,9 +116,6 @@
                               {{{step_3_label}}}
                             </td>
                           </tr>
-                          <!-- What the three slots didn't fit, in the server's own words, aligned
-                               with the labels. Empty is the common case: the cell then holds
-                               nothing at all and the row takes no height. -->
                           <tr>
                             <td width="20" style="width:20px; font-size:0; line-height:0;"></td>
                             <td class="wm-more" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:26px; color:#92805F;">{{{more_on_tree}}}</td>
@@ -165,10 +127,6 @@
                 </td>
               </tr>
 
-              <!-- The OTHER trees this mail doesn't feature — a count of trees, worded as trees
-                   by the server, never a bare "+N" a reader would take for steps. The empty
-                   string when there are none, which leaves this row holding nothing but its
-                   padding, so there is no logic in the template. -->
               <tr>
                 <td align="center" style="font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px; line-height:1.5; color:#92805F; padding-top:14px;">{{{more_ready}}}</td>
               </tr>
@@ -190,7 +148,7 @@
           </td>
         </tr>
 
-        <!-- footer: reminders always carry the promise and the pause link -->
+        <!-- reminders always carry the promise line and the pause link -->
         <tr>
           <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
             You get this once a week, only while a tree has steps ready.<br>

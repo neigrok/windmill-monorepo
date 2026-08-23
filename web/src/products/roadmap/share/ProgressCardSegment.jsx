@@ -1,23 +1,14 @@
-// The share sheet's second segment (X2 · brief #20): the week's card, the two choices that change
-// it, and the doors it leaves by. The link segment above shares the TREE — its identity, its unfurl
-// card, a URL that keeps working. This one shares a POST: one week of it, as a picture.
-//
-// It owns the settings and nothing else. The pixels come from `renderCard`, injected by the view
-// that holds the model and the rasterizer, and the view memoizes the last render — so the card is
-// already drawn before this opens (canon: never a spinner where the post should be) and a flipped
-// setting simply asks for another one.
-//
-// The two settings are per tree and remembered, because both are answers about a series rather than
-// about one post: whether these cards count weeks or days, and whether they carry the ledger.
+// The share sheet's second segment: the week's card, the two choices that change it, and the doors
+// it leaves by. It owns the settings and nothing else — the pixels come from `renderCard`, which
+// memoizes the last render. Both settings are per tree and remembered.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Switch } from '../../../design-system';
 import { ProgressPeriod, sinceLabel, WEEK_UNIT, DAY_UNIT } from './progressPeriod.js';
 
-// `week` is what this period actually holds — { lit, sinceAt, plantedAt, ordinal, ledger } — or null
-// while the tree is still loading. `onShared` advances the baseline the NEXT card is "since": asking
-// for the artifact IS the share, so it fires when a door is taken, not when the preview appears. The
-// segment mounts with the sheet and dies with it, which is what keeps that "once" honest.
+// `week` is { lit, sinceAt, plantedAt, ordinal, ledger }, or null while the tree is still loading.
+// `onShared` advances the baseline the next card is "since"; it fires when a door is taken, never
+// when the preview appears.
 export function ProgressCardSegment({ treeId, prefs, week, renderCard, onShared }) {
   const [unit, setUnit] = useState(() => prefs.cardUnit(treeId));
   const [ledgerOn, setLedgerOn] = useState(() => prefs.cardLedger(treeId));
@@ -32,8 +23,7 @@ export function ProgressCardSegment({ treeId, prefs, week, renderCard, onShared 
   const since = week ? sinceLabel({ plantedAt: week.plantedAt, at: week.sinceAt, unit }) : null;
   const ledger = ledgerOn ? (week?.ledger ?? []) : null;
 
-  // Draw whenever the card the settings describe changes. The view's cache makes the common case —
-  // opening onto a card the offer already rendered — resolve without a second raster.
+  // Draws whenever the card the settings describe changes; the view's cache absorbs the common case.
   useEffect(() => {
     if (!week || count === 0) { setPng(null); return undefined; }
     let live = true;
@@ -66,13 +56,12 @@ export function ProgressCardSegment({ treeId, prefs, week, renderCard, onShared 
 
   const file = png ? new File([png], `windmill-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, { type: 'image/png' }) : null;
 
-  // The phone's door: the OS sheet, with the PNG attached, so a post goes straight to the app it
-  // belongs in. A dismissed sheet is an answer, not a failure — nothing falls through to a download.
+  // The phone's door: the OS sheet with the PNG attached. A dismissed sheet is an answer.
   async function handleOsShare() {
     markShared();
     try {
       await navigator.share({ files: [file] });
-    } catch { /* dismissed or refused — the download and copy doors are still here */ }
+    } catch { /* dismissed or refused */ }
   }
 
   function handleDownload() {

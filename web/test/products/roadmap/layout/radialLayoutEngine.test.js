@@ -18,8 +18,7 @@ function star(childCount) {
   return treeOf(nodes);
 }
 
-// The property that matters: whatever the shape, no two nodes on one ring end up closer than a
-// node is wide. This is what "clumped" meant — it was measurable, not a matter of taste.
+// No two nodes on one ring end up closer than a node is wide.
 function closestPairOnAnyRing(positions) {
   const points = [...positions.values()];
   let closest = Infinity;
@@ -43,15 +42,12 @@ test('a crowded ring keeps its nodes a node-width apart', () => {
 });
 
 test('a sparse tree is left exactly where it was', () => {
-  // Six children never reach the crowding bound, so the first ring stays at its old radius.
   const positions = new RadialLayoutEngine().layout(star(6));
   const child = positions.get('c0');
   assert.equal(Math.round(Math.hypot(child.x, child.y)), Math.round(NODE_SIZE * 2.8));
 });
 
 test('a lopsided split does not push the ring out for a thin wedge', () => {
-  // 'wide' carries many leaves and 'narrow' carries one, so narrow owns a sliver of the circle
-  // — but the two of them stand far apart, and the ring has no reason to grow.
   const nodes = [
     { id: 'root', label: 'root', prerequisites: [] },
     { id: 'wide', label: 'wide', prerequisites: ['root'] },
@@ -79,8 +75,6 @@ test('a lone node sits at the origin', () => {
 });
 
 test('rings open up as they go outward', () => {
-  // A single chain: every ring holds one node, so nothing is crowded and the only thing setting
-  // the radii is the clearance — which should widen with depth rather than repeat one constant.
   const nodes = [{ id: 'n0', label: 'n0', prerequisites: [] }];
   for (let i = 1; i < 8; i++) nodes.push({ id: `n${i}`, label: `n${i}`, prerequisites: [`n${i - 1}`] });
   const positions = new RadialLayoutEngine().layout(treeOf(nodes));
@@ -91,8 +85,6 @@ test('rings open up as they go outward', () => {
 });
 
 test('a thin branch gets more room than its leaf count alone would buy', () => {
-  // 'narrow' carries one leaf against thirty, so on pure proportion it would be pressed against
-  // its neighbour. It should hold a wider slice than 1/31 of the circle.
   const nodes = [
     { id: 'root', label: 'root', prerequisites: [] },
     { id: 'wide', label: 'wide', prerequisites: ['root'] },
@@ -103,7 +95,5 @@ test('a thin branch gets more room than its leaf count alone would buy', () => {
   const angleOf = (id) => Math.atan2(positions.get(id).y, positions.get(id).x);
   let apart = Math.abs(angleOf('wide') - angleOf('narrow'));
   if (apart > Math.PI) apart = 2 * Math.PI - apart;
-  // Pure leaf count would place the two wedge centers about (1/2)(30/31 + 1/31) x 2pi apart at
-  // most; the evenness nudge has to move narrow measurably off the crowd.
   assert.ok(apart > (Math.PI * 2) / 31, `only ${apart.toFixed(3)} rad apart`);
 });

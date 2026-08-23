@@ -8,13 +8,6 @@ import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 
-// A session read back is the workout as it was LIVED: movements in the order they were first
-// touched, sets inside a movement in the order they were performed. Nothing here re-sorts by load,
-// by number or by name — an order that disagreed with the session would be a second account of it.
-//
-// And beside every set, what the FROZEN plan asked for. The snapshot is the only source: a routine
-// retargeted since must not rewrite what the log says about a session that already happened.
-
 class SessionScreenTests {
     private val catalog = listOf(
         Exercise(id = "bench-press", name = "Bench press"),
@@ -38,8 +31,6 @@ class SessionScreenTests {
     private fun line(movement: Performed.Movement) =
         (movement.against as? Performed.Against.Plan)?.line
 
-    // Interleaved on the clock — a lifter supersetting two movements — and grouped on screen, with
-    // the movement order taken from when each was FIRST touched.
     @Test
     fun setsAreGroupedByMovementInTheOrderTheyWereFirstTouched() {
         val movements = Performed.movements(listOf(
@@ -55,8 +46,6 @@ class SessionScreenTests {
         assertEquals(listOf("80 × 5", "82.5 × 5"), movements[0].rows.map { it.effort })
     }
 
-    // A set the plan never asked for is not measured against it and still says what it was: only a
-    // WORKING set is read against a target, because only a working set counts toward one.
     @Test
     fun onlyAWorkingSetIsReadAgainstThePlan() {
         val movements = Performed.movements(listOf(
@@ -72,9 +61,6 @@ class SessionScreenTests {
                      listOf("warmup", "on plan", "failure"), notes(movements[0]))
     }
 
-    // THE WHOLE OF §G17: what the plan said beside what was done, fail-fast in the order the facts
-    // outrank each other. A set that is both heavier and short reads as HEAVIER — the load is the
-    // claim the plan makes, and two clauses on one row is the scolding this screen refuses.
     @Test
     fun aSetIsReadAgainstTheFrozenPlansTargetInOneLine() {
         val movements = Performed.movements(listOf(
@@ -97,9 +83,6 @@ class SessionScreenTests {
                      movements[0].rows.map { it.note?.short ?: false })
     }
 
-    // A movement the session added is named as added — once, on the first set that COUNTS, because
-    // the header above already says it was not in the plan and a per-row repeat would be scolding
-    // somebody for work they chose to do.
     @Test
     fun aMovementTheSessionAddedIsNamedOnceAndNeverMeasured() {
         val movements = Performed.movements(listOf(
@@ -112,10 +95,6 @@ class SessionScreenTests {
         assertEquals(listOf("warmup", "added today", null), notes(movements[0]))
     }
 
-    // A PlanEntry carries no id, so the same movement written twice in one routine — a heavy triple
-    // and a back-off set — cannot be matched to the set in front of us. Nothing is annotated rather
-    // than annotating against whichever line came first: a wrong "on plan" is a worse answer than
-    // no answer at all.
     @Test
     fun aMovementThePlanNamesTwiceIsAnnotatedWithNothing() {
         val movements = Performed.movements(listOf(
@@ -130,9 +109,6 @@ class SessionScreenTests {
         assertEquals(listOf(null, null), notes(movements[0]))
     }
 
-    // A session nobody planned is measured against nothing at all. A movement the plan asked for
-    // without a load — a chin-up, written `3 × max` — is measured only on the axis it named, and
-    // every set of it is on plan, because "max" is whatever the movement gives that day.
     @Test
     fun aSessionWithNoPlanIsMeasuredAgainstNothingAndMaxRepsIsAlwaysMet() {
         val unplanned = Performed.movements(listOf(set("s1", "row", 60.0, 10, at = 1_000)), catalog)
@@ -148,11 +124,6 @@ class SessionScreenTests {
         assertEquals(listOf("on plan", "on plan"), notes(openEnded[0]))
     }
 
-    // AN OPEN ROW SAYS NOTHING, because the routine said nothing: a line written down with no set
-    // target decides at the rack, freezes as an absence, and has no target for this session to have
-    // met. It is not `plan max reps` — a target invented after the fact and attributed to the lifter
-    // — and every set of it is not `on plan`. It is not `Unplanned` either: the day did name the
-    // movement, and `not in the plan` over a line somebody wrote last week is its own false sentence.
     @Test
     fun anOpenRowIsMeasuredAgainstNothingAndInventsNoTargetAfterTheFact() {
         val movements = Performed.movements(
@@ -165,8 +136,6 @@ class SessionScreenTests {
         assertEquals(listOf(null, null), notes(movements[0]))
     }
 
-    // The catalog has not answered yet, or never will: a slug a lifter can still recognise beats a
-    // blank where the movement should be. The same fallback the whole product uses.
     @Test
     fun aMovementTheCatalogHasNoNameForKeepsItsId() {
         val movements = Performed.movements(listOf(set("s1", "zercher-squat", 60.0, 5, at = 1_000)),
@@ -181,11 +150,6 @@ class SessionScreenTests {
         assertEquals(emptyList<Performed.Movement>(), Performed.movements(emptyList(), catalog))
     }
 
-    // §G18'S SUBTITLE — "Overhead Press · set 3" — and it is the LOG'S number wherever the log has
-    // spoken for the row. A delete leaves a gap and the numbers after it do not close up, so a
-    // position in the list would name the wrong set the moment one was removed. The position is only
-    // the fallback for a session no account has numbered yet, where it is what the server would
-    // assign anyway: max+1 per movement, warmups counted.
     @Test
     fun aSetIsNamedByTheLogsOwnNumberAndFallsBackToItsPositionOnly() {
         val numbered = Performed.movements(listOf(
@@ -204,9 +168,6 @@ class SessionScreenTests {
                      listOf(1, 2), shelved[0].rows.map { it.number })
     }
 
-    // The sheet edits the row WHOLE, so the row it is opened from has to carry the whole set — the
-    // kind, the rpe, the note and the instant included. A screen that handed the editor four
-    // strings would save a set with everything else silently defaulted away.
     @Test
     fun everyRowCarriesTheSetItselfSoTheSheetCanEditIt() {
         val logged = set("s1", "bench-press", 82.5, 5, at = 1_000, kind = SetKind.Failure)

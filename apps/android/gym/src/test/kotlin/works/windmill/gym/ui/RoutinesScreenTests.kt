@@ -27,11 +27,6 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 
-// THE TILE'S ONE GESTURE, proven by tapping it. The routine-first shape moved the start OFF the
-// home list — the old shape's cost was asymmetric: a tap meant for the chevron started a workout
-// nobody asked for — so the whole tile opens the routine's own page, where Start workout is a
-// deliberate act made in front of the plan. The screen is composed for real and the tap is a real
-// tap, because the wiring under a thumb is exactly what a pure test cannot hold still.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RoutinesScreenTests {

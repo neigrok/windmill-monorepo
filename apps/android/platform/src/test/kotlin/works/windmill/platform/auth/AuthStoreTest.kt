@@ -57,10 +57,6 @@ class AuthStoreTest {
         assertNull(sessions.read())
     }
 
-    // Only the server's own 401 spends the secret. A server that failed and a host that could not
-    // be reached said nothing about the session — clearing on either was silent sign-out, and the
-    // queue's owed sets would have had no bearer left to replay under. A phone that never learned
-    // whose secret it holds reads signed out for now, with the secret surviving for next time.
     @Test
     fun aRestoreTheServerFailedKeepsTheSecretForNextTime() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
@@ -81,10 +77,6 @@ class AuthStoreTest {
         assertEquals("s3cret", sessions.read())
     }
 
-    // R7 — A TRANSPORT FAILURE OR A 5XX ON RESTORE IS NOT A SIGN-OUT. The last-known user is kept
-    // beside the secret, so the seat stands up SIGNED IN and unverified — the rooms connect for that
-    // account — and `reverify` asks again on the next resume until the server answers. Its answer
-    // is what decides: a 200 verifies the seat, and only a 401 signs it out and clears both.
     @Test
     fun aRestoreTheServerCouldNotAnswerStandsOnTheLastKnownUserUnverified() = runTest {
         val ana = User("u1", "a@b.c", "Ana")
@@ -130,7 +122,6 @@ class AuthStoreTest {
         assertNull(sessions.user())
     }
 
-    // The user is remembered by every door that signs in, so the NEXT launch has a seat to stand on.
     @Test
     fun aSignInRemembersTheUserBesideTheSecret() = runTest {
         server.enqueue(MockResponse().setBody("""{"user":{"id":"u1","email":"a@b.c","name":"Ana"}}"""))
@@ -147,7 +138,6 @@ class AuthStoreTest {
         assertEquals(User("u2", "b@b.c", ""), sessions.user())
     }
 
-    // `door: "app"` is what makes the mail carry a code rather than a link.
     @Test
     fun requestLinkTrimsRemembersTheAddressAndNamesTheAppDoor() = runTest {
         server.enqueue(MockResponse().setBody("""{"status":"sent"}"""))

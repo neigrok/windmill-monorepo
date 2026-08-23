@@ -1,17 +1,3 @@
-// The device-residue rule end to end (audit WEB-4). A browser holds a lot of a person: the
-// device-tree index, each tree's workspace note, progress, legend, and the lattice blob that can
-// paint a whole private tree with no server at all. None of it used to name an account, so the
-// next person on a shared browser was auto-navigated into the previous one's private tree, read
-// their per-node notes, and — if the tree had been born anonymously — uploaded it into their own
-// account on sign-in.
-//
-// Two behaviours have to survive together, and every case below is one of them:
-//   · anonymous work on this device still follows whoever signs in next (the anonymous-first door);
-//   · a tree that belongs to an account is never listed, opened or claimed by anybody else — not
-//     by the next account, not by a ghost, and not by typing #/app/<id> straight at it.
-//
-// The stores are the real ones; only the browser under them is a double.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -32,10 +18,6 @@ const realWindow = globalThis.window;
 const realLocalStorage = globalThis.localStorage;
 const realIndexedDB = globalThis.indexedDB;
 
-// One in-memory browser: localStorage, the windmill-sync object store, and the hash the tab stands
-// at. `disk` and `blobs` are shared by every store the cases construct, exactly as a real tab is.
-// A fresh `window` is a fresh DOCUMENT LOAD, which is where the account confirmation lives — so
-// every case below starts out not knowing who holds the device, exactly like a cold boot.
 function browser({ index = {}, keys = {}, blobs = {}, hash = '' } = {}) {
   const disk = new Map(Object.entries(keys));
   disk.set(INDEX, JSON.stringify(index));
@@ -44,8 +26,7 @@ function browser({ index = {}, keys = {}, blobs = {}, hash = '' } = {}) {
     setItem: (key, value) => { disk.set(key, String(value)); },
     removeItem: (key) => { disk.delete(key); },
   };
-  // Object.keys over a Storage is how the per-tree stores enumerate their own residue; the double
-  // has to answer it the way a real Storage does, so the keys live on the object itself.
+  // Per-tree stores enumerate residue with Object.keys over Storage, so keys must live on the object.
   const storageView = new Proxy(storage, {
     ownKeys: () => [...disk.keys()],
     getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
@@ -101,7 +82,6 @@ function blobFor(treeId, title, label) {
   return { frame: lattice.toFrame(), lastSeq: 0 };
 }
 
-// The network is gone: fetchMe answers `undefined` (a blip, not a 401) and so does the tree list.
 function serverUnreachable() {
   globalThis.fetch = async () => { throw new TypeError('failed to fetch'); };
 }
@@ -153,9 +133,6 @@ test('the owner comes back and finds their own row again — scoping is not a on
   assert.deepEqual(trees.map((tree) => [tree.id, tree.origin]), [['t_a', 'server'], ['t_anon', 'device']]);
 });
 
-// Every browser that ran the shipped build carries rows written before entries named an account.
-// The unclaimed ones are work that was never uploaded — treating those as residue would delete
-// somebody's only copy — and the claimed ones name a tree the server already holds.
 test('unstamped rows are attributed on first contact — the signed-in account gets them, and they were invisible until then', async () => {
   const device = browser({
     index: { t_old: { title: 'Older than the stamp', updatedAt: 10, claimed: false }, t_synced: { title: 'Synced before the stamp', updatedAt: 5, claimed: true } },
@@ -171,9 +148,6 @@ test('unstamped rows are attributed on first contact — the signed-in account g
   });
 });
 
-// HIGH-1, reproduced by the reviewer against the first fix: an unstamped UNCLAIMED row has exactly
-// the shape of anonymous work, and it is also what a signed-in person's interrupted claim leaves.
-// Read as anonymous it was a wildcard every account could see, list, open and claim.
 test("an unstamped row is nobody's until a confirmed answer says so — it lists, loads and claims for no one", async () => {
   const device = browser({
     index: { t_legacy: { title: 'A LEGACY UNCLAIMED SECRET', updatedAt: 10, claimed: false } },
@@ -196,9 +170,6 @@ test('the first confirmed answer on a signed-out device makes unstamped rows ano
   assert.deepEqual(device.index(), { t_legacy: { title: 'Older than the stamp', updatedAt: 10, claimed: false, owner: null } });
 });
 
-// THE RENDER. The verifier drove this one in a real browser: a bare #/app that still resolved into
-// the previous account's tree, and the id typed straight in, both painted the whole private tree
-// out of the blob while every server read for that caller 404'd.
 test("typing another account's tree id paints nothing — the blob answers only for the account that owns the row", async () => {
   browser({ index: { t_a: A_PRIVATE }, blobs: { t_a: blobFor('t_a', 'A private therapy plan', 'call the clinic Tuesday') } });
   serverSaying({ me: 'u_b', trees: [] });
@@ -231,8 +202,6 @@ test("the owner offline still opens their own tree from the blob, and an anonymo
   assert.equal(anonymous.mine, true);
 });
 
-// The hook the shell calls on an account change (shell/auth/accountChange.js). It is the second
-// line — the stamps above already deny the read — but the residue itself must go too.
 test('forgetDevice drops the departing account and every trace of its trees, and keeps the anonymous one', async () => {
   const device = browser({
     index: { t_a: A_PRIVATE, t_anon: ANON },
@@ -271,10 +240,7 @@ test('forgetDevice on an account switch stamps the arriving account and leaves i
   assert.deepEqual(device.blobIds(), []);
 });
 
-// HIGH-2, reproduced by the reviewer: with the API unreachable a stranger got the previous
-// account's tree listed, loaded and claimable, because the remembered marker was still the key.
-// A remembered identity may paint a face; it may not open a device store until this document load
-// has had one successful /v1/me.
+// A remembered identity may not open a device store until this document load has had one successful /v1/me.
 test('a cold boot with no network is nobody — the account\'s own rows stay shut, anonymous work still opens', async () => {
   browser({
     index: { t_a: A_PRIVATE, t_anon: ANON },

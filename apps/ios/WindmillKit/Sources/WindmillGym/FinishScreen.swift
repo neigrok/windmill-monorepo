@@ -1,21 +1,7 @@
 import SwiftUI
 import WindmillPlatform
 
-// THE END OF A SESSION — three facts, at most one line of meaning, and the movement-by-movement
-// comparison under it. Everything here RENDERS the `Review` the domain computed and nothing here
-// computes one: no e1RM, no record decision, no matching of one session against another. A second
-// opinion drawn on the phone would be the product arguing with itself in its own loudest pixel.
-//
-// THE EMPTY SLOT IS A DECISION. On the ~190 sessions in 200 that earn nothing the record line is
-// simply absent and nothing takes its place: no encouragement, no streak, no score. The comparison
-// is a fact with a DIRECTION and never a grade, which is why nothing in it is a percentage and
-// nothing in it is coloured.
-//
-// The one thing under the review is the coach share, and it is not a share SHEET: no social targets,
-// no image, nothing discoverable. It mints one revocable, expiring link to this one workout, and
-// CoachShare.swift is the whole of it. It is not drawn over a session that ended early — screen 11's
-// question there is keep-or-discard, and a second offer beside a delete button competes with it.
-//
+// Renders the `Review` the domain computed; nothing here computes an e1RM, a record or a comparison.
 // The native twin of web/src/products/gym/review.js.
 
 public enum Finish {
@@ -42,9 +28,6 @@ public enum Finish {
         public let rows: [Row]
     }
 
-    // A short session is not a failure and is not congratulated either — it is asked about, and the
-    // word above it is the only thing that changes. Whether one came before it is a question about
-    // the LOG, not about this session, which is why `first` is handed in.
     public static func head(startedAtMs: Int64, finishedAtMs: Int64, routine: String?,
                             slight: Bool, first: Bool) -> Head {
         Head(title: slight ? "Ended early" : "Session finished",
@@ -52,20 +35,14 @@ public enum Finish {
              when: "\(Readout.day(startedAtMs)) · \(Readout.time(startedAtMs)) – \(Readout.time(finishedAtMs))")
     }
 
-    // A session with no LOADED working set has no honest one-rep estimate — a chin-up at zero and a
-    // band-assisted pull-up at −20 have none — so the tile says nothing with a dash rather than
-    // printing a zero nobody lifted.
+    // With no loaded working set there is no honest estimate, so the tile prints a dash rather than a zero.
     public static func tiles(_ stats: Review.Stats) -> [Tile] {
         [Tile(value: Readout.duration(stats.durationMs), label: "Duration"),
          Tile(value: String(stats.workingSets), label: "Working sets"),
          Tile(value: stats.topE1rm.map(Readout.weight) ?? "—", label: "Top e1RM")]
     }
 
-    // The rare loud line. The mark that was passed is named beside the one that passed it, because a
-    // record with nothing to compare against is a first entry, and a first entry is not a record.
-    //
-    // A kind this build has never heard of draws NOTHING. The slot is allowed to be empty, and a
-    // sentence assembled out of a rule we do not know is the one thing it may not hold.
+    // A kind this build has never heard of draws nothing; the slot is allowed to be empty.
     public static func recordSentence(_ record: PersonalRecord?, catalog: [Exercise]) -> String? {
         guard let record else { return nil }
         let movement = Readout.movement(record.exerciseId, in: catalog)
@@ -80,8 +57,6 @@ public enum Finish {
         }
     }
 
-    // "Against last Legs" — the same routine, the last time it ran, in the order this session
-    // performed its movements.
     public static func comparison(_ against: Against?, catalog: [Exercise]) -> Comparison? {
         guard let against else { return nil }
         return Comparison(
@@ -94,22 +69,10 @@ public enum Finish {
         )
     }
 
-    // Which reference the arrow points from: the PLAN when the session had one for that movement,
-    // and last time when it did not — the plan is what the lifter agreed to and the log is what
-    // happened. The one row that is not an arrow is the one that fell short: "planned 3×12 · did
-    // 3×10" says the thing an arrow cannot.
-    //
-    // WHAT MAY BE CALLED SHORT is narrow, and it is review.js `detailOf`'s predicate exactly. `now
-    // .sets` is not what a reader assumes: it counts only the sets at the TOP LOAD, so a session that
-    // ramped 100·105·110·110·110 through every one of five planned sets arrives as `sets: 3`, and a
-    // set-count term told a lifter who finished the workout that they did not. Reps are the only axis
-    // this wire can be read short on — and only when the bar did not go up, because heavier for fewer
-    // is a different session rather than a smaller one, and this row is a fact with a direction and
-    // never a grade.
+    // The predicate for "fell short" is review.js `detailOf`'s exactly: reps are the only axis, and only when the bar did
+    // not go up — `now.sets` counts the sets at the top load alone.
     private static func detail(_ movement: Against.Movement) -> String {
-        // AN OPEN TARGET (§M) IS NOTHING TO MEASURE AGAINST, so the row falls through to last time
-        // exactly as a movement with no plan line does. The routine declined to name a number; an
-        // arrow drawn from `open` would be the comparison inventing the left-hand side of itself.
+        // An open target is nothing to measure against, so the row falls through to last time.
         let planned = movement.planned.flatMap { $0.isOpen ? nil : $0 }
         if let planned, let target = planned.reps, let sets = planned.sets,
            movement.now.reps < target,
@@ -125,16 +88,13 @@ public enum Finish {
         return top(movement.now)
     }
 
-    // Spaced when the target is absent and tight when it is named — `3 × max` beside `5×5` — which
-    // is review.js `countLabel`'s own spelling, so one comparison row reads the same on both
-    // surfaces. A movement taken to max never fell short of a rep target it does not have.
+    // Spacing is review.js `countLabel`'s: `3 × max` when the target is absent, `5×5` when it is named.
     private static func count(_ sets: Int, _ reps: Int?) -> String {
         guard let reps else { return "\(sets) × \(Readout.repTarget(nil))" }
         return "\(sets)×\(reps)"
     }
 
-    // Zero is not a load, it is the absence of one: a chin-up reads `3×8`, and a band-assisted
-    // pull-up at −20 still reads its load, because that is a real point on the number line here.
+    // Zero is the absence of a load, not a load: a band-assisted −20 still reads its own.
     private static func top(_ sets: Int, _ reps: Int?, _ weightKg: Double?) -> String {
         guard let weightKg, weightKg != 0 else { return count(sets, reps) }
         return "\(count(sets, reps)) @ \(Readout.weight(weightKg))"
@@ -145,9 +105,7 @@ public enum Finish {
     }
 }
 
-// A session that has just closed, held by the room until the lifter is done reading it. The sets
-// travel with it because the log has let go of them by now — the queue drops a delivered row the
-// moment its session closes — and "Keep this as a routine" is composed from exactly those sets.
+// The sets travel with it: the queue drops a delivered row the moment its session closes.
 struct FinishedSession: Equatable {
     let session: Session
     let sets: [TrainingSet]
@@ -157,26 +115,12 @@ struct FinishedSession: Equatable {
     var routine: String? { session.plan?.routine }
     var slight: Bool { review?.slight ?? false }
 
-    // The offer belongs to a session that had nothing written down for it — a session started FROM
-    // a routine already has one. Nothing is created until the tap, declining costs nothing, and the
-    // offer comes back next session.
-    //
-    // NEVER OVER A SLIGHT SESSION. Screen 11 wins: a session too slight to say anything about is too
-    // slight to be worth keeping as a routine, and drawing both would ask the lifter to name a
-    // program and throw it away in the same scroll — two primary buttons and two different "keep"s.
     var offersRoutine: Bool {
         !slight && session.routineId == nil && sets.contains { $0.kind == .working }
     }
 }
 
-// ONE DRAWING OF A REVIEW, used by the screen a session ends on and by the screen it is revisited
-// from. The three facts, the rare record line and the comparison are one readout, and two copies of
-// it would be two chances for the product to say the same session two ways.
-//
-// `stats` is off in exactly one place: the session detail's head already states those three facts on
-// its own line (§G17), and the tiles under it would be the same session counted twice. What is left
-// is the domain's OPINION — the record and the comparison — which no head line can say, and which
-// ~190 sessions in 200 do not have, so a review that never came back costs that screen nothing.
+// `stats` is off where the session detail's head already states those three facts.
 struct ReviewReadout: View {
     let review: Review?
     let catalog: [Exercise]
@@ -195,9 +139,6 @@ struct ReviewReadout: View {
                     against(comparison)
                 }
             } else if stats {
-                // The three facts are the domain's and this read did not come back. Nothing takes
-                // their place: a duration counted on the phone would be a second opinion in the one
-                // screen that exists to state the first.
                 Text("the log didn’t answer — the session is saved")
                     .font(GymType.numeral(13))
                     .foregroundStyle(skin.inkFaint)
@@ -226,8 +167,6 @@ struct ReviewReadout: View {
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
     }
 
-    // The only loud thing in the product, and at most one per session. Gold is a KIND of moment
-    // here, never a state — nothing else on this screen is allowed to borrow it.
     private func record(_ sentence: String) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text("Personal record")
@@ -269,9 +208,7 @@ struct ReviewReadout: View {
 struct FinishScreen: View {
     let finished: FinishedSession
     let catalog: [Exercise]
-    // Whether the routine WAS kept, answered by the room after the log said so. Held outside this
-    // view on purpose: a screen that hid the offer on the tap would be telling the lifter their
-    // program had changed on the strength of a request that may not have landed.
+    // Answered by the room after the log said so, never on the tap.
     let kept: Bool
     let coach: CoachDoors
     let onKeepRoutine: (String) -> Void
@@ -305,9 +242,6 @@ struct FinishScreen: View {
 
                 if finished.offersRoutine && !kept { keepAsRoutine }
 
-                // Not over a session that ended early: that screen is asking whether to keep the
-                // workout at all, and offering to send it to somebody in the same breath is two
-                // questions where the design allows one.
                 if !finished.slight { CoachShareCard(doors: coach) }
 
                 actions
@@ -327,9 +261,6 @@ struct FinishScreen: View {
                 .kerning(0.9)
                 .foregroundStyle(skin.accent)
 
-            // The name sits in a well, because it is the one thing on this screen that is EDITED and
-            // a field that looks like a label is one nobody taps. Screen 3 draws it sunken, with the
-            // instruction at the trailing end rather than under it.
             HStack(spacing: WindmillSpace.x3) {
                 TextField("", text: $routineName)
                     .font(WindmillFont.body(17, .semibold))
@@ -372,11 +303,6 @@ struct FinishScreen: View {
             }
             .disabled(routineName.trimmingCharacters(in: .whitespaces).isEmpty)
 
-            // "Declining costs nothing — the offer comes back next session" was drawn under this
-            // button until 2026-08-12. It is true, and it is a promise about how the OFFER behaves
-            // rather than anything about the workout — so it is said where the offer is designed
-            // (the comment above, and the board's own note) and not on the glass. Nothing is created
-            // until the tap either way, and nothing anywhere counts how often this is passed on.
             Button("Just keep the session", action: onDone)
                 .font(WindmillFont.body(16, .semibold))
                 .foregroundStyle(skin.inkDim)
@@ -388,9 +314,7 @@ struct FinishScreen: View {
             .strokeBorder(skin.accent, lineWidth: 1))
     }
 
-    // The one destructive action in the product, and it sits here because a three-set session is
-    // usually a phone left running rather than a workout. It deletes for good: nothing on this
-    // screen may suggest it can be got back.
+    // Deletes for good; nothing on this screen may suggest it can be got back.
     @ViewBuilder
     private var actions: some View {
         if finished.slight {
@@ -420,8 +344,6 @@ struct FinishScreen: View {
         }
     }
 
-    // The one place gym spells a target, borrowed rather than written out again — this preview and
-    // the routine card have to agree about what a line of a program says.
     private func target(_ entry: RoutineWrite.Entry) -> String {
         Readout.target(sets: entry.targetSets, reps: entry.targetReps, weightKg: entry.targetWeightKg)
     }

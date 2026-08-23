@@ -3,14 +3,8 @@ import { Section } from './Section.jsx';
 import { APPEARANCE_CHOICES } from '../appearance.js';
 import { useAppearance } from '../useAppearance.js';
 
-// Light or dark for the whole app, chosen once. Shown whether or not anyone is signed in — this is
-// a preference of the DEVICE, not of an account, so gating it behind sign-in would be asking for a
-// password to turn on a lamp.
-//
-// What it sets: the shell and every room that does not pin its own skin. A room owns its PALETTE
-// and not the choice (styles/tokens/palettes.css) — journal answers with dusk or paper, roadmap with
-// embers or Tuscan midday, and gym pins basalt either way until it opens. The marketing pages are
-// outside the app surface and stay warm cream, which is canon rather than an oversight.
+// A device preference, so it shows signed out too. It sets the shell and every room that does not
+// pin its own skin.
 
 const LABELS = { light: 'Light', dark: 'Dark', system: 'System' };
 

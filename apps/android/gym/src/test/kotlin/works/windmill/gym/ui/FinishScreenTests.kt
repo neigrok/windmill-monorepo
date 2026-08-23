@@ -18,10 +18,6 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.Target
 import works.windmill.gym.domain.TrainingSet
 
-// The end of a session, read. Nothing here computes a review — what is pinned is the reading: which
-// word goes above a short session, which slot stays EMPTY on the ordinary 190 in 200, and the one
-// comparison row that is not an arrow.
-
 private val catalog = listOf(
     Exercise(id = "back-squat", name = "Back Squat"),
     Exercise(id = "leg-press", name = "Leg Press"),
@@ -46,7 +42,6 @@ class FinishTests {
         assertEquals("Pull A", short.subtitle)
     }
 
-    // Whether one came before it is a question about the LOG, not about this session.
     @Test
     fun aSessionWithNoRoutineIsNamedByWhetherItIsTheFirstOne() {
         assertEquals("Your first session",
@@ -64,23 +59,17 @@ class FinishTests {
         assertEquals(listOf("1h 02m", "16", "122.5"), tiles.map { it.value })
     }
 
-    // A session with no loaded working set has no honest one-rep estimate — a chin-up at zero and a
-    // band-assisted pull-up at −20 have none — so the tile says nothing with a dash rather than
-    // printing a zero nobody lifted.
     @Test
     fun aSessionWithNoLoadedSetShowsADashRatherThanAZero() {
         val tiles = Finish.tiles(ReviewStats(durationMs = 660_000, workingSets = 3, topE1rm = null))
         assertEquals(listOf("11m", "3", "—"), tiles.map { it.value })
     }
 
-    // The empty slot is a decision: on an ordinary session nothing takes the record line's place.
     @Test
     fun noRecordDrawsNoLineAtAll() {
         assertNull(Finish.recordSentence(null, catalog))
     }
 
-    // The mark that was passed is named beside the one that passed it — a record with nothing to
-    // compare against is a first entry, and a first entry is not a record.
     @Test
     fun eachKindOfRecordNamesWhatItBeatAndWhen() {
         val past = 1_750_723_200_000L
@@ -100,8 +89,6 @@ class FinishTests {
                      Finish.recordSentence(reps, catalog))
     }
 
-    // A kind this build has never heard of draws NOTHING. The slot is allowed to be empty, and a
-    // sentence assembled out of a rule we do not know is the one thing it may not hold.
     @Test
     fun aRecordKindThisBuildHasNeverHeardOfDrawsNothing() {
         val unheard = PersonalRecord(kind = "volume-at-bodyweight", exerciseId = "back-squat",
@@ -110,8 +97,6 @@ class FinishTests {
         assertNull(Finish.recordSentence(unheard, catalog))
     }
 
-    // The Swift wire carries `previous` always; this build's model permits its absence, and a
-    // record with nothing named beside it is a first entry — not a record, not a line.
     @Test
     fun aRecordThatNamesNothingItBeatDrawsNothing() {
         val firstEntry = PersonalRecord(kind = "e1rm", exerciseId = "back-squat", value = 122.5,
@@ -119,8 +104,6 @@ class FinishTests {
         assertNull(Finish.recordSentence(firstEntry, catalog))
     }
 
-    // The plan is what the lifter agreed to and the log is what happened, so the arrow points from
-    // the plan when there was one.
     @Test
     fun theComparisonPointsFromThePlanAndFallsBackToLastTime() {
         val against = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1_750_723_200_000,
@@ -140,8 +123,6 @@ class FinishTests {
                      comparison?.rows?.map { it.detail })
     }
 
-    // The one row that is not an arrow: a session that did not get through what was written down
-    // says so, because an arrow cannot.
     @Test
     fun aMovementThatFellShortOfThePlanSaysItPlainly() {
         val against = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
@@ -154,7 +135,6 @@ class FinishTests {
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
-    // Zero is not a load, it is the absence of one: a chin-up reads its count and nothing else.
     @Test
     fun aBodyweightMovementPrintsNoLoad() {
         val against = Against(sessionId = "ses_0", routine = "Pull A", startedAtMs = 1,
@@ -166,9 +146,6 @@ class FinishTests {
         assertEquals(listOf("3×7 → 3×8"), Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
-    // A rep target the routine declined to set is `3 × max`, and a movement taken to max never fell
-    // short of a count it does not have — so this row is an arrow and not the "planned … · did …"
-    // sentence. The spacing follows review.js `countLabel`, so the two surfaces print one row alike.
     @Test
     fun aMovementWithNoRepTargetReadsAsMaxAndNeverAsAShortfall() {
         val against = Against(sessionId = "ses_0", routine = "Pull A", startedAtMs = 1,
@@ -181,8 +158,6 @@ class FinishTests {
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
-    // A `3 × max` plan cannot be fallen short of AT ALL: there is no rep target to miss, and a
-    // count of sets is not something this wire can be read short on either (see the ramp below).
     @Test
     fun aPlanThatNamesNoRepTargetCannotBeFallenShortOf() {
         val against = Against(sessionId = "ses_0", routine = "Pull A", startedAtMs = 1,
@@ -195,11 +170,6 @@ class FinishTests {
                      Finish.comparison(against, catalog)?.rows?.map { it.detail })
     }
 
-    // THE ROW THAT TOLD A FINISHED SESSION IT FELL SHORT. `now.sets` counts only the sets at the
-    // TOP LOAD, so a lifter who ramped 100·105·110·110·110 through every one of five planned sets
-    // arrives here as `sets: 3` — and a set-count term printed "planned 5×5 · did 3×5" in the
-    // loudest row on the screen, over bytes the desk read as an arrow. Set counts are not
-    // comparable on this wire and review.js has never compared them.
     @Test
     fun aSessionThatRampedThroughItsWholePlanIsNeverToldItFellShort() {
         val ramped = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
@@ -213,8 +183,6 @@ class FinishTests {
                      Finish.comparison(ramped, catalog)?.rows?.map { it.detail })
     }
 
-    // Nor is going heavier for fewer reps a smaller session: it is a different one, and the arrow
-    // carries both facts without grading either.
     @Test
     fun goingHeavierForFewerRepsIsADifferentSessionAndNotASmallerOne() {
         val heavier = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
@@ -227,8 +195,6 @@ class FinishTests {
                      Finish.comparison(heavier, catalog)?.rows?.map { it.detail })
     }
 
-    // What IS short: the reps at a load that did not go up — and a plan that names no load at all
-    // is read on the reps alone, because there is no bar to have gone up.
     @Test
     fun whatIsCalledShortIsTheRepsAtALoadThatDidNotGoUp() {
         val heldLoad = Against(sessionId = "ses_0", routine = "Legs", startedAtMs = 1,
@@ -250,10 +216,6 @@ class FinishTests {
                      Finish.comparison(noLoadNamed, catalog)?.rows?.map { it.detail })
     }
 
-    // AN OPEN ROW IS NOT A PLAN. The routine declined to name a target — the row asks at the rack —
-    // so the frozen snapshot froze the absence and the arrow points from last time, exactly as it
-    // does for a movement no plan named at all. Never `3 × max`, which is a target this session was
-    // never asked for and would be attributed to the lifter after the fact.
     @Test
     fun anOpenRowPointsFromLastTimeAndNeverFromATargetItNeverHad() {
         val open = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
@@ -266,8 +228,6 @@ class FinishTests {
         assertEquals(listOf("3×10 @ 57.5 → 3×10 @ 60"),
                      Finish.comparison(open, catalog)?.rows?.map { it.detail })
 
-        // And the first time that day is run there is no last time either: the row says what was
-        // done and stands on nothing.
         val firstRun = Against(sessionId = "ses_0", routine = "Heavy Thursday", startedAtMs = 1,
             movements = listOf(
                 AgainstMovement(exerciseId = "barbell-row",
@@ -293,8 +253,6 @@ class FinishedSessionTests {
                     completedAtMs = 2_000),
     )
 
-    // The offer belongs to a session that had nothing written down for it. A session started FROM
-    // a routine already has one, and offering to keep it again would create a second copy of it.
     @Test
     fun keepingASessionAsARoutineIsOfferedOnlyWhenThereWasNoRoutine() {
         assertTrue(FinishedSession(session = session(routineId = null), sets = lifted,
@@ -303,8 +261,6 @@ class FinishedSessionTests {
                                     review = null, isFirst = false).offersRoutine)
     }
 
-    // A session of nothing but warmups has no targets to write down, and RoutineWrite would refuse
-    // to compose one — so the offer is not made in the first place.
     @Test
     fun aSessionOfNothingButWarmupsIsNotOfferedAsARoutine() {
         val warmups = listOf(
@@ -315,10 +271,6 @@ class FinishedSessionTests {
                                     review = null, isFirst = true).offersRoutine)
     }
 
-    // SCREEN 11 WINS. A short ad-hoc session satisfied both, and drew "Keep this as a routine" /
-    // "Save routine" directly above "Ended early" / "Keep it" / "Discard session" — two primary
-    // buttons and two different "keep" verbs, asking the lifter to write this into their program
-    // and to consider deleting it in the same scroll.
     @Test
     fun aShortSessionIsNeverAlsoOfferedAsARoutine() {
         val short = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true)
@@ -333,8 +285,6 @@ class FinishedSessionTests {
                                  slight = ended.slight, first = ended.isFirst).title)
     }
 
-    // A review that never came back cannot make a session slight — and slight is what offers to
-    // destroy the whole workout, so it is never assumed.
     @Test
     fun withoutAReviewASessionIsNeverCalledShort() {
         assertFalse(FinishedSession(session = session(routineId = null), sets = lifted,

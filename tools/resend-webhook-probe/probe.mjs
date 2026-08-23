@@ -1,20 +1,12 @@
-// Is the Resend delivery webhook ARMED in production, or still dark?
-//
-// From outside you cannot tell: an unarmed endpoint and a wrongly-signed delivery both answer 401,
-// which is the point — the door is dark rather than forgeable. The only honest check is to send a
-// genuinely signed delivery and see a 200. That needs the signing secret, so this script reads it
-// from the environment and never takes it as an argument: an argument lands in shell history and
-// in the process list, where a webhook secret has no business being.
+// Is the Resend delivery webhook armed? Sends a genuinely signed delivery and looks for a 200; an
+// unarmed endpoint and a wrongly-signed one both answer 401. The secret comes from the environment,
+// never an argument, which would land in shell history and the process list.
 //
 //   read -rs RESEND_WEBHOOK_SECRET && export RESEND_WEBHOOK_SECRET
 //   node tools/resend-webhook-probe/probe.mjs https://windmill.works
 //
-// SAFETY: the delivery it sends is a PERMANENT bounce for a random address at .invalid — a domain
-// RFC 2606 reserves so it can never resolve and can never belong to an account. The handler answers
-// 200 for an address nobody owns and writes nothing (deliberately not a 404, which would turn the
-// endpoint into an account-existence oracle). So a pass proves the signature verified end to end
-// while changing no state. Never point this at a real address: a valid signed bounce is exactly
-// what stops that mailbox's mail, and nothing in the product lifts a suppression yet.
+// SAFETY: never point this at a real address — a valid signed bounce stops that mailbox's mail. The
+// delivery below is a bounce for a random .invalid address, which can never belong to an account.
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
@@ -25,9 +17,8 @@ if (!configured) {
   process.exit(2);
 }
 
-// The server trims surrounding whitespace and matching quotes before the whsec_ test, so a value
-// pasted with a stray newline or wrapped in quotes still works. Mirror that here, or this probe
-// reports a false 401 for a secret production is perfectly happy with.
+// The server trims surrounding whitespace and matching quotes before the whsec_ test; mirror that
+// here or the probe reports a false 401.
 const trimmed = configured.trim().replace(/^(['"])(.*)\1$/s, '$2');
 const key = Buffer.from(trimmed.startsWith('whsec_') ? trimmed.slice('whsec_'.length) : trimmed, 'base64');
 
@@ -64,8 +55,7 @@ if (response.status === 200) {
   console.log('Unexpected. A verified delivery should never 5xx; anything else is worth reading the logs for.');
 }
 
-// Guard the guard: prove the probe can also produce a FAILING signature, so a 200 above means the
-// server actually checked something rather than waving everything through.
+// Control: a wrong key must be refused, or the 200 above proves nothing.
 const forged = createHmac('sha256', Buffer.from('not-the-key')).update(`${id}.${timestamp}.${body}`).digest('base64');
 if (!timingSafeEqual(Buffer.from(forged), Buffer.from(signature))) {
   const refused = await fetch(`${origin}/v1/resend/webhook`, {

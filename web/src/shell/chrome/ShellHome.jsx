@@ -1,8 +1,3 @@
-// The /app home room — the product grid. Open products speak for themselves through their
-// registry HomeCard (product-owned truth, lazy); pre-open products get the shell's own no-door
-// cell, because a landing must never offer a door that opens onto nothing. The status line is
-// read off the registry, never hard-coded.
-
 import React, { Suspense } from 'react';
 import { joinLabels, PRODUCTS } from '../products.js';
 import { InstallChip } from '../pwa/InstallChip.jsx';
@@ -24,8 +19,6 @@ export function ShellHome() {
     <div className="wm-home">
       <p className="wm-home-status">{statusLine(open, preOpen)}</p>
       <div className="wm-home-grid">
-        {/* An open product without a HomeCard (registry not yet grown) renders nothing —
-            the shell never invents a product's cell. */}
         {open.map((p) => (p.shell.HomeCard
           ? (
             <Suspense key={p.id} fallback={<div className="wm-home-cell wm-home-cell--resolving" aria-hidden="true" />}>
@@ -33,9 +26,6 @@ export function ShellHome() {
             </Suspense>
           )
           : null))}
-        {/* A product without a room here is not necessarily a product without a product: a pre-open
-            product can be built and reachable at its own landing while `status` stays 'pre-open', so
-            this cell says the room is missing rather than that the thing is unbuilt or undesigned. */}
         {preOpen.map((p) => (
           <div key={p.id} className="wm-home-cell wm-home-cell--preopen">
             <div className="wm-home-cell-head">

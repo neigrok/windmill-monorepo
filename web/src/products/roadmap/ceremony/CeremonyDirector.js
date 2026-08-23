@@ -1,19 +1,8 @@
-// Composes the motion-language "sentence" — camera ease → travel → bloom → pulse
-// → toast (guidelines/motion-language.md X1) — into one ceremony at a time. The
-// director is pure sequencing: it holds no GL state and reaches growth only through
-// injected collaborators (node/edge batches, camera, a toast sink, a seconds clock,
-// a motion flag). Only upward changes arrive here — growth is the one thing
-// celebrated; the scene applies downward dims itself.
-//
-// One ceremony plays at a time; changes that land mid-ceremony coalesce and
-// celebrate once. Any canvas grab fast-forwards the live beats to their end state
-// over a single YIELD; the toast still speaks.
-
 import { TIER_COMPLETE } from '../theme.js';
 
-// Canonical constants — guidelines/motion-language.md §6. Milliseconds.
+// Milliseconds.
 const IGNITE = 280;
-const BLOSSOM = 620; // matches the shader bloom window — pulse/toast land after it settles
+const BLOSSOM = 620; // matches the shader bloom window
 const HANDOFF = 0.85;
 const DEPEND_AT = 0.90;
 const TOAST_GAP = 120;
@@ -21,11 +10,11 @@ const YIELD = 150;
 const IDLE_COALESCE = 400;
 const JITTER = 60; // ±, seeded per node
 const SETTLE_POLL = 16;
-const SETTLE_CAP = 760; // never wait past the 720ms camera cap + slack
-const CADENCE = 320;       // one depth ring enters this long after the previous
-const CADENCE_FLOOR = 160; // compress no tighter than this when a deep tree won't fit
-const CEREMONY_MAX = 2400; // structural budget, first ignite -> last settle
-const ARRIVAL_REST_MAX = 400; // past this many nodes the rings are skipped — one cross-fade, toast intact
+const SETTLE_CAP = 760;
+const CADENCE = 320;
+const CADENCE_FLOOR = 160;
+const CEREMONY_MAX = 2400; // budget from first ignite to last settle
+const ARRIVAL_REST_MAX = 400; // past this many nodes the rings are skipped
 
 export class CeremonyDirector {
   constructor(deps) {
@@ -37,22 +26,17 @@ export class CeremonyDirector {
     this.motion = deps.motion; // () => 0 | 1
 
     this.live = null;    // { changeset, spoken }
-    this.pending = null; // coalesced changeset waiting for the floor to clear
+    this.pending = null; // coalesced changeset waiting for the floor
     this.timers = [];
     this.settleTimer = null;
     this.idleTimer = null;
     this.editing = false;
   }
 
-  // ---- external signals ------------------------------------------------
-
-  // A growth changeset. While editing, hold and celebrate once the canvas idles;
-  // while a ceremony plays, coalesce into the next; otherwise begin now.
+  // While editing, hold and celebrate once the canvas idles; while a ceremony plays, coalesce.
   celebrate(changeset) {
     if (!changeset) return;
     if (!changeset.risen.length) {
-      // Nothing grew (e.g. an in-progress step completed with no child to open) —
-      // there's no beat to play, but a summary still speaks, once, if the floor is clear.
       if (changeset.summary && !this.live && !this.editing) this.speak(changeset.summary, { action: changeset.action });
       return;
     }
@@ -67,8 +51,7 @@ export class CeremonyDirector {
     if (!editing) this.armIdle();
   }
 
-  // Pointer-down / wheel / pinch: the user always wins. Fast-forward the live beats
-  // to their end state over one YIELD; the toast still speaks.
+  // Pointer-down / wheel / pinch: fast-forward the live beats over one YIELD; the toast still speaks.
   yieldToInput() {
     if (!this.live) return;
     const cs = this.live.changeset;
@@ -80,9 +63,6 @@ export class CeremonyDirector {
     this.drain();
   }
 
-  // A ceremony is coming: one is live, or one waits (coalesced, or held for the canvas to idle)
-  // for the floor. Every path that ends a ceremony — spoken, reduced, summary-less, yielded,
-  // cancelled — clears `live`, so this goes false even when nothing was said.
   busy() { return this.live !== null || this.pending !== null; }
 
   cancel() {
@@ -92,8 +72,6 @@ export class CeremonyDirector {
     this.pending = null;
   }
 
-  // ---- the sentence ----------------------------------------------------
-
   begin(changeset) {
     this.live = { changeset, spoken: false };
     if (this.motion() === 0) { this.playReduced(changeset); return; }
@@ -101,16 +79,11 @@ export class CeremonyDirector {
     this.waitForSettle(() => this.playBeats(changeset));
   }
 
-  // Completed sources full-bloom → light travels each newly-lit edge → the child
-  // wakes as the light lands (handoff) → the frontier pulses → the toast speaks
-  // last. Beats overlap on the canonical score; they never queue end-to-end.
   playBeats(changeset) {
     const t0 = this.clock();
     let lastSettle = 0;
     const waking = new Set();
-    // A step the light will wake (a child on a newly-lit edge) blooms as the light lands, not at
-    // t0 — so a chain completed in one changeset (a return-recap replay, a coalesced multi-finish)
-    // cascades one bloom per node rather than every step blooming at once and re-blooming on wake.
+    // A step the light will wake blooms when the light lands, not at t0.
     const woken = new Set(Object.values(changeset.wakeByEdge).map((child) => child.id));
 
     for (const n of changeset.risen) {
@@ -120,8 +93,7 @@ export class CeremonyDirector {
     }
 
     for (const e of changeset.litEdges) {
-      // e.wave staggers a multi-hop replay a cadence apart so light flows down a chain in order;
-      // ordinary single-hop completions carry no wave and ride IGNITE exactly as before.
+      // e.wave staggers a multi-hop replay a cadence apart so light flows down a chain in order.
       const at = IGNITE + (e.wave ?? 0) * CADENCE;
       const dur = this.edges.edgeDuration(e.from, e.to) || IGNITE;
       this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
@@ -145,19 +117,11 @@ export class CeremonyDirector {
     this.schedule(lastSettle + TOAST_GAP + 1, () => { this.live = null; this.drain(); });
   }
 
-  // uMotion = 0: no glide, no travel head, no stagger, no pulse — every riser
-  // cross-fades to its end tier (the shaders clamp the fade to 150ms), then a toast.
   playReduced(changeset) {
     this.settleAll(changeset);
     this.schedule(IGNITE, () => { this.speakNow(changeset); this.live = null; this.drain(); });
   }
 
-  // #3 paste arrival: the whole roadmap comes alive. The scene has dimmed everything
-  // and fit the camera; here each depth ring wakes on the 320ms cadence (light travels
-  // the edges into it), the root's crown ignites first, and one toast plants the tree.
-  // A deep tree compresses the cadence to a floor; rings past the budget join the last.
-  // Reduced motion and trees past the sanity ceiling take the one-beat cross-fade
-  // instead — the pre-dimmed tree settles to rest and the toast still speaks.
   arrival(plan) {
     this.live = { changeset: arrivalChangeset(plan), spoken: false };
     const planted = plan.rings.reduce((sum, ring) => sum + ring.length, 0);
@@ -171,8 +135,7 @@ export class CeremonyDirector {
 
     rings.forEach((ring, depth) => {
       const at = Math.min(depth, lastAnimated) * cadence; // rings past the budget join the last beat
-      // Arrived-complete steps wake DIRECTLY into their complete rest — imported history
-      // is shown, never replayed (paste-import §04). Live completions keep their bloom.
+      // Arrived-complete steps wake straight into their rest tier — no bloom.
       for (const node of ring) this.schedule(at + jitter(node.id), () => this.nodes.igniteNode(node.id, this.clock(), node.tier, { blossom: false }));
       for (const e of plan.litEdgesByRing[depth]) this.schedule(at, () => this.edges.travel(e.from, e.to, this.clock(), {}));
       lastSettle = Math.max(lastSettle, at + BLOSSOM);
@@ -181,8 +144,6 @@ export class CeremonyDirector {
     this.schedule(lastSettle + TOAST_GAP, () => this.speakNow(this.live.changeset));
     this.schedule(lastSettle + TOAST_GAP + 1, () => { this.live = null; this.drain(); });
   }
-
-  // ---- plumbing --------------------------------------------------------
 
   settleAll(changeset) {
     const now = this.clock();
@@ -196,9 +157,7 @@ export class CeremonyDirector {
     this.speak(changeset.summary, { action: changeset.action });
   }
 
-  // Dependent beats begin at DEPEND_AT of the camera settle — or now, when the
-  // glide no-op'd because the target already sat inside the safe frame. Capped so
-  // a cancelled/absent glide never leaves the ceremony hanging.
+  // Dependent beats begin at DEPEND_AT of the camera settle; SETTLE_CAP bounds the wait.
   waitForSettle(run) {
     if (this.camera.settleProgress() >= DEPEND_AT) { run(); return; }
     const start = this.clock();
@@ -226,8 +185,7 @@ export class CeremonyDirector {
 
 const key = (from, to) => `${from}|${to}`;
 
-// The arrival's end state, for a yield/reduced-motion fast-forward: every ring node
-// that lights (tier >= 1) rose from the dimmed baseline, and every ring edge lights.
+// The arrival's end state for a yield / reduced-motion fast-forward.
 function arrivalChangeset(plan) {
   const risen = plan.rings.flat().filter((n) => n.tier >= 1).map((n) => ({ id: n.id, fromTier: 0, toTier: n.tier, x: n.x, y: n.y }));
   return { focus: null, risen, fell: [], litEdges: plan.litEdgesByRing.flat(), wakeByEdge: {}, frontier: [], summary: plan.summary, action: null };
@@ -249,8 +207,7 @@ function merge(a, b) {
     wakeByEdge: { ...a.wakeByEdge, ...b.wakeByEdge },
     frontier: [...new Set([...a.frontier, ...b.frontier])],
     summary: b.summary ?? a.summary,
-    // The action belongs to whichever summary won — never pair a milestone's Share button with a
-    // later ordinary step's line.
+    // The action belongs to whichever summary won.
     action: b.summary != null ? b.action : a.action,
   };
 }

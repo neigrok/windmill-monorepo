@@ -1,12 +1,3 @@
-// The per-step workspace — sub-tasks, one note, saved links — is a pure workspace → workspace
-// module, and the arc behind every node in the scene is read straight off it. The next wave lifts
-// the calls into ui/tree/useWorkspace.js, so the two properties that must survive that move are
-// pinned here on every op: the input workspace comes back untouched, and a rejected edit returns
-// the SAME workspace object rather than an equal copy (the panel leans on that identity to skip a
-// save round-trip on a no-op keystroke).
-//
-// parseLink is not exported, so its rules are pinned through addLink, which is the only door to it.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -22,8 +13,6 @@ import {
   arcFraction,
 } from '../../../../src/products/roadmap/model/NodeWorkspace.js';
 
-// A workspace with three sub-tasks under known ids — addSubtask mints random ones, so the ops
-// under test get a fixture whose ids a full assertion can name.
 function threeTasks() {
   return {
     subtasks: [
@@ -43,7 +32,6 @@ function pure(before, input, output) {
 
 test('an empty workspace is three empty fields, freshly allocated each time', () => {
   assert.deepEqual(emptyWorkspace(), { subtasks: [], note: '', links: [] });
-  // two nodes opened in a row must not share one array
   assert.notEqual(emptyWorkspace().subtasks, emptyWorkspace().subtasks);
   assert.notEqual(emptyWorkspace().links, emptyWorkspace().links);
 });

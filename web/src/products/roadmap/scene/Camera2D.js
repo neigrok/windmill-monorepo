@@ -1,21 +1,16 @@
-// Pure 2D orthographic camera: world <-> screen is a scale (zoom) + translate.
-// World space is Y-down to match the layout data. The projection here is the
-// exact inverse of screenToWorld, so pointer picking stays pixel-accurate.
+// Pure 2D orthographic camera; world space is Y-down. worldToScreen must stay the exact inverse of screenToWorld or picking drifts.
 const MIN_ZOOM = 0.006;
 const MAX_ZOOM = 6;
-// The touch pinch range (§S3). The out-limit must clear a whole tree's fit zoom — on a phone a
-// ~20-node quest fits near 0.1, so the old 0.5 floor both stopped you seeing the tree AND snapped
-// the very first pinch INWARD from the fit. 0.05 lets a pinch reach past any quest's fit.
+// The touch pinch range; the out-limit must stay below a whole tree's fit zoom (~0.1 on a phone).
 const PINCH_MIN_ZOOM = 0.05;
 const PINCH_MAX_ZOOM = 2.5;
-const PAN_SLACK = 80; // px the read-only pan may drift past the tree bounds before it stalls
+const PAN_SLACK = 80; // px
 const WHEEL_ZOOM_SPEED = 0.0016;
 const INERTIA_FRICTION = 3.2;
 const INERTIA_STOP_SPEED = 2;
 const FOCUS_MIN_ZOOM = 0.6;
 
-// Distance-based glide tiers (seconds) — canonical motion spec §6: 600ms default,
-// 480ms for near targets, 720ms cap for far ones.
+// Distance-based glide tiers, seconds.
 const GLIDE_SHORT = 0.48;
 const GLIDE_DEFAULT = 0.6;
 const GLIDE_FAR = 0.72;
@@ -27,17 +22,14 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-// Soft boundary: inside [min,max] the value passes through 1:1; past an edge it eases
-// toward at most `slack` beyond, asymptotically — a heavier world near the clamp with
-// no rubber-band bounce (the derivative is 1 at the edge, tapering to 0 far outside).
+// Inside [min,max] the value passes through 1:1; past an edge it eases asymptotically toward at most `slack` beyond, never bouncing back.
 function softClamp(value, min, max, slack) {
   if (value < min) return min - slack * (1 - Math.exp((value - min) / slack));
   if (value > max) return max + slack * (1 - Math.exp((max - value) / slack));
   return value;
 }
 
-// Cubic-bezier sampler for a CSS timing token: solves x(t)=x by Newton (bisection
-// fallback), then evaluates y(t). Control points are P0=(0,0), P3=(1,1).
+// Cubic-bezier sampler with control points P0=(0,0), P3=(1,1): solves x(t)=x by Newton with a bisection fallback, then evaluates y(t).
 function cubicBezier(x1, y1, x2, y2) {
   const ax = 1 - 3 * x2 + 3 * x1;
   const bx = 3 * x2 - 6 * x1;
@@ -73,7 +65,7 @@ function cubicBezier(x1, y1, x2, y2) {
   };
 }
 
-// --ease-soft = cubic-bezier(0.16, 1, 0.3, 1) — the calm-reveal curve. Built once.
+// Mirrors the --ease-soft CSS token.
 const easeSoft = cubicBezier(0.16, 1, 0.3, 1);
 
 function glideDuration(distance, viewportSpan) {
@@ -102,8 +94,8 @@ export class Camera2D {
     this.viewportHeight = 1;
     this.velocityX = 0;
     this.velocityY = 0;
-    this.glide = null; // an in-flight eased reveal, or null
-    this.panBounds = null; // read-only soft-clamp bounds, or null for free pan
+    this.glide = null;
+    this.panBounds = null; // null = free pan
     this.dirty = true;
   }
 
@@ -142,9 +134,6 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Read-only touch pan is soft-clamped to the tree: pass the model bounds here and
-  // pan() lets the camera drift at most PAN_SLACK px past them, the world getting
-  // heavier the further out (never bouncing back). Null restores the free editor pan.
   setPanBounds(bounds) {
     this.panBounds = bounds;
   }
@@ -158,14 +147,10 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Camera-only reveal: an eased glide to a point (used by the activity feed, so a
-  // clicked row flies the camera without disturbing selection). Cancels inertia.
   glideTo(x, y, zoom = null) {
     const targetZoom = zoom == null ? Math.max(this.zoom, FOCUS_MIN_ZOOM) : clamp(zoom, MIN_ZOOM, MAX_ZOOM);
     const zoomChanged = Math.abs(targetZoom - this.zoom) > this.zoom * ZOOM_MATCH_EPSILON;
     const viewport = this.getViewport();
-    // Safe-frame gate: target already in the central 80% and no material zoom change
-    // means the user is already looking at it — do nothing.
     if (!zoomChanged && insideSafeFrame(viewport, x, y)) return;
 
     this.velocityX = 0;
@@ -173,8 +158,7 @@ export class Camera2D {
     const distance = Math.hypot(x - this.x, y - this.y);
     const viewportSpan = Math.min(viewport.maxX - viewport.minX, viewport.maxY - viewport.minY);
     const duration = glideDuration(distance, viewportSpan);
-    // Retarget-live: fromX/Y/Zoom are the current position, so an in-flight glide
-    // bends toward the new target continuously (t resets, inertia stays zeroed).
+    // from* is the current position, so an in-flight glide bends toward the new target.
     this.glide = { fromX: this.x, fromY: this.y, fromZoom: this.zoom, toX: x, toY: y, toZoom: targetZoom, t: 0, duration };
     this.dirty = true;
   }
@@ -189,11 +173,7 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Double-tap zoom (X5 §4): ease to `targetZoom` while the tapped screen point stays pinned
-  // under the finger. The world point there is captured once and held fixed for the whole glide
-  // (update() re-derives x/y from it each frame), so the view grows or shrinks AROUND the tap
-  // rather than lunging to re-centre it — and the anchor is exact at every frame, never bulging
-  // mid-ease. Fixed calm duration; any grab (stopMotion) cancels it, the user always winning.
+  // Ease to `targetZoom` with the tapped screen point pinned: the world point is captured once and update() re-derives x/y from it each frame.
   glideZoomAround(pxX, pxY, targetZoom, duration = GLIDE_SHORT) {
     this.velocityX = 0;
     this.velocityY = 0;
@@ -212,9 +192,7 @@ export class Camera2D {
     this.zoomAroundPoint(pxX, pxY, Math.exp(-wheelDeltaY * WHEEL_ZOOM_SPEED));
   }
 
-  // Pinch zoom: multiply the zoom by `factor` (the live finger-spread ratio) anchored
-  // at a screen point, clamped to the touch range. Mirrors zoomAt but takes a factor
-  // instead of a wheel delta; finger-driven, so it never eases.
+  // Anchored at a screen point and clamped to the touch pinch range; finger-driven, so it never eases.
   zoomAtScale(pxX, pxY, factor) {
     this.glide = null;
     const before = this.screenToWorld(pxX, pxY);
@@ -225,8 +203,6 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // A fresh grab cancels any in-flight glide/inertia in place — the finger takes over
-  // at once (the user always wins). Halts the tween without moving the camera.
   stopMotion() {
     this.glide = null;
     this.velocityX = 0;
@@ -247,8 +223,6 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Rehydrate a saved viewpoint (PlaceStore): a teleport, no glide — the tab opens
-  // already standing where the last one stood.
   restore(x, y, zoom) {
     this.glide = null;
     this.velocityX = 0;
@@ -265,8 +239,7 @@ export class Camera2D {
     this.glide = null;
     this.velocityX = 0;
     this.velocityY = 0;
-    // A tiny tree (bounds ~ a point) would otherwise fit-to-fill and balloon its nodes; maxZoom
-    // caps that so a near-empty tree opens at a natural node size. Big trees fit well below it.
+    // maxZoom keeps a tiny tree (bounds ~ a point) from fitting-to-fill and ballooning its nodes.
     this.zoom = clamp(Math.min(widthPx / boundsWidth, heightPx / boundsHeight) * padding, MIN_ZOOM, maxZoom);
     this.x = (bounds.minX + bounds.maxX) / 2;
     this.y = (bounds.minY + bounds.maxY) / 2;
@@ -285,8 +258,7 @@ export class Camera2D {
       const e = easeSoft(g.t);
       this.zoom = g.fromZoom + (g.toZoom - g.fromZoom) * e;
       if (g.anchor) {
-        // An anchored zoom (double-tap): hold the tapped world point under its screen point by
-        // deriving the camera centre from the eased zoom, so the anchor never drifts mid-ease.
+        // Derive the centre from the eased zoom so the anchored world point never drifts.
         this.x = g.anchor.wx - (g.anchor.px - this.viewportWidth / 2) / this.zoom;
         this.y = g.anchor.wy - (g.anchor.py - this.viewportHeight / 2) / this.zoom;
       } else {
@@ -319,8 +291,7 @@ export class Camera2D {
     return this.glide != null;
   }
 
-  // Eased 0..1 settle of the active glide (idle = 1, fully settled). The ceremony
-  // orchestrator starts dependent beats once this crosses DEPEND_AT (0.90).
+  // Eased 0..1 settle of the active glide; idle reads 1.
   settleProgress() {
     if (!this.glide) return 1;
     return easeSoft(this.glide.t);

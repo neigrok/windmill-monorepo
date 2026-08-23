@@ -1,18 +1,9 @@
 <!--
-  Windmill transactional email — magic link, FORK VARIANT · X7 + F4/X5 fork
-  From:      Windmill <sign-in@windmill.works>
-  Subject:   Your sign-in link — and your copy of "{{{tree_title}}}"
-  Preheader: One tap signs you in and plants a copy of {{{tree_title}}} in your trees.
-  Plain-text pair: magic-link-fork.txt
-  Resend template id: magic-link-fork · variables: magic_link, tree_title, tree_meta
-  Resend contract: variables are ALWAYS triple-brace {{{ }}} and substitute raw —
-  there is no escaping tier. tree_title is user-controlled, so the SENDER sanitizes
-  it (ResendEmailSender strips markup) before it becomes a variable. Light-only mail.
-  Same shell as magic-link.html; the ONLY additions are the tree strip and the
-  disclosure. Rule (briefs #6 / X7): the email must say plainly what the click
-  does — it signs you in AND plants the copy. Auth mail: never an unsubscribe.
-  The pending fork waits server-side behind the link (X5 §7) — ignoring this
-  email costs nothing.
+  Resend template `magic-link-fork`; plain-text twin magic-link-fork.txt.
+  Variables {{{magic_link}}}, {{{tree_title}}} and {{{tree_meta}}} substitute raw, with no escaping
+  tier: {{{tree_title}}} is user text and reaches the subject line, so the sender strips markup and
+  control bytes before it becomes a variable (emailSafeTitle, ResendClient.cpp).
+  Auth mail: never an unsubscribe.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -44,14 +35,12 @@
     <td align="center" style="padding:36px 16px 48px;">
       <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%;">
 
-        <!-- header: the wordmark (text = the alt fallback) -->
         <tr>
           <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
             Windmill
           </td>
         </tr>
 
-        <!-- the card -->
         <tr>
           <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -66,7 +55,6 @@
                 </td>
               </tr>
 
-              <!-- the tree, concretely -->
               <tr>
                 <td align="center" style="padding:20px 0 0;">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="#F9F5EB" style="background:#F9F5EB; border:1px solid #F1EADA; border-radius:14px;">
@@ -80,7 +68,6 @@
                 </td>
               </tr>
 
-              <!-- the one button -->
               <tr>
                 <td align="center" style="padding:26px 0 12px;">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
@@ -100,7 +87,6 @@
                 </td>
               </tr>
 
-              <!-- raw fallback URL -->
               <tr>
                 <td class="wm-div" style="border-top:1px solid #F1EADA; padding-top:22px;">
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -126,7 +112,7 @@
           </td>
         </tr>
 
-        <!-- footer: auth mail never carries unsubscribe -->
+        <!-- auth mail carries no unsubscribe -->
         <tr>
           <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
             Sent because this address asked to fork a tree at windmill.works.<br>

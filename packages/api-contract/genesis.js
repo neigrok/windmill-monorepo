@@ -1,8 +1,5 @@
-// The genesis legend — the single source of truth shared by backend and web.
-//
-// A locally-born tree's first sync converges with the server's empty tree ONLY while this
-// seed is byte-equal to the backend's Legend::seededDefaults + Hlc{1,0,"genesis"}. Keep this
-// file and backend/products/roadmap/domain/Legend.cpp in lockstep; the web build asserts it.
+// Must stay byte-equal to backend/products/roadmap/domain/Legend.cpp or a locally-born tree's first
+// sync will not converge; the web build asserts it.
 
 export const GENESIS_STAMP = '1:0:genesis';
 

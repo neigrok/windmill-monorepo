@@ -1,21 +1,3 @@
-// The canvas's data, driven for real. Journal-web used to lose writing two ways, and one of them
-// destroyed prose that already existed — so these are not shape tests, they are the failures:
-//
-//   · a returning writer, offline, saw a VIRGIN CANVAS and the first-run placeholder, because the
-//     window read's catch only cleared `loading`. A read that failed is not an empty account.
-//   · if they then typed, persist() minted a fresh stamp and PUT it, and
-//     backend/products/journal/domain/Page.h resolves two writers on the greater stamp — so this
-//     morning's real page was silently replaced. THE TEST THAT MATTERS MOST here is the one that
-//     asserts nothing is sent at all.
-//   · a signed-out visitor's first page was simply gone on reload: no cache of any kind, a PUT to a
-//     401, and a 4-second retry loop forever.
-//
-// And the two ordering rules, both copied from the phone rather than invented: the words land on
-// the device BEFORE the network, and a reply is a receipt for ONE write and never for every write.
-//
-// The store is driven directly, with a fake cache storage, a fake api and fake timers — no React
-// and no DOM, because none of the rules above are about either.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -23,10 +5,8 @@ import { PageCache } from '../../../src/products/journal/pageCache.js';
 import { BEGINNING, PageStore, corpus, joinBodies, joinCorpus, span } from '../../../src/products/journal/pageStore.js';
 
 const TODAY = '2026-08-07';
-// Who is signed in, as the store now takes it: a user id scopes the device tier (pageCache.js), and
-// `null` is the anonymous scope a signed-out writer's words live in.
 const A = 'user-a';
-const KEY = 'wm.journal.pages.anon';   // the scope a store with nobody signed in opens
+const KEY = 'wm.journal.pages.anon';
 
 function memoryStorage() {
   const map = new Map();
@@ -38,8 +18,6 @@ function memoryStorage() {
   };
 }
 
-// Answers are functions so a test can flip one mid-run — which is exactly what "the signal came
-// back" is.
 function fakeApi() {
   const calls = { range: [], page: [], put: [], all: 0 };
   const api = {
@@ -89,8 +67,6 @@ function wirePage(day, body, stamp, extra = {}) {
   return { day, body, mood: 0, energy: 0, source: 'typed', stamp, updatedAt: 1, ...extra };
 }
 
-// ── The overwrite ────────────────────────────────────────────────────────────────────────────
-
 test('a failed window read does NOT read as a first run', async (t) => {
   const api = fakeApi();
   api.onRange = () => { throw new Error('offline'); };
@@ -102,11 +78,9 @@ test('a failed window read does NOT read as a first run', async (t) => {
   assert.equal(store.snapshot.readState, 'failed');
   assert.equal(store.snapshot.firstRun, false);
   assert.equal(store.snapshot.loading, false);
-  assert.equal(timers.pending.size, 1);   // what is owed after a failed read is another read
+  assert.equal(timers.pending.size, 1);
 });
 
-// THE ONE THAT MATTERS MOST. The writer types into a canvas that could not be read; the account's
-// real page for today is untouched because nothing goes out at all.
 test('a failed window read followed by typing sends NOTHING', async (t) => {
   const api = fakeApi();
   api.onRange = () => { throw new Error('offline'); };
@@ -115,7 +89,7 @@ test('a failed window read followed by typing sends NOTHING', async (t) => {
 
   await store.connect(A);
   store.type('written on a plane');
-  await timers.run();                     // the debounce fires
+  await timers.run();
 
   assert.deepEqual(api.calls.put, []);
   assert.equal(mintCount(), 0, 'no stamp may be minted against a page this device has not read');
@@ -123,8 +97,6 @@ test('a failed window read followed by typing sends NOTHING', async (t) => {
   assert.equal(store.snapshot.firstRun, false);
 });
 
-// The whole failure, end to end: the words are held, the signal returns, and what finally goes up
-// CONTAINS this morning's page rather than replacing it.
 test('when the read finally lands, the held words are JOINED onto the account’s page, never over it', async (t) => {
   const api = fakeApi();
   api.onRange = () => { throw new Error('offline'); };
@@ -136,13 +108,12 @@ test('when the read finally lands, the held words are JOINED onto the account’
   await timers.run();
   assert.deepEqual(api.calls.put, []);
 
-  // The signal comes back. This morning's real page was written from the phone at 09:00.
   const morning = wirePage(TODAY, 'woke up early, wrote before work', '5:0:phone');
   api.onPage = () => morning;
   api.onRange = () => [morning];
   api.onPut = (day, body) => ({ day, ...body, updatedAt: 2 });
 
-  await timers.run();                     // the retry is the whole sync: claim, then read
+  await timers.run();
 
   assert.deepEqual(api.calls.page, [TODAY], 'the account’s page is READ before a stamp is minted');
   assert.equal(api.calls.put.length, 1);
@@ -152,11 +123,9 @@ test('when the read finally lands, the held words are JOINED onto the account’
   assert.deepEqual(store.cache.owed(), []);
 });
 
-// A failed read with a warm cache is the returning writer's actual case: two years of pages, a
-// plane, and a canvas that must still be their canvas.
 test('a failed read still draws what the device holds, and says the account could not be read', async (t) => {
   const storage = memoryStorage();
-  const warm = new PageCache(A, storage);   // pages this account read on this device, before the plane
+  const warm = new PageCache(A, storage);
   warm.markRead('2026-08-05', { day: '2026-08-05', body: 'a real page', mood: 3, energy: null, source: 'typed', stamp: '1:0:a' });
   warm.markRead('2026-08-06', null);
   warm.flush();
@@ -175,16 +144,12 @@ test('a failed read still draws what the device holds, and says the account coul
   ]);
 });
 
-// The canvas is what you wrote, not a calendar with holes in it. Unwritten days used to be drawn as
-// a marker and the words "nothing written" — a gap the writer never asked to be shown, and the one
-// thing on the canvas that could read as a score. The phone has never drawn them
-// (apps/ios/…/WindmillJournal/PageStore.swift), and now neither does this.
 test('only the days that were written are drawn — the quiet ones between them are not', async (t) => {
   const api = fakeApi();
   api.onRange = () => [
     wirePage('2026-08-01', 'monday', '1:0:web'),
     wirePage('2026-08-04', 'thursday', '2:0:web'),
-    wirePage('2026-08-05', '', '3:0:web', { mood: 3 }),   // only a mood, but still a day someone showed up for
+    wirePage('2026-08-05', '', '3:0:web', { mood: 3 }),
   ];
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
@@ -194,9 +159,6 @@ test('only the days that were written are drawn — the quiet ones between them 
   assert.deepEqual(store.snapshot.history.map((day) => day.date), ['2026-08-01', '2026-08-04', '2026-08-05']);
 });
 
-// The one race left in the join: the writer keeps typing while the reconnect is in the air. Their
-// newer words are joined onto the recovered page too, by the same rule — never raced against prose
-// they never saw, and never duplicated.
 test('typing while the join is in flight joins the newer words too, and saves them', async (t) => {
   const api = fakeApi();
   api.onRange = () => { throw new Error('offline'); };
@@ -218,7 +180,7 @@ test('typing while the join is in flight joins the newer words too, and saves th
   for (let turn = 0; turn < 50 && !release; turn += 1) await Promise.resolve();
   assert.ok(release, 'the join’s PUT should be in the air by now');
 
-  store.type('plane words, and more');   // typed while the join's PUT is still in the air
+  store.type('plane words, and more');
   api.onPut = (day, body) => ({ day, ...body, updatedAt: 3 });
   release();
   await reconnect;
@@ -229,8 +191,6 @@ test('typing while the join is in flight joins the newer words too, and saves th
   assert.deepEqual(store.cache.owed(), []);
 });
 
-// A day the device HAS read may be written over — that is ordinary last-writer-wins, and it is the
-// case the fix must not break.
 test('a read day is written normally: a stamp is minted and the page goes up', async (t) => {
   const api = fakeApi();
   api.onRange = () => [];
@@ -253,8 +213,6 @@ test('a read day is written normally: a stamp is minted and the page goes up', a
   assert.equal(store.snapshot.saveState, 'saved');
   assert.equal(store.snapshot.firstRun, false);
 });
-
-// ── Signed out ───────────────────────────────────────────────────────────────────────────────
 
 test('a signed-out write reaches no network, and survives a reload', async (t) => {
   const storage = memoryStorage();
@@ -287,19 +245,17 @@ test('a mood tap signed out is held too — the offline story covers both write 
   t.after(() => store.dispose());
 
   await store.connect(null);
-  await store.tap('mood', 4);            // a tap writes immediately — there is nothing to debounce
+  await store.tap('mood', 4);
 
   assert.deepEqual(api.calls.put, []);
   assert.equal(store.cache.page(TODAY).mood, 4);
   assert.equal(store.snapshot.mood, 4);
   assert.equal(timers.pending.size, 0, 'signed out there is nothing to retry — the device IS the record');
 
-  await store.tap('mood', 4);            // tapping the step you are on clears it
+  await store.tap('mood', 4);
   assert.equal(store.snapshot.mood, null);
   assert.equal(store.cache.page(TODAY).mood, null);
 });
-
-// ── The claim ────────────────────────────────────────────────────────────────────────────────
 
 test('signing in claims what is owed, oldest first', async (t) => {
   const storage = memoryStorage();
@@ -338,8 +294,8 @@ test('a claim onto an account that already holds that day joins rather than repl
   assert.equal(api.calls.put.length, 1);
   assert.deepEqual(api.calls.put[0].body, {
     body: 'what the account already had\n\nwhat I wrote here',
-    mood: 2,          // the writer's own, kept
-    energy: 3,        // never set here, so the account's survives
+    mood: 2,
+    energy: 3,
     source: 'typed',
     stamp: '1001:0:web',
   });
@@ -365,8 +321,6 @@ test('a claim that cannot reach the network stops at the first failure and stays
   assert.equal(timers.pending.size, 1);
 });
 
-// ── One receipt per write ────────────────────────────────────────────────────────────────────
-
 test('a reply to an earlier write leaves a newer one still owed', async (t) => {
   const api = fakeApi();
   api.onRange = () => [];
@@ -374,7 +328,6 @@ test('a reply to an earlier write leaves a newer one still owed', async (t) => {
   t.after(() => store.dispose());
   await store.connect(A);
 
-  // Both replies are held open, so the second write is banked while the first is still in the air.
   const gates = [];
   api.onPut = (day, body) => new Promise((resolve) => gates.push(() => resolve({ day, ...body, updatedAt: 2 })));
 
@@ -383,7 +336,7 @@ test('a reply to an earlier write leaves a newer one still owed', async (t) => {
   store.type('one sentence, and another');
   const second = store.scheduleSave(0);
 
-  gates[0]();                            // only the EARLIER write is acknowledged
+  gates[0]();
   await first;
 
   assert.deepEqual(store.cache.owed().map((entry) => entry.page.body), ['one sentence, and another']);
@@ -396,8 +349,6 @@ test('a reply to an earlier write leaves a newer one still owed', async (t) => {
   assert.deepEqual(api.calls.put.map((call) => call.body.body), ['one sentence', 'one sentence, and another']);
   assert.equal(timers.pending.size, 0);
 });
-
-// ── Honesty about where the words are ────────────────────────────────────────────────────────
 
 test('a browser with no room, and no network either, says the words are not saved', async (t) => {
   const refusing = {
@@ -435,14 +386,7 @@ test('a write that the account refused is still on the device, and owed', async 
   assert.equal(new PageCache(A, storage).page(TODAY).body, 'typed while the wire was down');
 });
 
-// ── The timers this store schedules with ─────────────────────────────────────────────────────
-//
-// Every case above injects its own timers, which is what made this store drivable — and it is also
-// how a canvas that could not open in a browser shipped past a green suite. `this.setTimer(…)`
-// calls whatever it holds as a METHOD of the store, and a browser's timer functions check their
-// receiver: `window.setTimeout` invoked on anything else throws "Illegal invocation". Node's do
-// not. The first call to reach one was dispose()'s clear, on React's StrictMode double-invoke, so
-// the canvas died at mount into the error boundary — "Something went wrong on this screen."
+// Browser timer functions check their receiver: called as a method they throw "Illegal invocation".
 test('the default timers survive being called as methods, the way a browser demands', async (t) => {
   const realSet = globalThis.setTimeout;
   const realClear = globalThis.clearTimeout;
@@ -455,24 +399,17 @@ test('the default timers survive being called as methods, the way a browser dema
   t.after(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
 
   const api = fakeApi();
-  api.onRange = () => { throw new Error('offline'); };   // a failed read schedules a retry
+  api.onRange = () => { throw new Error('offline'); };
   const storage = memoryStorage();
   const store = new PageStore({ openCache: (account) => new PageCache(account, storage), api, today: TODAY });
 
   await store.connect(A);
   store.type('and typing schedules a save');
-  store.dispose();                                        // …and leaving clears both
+  store.dispose();
 
   assert.equal(store.snapshot.readState, 'failed');
   assert.equal(store.snapshot.saveState, 'device');
 });
-
-// ── The floor ────────────────────────────────────────────────────────────────────────────────
-//
-// The top of the canvas is the bottom of the journal, and until 2026-08-07 there was no way down
-// it: WINDOW_DAYS is sixty, and the sixty-first day back was reachable only by knowing what to
-// search for. The walk has three answers and the difference between two of them is the whole point
-// — a read that FAILED must never read as the beginning of somebody's journal.
 
 test('the floor reaches one window deeper per press, and the walk stays open', async (t) => {
   const api = fakeApi();
@@ -496,13 +433,10 @@ test('the floor reaches one window deeper per press, and the walk stays open', a
   ]);
   assert.equal(store.snapshot.reach, 'more', 'a window with pages in it settles nothing');
   assert.equal(store.snapshot.history[0].date, '2026-05-02');
-  // Reaching back EXTENDS what the device holds, so the canvas is still theirs on the next open.
   assert.equal(store.cache.page('2026-05-02').body, 'a window deeper');
   assert.equal(store.cache.hasRead('2026-05-02'), true);
 });
 
-// THE ONE THAT MATTERS. Telling a writer with two years of pages that their journal starts in June
-// is the same lie the canvas already refuses to tell about an empty account, told at the other edge.
 test('a reach back that FAILED is never the start of the journal', async (t) => {
   const api = fakeApi();
   api.onRange = (from) => {
@@ -519,7 +453,6 @@ test('a reach back that FAILED is never the start of the journal', async (t) => 
   assert.equal(store.snapshot.firstRun, false);
   assert.equal(store.snapshot.history[0].date, '2026-06-10', 'what was already read stays on screen');
 
-  // …and the step is still offered, because the walk was never settled.
   api.onRange = (from) => (from === '2026-04-10' ? [wirePage('2026-05-02', 'still there', '2:0:a')] : []);
   await store.reachBack();
 
@@ -527,14 +460,12 @@ test('a reach back that FAILED is never the start of the journal', async (t) => 
   assert.equal(store.snapshot.history[0].date, '2026-05-02');
 });
 
-// The other half of the same rule: it is the SETTLING read that earns the word "start", so that
-// read failing must not settle anything either.
 test('a settling read that failed is not the beginning either', async (t) => {
   const api = fakeApi();
   api.onRange = (from) => {
     if (from === '2026-06-08') return [wirePage('2026-06-10', 'inside the window', '1:0:a')];
-    if (from === '2026-04-10') return [];              // sixty quiet days
-    throw new Error('offline');                        // …and the read that would settle them
+    if (from === '2026-04-10') return [];
+    throw new Error('offline');
   };
   const { store } = storeOn(memoryStorage(), api);
   t.after(() => store.dispose());
@@ -578,8 +509,6 @@ test('an empty stretch is settled in the same press, and the start is then said 
   assert.equal(api.calls.range.length, 3, 'there is nothing older to ask for twice');
 });
 
-// A writer who has been away longer than the window used to be handed a virgin canvas and told to
-// start anywhere, with years of their own pages one read away.
 test('a writer away longer than the window is not a first run', async (t) => {
   const api = fakeApi();
   api.onRange = (from) => (from === BEGINNING ? [wirePage('2026-01-04', 'before I stopped', '1:0:a')] : []);
@@ -623,12 +552,6 @@ test('signed out there is no account to reach into, and nothing is read', async 
   assert.equal(store.snapshot.readState, 'device');
   assert.equal(store.snapshot.firstRun, true, 'signed out, an empty device IS a first run — no read needed');
 });
-
-// ── The whole journal ────────────────────────────────────────────────────────────────────────
-//
-// Search, the year zoom and the nudge read the corpus rather than a window, and all three read the
-// ACCOUNT — which was the whole truth until pages began living on this device. A signed-out
-// writer's own pages were invisible to their own ⌘K.
 
 test('joinCorpus — the device’s pages are part of the journal, and an owed one wins outright', () => {
   const cache = new PageCache(null, memoryStorage());
@@ -690,8 +613,6 @@ test('corpus — the account answered, and this device’s unsent page is in it 
   ]);
 });
 
-// ── The pure rules underneath ────────────────────────────────────────────────────────────────
-
 test('joinBodies — nothing anyone wrote is destroyed, and nothing is duplicated', () => {
   assert.equal(joinBodies('', 'mine'), 'mine');
   assert.equal(joinBodies('theirs', ''), 'theirs');
@@ -705,10 +626,6 @@ test('span — the inclusive run of days, oldest first, gaps and all', () => {
   assert.deepEqual(span('2026-08-07', '2026-08-07'), ['2026-08-07']);
 });
 
-// A page the server will never accept — the 128 KB cap the backend grew in wave 2 — must not be
-// retried as though the network were down. The words stay on the device; what changes is that the
-// writer is told the truth and the timer stops, so shortening the page is the remedy rather than
-// waiting for a signal that was never the problem.
 test('a page the server refuses is kept here and NOT retried forever', async (t) => {
   const api = fakeApi();
   api.onPut = () => { const refusal = new Error('too long'); refusal.status = 413; throw refusal; };
@@ -717,11 +634,11 @@ test('a page the server refuses is kept here and NOT retried forever', async (t)
 
   await store.connect(A);
   store.type('a page far past the cap');
-  await timers.run();                     // the debounce fires and the PUT is refused
+  await timers.run();
 
   assert.equal(store.snapshot.saveState, 'refused');
-  assert.equal(timers.pending.size, 0);                       // nothing is waiting to try again
-  assert.equal(store.snapshot.body, 'a page far past the cap'); // and the words are still here
+  assert.equal(timers.pending.size, 0);
+  assert.equal(store.snapshot.body, 'a page far past the cap');
 });
 
 test('an outage is still an outage: offline, and it retries', async (t) => {
@@ -732,15 +649,12 @@ test('an outage is still an outage: offline, and it retries', async (t) => {
 
   await store.connect(A);
   store.type('words written on a train');
-  await timers.run();                     // the debounce fires and the PUT cannot be delivered
+  await timers.run();
 
   assert.equal(store.snapshot.saveState, 'offline');
   assert.equal(timers.pending.size, 1);
 });
 
-// The freeze this fix exists to prevent: a day the server will never accept used to stand at the
-// head of the owed queue forever, so every later day went unsent, the account's own window was
-// never read, and the canvas never finished opening — with no retry scheduled to break out of it.
 test('a refused day is stepped over: the rest of the backlog still goes, and the window is still read', async (t) => {
   const storage = memoryStorage();
   const api = fakeApi();
@@ -748,7 +662,6 @@ test('a refused day is stepped over: the rest of the backlog still goes, and the
     if (day === '2026-08-01') { const refusal = new Error('too long'); refusal.status = 413; throw refusal; }
     return { day, body: 'kept', mood: 0, energy: 0, source: 'typed', stamp: '9:0:srv', updatedAt: 1 };
   };
-  // Three days owed, oldest first, and only the oldest is the one the server refuses.
   const cache = new PageCache(A, storage);
   for (const day of ['2026-08-01', '2026-08-02', '2026-08-03'])
     cache.store({ day, body: `words for ${day}`, mood: 0, energy: 0, source: 'typed', stamp: `1:0:web` }, { needsPush: true, read: true });
@@ -763,11 +676,6 @@ test('a refused day is stepped over: the rest of the backlog still goes, and the
   assert.equal(store.snapshot.readState, 'ready');
   assert.equal(store.snapshot.saveState, 'refused');
 });
-
-// ── Midnight, on a canvas nobody closed ─────────────────────────────────────────────────────────
-//
-// `today` was fixed when the store opened, so a tab left open overnight kept writing into a day
-// that had already ended — the discomfort the writer reported, and a page landing on the wrong key.
 
 const TOMORROW = '2026-08-08';
 
@@ -792,8 +700,6 @@ test('midnight turns the canvas over: yesterday drops into the history, tonight 
   );
 });
 
-// The beat of typing that was still in the debounce belongs to the day it was typed on — the same
-// rule a sign-out follows. Carried into the new day, it would land on a page nobody wrote.
 test('the unsaved beat is settled under the day it was typed on, never the new one', async (t) => {
   const api = fakeApi();
   const { store, timers } = storeOn(memoryStorage(), api);
@@ -812,8 +718,6 @@ test('the unsaved beat is settled under the day it was typed on, never the new o
   assert.equal(store.snapshot.body, '');
 });
 
-// Tonight's first sentence has to be stamped over a page this device has read, so the turn-over is
-// a read of the account's window around the NEW today — not merely a change of key.
 test('the turn-over reads the account’s window around the new today', async (t) => {
   const api = fakeApi();
   api.onRange = (from, to) => (to === TOMORROW ? [wirePage(TOMORROW, 'already written on the phone', '9:0:ios')] : []);
@@ -827,7 +731,6 @@ test('the turn-over reads the account’s window around the new today', async (t
   assert.equal(store.snapshot.body, 'already written on the phone');
 });
 
-// The clock re-asks on every wake and every focus, so the same day arrives over and over.
 test('the same day again is nothing at all', async (t) => {
   const api = fakeApi();
   const { store } = storeOn(memoryStorage(), api);

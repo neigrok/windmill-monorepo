@@ -1,9 +1,4 @@
-// Every edge tessellated once into a bézier ribbon, merged into one buffer and
-// drawn in a single call. A branch inherits its source node (design SkillConnector):
-// once the source is done it lights up in that node's kind hue with a GPU color
-// sweep and a glow; while the source is not-done it's a thin muted line.
-// setStates only rewrites the aActive / aGrowStart floats, never vertex positions;
-// hue is baked once and never changes.
+// Every edge tessellated once into a bézier ribbon, merged into one buffer and drawn in a single call. setStates rewrites only the aActive / aGrowStart floats, never vertex positions.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLORS, NODE_COLOR_NAMES, isDone, CONNECTOR, NODE_SIZE, BARK_CREAM } from '../theme.js';
 import { edgeKey } from './edgeKey.js';
@@ -14,17 +9,15 @@ const KIND_HALF_WIDTH = { trunk: 2.6, 'in-branch': 1.6, 'cross-branch': 1.3 };
 const KIND_CODE = { trunk: 0, 'in-branch': 1, 'cross-branch': 2 };
 const BEND_FACTOR = 0.18;
 const GROW_DURATION = 0.5;
-const SOLO_SPEED = 400; // world-px/s the travel front covers a solo edge (slowed so it reads)
-const MIN_TRAVEL = 0.28; // seconds — floor so short edges still read as motion
-const MAX_TRAVEL = 0.62; // seconds — ceiling so long trunks don't drag
+const SOLO_SPEED = 400; // world-px/s
+const MIN_TRAVEL = 0.28; // seconds
+const MAX_TRAVEL = 0.62; // seconds
 const ALREADY_GROWN = -1000;
 const VERTS_PER_EDGE = (SEGMENTS + 1) * 2;
 const NC = NODE_COLOR_NAMES.length;
-const HOVER_COLOR = '#B29F7B'; // the hot hue a hovered branch deepens to
+const HOVER_COLOR = '#B29F7B';
 
-// A node's disc renders out to EDGE (0.84) of its half-size in NodeBatch, so its
-// world radius is 0.84 * NODE_SIZE/2. Ending edges here (rather than at the node
-// centre) keeps them out from under the translucent dim body.
+// Matches NodeBatch's disc edge (0.84 of its half-size): edges stop at the rim, not the centre.
 const NODE_RADIUS = NODE_SIZE * 0.42;
 
 const VERTEX_SRC = `#version 300 es
@@ -133,15 +126,10 @@ void main() {
   alpha = mix(alpha, 0.95, vHover);
   color = mix(color, dim, vDim * 0.5); // spotlight: branches off the focused node recede
   alpha *= 1.0 - vDim * 0.72;
-  // inside a node multi-selection (BOTH endpoints selected): the branch reads as part of the set —
-  // a heavier stroke brightening toward a warm bark-cream, so the whole selection reads as one
-  // connected shape. Derived from the node set, not an explicit edge pick; quieter than the white
-  // single-edge select below, which stays the brighter, handled edit.
+  // both endpoints selected: brighten toward bark-cream so the set reads as one shape
   color = mix(color, uBarkCream, vInSet * 0.6);
   alpha = max(alpha, vInSet * 0.92);
-  // selected (desktop multi-select): the branch reads picked — a soft brighten toward white
-  // plus an additive lift in its own kind hue, brought to near-full opacity so even a dormant
-  // edge stands out. Last say, so a selected edge is never dimmed; distinct from hover's deepen.
+  // selected: last say, so a selected edge is never dimmed
   color = mix(color, vec3(1.0), vSelected * 0.20);
   color += hue * vSelected * 0.28;
   alpha = max(alpha, vSelected * 0.9);
@@ -159,11 +147,7 @@ function hashStr(str) {
   return Math.abs(h);
 }
 
-// Each edge bows by its own arbitrary amount, so a fan of branches reads as drawn rather than
-// printed. `sway` is that amount, in [-0.5, 0.5), and it belongs to the EDGE — it is hashed from
-// the two node ids by bendOf, once, and never from the endpoints. Hashing the coordinates (as this
-// did) re-rolls the curve every time either end moves: drag a node and its edges are re-bent from
-// scratch on every pointer event, which is not a wobble but a different curve sixty times a second.
+// `sway` is the edge's own bow, in [-0.5, 0.5), hashed from the two node ids by bendOf. Never derive it from the endpoint coordinates, or a drag re-rolls the curve every frame.
 function controlPoint(fx, fy, tx, ty, sway) {
   const dx = tx - fx;
   const dy = ty - fy;
@@ -174,14 +158,11 @@ function controlPoint(fx, fy, tx, ty, sway) {
   return { cx: (fx + tx) / 2 + nx * bend, cy: (fy + ty) / 2 + ny * bend };
 }
 
-// The edge's own bow, fixed for as long as the edge exists.
 export function bendOf(fromId, toId) {
   return (hashStr(`${fromId}-${toId}`) % 100) / 100 - 0.5;
 }
 
-// The curve parameter range that lies outside both endpoint discs, so the drawn
-// ribbon meets each node's boundary instead of running to its centre. Scans the
-// bézier (setModel runs once) for the first/last t past NODE_RADIUS.
+// The curve parameter range that lies outside both endpoint discs, so the drawn ribbon meets each node’s boundary instead of running to its centre.
 function trimRange(fx, fy, cx, cy, tx, ty) {
   const at = (t) => {
     const omt = 1 - t;
@@ -207,21 +188,16 @@ function colorIndex(name) {
   return i < 0 ? 0 : i;
 }
 
-// Solo travel time for one edge: its front covers SOLO_SPEED world-px/s, clamped so
-// even short edges register as motion and long trunks never drag. Seconds.
 function travelDuration(lengthWorld) {
   return Math.min(MAX_TRAVEL, Math.max(MIN_TRAVEL, lengthWorld / SOLO_SPEED));
 }
 
-// Tessellate one edge's bézier ribbon into `positions` at its vertex range. Only
-// the positions depend on the endpoints, so both setModel (bulk) and moveNode
-// (a single node's incident edges) go through here; the along/active/color
-// attributes are constant under a move and written once.
+// Only positions depend on the endpoints; the along/active/color attributes are constant under a move.
 export function writeEdgePositions(positions, vertexStart, fx, fy, tx, ty, halfWidth, sway) {
   const { cx, cy } = controlPoint(fx, fy, tx, ty, sway);
   const [t0, t1] = trimRange(fx, fy, cx, cy, tx, ty);
   const span = t1 - t0;
-  let length = 0; // centerline polyline length — drives per-edge travel duration
+  let length = 0;
   let prevX = 0;
   let prevY = 0;
   for (let i = 0; i <= SEGMENTS; i++) {
@@ -303,11 +279,11 @@ export class ConnectorBatch {
     this.grow = new Float32Array(vertexTotal).fill(ALREADY_GROWN);
     this.hover = new Float32Array(vertexTotal);
     this.dim = new Float32Array(vertexTotal);
-    this.duration = new Float32Array(vertexTotal); // per-edge, length-derived travel seconds
-    this.length = new Float32Array(vertexTotal); // per-edge world length, for the wake px->t
-    this.head = new Float32Array(vertexTotal); // 1 only on edges lit via travel() — enables the comet
-    this.selected = new Float32Array(vertexTotal); // 1 on desktop multi-selected edges (setSelectedEdges)
-    this.inSet = new Float32Array(vertexTotal); // 1 when BOTH endpoints are in the node selection (bark-cream)
+    this.duration = new Float32Array(vertexTotal); // per-edge travel seconds
+    this.length = new Float32Array(vertexTotal); // per-edge world length
+    this.head = new Float32Array(vertexTotal); // 1 on edges lit via travel(): enables the comet
+    this.selected = new Float32Array(vertexTotal); // 1 on multi-selected edges
+    this.inSet = new Float32Array(vertexTotal); // 1 when BOTH endpoints are in the node selection
     this.hoveredEdge = -1;
     this.spotlit = null;
     const indices = new Uint32Array(edgeCount * SEGMENTS * 6);
@@ -372,8 +348,7 @@ export class ConnectorBatch {
     gl.bindVertexArray(null);
   }
 
-  // Re-tessellate just the edges touching a moved node and re-upload their vertex
-  // ranges in place — no full rebuild, so it stays cheap under a live drag.
+  // Re-tessellate only the edges touching a moved node and re-upload their vertex ranges in place.
   moveNode(id, x, y) {
     const pos = this.nodePos.get(id);
     if (!pos) return;
@@ -388,7 +363,7 @@ export class ConnectorBatch {
       const to = this.nodePos.get(edge.to);
       const length = writeEdgePositions(this.positions, edge.vertexStart, from.x, from.y, to.x, to.y, edge.halfWidth, edge.sway);
       edge.length = length;
-      edge.duration = travelDuration(length); // the move changed the edge's length, so retime it
+      edge.duration = travelDuration(length);
       const start = edge.vertexStart;
       this.length.fill(length, start, start + VERTS_PER_EDGE);
       this.duration.fill(edge.duration, start, start + VERTS_PER_EDGE);
@@ -425,10 +400,7 @@ export class ConnectorBatch {
     }
   }
 
-  // The animated wake the ceremony orchestrator drives: light one edge from atSeconds
-  // and fire its comet head down the ribbon parent->child. Unlike setStates, this arms
-  // the head flag so the front reads as a travelling highlight. durationMs overrides the
-  // length-derived clamp when the orchestrator wants a specific beat.
+  // Light one edge from atSeconds and fire its comet head down the ribbon parent->child; durationMs overrides the length-derived duration.
   travel(from, to, atSeconds, opts = {}) {
     if (!this.active) return;
     const e = this.edgeIndex.get(`${from}→${to}`);
@@ -451,16 +423,13 @@ export class ConnectorBatch {
     }
   }
 
-  // Length-derived travel time in milliseconds, so the orchestrator can ignite the
-  // child at HANDOFF (0.85) of the edge's travel.
+  // Length-derived travel time, in milliseconds.
   edgeDuration(from, to) {
     const e = this.edgeIndex.get(`${from}→${to}`);
     if (e === undefined) return 0;
     return travelDuration(this.edges[e].length) * 1000;
   }
 
-  // The transient hover deepen: a per-vertex flag paints one edge's ribbon hot,
-  // leaving the baked kind hue and the activation sweep untouched underneath.
   setHovered(edge) {
     if (!this.hover) return;
     const next = edge == null ? -1 : (this.edgeIndex.get(`${edge.from}→${edge.to}`) ?? -1);
@@ -476,9 +445,7 @@ export class ConnectorBatch {
     this.hoveredEdge = next;
   }
 
-  // Spotlight one node's branches: every edge not incident to it recedes (design
-  // A — a hovered feed row lights its node + branches, the rest dims). Whole-
-  // buffer upload, once per hover-change, so it stays off the render loop.
+  // Every edge not incident to nodeId recedes.
   setSpotlight(nodeId) {
     if (!this.dim) return;
     if (nodeId === this.spotlit) return;
@@ -495,9 +462,7 @@ export class ConnectorBatch {
     this.uploadDynamic(this.dimBuffer, this.dim);
   }
 
-  // Highlight the desktop multi-selection: every edge whose key is in the set reads aSelected=1,
-  // every other 0 — one whole-buffer sweep + upload, mirroring setSpotlight's per-vertex `dim`.
-  // Called once per selection change (never per frame), so the sweep stays off the render loop.
+  // Every edge whose key is in the set reads aSelected=1.
   setSelectedEdges(keySet) {
     if (!this.selected) return;
     for (const edge of this.edges) {
@@ -507,11 +472,7 @@ export class ConnectorBatch {
     this.uploadDynamic(this.selectedBuffer, this.selected);
   }
 
-  // Highlight the inside-set links (brief #10): every edge whose BOTH endpoints are in the node
-  // selection reads aInSet=1 — a heavier bark-cream stroke, so a node multi-selection reads as one
-  // connected shape. Derived from the node set (not an explicit edge pick), so it lights the phone
-  // bulk selection too; independent of the editor-only setSelectedEdges. One whole-buffer sweep +
-  // upload per selection change, mirroring setSpotlight — off the render loop.
+  // Every edge with BOTH endpoints in the node selection reads aInSet=1.
   setInSetEdges(nodeIdSet) {
     if (!this.inSet) return;
     for (const edge of this.edges) {

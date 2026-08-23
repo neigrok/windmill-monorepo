@@ -1,23 +1,5 @@
-// The TreeSwitcher (F1·F2 §4) — the tree identity plaque and the one home for "which
-// tree am I in". At rest it's just the tree's name; hover reveals the caret; clicking
-// drops a menu of YOUR roadmaps (current one checked) plus the "New tree" bud row that
-// lands on the birth canvas. Switching is navigation — it points the hash at #/app/:id
-// and the app reloads that tree. Your rows also carry the hover-revealed pencil + trash
-// (rename-tree spec §01): the row itself becomes the editor — pencil or double-click to
-// open it (your rows defer their click a beat so the double-click door stays open),
-// ↵/blur commits, esc restores, a whitespace-only commit restores the old name
-// under a gold flash (a tree always has a name) — and delete confirms inline in the row,
-// never a dialog. Mutations are injected (onRename/onDelete) like listTrees is.
-//
-// Rows now come from the union list (anon-first-tree F3) and wear a tag — "on this
-// device" for unclaimed local trees, "synced" for the rest — that flips in a 150ms
-// cross-fade as a claim lands (wm-tree-claimed). Edits route by that tag, never by
-// presence in the server list: a local row's pencil/trash reach only the local seams.
-//
-// The last row, beneath your own trees, is the one door to the public wall — "Planted in
-// public →" navigates to #/browse (og-tree-cards build-findings §1: the shelf re-sites as a
-// switcher row, never a nav item, no vanity count). Switching into a stranger's tree is not
-// switching, so it leaves for the wall rather than loading one here.
+// Rows wear a tag — "on this device" for unclaimed local trees, "synced" for the rest — and every
+// edit routes by that tag, never by presence in the server list.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
@@ -35,11 +17,7 @@ function hueOf(kind) {
   return KIND_HUE[kind] ?? KIND_HUE.terracotta;
 }
 
-// Which seam a row's pencil/trash reach (anon-first-tree F3): server rows edit through
-// the registry (PATCH/DELETE); unclaimed device rows edit the local seams and must never
-// see the server; a device row already claimed but not currently vouched for (signed
-// out) offers neither. The merged-in current row (offline, someone else's tree) has no
-// origin and gets no editor either — exactly the old rule, by tag instead of by list.
+// Unclaimed device rows edit the local seams and must never see the server.
 function seamOf(tree) {
   if (tree.origin === 'device') return tree.claimed ? null : 'local';
   return tree.origin === 'server' ? 'server' : null;
@@ -83,8 +61,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   editingRef.current = editingId;
   confirmRef.current = confirmId;
 
-  // Load the registry each time the menu opens — cheap, and it keeps "2h ago" honest
-  // without a poll. Degrades to the current tree alone when the registry can't answer.
+  // Load the registry each time the menu opens; degrades to the current tree alone when it can't answer.
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
@@ -94,9 +71,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   useEffect(() => {
     if (!open) return undefined;
-    // Clicking away commits an in-flight rename (blur may never fire once the menu
-    // unmounts); esc peels one layer — the field restores itself, a confirm folds back,
-    // and only then does the menu close.
+    // Clicking away commits an in-flight rename: blur may never fire once the menu unmounts.
     const onDown = (e) => {
       if (rootRef.current?.contains(e.target)) return;
       if (editingRef.current != null) commitRef.current?.();
@@ -125,8 +100,6 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     setFlashId(null);
   }, [open]);
 
-  // A claim landing while the menu is open flips that row's tag in place —
-  // "on this device" → "synced", one 150ms cross-fade (anon-first-tree §02).
   useEffect(() => {
     if (!open) return undefined;
     const onClaimed = (event) => setTrees((prev) => (Array.isArray(prev)
@@ -140,8 +113,8 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     if (editingId != null) inputRef.current?.select(); // the name arrives pre-selected
   }, [editingId]);
 
-  // The gold flash retires on a timer: under prefers-reduced-motion the animation never
-  // runs, so animationend alone would leave the class stuck forever.
+  // The gold flash retires on a timer: under prefers-reduced-motion the animation never runs, so
+  // animationend alone would leave the class stuck forever.
   useEffect(() => {
     if (flashId == null) return undefined;
     const timer = setTimeout(() => setFlashId(null), 750);
@@ -150,7 +123,6 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   useEffect(() => () => clearTimeout(goTimerRef.current), []);
 
-  // The current tree always shows, even before the list resolves or if it never does.
   const rows = mergeCurrent(trees, current);
 
   const go = (id) => {
@@ -173,15 +145,13 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     const before = rows.find((r) => r.id === id)?.title ?? '';
     const next = draft.trim();
     if (!next) {
-      setFlashId(id); // empty commits keep the old name — the gold flash says so, wordlessly
+      setFlashId(id); // an empty commit keeps the old name
       onPreviewTitle?.(id, before);
       return;
     }
     if (next === before.trim()) return void onPreviewTitle?.(id, before);
     setTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
-    // Optimism with a receipt: if the rename is refused (offline, signed out, not yours),
-    // the plaque falls back to truth and the rows re-read the registry. Local rows route
-    // to the local seams by tag — they never PATCH the server.
+    // Local rows route to the local seams by tag — they never PATCH the server.
     const seam = seamOf(rows.find((r) => r.id === id) ?? {});
     Promise.resolve(onRename?.(id, next, { local: seam === 'local' })).catch(() => {
       onPreviewTitle?.(id, before);
@@ -204,12 +174,10 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== t.id);
     setTrees(remaining);
     if (t.id !== current?.id) return;
-    setOpen(false); // the current tree left — land on the newest remaining, or hand bare #/app to the resolver
+    setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
     window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app';
   };
 
-  // While the current tree's row is the editor, the plaque follows every keystroke —
-  // the field IS the title.
   const liveDraft = editingId != null && editingId === current?.id;
   const name = (liveDraft ? draft : current?.title)?.trim() || 'Untitled roadmap';
 
@@ -356,8 +324,6 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
 export default TreeSwitcher;
 
-// The current tree, deduped into the fetched list (or standing alone if the list is
-// empty/unavailable) so it always appears and never doubles.
 function mergeCurrent(trees, current) {
   const list = Array.isArray(trees) ? trees : [];
   if (!current) return list;
@@ -371,8 +337,7 @@ function readout(t) {
   return [count, ago].filter(Boolean).join(' · ');
 }
 
-// The row's second line: progress + recency, then the registry tag. The tag span is
-// keyed by its text so a live flip remounts it into the 150ms cross-fade.
+// The tag span is keyed by its text so a live flip remounts it into the cross-fade.
 function RowMeta({ tree }) {
   const meta = readout(tree);
   const tag = tagOf(tree);
@@ -400,7 +365,6 @@ function Check() {
   );
 }
 
-// A tiny progress ring in the tree's dominant kind — the row's glance-able state.
 function Ring({ done = 0, total, kind }) {
   const hue = hueOf(kind);
   if (!total) return <span style={{ ...bud, borderColor: hue, background: 'transparent' }} />;

@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 
 import { InputController } from '../../../../../src/products/roadmap/scene/input/InputController.js';
 
-// A double-tap glides the camera to whatever zoom the controller picks. This fake records that
-// pick and applies it, so a run of taps threads through exactly as it would on a real camera.
 function tapper(startZoom) {
   const camera = { zoom: startZoom };
   camera.glideZoomAround = (px, py, target) => { camera.zoom = target; };

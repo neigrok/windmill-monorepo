@@ -1181,7 +1181,7 @@ empty state points at the MCP door.
 
 ## 13. Open items
 
-- The phase-1 dogfood gate — 8 consecutive real sessions without falling back to another app, prefill
+- The dogfood gate — 8 consecutive real sessions without falling back to another app, prefill
   right on set one in ≥6 — has never been run. Its capture surfaces are `apps/android` (a sideloaded
   APK off a GitHub Release) and `apps/ios` (builds and tests green, runnable from Xcode).
 - iOS store distribution is blocked on signing, not code: `apps/ios/project.yml` sets

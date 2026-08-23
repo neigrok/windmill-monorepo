@@ -1,10 +1,3 @@
-// Who the device may say it is, and when it must forget (audit JOURNAL-1 / WEB-4). Two rules, one
-// object. First: an account reaches a product only after the SERVER confirmed it on this document
-// load — a remembered hint may paint a face, never open a scope, because an attacker holding the
-// device can make the network fail and the device would otherwise answer with the last owner.
-// Second: when a confirmed account is replaced — a sign-out, or somebody else — every product is
-// told to give up what it keeps here.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -18,9 +11,6 @@ function recorder(id) {
   return { product: { id, forgetDevice: (change) => calls.push(change) }, calls };
 }
 
-// The cold-boot hole a reviewer opened in a real browser: with the API unreachable, a hinted tab
-// stayed signed in as the previous account and handed that account's journal to whoever was
-// holding the laptop.
 test('a cold boot that cannot reach the server is nobody — no account, and not confirmed', () => {
   const seat = new DeviceSeat([]);
 
@@ -38,8 +28,6 @@ test('one successful answer confirms the load, and that is when the account exis
   assert.equal(seat.confirmed, true);
 });
 
-// The other side of the same rule: the network dying mid-session must not throw anyone out of work
-// they are in the middle of.
 test('a blip after confirmation changes nothing at all — the confirmed account stays', () => {
   const seat = new DeviceSeat([]);
   seat.receive(A);
@@ -68,8 +56,6 @@ test('a sign-out forgets the device — every product hears the same change', ()
   assert.deepEqual(journal.calls, [{ previous: 'u_A', next: null }]);
 });
 
-// The transition a naive fix misses: nothing happened in THIS tab. Another tab signed out and in as
-// somebody else, and all this tab did was re-ask the server and get a different answer.
 test('an account switch this tab only learned about forgets the device too', () => {
   const roadmap = recorder('roadmap');
   const seat = new DeviceSeat([roadmap.product]);
@@ -98,9 +84,6 @@ test('the same account answering again is not a change', () => {
   assert.deepEqual(roadmap.calls, []);
 });
 
-// An unconfirmed hint is not a previous account: forgetting on one would let a stale or planted
-// hint delete work the server never said belonged to anybody. The seat starts empty for exactly
-// this reason, so a boot that never reached the server forgets nothing.
 test('a boot with no network, then a real answer, forgets nothing — no account was ever handed out', () => {
   const roadmap = recorder('roadmap');
   const seat = new DeviceSeat([roadmap.product]);

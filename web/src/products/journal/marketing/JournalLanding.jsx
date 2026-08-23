@@ -1,7 +1,4 @@
-// The journal landing at /journal, on the family chrome. The static page it replaced could only
-// fake the auth cluster (a localStorage hint, then a hand-off URL that dropped a signed-out visitor
-// into the dark room), which is exactly what the chrome now does for real. Register: quiet and warm,
-// no game metaphor anywhere, and journal never claims share — because it has none.
+// The journal landing at /journal, on the family chrome.
 
 import React from 'react';
 import { Button } from '../../../design-system';
@@ -57,8 +54,7 @@ function Hero() {
   );
 }
 
-// The moat: a window of night cut into the warm page. The one dark region on the landing, and it
-// carries the design system's journal dusk scope rather than a copy of its values.
+// The moat — the one dark region on the landing, carrying the design system's journal dusk scope.
 function NightWindow() {
   const ref = useScene(mountNightWindow);
   return (
@@ -109,8 +105,7 @@ function WriteScene() {
   );
 }
 
-// Three days from the read view, then the same canvas pinched down to a year. 0 is a day nobody
-// wrote; the rest are lamp steps — how warm the day read, never how much of it there was.
+// Three days from the read view, then the canvas pinched down to a year. 0 is a day nobody wrote.
 const READ_LINES = [
   { day: 'Jul 22', line: 'Clearest day in weeks. I suspect the answer is boring.' },
   { day: 'Jul 24', line: 'Everyone else seems further along, and I can’t tell.' },
@@ -155,9 +150,7 @@ function LookBackScene() {
   );
 }
 
-// A week of columns, drawn the way the product draws them (zoom/ZoomView.jsx): the mood square and
-// the three energy ticks, one column a day, with the count of days written and words beside them.
-// A day with no writing gets a hollow square and no lit tick — the gap stays a gap here too.
+// A mood square and three energy ticks per day; a day with no writing gets a hollow square, no lit tick.
 const WEEK = [
   { dow: 'M', mood: 'var(--lamp-500)', energy: 2 },
   { dow: 'T', mood: 'var(--lamp-400)', energy: 3 },
@@ -353,8 +346,7 @@ function WhyWindmill() {
     <section className="wrap" style={{ paddingTop: 96 }}>
       <div className="eyebrow">Why Windmill</div>
       <h2 className="sectionTitle">Journal is a room, not an app.</h2>
-      {/* Two rooms, not three — role 6 says swap out anything that would be untrue, and journal
-          has no third true claim here. The family's trio widened to a duo; phones flatten it. */}
+      {/* Two rooms, not three: the family's trio widened to a duo, and phones flatten it. */}
       <div className="trio" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', maxWidth: 900 }}>
         {ROOMS.map((room) => (
           <div key={room.title} className="trioItem">

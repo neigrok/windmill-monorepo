@@ -19,10 +19,6 @@ import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
-// THE UNDO WINDOW, DRIVEN THROUGH THE STORE — the wiring above the queue promises pinned in
-// UndoWindowTests: that the walk really skips a held set, that the save line stays silent over a
-// send nobody attempted, that finish, leaving the room and the boot read each force the window shut
-// rather than stranding the set behind it, and that the verb is only ever offered where its row is.
 class UndoWindowStoreTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -42,8 +38,6 @@ class UndoWindowStoreTests {
         preferencesFile = File(tmp.root, "gym-undo-prefs-${System.nanoTime()}.json")
     }
 
-    // The queue read back as the seat these tests sign in as would see it: the seat lives in memory
-    // now, so a bare construction is the ANONYMOUS queue and answers nothing for a signed-in lifter.
     private fun onDisk() = SetQueue(queueFile, "u1")
 
     private fun TestScope.makeStore(server: FakeTraining) = TrainingStore(
@@ -68,8 +62,6 @@ class UndoWindowStoreTests {
         return store
     }
 
-    // The set is on the device the instant it is tapped — the window changes when it is SENT,
-    // never whether it was kept.
     @Test
     fun testASetJustLoggedIsOnTheDeviceAndNotYetOnTheLog() = runTest {
         val server = FakeTraining()
@@ -83,8 +75,6 @@ class UndoWindowStoreTests {
         assertEquals("and it is on disk, not in memory", 1, onDisk().pending.size)
     }
 
-    // "Offline" would be the wrong word for a send nobody has attempted. Silence is the honest
-    // state while the window is open.
     @Test
     fun testASetInsideItsWindowIsNotCalledOffline() = runTest {
         val server = FakeTraining()
@@ -96,8 +86,6 @@ class UndoWindowStoreTests {
         assertNull(store.saveState.line)
     }
 
-    // The gesture the window exists for: the set never reaches the log at all, so nothing already
-    // written is destroyed by one tap.
     @Test
     fun testUndoTakesTheSetBackAndTheLogNeverHearsOfIt() = runTest {
         val server = FakeTraining()
@@ -112,7 +100,6 @@ class UndoWindowStoreTests {
         assertNull(store.undoable)
     }
 
-    // Undo answers the tap the lifter just made, not the oldest one still waiting.
     @Test
     fun testUndoTakesBackTheNewestSetAndLeavesTheRest() = runTest {
         val server = FakeTraining()
@@ -126,10 +113,6 @@ class UndoWindowStoreTests {
         assertEquals(listOf(82.5), store.sets.map { it.weightKg })
     }
 
-    // §K PUT UNDO ON THE ROW IT TAKES BACK, and the logger only draws THIS movement's rows — so an
-    // unscoped answer here was a window held open with its button on no screen: log the last set,
-    // tap the title's `›`, and the set was still withdrawable with nothing anywhere to withdraw it.
-    // The verb and its row are one fact now, and walking back inside the nine seconds finds both.
     @Test
     fun testUndoFollowsTheRowAndIsNotOfferedFromAnotherMovement() = runTest {
         val server = FakeTraining()
@@ -152,8 +135,6 @@ class UndoWindowStoreTests {
         assertEquals(emptyList<TrainingSet>(), store.sets)
     }
 
-    // Once the window closes the set goes out on its own — a hold that never ended would be a set
-    // that never landed.
     @Test
     fun testWhenTheWindowClosesTheSetGoesOutByItself() = runTest {
         val server = FakeTraining()
@@ -168,9 +149,6 @@ class UndoWindowStoreTests {
         assertNull("and there is nothing left to take back", store.undoable)
     }
 
-    // Past the window the log holds the row, and this door does not reach the account's. The answer
-    // is no rather than a screen that quietly disagrees with it — the set comes off through §G18's
-    // delete on the session read back, never through the logger mid-workout.
     @Test
     fun testUndoAfterTheSetHasLandedRefusesRatherThanPretending() = runTest {
         val server = FakeTraining()
@@ -185,8 +163,6 @@ class UndoWindowStoreTests {
             listOf(82.5), store.sets.map { it.weightKg })
     }
 
-    // Finishing is this device's statement that everything the session holds is already delivered.
-    // A walk that skipped a held set would leave it behind, and the close would refuse it FOREVER.
     @Test
     fun testFinishSendsASetStillInsideItsWindowBeforeItCloses() = runTest {
         val server = FakeTraining()
@@ -201,8 +177,6 @@ class UndoWindowStoreTests {
             listOf("append", "finish"), server.calls.filter { it == "append" || it == "finish" })
     }
 
-    // Leaving the room ends the window whether or not its nine seconds are up: the affordance goes
-    // with the subtree, and the store that would have sent it is about to be let go.
     @Test
     fun testLeavingTheRoomEndsTheWindowAndSendsWhatIsHeld() = runTest {
         val server = FakeTraining()
@@ -216,9 +190,6 @@ class UndoWindowStoreTests {
         assertEquals(listOf(82.5), server.appended.map { it.weightKg })
     }
 
-    // A relaunch is the other end of the same rule: the row is gone from the screen, so the window
-    // is protecting a gesture nobody can still make — and the boot read would settle the session
-    // over it.
     @Test
     fun testAReadOfTheLogSendsWhatIsHeldFirst() = runTest {
         val server = FakeTraining()

@@ -1,38 +1,16 @@
 import SwiftUI
 import WindmillPlatform
 
-// CHANGE TODAY, OR CHANGE THE PROGRAM — the one moment gym asks a question it did not have to ask.
-// The plan snapshot is frozen, so last Tuesday keeps reading correctly whichever way this is
-// answered; what is at stake is only whether next week's target moves with the lifter.
-//
-// THE SERVER NEVER INFERS THIS. It never auto-writes a routine and never asks — a store that noticed
-// a heavier set and quietly rewrote the program would be changing what somebody wrote down, on the
-// evidence of one afternoon. The offer is the client's, it is raised ONCE per movement per session
-// at the exercise boundary, and declining costs nothing.
-//
-// ONLY HEAVIER. The design's own title says so and the restriction is the honest half of the rule:
-// dropping the weight mid-exercise is a bad night far more often than it is a decision, and writing
-// that back would lower next week's target off one session and then read as a failed session every
-// time it came round.
-
 public struct Deviation: Equatable {
     public let exerciseId: String
     public let routineId: String
     public let routine: String
-    // The routine POSITION of the plan line this was raised against — what the save addresses,
-    // because a program may hold the same movement twice and only one of its rows is this one.
+    // Routine position of the plan line this addresses: a program may hold the same movement twice.
     public let position: Int
     public let plannedKg: Double
     public let liftedKg: Double
 
-    // The heaviest WORKING set of the movement being left, against the weight the frozen snapshot
-    // named for it. Warmups, drops and failures are not what the session was, so none of them can
-    // raise this.
-    //
-    // WHICH LINE, when the plan names the movement more than once: the HEAVIEST planned one — the
-    // top set. Beating only the back-off is not a deviation from the program. The snapshot is
-    // written from the routine's entries in position order and carries no position of its own, so
-    // plan index i IS routine position i + 1.
+    // The snapshot carries no positions: plan index i is routine position i + 1.
     public init?(leaving exerciseId: String, session: Session?, sets: [TrainingSet], asked: Set<String>) {
         guard let session, let routineId = session.routineId, let plan = session.plan else { return nil }
         guard !asked.contains(exerciseId) else { return nil }
@@ -87,10 +65,6 @@ struct DeviationSheet: View {
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
 
-            // "Asked once, when you leave the exercise — never again this session" was drawn here
-            // until 2026-08-12. It described when this sheet appears, to somebody already looking at
-            // it — which is the room explaining its own timing rather than telling a lifter anything
-            // about their training. The rule it described is unchanged and lives in `Deviation`.
             Button(action: onToday) {
                 Text("Today only")
                     .font(WindmillFont.body(16, .semibold))

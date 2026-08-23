@@ -1,20 +1,12 @@
 import Foundation
 
-// Sign-in for the native superapp — the same one door the web has, reached the way a phone can
-// reach it. The account is an email address (backend/AUTH.md): the app asks for an emailed six-digit
-// CODE (`door: "app"`), the web keeps the magic link, and Sign in with Apple is the native extra.
-// Whichever door opens, the session secret it yields is the app's only credential and lives in the
-// Keychain, never in UserDefaults — a session is a 90-day bearer of someone's whole journal.
+// The session secret is the app's only credential and lives in the Keychain, never UserDefaults.
 
 public enum AuthStatus: Equatable {
-    case unknown            // the app has not yet asked /v1/me — the seat is a ghost, not empty
+    case unknown            // /v1/me has not been asked yet
     case signedOut
     case signedIn(User)
-    // The seat as this device last knew it: a secret is held and this is the user the log last
-    // named for it, but THIS launch has not heard the log confirm it — the phone had no signal, or
-    // the log fell over. It is a signed-in seat, not a signed-out one: a basement is not a sign-out,
-    // and every product connects under this user off the copy it holds. The next launch or
-    // return to the foreground asks again (`restore`).
+    // A held secret whose user this launch has not confirmed with the backend.
     case unverified(User)
 
     public var user: User? {
@@ -24,19 +16,13 @@ public enum AuthStatus: Equatable {
         }
     }
 
-    // False only for the seat the log has not confirmed THIS launch. Signed out is verified — nobody
-    // is waiting on an answer — so a room keyed on (user, verified) re-runs for a verification and
-    // for nothing else.
+    // Signed out counts as verified.
     public var verified: Bool {
         if case .unverified = self { return false }
         return true
     }
 }
 
-// What happened to a link that arrived from OUTSIDE the app — a universal-link tap rather than a
-// paste. It is published because nobody is standing at the paste field when one lands: a door that
-// happens to be open reads it and closes itself, and a link that woke a closed app hands its refusal
-// back to the caller so the shell can open a door for it.
 public enum LinkArrival: Equatable {
     case signedIn
     case refused(String)
@@ -51,31 +37,16 @@ public final class AuthStore: ObservableObject {
     public let api: WindmillApi
     private let sessions: any SessionStore
 
-    // Nonisolated: building the store touches nothing but its own stored properties, so a caller
-    // may create one anywhere (a default argument, a preview) while every mutation stays on main.
     public nonisolated init(baseURL: URL = WindmillApi.resolvedBaseURL(),
                             sessions: any SessionStore = KeychainSessions(),
                             urlSession: URLSession = WindmillApi.cookieless) {
         self.sessions = sessions
         self.api = WindmillApi(baseURL: baseURL, credential: { [sessions] in sessions.read() },
                                session: urlSession)
-        // What an older build let the system keep. This app sends no cookies now, so nothing here
-        // reaches the wire — but a 90-day session secret sitting outside the Keychain is the other
-        // half of the same finding, and the sign-out that would have ended it is one somebody who
-        // simply upgraded never performs (audit MOBILE-2).
         WindmillApi.forgetCookieJar(for: baseURL)
     }
 
-    // The seat on launch, and again on every return to the foreground while it is unverified. A
-    // lapsed session is a non-event (AUTH.md): drop the dead secret and show the door, never an
-    // error — nobody needs to be told their 90 days ran out.
-    //
-    // Only a DEFINITIVE 401 may clear the Keychain, and only a definitive 401 is a sign-out. A phone
-    // with no signal — or a log answering 5xx — has not been signed out: the secret stays, and the
-    // seat is the user this device last read beside it, marked unverified, so the rooms connect
-    // SIGNED IN off the copies they hold. Answering signed-out there was a silent sign-out that
-    // opened gym on the anonymous shelf, let go of the account's settings document, and stranded
-    // the queue's owed sets behind a bearer that no longer existed.
+    // Only a 401 clears the Keychain; any other failure keeps the secret and marks the seat unverified.
     public func restore() async {
         guard sessions.read() != nil else {
             status = .signedOut
@@ -97,17 +68,14 @@ public final class AuthStore: ObservableObject {
         }
     }
 
-    // `door: "app"` asks the mail to carry the six-digit code instead of the link — a code can be
-    // read off one screen and typed into this one, where a tapped link opens the wrong surface.
+    // `door: "app"` asks the mail to carry the six-digit code instead of the link.
     public func requestLink(to email: String) async throws {
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
         try await api.send("POST", "/v1/auth/magic-link", body: ["email": address, "door": "app"])
         linkSentTo = address
     }
 
-    // The app door's own finish: the emailed code, with the address it was sent to. The reply is
-    // shaped exactly like /v1/auth/verify — the user in the body, the session only in Set-Cookie —
-    // so the same capture lifts it.
+    // User in the body, session only in Set-Cookie.
     public func completeCode(email: String, code: String) async throws {
         let answer = try await api.sendCapturingSession("POST", "/v1/auth/verify-code",
                                                         body: ["email": email, "code": code],
@@ -115,10 +83,7 @@ public final class AuthStore: ObservableObject {
         try adopt(session: answer.session, user: answer.reply.user)
     }
 
-    // The token arrives from the mail. On a phone that means one of two things: the app was opened
-    // by the link itself (a universal link, once the associated domain is live), or the person
-    // pasted what they were looking at. Both land here, and both accept the whole URL — asking
-    // someone to extract a token out of a URL is asking them to do the parser's job.
+    // Accepts the whole link URL or a bare token.
     public func completeLink(_ pastedOrURL: String) async throws {
         guard let token = MagicLink.token(in: pastedOrURL) else { throw MagicLink.unreadable }
         let answer = try await api.sendCapturingSession("POST", "/v1/auth/verify",
@@ -126,14 +91,7 @@ public final class AuthStore: ObservableObject {
         try adopt(session: answer.session, user: answer.reply.user)
     }
 
-    // The same completion, reached from the other side: the app was opened BY the link. It cannot
-    // throw, because no call site is holding a `catch` — the outcome is the return value and the
-    // published `arrival` at once, and clearing to nil first is what makes a second identical
-    // refusal still register as a change for anything watching.
-    //
-    // A URL carrying nothing this app can read answers nil and touches nothing. That guard lives
-    // here rather than at the call site because what a magic link looks like is auth's knowledge,
-    // and a shell that had to know it would be a second copy of the same rule.
+    // Clearing `arrival` first makes a repeated identical refusal register as a change.
     @discardableResult
     public func arrived(from url: URL) async -> LinkArrival? {
         guard MagicLink.token(in: url.absoluteString) != nil else { return nil }
@@ -149,10 +107,7 @@ public final class AuthStore: ObservableObject {
         return outcome
     }
 
-    // The native door. Apple hands the app a one-time authorization code; the backend does the rest
-    // and answers with the session in the body (it knows a native caller has no cookie jar). `name`
-    // is Apple's, sent exactly once ever for an Apple ID — so it is forwarded on the one
-    // authorization that carries it or it is lost for good.
+    // Apple sends `name` once ever per Apple ID: forward it on that authorization or it is lost.
     @discardableResult
     public func signInWithApple(authorizationCode: String, name: String?) async throws -> AppleOutcome {
         var body: [String: String] = ["authorizationCode": authorizationCode]
@@ -162,9 +117,7 @@ public final class AuthStore: ObservableObject {
         return AppleOutcome(created: reply.created ?? false, privateEmail: reply.privateEmail ?? false)
     }
 
-    // Fold this (new, empty) account into the one a magic link names — the remedy for a Hide My
-    // Email sign-in that could not find the account the person already has on the web. Runs while
-    // still holding the new account's session, which is why a fresh session comes back.
+    // Folds this account into the one the link names; the reply carries a fresh session.
     public func linkToAccount(_ pastedOrURL: String) async throws {
         guard let token = MagicLink.token(in: pastedOrURL) else { throw MagicLink.unreadable }
         let reply = try await api.send("POST", "/v1/auth/link", body: ["token": token], as: AppleReply.self)
@@ -174,9 +127,6 @@ public final class AuthStore: ObservableObject {
     public func signOut() async {
         _ = try? await api.send("POST", "/v1/auth/logout")
         sessions.clear()
-        // And whatever an older build let the system keep beside it. This app sends no cookies, so
-        // nothing here is on the wire — but a session secret that outlives the sign-out that ended
-        // it has no business on the disk either (audit MOBILE-2).
         WindmillApi.forgetCookieJar(for: api.baseURL)
         linkSentTo = nil
         status = .signedOut
@@ -199,27 +149,18 @@ public final class AuthStore: ObservableObject {
     }
 }
 
-// `created` and `privateEmail` together are the one condition the link door is offered on
-// (AUTH.md): a brand-new account reached through a relay address can never have found the account
-// this person already has on the web, and no honest guess exists — so the app offers, once.
 public struct AppleOutcome: Equatable {
     public let created: Bool
     public let privateEmail: Bool
     public var shouldOfferLinkDoor: Bool { created && privateEmail }
 }
 
-// The emailed link is `{app}/#/auth?token=…` — the token lives in the URL *fragment*, so the
-// obvious reading (URLComponents.queryItems) finds nothing. This is the whole reason this is a
-// tested function and not two lines at a call site.
+// The emailed link is `{app}/#/auth?token=…`: the token sits in the fragment, so queryItems finds nothing.
 public enum MagicLink {
     public static let unreadable = WindmillApiError.refused(400, Refusal(Data()))
 
-    // One fact, one sentence, wherever a link fails — pasted into the door or tapped in the mail.
     public static let expired = "That link has expired. Links work once and last 15 minutes — send a fresh one."
 
-    // And it is not always that fact. A request that never reached the server has not expired
-    // anything, and "send a fresh one" is advice nobody offline can follow — so the only failure
-    // that is really about the link gets the sentence about the link.
     public static func refusal(for error: Error) -> String {
         guard let api = error as? WindmillApiError, api == .offline else { return expired }
         return api.line
@@ -230,8 +171,6 @@ public enum MagicLink {
         guard !trimmed.isEmpty else { return nil }
         guard trimmed.contains("://") || trimmed.contains("token=") else { return trimmed }
 
-        // Everything after the first `token=`, up to whatever ends it. Works on the fragment form,
-        // on a plain query, and on a link a mail client wrapped in tracking parameters.
         guard let start = trimmed.range(of: "token=") else { return nil }
         let tail = trimmed[start.upperBound...]
         let token = tail.prefix { $0 != "&" && $0 != "#" && !$0.isWhitespace }
@@ -239,18 +178,10 @@ public enum MagicLink {
     }
 }
 
-// The emailed six-digit code — what the app's own door requests (`door: "app"`) and verifies. It
-// shares one field with the pasted link, and the door tells the two credentials apart HERE, before
-// the parser: `MagicLink.token(in:)` accepts ANY bare string as a token, so a code that reached it
-// would go out to /v1/auth/verify as a token and die there. Exactly six ASCII digits is a code;
-// everything else is the parser's.
+// Exactly six ASCII digits is a code; anything else belongs to MagicLink.
 public enum SignInCode {
-    // The server collapses wrong, spent, expired and unknown into one refusal so nothing leaks;
-    // this is the door's one sentence for all of them, and the remedy is the Resend button above it.
     public static let expired = "That code has expired. Codes work once and last 15 minutes — send a fresh one."
 
-    // The same split MagicLink.refusal makes: a request that never reached the server has not
-    // expired anything, so only a failure that is really about the code gets the code's sentence.
     public static func refusal(for error: Error) -> String {
         guard let api = error as? WindmillApiError, api == .offline else { return expired }
         return api.line
@@ -263,10 +194,6 @@ public enum SignInCode {
     }
 }
 
-// Where the session secret sleeps — and, beside it, the user the log last named for that secret,
-// which is what lets a launch with no signal answer a seat instead of a sign-out. A protocol so
-// tests get a fake for free and never touch the real Keychain, which is process-wide state a test
-// suite must not mutate. `clear` ends both together: a secret the log refused names nobody.
 public protocol SessionStore: Sendable {
     func read() -> String?
     func write(_ secret: String)
@@ -291,9 +218,6 @@ public final class KeychainSessions: SessionStore {
         write(Data(secret.utf8), account: secretAccount)
     }
 
-    // The user rides in the same Keychain item class as the secret, under its own account name:
-    // it is the secret's companion, held exactly as long and cleared in the same breath, and a
-    // file in Application Support would outlive the secret it describes.
     public func readUser() -> User? {
         guard let data = read(account: userAccount) else { return nil }
         return try? JSONDecoder().decode(User.self, from: data)

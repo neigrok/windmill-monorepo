@@ -1,19 +1,3 @@
-// THE END OF A SESSION — three facts, at most one line of meaning, and the movement-by-movement
-// comparison under it. Everything drawn here is the `Review` the store computed: no e1RM is
-// calculated on this surface and no record is decided on it, so web and iOS can never disagree about
-// which line is the loud one (review.js).
-//
-// THE EMPTY SLOT IS THE DESIGN. On the ~190 sessions in 200 that earn nothing, the space a record
-// would occupy is simply empty — nothing says well done, nothing implies the session was wasted, and
-// there is no streak and no score to fill it with. The coach share below it is not that slot's
-// filler: it is offered on every session alike, it says nothing about how the session went, and it
-// is a link to one person and never a share sheet.
-//
-// It reads the session back rather than being handed it: sessions finish on the phone (§11), so
-// everything drawn here is the log's answer and nothing is a memory of a screen that closed one —
-// which is also what lets a reload, a back button and the log's own review door all land on the
-// same three facts.
-
 import React, { useRef, useState } from 'react';
 import { failureReason, gymApi } from './gymApi.js';
 import {
@@ -31,8 +15,6 @@ export function FinishScreen({ id, log }) {
       gymApi.session(id),
       gymApi.review(id),
       gymApi.exercises(),
-      // Two rows settle "your first session": the log reads newest first, so any earlier session is
-      // the one immediately under this one (log.js).
       gymApi.sessions({ limit: 2 }),
     ]).then(([detail, review, catalog, recent]) => (detail ? { detail, review, catalog, recent } : null)),
     [id],
@@ -48,8 +30,6 @@ export function FinishScreen({ id, log }) {
     );
   }
   if (view.phase === 'failed') {
-    // The session is closed either way — that write landed before this screen existed. So this says
-    // what could not be READ, and never that anything was lost.
     return (
       <>
         <p className="gym-read-failed">
@@ -99,14 +79,6 @@ export function FinishScreen({ id, log }) {
         <section className="gym-against">
           <h2 className="gym-against-title">{against.title}</h2>
           <ul className="gym-against-rows">
-            {/* THE NAME IS A DOOR (§H), and this band is the case §H's own note names: a line that
-                says "+2.5 on squat" is checkable in one tap, on the one screen that says it. It is
-                a door OUT of this screen, and the screen keeps nothing the store has not already
-                answered — the three facts, the record and this band are all re-read on the way back
-                in, which is why the finish is a place and not a moment (above). The one thing
-                below it that a lifter can type into — the routine name — sits under this band
-                rather than around it, and every state of this screen already draws a link out
-                of it. */}
             {against.rows.map((row) => (
               <li className="gym-against-row" key={row.exerciseId}>
                 <a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId)}>
@@ -124,13 +96,6 @@ export function FinishScreen({ id, log }) {
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} log={log} />
       )}
 
-      {/* Not offered on a short session: a screen asking "keep it in the log, or drop it?" must not
-          also offer to send it to somebody. The session detail carries the same door, so a session
-          kept is one tap from it.
-          THE CHAT IS NOT HERE ANY MORE, and its absence is the decision. It used to be a composer
-          under this one workout; §L widened it into a room over the whole log, reached from Today's
-          band — because "what happened in this session" is the screen above, and the questions worth
-          asking a model are about the months behind it. */}
       {!review.slight && <CoachShare sessionId={id} />}
 
       {!review.slight && (
@@ -143,14 +108,6 @@ export function FinishScreen({ id, log }) {
   );
 }
 
-// The one destructive action in the product, and it sits here because a three-set session is usually
-// a phone left running rather than a workout. It is offered only after the close — while a session
-// is open, only the device holding the offline queue knows every set landed (gymApi.js).
-//
-// THE REASON IS IN THIS COMMENT AND NOT ON THE SCREEN (W9). The line used to open "a session this
-// short is usually a phone left running" — our generalisation about sessions, told to a lifter
-// looking at one of their own. The tiles directly above already say 11m and 3 working sets, which is
-// the fact; what was left to say is the question.
 function ShortSession({ id, log }) {
   const [dropping, setDropping] = useState(false);
   return (
@@ -166,7 +123,6 @@ function ShortSession({ id, log }) {
             setDropping(true);
             try {
               await gymApi.discardSession(id);
-              // The list on screen still holds it, and the lifter is about to look at that list.
               log.reloadLog();
               log.say('That session is out of your log.');
               window.location.hash = '#/gym';
@@ -183,24 +139,13 @@ function ShortSession({ id, log }) {
   );
 }
 
-// "Keep this as a routine" (canon screen 3) — the first routine most lifters ever have, and a
-// by-product of a session rather than a form they filled in. Nothing is created until the tap:
-// declining costs nothing and the offer comes back next session, because a routine exists because
-// somebody named it.
-//
-// The name field opens on the day it happened, which is a value on screen to be typed over and not
-// a name anything wrote on its own — a lifter who saves it unchanged has read it and chosen it.
 function KeepAsRoutine({ session, sets, catalog, log }) {
   const [name, setName] = useState(() => weekdayName(session.startedAt));
   const [offered, setOffered] = useState(true);
   const [saving, setSaving] = useState(false);
-  // Minted once, so a create that times out and is tapped again is the same document arriving twice
-  // rather than two routines with one name — the id IS the idempotency key (gymApi.js).
+  // The id is the idempotency key: mint once so a retried create is one routine.
   const minted = useRef(null);
   if (minted.current === null) minted.current = mintId('rt_');
-  // The default position is the top, and it only ever separates routines that share a last-trained
-  // instant: a routine born from a session has never been trained, so what actually places it is
-  // that fact — and Today's card says the same thing about it (routines.js).
   const composed = routineFromSession({ id: minted.current, name: name.trim(), sets });
   if (!offered || composed.entries.length === 0) return null;
 

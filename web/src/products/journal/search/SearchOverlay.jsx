@@ -1,8 +1,5 @@
-// Search — semantic and on-device. A feeling finds the passage that never used the word; every hit
-// states why it matched and, when chosen, flies the canvas to that spot (it never opens a detail view
-// — that is the whole payoff of never paginating). It answers instantly on the lexical index and, once
-// the meaning model has loaded, re-ranks the same query in place — the results sharpen while you read
-// them. The query and the vectors never leave the device, and the footer says so plainly.
+// Every hit states why it matched and, when chosen, flies the canvas to that spot. It answers on the
+// lexical index and re-ranks in place once the meaning model has loaded. Nothing leaves the device.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearch } from './useSearch.js';
@@ -25,8 +22,7 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
   useEffect(() => { if (!open) { setQuery(''); setResults([]); } }, [open]);
 
-  // Run the query against whatever index is active; re-run when the neural index swaps in (version)
-  // so the ranking sharpens under a query already on screen. A token drops stale async results.
+  // Re-runs when the neural index swaps in (`version`); `live` drops stale async results.
   useEffect(() => {
     if (!open || !query.trim()) { setResults([]); return undefined; }
     let live = true;
@@ -67,9 +63,7 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
             </button>
           ))}
         </div>
-        {/* A journal that could not be read is not a journal with nothing in it — said above the
-            foot rather than instead of it, because "nothing leaves the device" is true either way
-            and is not the line to drop when the network is down. */}
+        {/* Said above the foot rather than instead of it: "nothing leaves the device" is true either way. */}
         {source === 'failed' && (
           <p className="journal-search-unread">
             Couldn’t reach your journal — this searches only what’s on this device.

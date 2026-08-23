@@ -38,24 +38,8 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// THE LOG — every finished session, newest first, folded into weeks. It answers the question the
-// routine list cannot: what has the last three months actually looked like.
-//
-// IT IS NOT A CALENDAR. A month grid answers "which days did I train", which this lifter already
-// answers with a program — and there is no adherence percentage anywhere on it, because that is a
-// number that scores somebody against a plan they changed on purpose.
-//
-// A session nobody planned is named by `Readout.noRoutine`, with every other phrase this product
-// spells exactly once.
-
-// The fold, with no Compose in it: which week a session fell in, what a row says, and the one rule
-// that keeps a divider honest. Weeks are the CLIENT's — they are a presentation fold over the page
-// already in hand, and a week endpoint would be a second place in the product deciding what a week
-// is. They start Monday, in the zone the lifter trained in: a Sunday-night session belongs to the
-// week they lived it in, not to whatever UTC calls it.
+// Weeks are the CLIENT's fold and start Monday in the zone the lifter trained in, never in UTC.
 object LogFold {
-    // Every field is optional exactly where the fact may be missing, and a missing one draws
-    // NOTHING — never a dash, never a zero standing in for a read that did not happen.
     data class Row(
         val summary: SessionSummary,
         val title: String,
@@ -64,22 +48,12 @@ object LogFold {
         val tonnage: String?,
         val estimate: String?,
         val onThisDeviceOnly: Boolean,
-        // §G's gold dot: a personal record happened in this workout. The log judges it against
-        // itself AS IT IS NOW and not frozen at finish, so a correction that moves a record moves
-        // the dot with it — a dot that lied after a fix would be worse than none. A row the log
-        // never spoke for draws none, which is an omission and not a denial.
         val record: Boolean,
     )
 
     data class Week(val label: String, val tonnage: String?, val rows: List<Row>)
 
-    // `complete` is whether the log has been read to its bottom. It exists for one honesty rule:
-    // paging is newest-first, so every loaded week is whole EXCEPT possibly the oldest one — half a
-    // week's sessions are in hand and the rest are one tap away. That week's divider therefore says
-    // nothing about its tonnage until the rest arrives, for the same reason a zero says nothing.
-    //
-    // An OPEN session is not in the log. It is the workout the lifter is standing in, its numbers
-    // change under them, and the logger is where it lives.
+    // `complete` is whether the log has been read to its bottom; only the oldest week may be partial.
     fun weeks(
         sessions: List<SessionSummary>,
         onThisDevice: Set<String>,
@@ -94,8 +68,7 @@ object LogFold {
         return buckets.map { (start, sessionsInWeek) ->
             Week(
                 label = Readout.weekOf(start),
-                // A week whose sum is unknowable prints nothing rather than a total that is quietly
-                // short: one session the log sent no tonnage for takes the whole caption with it.
+                // One session with no tonnage takes the whole week's caption rather than a short total.
                 tonnage = when {
                     start == oldest && !complete -> null
                     sessionsInWeek.any { it.tonnageKg == null } -> null
@@ -129,9 +102,6 @@ object LogFold {
 fun LogScreen(store: TrainingStore, onOpenSession: (SessionSummary) -> Unit) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
-    // A row the shelf holds is saved on this device and nowhere else — signed out that is the whole
-    // log, and it is true rather than a warning: the lifter owns it, and the claim card on the
-    // Routines home is where signing in is offered.
     val onThisDevice = store.shelved.map { it.id }.toSet()
     val weeks = LogFold.weeks(store.recent, onThisDevice, complete = store.older == Older.End, nowMs = nowMs)
     val load: () -> Unit = { scope.launch { store.loadOlder() } }
@@ -153,10 +123,7 @@ fun LogScreen(store: TrainingStore, onOpenSession: (SessionSummary) -> Unit) {
             )
         }
 
-        // THREE DIFFERENT SILENCES, and only one of them is "you have no sessions". The log said so;
-        // the log failed, which is the foot's own sentence and gets no rows above it; or the log has
-        // not answered yet, and this screen claims nothing at all — a boot that drew "No sessions
-        // yet" over an account with two hundred of them would be the worst sentence in the product.
+        // Three silences: the log said so · the read failed · the log has not answered yet.
         if (weeks.isEmpty()) {
             when (store.older) {
                 Older.End -> Empty()
@@ -193,8 +160,6 @@ private fun WeekDivider(week: LogFold.Week) {
             .fillMaxWidth()
             .padding(top = WindmillSpace.x4, bottom = WindmillSpace.x2),
     ) {
-        // Upper case and tracked out, which is the divider's own treatment in §G16 and the one place
-        // this room uses it: it has to read as a rule across the list rather than as a row in it.
         Text(
             week.label.uppercase(),
             style = GymType.numeral(11).copy(letterSpacing = 0.07.em),
@@ -210,23 +175,8 @@ private fun WeekDivider(week: LogFold.Week) {
     }
 }
 
-// FOUR FACTS AND NO FIFTH: what it was, when it was, how much working there was in it, and the
-// heaviest thing that happened. The tonnage and the estimate are each drawn only where there is one
-// — a bodyweight session moved no external load, and a session claimed by no account has no e1RM
-// because no phone computes one.
-//
-// Beside the title, one gold dot on the ~ten rows in two hundred that hold a personal record. It is
-// the log's own verdict, replayed against the log as it stands now, which is why nothing on this
-// phone tries to compute one: a cheaper dot that is sometimes wrong is worse than no dot at all.
-//
-// THE DOT IS THE WHOLE CLAIM AND THE NUMBERS UNDER IT STAY IRON, which is where this row differs
-// from the design's mock. `record` is one bool over THREE rules — best e1RM, most reps at a weight,
-// heaviest load for any reps — and the wire does not say which one was earned. Colouring the
-// estimate gold would read as "this figure is the record", and it is that for only one of the
-// three: a session that beat its own reps at 100 kg can carry a top e1RM well under the standing
-// one. §G asks for a dot meaning "a PR happened in there", which is exactly what a dot says and no
-// more. iOS says it the same way. If the row is ever to point at the number, the kind has to ride
-// on the wire first.
+// `record` is one bool over three rules — best e1RM, most reps at a weight, heaviest load for any
+// reps — and the wire does not say which was earned, so nothing here may colour a number gold.
 @Composable
 private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
     Column(
@@ -245,9 +195,6 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(row.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            // Filled, because a record is a thing that happened. It shares the slot the hollow ring
-            // uses and cannot collide with it: an unclaimed row is one no account has judged, so it
-            // never carries a verdict.
             if (row.record) {
                 Box(
                     Modifier
@@ -255,7 +202,6 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
                         .background(GymSkin.prInk, CircleShape),
                 )
             }
-            // Hollow, because the session is real and only its second home is missing.
             if (row.onThisDeviceOnly) {
                 Box(
                     Modifier
@@ -274,11 +220,6 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
     }
 }
 
-// THE FOOT, in the order a scroll meets it. `Load older` is a tap and never an infinite scroll,
-// because twelve weeks back is a destination and a scroll that keeps going has no arrival. Loading
-// is the same box dimmed — no spinner, and no skeleton rows pretending to be sessions somebody did
-// not lift. The bottom is a DATE rather than an empty box: it is the one fact worth arriving at.
-// And alarm ink fires here on a failed read and on nothing else.
 @Composable
 private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
     if (older == Older.End) {
@@ -303,8 +244,6 @@ private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
         return
     }
     if (older == Older.Loading) {
-        // The same box one shade quieter, and a dot rather than a spinner: nothing in this room
-        // animates to say it is waiting, it says it.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -359,10 +298,7 @@ private fun Empty() {
     }
 }
 
-// Both halves are counts of what is IN HAND, which is the work the word at the end of the line is
-// doing. The log has no total to ask for — the wire answers pages — and a number claiming to be the
-// whole account's would be a number nobody read. With nothing in hand there is no count to state:
-// the sentence under the title is either the read still running or nothing at all.
+// Both halves count what is IN HAND: the wire answers pages and there is no total to ask for.
 private fun headLine(weeks: List<LogFold.Week>, older: Older): String? {
     if (weeks.isEmpty()) {
         if (older == Older.End || older == Older.Failed) return null

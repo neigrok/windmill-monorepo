@@ -1,13 +1,5 @@
-// The settings page's presentation formatters — pure, dependency-free, and the one
-// testable seam in the settings package. A session row has no geo-IP, so place never
-// renders; what we can say honestly is the device (from the user-agent string) and the
-// recency (from a millisecond timestamp). Grants speak the same two dialects: a granted
-// date and a last-active recency.
-
-// A user-agent string → "Chrome on macOS", degrading a phrase at a time: browser + OS,
-// else whichever half we recognise, else "Unknown device". Order is load-bearing — Edge,
-// Opera and Brave all carry "Chrome" in their UA, and Safari carries "Safari" that Chrome
-// also carries, so the more specific token is tested first.
+// Test order is load-bearing: Edge, Opera and Brave all carry "Chrome", and Chrome carries
+// "Safari", so the more specific token is tested first.
 export function formatUserAgent(userAgent) {
   const ua = String(userAgent ?? '');
   const browser = browserOf(ua);
@@ -38,8 +30,6 @@ function osOf(ua) {
   return '';
 }
 
-// A past millisecond timestamp → a calm recency: "just now", "5m ago", "3h ago", "2d ago",
-// then a plain date once it is more than a week old. Matches the switcher's "2h ago" voice.
 export function relativeTime(ms) {
   if (!ms) return '';
   const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
@@ -53,15 +43,11 @@ export function relativeTime(ms) {
   return shortDate(ms);
 }
 
-// A millisecond timestamp → "Aug 16, 2026". Used for grant dates and the account-closing chip.
 export function shortDate(ms) {
   if (!ms) return '';
   return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// An MCP key's meta line: when it was minted, and how recently it last authenticated — a
-// fresh key reads "never used" until its first call. Composes the same two dialects the
-// session and grant rows speak.
 export function mcpKeyMeta(key) {
   const used = key.lastUsedMs ? `Last used ${relativeTime(key.lastUsedMs)}` : 'never used';
   return `Created ${shortDate(key.createdMs)} · ${used}`;

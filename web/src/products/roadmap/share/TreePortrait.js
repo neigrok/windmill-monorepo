@@ -1,17 +1,13 @@
-// The hero of every share surface (X2 identity) — the tree rendered as a
-// deterministic, standalone SVG string from the app's RenderModel. Pure: it
-// takes a model, a share palette and a pixel box, and returns markup. No React,
-// no WebGL, no DOM, no I/O. The string is rasterised into an <img> for PNG/OG/
-// thumb/GIF export, so it carries its own xmlns, explicit width/height, and
-// per-call-unique filter ids; it never reaches out to CSS vars, fonts or urls.
+// The tree as a deterministic, standalone SVG string from the app's RenderModel. It is rasterised
+// through an <img>, so it carries its own xmlns, explicit width/height and per-call unique filter
+// ids, and never reaches out to CSS vars, fonts or urls.
 
 import { NODE_SIZE } from '../theme.js';
 
 const RADIUS = NODE_SIZE / 2;   // 28 world units — same space as node x/y and bounds
 const ROOT_SCALE = 1.35;        // the root disc (emphasis) runs larger + crowned
 
-// Look ratios are × a node's own radius so they hold whether the tree spans
-// hundreds or thousands of world units — strokes track the node, not the pixel.
+// Look ratios are × a node's own radius, so strokes track the node and not the pixel.
 const GLOW_R = 2.05;            // soft halo radius
 const RING_R = 1.13;            // thin outer ring, just past the disc
 const RING_W = 0.09;            // outer ring stroke
@@ -20,16 +16,14 @@ const BOW = 0.14;               // edge bow — perpendicular offset, × edge le
 
 const LIT_EDGE = RADIUS * 0.07;      // ~1.96 world units — a grown, lit branch
 const DIM_EDGE = RADIUS * 0.05;      // ~1.4  — a dormant branch
-const ROUTE_EDGE = RADIUS * 0.078;   // ~2.2  — canon's 2.4·k at the progress card's clamped fit
+const ROUTE_EDGE = RADIUS * 0.078;   // ~2.2  — the progress card's route edge
 const AVAIL_STROKE = RADIUS * 0.072; // ~2    — the outline of an available node
 const LOCKED_STROKE = RADIUS * 0.046;// ~1.3  — the faint edge of a locked ghost
 
-const BLUR_STD = RADIUS * 0.55;  // the done/active halo's gaussian spread — part of a node's drawn footprint
+const BLUR_STD = RADIUS * 0.55;  // the done/active halo's gaussian spread; part of the footprint
 
-// The period ink ladder (#20 canon), one table so the ladder reads as one thing. Only the steps
-// that lit THIS period wear the in-app look; every rung below is stated here. Settled work keeps
-// its kind and its crown at a whisper and loses its halo — the halo is what "new" looks like on
-// a period card, so nothing older may wear one.
+// The period ink ladder: only steps that lit this period wear the in-app look. Settled work keeps
+// its kind and crown but loses its halo.
 const PERIOD_INK = {
   settledFill: 0.34, settledRing: 0.5, crown: 0.42,
   availRing: 0.55,
@@ -39,21 +33,14 @@ const PERIOD_INK = {
 
 let portraitUid = 0; // unique filter ids so many portraits on one page never collide
 
-// The tree portrait as an SVG string. `box` is the pixel viewport; `viewBox` optionally
-// overrides the world window — the OG card passes a glow-inclusive, padded, clamped box so
-// any tree centers and fills the panel. Omit it and the model's own bounds are the window.
-// `options` = { lit: Set<nodeId> } opens the period ink below.
+// `box` is the pixel viewport; `viewBox` optionally overrides the world window, defaulting to the
+// model's own bounds. `options` = { lit: Set<nodeId> } opens the period ink below.
 export function treePortraitSvg(model, palette, box, viewBox, options) {
   const b = model.bounds;
   const vb = viewBox ?? { minX: b.minX, minY: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY };
   const glowId = `wm-glow-${portraitUid++}`;
 
-  // The period ink (brief #20): handed the steps that lit this period, the tree is drawn on the
-  // four-tier ladder instead of the plain done/not look — new work at full light, everything
-  // older stepped back, and the edge INTO each new step in that step's own kind. That last rule
-  // is what carries the card's meaning: it draws the ROUTE taken this period, not just the
-  // destinations. No set, or an empty one, never opens the ladder — so the markup the OG card
-  // and the share clip pin stays byte-identical.
+  // No set, or an empty one, never opens the ladder, so the markup stays byte-identical.
   const lit = options?.lit?.size ? options.lit : null;
   const ink = (node) => (lit ? periodInkMarkup(node, palette, glowId, lit.has(node.id)) : nodeMarkup(node, palette, glowId));
 
@@ -70,10 +57,8 @@ export function treePortraitSvg(model, palette, box, viewBox, options) {
     + `</svg>`;
 }
 
-// A node's drawn footprint radius in world units — the OG card grows its bounding box by
-// this per node so no done halo (nor the root's crown) clips at the panel edge. `assumeLit`
-// measures a node as if it were done: a card in a SERIES needs a footprint that holds still
-// while steps complete, and a lit node's is the larger of the two (see ogCard's steady fit).
+// A node's drawn footprint radius in world units, so no halo or crown clips at the panel edge.
+// `assumeLit` measures a node as if done, the larger footprint.
 export function nodeGlowRadius(node, assumeLit = false) {
   const r = node.emphasis ? RADIUS * ROOT_SCALE : RADIUS;
   const lit = assumeLit || node.state === 'complete' || node.state === 'active';
@@ -82,7 +67,7 @@ export function nodeGlowRadius(node, assumeLit = false) {
   return Math.max(outer, crown);
 }
 
-// A branch: a quadratic bézier bowed perpendicular to its own line, inked by the ladder below.
+// A quadratic bézier bowed perpendicular to its own line.
 function edgePath(edge, byId, palette, lit) {
   const a = byId.get(edge.from);
   const b = byId.get(edge.to);
@@ -100,11 +85,9 @@ function edgePath(edge, byId, palette, lit) {
     + ` fill="none" stroke="${stroke}" stroke-width="${num(width)}" stroke-linecap="round" opacity="${num(opacity)}"/>`;
 }
 
-// A branch is lit when its source node is engaged (complete/active) and dormant otherwise — and
-// on a period card one rung above both: the edge INTO a step that lit this period is drawn in
-// that step's own kind, thicker, at full alpha. Canon states the period card's three edge tiers
-// flat, so the cross-branch fade sits this one out: the route has to read unambiguously at
-// thumbnail size and a second grammar only muddies it.
+// A branch is lit when its source node is complete or active, dormant otherwise. On a period card
+// the edge into a step that lit this period is drawn in that step's own kind, thicker, at full
+// alpha, without the cross-branch fade.
 function edgeInk(edge, from, to, palette, lit) {
   if (lit?.has(to.id)) {
     const kind = palette.kinds[to.color] ?? palette.kinds.terracotta;
@@ -120,8 +103,8 @@ function edgeInk(edge, from, to, palette, lit) {
   return { stroke: palette.dimEdge, width: DIM_EDGE, opacity: 0.75 * faded };
 }
 
-// State → look. Done fruit glows; available fruit is a hollow outline; locked
-// fruit is a faint ghost of its kind. The root wears a crown on top of any state.
+// Done glows, available is a hollow outline, locked is a faint ghost of its kind; the root wears a
+// crown on top of any state.
 function nodeMarkup(node, palette, glowId) {
   const kind = palette.kinds[node.color] ?? palette.kinds.terracotta;
   const r = node.emphasis ? RADIUS * ROOT_SCALE : RADIUS;
@@ -143,10 +126,8 @@ function nodeMarkup(node, palette, glowId) {
   return disc + crown;
 }
 
-// The same three states one rung down the period ladder, for a card that has to say WHEN as well
-// as what. This period's work is the app's own look, borrowed whole from nodeMarkup so "new"
-// can never drift from "done"; anything older keeps its kind and its shape but gives up its
-// halo, its specular and most of its ink.
+// The same three states one rung down the period ladder: this period's work borrows nodeMarkup
+// whole, anything older keeps its kind and shape but gives up its halo, specular and most ink.
 function periodInkMarkup(node, palette, glowId, isNew) {
   if (isNew) return nodeMarkup(node, palette, glowId);
 
@@ -171,7 +152,7 @@ function periodInkMarkup(node, palette, glowId, isNew) {
   return disc + crown;
 }
 
-// The painterly fruit highlight — a soft white ellipse tilted top-left of the disc.
+// A soft white ellipse tilted top-left of the disc.
 function specular(cx, cy, r) {
   const ex = num(cx - r * 0.3);
   const ey = num(cy - r * 0.36);

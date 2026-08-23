@@ -1,14 +1,3 @@
-// The in-product public wall (#/browse) — the client-rendered twin of windmill.works/gallery.
-// One index, one ranking, two readers: this one knows you, so a card wears your relationship
-// to the tree and carries the fork itself (canon §3). Never a nav item and never above your
-// own trees — you arrive here from the shelf at the end of your gallery, and the way back is
-// the plaque.
-//
-// The loading grammar is the whole reason this surface needed a design (canon §4): nothing at
-// all for 400ms, because a loader that flashes is worse than none; then a skeleton at the
-// card's exact height; then a flat 150ms cross-fade as the real cards land in the same boxes.
-// Chrome — plaque, header, buttons — is never skeletonised and paints immediately. No spinners.
-
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useViewMode } from '../ui/useViewMode.js';
@@ -22,7 +11,7 @@ import { BrowseCard, BROWSE_CARD_CSS } from './BrowseCard.jsx';
 
 const SKELETON_AFTER_MS = 400;
 const ARRIVAL_MS = 150;
-const SKELETON_CARDS = [0, 1, 2, 3, 4, 5]; // the rack fills the first screen; CSS hides the rows a narrower one doesn't have
+const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
 
 export function BrowsePage() {
   const { user, status } = useAuth();
@@ -44,8 +33,6 @@ export function BrowsePage() {
         clearTimeout(reveal);
         if (!live) return;
         setIndex((current) => current.join(page));
-        // A page that beat the 400ms mark never had a skeleton to cross-fade from; one that
-        // didn't hands its boxes over to the arriving cards.
         setSkeleton((current) => (current === 'shown' ? 'leaving' : 'hidden'));
       })
       .catch(() => {
@@ -71,9 +58,6 @@ export function BrowsePage() {
       .catch(() => setIndex((current) => current.failed()));
   }
 
-  // Retry means "ask again for what didn't arrive": a page that failed mid-walk resumes from
-  // its cursor and keeps the trees already on screen; a first page that never landed starts the
-  // whole load over, 400ms silence and all.
   function retry() {
     if (index.hasMore) {
       showMore();
@@ -84,9 +68,6 @@ export function BrowsePage() {
     setAttempt((n) => n + 1);
   }
 
-  // One click, on the card. Signed in it plants the copy and the card flips to "Forked" —
-  // you stay on the wall, which is the only way "can't be forked twice by accident" can mean
-  // anything. Signed out there is no session to own a copy, so the email door finishes it.
   async function fork(entry) {
     setForkFailedId('');
     if (!signedIn) { setDoorFor(entry.id); return; }
@@ -105,9 +86,6 @@ export function BrowsePage() {
     }
   }
 
-  // Canon §5 gates the Popular · New · Finished chips at 24 listed trees and search at 100.
-  // `header.chips` and `header.search` are the record of those numbers; neither control is
-  // built while the index is in single digits, and this line is where they will mount.
   const header = galleryHeader(index.count);
 
   return (
@@ -161,14 +139,10 @@ export function BrowsePage() {
               Listing is a deliberate choice — sharing a link keeps a tree unlisted, and putting one here is a
               separate yes. Yours could be the first.
             </p>
-            {/* The line above already carries "How a tree gets here"; what a bare wall is missing
-                is a tree, so the invitation is the door to planting one. */}
             <a href="#/app/new">Plant a tree</a>
           </div>
         )}
 
-        {/* Paging is a button, not an endless scroll: the wall is a shelf you can reach the end
-            of, and an infinite feed is the body language canon §7 rules out. */}
         {index.status === 'failed' ? (
           <div className="wm-br-quiet">
             <p>Can’t reach the gallery just now.</p>
@@ -219,20 +193,17 @@ const CSS = `
   .wm-br-line a:hover { color:var(--text-link-hover); }
   .wm-br-sep { width:3px; height:3px; border-radius:50%; background:var(--border-default); flex:none; }
 
-  /* X5 §8's grid: one column, 2-up from 744, 3-up from 1180 — the 1080 column keeps every
-     card past 320px wide at every step. */
+  /* One column, 2-up from 744, 3-up from 1180 — every card stays past 320px wide at every step. */
   .wm-br-stage { position:relative; }
   .wm-br-grid { display:grid; grid-template-columns:1fr; gap:20px; }
   @media (min-width: 744px)  { .wm-br-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
   @media (min-width: 1180px) { .wm-br-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
 
-  /* The skeleton rack fills the screen it is on and no more: two cards on a phone, four on a
-     tablet, six on a desktop — the rows a reader would actually see wait for content. */
+  /* The skeleton rack fills the screen it is on and no more: two cards on a phone, four on a tablet, six on a desktop. */
   .wm-br-skel > *:nth-child(n+3) { display:none; }
   @media (min-width: 744px)  { .wm-br-skel > *:nth-child(3), .wm-br-skel > *:nth-child(4) { display:block; } }
   @media (min-width: 1180px) { .wm-br-skel > *:nth-child(5), .wm-br-skel > *:nth-child(6) { display:block; } }
-  /* Arrival: the rack lifts out of flow so the cards keep its exact boxes, and the two
-     layers cross-fade over 150ms. */
+  /* Arrival: the rack lifts out of flow so the cards keep its exact boxes, and the layers cross-fade. */
   .wm-br-skel.is-leaving { position:absolute; left:0; right:0; top:0; opacity:0; pointer-events:none;
                            transition:opacity ${ARRIVAL_MS}ms linear; }
 

@@ -1,8 +1,4 @@
-/* X8 · The list view. One scroller (the body); everything else is layout over the app's tokens,
-   so light/dark follow the theme. Kind hues arrive as --k-* custom properties set inline from
-   theme.js (never hardcoded), so a fruit reads 1:1 with the canvas. Reduced motion keeps the
-   jump flash and a short accordion fade (the design's calm color ramps) but drops smooth scroll
-   and rotation — see the block at the foot. */
+/* The list view. One scroller — the body; kind hues arrive as --k-* custom properties set inline from theme.js, never hardcoded. */
 
 .st-list {
   display: flex;
@@ -11,8 +7,7 @@
   background: var(--surface-canvas);
 }
 
-/* The list trains long-press = multi-select, so no control in it may raise the iOS selection
-   loupe or callout. .st-list-row-line carries this for rows; these five sit outside it. */
+/* No control in the list may raise the iOS selection loupe or callout. .st-list-row-line carries this for rows; these five sit outside it. */
 .st-list-kindchip,
 .st-list-nextup-row,
 .st-list-more,
@@ -23,8 +18,7 @@
   -webkit-touch-callout: none;
 }
 
-/* The live region: heard, never seen. Filtering is otherwise silent — 180 rows leave with no
-   announcement at all — and it must be in the DOM from the start to be announced when it fills. */
+/* The live region: heard, never seen. It must be in the DOM from the start to be announced when it fills. */
 .st-list-live {
   position: absolute;
   width: 1px;
@@ -65,11 +59,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ---- Header: the plaque facts on one line (kind dot · name · n/m · gradient bar · search).
-   The readout is 46px with a 6px floor (audit fix 2) — a long empty track with a nub in it reads
-   as a failed load, never as "early" — and the search icon takes the room that bought. The field
-   grows BESIDE identity: the readout yields its width, the dot and the name stay, because a head
-   that drops identity to hold a field is a head that stopped doing the job §5 gave it. ---- */
+/* ---- Header: kind dot · name · n/m · gradient bar · search. The field grows BESIDE identity: the readout yields its width, the dot and the name stay. ---- */
 .st-list-header {
   flex: 0 0 auto;
   display: flex;
@@ -98,8 +88,7 @@
   font-size: 17px;
   color: var(--text-primary);
 }
-/* For an owner the name is a door (X8 L6): it grows a caret and raises the switcher. The name
-   inside shrinks with an ellipsis so the caret rides snug against it, not out at the count. */
+/* For an owner the name is a door: it grows a caret and raises the switcher. The name inside ellipsises so the caret rides snug against it. */
 .st-list-header-door {
   flex: 1;
   min-width: 0;
@@ -168,7 +157,7 @@
   background: var(--surface-sunken);
 }
 
-/* The one door in the head (§5): 36px round in a 44px hit, quiet until it is the surface. */
+/* The one door in the head: 36px round in a 44px hit, quiet until it is the surface. */
 .st-list-search-btn {
   position: relative;
   flex-shrink: 0;
@@ -197,8 +186,7 @@
   flex-shrink: 0;
   color: var(--text-tertiary);
 }
-/* 16px, not a hair under: iOS zooms the whole page into any input below it, and this one sits in
-   the head — a zoom here would take the list with it the moment the keyboard opens. */
+/* 16px, not a hair under: iOS zooms the whole page into any input below it, and this one sits in the head. */
 .st-list-search-input {
   flex: 1;
   min-width: 0;
@@ -213,8 +201,7 @@
   color: var(--text-primary);
 }
 
-/* ---- Notice row: a quiet full-width line under the header (e.g. the anon sign-in nudge). It is
-   the plaque nudge's list-view home (X8 L1) — static above the scroller, one tap, ≥44px. ---- */
+/* ---- Notice row: a quiet full-width line under the header — static above the scroller, one tap, ≥44px. ---- */
 .st-list-notice {
   flex: 0 0 auto;
   display: flex;
@@ -244,11 +231,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- The way back (§10): every explore primitive moves the finger hundreds of rows, so a jump
-   leaves one level of "back" behind — an invitation in the TOP transient lane, off the verb rail
-   and clear of the undo lane, naming where it returns to. The lane RESERVES its strip rather than
-   floating over the scroller: a chip hovering over live rows eats their taps, and the row it would
-   cover is the one the eye just arrived at. ---- */
+/* ---- The way back: a chip in the top transient lane. The lane RESERVES its strip rather than floating over the scroller, so it never eats a row's taps. ---- */
 .st-list-backlane {
   flex: 0 0 auto;
   display: flex;
@@ -286,11 +269,7 @@
   white-space: nowrap;
 }
 
-/* ---- The one scroller. Its box ENDS at the action lane's top edge — the lane measured what it
-   occupies (§5) and the host sets --lane-inset; the fallback only covers the frame before it does —
-   so a row can never scroll under the pill or Share: a seat is tappable as the seat, or off screen.
-   Inside, the bottom pads by what the keyboard covers of this box (--keyboard-cover, §7) plus a
-   row's worth of air, so the last step never kisses the lane. ---- */
+/* ---- The one scroller. Its box ENDS at the action lane's top edge (--lane-inset, with a fallback until the host measures it), so no row can scroll under the pill. Inside, the bottom pads by --keyboard-cover plus a row's worth of air. ---- */
 .st-list-body {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -300,12 +279,7 @@
   padding: var(--space-2) 0 calc(var(--keyboard-cover, 0px) + var(--space-3));
 }
 
-/* ---- The lens (§4): the legend as a filter row, and the first thing in the scroller — content,
-   not a band above the fold, so it scrolls away like everything else. Scrolls horizontally with
-   momentum and no visible bar; the held chip wears its kind's ring AND a check, because colour
-   alone is unreadable on a dark surface where the ring hues have no dark palette. The 5px of top
-   padding is the chip's overflowing hit box: `overflow-x: auto` makes `overflow-y` auto too, and
-   without the room the 44px target is clipped to 43px. ---- */
+/* ---- The lens: the legend as a filter row, first in the scroller. The held chip wears its kind's ring AND a check. The 5px of top padding is the chip's overflowing hit box: overflow-x:auto makes overflow-y auto too, and without the room the 44px target is clipped. ---- */
 .st-list-lens {
   display: flex;
   align-items: center;
@@ -365,9 +339,7 @@
   box-shadow: inset 0 0 0 1.5px var(--k-ring);
 }
 
-/* ---- Next-up shelf: ≤3 ready steps as full-bleed rows (audit fix 3) — a card border inside a
-   card was a rounded box in a rounded box, and three pills hugging three strings left a ragged
-   edge with nowhere for the consequence line to go. Two rules and 54px rows instead. ---- */
+/* ---- Next-up shelf: ≤3 ready steps as full-bleed 54px rows. ---- */
 .st-list-nextup {
   margin: 0 0 10px;
   padding: 0 0 2px;
@@ -387,8 +359,7 @@
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
-/* The readout and the consequence line carry the shelf's whole point (audit fix 3), so neither
-   can be the dimmest thing on it — tertiary on a card measures 3.84:1. */
+/* Neither the readout nor the consequence line may be the dimmest thing on the shelf — tertiary on a card measures 3.84:1. */
 .st-list-nextup-ready {
   margin-left: auto;
   color: var(--text-secondary);
@@ -442,8 +413,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Branch head: a row like any other (it IS the section, §2), reading as a heading, with the
-   fold on the trailing edge so the fruit stays in the one column every row shares ---- */
+/* ---- Branch head: a row like any other, reading as a heading, with the fold on the trailing edge so the fruit stays in the one column every row shares ---- */
 .st-list-row--head {
   margin-top: 6px;
 }
@@ -480,8 +450,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Row: the seat (fruit) · the opener (name · one meta fact) · the fold, on branch heads.
-   Three targets, one line — the line itself is only their carrier and the swipe's canvas. ---- */
+/* ---- Row: the seat (fruit) · the opener (name · one meta fact) · the fold, on branch heads. ---- */
 .st-list-row {
   position: relative;
   display: block;
@@ -505,7 +474,7 @@
   background: transparent;
   text-align: left;
   font-family: var(--font-body);
-  /* A held row must not raise the native long-press callout or select its own text (M5). */
+  /* A held row must not raise the native long-press callout or select its own text. */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -516,7 +485,7 @@
 .st-list-row--expanded .st-list-row-line:active {
   background: transparent;
 }
-/* The opener: everything between the fruit and the fold, and the row's own tap target (§3). */
+/* The opener: everything between the fruit and the fold, and the row's own tap target. */
 .st-list-row-open {
   flex: 1;
   min-width: 0;
@@ -547,8 +516,7 @@
   font-weight: 700;
   color: var(--text-primary);
 }
-/* A locked step's name is still its own name (audit fix 7): tertiary is the meta token and fails
-   the contrast floor on the most numerous row type there is. Tier is carried by the fruit. */
+/* A locked step's name keeps a name's colour: tertiary is the meta token and fails the contrast floor. Tier is carried by the fruit. */
 .st-list-name--locked {
   color: var(--text-secondary);
   font-weight: 600;
@@ -565,13 +533,7 @@
   color: var(--text-tertiary);
 }
 
-/* ---- Under a filter (§4): a section keeps its head so depth survives, dimmed when the head
-   itself missed; a row that matched on its description alone carries the fragment; and what the
-   filter left out waits behind one muted, tappable count rather than vanishing.
-   Scaffolding is said with WEIGHT, never with the meta token and never with opacity: this rule
-   outranks .st-list-name--locked, so tertiary here would put back the 3.5:1 failure audit fix 7
-   exists to remove, on the most numerous head under any filter — and opacity is the same failure
-   by another route (secondary at 0.85 measures 3.8–4.4:1 on these surfaces, 0.9 barely 4.6). ---- */
+/* ---- Under a filter: a section keeps its head, dimmed when the head itself missed; a row that matched on its description carries the fragment; what the filter left out waits behind one muted, tappable count. Scaffolding is said with WEIGHT — the meta token and opacity both fail the contrast floor here. ---- */
 .st-list-section--scaffold > .st-list-row--head .st-list-name {
   color: var(--text-secondary);
   font-weight: 600;
@@ -638,9 +600,7 @@
   color: var(--color-brand-hover);
 }
 
-/* ---- The seat: the fruit IS the control (§6), so its 24px of state carries a 44px hit. The hit
-   is a pseudo-element so it costs the row no layout, and it takes the layer above its neighbours
-   so the opener beside it can never steal the finger. ---- */
+/* ---- The seat: the fruit's 24px of state carries a 44px hit. The hit is a pseudo-element, so it costs the row no layout and takes the layer above its neighbours. ---- */
 .st-list-seat {
   position: relative;
   z-index: 1;
@@ -687,7 +647,7 @@
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-base) 35%, transparent);
 }
 
-/* ---- Check seat: the fruit's multi-select stand-in (M5) — bark, the selection tool's colour ---- */
+/* ---- Check seat: the fruit's multi-select stand-in — bark, the selection tool's colour ---- */
 .st-list-check {
   background: transparent;
   box-shadow: inset 0 0 0 2px var(--border-default);
@@ -711,9 +671,7 @@
   line-height: 1.5;
   color: var(--text-secondary);
 }
-/* ---- The gate (§4): a locked step's own block — what it is waiting on, what you can start now,
-   and, when the data really is a line, the breadcrumb instead. The chips inside are ordinary jump
-   chips, so the frontier reads exactly like Needs and Unlocks do. ---- */
+/* ---- The gate: a locked step's own block — what it is waiting on, what can start now, and the breadcrumb when the data is a line. ---- */
 .st-list-why {
   display: flex;
   flex-direction: column;
@@ -741,8 +699,7 @@
 .st-list-why-depth {
   color: var(--text-secondary);
 }
-/* Chip hit boxes overhang their rows by 5px, so a wrapped line needs more than that between
-   rows or the sliver between two chips belongs to whichever came first in the DOM. */
+/* Chip hit boxes overhang their rows by 5px, so a wrapped line needs more than that between rows. */
 .st-list-trace {
   display: flex;
   flex-wrap: wrap;
@@ -871,14 +828,9 @@
   color: #fff;
 }
 
-/* ============================================================================
-   The edit path (X8 L3/L4) — every rule below is owner-only; the visitor render
-   above is untouched. Transient surfaces (the bud, the fields, the swatch row,
-   the picker) are born in place and read the same tokens as the read view.
-   ============================================================================ */
+/* ---- The edit path: every rule below is owner-only. Transient surfaces (the bud, the fields, the swatch row, the picker) are born in place and read the read view's tokens. ---- */
 
-/* ---- Swipe-to-done: an olive band with a check waits under the row; the line rides an opaque
-   surface over it, so the band shows only as the finger draws the line right. ---- */
+/* ---- Swipe-to-done: an olive band with a check waits under the row; the line rides an opaque surface over it. ---- */
 .st-list-swband {
   position: absolute;
   inset: 0;
@@ -899,8 +851,7 @@
   overflow: hidden;
 }
 
-/* ---- Edit field: the edit path's one input (rename · describe · bud). The lookup's field lives
-   in the head and writes nothing, so it shares none of this. ---- */
+/* ---- Edit field: the edit path's one input (rename · describe · bud). ---- */
 .st-list-row-line--editing {
   cursor: default;
 }
@@ -930,10 +881,7 @@
   line-height: 1.5;
   font-weight: 400;
 }
-/* On a phone the list IS the editing surface, and iOS zooms the whole page into any focused input
-   under 16px — so a rename or describe here would yank the viewport the moment the keyboard opens.
-   Floor it at 16px only where the keyboard is the concern; the desktop workbench keeps its tighter
-   rhythm. Covers the describe textarea too (--area doesn't override the size). */
+/* iOS zooms the whole page into any focused input under 16px, so the list's fields are floored at 16px on a phone; desktop keeps its tighter rhythm. Covers the describe textarea too (--area doesn't override the size). */
 @media (max-width: 743px) {
   .st-list-input {
     font-size: 16px;
@@ -1025,9 +973,7 @@
   box-shadow: 0 2px 12px var(--k-glow);
 }
 
-/* ---- The structural edits (P3, §1): a quiet wrapping strip at the card's foot — add · connect ·
-   recolor · delete. Available, never featured; the delete carries its cost and takes the last
-   line to itself so the cost is read before the tap (§8). ---- */
+/* ---- The structural edits: a quiet wrapping strip at the card's foot — add · connect · recolor · delete. The delete carries its cost and takes the last line to itself. ---- */
 .st-list-edits {
   display: flex;
   flex-wrap: wrap;
@@ -1110,8 +1056,7 @@
   color: var(--color-bark);
 }
 
-/* ---- Press feedback: every new control answers a tap with the list's surface-press treatment,
-   the same one the rows and picker rows already use. ---- */
+/* ---- Press feedback: every control answers a tap with the list's surface-press treatment. ---- */
 .st-list-verb:active,
 .st-list-edit-btn:active,
 .st-list-addrow:active,
@@ -1122,8 +1067,7 @@
   background: var(--surface-hover);
 }
 
-/* ---- The need picker: a half-sheet over a scrim, portalled above the pill/chrome (below the
-   fork door z100 and the undo toast z50) so a mid-modal view flip is impossible. ---- */
+/* ---- The need picker: a half-sheet over a scrim, portalled above the pill/chrome and below the fork door (z100) and the undo toast (z50). ---- */
 .st-list-scrim {
   position: fixed;
   inset: 0;
@@ -1274,9 +1218,7 @@
   text-align: center;
 }
 
-/* ---- The tree switcher (X8 L6): the same portalled half-sheet shell as the picker (it reuses
-   .st-list-scrim + .st-list-picker for the rise, scrim fade, pointer-events and reduced-motion
-   fallback), with rows carrying the plaque facts and a ghost plant row pinned at the foot. ---- */
+/* ---- The tree switcher: the picker's portalled half-sheet shell reused (.st-list-scrim + .st-list-picker), with rows carrying the plaque facts and a ghost plant row pinned at the foot. ---- */
 .st-switcher-row {
   display: flex;
   align-items: center;
@@ -1383,9 +1325,7 @@
   flex-shrink: 0;
 }
 
-/* The public-wall door — beneath your own trees, the one entrance to #/browse. Solid, not the
-   plant row's dashed bud: it navigates away rather than creating, and the arrow says so. No
-   count (og-tree-cards build-findings §1 — no vanity numbers on the door). */
+/* The public-wall door — beneath your own trees, the one entrance to #/browse. Solid, not the plant row's dashed bud, and no count. */
 .st-switcher-public {
   display: flex;
   align-items: center;
@@ -1422,8 +1362,7 @@
   color: var(--text-tertiary);
 }
 
-/* Reduced motion: the picker rises as a fade, not a slide (opacity only); the scrim already
-   is opacity, the swipe stays finger-driven, and the bud flash stays a color ramp. */
+/* Reduced motion: the picker rises as a fade, not a slide (opacity only). */
 @media (prefers-reduced-motion: reduce) {
   .st-list-picker {
     transform: none !important;
@@ -1451,15 +1390,13 @@
 .st-list-row--flash {
   animation: st-list-flash 1200ms var(--ease-standard);
 }
-/* A collapsed available row wears an opaque swipe line over the row's flash background, so the
-   line itself must ramp — otherwise the planted-bud flash is invisible on exactly these rows. */
+/* A collapsed available row wears an opaque swipe line over the row's flash background, so the line itself must ramp. */
 .st-list-row--flash .st-list-row-line--swipe {
   animation: st-list-flash 1200ms var(--ease-standard);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The design keeps the color ramps under reduced motion (they read, they don't move);
-     it drops only the smooth scroll (handled in JS) and the movement transitions below. */
+  /* Colour ramps stay under reduced motion; only the smooth scroll (handled in JS) and the movement transitions below are dropped. */
   .st-list-row--flash {
     animation: st-list-flash 1200ms var(--ease-standard) !important;
   }
@@ -1469,12 +1406,11 @@
   .st-list-card {
     animation: st-list-card-in 150ms var(--ease-soft) !important;
   }
-  /* The way back arrives as a fade, never a drop — the same opacity-only ramp the card uses. */
+  /* The way back arrives as a fade, never a drop. */
   .st-list-back {
     animation: st-list-card-in 150ms var(--ease-soft) !important;
   }
-  /* Movement, dropped: the chevron still points the right way (rotate applies instantly, no
-     tween); the header/switcher progress fills snap to width. */
+  /* Movement, dropped: the chevron rotate applies instantly, and the progress fills snap to width. */
   .st-list-chevron {
     transition: none;
   }

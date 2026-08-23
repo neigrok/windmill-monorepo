@@ -1,9 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// The one question gym asks that it did not have to. What is pinned here is mostly what it does NOT
-// ask: not without a routine, not about a warmup, not twice, and not when the weight went down.
-
 private func aSet(_ exerciseId: String, _ weightKg: Double, kind: SetKind = .working,
                   at completedAtMs: Int64 = 1_000) -> TrainingSet {
     TrainingSet(id: "set_\(exerciseId)_\(Int(weightKg))_\(completedAtMs)", exerciseId: exerciseId,
@@ -34,8 +31,6 @@ final class DeviationTests: XCTestCase {
                        + "Today’s session already has it. Push A does not.")
     }
 
-    // ONLY HEAVIER. Dropping the weight mid-exercise is a bad night far more often than it is a
-    // decision, and writing that back would lower next week's target off one session.
     func testALighterSessionIsNeverOfferedToTheProgram() {
         XCTAssertNil(Deviation(leaving: "bench-press", session: pushA,
                                sets: [aSet("bench-press", 75)], asked: []))
@@ -46,8 +41,6 @@ final class DeviationTests: XCTestCase {
                                sets: [aSet("bench-press", 82.5)], asked: []))
     }
 
-    // Warmups, drops and failures are not what the session was, so none of them can raise the offer:
-    // a ramp-up above the working weight is not a program change.
     func testAWarmupOrADropNeverRaisesTheOffer() {
         XCTAssertNil(Deviation(leaving: "bench-press", session: pushA,
                                sets: [aSet("bench-press", 100, kind: .warmup),
@@ -56,14 +49,11 @@ final class DeviationTests: XCTestCase {
                                asked: []))
     }
 
-    // Asked ONCE, when you leave the exercise — never again this session.
     func testAMovementAlreadyAskedAboutIsNotAskedAgain() {
         XCTAssertNil(Deviation(leaving: "bench-press", session: pushA,
                                sets: [aSet("bench-press", 87.5)], asked: ["bench-press"]))
     }
 
-    // An ad-hoc session has no program to change, and a routine line that named no weight named no
-    // target to deviate from — 3 × max is a movement taken to whatever it gives that day.
     func testWithNothingWrittenDownThereIsNothingToChange() {
         let adHoc = Session(id: "ses_2", startedAtMs: 1_000)
         XCTAssertNil(Deviation(leaving: "bench-press", session: adHoc,
@@ -75,8 +65,6 @@ final class DeviationTests: XCTestCase {
                      "a movement the plan never named cannot have been deviated from")
     }
 
-    // The heaviest working set is what the offer carries, not the last one — a back-off set after a
-    // top single is not the number next week should be aimed at.
     func testTheOfferCarriesTheHeaviestWorkingSetAndNotTheLast() {
         let deviation = Deviation(leaving: "bench-press", session: pushA,
                                   sets: [aSet("bench-press", 90, at: 2_000),
@@ -85,9 +73,6 @@ final class DeviationTests: XCTestCase {
         XCTAssertEqual(deviation?.liftedKg, 90)
     }
 
-    // A program may hold the same movement twice — a top set and a back-off. The offer is raised
-    // against the HEAVIEST planned line and carries that line's position: beating only the back-off
-    // is not a deviation from the program, and the save must not touch the back-off's row.
     func testWhenTheMovementIsPlannedTwiceTheOfferIsAgainstTheHeaviestLine() {
         let topAndBackOff = Session(
             id: "ses_3", startedAtMs: 1_000, routineId: "rt_push_b",

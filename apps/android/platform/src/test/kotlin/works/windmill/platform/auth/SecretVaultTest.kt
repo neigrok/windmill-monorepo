@@ -8,13 +8,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-// What has to be true for the 90-day bearer to survive leaving the phone in a backup: the bytes on
-// disk are not the secret, they do not repeat, and anything that is not exactly what this vault
-// wrote opens as nothing rather than as something.
-//
-// The KEY is the one part not proven here — on a device it comes out of the Android Keystore and
-// cannot be read out of it at all, which is the whole reason a copied file decrypts nowhere else.
-// This stands an ordinary AES key in its place so the format is provable on the JVM.
 class SecretVaultTest {
     private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
     private val vault = SecretVault { key }
@@ -32,8 +25,6 @@ class SecretVaultTest {
         assertEquals(secret, vault.open(sealed))
     }
 
-    // A fresh IV every time, so two writes of the same secret are two different blobs — a file
-    // whose bytes told you the secret had not changed would be telling somebody something.
     @Test
     fun testTheSameSecretSealsDifferentlyEveryTime() {
         val once = vault.seal(secret)!!
@@ -44,8 +35,6 @@ class SecretVaultTest {
         assertEquals(secret, vault.open(again))
     }
 
-    // Everything that is not this vault's own writing is NOTHING, and the caller reads that as no
-    // secret and shows the door: a credential the app cannot read is not a credential.
     @Test
     fun testAnythingElseOpensAsNothing() {
         val sealed = vault.seal(secret)!!
@@ -63,8 +52,6 @@ class SecretVaultTest {
         assertNull("nor is nothing at all", vault.open(""))
     }
 
-    // A phone whose Keystore cannot be reached keeps NOTHING rather than falling back to plaintext
-    // — the fallback is the defect this file exists to remove.
     @Test
     fun testWithNoKeyNothingIsSealedAndNothingIsOpened() {
         val keyless = SecretVault { null }

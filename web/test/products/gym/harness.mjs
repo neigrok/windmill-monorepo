@@ -1,11 +1,4 @@
-// THE HARNESS the gym's hooks and screens are driven with, for real and without a DOM. React is run
-// through its own dispatcher: a hook — or a screen component, called as the function it is — is the
-// unit under test, effects run where React runs them, and every state change re-renders
-// synchronously. A screen's returned tree is a tree of React elements, walked below rather than
-// painted; the handler a test wants to press is a prop on one of them.
-//
-// Named `.mjs` and not `.test.js` on purpose: the runner picks a `.js` under test/ up as a test
-// file, and this one has no tests in it.
+// Named `.mjs`: the runner takes any `.js` under test/ as a test file.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,9 +8,7 @@ import React from 'react';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 
-// Teardown is registered with the runner at mount, never trailed at the end of a test body: a
-// thrown assertion skips the rest of the body, and the hook's intervals would then hold the event
-// loop open — the runner hangs forever instead of reporting the failure.
+// Teardown is registered at mount: a thrown assertion would otherwise leave intervals holding the event loop open.
 export function renderHook(t, run) {
   const cells = [];
   const queued = [];
@@ -85,15 +76,12 @@ export function renderHook(t, run) {
   }
 
   render();
-  // Leaving the screen: every effect's cleanup runs once, in mount order, exactly as React runs them
-  // on unmount — and once only, so a test that unmounts by hand is not unmounted again at teardown.
   const unmount = () => {
     cells.forEach((cell) => { cell.cleanup?.(); cell.cleanup = null; });
   };
   t.after(unmount);
   return {
     get log() { return result; },
-    // The same value under a name that reads right when the thing rendered is a screen.
     get tree() { return result; },
     unmount,
   };
@@ -103,8 +91,7 @@ export const settle = async (turns = 4) => {
   for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
-// `live` and `queue` are seeded as RAW BYTES: what a pre-mirror build left behind is a foreign
-// input, and the boot's only business with either key is remove-one, touch-nothing-else.
+// `live` and `queue` are seeded as raw bytes.
 export function browserWith({ queue = null, live = null } = {}) {
   const disk = new Map();
   if (queue !== null) disk.set('windmill.gym.queue', queue);
@@ -135,8 +122,6 @@ export function browserWith({ queue = null, live = null } = {}) {
       globalThis.document.visibilityState = 'visible';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
     },
-    // The signal coming back, exactly as the browser announces it. A listener that was never bound
-    // hears nothing, which is the whole of what the failed-boot test below is asking about.
     reconnect: () => {
       globalThis.navigator.onLine = true;
       (listeners.get('online') ?? []).forEach((fn) => fn());
@@ -145,10 +130,6 @@ export function browserWith({ queue = null, live = null } = {}) {
 }
 
 
-// A SCREEN, IMPORTED FOR REAL. `node --test` speaks no JSX, so the shared loader (test/jsxLoader.mjs)
-// is registered once, on first use, and compiles a `.jsx` module through esbuild on the way in —
-// resolving the extension-less directory imports the design system uses, and answering a `.css`
-// import with nothing. Registered lazily so the pure-module tests pay nothing for it.
 let loaderRegistered = false;
 export async function loadScreen(relativeToSrc) {
   if (!loaderRegistered) {
@@ -159,10 +140,7 @@ export async function loadScreen(relativeToSrc) {
   return import(pathToFileURL(path.join(src, relativeToSrc)).href);
 }
 
-// Every element in a rendered tree, depth first — children and any prop that is itself an element
-// (a Row's `aside`, say). Fragments and components are walked like any other node: the tree a
-// screen returns is elements all the way down, and a child COMPONENT is not rendered, so its props
-// are exactly what the screen handed it.
+// Every element depth first; a child component is not rendered, so its props are what the parent handed it.
 export function elementsOf(tree) {
   const found = [];
   const walk = (node) => {
@@ -179,8 +157,7 @@ export function elementsOf(tree) {
   return found;
 }
 
-// The text under an element, joined — what a lifter would read off it, with child COMPONENTS
-// contributing nothing (they were not rendered).
+// The text under an element, joined; child components contribute nothing.
 export function textOf(node) {
   if (node == null || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);

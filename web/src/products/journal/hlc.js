@@ -1,6 +1,5 @@
-// The device's hybrid logical clock — the sole convergence key for a page, ordered exactly like the
-// server's Hlc. A stamp is "physicalMs:counter:actor": counter breaks ties inside one millisecond,
-// actor is a stable per-device id so two devices never collide on (ms, counter).
+// The sole convergence key for a page, ordered exactly like the server's Hlc. A stamp is
+// "physicalMs:counter:actor": counter breaks ties inside one millisecond, actor is a stable per-device id.
 
 const ACTOR_KEY = 'wm.journal.device';
 
@@ -28,8 +27,7 @@ export function mintStamp() {
   return `${ms}:${counter}:${actor()}`;
 }
 
-// The zero stamp — what an unparseable one reads as, and what an unstamped page carries. A page
-// holding it loses every race, which is the safe direction to fail in.
+// What an unparseable stamp reads as, and what an unstamped page carries; it loses every race.
 export const ZERO_STAMP = '';
 
 function parseStamp(text) {
@@ -41,9 +39,7 @@ function parseStamp(text) {
   return { ms, counter, actor: parts.slice(2).join(':') };
 }
 
-// Exactly the order the server resolves a page by (backend platform/domain/Ids.h: Hlc's default
-// spaceship over physicalMs, counter, actor) and exactly iOS's Hlc.<. The winner of a two-device
-// race is therefore a fact all three sides compute identically, never a negotiation.
+// Exactly the order the server and iOS resolve a page by: physicalMs, then counter, then actor.
 export function compareStamps(left, right) {
   const a = parseStamp(left);
   const b = parseStamp(right);
@@ -53,7 +49,7 @@ export function compareStamps(left, right) {
   return 0;
 }
 
-// The writer's local day, "YYYY-MM-DD" — the page key. The device owns the calendar, never UTC.
+// The writer's local day, "YYYY-MM-DD" — the page key. Local, never UTC.
 export function localDay(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -66,15 +62,13 @@ export function daysBefore(iso, n) {
   return localDay(date);
 }
 
-// How long until this device's calendar turns over — what a canvas left open overnight waits for.
-// Local midnight, never UTC's, by the same rule localDay follows: the writer's day is the device's.
-// Floored at a second so a timer that fires a hair early cannot spin.
+// Local midnight, never UTC's, floored at a second so a timer that fires a hair early cannot spin.
 export function msUntilNextDay(now = new Date()) {
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   return Math.max(midnight.getTime() - now.getTime(), 1000);
 }
 
-// The tab was looked at again — the only signal that catches a midnight a timer slept through.
+// Catches a midnight a timer slept through.
 function browserWake(settle) {
   window.addEventListener('focus', settle);
   document.addEventListener('visibilitychange', settle);
@@ -84,15 +78,8 @@ function browserWake(settle) {
   };
 }
 
-// THE CANVAS'S CLOCK. Says the local day, now and every time it changes, until the returned stop is
-// called. A journal is written at night and the tab is still open in the morning, so a day read once
-// at mount stops being today while the writer is still typing into it.
-//
-// A TIMER IS NOT A CLOCK, and this is why there are two halves. The timer is what turns a canvas
-// over for somebody watching it happen at midnight; the wake is what catches every way a timer
-// cannot be trusted — a laptop that slept through midnight, a background tab whose timers were
-// throttled, a clock the writer moved by hand. Both say the same thing (the day, re-read from the
-// device), so hearing it twice is harmless and hearing it once is enough.
+// The local day, now and every time it changes, until the returned stop is called. Two halves: the timer
+// turns the canvas over at midnight, the wake catches a slept-through one. Hearing it twice is harmless.
 export function watchLocalDay(onDay, {
   setTimer = (run, delay) => setTimeout(run, delay),
   clearTimer = (timer) => clearTimeout(timer),

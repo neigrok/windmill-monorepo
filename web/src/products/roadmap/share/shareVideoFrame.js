@@ -1,14 +1,8 @@
-// The per-tree share VIDEO frame (design brief #19, "og-share-video"): the motion companion to the
-// og-tree-cards still (#12). It renders the SAME framed postcard, but as a pure function of loop
-// time t ∈ [0, LOOP): the tree dissolves to dormant and grows itself back — root → frontier — while
-// the n/m score assembles with the blooms, then rests on the grown portrait === frame 0 (seamless).
-//
-// Pure and DOM-free like ogCard.js: it returns an SVG string per frame, which the capture pass
-// (captureShareVideo.js) rasterises and encodes. Every physics constant is motion-language.md; at
-// t=0 (HOLD, fully lit, no bloom) each node renders IDENTICALLY to the still, so the poster → clip
-// handoff is invisible. Frame layout follows the spec's k = w/1200 chrome and the two ratios
-// (1080² primary, 1280×720 wide) — one render serves both since the wide's centre 1:1 crop IS the
-// square. Light only; the poster is always the fallback (this never replaces the still).
+// One frame of the share video: the same framed postcard as ogCard.js, as a pure function of loop
+// time t ∈ [0, LOOP). The tree dissolves to dormant and grows itself back root → frontier while the
+// score assembles, then rests on the grown portrait, which is frame 0, so the loop is seamless. At
+// t=0 each node renders identically to the still. Everything scales off k = w/1200; the wide
+// frame's centre 1:1 crop is the square. Light only.
 
 import { SHARE_PALETTE } from './palette.js';
 import { paddedGlowBox, clampViewBox } from './ogCard.js';
@@ -77,15 +71,15 @@ function buildSchedule(model) {
   return { index, igniteAt };
 }
 
-// Per-node litness L ∈ [0,1] at time t: 1 while held, 1→0 together on the exhale, then each node
-// 0→1 as its ring ignites; grown === 1 at the seam.
+// Per-node litness L ∈ [0,1] at time t: 1 while held, 1→0 together on the exhale, then 0→1 as each
+// ring ignites; 1 at the seam.
 function litAt(schedule, i, t) {
   if (t < HOLD_END) return 1;
   if (t < EXHALE_END) return 1 - easeStd((t - HOLD_END) / (EXHALE_END - HOLD_END));
   return easeStd(clamp01((t - schedule.igniteAt(i)) / IGNITE));
 }
 
-// 0 within SEAM_WIN of either end of the loop, 1 in the interior — kills every breath at the cut.
+// 0 within SEAM_WIN of either end of the loop, 1 in the interior: no breath survives the cut.
 function seamWindow(t) {
   return smooth(clamp01(t / SEAM_WIN)) * smooth(clamp01((LOOP - t) / SEAM_WIN));
 }
@@ -96,8 +90,7 @@ function drawState(state) {
   return 'dim';
 }
 
-// A node's SVG at (L, t). At L=1 with no bloom it is byte-for-byte the still's nodeMarkup; the extra
-// bloom bump + crown breath ride on top and vanish by the seam.
+// A node's SVG at (L, t). At L=1 with no bloom it is byte-for-byte the still's nodeMarkup.
 function nodeFrame(node, palette, schedule, i, t) {
   const kind = palette.kinds[node.color] ?? palette.kinds.terracotta;
   const r = node.emphasis ? RADIUS * ROOT_SCALE : RADIUS;
@@ -147,7 +140,7 @@ function edgeFrame(edge, byId, indexOf, schedule, palette, t) {
   const width = lit ? LIT_EDGE : DIM_EDGE;
   const faded = edge.kind === 'cross-branch' ? 0.8 : 1;
 
-  // The edge fades in with the node it FEEDS (the deeper of its two, so it never precedes its child).
+  // The edge fades in with the node it feeds, so it never precedes its child.
   const ai = indexOf.get(edge.from), bi = indexOf.get(edge.to);
   const child = schedule.igniteAt(ai) > schedule.igniteAt(bi) ? ai : bi;
   const childL = litAt(schedule, child, t);
@@ -180,8 +173,7 @@ function crownMarkup(cx, cy, r, palette) {
   return `<path d="${d}" fill="${palette.kinds.gold.c}"/>`;
 }
 
-// The done score assembling itself: each done node contributes smooth(L) as it blooms in, so n/m
-// climbs with the rings and the bar fills — the reason to post.
+// Each done node contributes smooth(L) as it blooms in, so the score climbs with the rings.
 function doneShownAt(model, schedule, t) {
   let shown = 0;
   model.nodes.forEach((node, i) => {
@@ -190,8 +182,7 @@ function doneShownAt(model, schedule, t) {
   return Math.round(shown);
 }
 
-// The framed video card at time t. `w`/`h` are the frame box (1080² or 1280×720); everything scales
-// off k = w/1200, matching the still's chrome so poster and clip share one safe-frame.
+// The framed video card at time t. `w`/`h` are the frame box; everything scales off k = w/1200.
 export function buildShareVideoFrameSvg({ model, title, done, total, dominantKind, t, w = 1080, h = 1080 }) {
   const pal = SHARE_PALETTE.light;
   const hue = pal.kinds[dominantKind] ?? pal.kinds.terracotta;

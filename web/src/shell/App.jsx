@@ -7,49 +7,22 @@ import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
 
-// The brand root is the one view imported eagerly: it answers our most-indexed URL, so it paints
-// in a single download (best LCP). Everything else loads on demand behind a Suspense fallback —
-// each product's routes (the heavy WebGL tree, the public wall), each product's landing, and the
-// signed-in platform surfaces below — none of which a visitor to the root ever renders, so their
-// code stays out of the entry chunk.
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
 const OAuthConsent = lazy(() => import('./auth/OAuthConsent.jsx').then((m) => ({ default: m.OAuthConsent })));
 const ConnectPage = lazy(() => import('./connect/ConnectPage.jsx').then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import('./settings/SettingsPage.jsx').then((m) => ({ default: m.SettingsPage })));
-// Named rather than inlined, because warming a link to the app calls the same thunk early.
 const importShell = () => import('./chrome/Shell.jsx').then((m) => ({ default: m.Shell }));
 const Shell = lazy(importShell);
 
-// The app doors — hash URLs from before /app existed, still set by every landing CTA, product
-// switcher and account menu. A door upgrades in place (replaceState, no reload) from ANYWHERE
-// except its own room: the bare root, a landing, a share page, the /app home grid, even a
-// sibling's room (that is how cross-room switching works). Inside its own room the hash is the
-// product's private space and never fires — #/app/t_x inside /app/roadmap is tree navigation,
-// not a door. "#/" exact is the exit: back to the brand root. Public surfaces are not doors:
-// #/demo, #/t/:id, #/browse, #/auth, #/oauth, #/showcase; a landing's own anchors (/roadmap#how)
-// never match because doors start with "#/".
-//
-// The product rows are DERIVED — switchHash and shell.room are already on the registry, and writing
-// them out here made the shell restate a product fact it does not own. Only OPEN products get a
-// door, which is the rule that used to be an omission: a product whose `shell.status` is still
-// 'pre-open' renders at its own hash but never upgrades into /app/<room>, so it stays outside the
-// room chrome until its own route table flips. That is now something the code says rather than
-// something a reader has to notice is missing.
+// Hash prefixes that upgrade in place to a pathname.
 const LEGACY_DOORS = [
   ...PRODUCTS.filter((product) => product.shell.status === 'open').map((product) => [product.switchHash, product.shell.room]),
   ['#/settings', '/app/settings'],
   ['#/connect', '/app/connect'],
 ];
 
-// A door matches on a PREFIX, and some of a product's own hashes sit under that prefix while being
-// nothing to do with the account looking at them — gym's coach link is `#/gym/shared/<token>`, a
-// page for somebody who is not signed in and may not have an account at all. Upgraded into the room
-// it would draw a rail, a Sign in seat and a product switcher around one stranger's workout.
-//
-// The shell cannot know that; it may not name a product. So a product declares it, on the same
-// registry the shell already composes, and the answer stays beside the route grammar that produced
-// the hash in the first place.
+// Hashes a product declares must never be wrapped in room chrome.
 function staysOutsideTheShell(hash) {
   return PRODUCTS.some((product) => product.shell.bare?.(hash));
 }
@@ -64,14 +37,7 @@ function legacyDoorTarget(pathname, hash) {
 }
 
 function useHashRoute() {
-  // One subscription for both URL axes: hashchange for the legacy hash world, popstate for the
-  // shell's pushState room navigation (chrome/Shell.jsx dispatches it after every push). The
-  // hash doubles as the render tick — pathname is read live each render, so a popstate with an
-  // unchanged hash still re-routes via the tick counter.
-  //
-  // The route change is a transition, which is what keeps a hop smooth: React holds the page the
-  // visitor is looking at on screen while the next route's chunk arrives, instead of tearing it
-  // down for the Suspense fallback the moment the URL changes.
+  // The tick re-routes when the hash itself is unchanged.
   const [, setTick] = React.useState(0);
   const [hash, setHash] = React.useState(() => window.location.hash);
   React.useEffect(() => {
@@ -88,15 +54,11 @@ function useHashRoute() {
   return hash;
 }
 
-// Which pathnames this app can answer itself. Everything else on the origin — the static pages,
-// /gallery, /t/:id — is a real navigation, because a real server answers it.
 function ownRoute(pathname) {
   if (pathname === '/' || pathname === '/app' || pathname.startsWith('/app/')) return true;
   return PRODUCTS.some((product) => pathname === product.landing.href);
 }
 
-// Where a link is heading, so its chunk is already arriving by the time the tap lands. Warming is
-// pure speculation: it never navigates, and a second call is the module cache answering.
 function warmRoute(pathname, hash) {
   const landing = PRODUCTS.find((product) => product.landing.href === pathname);
   if (landing) {
@@ -110,12 +72,7 @@ function warmRoute(pathname, hash) {
   PRODUCTS.find((product) => room === product.shell.room || room.startsWith(`${product.shell.room}/`))?.preloadApp?.();
 }
 
-// The four landings are one app, so moving between them should never be a document load: that
-// throws away a running page, re-downloads the shell and re-boots React, and the visitor watches
-// all of it. This catches the plain left-click on any link we can answer ourselves and turns it
-// into a pushState — the anchors keep their real hrefs, so crawlers, ⌘-click and no-JS are
-// untouched. Hash-only changes fall through to the browser, which is what makes in-page anchors
-// and the legacy #/ doors keep working.
+// A left-click on a same-origin route we answer becomes a pushState; hash-only changes fall through.
 function useOwnNavigation() {
   React.useEffect(() => {
     const follow = (event) => {
@@ -148,18 +105,7 @@ function useOwnNavigation() {
   }, []);
 }
 
-// A wait short enough to feel like nothing should look like nothing — so this is the ground and
-// nothing else. The boot script in index.html has already painted that exact colour on <html>, so
-// a route arriving here changes not one pixel: the wait reads as stillness rather than as a screen.
-//
-// THE WORDMARK IS GONE FROM THE APP, and only from the app — `mark={false}` is passed at exactly
-// one call site, the /app shell. A centred 800-weight mark on a fixed inset-0 layer is a splash
-// screen, and inside a room it was the second full-viewport repaint of every cold start, standing
-// over the ground the boot script had just painted.
-//
-// Everywhere else it stays, because everywhere else it is not a splash screen but a page saying
-// whose door this is: the two auth routes a magic link lands on, the landings, and — the one that
-// matters most — a cold /t/:id share page, which is a stranger's first contact with Windmill.
+// mark={false} is bare ground, no wordmark.
 function RouteFallback({ mark = true }) {
   const [waited, setWaited] = React.useState(false);
   React.useEffect(() => {
@@ -168,8 +114,6 @@ function RouteFallback({ mark = true }) {
     return () => clearTimeout(beat);
   }, [mark]);
 
-  // Without a mark this is a ground and nothing else, so it is furniture rather than content and
-  // says so — the same thing the room's own fallback says (chrome/Shell.jsx).
   if (!mark) {
     return <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'var(--surface-canvas)' }} />;
   }
@@ -195,23 +139,13 @@ function RouteFallback({ mark = true }) {
   );
 }
 
-// The shell router. Platform routes (product-neutral account surfaces) are answered here; then
-// each product's route table gets a chance to claim the URL; the marketing landing is the root
-// fallback. The router lives inside AuthProvider so #/auth's success can claim the session.
-//
-// The magic link lands on #/auth?token=… (token in the fragment); AuthLanding verifies it, signs
-// us in, and hands the post-sign-in destination to the ACTIVE product — the roadmap-specific
-// "go to your fork" lives there, not here, so the shell stays product-agnostic. An expired link
-// sends us back to that product and asks the one door (auth/SignInDoor.jsx) to open.
 function AppRoutes() {
   const route = useHashRoute();
   const { signIn } = useAuth();
   const openSignInDoor = useSignInDoor();
   useOwnNavigation();
 
-  // A document load starts every page at the top; a pushState hop does not, so it has to be said.
-  // After the commit, not during — the visitor should see the page they are leaving hold still,
-  // then the new one arrive at its beginning.
+  // A pushState hop does not reset scroll; do it after the commit.
   const landedOn = React.useRef(window.location.pathname);
   React.useEffect(() => {
     if (landedOn.current === window.location.pathname) return;
@@ -219,8 +153,7 @@ function AppRoutes() {
     window.scrollTo(0, 0);
   });
 
-  // A legacy door upgrades this very render — the URL bar catches up in the effect, the route
-  // decision below never sees the old shape, and nothing reloads or flashes.
+  // The door upgrades during this render; the effect only catches the URL bar up.
   const upgraded = legacyDoorTarget(window.location.pathname, route);
   React.useLayoutEffect(() => {
     if (upgraded) window.history.replaceState({}, '', upgraded + window.location.search + window.location.hash);
@@ -239,17 +172,11 @@ function AppRoutes() {
     );
   }
 
-  // The MCP OAuth consent screen — the backend's /oauth/authorize redirects the browser here
-  // with the PKCE params in the hash. Kept off #/auth on purpose: that path lands on the app,
-  // which would drop the consent params; this route stays put and lets sign-in resolve in place.
+  // /oauth/authorize redirects here with the PKCE params in the hash; #/auth would drop them.
   if (route.startsWith('#/oauth/authorize')) {
     return <Suspense fallback={<RouteFallback />}><OAuthConsent /></Suspense>;
   }
 
-  // The apps surface — one shell at /app, rooms inside (chrome/Shell.jsx). The shell resolves
-  // product rooms from the registry; the two account surfaces ride in as neutral rooms so the
-  // rail is their chrome. Everything below this branch is the public world: landings, share
-  // pages, the demo, and the legacy hash doors on non-root paths.
   if (pathname === '/app' || pathname.startsWith('/app/')) {
     const neutral = pathname.startsWith('/app/settings')
       ? { Component: SettingsPage, props: { inShell: true } }
@@ -266,17 +193,11 @@ function AppRoutes() {
     );
   }
 
-  // #/connect and #/settings need no branches here: they are doors (LEGACY_DOORS), so any
-  // pathname that can reach this point has already upgraded into the shell's neutral rooms.
-
-  // The design-system showcase — product-neutral, its own stable URL.
   if (route === '#/showcase') {
     return <Suspense fallback={<RouteFallback />}><Showcase /></Suspense>;
   }
 
-  // Compose the products: the first whose route table claims this URL wins. Each returns a
-  // { Component, props } descriptor (or null to pass); one Suspense boundary covers whichever
-  // answers, and the components are lazy so only the claimed product's chunk downloads.
+  // The first product whose route table claims this URL wins.
   const location = { hash: route, pathname: window.location.pathname, search: window.location.search };
   for (const product of PRODUCTS) {
     const match = product.render(location);
@@ -286,10 +207,7 @@ function AppRoutes() {
     }
   }
 
-  // Every landing lives at /<product> and belongs to that product, so the shell names none of
-  // them: the registry says which pathname each one answers on. /products/<product> is the shape
-  // from before the rename — Caddy 301s it, and dropping the prefix here is the belt to that
-  // suspender while old tabs and caches drain. The bare root is the product-neutral front door.
+  // /products/<product> is accepted alongside /<product>.
   const landingPath = pathname.startsWith('/products/') ? pathname.slice('/products'.length) : pathname;
   const landing = PRODUCTS.find((p) => landingPath === p.landing.href || landingPath.startsWith(`${p.landing.href}/`));
   if (landing) {
@@ -299,16 +217,7 @@ function AppRoutes() {
   return <BrandLanding />;
 }
 
-// Paddle's payment link lands back on our own origin carrying `?_ptxn=<transaction>` — the signal
-// to resume that checkout. It can arrive on any route, so this is read at the root rather than
-// owned by a route.
-//
-// Two things have to be true before an overlay opens, because a link is not a decision: the server
-// must have confirmed an account on this load (a checkout belongs to one, and a hint is not an
-// account), and pendingTransactionId must recognise the id as one this tab itself minted. A
-// stranger's link to our own origin therefore opens nothing (audit WEB-3). Nothing is read or
-// stripped before then: a genuine return trip can land while the session is still resolving, and
-// consuming its mint at that moment would destroy the resume it exists for.
+// Resume only once the server has confirmed an account and this tab minted the id.
 function ResumeCheckout() {
   const { account } = useAuth();
   React.useEffect(() => {
@@ -317,7 +226,7 @@ function ResumeCheckout() {
     const url = new URL(window.location.href);
     if (!url.searchParams.has('_ptxn')) return;
     url.searchParams.delete('_ptxn');
-    window.history.replaceState({}, '', url.toString());  // one resume per return trip, never on a refresh
+    window.history.replaceState({}, '', url.toString());
     if (transactionId) openCheckout(transactionId);
   }, [account]);
   return null;

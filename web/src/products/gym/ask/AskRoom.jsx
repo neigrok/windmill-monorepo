@@ -1,34 +1,3 @@
-// ASK (§L) — the second door onto the tools an agent drives over MCP, for a lifter who has not got
-// an agent of their own. Same log, the same catalog, the same typed diffs, the same tap: what is
-// different is only that the model sits on our side of the wire and we pay for its tokens.
-//
-// IT IS A ROOM AND NOT A FOURTH TAB, and not a panel bolted under one finished workout either. The
-// tab bar is the app's three rooms and a chat is not a place you live, so Ask is reached from
-// Today's band and from a proposal, and it is left the way any other screen is left. Widening it
-// from one workout to the whole log is what made it a room: the questions worth asking — "bench has
-// been stuck for three weeks" — are about the log and not about Tuesday.
-//
-// AND IT IS THE DESK'S FEATURE BY CONSTRUCTION. "Never mid-session" is exactly what a phone is doing
-// most of the time, so the surface that is never mid-session is this one.
-//
-// EVERY ANSWER STATES WHAT IT READ, and the count is the SERVER's — the rows it served this
-// connection, deduped by id (ask.js). Nothing here sums a number, because a number this layer
-// computed would be an audit the model could have written itself.
-//
-// IT PROPOSES AND IT NEVER WRITES. A routine change arrives as a proposal id, which this room opens
-// as the same diff every other door opens, on the same all-or-none tap. A logged set it cannot touch
-// at all, at any grant level — so the room says where that correction lives instead of leaving a
-// lifter to find the refusal by asking for one.
-//
-// AND IT CAN BE ABSENT. A deployment with no model wired never mounts the route, so the first ask
-// can come back a bare 404 — in which case the composer goes and the question the lifter typed stays
-// on screen as their own turn, unanswered. Nothing they wrote disappears quietly.
-//
-// IT HAS A PAST NOW (§O). W7 built this room stateless on purpose and said so; the owner reversed
-// it, because a conversation about your bench plateau is worth more in six weeks than it was that
-// evening. So the room mints a thread id, sends ONE question against it, and the header is a door
-// onto every conversation before this one.
-
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { gymApi } from '../gymApi.js';
@@ -44,11 +13,6 @@ import {
 } from './ask.js';
 import { THREADS_TITLE } from './threads.js';
 
-// THE DOOR, and the one condition it is ever drawn under. §L: never offered mid-session — an answer
-// about a workout that is still moving is out of date before it is read, and the server refuses one
-// anyway (409 ask-session-open). The caller passes the fact rather than this reading the log itself:
-// both hosts already hold the one read every room in gym shares, and a second read of it here would
-// be a second thing that could disagree with the mirror three lines above.
 export function AskDoor({ training }) {
   if (training) return null;
   return (
@@ -61,64 +25,35 @@ export function AskDoor({ training }) {
 }
 
 export function AskRoom({ log }) {
-  // { from: 'lifter' | 'ask', text, steps?, read?, proposals? } — the conversation as this screen
-  // draws it, which is NOT the same object as the thread the server stores (§O). The store holds the
-  // questions and the answers; the steps and the receipt under each answer are evidence for the
-  // reader and belong to the exchange that produced them, so they live here and are not read back.
+  // turns: { from: 'lifter' | 'ask', text, steps?, read?, proposals? }
   const [turns, setTurns] = useState([]);
-  // THE THREAD THIS ROOM IS WRITING INTO, minted before the first question rather than handed back
-  // by the server: a fresh id IS how a new conversation is opened, so there is nothing to ask for.
-  // Entering the room starts one — the room is left the way any other screen is left, and an old
-  // conversation is read in Threads rather than resumed here.
   const [threadId, setThreadId] = useState(() => mintId(THREAD_PREFIX));
   const [draft, setDraft] = useState('');
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState('');
-  // Set to the sentence that closed the room — no Ask on this deployment, or an account that went.
-  // Either way asking again is not the repair, so the composer goes and this takes its place. It
-  // holds the SENTENCE rather than a flag because the two reasons are different facts and printing
-  // the wrong one is exactly the misinformation this room exists to avoid.
   const [closed, setClosed] = useState('');
-  // THE SERVER SAID THIS CONVERSATION IS FULL. The room predicts the cap from the answers on screen
-  // and retires the composer a question early — but another surface can have added turns to the same
-  // thread, so the refusal is honoured as well as anticipated: a composer left open under a 409 the
-  // next send would earn again is a box that takes typing and cannot deliver it.
   const [refusedFull, setRefusedFull] = useState(false);
 
   const ask = async () => {
     const question = draft.trim();
     if (question === '' || asking) return;
-    // The cap is bytes and the field counts characters, so this is where a long question stops —
-    // on screen, with the draft intact, rather than in a 400 that took the words with it.
+    // The cap is bytes; the field counts characters.
     if (questionTooLong(question)) {
       setNote(TOO_LONG_NOTE);
       return;
     }
-    // The lifter's turn lands on screen BEFORE the request — so a reply that never comes leaves the
-    // question they asked, not a cleared box and no explanation. It is on screen and not yet in the
-    // thread: the server stores a question only once an answer has landed beside it, so a failed ask
-    // leaves the conversation exactly as it was and this same question sent again lands once.
     setTurns((held) => [...held, { from: 'lifter', text: question }]);
     setDraft('');
     setNote('');
     setAsking(true);
     try {
       const reply = await gymApi.ask(threadId, question);
-      // A 200 IS NOT YET AN ANSWER. Every answer states what it read (§L), so a body with no
-      // receipt in it is not something this room may draw — `answerTurn` is the one door onto a
-      // turn, and a reply it refuses is said as the model not having answered, which is what it is.
-      // The lifter's question stays on screen either way.
       const answer = answerTurn(reply);
       if (answer) setTurns((held) => [...held, answer]);
       else setNote(NO_ANSWER_NOTE);
     } catch (error) {
       const failure = askFailure(error);
-      // An id another account already holds — which can only happen before anything of this
-      // conversation was stored, so a fresh one costs nothing and the question stays on screen to
-      // send again.
       if (failure.fresh) setThreadId(mintId(THREAD_PREFIX));
-      // A full conversation says itself ONCE, in the block that replaces the composer — a note above
-      // that block would print the same sentence twice.
       if (failure.full) setRefusedFull(true);
       else if (failure.gone) setClosed(failure.note);
       else setNote(failure.note);
@@ -131,13 +66,6 @@ export function AskRoom({ log }) {
       <a className="gym-back" href="#/gym">
         <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Today
       </a>
-      {/* The header is the whole disclosure and it is on screen before a word is typed: what Ask
-          reaches, and — in the same breath — that proposing is the most it can do. There is no plan
-          chip beside it, because Ask is not behind a plan: it is open, with a cap that says so in
-          words when it is reached.
-
-          AND THE PAST HANGS OFF IT (§O). One door, no count on it and no dot: a number here would be
-          an inbox saying something is waiting, and nothing in this room is ever waiting for anybody. */}
       <header className="gym-ask-head">
         <div className="gym-ask-titles">
           <h1 className="gym-title">{ASK_TITLE}</h1>
@@ -156,9 +84,6 @@ export function AskRoom({ log }) {
         setDraft={setDraft}
         onAsk={ask}
         refusedFull={refusedFull}
-        /* Starting again is a NEW conversation and not a cleared screen: the one on it is stored
-           under its own id, so the room mints another rather than writing a fifth question into a
-           thread the server would refuse. */
         onStartAgain={() => {
           setTurns([]); setNote(''); setRefusedFull(false); setThreadId(mintId(THREAD_PREFIX));
         }}
@@ -167,19 +92,9 @@ export function AskRoom({ log }) {
   );
 }
 
-// The room's one branch, and it is a branch about whether there is anything to type INTO — never
-// about what the answers look like. A composer nobody could get an answer from is the failure the
-// old panel's paywall rule named: nobody types a question about their squats and then finds out it
-// was never going to be answered.
 function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onStartAgain, refusedFull }) {
-  // The shared read has not told us whether a workout is running yet, and "not training" is exactly
-  // the wrong guess to make while it is in flight.
   if (log.phase === 'loading') return <p className="gym-quiet">Opening the log…</p>;
 
-  // NEVER MID-SESSION, said before anything is typed. The server is the floor under this rule and
-  // not a substitute for it (409 ask-session-open) — which is also why a failed log read still
-  // draws the composer below: this surface guesses nothing about a workout it could not read, and
-  // the 409 says it properly if there is one.
   if (log.session) {
     return (
       <>
@@ -189,8 +104,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
     );
   }
 
-  // Predicted from the answers on screen, or said outright by the server — one flag either way, so
-  // there is one face for "this conversation is finished" and not two.
   const full = refusedFull || threadFull(turns);
 
   return (
@@ -219,10 +132,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
 
       {closed && <p className="gym-ask-closed">{closed}</p>}
 
-      {/* A THREAD IS EIGHT TURNS AND THE ROOM SAYS SO RATHER THAN LETTING SEND FAIL. What starting
-          again costs used to be the whole context, because the server kept none of it; since §O it
-          costs the model's memory of this exchange and nothing else — the conversation itself is
-          kept, titled by the question that opened it, and the sentence says where. */}
       {!closed && full && (
         <div className="gym-ask-full">
           <p className="gym-ask-note">{THREAD_FULL_NOTE}</p>
@@ -230,14 +139,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
         </div>
       )}
 
-      {/* AND NO CHIPS ABOVE IT. §L draws three suggested follow-ups over the composer; they are
-          deliberately not built, and not because they were forgotten. A follow-up has to come out
-          of the answer above it, and nothing on this wire carries one — so a client writing "Deload
-          week?" for itself would be the room composing the lifter's next question about numbers it
-          never read, which is a personality, and §L bans one in the same breath it asks for chips.
-          Openers before the first question are a different object and also absent here: this room
-          does not speak first, and an empty one says the free door and nothing else. Android
-          declared the same omission for the same reason (gym/domain/Ask.kt). */}
       {!closed && !full && (
         <div className="gym-ask-compose">
           <textarea
@@ -249,7 +150,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
             aria-label={ASK_PLACEHOLDER}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              // Enter sends, shift+Enter is a newline — the shape every composer in this brand uses.
               if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); onAsk(); }
             }}
           />
@@ -265,11 +165,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
         </div>
       )}
 
-      {/* WHAT IT HANDS BACK, standing rather than waiting to be refused. Ask cannot edit a set you
-          lifted at any grant level, so the room names the door that can — §G18's, where every set in
-          a workout is a door onto its own fix. It is one line and it is always true, which is the
-          only honest shape available: nothing on this wire tells this screen WHICH set a refusal was
-          about, so nothing here may name one. */}
       {!closed && (
         <p className="gym-ask-hand-back">
           {FIX_IS_YOURS}
@@ -280,12 +175,6 @@ function AskBody({ log, turns, asking, note, closed, draft, setDraft, onAsk, onS
   );
 }
 
-// THE EMPTY ROOM POINTS AT THE FREE DOOR — and it is the only thing an empty room says, because Ask
-// does not speak first. No greeting, no suggestions, no "what would you like to know": the sentence
-// on screen is about the better option, and the better option is not this one.
-// The door lands on gym's own connected-log room (§D12/13) rather than on the account's workbench:
-// the workbench hands out a URL and per-client steps, and what somebody standing in Ask is asking is
-// what the OTHER door actually gets them. That room answers it and walks on to the workbench.
 function FreeDoor() {
   return (
     <section className="gym-ask-empty">
@@ -295,21 +184,6 @@ function FreeDoor() {
   );
 }
 
-// ONE ANSWER: the prose, whatever it proposed, and then the two lines that make it checkable. The
-// order is canon's — the receipt is UNDER the answer, because it is evidence about the thing above
-// it and not a preamble to it.
-//
-// The receipt is drawn unconditionally and that is the point: a turn with no receipt was never made
-// (ask.js `answerTurn`), so there is no branch here in which prose stands on its own.
-//
-// WHAT §L DRAWS THAT THIS DOES NOT: the four-row mono block of dated sets the model reasoned from,
-// under the prose and above the read line. The wire carries no rows — `POST /v1/gym/ask` answers
-// `answer`, `steps`, `read` and `proposals` and nothing else (backend adapters/http/AskApi.cpp) —
-// and reading them back off the log here to fill the block would be a SECOND account of the same
-// answer, assembled by the client, which is exactly the laundered receipt the whole design refuses.
-// So this holds the true thing we have — how much was served, and which tools served it — and the
-// rows arrive the wave the server hands them over. iOS says the same thing in the same place
-// (WindmillGym/AskScreen.swift); no surface draws rows today.
 function Answer({ turn, catalog }) {
   return (
     <>
@@ -321,20 +195,9 @@ function Answer({ turn, catalog }) {
   );
 }
 
-// A PROPOSAL ASK MINTED, drawn as the same object every other door draws (§D14, proposals.js). Only
-// the id comes back on the wire, which is the point: it is read from the store like any other
-// proposal, so a diff written by Ask and a diff written by a lifter's own Claude are indistinguishable
-// in type, in mechanism and on screen — provenance is a column and not a fork.
-//
-// The rows are the diff's own renderer rather than a compact copy of it. A second reading of a
-// change would be the product disagreeing with itself about one routine on two screens, and this
-// card is the first place a lifter sees the change at all.
 function AskProposal({ id, catalog }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
 
-  // Minted means it exists, so a read that did not answer is this screen's problem and not the
-  // proposal's — and the door is what the lifter actually needs either way. `absent` lands here too:
-  // a proposal settled on another tab between the mint and this read is still a proposal to open.
   if (view.phase !== 'ready') {
     return (
       <a className="gym-ask-proposal-door" href={proposalHref(id)}>Open the proposal ›</a>

@@ -7,9 +7,7 @@
 <meta name="description" content="Windmill is free — all three rooms, everything you do by hand. What costs money is the AI doing the work: tending in the roadmap, Talk and echoes in the journal. Gym asks for nothing. Nothing is on sale yet." />
 <link rel="canonical" href="https://windmill.works/pricing.html" />
 
-<!-- Unfurl: this page's own title and description, and the family share card. A shelf page is
-     pasted into a chat as often as it is found in a search — without these it arrived as a bare
-     URL. staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
+<!-- staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Windmill" />
 <meta property="og:title" content="Pricing — Windmill" />
@@ -36,10 +34,9 @@
 <link rel="stylesheet" href="/fonts.css" />
 <link rel="stylesheet" href="/chrome.css" />
 <style>
-  /* Design tokens resolved from the Windmill Design System tokens/*.css to concrete light-theme
-     values — the static pages are light-only. This page's own type is below them; the family
-     chrome — frame, header, buttons, footer — and the faces arrive on the two sheets linked
-     above, served by scripts/staticPageAssets.js so every static page wears one geometry. */
+  /* Light-theme token values resolved from the Windmill Design System tokens/*.css — the static
+     pages are light-only. This page's own type is below them; the family chrome and the faces
+     arrive on the two sheets linked above, served by scripts/staticPageAssets.js. */
   :root {
     --font-display: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
     --font-body: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
@@ -126,9 +123,7 @@
   .beat2 .bt2{font-size:14px;line-height:1.5;color:var(--text-secondary)}
   .beat2 .bt2 b{color:var(--text-primary);font-weight:700;display:block;font-size:14.5px}
   .pro .cta2{width:100%;margin:24px 0 0}
-  /* The stand-in for the buy button while there is nothing to buy. It is deliberately NOT a button
-     and NOT a link: a primary CTA that leads to a page with no checkout on it is a door onto
-     nothing, which is the one thing the /app home already refuses to draw for a pre-open product. */
+  /* The stand-in for the buy button while there is nothing to buy: not a button, not a link. */
   .pro .notopen{width:100%;margin:24px 0 0;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:1.5px dashed var(--border-strong);background:var(--surface-card);text-align:center;font-size:14px;line-height:1.55;color:var(--text-secondary)}
   .pro .notopen b{display:block;font-family:var(--font-display);font-size:15.5px;color:var(--text-primary)}
   .pro .guar{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0;font-size:12.5px;color:var(--text-tertiary);text-align:center}
@@ -178,19 +173,9 @@
 <section class="hero">
   <h1>Windmill is free.</h1>
   <p>All three rooms — the roadmap, the journal, the training log. What costs money is the AI doing the work for you: <b>tending</b> in the roadmap, Talk and echoes in the journal. <b>Gym asks for nothing at all</b> — its log is free, its connected log is free, and Ask answers a few questions a day without a plan. One plan covers the rest.</p>
-  <!-- THE DECISION, 2026-08-07. This page carried a primary CTA — "Get Windmill One — $12/month" —
-       pointing at /#/settings, where paidPlansOpen() is false, so there was nothing to buy there and
-       no word about why. A price with a door that opens onto nothing is exactly the manufactured
-       urgency the mission section forbids, and the audit ranked it a dead end.
-       Two options: pull the price, or say the state plainly. The price STAYS and the CTA goes,
-       because the page's actual job is honesty about what will ever cost money — a person deciding
-       whether to build years of notes on Windmill deserves to know the number up front, and deleting
-       it would hide the very thing this page exists to disclose. What could not stay is a button.
-       So: the plan is described in the future tense it actually lives in, the price wears a "not
-       open yet" chip, and where the button was there is a statement instead of a door.
-       When billing/checkout.js paidPlansOpen() flips true, the CTA comes back and this notice goes —
-       test/shell/pricing.test.mjs pins both directions, so a page that opens the till while still
-       saying "nothing to buy yet" fails the build. -->
+  <!-- No priced link while paidPlansOpen() in src/shell/billing/checkout.js is false; when it
+       flips true the CTA comes back and this notice goes. test/shell/pricing.test.mjs pins both
+       directions. -->
   <p style="font-size:15.5px;color:var(--text-tertiary);margin-top:14px">Billing is not open yet, so <b style="color:var(--text-secondary)">nothing on this page can be bought today</b>. This is what it will cost when it opens.</p>
 </section>
 

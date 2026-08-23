@@ -429,17 +429,16 @@ GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramSe
 std::vector<ToolRetirement> GymTools::retiredTools() const {
   return {
       ToolRetirement{"save_routine", "propose_routine_change",
-                     "retired on 2026-08-12, and the level you hold was not the problem. Use "
+                     "retired, and the level you hold was not the problem. Use "
                      "propose_routine_change to change a day of the program that already stands — it "
                      "hands the lifter a typed diff and changes nothing until they tap Apply — or "
-                     "create_routine to add one that does not exist yet, which still lands "
-                     "immediately."},
+                     "create_routine to add one that does not exist yet, which lands immediately."},
       ToolRetirement{"delete_routine", "propose_routine_removal",
-                     "retired on 2026-08-12, and the level you hold was not the problem. Use "
+                     "retired, and the level you hold was not the problem. Use "
                      "propose_routine_removal: it puts the day's lines in front of the lifter as a "
                      "diff of what would go, and nothing is deleted until they tap Apply."},
       ToolRetirement{"get_preferences", "",
-                     "retired on 2026-08-13, and nothing replaced it. gym no longer keeps a plate "
+                     "retired, and nothing replaced it. gym no longer keeps a plate "
                      "inventory or a bar weight, and the rest target and reading unit it also carried "
                      "are the lifter's own dials rather than context for a proposal. Propose loads in "
                      "kilograms and let them round at the rack."},

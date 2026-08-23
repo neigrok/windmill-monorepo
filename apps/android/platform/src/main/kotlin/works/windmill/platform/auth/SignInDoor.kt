@@ -38,15 +38,7 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.net.WindmillApiException
 
-// One door (auth canon §1): no sign-in/sign-up fork, no tabs, no passwords — the email decides, and
-// the account is created the first time. Every string below is the canon's, verbatim, because the
-// same sentence is already on the app doors of both platforms and one sentence lives in one place.
-//
-// The mail carries a 6-DIGIT CODE (the mint rides `door: "app"`), because a code finishes the
-// sign-in on the phone that asked for it — a magic link would open the web app and burn itself
-// there, which is why this door used to instruct people to copy-not-tap. The code field still
-// takes a pasted link or bare token as the fallback: older mails, and links minted from another
-// surface, stay usable.
+// The field takes a 6-digit code, a pasted link, or a bare token.
 
 @Composable
 fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
@@ -106,8 +98,6 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
 
             refusal?.let { RefusalLine(it) }
 
-            // Since the gym runs signed out and the claim replay carries what it made onto the
-            // account, the footnote can finally say the simple half that holds everywhere.
             Text(
                 "No password. What you make on this device is claimed by your account when you sign in.",
                 style = WindmillFont.body(13),
@@ -124,8 +114,7 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
 
             HorizontalDivider(color = WindmillColor.borderSubtle.color)
 
-            // The number pad is for the code the mail just sent; pasting still lands whole links
-            // and bare tokens in the same field, and exactly six digits is what tells them apart.
+            // Exactly six digits tells a code apart from a link or token.
             DoorField("6-digit code", typed, keyboardType = KeyboardType.Number) { typed = it }
 
             ActionCapsule(
@@ -162,7 +151,6 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
                         typed = ""
                     },
                 )
-                // Absent while it would only invite a double send; it appears at 30 seconds.
                 if (canResend) {
                     Text(
                         "Resend",
@@ -176,9 +164,6 @@ fun SignInDoor(auth: AuthStore, onDone: () -> Unit = {}) {
     }
 }
 
-// Every failure ends in a next step, and none of them is a wall — the remedy is always the field
-// or the button directly above this line. Directly: it sits under the action capsule in both
-// stages, because a phone-height column pushed anything below the footnote off the screen.
 @Composable
 private fun RefusalLine(line: String) {
     Text(
@@ -192,10 +177,6 @@ private fun RefusalLine(line: String) {
     )
 }
 
-// The one field this door uses, in both places it needs one (the address, and the code).
-// The placeholder is DRAWN in the decoration rather than left to any component default, so what
-// colour it is is never the platform's guess — the iOS door learned that when a sheet built
-// entirely out of brand neutrals came up with a system-blue prompt sitting in the middle of it.
 @Composable
 private fun DoorField(
     placeholder: String,

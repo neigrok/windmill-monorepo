@@ -1,9 +1,3 @@
-// The pure presentation of a tend run and its meter — the settings package's testable seam, kept
-// out of the React component so the honest-word logic can be asserted directly.
-
-// The receipt line a run shows in the ledger: the summary when it did something, an honest word
-// when it didn't or couldn't. Refusals never reach here — the ledger only lists runs that spent
-// allowance, so a `refused` run is already filtered out server-side.
 export function receiptLine(run) {
   if (run.status === 'running') return 'Working…';
   if (run.status === 'failed') return 'Couldn’t finish';
@@ -11,42 +5,29 @@ export function receiptLine(run) {
   return run.summary;
 }
 
-// The meter fill as a percentage, floored at 0 and capped at 100 — an account somehow over its
-// limit reads as a full bar, never an overflowing one.
 export function meterPct(used, limit) {
   if (!limit || limit <= 0) return 0;
   return Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
 }
 
-// A run has reached rest once it is anything but `running` — the poll stops here and reads the face.
 export function isTerminal(run) {
   return !!run && run.status !== 'running';
 }
 
-// The quiet face a finished or refused run wears in the composer — guidelines/tending.md §6/§9. A
-// fact and a next step, never a wall, never a spinner. `kind` drives the visual register; `line` is
-// the copy; `undo` marks a receipt whose edits are worth the revert button.
+// `kind` drives the visual register, `line` is the copy.
 export function runFace(run) {
   if (!run) return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
   if (run.status === 'running') return { kind: 'working', line: 'Tending your tree…' };
-  // `created` is the authoritative set the run planted (server-recorded at the tool boundary), so the
-  // receipt's Undo reverts exactly the agent's additions — never a step someone else touched. `detail`
-  // is the agent's reasoning, shown only when the person taps the receipt for the why.
+  // `created` is the server-recorded set the run planted, so Undo reverts exactly its additions.
   if (run.status === 'done') return { kind: 'receipt', line: receiptLine(run), created: run.created ?? [], detail: run.detail ?? '' };
   if (run.status === 'failed') return { kind: 'failed', line: 'Nothing changed — the tree is untouched and your sentence is still here.' };
   if (run.status === 'refused') return refusalFace(run.refusal);
   return { kind: 'failed', line: 'Nothing changed — the tree is untouched.' };
 }
 
-// The five honest refusal faces (§6): each a fact and a way forward, and neither ceiling points at a
-// paywall — there is no checkout to point at. `empty` is the no-op of a blank submit — nothing to say.
 function refusalFace(refusal) {
   if (refusal === 'rate-limited') return { kind: 'rate', line: 'That’s a lot of tending quickly. Your tree is exactly as you left it.' };
   if (refusal === 'out-of-allowance') return { kind: 'out', line: 'You’ve used this month’s tending. You can still edit by hand — nothing is gated.' };
-  // OUR ceiling, not a fault of theirs, and a rolling window rather than a door that shut: the
-  // honest shape of a 30-day budget is "it comes back", so the sentence says when. It offers no
-  // upgrade on purpose — there is no checkout to send anyone to, and copy that pointed at one would
-  // be selling a thing this product cannot yet hand over.
   if (refusal === 'out-of-budget') return { kind: 'out', line: 'This account has reached its AI ceiling for the last 30 days. You can still edit by hand, and tending returns as that window rolls on.' };
   if (refusal === 'prompt-too-long') return { kind: 'long', line: 'That’s a lot at once — paste an outline instead for a whole plan.' };
   if (refusal === 'not-enabled') return { kind: 'off', line: 'Tending is off for this account.' };

@@ -1,18 +1,8 @@
-// Durable local store for one tree's lattice — the offline half of "the lattice is the
-// outbox". One IndexedDB record per tree holds { frame, progress, lastSeq } — both lanes and the
-// seq, written together so a
-// crash never tears them. The coverage vector is deliberately NOT persisted (it is rebuilt
-// from the next server graft — a fresher, truer statement of coverage than any saved vector,
-// and keeping it off disk means no stale claim can outlive its content).
-//
-// The one subtlety that earns the raw-callback style below: `save` is a read-JOIN-put inside
-// a SINGLE transaction. Two tabs of one account share this record; a blind put would let one
-// tab clobber the other's unflushed offline edits. Joining the stored frame into the outgoing
-// one (via the same CRDT merge the whole system rides) means racy tabs can only ADD
-// information. IndexedDB auto-commits a transaction the moment control returns to the event
-// loop with no pending request, so the join MUST run synchronously inside get.onsuccess and
-// issue the put before yielding — never `await get()` then `await put()` (that is two
-// transactions, reopening the clobber window).
+// Durable local store for one tree's lattice: one IndexedDB record per tree holding
+// { frame, progress, lastSeq }, written together so a crash never tears them. The coverage vector
+// is not persisted; it is rebuilt from the next server graft.
+// `save` is a read-join-put inside a single transaction: the join must run synchronously inside
+// get.onsuccess and issue the put before yielding, never `await get()` then `await put()`.
 
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
@@ -41,7 +31,7 @@ export class SyncStore {
     return this.dbPromise;
   }
 
-  // Best-effort durability: ask the browser not to evict us, and report whether it granted it.
+  // Asks the browser not to evict us; reports whether it agreed.
   async requestPersistent() {
     try { return await navigator.storage?.persist?.() ?? false; } catch { return false; }
   }
@@ -55,8 +45,7 @@ export class SyncStore {
     });
   }
 
-  // Every tree with a blob on this device. The account hand-off sweeps by tree id, and a blob
-  // whose device-index row is long gone is exactly the residue that painted a stranger's tree.
+  // Every tree with a blob on this device.
   async treeIds() {
     const db = await this.db();
     return new Promise((resolve, reject) => {
@@ -75,8 +64,8 @@ export class SyncStore {
     });
   }
 
-  // Read-join-put in one transaction. `value` = { frame, progress, lastSeq };
-  // the caller must have snapshotted it synchronously (no awaits between lattice state and here).
+  // Read-join-put in one transaction. `value` = { frame, progress, lastSeq }; the caller must
+  // have snapshotted it synchronously (no awaits between lattice state and here).
   save(treeId, value) {
     this.chain = this.chain.then(() => this.saveOnce(treeId, value)).catch(() => {});
     return this.chain;
@@ -100,11 +89,7 @@ export class SyncStore {
   }
 }
 
-// Join two stored values so a racy sibling tab can only add information: both lanes merge by their
-// own lattice join, the seq by max. max(lastSeq) is safe precisely because the frames are joined in
-// the same value — the union frame covers whatever either lastSeq claims seen. The private lane
-// merges here for exactly the same reason the structure does: two tabs marking different steps
-// offline must not have one tab's write erased by the other's save.
+// max(lastSeq) is safe: the union frame covers whatever either lastSeq claims to have seen.
 function mergeValues(a, b) {
   const lattice = new TreeLattice();
   lattice.join(a.frame);

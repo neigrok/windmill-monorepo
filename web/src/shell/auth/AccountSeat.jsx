@@ -1,11 +1,5 @@
-// The account seat (X6) — the ONE unprompted mention of sign-in in the whole product.
-// A small round seat that is a quiet ghost outline when signed-out and the user's
-// initial avatar when signed-in; clicking it opens a small popover menu. Purely
-// presentational: the integration passes user/status and the three handlers, and we
-// never touch the network. On a live ghost→signed-in flip we play the claim beat —
-// the avatar wakes and a chip beside the seat narrates "Syncing…" then "Synced" and
-// fades to silence. A lapsed session (the optional `expired` flag) keeps the ghost
-// seat but voices the "your sign-in expired" line in the menu.
+// Presentational: the caller passes user/status and the handlers. `expired` keeps the ghost seat
+// and voices the lapsed-session line in the menu.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Avatar } from '../../design-system';
@@ -13,9 +7,7 @@ import { Avatar } from '../../design-system';
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// `mine` is the row that returns a signed-in visitor to their own work — { label, count, onSelect } —
-// and the PRODUCT supplies the noun ("My trees", "My pages", "My log"): the shell owns no sentence
-// about anybody's data, so a page with nothing true to offer passes none and the row is absent.
+// `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row.
 export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -31,11 +23,8 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
-  // The claim beat fires only on a live ghost→signed-in flip — never on a page reload
-  // that resolves loading→signed-in, so a returning session stays silent. Without a
-  // claimBusy prop the chip runs on its own clock (today's timers); with one
-  // (anon-first-tree F5) the gold "Syncing…" holds until the claim run
-  // reports done — the effect below takes over.
+  // Fires only on a live ghost→signed-in flip. Without a claimBusy prop the chip runs on its own
+  // timers; with one, the "Syncing…" line holds until the claim reports done.
   useEffect(() => {
     const woken = prevStatus.current === 'ghost' && status === 'signed-in';
     prevStatus.current = status;
@@ -51,16 +40,12 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
     return () => [toSynced, toFading, toSilent, settle].forEach(clearTimeout);
   }, [status]);
 
-  // claimBusy released while the chip is gold: give the syncing line its minimum beat,
-  // then "Synced" (olive) holds 1.5s and fades to silence. A re-armed claimBusy cancels
-  // the countdown and the gold line simply keeps breathing.
+  // claimBusy released mid-beat: hold the syncing line for its minimum, then "Synced", then fade.
   useEffect(() => {
     if (claimBusy === undefined || claimBusy === true || claim !== 'syncing') return undefined;
     const wait = Math.max(0, 1200 - (Date.now() - beatStartRef.current));
     if (claimBusy === 'incomplete') {
-      // Some trees stayed unclaimed (server unreachable mid-run): never say "Synced" —
-      // the gold line just fades; the registry tags keep telling the truth and the next
-      // boot retries silently.
+      // Something stayed unclaimed: never say "Synced".
       const toFading = setTimeout(() => setClaim('fading'), wait);
       const toSilent = setTimeout(() => setClaim(null), wait + 450);
       return () => [toFading, toSilent].forEach(clearTimeout);
@@ -71,13 +56,10 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
     return () => [toSynced, toFading, toSilent].forEach(clearTimeout);
   }, [claimBusy, claim]);
 
-  // Sign-out mid-claim: the chip must not survive into the ghost seat and later flash
-  // "Synced" at nobody — any departure from signed-in silences it.
   useEffect(() => {
     if (status !== 'signed-in') setClaim(null);
   }, [status]);
 
-  // Esc and click-away dismiss the menu — the seat is never a wall.
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => { if (!rootRef.current?.contains(e.target)) setOpen(false); };
@@ -102,7 +84,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
         @keyframes wm-seat-chip-fade { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
 
-      {/* Claim chip — floats to the left of the seat so its arrival never nudges it */}
       {claim && (
         <span
           style={{
@@ -125,7 +106,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             fontWeight: 600,
             color: claim === 'syncing' ? 'var(--accent-gold-600)' : 'var(--accent-olive-600)',
             opacity: claim === 'fading' ? 0 : 1,
-            // Reduced motion keeps the chip's story in 150ms cross-fades — no rise, no scale.
             transition: `opacity ${reduced ? 'var(--duration-fast)' : 'var(--duration-base)'} var(--ease-soft)`,
             animation: reduced
               ? 'wm-seat-chip-fade var(--duration-fast) var(--ease-soft)'
@@ -146,7 +126,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
         </span>
       )}
 
-      {/* Seat — one round button; the ghost outline and the avatar are stacked and cross-fade */}
       <button
         type="button"
         aria-haspopup="menu"
@@ -170,7 +149,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           transition: 'transform var(--duration-fast) var(--ease-standard)',
         }}
       >
-        {/* Ghost layer — a quiet person outline; the resting, signed-out face */}
         <span
           style={{
             position: 'absolute',
@@ -193,7 +171,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           </svg>
         </span>
 
-        {/* Avatar layer — the user's initial; wakes on the claim beat */}
         {user && (
           <span
             style={{
@@ -210,7 +187,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
         )}
       </button>
 
-      {/* Menu — a small popover under the seat; two faces, one for each state */}
       {open && (
         <div
           role="menu"
@@ -263,10 +239,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
                 </div>
               )}
               <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />
-              {/* Settings is offered to BOTH faces, because one thing on that page belongs to the
-                  device and not to an account: light or dark. Gating it would be asking for a
-                  password to turn on a lamp — and since the /app head stopped carrying a settings
-                  door of its own, this row is the only one there is. */}
               {onSettings && <MenuRow label="Settings" onSelect={() => choose(onSettings)} />}
             </>
           )}

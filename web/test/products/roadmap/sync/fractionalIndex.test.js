@@ -1,9 +1,3 @@
-// The correctness bar for order keys: the whole angular-reorder feature rests on this one
-// invariant — a < keyBetween(a, b) < b under plain string `<`, every time, with no collisions.
-// We hammer it with thousands of randomized inserts, deep same-gap subdivision, the open-end
-// cases, and nKeysBetween seeding. If any of these ever fail, siblings can render out of order
-// or two nodes can claim the same slot — so this file is exhaustive on purpose.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { keyBetween, nKeysBetween } from '../../../../src/products/roadmap/sync/fractionalIndex.js';
@@ -22,7 +16,6 @@ function rng(seed) {
   };
 }
 
-// A key is well-formed: a non-empty string over the alphabet with no fractional trailing zero.
 function assertValidKey(key) {
   assert.equal(typeof key, 'string');
   assert.ok(key.length > 0, 'key is non-empty');
@@ -69,16 +62,13 @@ test('keyBetween is a pure function — identical inputs give identical output',
   assert.equal(keyBetween(b, null), keyBetween(b, null));
 });
 
-// THE invariant, hammered: thousands of inserts between random existing neighbors into a
-// growing sorted list. After every insert the pair ordering AND the whole list stay strictly
-// ascending and collision-free, and every generated key is well-formed.
 test('5000 random neighbor inserts never violate ordering or collide', () => {
   const random = rng(0x1234abcd);
   const keys = [keyBetween(null, null)];
   const seen = new Set(keys);
 
   for (let iter = 0; iter < 5000; iter++) {
-    const at = Math.floor(random() * (keys.length + 1));  // an insertion slot in [0, len]
+    const at = Math.floor(random() * (keys.length + 1));
     const left = at > 0 ? keys[at - 1] : null;
     const right = at < keys.length ? keys[at] : null;
 
@@ -96,9 +86,6 @@ test('5000 random neighbor inserts never violate ordering or collide', () => {
   assertStrictlyAscendingUnique(keys);
 });
 
-// The pathological worst case the spec calls out: 500 successive midpoints between the SAME
-// two anchors, each new key becoming the next neighbor. Both leanings — collapsing toward the
-// left anchor and toward the right — plus deep subdivision of one shrinking gap.
 test('500 successive inserts against a fixed left anchor stay ordered and unique', () => {
   const left = keyBetween(null, null);
   let right = keyBetween(left, null);
@@ -129,8 +116,6 @@ test('500 successive inserts against a fixed right anchor stay ordered and uniqu
   assert.equal(new Set(collected).size, collected.length);
 });
 
-// Appending forever (keyBetween(prev, null)) and prepending forever (keyBetween(null, next))
-// each stay monotone across a long run — the two open-ended growth directions.
 test('1000 appends are strictly increasing; 1000 prepends are strictly decreasing', () => {
   let prev = keyBetween(null, null);
   const appended = [prev];
@@ -171,7 +156,7 @@ test('nKeysBetween respects both bounds and the open ends', () => {
   const inside = nKeysBetween(a, b, 30);
   assert.equal(inside.length, 30);
   inside.forEach(assertValidKey);
-  assertStrictlyAscendingUnique([a, ...inside, b]);  // all strictly between a and b, in order
+  assertStrictlyAscendingUnique([a, ...inside, b]);
 
   const tail = nKeysBetween(a, null, 30);
   assertStrictlyAscendingUnique([a, ...tail]);
@@ -182,8 +167,6 @@ test('nKeysBetween respects both bounds and the open ends', () => {
   head.forEach(assertValidKey);
 });
 
-// nKeys-seeded groups accept further inserts between every adjacent pair — the seed and the
-// per-insert paths compose (a group seeded up front is still fully subdividable afterward).
 test('a seeded group accepts an insert between every adjacent pair', () => {
   const seeded = nKeysBetween(null, null, 50);
   const merged = [];

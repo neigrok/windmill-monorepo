@@ -1,15 +1,6 @@
 import React from 'react';
 
-// A node's COLOUR comes from its `kind`; its TIER comes from `state` and is
-// shown by treatment alone (the tier never re-hues — gold is a kind, not a state):
-//   locked    → recessed kind tint — dim, quiet
-//   available → white disc, solid kind ring — awake, unlit
-//   active    → the "ember" (F1): kind-tinted fill + low breathing glow
-//               (wm-ember). No halo ring — that's earned at complete. An ember
-//               never lights its outward branches.
-//   complete  → full kind colour, glowing halo (breathing via `pulse`)
-// `progress` (F13) adds the sub-task gauge: a thin kind-hued arc at r+5px,
-// orthogonal to tier, hidden at complete (the halo owns that radius).
+// Colour comes from `kind`; tier comes from `state` and is shown by treatment alone — the tier never re-hues.
 const KINDS = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const STATES = ['locked', 'available', 'active', 'complete'];
 
@@ -17,12 +8,12 @@ export function SkillNode({
   label,
   kind = 'terracotta',
   state, // 'locked' | 'available' | 'active' | 'complete'
-  done = false, // legacy alias — done → 'complete', not-done → 'locked'. Prefer `state`.
+  done = false, // alias: done → 'complete', not-done → 'locked'. Prefer `state`.
   progress = null, // 0–1 sub-task fraction; renders the gauge arc + track. null = no gauge.
   icon = null,
-  size = 56, // world-unit parity with production (theme.js NODE_SIZE)
+  size = 56, // world units (theme.js NODE_SIZE)
   onClick,
-  pulse = false, // calm ceiling: infinite breath is opt-in — the crowned root (and embers, capped) pass true
+  pulse = false, // infinite breath is opt-in
 }) {
   const k = KINDS.includes(kind) ? kind : 'terracotta';
   const s = STATES.includes(state) ? state : done ? 'complete' : 'locked';
@@ -34,7 +25,7 @@ export function SkillNode({
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // wm-ember frozen at mid-breath — the reduced-motion / pulse-off face
+  // wm-ember frozen at mid-breath: the reduced-motion / pulse-off face
   const emberRest = `0 0 8px 0 color-mix(in srgb, ${glow} 44%, transparent), 0 0 15px 2px color-mix(in srgb, ${glow} 20%, transparent)`;
 
   const body = {
@@ -71,8 +62,7 @@ export function SkillNode({
         ? 'wm-ember var(--duration-glow) var(--ease-glow) infinite'
         : 'none';
 
-  // the sub-task gauge (F13): starts at 12 o'clock, clockwise; solid kind arc
-  // on a faint track; fraction changes ease 280ms; never loops, never breathes.
+  // the sub-task gauge: starts at 12 o'clock, clockwise
   const showArc = typeof progress === 'number' && s !== 'complete';
   const frac = showArc ? Math.max(0, Math.min(1, progress)) : 0;
   const arcR = size / 2 + 5;

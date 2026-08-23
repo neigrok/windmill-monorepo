@@ -1,19 +1,13 @@
-// Jitterless fractional indexing (LexoRank / Figma style): an order key is a string that
-// sorts by plain lexicographic `<`, and between any two distinct keys there is always room
-// for another — so a reorder is a single write of one key, never a renumber of siblings.
-// A key is an integer part (length-prefixed by its head char) plus a fractional tail; the
-// alphabet is base-62 in ascending char-code order (`0-9A-Za-z`), so string comparison over
-// keys equals comparison over digit indices. This is the standard rocicorp/fractional-indexing
-// algorithm; its correctness is pinned exhaustively in test/skilltree/sync/fractionalIndex.test.js.
+// Jitterless fractional indexing: an order key is a string that sorts by plain lexicographic `<`,
+// with room for another key between any two, so a reorder writes one key. A key is an integer part
+// (length-prefixed by its head char) plus a fractional tail over base-62 (`0-9A-Za-z`).
 
 const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const ZERO = DIGITS[0];
 const LAST = DIGITS[DIGITS.length - 1];
 const SMALLEST_INTEGER = 'A' + ZERO.repeat(26);  // integerLength('A') - 1 zeros — the internal floor, never a valid key
 
-// The integer part's length, encoded by its head char: heads a..z hold positives of length
-// 2..27, heads A..Z hold negatives of length 27..2. This is how a key carries an unbounded
-// integer magnitude without a separator.
+// Heads a..z hold positives of length 2..27, heads A..Z hold negatives of length 27..2.
 function integerLength(head) {
   if (head >= 'a' && head <= 'z') return head.charCodeAt(0) - 'a'.charCodeAt(0) + 2;
   if (head >= 'A' && head <= 'Z') return 'Z'.charCodeAt(0) - head.charCodeAt(0) + 2;
@@ -37,8 +31,8 @@ function validateKey(key) {
   if (frac.slice(-1) === ZERO) throw new Error(`invalid order key (trailing zero): ${key}`);
 }
 
-// A fractional string strictly between `a` and `b` (fractional parts only, no integer part).
-// `a` may be '' (open start), `b` may be null (open end); `a < b` when `b` is non-null.
+// A fractional string strictly between `a` and `b` (fractional parts only). `a` may be '' (open
+// start), `b` may be null (open end); `a < b` when `b` is non-null.
 function midpoint(a, b) {
   if (b !== null && a >= b) throw new Error(`${a} >= ${b}`);
   if (a.slice(-1) === ZERO || (b && b.slice(-1) === ZERO)) throw new Error('trailing zero');
@@ -90,9 +84,8 @@ function decrementInteger(x) {
   return prev + digs.join('');
 }
 
-// A key strictly between `a` and `b` under plain string `<`. Either end may be null (open):
-// keyBetween(null, null) is a mid key, keyBetween(a, null) sits after a, keyBetween(null, b)
-// before b. Requires a < b when both are given.
+// A key strictly between `a` and `b` under plain string `<`. Either end may be null (open).
+// Requires a < b when both are given.
 export function keyBetween(a = null, b = null) {
   if (a != null) validateKey(a);
   if (b != null) validateKey(b);
@@ -127,8 +120,7 @@ export function keyBetween(a = null, b = null) {
   return intA + midpoint(fracA, null);
 }
 
-// n evenly-spaced keys strictly between `a` and `b`, ascending — for seeding a whole group in
-// one shot. Splits the range recursively so the keys stay short and balanced.
+// n evenly-spaced keys strictly between `a` and `b`, ascending.
 export function nKeysBetween(a = null, b = null, n) {
   if (n <= 0) return [];
   if (n === 1) return [keyBetween(a, b)];

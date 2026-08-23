@@ -1,13 +1,7 @@
-// Off-screen births announce themselves here (burst-camera): a bark pill hugging
-// the viewport edge along the bearing to the newest arrivals, its glyph rotated
-// toward them and a count that accumulates across a burst. It informs — it never
-// moves the camera; clicking it asks the scene to glide there. It fades after a
-// few quiet seconds, retargets + re-arms on every fresh burst, and dissolves on
-// its own the moment the target scrolls into view. A scene overlay repositioned
-// from the render loop, styled inline so it owns no CSS, like HoverLabel.
+// Edge pill pointing at off-screen new arrivals; clicking it asks the scene to glide there.
 
-const EDGE_INSET = 20; // screen px between the viewport edge and the pill's center
-const LINGER_MS = 4200; // quiet time before an unclicked chevron fades away
+const EDGE_INSET = 20; // screen px
+const LINGER_MS = 4200; // quiet ms before an unclicked chevron fades
 
 export class ArrivalChevron {
   constructor(canvas, { onReveal }) {
@@ -35,7 +29,7 @@ export class ArrivalChevron {
       if (target) onReveal(target.x, target.y);
     });
     canvas.parentElement.appendChild(this.pill);
-    this.target = null; // { x, y, count } — world-space centroid of the latest burst
+    this.target = null; // { x, y, count } — world-space centroid
     this.fadeTimer = null;
   }
 
@@ -65,7 +59,7 @@ export class ArrivalChevron {
     const sy = (this.target.y - camera.y) * camera.zoom + camera.viewportHeight / 2;
     const w = camera.viewportWidth;
     const h = camera.viewportHeight;
-    if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) { this.clear(); return; } // seen — dissolve
+    if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) { this.clear(); return; }
     const dx = sx - w / 2;
     const dy = sy - h / 2;
     const tx = dx !== 0 ? (dx > 0 ? w - EDGE_INSET - w / 2 : EDGE_INSET - w / 2) / dx : Infinity;

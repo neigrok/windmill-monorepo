@@ -1,31 +1,18 @@
-// The plain account chrome — the frame the account surfaces share: /connect and
-// /settings. One fixed, centered card on the canvas, its head a wordmark and the
-// signed-in seat (a signed-out visitor gets the "Back to Windmill" door instead).
-// Purely presentational: it reads who this tab is straight from useAuth so both pages
-// render an identical head, and hands the page its own body as children. The margin:auto
-// centering keeps a short card centered while letting a tall one (settings) scroll from
-// the top instead of clipping.
+// The frame /connect and /settings share: one centred card.
 
 import React from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
 import { Avatar } from '../../design-system';
 
-// Product-neutral account frame: where "back/home" goes is the shell's call, not this
-// frame's. The shell hands in `backHash` from the active product's home (see shell/products.js);
-// the account surfaces (/settings, /connect) pass it down, so a new product slots in unchanged.
-// `bare` is the /app-shell mode: the same card at the same measure, minus the wordmark head,
-// the back door and its Esc twin — the shell's rail is the chrome there, not this frame.
+// `bare` is the /app-shell mode: the card minus the wordmark head, the back door and its Esc twin.
 export function AccountChrome({ width = 460, backHash = '#/app', bare = false, children }) {
   const { user, status } = useAuth();
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
-  // Esc leaves the account surface for the app — the keyboard twin of the "Back to Windmill"
-  // door, so /settings and /connect aren't a dead end. A bubble listener, so an open Dialog's
-  // capture-phase Esc still wins (closes the dialog first); skipped while typing in a field so
-  // Esc mid-edit stays the field's own, not a navigation that discards the edit.
+  // Bubble-phase, so an open Dialog's capture-phase Esc still wins.
   React.useEffect(() => {
-    if (bare) return undefined; // no back door in the shell — its rail owns navigation
+    if (bare) return undefined;
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
       const el = document.activeElement;

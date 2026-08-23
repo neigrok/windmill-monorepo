@@ -1,10 +1,3 @@
-// The log's screens (Log.jsx), driven for real through the harness (harness.mjs): the session read
-// whole with its withheld delete, and the log that did not open. What is pinned is what only a
-// screen can get wrong — a toast the hook owns outliving the screen that offered its Undo, and a
-// failure sentence blaming the signal for a store that answered. Named LogScreen and not Log.test.js
-// because log.test.js (the pure rules) already stands beside it, and a case-insensitive disk holds
-// one file under those two names.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -15,8 +8,6 @@ import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, t
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
 
-// One session with one set, as `GET /sessions/:id` and `GET /exercises` answer them; every request
-// is kept, because whether and when the DELETE went is the thing under test.
 function sessionOnTheWire({ deleteStatus = 204 } = {}) {
   const wire = [];
   const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000 };
@@ -34,8 +25,6 @@ function sessionOnTheWire({ deleteStatus = 204 } = {}) {
   return { wire, set };
 }
 
-// The one voice, as the hook hands it out — a stable `say` and `reloadLog`, and the toast the last
-// sentence landed in.
 function voice() {
   const spoken = [];
   return {
@@ -50,10 +39,6 @@ function voice() {
   };
 }
 
-// THE UNDO GOES WITH THE WINDOW. Delete a set, leave the screen inside the five seconds: the DELETE
-// is sent at once — the lifter asked for it — and the toast, which the hook owns and which outlives
-// this screen, used to keep offering an Undo on the next room that restored nothing and said nothing.
-// Now leaving says the sentence again with no move on it, which is what is true.
 test('a withheld delete sent on the way out says so again, with no Undo left on the toast', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
@@ -65,9 +50,6 @@ test('a withheld delete sent on the way out says so again, with no Undo left on 
   await settle();
   assert.deepEqual(wire, ['GET /sessions/ses_1', 'GET /exercises']);
 
-  // The fix sheet is opened on the set (its own row's `tap to fix`), and the sheet's Delete is the
-  // door into the withheld delete — the sheet is a child component, so its props are what the
-  // screen handed it.
   const row = findByClass(screen.tree, 'gym-set')[0];
   assert.notEqual(row, undefined, 'the set row is the door onto the fix');
   row.props.onClick();
@@ -75,15 +57,12 @@ test('a withheld delete sent on the way out says so again, with no Undo left on 
   assert.notEqual(sheet, undefined);
   sheet.props.onDelete();
 
-  // Withheld: the row is gone from the screen, the Undo is offered, and NOTHING has been sent.
   assert.deepEqual(wire, ['GET /sessions/ses_1', 'GET /exercises']);
   assert.equal(spoken.length, 1);
   assert.equal(spoken[0].text, '100 × 5 is out of the log.');
   assert.equal(spoken[0].action.label, 'Undo');
   assert.equal(findByClass(screen.tree, 'gym-set').length, 0);
 
-  // Two seconds in, the lifter leaves the screen. The delete goes now — and the sentence is said
-  // again with no move on it, so the toast the next room shows offers nothing it cannot do.
   t.mock.timers.tick(UNDO_MS - 3000);
   screen.unmount();
   await settle();
@@ -92,15 +71,12 @@ test('a withheld delete sent on the way out says so again, with no Undo left on 
     { text: '100 × 5 is out of the log.', action: null },
     { reloaded: true },
   ]);
-  // And the window's own clock, fired after the screen has gone, sends nothing twice.
   t.mock.timers.tick(UNDO_MS);
   await settle();
   assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 1);
   assert.equal(set.id, 'set_1');
 });
 
-// A DELETE the store refuses on the way out still speaks its refusal over the sentence above — the
-// set is still in the log, and that is what the lifter reads next.
 test('a delete refused on the way out says the set is still in the log, after the sentence that said it was out', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
@@ -124,10 +100,6 @@ test('a delete refused on the way out says the set is still in the log, after th
   assert.equal(spoken[2].action, null);
 });
 
-// THE LOG THAT DID NOT OPEN says why, because the three reasons have three repairs: a lapsed
-// sign-in is the door, a store that answered 5xx is a Retry the lifter can press now (the 'online'
-// event the screen once waited on never fires for it), and only a request that got no answer at
-// all is about signal — and even that one offers the Retry.
 test('the log that did not open names its reason, and offers the repair for it', async () => {
   const { LogNotOpen } = await loadScreen('products/gym/Log.jsx');
   const pressed = [];

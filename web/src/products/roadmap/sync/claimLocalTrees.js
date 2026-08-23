@@ -1,10 +1,6 @@
-// The claim (anon-first-tree F4): adopt this device's unclaimed local trees into the
-// signed-in account. Additive by construction — the create is INSERT-only (POST
-// /v1/trees with the client-minted id; `existed` is the idempotent resume), the lattice
-// flushes through the normal sync machinery (a CRDT join, never PUT), progress pushes
-// only marks the server holds NO row for, and markClaimed lands LAST. Every input is
-// durable before any wire traffic, so the whole sequence is resumable: a reload
-// mid-claim loses nothing — the boot trigger simply runs it again.
+// Adopts this device's unclaimed local trees into the signed-in account. Additive: the create is
+// insert-only (`existed` is its idempotent resume), the lattice flushes through the normal sync
+// machinery, and the claim mark lands last, after everything is durable.
 
 import { createTree } from '../persistence/TreeRegistry.js';
 import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeRegistry.js';
@@ -14,8 +10,7 @@ import { track } from '../../../telemetry/beacon.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
 
-// The id names a roadmap this account deleted. Not an error to retry — an answer: this device
-// is holding the leftovers of a tree its owner retired, and the claim's job is to let it go.
+// The id names a roadmap this account deleted: not an error to retry, an instruction to let go.
 class RetiredTree extends Error {
   constructor(treeId) {
     super(`tree ${treeId} was deleted by its owner`);
@@ -23,15 +18,10 @@ class RetiredTree extends Error {
   }
 }
 
-// One pass over the device index. `openSession` is an accessor for the live session of
-// the currently-open tree (its socket already carries the fresh principal); every other
-// tree drains through a headless session. Never rejects — a tree whose claim fails just
-// stays unclaimed for the next pass.
+// One pass over the device index. `openSession` is an accessor for the live session of the
+// currently-open tree; every other tree drains through a headless session. Never rejects.
 export async function claimLocalTrees({ openTreeId = null, openSession = null } = {}) {
-  // The claim adopts the ANONYMOUS work on this device plus whatever the arriving account itself
-  // left unclaimed here — never another account's rows (audit WEB-4: the next person to sign in
-  // used to upload the previous one's trees into their own account). Who is arriving comes from
-  // the server: the remembered marker survives a browser that was killed instead of signed out.
+  // Who is arriving comes from the server, never from a remembered marker.
   const owner = await resolveDeviceOwner();
   if (!owner) return { claimed: 0 }; // nobody is signed in; there is no account to claim into
   const registry = new LocalTreeRegistry();
@@ -48,10 +38,7 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
       window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId } }));
       claimed += 1;
     } catch (err) {
-      // A tree the account has deleted is done, not pending: clear this device's copy so the
-      // next boot has nothing left to claim. Every other failure leaves the tree unclaimed and
-      // the next boot retries it; an unreachable or signed-out server dooms the rest of the run
-      // too, so stop asking.
+      // A deleted tree is done, not pending; every other failure leaves it for the next boot.
       if (err instanceof RetiredTree) {
         await deleteLocalTree(err.treeId).catch(() => {});
         window.dispatchEvent(new CustomEvent('wm-claim-retired', { detail: { treeId: err.treeId } }));
@@ -65,26 +52,19 @@ export async function claimLocalTrees({ openTreeId = null, openSession = null } 
   return { claimed, pending: pending.length };
 }
 
-// Step 1 — the server tree exists under our id: created empty (default legend at
-// genesis, so the local seed converges with it), or `existed` (owner == caller, a
-// plain resume). 409 id-taken means another account owns the id — cryptographically
-// unreachable for an honestly-minted one. The local tree survives by moving under a
-// fresh id; the server's version stands untouched.
+// Step 1 — the server tree exists under our id: created empty at the genesis legend, or `existed`,
+// a resume. 409 id-taken means another account owns the id; the local tree moves under a fresh one.
 async function ensureServerTree(entry) {
   try {
     const { treeId } = await createTree(claimBody(entry.id, entry.title));
     return treeId;
   } catch (err) {
-    // 409 id-retired is this account's own deleted roadmap. Re-planting it under a fresh id —
-    // what the id-taken path below does — is how a deleted tree came back every boot, forever,
-    // wearing a new id each time so deleting it again never helped. A delete is an instruction:
-    // honour it by clearing what this device still holds, and claim nothing.
+    // id-retired is this account's own deleted roadmap: never re-plant it under a fresh id.
     if (err?.code === 'id-retired') throw new RetiredTree(entry.id);
     if (err?.code !== 'id-taken') throw err;
   }
   const freshId = mintTreeId();
   await moveLocalTree(entry.id, freshId);
-  // wm-claim-conflict is a stub seam: the F7/X4 two-versions card will listen here and decide, instead of this silent remap.
   window.dispatchEvent(new CustomEvent('wm-claim-conflict', { detail: { treeId: entry.id, remappedTo: freshId } }));
   if (window.location.hash === `#/app/${entry.id}`) window.location.hash = `#/app/${freshId}`;
   const { treeId } = await createTree(claimBody(freshId, entry.title));
@@ -96,13 +76,9 @@ function claimBody(id, title) {
   return trimmed ? { id, title: trimmed } : { id };
 }
 
-// Steps 2 + 3 — drain the lattice up through the normal machinery (the flush is derived
-// from coverage, not a queue), then push only the progress marks the server has never
-// heard of: cleared marks stay dead, known marks stand.
+// Step 2 — drain both lanes; the flush is derived from coverage, not a queue.
 async function syncTreeUp(treeId, title, { openTreeId, openSession }) {
-  // openSession() returns whatever session is live NOW — the user may have switched
-  // trees since the run started, and draining a stranger's session would record this
-  // tree's progress onto that one. Identity-check it; the headless path is always safe.
+  // Identity-check the live session, or a tree switched since the run started takes this progress.
   const candidate = treeId === openTreeId ? openSession?.() : null;
   const live = candidate?.treeId === treeId ? candidate : null;
   const session = live ?? new SyncSession({ treeId, title });
@@ -113,18 +89,13 @@ async function syncTreeUp(treeId, title, { openTreeId, openSession }) {
     });
     if (live) session.forceReconnect();
     else await session.start();
-    // The subscribe can race the create's commit: one silent "no such tree" reject and
-    // the session sits dead (rejects never resubscribe on their own). Nudge the wire
-    // until it goes live — the drain resolves the happy side of the race.
+    // The subscribe can race the create's commit and a reject never resubscribes: nudge until live.
     const nudge = setInterval(() => { if (session.phase !== 'live') session.forceReconnect(); }, 2500);
     try {
       await drained;
     } finally {
       clearInterval(nudge);
     }
-    // The marks made before this account existed need no push of their own: they are registers in
-    // the same session's private lane, uncovered until the server acks them, so the drain above IS
-    // their flush. `onDrained` waits on both lanes for exactly this reason.
   } finally {
     session.onDrained(null);
     if (!live) session.close();

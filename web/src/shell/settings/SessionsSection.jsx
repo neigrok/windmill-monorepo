@@ -1,9 +1,4 @@
-// Settings §03 · Sessions & devices. Every active sign-in this account holds: the device
-// (formatted from its user-agent — there is no geo-IP, so place never renders), how
-// recently it was seen, and a THIS DEVICE tag on the one you're reading from. A quiet ×
-// revokes any single session; revoking the current one signs this tab out and returns it
-// home. "Sign out everywhere" clears every other device at once — they keep their local
-// copies, the standing promise.
+// Revoking the current session signs this tab out and returns it home.
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
@@ -31,7 +26,7 @@ export function SessionsSection() {
   const revoke = async (session) => {
     try {
       await revokeSession(session.id);
-    } catch { /* already gone or unreachable — fall through to the local effect */ }
+    } catch { /* already gone or unreachable */ }
     if (session.current) {
       await signOut();
       window.location.hash = '#/';
@@ -44,7 +39,7 @@ export function SessionsSection() {
     try {
       await signOutEverywhere();
       setSessions((rows) => rows.filter((row) => row.current));
-    } catch { /* unreachable — the list stays as it was */ }
+    } catch { /* unreachable */ }
   };
 
   const others = (sessions ?? []).some((session) => !session.current);

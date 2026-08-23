@@ -1,33 +1,20 @@
-// Turn an SVG string into a PNG Blob by drawing it onto a canvas through an <img>. Used by
-// the share flow to rasterize the OG card (ogCard.js) before uploading it.
-//
-// THE FONT GOTCHA (verified, not theoretical): an SVG drawn onto a canvas via <img> is an
-// ISOLATED document — it can neither fetch its own @font-face fonts NOR reach the host page's
-// already-loaded ones. document.fonts.ready + document.fonts.load make fonts.check() pass, yet
-// the raster still falls back to sans-serif (a Baloo raster came out pixel-identical to a plain
-// sans-serif one). The only reliable fix is to EMBED the exact faces the card uses as base64
-// @font-face inside the SVG, so the isolated document carries its own fonts. We inject that
-// <style> here (at the I/O boundary) — the builder stays pure and font-agnostic. fonts.ready
-// remains as a weak fallback for the rare case the woff2 bytes can't be fetched.
-//
-// Best-effort by contract: any failure (a tainted canvas, an <img> that won't decode, no DOM at
-// all) resolves to null — the caller falls back to the generic OG image and sharing is never
-// blocked or broken.
+// Turns an SVG string into a PNG Blob by drawing it onto a canvas through an <img>. An SVG drawn
+// that way is an isolated document — it can reach neither its own @font-face fonts nor the host
+// page's loaded ones — so the exact faces must be embedded as base64 @font-face inside the SVG.
+// Any failure resolves to null.
 
 import BALOO_700_URL from '@fontsource/baloo-2/files/baloo-2-latin-700-normal.woff2?url';
 import BALOO_600_URL from '@fontsource/baloo-2/files/baloo-2-latin-600-normal.woff2?url';
 import MONO_600_URL from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2?url';
 
-// Only the exact faces the card's text uses: title (Baloo 700), watermark (Baloo 600), readout
-// (JetBrains Mono 600). The latin subset covers the card's copy — titles, "Made with Windmill",
-// digits and the ellipsis.
+// Only the exact faces the card's text uses; the latin subset covers its copy.
 const CARD_FACES = [
   { family: 'Baloo 2', weight: 700, url: BALOO_700_URL },
   { family: 'Baloo 2', weight: 600, url: BALOO_600_URL },
   { family: 'JetBrains Mono', weight: 600, url: MONO_600_URL },
 ];
 
-let fontStyle = null; // the embedded <style>, fetched + encoded once and reused across shares
+let fontStyle = null; // fetched and encoded once, reused across shares
 
 export async function svgToPngBlob(svgString, width = 2400, height = 1260) {
   if (typeof document === 'undefined') return null;
@@ -48,8 +35,7 @@ export async function svgToPngBlob(svgString, width = 2400, height = 1260) {
   }
 }
 
-// The card's fonts as a base64 @font-face <style>, fetched + encoded once and reused. Exposed so
-// the share-video capture can embed the same faces in every frame it rasterises (same font gotcha).
+// The card's fonts as a base64 @font-face <style>, shared with the share-video capture.
 export async function embeddedFontStyle() {
   if (!fontStyle) fontStyle = await buildFontStyle();
   return fontStyle;
@@ -61,8 +47,7 @@ async function withEmbeddedFonts(svgString) {
     const at = svgString.indexOf('>'); // end of the opening <svg …> tag
     return at < 0 ? svgString : `${svgString.slice(0, at + 1)}${style}${svgString.slice(at + 1)}`;
   } catch {
-    // The woff2 bytes couldn't be fetched — fall back to the host page's loaded faces (weaker:
-    // it works in some engines, not all) rather than failing the whole raster.
+    // The woff2 bytes couldn't be fetched: fall back to the host page's loaded faces.
     if (document.fonts) await document.fonts.ready.catch(() => {});
     return svgString;
   }

@@ -1,20 +1,10 @@
-// Everything an echo draws inside a page: the tab on the edge, the ink the tab opens, and — once
-// ever — the card that says what an echo is.
-//
-// An echo belongs to its page permanently, so it is marked the way you mark a book: a tab on the
-// edge, level with the paragraph it belongs to, carrying nothing but its count. It never appears
-// above the cursor, never animates, and never differs between a subscriber and everyone else.
-// Hiding it made the canvas quietly dishonest — the journal had found something and said nothing.
-//
-// What differs is one tap in. With One the passage arrives whole, and everything else found under
-// it. Without One the nearest passage stops mid-clause, the words it withheld are counted, and the
-// page it came from stays free to scroll to — because One sells the finding, never access to your
-// own writing.
+// Everything an echo draws inside a page: the tab on the edge, the ink it opens, the once-ever card.
+// The tab is the same with or without One; what differs is one tap in.
 
 import React, { useEffect, useRef } from 'react';
 import { FreePath, InkDates, InkRow } from './Ink.jsx';
 
-// Newest reads first and nothing is dimmed past legibility, so the ladder stops at half.
+// Nothing is dimmed past legibility, so the ladder stops at half.
 const LADDER = [1, 0.82, 0.64, 0.5];
 
 export function PageEchoes({ echoes, day, standing = false }) {
@@ -23,9 +13,7 @@ export function PageEchoes({ echoes, day, standing = false }) {
   const open = echoes.openDay === day;
   const first = echoes.firstEchoDay === day;
 
-  // The tab carries a count while it is closed, so the count has to be one the reader could check —
-  // which means the quotes behind it must already have been re-located in their live pages. Verify
-  // on mount, not on open: a number that shrinks the moment you touch it was never true.
+  // The tab carries a count while closed, so quotes are re-located on mount, not on open.
   useEffect(() => { verify(day); }, [verify, day]);
 
   if (!page) return null;
@@ -42,9 +30,7 @@ export function PageEchoes({ echoes, day, standing = false }) {
   );
 }
 
-// The tab: 24 × 26, hung off the right edge with no right border, so it runs off the page rather
-// than sitting near it. It says the count and nothing else — no word, no icon, no dot — and it is
-// the close control once its ink is open. Present when the page loads; it never arrives.
+// The tab says the count, and is the close control once its ink is open.
 function EdgeTab({ count, state, onClick }) {
   const closing = state === 'open';
   return (
@@ -66,21 +52,13 @@ function EdgeTab({ count, state, onClick }) {
   );
 }
 
-// The ink, in place. With One it is every passage found, oldest at the bottom. Without One it is the
-// nearest, cut, then every other date — all of them, because the tab already said how many there are
-// and a count whose members you cannot reach is not a fact.
-//
-// Named for where it opens, not for what it is made of: `Ink.jsx` is the shared parts every surface
-// draws an echo out of, and a local `Ink` here would read like the one thing that file does not export.
+// With One, every passage found, oldest at the bottom; without One, the nearest cut, then the dates.
 function PageInk({ echoes, page }) {
   const [nearest, ...rest] = page.matches;
   const ref = useRef(null);
   const scroller = echoes.canvas?.scroller ?? null;
 
-  // "The surface grows downward and tonight's text moves up" — the canvas has to actually move, or
-  // a tap on the tab appends something below the fold and looks like nothing happened. Forward only,
-  // and only within a screen of where you already are: a page you tapped gets nudged into view, a
-  // page you are still flying to is the flight's business and this must not fight it.
+  // Forward only, and only within a screen: a page still being flown to is the flight's business.
   useEffect(() => {
     if (!scroller || !ref.current) return;
     const frame = scroller.getBoundingClientRect();
@@ -105,9 +83,7 @@ function PageInk({ echoes, page }) {
       </div>
     );
   }
-  // The cut passage can be answered too. A reader without One still sees the date, the distance and
-  // the opening words, which is enough to know whether the journal reached back at anything real —
-  // and an answer only subscribers may give measures only subscribers.
+  // The cut passage can be answered too.
   return (
     <div className="je-ink" ref={ref}>
       <InkRow
@@ -123,8 +99,7 @@ function PageInk({ echoes, page }) {
   );
 }
 
-// Said once, below tonight's page, never during the first run and never with a fanfare. An echo
-// needs months, so offering it early sells nothing real. From now on it is the tab on the edge.
+// Said once, below tonight's page, never during the first run.
 function FirstEcho({ echoes, page }) {
   const { claimFirstEcho } = echoes;
   useEffect(() => { claimFirstEcho(); }, [claimFirstEcho]);

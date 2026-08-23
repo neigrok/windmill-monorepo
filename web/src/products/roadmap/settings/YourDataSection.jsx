@@ -1,11 +1,4 @@
-// Settings · Your roadmaps — the export, and nothing else. It zips one Markdown file per tree in
-// F3's grammar, the same format the composer pastes back, so it round-trips.
-//
-// CLOSING THE ACCOUNT USED TO LIVE HERE TOO, and that was the bug: an account holds journal pages
-// and gym sessions as well as trees, so a delete screen inside the roadmap described one product's
-// data while closing all three. It moved to shell/settings/CloseAccountSection.jsx on 2026-08-07 —
-// a product owns its export, the account owns its close, and no product may grow a second door
-// that closes it.
+// A product owns its export, the account owns its close, and no product grows a second door that closes it.
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';

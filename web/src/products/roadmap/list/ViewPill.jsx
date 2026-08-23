@@ -1,8 +1,3 @@
-// The view switch (X8 L1): a cream pill, two icon segments — list and tree — one tap apart. It is
-// a tool, never a kind, so it wears bark, not a hue. Present in both views for both audiences; the
-// active segment fills bark with a white glyph. Purely presentational — the host owns which view
-// is live and persists the choice, and the action lane owns where the pill sits (its left slot).
-
 import React from 'react';
 
 const LIST_GLYPH = (

@@ -2,22 +2,13 @@ import React from 'react';
 import { SHARE_PALETTE } from './palette.js';
 import { treePortraitSvg } from './TreePortrait.js';
 
-// The gallery thumb (X2 spec #12) — one tree, drawn the same way on every surface that
-// exhibits trees: the design showcase, and the in-product wall at #/browse. Drops the
-// postcard mat — it already lives inside app chrome — but keeps the kind rule and reuses
-// the share frame's title + progress readout. All color comes from SHARE_PALETTE[theme];
-// the surface and text branch on theme so a dark card is a dark card, not a light one dimmed.
-//
-// Three slots vary by surface. The thumb is either a live RenderModel (`model`) or the
-// tree's own uploaded portrait (`portrait`, a URL). The footer is either the showcase's
-// byline (`author`) or whatever the surface composes (`children`). And `loading` draws the
-// whole anatomy as neutral blocks — thumb, kind rule, title line, meta line, footer — at
-// the card's exact height, so the card that replaces it lands with no shift (X3 §4).
-//
-// A surface that uses `loading`, `href` or `badge` mounts GALLERY_CARD_CSS once.
+// One tree, drawn the same way on every surface that exhibits trees. All colour comes from
+// SHARE_PALETTE[theme]. The thumb is either a live RenderModel (`model`) or the tree's own uploaded
+// portrait (`portrait`, a URL); the footer is either `author` or whatever `children` composes;
+// `loading` draws the anatomy as neutral blocks at the card's exact height. A surface using
+// `loading`, `href` or `badge` mounts GALLERY_CARD_CSS once.
 
-// The three body rows carry fixed heights so a skeleton and a filled card can never
-// disagree about how tall the card is — the same code draws both.
+// Fixed row heights, so a skeleton and a filled card cannot disagree about the card's height.
 const TITLE_LINE = 22;
 const META_LINE = 16;
 const FOOTER_LINE = 28;
@@ -37,8 +28,7 @@ export function GalleryCard({
   const textSecondary = isDark ? pal.sub : 'var(--text-secondary)';
   const textTertiary = isDark ? pal.tert : 'var(--text-tertiary)';
 
-  // A pixel-wide card sizes its thumb in pixels (~16:9, 158 at the 288 default); a fluid
-  // one takes the OG portrait's own shape, the same box the public wall gives it.
+  // A pixel-wide card sizes its thumb in pixels; a fluid one takes the OG portrait's own shape.
   const thumbHeight = typeof width === 'number' ? Math.round(width * 0.55) : null;
   const thumbBox = thumbHeight === null ? { aspectRatio: '1200 / 630' } : { height: thumbHeight };
 
@@ -113,9 +103,8 @@ export function GalleryCard({
   );
 }
 
-// The title is the card's one link when it has a destination: its ::after stretches over
-// the whole card, so clicking anywhere opens the tree while a real button in the footer
-// (fork) still takes its own clicks — no interactive element nested inside another.
+// The card's one link: its ::after stretches over the whole card, so clicking anywhere opens the
+// tree while a button in the footer still takes its own clicks.
 function TitleLine({ href, color, children }) {
   const style = {
     fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16.5, color,
@@ -125,9 +114,7 @@ function TitleLine({ href, color, children }) {
   return <a className="wm-gc-open" href={href} style={style}>{children}</a>;
 }
 
-// Mounted once by any surface that draws linked, badged or loading cards. The neutral
-// sweep is the card's whole loading vocabulary (X3): neutral-100 ↔ neutral-200, 2s linear,
-// never a kind hue; reduced motion holds it at a flat neutral-100.
+// Mounted once by any surface that draws linked, badged or loading cards.
 export const GALLERY_CARD_CSS = `
   .wm-gc-shot { display:block; width:100%; height:100%; object-fit:cover; }
   .wm-gc-open { text-decoration:none; }

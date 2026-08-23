@@ -1,61 +1,33 @@
 import SwiftUI
 import WindmillPlatform
 
-// §M's building surface — ONE editor since the 13 Aug update (R2/R3): the same screen creates a
-// routine and edits one, differing only in what is already in the list. What it DECIDES lives in
-// RoutineBuilder.swift; this draws it.
-//
-// THE NAME IS INLINE AT THE TOP, never a step before — add movements first and name it last, or
-// the reverse — with the suggestion chips beside the field while it is empty. The two-step wizard
-// (a name screen, then a build screen) retired with the Today tab; renaming a routine is editing
-// this same field, so the standalone rename sheet went with it.
-//
-// SAVE IS IN THE HEADER AND ONLY THERE — §M's own sentence ("Save in the header") wins over the
-// drawn footer. It enables when the draft is savable: named and holding a movement on a build, and
-// additionally CHANGED on an edit — a Save that re-sent an unchanged document would move the
-// revision and set pending proposals aside for nothing. Rows with no targets are `open` and ask at
-// the rack — a program copied in over two sittings is a routine, not a half-finished form.
-//
-// THE SHEET SITS OVER THE LIST AND NOT INSTEAD OF IT (screen 29). That is the whole reason targets
-// are set here rather than on a page of their own: the shape of the day stays visible while numbers
-// are typed into it, so a lifter copying a program in can see what they have already put down.
+// Save enables when the draft is savable: named and holding a movement on a build, and changed as well on an edit — re-sending
+// an unchanged document would move the revision and set pending proposals aside for nothing.
 struct RoutineEditorScreen: View {
     let catalog: [Exercise]
-    // Whether this is a routine the room already holds — the title's word, Save's changed-rule, and
-    // the two foot rows only edit mode carries. Create-vs-replace on the wire stays the draft id's
-    // own question, decided by the room at the save.
     let editing: Bool
     let untested: Bool
     let saving: Bool
     let failure: String?
     let onSave: (RoutineDraft) -> Void
-    // Edit mode's foot rows (R3). Duplicate hands back the day AS EDITED — a copy of what is on
-    // screen, not of what was last saved — and the room opens a fresh create-mode editor on it.
+    // Hands back the day as edited, not as last saved.
     let onDuplicate: ((RoutineDraft) -> Void)?
     let onDelete: (() -> Void)?
     let onCreateMovement: (String, String) async -> Result<Exercise, TrainingStore.WriteFailure>
 
     @Environment(\.gymSkin) private var skin
-    // SEEDED ONCE AND OWNED HERE. The room hands a draft in and gets one back at the tap; everything
-    // between is this screen's, so a movement added and a target typed do not need a round trip
-    // through the room to appear.
     @State private var draft: RoutineDraft
-    // The draft as it arrived, kept for edit mode's changed-rule — one comparison over the WRITE,
-    // because the write is what a Save would send and line ids are this screen's own scaffolding.
+    // Kept for edit mode's changed-rule: the comparison is over the write, since line ids are this screen's own.
     private let opening: RoutineDraft
     @State private var sheet: Sheet?
     @State private var minting = false
     @State private var mintFailure: String?
     @FocusState private var namingIt: Bool
 
-    // The two sheets this screen opens, and the row a target is being typed for. One value rather
-    // than a Bool beside an index, because "which row" and "is a sheet up" are the same fact and two
-    // spellings of it eventually disagree.
     private enum Sheet: Identifiable {
         case picking
         case creating(String)
-        // The LINE and never its place in the list: a drag moves places, and a sheet keyed on one
-        // would be typing numbers into whichever row slid into that slot.
+        // The line and never its place: a drag moves places.
         case targeting(String)
 
         var id: String {
@@ -86,7 +58,6 @@ struct RoutineEditorScreen: View {
         _draft = State(initialValue: draft)
     }
 
-    // Savable on a build; savable AND changed on an edit (R3).
     private var savable: Bool {
         guard editing else { return draft.isSavable }
         return draft.isSavable && draft.write != opening.write
@@ -100,9 +71,6 @@ struct RoutineEditorScreen: View {
 
             if draft.lines.isEmpty {
                 nothingYet
-                // The list is what fills this screen, so with no rows the space has to come from
-                // somewhere — the buttons belong at the foot, in the thumb zone, and not stacked
-                // under a sentence at the top of an empty page.
                 Spacer(minLength: 0)
             } else {
                 rows
@@ -121,9 +89,6 @@ struct RoutineEditorScreen: View {
             if editing { editRows }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // A fresh build opens with the keyboard already up on the name (screen 28 draws the field
-        // focused) — the one question only this lifter can answer. An edit, and a duplicate that
-        // arrives named, open on the list instead: the name is already there to be typed over.
         .task {
             guard !editing, draft.trimmedName.isEmpty else { return }
             namingIt = true
@@ -131,15 +96,10 @@ struct RoutineEditorScreen: View {
         .sheet(item: $sheet) { open in
             switch open {
             case .picking:
-                // The same picker the logger opens, so one product has one way to name a movement.
-                // `lastSets` is nil on purpose and is not an omission: that read is a picker-open
-                // call about what the lifter has TRAINED, and a routine being written at a kitchen
-                // table is not asking what they lifted last Tuesday.
+                // `lastSets` is nil here: this screen asks the log for no history.
                 MovementPicker(catalog: catalog, taken: draft.entries.map(\.exerciseId),
                                lastSets: nil,
                                onPick: { pick($0) },
-                               // A movement the catalog has never heard of goes through §N screen
-                               // 31 — two questions — and lands straight in the day being built.
                                onCreate: { sheet = .creating($0) },
                                onClose: { sheet = nil })
                     .presentationBackground(skin.canvas)
@@ -149,8 +109,6 @@ struct RoutineEditorScreen: View {
                                     onCancel: { sheet = nil })
                     .presentationBackground(skin.canvas)
             case .targeting(let lineId):
-                // A line dropped while its sheet was up has nothing to type into, so the sheet
-                // draws nothing rather than reaching into a list that no longer holds it.
                 if let line = draft.line(lineId) {
                     TargetSheet(entry: line.entry,
                                 movement: Readout.movement(line.entry.exerciseId, in: catalog),
@@ -178,10 +136,6 @@ struct RoutineEditorScreen: View {
             .padding(.horizontal, WindmillSpace.x5)
     }
 
-    // A List for the two gestures the assembly sheet already teaches — drag to reorder, swipe to
-    // drop — so one product has one way to rearrange a list of movements. Its own chrome is off:
-    // the room draws its rows, and a system separator in here would be the one hairline in gym that
-    // came from somewhere else.
     private var rows: some View {
         List {
             ForEach(draft.lines) { line in
@@ -208,8 +162,6 @@ struct RoutineEditorScreen: View {
                 .font(WindmillFont.body(15, .bold))
                 .foregroundStyle(skin.ink)
             Spacer(minLength: WindmillSpace.x2)
-            // The open row is drawn in the room's faintest ink and a named target in the accent,
-            // because one of them is a number the lifter chose and the other is the absence of one.
             Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
                                 weightKg: entry.targetWeightKg))
                 .font(GymType.numeral(13))
@@ -234,9 +186,6 @@ struct RoutineEditorScreen: View {
         .padding(.horizontal, WindmillSpace.x5)
     }
 
-    // SAVE IS THE HEADER'S AND ONLY THE HEADER'S (R3). It says what it is doing while the write is
-    // out, and it is dim rather than absent while the draft is not savable — a control that
-    // vanished would leave the way out of this screen moving around.
     private var head: some View {
         HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
             Text(editing ? "Edit routine" : "New routine")
@@ -256,10 +205,7 @@ struct RoutineEditorScreen: View {
         .padding(.top, WindmillSpace.x8)
     }
 
-    // The name, IN the editor (§M): capped where it is typed — sixty characters, and the eighty
-    // bytes the column holds, which in a two-byte script runs out first. Any language, any
-    // spelling, any punctuation: a length is the only bound in this product, because we do not
-    // correct anyone's spelling of their own gym.
+    // Capped where it is typed: sixty characters, or the eighty bytes the column holds.
     private var nameField: some View {
         HStack(spacing: WindmillSpace.x3) {
             TextField("", text: $draft.name,
@@ -288,9 +234,7 @@ struct RoutineEditorScreen: View {
         .padding(.horizontal, WindmillSpace.x5)
     }
 
-    // SUGGESTIONS, NEVER RULES — screen 28's chips, drawn only while the field is empty. A tap
-    // fills the field and typing over it is the expected case; nothing here validates a name
-    // against this list, and nothing counts how often it is ignored.
+    // Drawn only while the field is empty; nothing validates a name against this list.
     private var suggestions: some View {
         HStack(spacing: WindmillSpace.x2) {
             ForEach(RoutineDraft.suggestions, id: \.self) { offered in
@@ -308,8 +252,6 @@ struct RoutineEditorScreen: View {
         .padding(.horizontal, WindmillSpace.x5)
     }
 
-    // Edit mode's two remaining verbs (R3), moved here from the routine's own page: quiet text
-    // rows at the foot, the destructive one in the room's alarm ink and nothing else in it.
     private var editRows: some View {
         HStack(spacing: WindmillSpace.x6) {
             Button("Duplicate") { onDuplicate?(draft) }
@@ -327,16 +269,11 @@ struct RoutineEditorScreen: View {
         .padding(.bottom, WindmillSpace.x2)
     }
 
-    // Adding a movement is asking what it is for, so the target sheet opens on it — the row's own
-    // tap, given without the tap. It can still be left open from there, which is the whole of §M's
-    // savable-while-incomplete rule under a thumb.
     private func pick(_ exerciseId: String) {
         sheet = .targeting(draft.add(exerciseId).id)
     }
 
-    // A movement minted from screen 31 lands in the day being built, and the sheet stays up until
-    // the log answers: a create that did not happen may not close as though it had, and a picker
-    // that closed on a movement that was never minted is a lifter left holding nothing.
+    // The sheet stays up until the log answers.
     private func mint(_ name: String, loadedAs equipment: String) {
         minting = true
         mintFailure = nil
@@ -353,25 +290,13 @@ struct RoutineEditorScreen: View {
     }
 }
 
-// THE TARGET SHEET (§M screen 29) — the numbers for one movement, over the day they belong to.
-//
-// IT REACHES FOR NO HISTORY, and that is the rule this sheet exists to keep. A routine built at home
-// has never been run, so there is no last time for it to prefill from; the line above the steppers
-// says so plainly, and inventing a number to sit under it would be the exact lie that line prevents.
-// The dial opens on WHAT THE ROW ALREADY SAYS — including the two things it may say by saying
-// nothing, `max` and `last time`, each of which keeps its own word here and its own way back.
-//
-// THE LADDER IS THE ONE THAT ALREADY EXISTS. The four buttons are `Ladder.labels` and the step is
-// `Ladder.bump` — the same rule as the rack, pinned across three languages by a golden. A second
-// stepper written here would step a Sunday target differently from the same weight on Thursday.
+// Reaches for no history: the dial opens on what the row already says, including `max` and `last time`.
 private struct TargetSheet: View {
     let entry: RoutineWrite.Entry
     let movement: String
     let place: String
     let untested: Bool
-    // Reps and weight are handed back OPTIONAL, because either may be the absence the row arrived
-    // with or was just given: `3 × max` and "whatever you did last time" are targets a lifter and an
-    // agent both write, and a commit that could only spell numbers would overwrite them with two.
+    // Reps and weight are optional: either may be the absence the row arrived with, and both absences are targets.
     let onSet: (Int, Int?, Double?) -> Void
     let onOpen: () -> Void
 
@@ -402,15 +327,10 @@ private struct TargetSheet: View {
                     .foregroundStyle(skin.inkFaint)
             }
 
-            // Drawn only over a routine that has never been trained, because that is the only
-            // routine it is true of. Editing a day you have already run says nothing here: the
-            // targets on screen came from that history and need no disclaimer.
             if untested { neverLogged }
 
             HStack(spacing: WindmillSpace.x3) {
                 stepper("Sets", value: String(target.sets)) { target.bumpSets($0) }
-                // `max` is a rep target and not a missing one, so the stepper reads it as a word
-                // rather than as a blank where a number should be.
                 stepper("Reps", value: Readout.repTarget(target.reps)) { target.bumpReps($0) }
             }
 
@@ -426,8 +346,6 @@ private struct TargetSheet: View {
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
 
-            // The other answer, and it is an answer rather than a cancel: leaving the row open is a
-            // decision about the training — you will pick the weight when you are standing there.
             Button(action: onOpen) {
                 HStack {
                     Text("Leave it open")
@@ -495,9 +413,7 @@ private struct TargetSheet: View {
         }
     }
 
-    // A ROW MAY NAME NO WEIGHT, and that is a target rather than a blank: "whatever you did last
-    // time", answered at the rack off this lifter's own log. It is drawn in the room's faintest ink
-    // in the numeral's own place — the absence where the number would be.
+    // No weight is a target rather than a blank: whatever you did last time.
     private var weight: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text("TARGET WEIGHT")
@@ -517,9 +433,6 @@ private struct TargetSheet: View {
                     Spacer(minLength: WindmillSpace.x2)
                 }
             } else {
-                // THE NUMERAL'S OWN FONT, so the absence stands exactly where the number would and
-                // the ladder under it does not jump the moment a load is named. Faint, because it is
-                // the one thing on this sheet that is not a number the lifter chose.
                 Text("last time")
                     .font(WindmillFont.display(56, .heavy))
                     .foregroundStyle(skin.inkFaint)
@@ -529,14 +442,8 @@ private struct TargetSheet: View {
         }
     }
 
-    // THE TWO WAYS TO SAY LESS, in one row that is always here whether or not it has a word in it.
-    // Each takes one field back to the absence it arrived with — no rep target is `max`, no weight is
-    // "last time" — and each is offered only while there is a number to remove.
-    //
-    // THE ROW KEEPS ITS HEIGHT EMPTY, which is the point of it being a row at all: a word appearing
-    // under a thumb would push the ladder half an inch down on the tap that named the first weight,
-    // and the four keys above are tapped three and four times in a row. Nothing on this sheet moves
-    // while a target is being dialled.
+    // Each takes one field back to its absence — no rep target is `max`, no weight is last time's — and the row keeps its
+    // height when empty so the ladder under it does not move.
     private var waysBack: some View {
         HStack(spacing: WindmillSpace.x4) {
             if target.reps != nil { clear("take it to max") { target.reps = nil } }
@@ -546,8 +453,6 @@ private struct TargetSheet: View {
         .frame(height: GymTap.minimum)
     }
 
-    // A word rather than a key, because it removes a target instead of moving one and it is the
-    // rarer answer of the two. Full tap height like every other control in this room.
     private func clear(_ word: String, tap: @escaping () -> Void) -> some View {
         Button(word, action: tap)
             .font(WindmillFont.body(12.5, .semibold))
@@ -565,8 +470,6 @@ private struct TargetSheet: View {
         }
     }
 
-    // The fine step is the program step and the plate step is a plate change, and they are SIZED
-    // apart rather than captioned — §K's own rule, so the labels are the caption.
     private func step(_ label: String, big: Bool, tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
             Text(label)

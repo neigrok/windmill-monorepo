@@ -26,16 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// The brand's scales for native, plus the one treatment where two of them must be chosen together.
-// The values are the ones web/src/styles/tokens/colors.css holds, mirrored BY HAND: nothing checks
-// the surfaces against each other (packages/design-tokens, which would, is still only a README),
-// so a hue that moves on one surface has to be carried to the others. Product-neutral by
-// construction: a product that needs its own surface (gym's basalt, journal's night) overrides
-// these inside its own scope, exactly as the web products override role tokens inside their class.
+// The values mirror web/src/styles/tokens/colors.css by hand; nothing checks one against the other.
 
-// One token, two skins, resolved by this local rather than by a branch at the call site — so a
-// view never has to ask which appearance it is in. It defaults to dark because the v1 app IS dark
-// (one room, and it pins basalt); the pair keeps the future, for a shell whose hub provides false.
 val LocalWindmillDark = staticCompositionLocalOf { true }
 
 @Immutable
@@ -47,11 +39,7 @@ class WindmillShade(light: Long, dark: Long) {
         @Composable @ReadOnlyComposable get() = if (LocalWindmillDark.current) dark else light
 }
 
-// The ramp is ADAPTIVE and the roles below are aliases onto it — the same structure
-// web/src/styles/tokens/colors.css uses, where `[data-theme="dark"]` re-authors the ramp and every
-// role token that references it follows for free. The dark ramp is re-authored, never a linear
-// inversion: low indices stay deep warm surfaces and high indices become warm off-whites for text,
-// so a role that meant "canvas" still means canvas.
+// In both ramps low indices are deep warm surfaces, high indices warm off-whites for text.
 object WindmillColor {
     val neutral0 = WindmillShade(0xFFFFFF, 0x17120B)
     val neutral25 = WindmillShade(0xFDFBF6, 0x14100A)
@@ -70,9 +58,7 @@ object WindmillColor {
     val olive400 = Color(0xFF9AA859)
     val olive500 = Color(0xFF7D8C43)
 
-    // Ink for text that sits ON a bright accent fill. Fixed in both skins: the fill is the same
-    // gold either way, so the ink on it must be too — 8.92:1 on gold400, where the adaptive ramp
-    // reaches for its dark end and reads 1.77:1.
+    // Ink for text on a bright accent fill; fixed in both skins.
     val onAccent = Color(0xFF1B1408)
 
     val surfaceCanvas = neutral50
@@ -84,10 +70,6 @@ object WindmillColor {
     val borderDefault = neutral300
 }
 
-// tokens/fonts.css names the brand faces and then the native fallback for each: ui-rounded for
-// display and body, ui-monospace for numerals. On iOS those are SF Rounded and SF Mono; Android
-// has no system rounded face, so v1 keeps the token's weights on the default sans rather than
-// bundling a face the design has not chosen (design.md: do NOT bundle fonts in v1).
 object WindmillFont {
     fun display(size: Int, weight: FontWeight = FontWeight.Bold) = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -129,7 +111,6 @@ object WindmillRadius {
     val full = 999.dp
 }
 
-// Keep animation restrained — this is an instrument, not a toy.
 object WindmillMotion {
     val easeSoft: Easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
     const val fastMs = 150
@@ -137,10 +118,6 @@ object WindmillMotion {
     const val slowMs = 480
 }
 
-// The weight of an action, and with it BOTH of the colours that say so. Fill and ink were two
-// separate decisions at every call site on iOS, and every gold capsule in the app picked the
-// adaptive ramp for its label — warm near-white on gold, 1.77:1. Pairing them in one composable is
-// what stops that being writable again, rather than merely fixed once.
 enum class ActionWeight { Primary, Quiet }
 
 @Composable

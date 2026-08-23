@@ -1,15 +1,10 @@
-// The OAuth consent endpoints — the three credentialed calls the #/oauth/authorize
-// screen makes. The backend is the authorization server: it owns every code, token,
-// and PKCE value. This client only reads the *verified* client to display and posts
-// the user's decision, then the screen follows the redirect the backend hands back.
-// No secret ever passes through here. Reuses AuthError so a dead server is the same
-// brick it is everywhere else, and every failure carries a `code` the screen maps to copy.
+// The credentialed OAuth calls the #/oauth/authorize screen makes; every failure throws an
+// AuthError carrying a `code`.
 
 import { AuthError } from './AuthClient.js';
 import { API_BASE } from '../apiBase.js';
 
-// The registered client behind a client_id, so the screen renders a name Windmill
-// vouches for — never attacker-supplied text from the URL. 404 is an unknown app.
+// The registered client behind a client_id, so the screen renders a verified name, not URL text.
 export async function fetchConsentClient(clientId) {
   const response = await get(`/v1/oauth/client?client_id=${encodeURIComponent(clientId)}`);
   if (response.ok) return response.json();
@@ -17,9 +12,8 @@ export async function fetchConsentClient(clientId) {
   throw await errorFrom(response);
 }
 
-// Approve or deny. The opaque PKCE/anti-CSRF params are echoed back byte-for-byte.
-// On success the body is { redirect } — the screen navigates straight to it. A 401 is
-// a lapsed session mid-flow (re-sign-in and retry); a 400 is an expired/malformed request.
+// Approve or deny; the opaque PKCE/anti-CSRF params are echoed back byte-for-byte. Success is
+// { redirect }.
 export async function postDecision(decision) {
   const response = await post('/v1/oauth/decision', decision);
   if (response.ok) return response.json();
@@ -28,10 +22,7 @@ export async function postDecision(decision) {
   throw await errorFrom(response);
 }
 
-// The LLM grants this account has handed out (X6 §5 · settings §02). GET /v1/oauth/grants →
-// one row per client: { clientId, name, grantedMs, lastUsedMs, scope }. Separate from browser
-// sessions on purpose — pulling a tool's key never signs a device out. A 401 is a lapsed
-// session mid-visit.
+// GET /v1/oauth/grants → one row per client: { clientId, name, grantedMs, lastUsedMs, scope }.
 export async function listGrants() {
   const response = await get('/v1/oauth/grants');
   if (response.ok) return (await response.json()).grants ?? [];
@@ -39,8 +30,7 @@ export async function listGrants() {
   throw await errorFrom(response);
 }
 
-// DELETE /v1/oauth/grants/{clientId} → 204. Disconnect acts immediately; revoking never
-// touches content the tool created.
+// DELETE /v1/oauth/grants/{clientId} → 204.
 export async function revokeGrant(clientId) {
   const response = await del(`/v1/oauth/grants/${encodeURIComponent(clientId)}`);
   if (response.ok) return;

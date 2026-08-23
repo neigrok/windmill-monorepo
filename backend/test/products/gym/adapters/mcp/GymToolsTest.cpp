@@ -1192,7 +1192,7 @@ TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
                                               ToolCaller{uid(), parseToolScope("gym:read")});
 
   CHECK(refused.isError);
-  CHECK(message(refused).find("retired on 2026-08-13") != std::string::npos);
+  CHECK(message(refused).find("retired") != std::string::npos);
   CHECK(message(refused).find("nothing replaced it") != std::string::npos);
   // The level was granted; the tool is gone.
   CHECK(message(refused).find("granted") == std::string::npos);
@@ -1203,7 +1203,7 @@ TEST(gym_retired_get_preferences_says_that_nothing_replaced_it) {
 TEST(gym_connect_paragraph_carries_the_retirement) {
   const std::string paragraph = gymInstructions();
 
-  CHECK(paragraph.find("Retired on 2026-08-13 with NO replacement: `get_preferences`") !=
+  CHECK(paragraph.find("`get_preferences` does not exist and nothing replaced it") !=
         std::string::npos);
   CHECK(paragraph.find("keeps no plate inventory") != std::string::npos);
 }

@@ -9,9 +9,6 @@ import {
   coachEligible,
 } from '../../../../src/products/roadmap/demo/demoStage.js';
 
-// A wrong id silently seeds an empty overlay — the build's most common failure mode.
-// These guard the staged set's integrity: exactly six done, the coached node ready
-// (not among the done), and its two children still asleep (not among the done).
 test('staged set — six done, coached node ready, both children asleep', () => {
   assert.equal(DEMO_STAGED_COMPLETED.length, 6);
   assert.equal(new Set(DEMO_STAGED_COMPLETED).size, 6);

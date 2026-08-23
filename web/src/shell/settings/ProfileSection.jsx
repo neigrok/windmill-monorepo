@@ -1,8 +1,4 @@
-// Settings §01 · Profile. The monogram bloom (same as the seat), the one editable
-// identity field (name), the read-only email (the account key), and how you sign in.
-// Saving writes PATCH /v1/me then pulls useAuth().refresh() so the seat and every other
-// tab see the new name. No photo upload in v1; the Google slot is ghosted until the
-// provider lands.
+// Saving writes PATCH /v1/me then pulls useAuth().refresh() so the seat sees the new name.
 
 import React, { useState } from 'react';
 import { Avatar, Button, Input } from '../../design-system';

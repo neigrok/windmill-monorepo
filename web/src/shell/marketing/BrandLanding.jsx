@@ -1,12 +1,4 @@
-// The brand front door at the bare root — product-neutral, and now the same page shape as its three
-// siblings: the family chrome renders the nav, the auth cluster and the legal shelf, so switching
-// between / and /roadmap no longer moves the wordmark. What is left here is what only the brand root
-// can say: Windmill is one account over three tools, and here are the three doors. The doors are read
-// from the registry — label, landing href, true state, and the two lines each product writes about
-// itself — so this page holds no sentence about a product and cannot outlive one's status. The badge
-// is `shell.status` and nothing else for the same reason: invent a word for it here and a visitor
-// clicking Gym is told its state changed between two pages of one family. It stays eager and
-// indexed, shipping with the entry chunk.
+// The brand front door at the bare root; every door is read from the registry.
 
 import React from 'react';
 import { Badge, Button } from '../../design-system';
@@ -18,8 +10,6 @@ function ProductDoor({ product }) {
   const { label, landing, shell } = product;
   const open = shell.status === 'open';
   const verb = open ? `Explore ${label}` : 'See what’s coming';
-  // The whole card is the door — without a name of its own, a screen reader reads the entire
-  // paragraph out as the link.
   const doorLabel = open ? verb : `${label} — ${verb}`;
   return (
     <a
@@ -39,11 +29,6 @@ function ProductDoor({ product }) {
       <div className="eyebrow">{landing.tagline}</div>
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h3 className="trioTitle">{label}</h3>
-        {/* "Not open yet", never "In design" — the same words the /app home cell uses. A pre-open
-            product here is one whose ROOM has not opened; it is not a product nobody has built. A
-            product can be finished and reachable at its own landing while it wears this badge, and
-            a badge calling it a design would be the brand root telling a visitor something the next
-            click contradicts. */}
         {shell.status === 'pre-open' && <Badge tone="neutral">Not open yet</Badge>}
       </div>
       <p className="trioCopy" style={{ flex: 1 }}>{landing.summary}</p>
@@ -53,8 +38,6 @@ function ProductDoor({ product }) {
 }
 
 export function BrandLanding() {
-  // The brand root has one door, not three: the first product the registry calls open. Derived, so
-  // the day a product opens or closes the front door moves with it instead of lying.
   const start = PRODUCTS.find((p) => p.shell.status === 'open') ?? null;
   const cta = start ? { href: start.landing.href, label: 'Start' } : null;
 

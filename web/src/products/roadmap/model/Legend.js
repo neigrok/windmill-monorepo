@@ -1,31 +1,16 @@
-// The color legend (F6 — Custom color legend): a tree's ordered list of kinds,
-// naming and describing the hues its steps are painted in. A pure domain module —
-// every op takes a legend and returns a NEW one, so callers stay immutable and the
-// persistence layer + the render always read a fresh value. No I/O lives here.
-//
-//   kind:   { id, hue, label, description }  (+ derived `count` from withCounts)
-//   legend: an ordered array of kinds; hue unique, at most six (the palette).
-//
-// A node's `color` field IS its kind — it holds the hue. The legend names and
-// orders those hues; there is no separate node→kind link. Legend order is
-// generation priority: the first kind is the fallback (see F6 §data model).
+// A node's `color` field is its kind; the legend names and orders those hues, and legend order
+// is generation priority. Every op returns a new legend. Hue is unique, at most six.
 
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { GENESIS_STAMP, DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 
-const LABEL_MAX = 24; // one or two words, sentence-case (F6 §data model)
-const DESCRIPTION_MAX = 80; // a plain-text sorting brief, optional
+const LABEL_MAX = 24;
+const DESCRIPTION_MAX = 80;
 
-// A new/empty tree is born with these three kinds, in order — never all six (F6 §2).
-// The seed itself lives once, in packages/api-contract/genesis.js, the single source of
-// truth shared with the backend (Legend::seededDefaults + Hlc{1,0,"genesis"}): a local-born
-// tree's claim converges with the server's empty tree ONLY while both sides seed byte-equal
-// legends at the same stamp. vite.config.js re-asserts the golden on every build; the backend
-// pin is TreeRegistryTest's genesis case. Re-exported here so the model keeps one legend door.
+// A local-born tree's claim converges only while web and backend seed byte-equal legends at
+// the same stamp.
 export { GENESIS_STAMP, DEFAULT_KINDS };
 
-// The tree's legend: saved kinds when we have them (reconciled so every in-use hue
-// still has an entry), else derived from the hues actually in use, else the defaults.
 export function deriveLegend(nodes, saved) {
   const used = inUseHues(nodes);
   if (saved) {
@@ -43,7 +28,6 @@ export function deriveLegend(nodes, saved) {
   return used.map((hue) => unlabeledKind(hue));
 }
 
-// Each kind annotated with how many nodes currently wear its hue.
 export function withCounts(legend, nodes) {
   const tally = new Map();
   for (const node of nodes) {
@@ -53,12 +37,11 @@ export function withCounts(legend, nodes) {
   return legend.map((kind) => ({ ...kind, count: tally.get(kind.hue) ?? 0 }));
 }
 
-// How many kinds are actually worn by a node — the key appears at two (F6 §4).
 export function inUseCount(legend, nodes) {
   return withCounts(legend, nodes).filter((kind) => kind.count > 0).length;
 }
 
-// The next unused hue in palette order, or null once all six are taken.
+// null once all six palette hues are taken.
 export function freeHue(legend) {
   const taken = new Set(legend.map((kind) => kind.hue));
   return NODE_COLOR_NAMES.find((hue) => !taken.has(hue)) ?? null;
@@ -74,25 +57,19 @@ export function describeKind(legend, id, description) {
   return legend.map((kind) => (kind.id === id ? { ...kind, description: clean } : kind));
 }
 
-// Append an unlabeled kind for a free hue (count 0 until steps use it). A no-op if
-// the hue is already taken or the palette is full (hue null). `id` is minted locally
-// for a fresh add, or passed through when applying an authoritative AddKind op whose
-// id the server (or a collaborator) already chose.
+// `id` is passed through when applying an op whose id the server or a collaborator already chose.
 export function addKind(legend, hue, id) {
   if (!hue) return legend;
   if (legend.some((kind) => kind.hue === hue)) return legend;
   return [...legend, unlabeledKind(hue, id)];
 }
 
-// Drop a kind from the legend. Callers only remove kinds no node wears (count 0);
-// the count guard lives at the call site, which knows the current nodes.
+// Callers must only remove kinds no node wears.
 export function removeKind(legend, id) {
   return legend.filter((kind) => kind.id !== id);
 }
 
-// Swap a kind's hue to a free one, returning the old and new hues so the caller can
-// repaint every node of the old hue to the new. A no-op ({ oldHue, newHue } null) if
-// the kind is missing or the target hue is already taken by another kind.
+// Returns the old and new hues for the caller to repaint; both null when nothing changed.
 export function recolorKind(legend, id, newHue) {
   const target = legend.find((kind) => kind.id === id);
   if (!target || !newHue || legend.some((kind) => kind.hue === newHue)) {
@@ -102,7 +79,6 @@ export function recolorKind(legend, id, newHue) {
   return { legend: next, oldHue: target.hue, newHue };
 }
 
-// The hues a node actually wears, in palette order.
 function inUseHues(nodes) {
   const used = new Set(nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
   return NODE_COLOR_NAMES.filter((hue) => used.has(hue));

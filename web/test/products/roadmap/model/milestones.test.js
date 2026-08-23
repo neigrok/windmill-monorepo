@@ -1,7 +1,3 @@
-// milestone-share-beat: the share offer fires for a whole branch or the crown, never a single
-// step, once per fresh crossing. detectMilestones is the pure core — the owner-only / once-ever
-// conduct lives in the shell, so this pins exactly what counts as a milestone.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
@@ -9,8 +5,7 @@ import { detectMilestones, CROWN } from '../../../../src/products/roadmap/model/
 
 // root ─ a1 ─ a2   (branch A, 2 steps)
 //      ├ b1 ─ b2   (branch B, 2 steps)
-//      └ c1 ─ c2   (branch C, 2 steps) — a spare limb kept incomplete so a branch test never
-//                                        accidentally also completes the whole tree (crown).
+//      └ c1 ─ c2   (branch C, 2 steps) — a spare limb kept incomplete
 function forkedTree() {
   return new SkillTree({
     id: 't', title: 'Bakery',
@@ -53,7 +48,6 @@ test('a single-node limb (a root-child leaf) is a step, never a branch', () => {
 
 test('an already-complete branch never re-fires when another step lands', () => {
   const tree = forkedTree();
-  // branch A already done; completing b2 finishes branch B — A must not re-appear.
   const found = detectMilestones(tree, S('root', 'a1', 'a2', 'b1'), S('root', 'a1', 'a2', 'b1', 'b2'));
   assert.deepEqual(found, [{ id: 'b1', kind: 'branch', label: 'Master sourdough', done: 2, total: 2 }]);
 });
@@ -77,7 +71,7 @@ test('a one-node tree completing is a step, not a shareable crown', () => {
 });
 
 test('a shared (diamond) step completes every limb it finishes at once', () => {
-  // root ─ x ┐        w (a spare limb) keeps the tree incomplete so this is two branches, not crown.
+  // root ─ x ┐        w is a spare limb, so this is two branches, not the crown.
   //      ├ y ┼─ z
   //      └ w
   const tree = new SkillTree({

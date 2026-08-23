@@ -2,18 +2,6 @@ import XCTest
 @testable import WindmillGym
 @testable import WindmillPlatform
 
-// FIX A SET (§G18), and everything about it that could lose training. The whole client contract this
-// wave lands in — the offline queue, the undo window, the anonymous claim — was built on sets only
-// ever being APPENDED, and this is the first mutation to reach it.
-//
-// The three cases a client has to tell apart, and each of them is here: a set the log has never seen
-// (it lives on this device's shelf and is corrected THERE, so the claim replays what the lifter can
-// see), a set the log holds (the write rides the queue with the same lanes, retries and verdicts as
-// every other), and a set the log refuses (told apart by CODE, never by a sentence).
-//
-// The one that silently duplicates data if it is wrong has its own name below: a correction made
-// signed-out must replay CORRECTED — never the original, and never both.
-
 private func refusal(_ status: Int, code: String = "", message: String) -> WindmillApiError {
     let body = code.isEmpty
         ? #"{"error":"\#(message)"}"#
@@ -43,8 +31,6 @@ final class FixSetTests: XCTestCase {
         try? FileManager.default.removeItem(at: localURL)
     }
 
-    // The window is off except where it is the subject: what most of these tests are about is where
-    // a correction GOES, and nine seconds in front of that would only be a delay before the subject.
     private func makeStore(sync: FakeTraining?, undoWindowMs: Int64 = 0,
                            retryAfter: Duration = .seconds(4)) -> TrainingStore {
         TrainingStore(
@@ -61,9 +47,6 @@ final class FixSetTests: XCTestCase {
         )
     }
 
-
-    // An inspection read names a seat like every other read: the queue and the shelf hold one set of
-    // rows per account, so "what is on this device" is only ever answerable for somebody.
     private func queueOnDisk(of seat: String? = "u1") -> SetQueue {
         let held = SetQueue(url: queueURL, deviceHolds: nil)
         held.open(under: seat)
@@ -85,9 +68,6 @@ final class FixSetTests: XCTestCase {
 
     private func shelf(of seat: String? = nil) -> LocalLog { shelfOnDisk(of: seat) }
 
-    // THE ROOM'S DEFAULT STATE since it opened anonymous-first: a session composed on this DEVICE
-    // with sets logged into it, an account signed in, and a claim that has not managed to file any
-    // of it. The log has never been told a single one of these ids.
     private func liveUnclaimedStore(_ server: FakeTraining, undoWindowMs: Int64 = 0) async -> TrainingStore {
         server.online = false
         let store = makeStore(sync: server, undoWindowMs: undoWindowMs)
@@ -106,7 +86,6 @@ final class FixSetTests: XCTestCase {
                     reps: reps, kind: kind, completedAtMs: completedAtMs)
     }
 
-    // A finished session the log already holds, and the store standing in front of it at rest.
     private func loggedStore(_ server: FakeTraining) async -> TrainingStore {
         server.open(Session(id: "ses_1", startedAtMs: 1_000, finishedAtMs: 5_000))
         server.sets["ses_1"] = [set("set_1", 82.5, 5, at: 2_000, number: 1),
@@ -116,7 +95,6 @@ final class FixSetTests: XCTestCase {
         return store
     }
 
-    // A session finished on this device and never claimed — the anonymous room's own history.
     private func seedShelf(routineId: String? = nil) {
         let kept = shelf()
         kept.keep(Session(id: "ses_local", startedAtMs: 1_000, finishedAtMs: 5_000,
@@ -135,11 +113,6 @@ final class FixSetTests: XCTestCase {
         kept.flush()
     }
 
-    // ── the correction rule itself ─────────────────────────────────────────────────────────────
-
-    // The three fields a thumb can move, and the five it cannot. Everything that makes this the SAME
-    // set is copied across: a body that moved the id, the movement, the number or the instant would
-    // be logging a different set under a repair's name.
     func testACorrectionMovesThreeFieldsAndCopiesEverythingElse() {
         let logged = TrainingSet(id: "set_1", exerciseId: "bench-press", setNumber: 2, weightKg: 100,
                                  reps: 4, kind: .working, rpe: 8.5, note: "felt heavy",
@@ -152,10 +125,6 @@ final class FixSetTests: XCTestCase {
                                               note: "felt heavy", completedAtMs: 3_000))
     }
 
-    // ── the set the log has never seen ─────────────────────────────────────────────────────────
-
-    // THE ONE THAT DUPLICATES DATA IF IT IS WRONG. A lifter logs signed out, spots a typo, fixes it,
-    // and only then signs in: the account has to receive the number they can SEE, once.
     func testACorrectionMadeSignedOutReplaysCorrectedAndNeverTwice() async {
         seedShelf()
         let signedOut = makeStore(sync: nil)
@@ -181,8 +150,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(signedIn.refusals.isEmpty)
     }
 
-    // A set deleted before the claim is a set the account never hears of. Replaying it and then
-    // clearing the shelf would resurrect it on the log with no copy left to compare against.
     func testASetDeletedSignedOutIsNeverReplayed() async {
         seedShelf()
         let signedOut = makeStore(sync: nil)
@@ -200,8 +167,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(signedIn.refusals.isEmpty)
     }
 
-    // Corrected on the shelf means corrected for every read the shelf answers: the log page's row is
-    // this device's own arithmetic, so its tonnage and its top set move with the set.
     func testACorrectionOnTheShelfMovesWhatThisDeviceAnswers() async {
         seedShelf()
         let store = makeStore(sync: nil)
@@ -218,10 +183,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(shelf().session("ses_local")?.sets.map(\.weightKg), [82.5, 60])
     }
 
-    // SIGNED IN AND STILL ON THE SHELF, which is the case that decides the rule: the account exists
-    // but the claim has not managed to file this session yet, so the log has never heard of that
-    // session or that set. A PATCH or a DELETE here would name ids the server has never seen. The
-    // repair stays on the shelf, and the claim carries it when the road opens.
     func testACorrectionOfAnUnclaimedSessionStaysOnTheShelfAndTravelsWithTheClaim() async {
         seedShelf()
         let server = FakeTraining()
@@ -246,11 +207,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(store.refusals.isEmpty)
     }
 
-    // THE THIRD HOME, and the one a shelf test cannot reach: the LIVE session, composed on this
-    // device and not claimed yet, whose sets live in the queue and nowhere else. A correction here
-    // rewrites the queued APPEND. Filing a change over it would do two wrong things at once — name a
-    // set the server has never had, and replace the one write that was going to put that set on the
-    // log at all, so the set dies on its way there.
     func testACorrectionOfALiveSetTheLogHasNeverSeenRewritesTheAppend() async {
         let server = FakeTraining()
         let store = await liveUnclaimedStore(server)
@@ -275,9 +231,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(store.refusals.isEmpty)
     }
 
-    // The same home, the other write: the queued row simply goes. A DELETE would name nothing on the
-    // log — benign today only because that route is unconditionally idempotent, which is not a reason
-    // to send it.
     func testDeletingALiveSetTheLogHasNeverSeenIsTakenBackHereAndNeverSent() async {
         let server = FakeTraining()
         let store = await liveUnclaimedStore(server)
@@ -299,8 +252,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(store.refusals.isEmpty)
     }
 
-    // And the Undo answers out of that same home — the append goes back, so the account receives the
-    // set once the claim opens the road.
     func testTakingBackTheDeleteOfALiveSetPutsItsAppendBack() async {
         let server = FakeTraining()
         let store = await liveUnclaimedStore(server, undoWindowMs: 9_000)
@@ -322,10 +273,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(server.deleted.isEmpty)
     }
 
-    // ── the set the log holds ──────────────────────────────────────────────────────────────────
-
-    // The ordinary correction: it lands on the log under the same id, the set NUMBER does not move,
-    // and nothing is left owed.
     func testACorrectionOfALandedSetPatchesTheLogUnderTheSameId() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -342,9 +289,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(store.refusals.isEmpty)
     }
 
-    // Offline, the correction is the lifter's anyway: it is on this device, it is what the session
-    // reads back as, and it survives a relaunch to be sent later. A screen that showed the log's
-    // stale row after a correction would be handing back the number they just moved.
     func testACorrectionMadeOfflineIsHeldAndDrawnOverTheLogsOwnRow() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -364,8 +308,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // The same, read back before the queue drains: the merge is what makes the room local-first
-    // about a correction rather than only about a set.
     func testASessionReadBackCarriesTheCorrectionThisDeviceIsStillHolding() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -382,8 +324,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(read.sets.map(\.id), ["set_1", "set_2"])
     }
 
-    // A deleted row leaves the screen before it leaves the log, and a session read back in between
-    // must not hand it back — the log is still honestly answering with the row it has.
     func testASessionReadBackDropsARowThisDeviceHasDeleted() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -398,10 +338,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(read.sets.map(\.id), ["set_2"])
     }
 
-    // A correction re-reads the log, because the row's arithmetic is the server's — and the re-read
-    // may never come back shallower than the lifter had already scrolled. `served` is the cursor the
-    // next page is asked from, so a one-page answer would take every older page with it, including
-    // the session the correction was just made in.
     func testACorrectionKeepsEveryPageOfTheLogTheLifterHadLoaded() async {
         let server = FakeTraining()
         for index in 0..<60 {
@@ -417,7 +353,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.recent.count, 60)
         XCTAssertEqual(store.logFoot, .bottom)
 
-        // The oldest session there is — page two of the log, and nowhere near the first page.
         await store.fix(set("set_0", 82.5, 5, at: 1_100, number: 1), in: "ses_000",
                         by: SetFix(weightKg: 85, reps: 5, kind: .working))
 
@@ -427,9 +362,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.logFoot, .bottom)
     }
 
-    // The queue file is the LIVE session's, plus whatever is still owed to the log. A settled
-    // correction of a session that is already history is neither — and nothing would ever collect it:
-    // `close` and `forget` run for the live session alone.
     func testASettledCorrectionLeavesNothingBehindInTheQueueFile() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -443,9 +375,6 @@ final class FixSetTests: XCTestCase {
                       "a file rewritten on every tap keeps no row per correction ever made")
     }
 
-    // The note under the logger speaks for the SETS this device is holding, and a correction is not
-    // one of them. A fix of last week's session jammed behind a 500 must not put "offline · saved
-    // here" over a set that landed a second ago — that is the one thing the note exists to state.
     func testACorrectionJammedInTheQueueDoesNotCallALandedSetUnsaved() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -463,11 +392,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.strandedCount, 0)
     }
 
-    // ── the set the log refuses ────────────────────────────────────────────────────────────────
-
-    // 404 `set-not-found` is the word this wave had to add: the row a correction NAMES is not there,
-    // and no amount of waiting puts it back. Nothing is lost but the change — so it is dropped, and
-    // said in the sentence a lost CHANGE gets rather than the one a lost set gets.
     func testACorrectionOfASetTheLogNoLongerHasIsDroppedAndSaidAsAChange() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -483,8 +407,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "a terminal write is not retried forever")
     }
 
-    // A body the log cannot read never becomes readable, so it is terminal too — and it is SAID, for
-    // the reason every terminal write in gym is: a change dropped quietly counts as intended.
     func testACorrectionTheLogCannotReadIsTerminalAndSaid() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -497,8 +419,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // A 500 is the server's and heals on its own. The correction stays owed — dropping it would lose
-    // a change over a deadlock — and the next walk sends it.
     func testAStorageFailureLeavesTheCorrectionOwed() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -516,8 +436,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(server.sets["ses_1"]?.map(\.weightKg), [82.5, 85])
     }
 
-    // A spent id is an APPEND's repair and only an append's. Reminting a correction would send the
-    // PATCH at a set nobody has ever logged — and the log would answer that it does not exist.
     func testACorrectionIsNeverRemintedOntoAFreshId() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -530,9 +448,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.refusals.map(\.id), ["change-set_2"])
     }
 
-    // WHAT THE SHEET IS ANSWERED WITH IS WHAT STANDS. A change the log refused outright is not a
-    // change — the row is still there under the numbers it had — and the screen is told so, rather
-    // than drawing a correction that never happened underneath a banner saying it never happened.
     func testARefusedCorrectionAnswersWithTheRowTheLogStillHolds() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -545,9 +460,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.refusals.map(\.id), ["change-set_2"])
     }
 
-    // `set-not-found` is a CHANGE's word: it names a row the write expects to already be there.
-    // Today's log sends it from one handler and an append cannot honestly meet it — but nothing on
-    // either side of the wire pins that, and a set is never lost to a code it was not sent.
     func testAnAppendThatMeetsSetNotFoundIsKeptRatherThanDropped() async {
         let server = FakeTraining()
         server.open(Session(id: "ses_1", startedAtMs: 1_000))
@@ -563,10 +475,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.stalled.count, 1)
     }
 
-    // ── the delete, and the nine seconds ───────────────────────────────────────────────────────
-
-    // The row leaves the screen on the tap and the log a window later. Nothing about this promises
-    // recovery past the window — the sheet says only what is true.
     func testADeleteLeavesTheScreenAtOnceAndTheLogWhenTheWindowCloses() async {
         let server = FakeTraining()
         server.open(Session(id: "ses_1", startedAtMs: 1_000, finishedAtMs: 5_000))
@@ -589,8 +497,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // Undo inside the window: the DELETE never goes at all, and what comes back is owed as a
-    // correction — this device may have been holding numbers the log does not have.
     func testADeleteTakenBackInsideItsWindowNeverReachesTheLog() async {
         let server = FakeTraining()
         server.open(Session(id: "ses_1", startedAtMs: 1_000, finishedAtMs: 5_000))
@@ -610,8 +516,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertNil(store.restorable, "one deletion, one undo")
     }
 
-    // Past the window there is nothing to take back, and the store says so rather than answering a
-    // tap that would have to apologise.
     func testADeleteCannotBeTakenBackOnceItsWindowHasClosed() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -624,8 +528,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(server.deleted, ["set_1"])
     }
 
-    // A shelf deletion is taken back on the shelf, in the order it was performed, and the undo is
-    // one door over both homes.
     func testAShelfDeleteTakenBackPutsTheRowBackWhereItWas() async {
         seedShelf()
         let store = makeStore(sync: nil, undoWindowMs: 9_000)
@@ -641,13 +543,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(store.recent.first?.setCount, 2)
     }
 
-    // THE UNDO MUST SURVIVE THE CLAIM — AND BE HONEST ABOUT WHAT THE LOG WILL TAKE. A shelf deletion
-    // waits out its window on this device, and the claim rides the queue's own cadence — so an
-    // ordinary return to signal can empty the shelf while the offer is still on screen. The row goes
-    // back the one way a set ever reaches the log, an APPEND under its own id; and the claim has by
-    // then FINISHED that session on the log, which refuses every new set with 409 session-finished
-    // (the fake models the rule). So the loss is SAID, with the numbers on it. What may never happen
-    // is what did before this was pinned: the record cleared, the row put back nowhere, nothing said.
     func testAnUndoTheClosedSessionRefusesIsSaidRatherThanSwallowed() async {
         seedShelf()
         let server = FakeTraining()
@@ -676,11 +571,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // ── what must not move ─────────────────────────────────────────────────────────────────────
-
-    // THE CAPTION OF THE WHOLE SCREEN. The session's frozen plan snapshot and the routine it was run
-    // against are what "Push A keeps its own numbers" is a promise about, and a correction may not
-    // reach either — on the shelf or over the wire.
     func testFixingAndDeletingASetLeaveTheFrozenPlanAndTheRoutineUntouched() async {
         seedShelf(routineId: "rt_local")
         let store = makeStore(sync: nil)
@@ -699,9 +589,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertEqual(shelf().session("ses_local")?.sets.map(\.kind), [.drop])
     }
 
-    // A correction and a deletion are not sets saved on this device. The strip and the row marks
-    // both count what is STRANDED — a set nowhere but here — and a row the log holds under numbers
-    // this device is trying to move is a different fact with a different word.
     func testACorrectionOwedIsNotCountedAsASetSavedOnThisDevice() async {
         let server = FakeTraining()
         let store = await loggedStore(server)
@@ -717,8 +604,6 @@ final class FixSetTests: XCTestCase {
         XCTAssertNil(store.undoable, "the logger's Undo answers a set that was just LOGGED")
     }
 
-    // A queue file written before §G18 has no verb on its rows, and every owed row in one is an
-    // append. Reading a missing key as anything else would strand a real set on the next launch.
     func testAQueueFileFromBeforeCorrectionsOpensWithEveryOwedRowAnAppend() throws {
         let legacy = """
         {"entries":{"set_1":{"set":{"id":"set_1","exerciseId":"bench-press","weightKg":82.5,\
@@ -727,8 +612,6 @@ final class FixSetTests: XCTestCase {
         """
         try Data(legacy.utf8).write(to: queueURL)
 
-        // …and it has no SEAT on it either, so whose it is comes from the device: this phone was
-        // holding u1's session when it upgraded, so the owed row is u1's.
         let queue = SetQueue(url: queueURL, deviceHolds: "u1")
         queue.open(under: "u1")
 

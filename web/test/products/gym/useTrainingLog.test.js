@@ -1,23 +1,3 @@
-// The training log's shared read, driven for real. Web gym is the mirror and the desk (§11): the
-// boot read finds the open session and POLLS it read-only, and everything else here is the walk
-// down the log. What is pinned is what can silently lose history or falsify the mirror:
-//   · the walk down the log pages on the PAIR (startedAt, id), because an instant-only cursor
-//     leaves a tied session in no page, ever;
-//   · the mirror polls only while the tab is visible, refetches the moment it comes back, and
-//     never survives the session it shows closing on the phone;
-//   · the poll rides the read's weak ETag — the last reply's tag goes up as If-None-Match, and a
-//     304 leaves the state in hand untouched, no re-render over a workout that did not move;
-//   · the retired web logger's resume note is cleared on boot, and the old offline queue's bytes
-//     are NOT — whatever sets a pre-mirror build still owed the log are the lifter's;
-//   · while nothing is mirrored the hook WATCHES for a workout starting — on the way back to the
-//     tab and on a slow beat — and every reader of the log adopts an open row, so "Not training now"
-//     is never said over a workout the log lists open;
-//   · a boot that failed says WHY, because a lapsed sign-in and a store that answered 5xx are not
-//     signal problems, and the one repair the failure screen used to have never fires for either.
-//
-// React is driven through its own dispatcher rather than a DOM: the hook is the unit under test,
-// effects run where React runs them, and every state change re-renders synchronously.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -29,15 +9,9 @@ import { browserWith, renderHook, settle } from './harness.mjs';
 
 const HOUR = 3600_000;
 const POLL_MS = 5000;
-// The watch for a workout starting while none is mirrored — slow on purpose (useTrainingLog.js).
 const WATCH_MS = 30_000;
-// The toast's own five seconds, which are also the seconds a withheld delete can be taken back in
-// (`UNDO_MS`, fix.js — screens.test.js pins the two constants equal). They are the same number on
-// purpose, and that is precisely why the test below exists.
 const TOAST_MS = 5000;
 
-// A log holding one open session — the phone's workout, as GET /sessions and GET /sessions/:id
-// answer it. `wire` keeps every request so a test can say exactly what polled and what did not.
 function phoneWorkout({ startedAt, sets = [] }) {
   const wire = [];
   const session = { id: 'ses_phone', startedAt, finishedAt: null };
@@ -51,9 +25,6 @@ function phoneWorkout({ startedAt, sets = [] }) {
         wire.push('GET /exercises');
         return [{ id: 'back-squat', name: 'Back Squat' }, { id: 'bench-press', name: 'Bench Press' }];
       },
-      // §I's five settings ride the boot read (W4). The empty document is what the server answers
-      // an account that has never opened the settings screen: it never 404s, and every field in it
-      // is the default — which is the state every test in this file is in unless it says otherwise.
       async preferences() {
         wire.push('GET /preferences');
         return {};
@@ -74,11 +45,6 @@ function phoneWorkout({ startedAt, sets = [] }) {
   };
 }
 
-// The same phone workout, over a log that speaks the freshness contract the server speaks: every
-// 200 hands back a weak tag — opaque bytes the hook must only ever echo, which is why this fake
-// minting a shape of its own is fine — and a read that sends the current tag back up is answered
-// UNCHANGED with no detail at all. `asked` keeps the tag each detail read carried, because the
-// ride itself is what the tests below assert.
 function taggedWorkout({ startedAt, sets = [] }) {
   const asked = [];
   const session = { id: 'ses_phone', startedAt, finishedAt: null };
@@ -109,10 +75,6 @@ function taggedWorkout({ startedAt, sets = [] }) {
   };
 }
 
-// A log deep enough to page, answering exactly as the shipped read does: newest first on the PAIR
-// (startedAt, id), strictly before the whole cursor, and `beforeId` without `before` refused as a
-// bad cursor rather than half-honoured. Every query it was asked is kept, because the cursor the
-// client sends IS the thing under test.
 function deepLog(rows) {
   const asked = [];
   const log = rows.map((row) => ({ ...row }));
@@ -134,10 +96,6 @@ function deepLog(rows) {
         return log.slice()
           .sort((left, right) => right.startedAt - left.startedAt || (left.id < right.id ? 1 : -1))
           .filter((row) => row.startedAt < before || (row.startedAt === before && row.id < beforeId))
-          // The handler's own ceiling (TrainingApi.cpp: std::min(value, 200)), mirrored because the whole
-          // `end` signal is a page coming back short of what was asked for. A LOG_PAGE raised past
-          // 200 would be answered 200 by the real server and read as the bottom of the log — a fake
-          // that hands back everything it was asked for would keep the suite green through it.
           .slice(0, Math.min(query.limit ?? 50, 200))
           .map((row) => ({ ...row, setCount: 0, exercises: [] }));
       },
@@ -158,7 +116,6 @@ function finishedRows(count, newest, mark = 'a') {
   });
 }
 
-// A set the log already holds, exactly as `GET /sessions/:id` hands it back.
 function loggedSet(index, at, weightKg, exerciseId = 'back-squat') {
   return {
     id: `set_stored${index}`,
@@ -178,9 +135,6 @@ async function open(t, api) {
   return view;
 }
 
-// THE MIRROR OPENS ON THE BOOT READ. An open session on the log is a workout running on the phone;
-// the web holds it read-only — nothing on the returned surface can write into it, because nothing
-// on the returned surface writes sets at all.
 test('the boot read finds the open session, and the mirror holds it with its sets', async (t) => {
   const now = Date.now();
   browserWith();
@@ -213,10 +167,6 @@ test('a log with nothing open is ready, with no session and no detail read', asy
   assert.deepEqual(backend.asked, [{ limit: PAGE }]);
 });
 
-// THE RETIRED KEYS. The resume note held no sets and no build writes it any more — cleared, so it
-// cannot claim forever that a workout is open here. The old offline queue is the opposite case:
-// anything under it is sets a pre-mirror build still owed the log, and the boot may not destroy a
-// lifter's sets, so those bytes are left exactly as found.
 test('the boot clears the retired resume note and leaves the old queue bytes alone', async (t) => {
   const now = Date.now();
   const browser = browserWith({
@@ -231,9 +181,6 @@ test('the boot clears the retired resume note and leaves the old queue bytes alo
   assert.equal(browser.held(), '[{"setId":"set_owed","sessionId":"ses_old","weightKg":100}]');
 });
 
-// 'failed' is the one phase nothing else leaves — the boot read is the only door into the log — so
-// the signal returning has to ask it again, or a lifter who opened the log underground stays on the
-// failure screen while the signal comes back around them.
 test('the signal returning asks a failed boot read again, and the mirror opens', async (t) => {
   const now = Date.now();
   const browser = browserWith();
@@ -257,9 +204,6 @@ test('the signal returning asks a failed boot read again, and the mirror opens',
   assert.equal(view.log.session.id, 'ses_phone');
 });
 
-// The detail read fails like a poll, not like the boot: the log itself LOADED, so the surface
-// opens over the summaries that landed — 'failed' over a loaded log would strand the lifter, since
-// its one recovery is the 'online' event, which a server-side 5xx flap never fires.
 test('a failed detail read of the open session does not fail a boot that loaded the log', async (t) => {
   const now = Date.now();
   browserWith();
@@ -278,8 +222,6 @@ test('a failed detail read of the open session does not fail a boot that loaded 
   assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions', 'GET /preferences', 'GET /sessions/ses_phone']);
 });
 
-// THE POLL (§11.3 flow 2): five seconds, visible tab only, no new endpoint. The facts on the
-// mirror only move when the poll answers, so the poll answering IS the mirror staying true.
 test('the mirror polls the open session every five seconds and takes what the log answers', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -303,10 +245,6 @@ test('the mirror polls the open session every five seconds and takes what the lo
   assert.deepEqual(backend.wire.filter((line) => line === 'GET /sessions/ses_phone').length, 3);
 });
 
-// THE FRESHNESS RIDE, first half: the boot's detail read carries no tag — there is nothing in hand
-// yet — and every beat after it sends the last reply's tag back. While nobody lifted, the answer is
-// a 304 and the mirror replaces NOTHING: the very same objects stay on the surface, which is the
-// no-re-render promise stated as identity rather than as a spy on React.
 test('the first poll sends the boot read’s tag, and a 304 leaves the state in hand untouched', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -329,9 +267,6 @@ test('the first poll sends the boot read’s tag, and a 304 leaves the state in 
   assert.equal(view.log.sets, heldSets);
 });
 
-// THE FRESHNESS RIDE, second half: a set landing on the phone unmatches the tag, the next beat
-// takes the full read, and the beat after that asks with the NEW tag — proving the mirror moves
-// its tag with every 200 it takes, not just the boot's.
 test('a set landing after a 304 reaches the mirror on the next beat, under the new tag', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -357,8 +292,6 @@ test('a set landing after a 304 reaches the mirror on the next beat, under the n
   assert.equal(view.log.sets, heldSets);
 });
 
-// A hidden tab asks no questions, and the moment it comes back it asks at once rather than waiting
-// out a poll interval — a lifter glancing at a laptop mid-set is the whole audience of this panel.
 test('a hidden tab stops the poll, and coming back refetches at once', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -382,8 +315,6 @@ test('a hidden tab stops the poll, and coming back refetches at once', async (t)
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0', 'set_stored1']);
 });
 
-// The phone finishing the workout is the mirror's end, not its failure: the panel goes, and the
-// log is re-read from the top so the closed session appears where it now belongs.
 test('the session finishing on the phone ends the mirror and re-reads the log', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -399,13 +330,10 @@ test('the session finishing on the phone ends the mirror and re-reads the log', 
 
   assert.equal(view.log.session, null);
   assert.deepEqual(view.log.sets, []);
-  // The re-read from the top: one more GET /sessions after the boot's own.
   assert.equal(backend.wire.filter((line) => line === 'GET /sessions').length, 2);
   assert.equal(view.log.summaries[0].finishedAt, now);
 });
 
-// A poll that fails is a signal fact, not a session fact: "last set 3:40 ago" is still true, the
-// panel keeps the last answered read, and the next beat is the retry.
 test('a poll that does not come back keeps the last true read on the mirror', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -433,11 +361,6 @@ test('a poll that does not come back keeps the last true read on the mirror', as
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0', 'set_stored1']);
 });
 
-// THE MIRROR'S CORE PROMISE, FOR THE COMMON DESK SEQUENCE: the laptop is opened at home, the
-// workout starts at the rack an hour later. A boot that found nothing open used to be the LAST time
-// the log was read — no beat, no wake — and Today said "Not training now" over the whole workout.
-// Now, with nothing mirrored, the hook watches: one row is asked for on a slow beat while the tab is
-// visible, and at once when the tab comes back, and an open row is adopted as the boot adopts one.
 test('a workout started after the tab opened is found by the watch, on the beat and on the way back', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -455,13 +378,11 @@ test('a workout started after the tab opened is found by the watch, on the beat 
   assert.equal(view.log.session, null);
   assert.deepEqual(backend.wire, ['GET /exercises', 'GET /sessions?limit=50', 'GET /preferences']);
 
-  // Nothing started, and the watch costs one row every thirty seconds — never a detail read.
   t.mock.timers.tick(WATCH_MS);
   await settle();
   assert.deepEqual(backend.wire.slice(3), ['GET /sessions?limit=1']);
   assert.equal(view.log.session, null);
 
-  // The phone starts a workout; the next beat finds it and the detail read brings its sets.
   started = true;
   backend.stored.push(loggedSet(0, now + 60_000, 100));
   t.mock.timers.tick(WATCH_MS);
@@ -469,18 +390,13 @@ test('a workout started after the tab opened is found by the watch, on the beat 
   assert.deepEqual(backend.wire.slice(4), ['GET /sessions?limit=1', 'GET /sessions/ses_phone']);
   assert.equal(view.log.session.id, 'ses_phone');
   assert.deepEqual(view.log.sets.map((set) => set.id), ['set_stored0']);
-  // The list is not touched by the watch: the row lands there when the mirror closes and the log is
-  // re-read, as it always did.
   assert.deepEqual(view.log.summaries, []);
 
-  // Once mirrored, the poll owns the session and the watch is quiet: thirty seconds of beats read
-  // the DETAIL, and no one-row read is sent.
   t.mock.timers.tick(WATCH_MS);
   await settle();
   assert.equal(backend.wire.slice(6).every((line) => line === 'GET /sessions/ses_phone'), true);
   assert.equal(backend.wire.slice(6).length, WATCH_MS / POLL_MS);
 
-  // The way back to the tab asks at once, and a hidden tab asks nothing.
   browser.show();
   await settle();
   browser.hide();
@@ -490,8 +406,6 @@ test('a workout started after the tab opened is found by the watch, on the beat 
   assert.equal(backend.wire.length, before);
 });
 
-// A hidden tab is not watched — and the visibilitychange back is the moment that matters, since a
-// lifter glancing at the laptop mid-set should not wait out a thirty-second beat.
 test('while nothing is mirrored, coming back to the tab asks at once and a hidden tab asks nothing', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -517,9 +431,6 @@ test('while nothing is mirrored, coming back to the tab asks at once and a hidde
   assert.equal(view.log.session.id, 'ses_phone');
 });
 
-// THE BOOT'S DETAIL READ FLAPPED — one 503 — and the surface opened without the mirror, which was
-// right. What was wrong: nothing ever asked again, and the live workout stayed unmirrored for the
-// whole visit. The watch is the retry, through the very same path.
 test('a boot whose detail read flapped is mirrored by the next beat of the watch', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -549,10 +460,6 @@ test('a boot whose detail read flapped is mirrored by the next beat of the watch
   ]);
 });
 
-// THE PHONE FINISHES A AND STARTS B. The mirror closing on A re-reads the log, and that read lists B
-// open — a re-read that replaced the summaries and adopted nothing left the list saying "in
-// progress" under a Today saying "Not training now". One `adopt` step serves the boot, the re-read
-// and the watch alike, so no reader of the log can leave the two disagreeing.
 test('the log re-read when the mirror closes adopts the next workout it lists open', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   const now = Date.now();
@@ -593,10 +500,6 @@ test('the log re-read when the mirror closes adopts the next workout it lists op
   ]);
 });
 
-// A LAPSED COOKIE IS NOT A SIGNAL PROBLEM. A boot answered 401 used to read "Open it again when you
-// have signal" and wait for an 'online' event that never comes: the repair is the sign-in door, so
-// the failure says so, and the frame is told so the auth state can settle. And a store that answered
-// 5xx is a failure the lifter can retry NOW — `retryBoot` is that, and it asks the boot again.
 test('a boot answered 401 fails as signed-out and tells the frame; a 5xx fails as the server, and Retry asks again', async (t) => {
   const now = Date.now();
   browserWith();
@@ -620,7 +523,6 @@ test('a boot answered 401 fails as signed-out and tells the frame; a 5xx fails a
   assert.equal(view.log.failure, 'server');
   assert.deepEqual(told, ['signed-out']);
 
-  // A request that never got an answer is the one failure that IS about signal.
   answer = () => { throw new TypeError('Failed to fetch'); };
   view.log.retryBoot();
   await settle();
@@ -634,8 +536,6 @@ test('a boot answered 401 fails as signed-out and tells the frame; a 5xx fails a
   assert.equal(view.log.session.id, 'ses_phone');
 });
 
-// THE WALK DOWN THE LOG. The cursor is the last row in hand and BOTH halves of it — the server
-// refuses an id with no instant, and an instant with no id cannot express a tie.
 test('the next page is asked for with both halves of the cursor, taken from the last row in hand', async (t) => {
   const now = Date.now();
   browserWith();
@@ -654,13 +554,10 @@ test('the next page is asked for with both halves of the cursor, taken from the 
     { limit: PAGE },
     { before: tail.startedAt, beforeId: tail.id, limit: PAGE },
   ]);
-  // Appended, nothing merged: the pair is stable, so no row crosses a page edge between two reads.
   assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, 2 * PAGE).map((each) => each.id));
   assert.equal(view.log.older.status, 'more');
 });
 
-// A first page of three sessions is the whole log. Offering to load older ones over it is a promise
-// the read has already answered.
 test('a first page shorter than one full page is the bottom of the log', async (t) => {
   const now = Date.now();
   browserWith();
@@ -674,8 +571,6 @@ test('a first page shorter than one full page is the bottom of the log', async (
   assert.equal(view.log.older.status, 'end');
 });
 
-// The exactly-divisible log: a full page can only mean "maybe more", and the empty page under it is
-// what settles the question. Nothing here can tell them apart in advance.
 test('a full first page offers more, and the empty page under it is the bottom', async (t) => {
   const now = Date.now();
   browserWith();
@@ -697,8 +592,6 @@ test('a full first page offers more, and the empty page under it is the bottom',
   assert.equal(view.log.older.status, 'end');
 });
 
-// THE CASE THE ID HALF EXISTS FOR. Two sessions share a start instant and the page edge falls
-// between them — near-certain now that lift-import has bulk-loaded coarse timestamps.
 test('two sessions sharing an instant across a page edge both land, in order and once each', async (t) => {
   const now = Date.now();
   browserWith();
@@ -715,8 +608,6 @@ test('two sessions sharing an instant across a page edge both land, in order and
   await view.log.older.load();
   await settle();
 
-  // The harm first: a broken cursor is a session that vanished out of the lifter's history, and the
-  // failure should say that rather than report a changed query string.
   const walked = view.log.summaries.map((each) => each.id);
   assert.deepEqual(walked, rows.map((each) => each.id));
   assert.equal(new Set(walked).size, rows.length);
@@ -726,14 +617,10 @@ test('two sessions sharing an instant across a page edge both land, in order and
     { before: tie, beforeId: 'ses_tieB', limit: PAGE },
   ]);
 
-  // What the id half buys, stated against the same server: an instant-only cursor puts ses_tieA in
-  // no page, ever — it is not before the instant, and page one stopped above it.
   const halfCursor = await backend.api.sessions({ before: tie, limit: PAGE });
   assert.deepEqual(halfCursor.map((each) => each.id), ['ses_z000', 'ses_z001']);
 });
 
-// An older page is its own read. Failing it must not blank the sessions already on screen, and must
-// not say the LOG failed — the log is right there, and only the step deeper did not come back.
 test('an older page that does not come back leaves the log on screen, and can be asked again', async (t) => {
   const now = Date.now();
   browserWith();
@@ -771,10 +658,6 @@ test('an older page that does not come back leaves the log on screen, and can be
   assert.equal(view.log.older.status, 'end');
 });
 
-// A second press while the first page is still in the air. The cursor has not moved — the list has
-// not grown yet — so an unguarded second call asks the identical question and appends the same fifty
-// sessions twice: the one way this walk can put a duplicate in a lifter's history. The guard is read
-// off the state the caller last saw, which is what a press after the busy state is drawn holds.
 test('a second press while a page is in the air sends nothing, and the page lands once', async (t) => {
   const now = Date.now();
   browserWith();
@@ -798,10 +681,6 @@ test('a second press while a page is in the air sends nothing, and the page land
   ]);
 });
 
-// RELOAD ORPHANS THE PAGE IN THE AIR. A backfill landing re-reads the log from the top — which
-// truncates a list the lifter may have read to the bottom, so the walk resets with the list, and
-// an older page still in flight continues a tail the reload has just thrown away: appended, it
-// would silently drop the row the new top pushed off the end.
 test('an older page in flight when the log is re-read from the top is not appended to the new list', async (t) => {
   const now = Date.now();
   browserWith();
@@ -820,7 +699,6 @@ test('an older page in flight when the log is re-read from the top is not append
   await settle();
   assert.equal(view.log.older.status, 'loading');
 
-  // What a backfill save does: a new session lands, and the list is re-read from the top.
   const fresh = { id: 'ses_backfill', startedAt: now, finishedAt: now + HOUR };
   backend.log.unshift(fresh);
   await view.log.reloadLog();
@@ -837,10 +715,6 @@ test('an older page in flight when the log is re-read from the top is not append
   assert.equal(view.log.older.status, 'more');
 });
 
-// The knot the two guards tie between them: an older page is in the air, a reload orphans it, and
-// the re-read meant to replace the list fails too. The stale page drops silently by design — so if
-// the failed re-read is also silent, nothing is left to release the foot and it sits at "Loading
-// older sessions…" until a reload, over a log the lifter can still walk.
 test('a failed re-read from the top still releases the foot of the log', async (t) => {
   const now = Date.now();
   browserWith();
@@ -873,16 +747,6 @@ test('a failed re-read from the top still releases the foot of the log', async (
   assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
 });
 
-// THE ONE VOICE MUST NOT SWALLOW ITS OWN NEXT SENTENCE, and the caller that makes this a live
-// hazard rather than a curiosity is the withheld delete (§G18): its DELETE is sent when its five
-// seconds close, and those are the SAME five seconds a toast is up for. So a delete the log refuses
-// — being offline is exactly this — speaks in the instant the toast holding its Undo is due to
-// expire, and each sentence must get its own window rather than the remainder of the one before it.
-//
-// The far edge of that — the older clock firing AFTER the newer sentence is already state — cannot
-// be driven here: this harness renders synchronously, so the effect's cleanup always cancels the
-// old timer before it can run. That ordering is React's own, and the shape that survives it is read
-// off the source in screens.test.js and driven for real in the wave's browser harness.
 test('a second sentence replaces the first and is up for its own five seconds', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const now = Date.now();
@@ -896,11 +760,9 @@ test('a second sentence replaces the first and is up for its own five seconds', 
   t.mock.timers.tick(TOAST_MS - 1);
   assert.equal(view.log.toast.text, '47.5 × 4 is out of the log.');
 
-  // The refusal, said one millisecond before the toast that offered the Undo would have gone.
   view.log.say('That set is still in the log — the log didn’t answer. Try again when you have signal.');
   assert.equal(view.log.toast.action, null);
 
-  // Past the instant the first toast was due, and one millisecond short of its own: still up.
   t.mock.timers.tick(TOAST_MS - 1);
   assert.equal(
     view.log.toast.text,
@@ -910,11 +772,6 @@ test('a second sentence replaces the first and is up for its own five seconds', 
   assert.equal(view.log.toast, null);
 });
 
-// A CORRECTION MOVES A ROW WHEREVER IT SITS, and the desk is where somebody goes back three months
-// to make one (§G18). Every other caller of the re-read moves page ONE — a backfill, a discard, the
-// mirror closing — so a re-read of the top fifty was right for them and wrong for this one twice
-// over: it threw away the pages the lifter had walked, AND the page it did read could not contain
-// the row it was fired to move. Read to the depth the log is actually open to, both hold.
 test('the log re-read after a correction is as deep as the walk, and carries the row that moved', async (t) => {
   const now = Date.now();
   browserWith();
@@ -934,14 +791,9 @@ test('the log re-read after a correction is as deep as the walk, and carries the
 
   assert.deepEqual(backend.asked, [{ limit: 150 }]);
   assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, 150).map((each) => each.id));
-  // The row a correction on the third page would have moved is in the read that followed it — which
-  // is the whole of what a re-read of the top fifty could not say.
   assert.equal(view.log.summaries.some((each) => each.id === rows[120].id), true);
   assert.equal(view.log.older.status, 'more');
 
-  // Past the handler's own ceiling the tail is still truncated, and the foot says so rather than
-  // claiming the log ends where the clamp did: asking for more than the server will answer is the
-  // one thing that would turn a short page into a lie.
   await view.log.older.load();
   await settle();
   await view.log.older.load();
@@ -957,8 +809,6 @@ test('the log re-read after a correction is as deep as the walk, and carries the
   assert.equal(view.log.older.status, 'more');
 });
 
-// A movement minted from the picker lands in the one catalog instance this product has, so it is on
-// every picker in the app a render later — the routine editor's and the backfill form's.
 test('a created movement lands in the catalog, and a refusal is said in the one voice', async (t) => {
   const now = Date.now();
   browserWith();
@@ -975,10 +825,6 @@ test('a created movement lands in the catalog, and a refusal is said in the one 
 
   assert.equal(made.name, 'Face Pull');
   assert.equal(view.log.catalog.some((each) => each.name === 'Face Pull'), true);
-  // BOTH ANSWERS TRAVEL (§N screen 31), and the one the lifter was asked for is the one that is
-  // stored: equipment is what the ladder reads, and it was a silent `barbell`
-  // on every movement ever minted here before the question existed. `pattern` is the field nobody is
-  // asked about, so it claims the least it can.
   assert.equal(made.equipment, 'machine');
   assert.equal(made.pattern, 'isolation');
 
@@ -992,9 +838,6 @@ test('a created movement lands in the catalog, and a refusal is said in the one 
   );
 });
 
-// A 400 is the store's own answer — it read the document and would not take it — and blaming the
-// signal for it invites a retry that fails identically forever. The toast speaks through
-// failureReason, which keeps the two failures apart.
 test('a movement the store refuses as written is not blamed on the signal', async (t) => {
   const now = Date.now();
   browserWith();
@@ -1011,10 +854,6 @@ test('a movement the store refuses as written is not blamed on the signal', asyn
   assert.equal(view.log.toast.text, 'That movement wasn’t created — the log wouldn’t take it as written.');
 });
 
-// §I'S SETTINGS RIDE THE BOOT READ (W4). Two of them reach these rooms: the unit every weight
-// on this surface is spelled in, and the rest target the mirror names beside the last set. The
-// spelling is module-level state at the very edge (units.js), so what is pinned here is that the
-// surface sets it — and sets it BEFORE the phase moves, so no room paints a number twice.
 test('the account’s settings arrive with the log, and the unit is set before the rooms open', async (t) => {
   t.after(() => spellWeightsIn(KG));
   const now = Date.now();
@@ -1027,16 +866,11 @@ test('the account’s settings arrive with the log, and the unit is set before t
   assert.equal(view.log.phase, 'ready');
   assert.equal(view.log.preferences.units, 'lb');
   assert.equal(view.log.preferences.restSeconds, 120);
-  // The whole document, so a room reading one field never has to know which fields were stored.
   assert.equal(view.log.preferences.confirmHaptic, true);
   assert.equal(weightUnit(), 'lb');
   assert.equal(fmt(102.5), '226');
 });
 
-// A LOG THAT OPENS IN KILOGRAMS IS A LOG THAT OPENS. The settings are one request beside two others
-// and they may not take the boot down with them: a lifter whose preferences read flapped gets their
-// sessions, in the unit the store holds, which is the same thing an account that has never opened
-// the settings screen gets.
 test('a settings read that does not come back still opens the log, in kilograms', async (t) => {
   t.after(() => spellWeightsIn(KG));
   const now = Date.now();

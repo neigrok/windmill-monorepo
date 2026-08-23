@@ -3,10 +3,6 @@ import assert from 'node:assert/strict';
 
 import { bendOf } from '../../../../src/products/roadmap/scene/ConnectorBatch.js';
 
-// An edge's bow belongs to the edge, not to wherever its ends happen to be sitting. It used to be
-// hashed from the endpoint coordinates, so dragging a node re-rolled the curve of every edge
-// touching it on every pointer event — the edge appeared to shake because it was a different
-// curve each frame.
 test('an edge bows by the same amount wherever its ends are', () => {
   assert.equal(bendOf('root', 'child'), bendOf('root', 'child'));
 });
@@ -23,9 +19,7 @@ test('the bow stays within half a span either way', () => {
   }
 });
 
-// The behaviour that actually broke: an edge keeps its shape when an end moves. The curve is
-// allowed to stretch and swing round — it is not allowed to be re-bent. Measured as the curve's
-// deviation from its own chord, which is scale-free, so the two are comparable.
+// An edge keeps its shape when an end moves, measured as deviation from its own chord (scale-free).
 import { writeEdgePositions } from '../../../../src/products/roadmap/scene/ConnectorBatch.js';
 
 function bowRatio(fx, fy, tx, ty, sway) {
@@ -42,7 +36,6 @@ function bowRatio(fx, fy, tx, ty, sway) {
 test('an edge keeps its shape when one end is dragged', () => {
   const sway = bendOf('root', 'child');
   const home = bowRatio(0, 0, 400, 0, sway);
-  // the far end swung right round its ring, exactly what a reorder drag does
   for (const [x, y] of [[380, 120], [260, 300], [0, 400], [-300, 260], [-400, 20]]) {
     const moved = bowRatio(0, 0, x, y, sway);
     assert.ok(Math.abs(moved - home) < 0.02, `bow changed from ${home.toFixed(3)} to ${moved.toFixed(3)}`);

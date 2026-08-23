@@ -1,5 +1,4 @@
-// Cosine similarity and a top-k rank. The embedder already returns unit vectors, but the full form
-// (with a zero-norm guard) keeps this correct for any input and honest as a tested primitive.
+// Cosine similarity with a zero-norm guard, so it holds for any input, not only unit vectors.
 
 export function cosine(a, b) {
   let dot = 0;

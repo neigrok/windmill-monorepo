@@ -40,29 +40,8 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// ASK HAS A PAST — §O, screen 33. Every conversation the lifter has had, titled by what they asked
-// and subtitled by what came of it, grouped by the month it happened in.
-//
-// IT IS NOT AN INBOX AND THAT IS MOST OF THE DESIGN. No unread count, no badge, no notification, no
-// dot, nothing waiting for anybody: this is the most natural place in the whole product for one to
-// grow, and Ask's own rule — it does not speak first — is the same rule applied to a list. There is
-// no search either (§O refuses search-by-model, and a filter over the lifter's own words is not
-// drawn), no folders, no pinning, and nothing here resurfaces on its own. NOTHING IN HERE IS NAMED
-// `unread` EITHER, state included: `outOfReach` is a failed READ, and a flag spelled the other way
-// is the seam a later wave grows a badge out of without noticing it changed the product.
-//
-// EVERY ROW IS TWO FACTS AND NOTHING ELSE. The title is the lifter's first message VERBATIM, drawn
-// as it arrived; the subtitle is the outcome the server derived from the proposals the conversation
-// minted. WHAT THE BOARD DRAWS AND THIS DOES NOT is one line: a dismissed thread reading `built it
-// myself instead`. Nothing observes why a lifter dismissed a proposal and this product does not ask,
-// so that sentence would be the room narrating a motive onto somebody's evening — one line under the
-// rule that a thread is titled by your own words and never by a summary a model wrote about you. A
-// dismissed row says what was dismissed (`4 changes dismissed`) and nothing about why. It is filed
-// as a drift item against the board rather than corrected quietly.
-//
-// A LIST THAT COULD NOT BE READ IS NOT AN EMPTY ONE. The two say different sentences and never
-// collapse into one, because a lifter with nine conversations reading "nothing here yet" would be
-// the room making a false claim about their own past.
+// Not an inbox: no unread count, no badge, no notification, no search and no folders — and a list that
+// could not be read is not an empty one.
 @Composable
 fun ThreadsScreen(
     store: TrainingStore,
@@ -75,10 +54,7 @@ fun ThreadsScreen(
     var threads by remember { mutableStateOf<List<AskThread>?>(null) }
     var outOfReach by remember { mutableStateOf(false) }
 
-    // Read on the way in and held for exactly as long as the screen stands. A conversation's outcome
-    // is DERIVED from the proposals it minted, so it moves the moment anybody applies or dismisses
-    // one — a list cached between visits would draw `4 changes waiting` under a diff the lifter
-    // decided on this morning.
+    // Read on the way in and held only while the screen stands: an outcome moves when a proposal is.
     LaunchedEffect(Unit) {
         when (val read = store.threads()) {
             is GymResult.Ok -> {
@@ -95,8 +71,6 @@ fun ThreadsScreen(
             backLabel = backLabel,
             onBack = onBack,
             title = Threads.title,
-            // The count is drawn once the log has actually said how many there are. A number over a
-            // list nobody has read yet would be this screen counting rows it does not have.
             beneath = if (threads == null) null else Threads.counted(held.size),
         )
         Column(
@@ -120,8 +94,6 @@ fun ThreadsScreen(
             }
             Threads.months(held, nowMs).forEach { month ->
                 Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-                    // No heading for the group the log gave no instant for: a month is where an
-                    // evening happened, and this room does not name one it was not told.
                     month.label?.let {
                         Text(it, style = GymType.numeral(11), color = GymSkin.inkFaint)
                     }
@@ -131,10 +103,6 @@ fun ThreadsScreen(
                 }
             }
         }
-        // The one door out of the past and into a question, and it opens a NEW conversation rather
-        // than continuing whichever one was read last: a thread is titled by its first message, so
-        // adding tonight's question to a thread about a bench plateau would file it under somebody
-        // else's evening.
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -150,13 +118,7 @@ fun ThreadsScreen(
     }
 }
 
-// ONE CONVERSATION AS A ROW: what was asked, in the lifter's own words, and what came of it. The
-// question is drawn to two lines and then it stops — the row is a way back into an evening rather
-// than the evening itself, and the whole text is one tap away.
-//
-// A ROW WHOSE OUTCOME THIS BUILD CANNOT NAME DRAWS THE TITLE ALONE. The chip and the detail both
-// answer null for a word from a newer server, and a title with nothing under it is a true row where
-// a guessed outcome would be a false one.
+// A row whose outcome this build cannot name draws the title alone.
 @Composable
 private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
     Column(
@@ -169,9 +131,7 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
             .clickable(onClick = onOpen)
             .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
     ) {
-        // VERBATIM. Nothing here trims for meaning, sentence-cases, strips punctuation or adds a
-        // full stop: it is the question as it was typed, and the only thing the room does to it is
-        // stop drawing after two lines.
+        // VERBATIM: nothing trims for meaning, sentence-cases or adds a full stop.
         Text(
             thread.title,
             style = WindmillFont.body(15, FontWeight.SemiBold).copy(lineHeight = 21.sp),
@@ -188,9 +148,6 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
                 Text(detail, style = GymType.numeral(11), color = GymSkin.inkDim, maxLines = 1)
             }
             Spacer(Modifier.weight(1f))
-            // When it was last asked, which is what a lifter looking for a conversation remembers:
-            // the day it happened, in the room's own spelling — and nothing at all when the log
-            // said nothing about when, rather than a date this room made up.
             thread.day(nowMs)?.let {
                 Text(it, style = GymType.numeral(11), color = GymSkin.inkFaint, maxLines = 1)
             }
@@ -198,9 +155,6 @@ private fun ThreadRow(thread: AskThread, nowMs: Long, onOpen: () -> Unit) {
     }
 }
 
-// The accent is spent on ONE outcome and it is `applied`: that is the conversation that changed the
-// program, and the only one a lifter scanning the list is looking for. Everything else is a quiet
-// word on the raised surface — a dismissal is not a failure and a read is not a lesser evening.
 @Composable
 private fun OutcomeChip(label: String, applied: Boolean) {
     Box(
@@ -219,18 +173,7 @@ private fun OutcomeChip(label: String, applied: Boolean) {
     }
 }
 
-// ONE CONVERSATION, READ BACK — the turns as the log stored them, byte for byte as they were sent,
-// and what came of them. It is READ-ONLY and says so: there is no composer here, because a thread is
-// titled by its first message and a question typed under an old title would be filed under a
-// question nobody asked tonight.
-//
-// WHAT IT DOES NOT DRAW is everything the live conversation carries and the store does not: no tool
-// steps and no read receipt. Those are facts about ONE exchange the server observed as it happened
-// and does not keep with the turns — a receipt composed here from nothing would be the one number on
-// the screen that nobody counted.
-//
-// DELETE IS AT THE FOOT, and what it takes is said before it is offered: the conversation goes and
-// the consequence stays, because an applied change is a fact about the program rather than a message.
+// READ-ONLY: there is no composer, because a thread is titled by its first message.
 @Composable
 fun ThreadScreen(
     threadId: String,
@@ -249,8 +192,7 @@ fun ThreadScreen(
     LaunchedEffect(threadId) {
         when (val read = store.thread(threadId)) {
             is GymResult.Ok -> thread = read.value
-            // In the log's own words, and never as an empty conversation: a thread that could not be
-            // read and a thread with nothing in it are two different evenings.
+            // A thread that could not be read and one with nothing in it are two different evenings.
             is GymResult.Failed -> say(read.why.line("that conversation didn’t open"))
         }
     }
@@ -266,9 +208,6 @@ fun ThreadScreen(
         ThreadsHead(
             backLabel = backLabel,
             onBack = onBack,
-            // The title IS the lifter's first message, so the head of this screen is their own
-            // question at display size. A thread the log has not answered for yet has no title to
-            // draw and says the noun instead of guessing one.
             title = held?.title ?: Threads.title,
             beneath = held?.outcome?.detail,
         )
@@ -279,10 +218,6 @@ fun ThreadScreen(
         ) {
             Text(Threads.past, style = GymType.numeral(12), color = GymSkin.inkFaint)
             held.turns.forEach { turn -> Turn(turn) }
-            // WHAT THE CONVERSATION MINTED, and the door onto the diff — the other half of the trail
-            // §O asks for: the routine's history says a change came from Ask, and the thread says
-            // which changes those were. Each is read whole when it is opened, because a proposal
-            // moves the moment anybody decides anything.
             held.proposals.forEach { proposal ->
                 Minted(proposal, nowMs) { onReview(proposal) }
             }
@@ -295,10 +230,7 @@ fun ThreadScreen(
                     .clip(RoundedCornerShape(WindmillRadius.lg))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
                     .clickable(enabled = !deleting) {
-                        // The screen only leaves once the log says the conversation is gone — the
-                        // same rule a discarded session lives under. A room that popped on the tap
-                        // would tell the lifter their past was deleted on the strength of a request
-                        // that may never have landed.
+                        // The screen only leaves once the log says the conversation is gone.
                         scope.launch {
                             if (deleting) return@launch
                             deleting = true
@@ -325,10 +257,6 @@ fun ThreadScreen(
     }
 }
 
-// A stored turn, drawn on the side it was said from — the lifter's own words in the bubble Ask draws
-// them in live, so a conversation read back six weeks later is the conversation, not a transcript of
-// one. A speaker this build does not know is drawn as the log's side: the room never puts words in
-// the lifter's mouth, and that is the direction this is allowed to fail in.
 @Composable
 private fun Turn(turn: AskTurn) {
     if (!turn.fromLifter) {
@@ -356,9 +284,6 @@ private fun Turn(turn: AskTurn) {
     }
 }
 
-// A proposal this conversation minted, at the size a thread carries it: the routine by name, the
-// count the server made, and what became of it — dated, because a decision taken on Tuesday about a
-// diff written on Sunday belongs to Tuesday.
 @Composable
 private fun Minted(proposal: ThreadProposal, nowMs: Long, onReview: () -> Unit) {
     Row(
@@ -381,9 +306,6 @@ private fun Minted(proposal: ThreadProposal, nowMs: Long, onReview: () -> Unit) 
     }
 }
 
-// The head both screens share — the way back naming where it goes, then what is being read. It is
-// the room's own pushed-screen head at one size, and it lives here rather than being written twice
-// because the list and the conversation are one screen a lifter walks through.
 @Composable
 private fun ThreadsHead(backLabel: String, onBack: () -> Unit, title: String, beneath: String?) {
     Column(

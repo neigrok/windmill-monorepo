@@ -1,15 +1,3 @@
-// The legend is the tree's colour vocabulary, and every op on it is a pure legend → legend
-// transform: take a legend, return a NEW one. SkillTreeView calls these ops inline today and the
-// next wave lifts the calls into ui/tree/useLegend.js — and the one thing a hook extraction can
-// break without anything looking wrong is exactly that purity. A hook that "optimises" renameKind
-// into an in-place splice still paints the right colour on the next frame; what it loses is the
-// undo snapshot and the persisted op, hours later, silently. So every case below asserts the whole
-// returned legend AND that the legend handed in came back untouched.
-//
-// The other load-bearing contract is deriveLegend's three branches: saved (reconciled), in-use,
-// and the genesis seed — the seed being shared with the backend byte-for-byte, which is why the
-// empty-tree branch is checked by reference and not just by value.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -28,7 +16,6 @@ import {
 } from '../../../../src/products/roadmap/model/Legend.js';
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../../../../src/products/roadmap/theme.js';
 
-// A legend wearing three of the six hues, the shape SkillTreeView holds.
 function savedLegend() {
   return [
     { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },
@@ -37,8 +24,6 @@ function savedLegend() {
   ];
 }
 
-// Every op is checked against this: the input is deep-equal to what it was, and the output is a
-// different array object. `before` must be taken before the op runs.
 function pure(before, input, output) {
   assert.deepEqual(input, before, 'the op mutated the legend it was given');
   assert.notEqual(output, input, 'the op returned the same array instead of a new one');
@@ -52,9 +37,7 @@ test('an empty tree with no saved legend is born as the genesis seed itself', ()
     { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out' },
     { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter' },
   ]);
-  // Returned BY REFERENCE — the module-level seed shared byte-for-byte with the backend. Nothing
-  // downstream may mutate a legend in place, or the next locally-born tree inherits the damage
-  // and its claim diverges from the server's empty tree.
+  // Returned BY REFERENCE: the genesis seed is shared byte-for-byte with the backend, never mutate it.
   assert.equal(derived, DEFAULT_KINDS);
   assert.equal(GENESIS_STAMP, '1:0:genesis');
 });
@@ -103,7 +86,6 @@ test('a saved legend gains an unlabeled kind for every hue in use it is missing'
       { hue: 'terracotta', label: 'Build', description: 'Things you make' },
       { hue: 'olive', label: 'Learn', description: 'Things you figure out' },
       { hue: 'gold', label: 'Milestone', description: 'Moments that matter' },
-      // appended in palette order, after everything saved
       { hue: 'sky', label: '', description: '' },
       { hue: 'plum', label: '', description: '' },
     ],
@@ -118,8 +100,6 @@ test('a saved kind with a missing label or description reads as empty strings', 
 });
 
 test('an empty saved legend is still the saved branch — the seed does not come back', () => {
-  // `[]` is truthy, so a tree that has deliberately emptied its legend gets the in-use hues
-  // appended to nothing, NOT the three genesis kinds.
   assert.deepEqual(deriveLegend([], []), []);
 
   const derived = deriveLegend([{ id: 'a', color: 'gold' }], []);
@@ -137,7 +117,7 @@ test('withCounts tallies a colourless node as the default hue and marks unworn k
     { id: 'b' },
     { id: 'c', color: 'gold' },
     { id: 'd', color: DEFAULT_NODE_COLOR },
-    { id: 'e', color: 'plum' }, // a hue with no kind — tallied, then ignored
+    { id: 'e', color: 'plum' },
   ];
 
   const counted = withCounts(legend, nodes);
@@ -160,7 +140,6 @@ test('inUseCount counts only the kinds a step actually wears', () => {
   assert.equal(inUseCount(legend, []), 0);
   assert.equal(inUseCount(legend, [{ id: 'a', color: 'gold' }, { id: 'b', color: 'gold' }]), 1);
   assert.equal(inUseCount(legend, [{ id: 'a', color: 'gold' }, { id: 'b' }]), 2);
-  // a hue nothing in the legend names never counts
   assert.equal(inUseCount(legend, [{ id: 'a', color: 'plum' }]), 0);
 });
 
@@ -169,7 +148,6 @@ test('freeHue hands out the palette in order and dries up at six', () => {
 
   assert.equal(freeHue([]), 'terracotta');
   assert.equal(freeHue(savedLegend()), 'brick');
-  // order in the legend is irrelevant — palette order decides
   assert.equal(freeHue([{ id: 'x', hue: 'plum' }, { id: 'y', hue: 'terracotta' }]), 'olive');
   assert.equal(freeHue(NODE_COLOR_NAMES.map((hue) => ({ id: hue, hue }))), null);
 });
@@ -242,7 +220,6 @@ test('addKind uses the id it is given, so an authoritative AddKind op keeps the 
 test('addKind is a no-op for a hue that is already taken or missing entirely', () => {
   const legend = savedLegend();
 
-  // a full palette makes freeHue null, and null must not append a hueless kind
   assert.equal(addKind(legend, null), legend);
   assert.equal(addKind(legend, undefined), legend);
   assert.equal(addKind(legend, ''), legend);
@@ -294,7 +271,6 @@ test('recolorKind refuses a hue another kind already wears, including the kind\'
 
   assert.deepEqual(recolorKind(legend, 'learn', 'gold'), { legend, oldHue: null, newHue: null });
   assert.equal(recolorKind(legend, 'learn', 'gold').legend, legend);
-  // recolouring a kind to the hue it already has is the same refusal — no repaint, no op
   assert.deepEqual(recolorKind(legend, 'learn', 'olive'), { legend, oldHue: null, newHue: null });
   assert.deepEqual(legend, savedLegend());
 });

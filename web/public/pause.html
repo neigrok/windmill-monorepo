@@ -15,10 +15,9 @@
     <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/chrome.css" />
     <style>
-      /* This page's own type only. The family chrome — frame, header, buttons, footer — and the
-         faces both arrive on the two sheets linked above, served by scripts/staticPageAssets.js so
-         every static page wears one geometry. Colours are light-theme token values resolved
-         from src/styles/tokens/*.css; these pages are light-only. */
+      /* This page's own type only — the family chrome and the faces arrive on the two sheets
+         linked above, served by scripts/staticPageAssets.js. Light-theme token values from
+         src/styles/tokens/*.css; these pages are light-only. */
       .doc { max-width: 560px; padding: 56px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -0.02em; margin: 0; }
       .doc p { font-size: 15.5px; line-height: 1.65; color: #6F5F45; margin: 14px 0 0; }
@@ -29,11 +28,8 @@
       .act { margin-top: 26px; }
       .doc .note { font-size: 13px; line-height: 1.6; color: #92805F; margin-top: 16px; }
 
-      /* One document, five faces. The face is chosen by <html data-pause>, stamped before first
-         paint below, so the reader never sees the button flash past a state it isn't in. With no
-         JavaScript at all nothing here shows and the <noscript> line stands in its place — which
-         is the safe way round: a page that can only pause by running our script is a page a link
-         scanner can't pause through. */
+      /* One document, five faces; the face is chosen by <html data-pause>, stamped before first
+         paint below. With no JavaScript nothing here shows and the <noscript> line stands in. */
       .st { display: none; }
       html[data-pause="ready"] .st--ready { display: block; }
       html[data-pause="working"] .st--working { display: block; }
@@ -115,21 +111,12 @@
     </footer>
 
     <script>
-      // The pause itself. Two rules hold this page up, and both are about the same danger:
-      //
-      //   1. The token rides in the FRAGMENT (/pause.html#t=<secret>), like the magic link — the
-      //      part of a URL a browser never puts on the wire, so the secret stays out of OUR access
-      //      logs, referrers and proxy traces. Not out of everyone's: a corporate mail rewriter
-      //      that percent-encodes the whole URL onto its own domain carries the fragment along
-      //      with it. The mechanism is still the right one — the claim is just narrower than
-      //      "nobody ever sees it".
-      //   2. Nothing is sent until a person presses the button. Outlook and corporate link
-      //      scanners fetch every URL in an email before the reader ever sees it; a pause that
-      //      happened on GET would quietly switch off people who never clicked.
-      //
-      // The server answers 204 whether or not the token matches, on purpose — it must never work
-      // as an oracle for guessed tokens — so a success here means "we asked", not "it was you".
-      // The copy on the done state says exactly that rather than claiming more than we know.
+      // Two rules hold this page up. The token rides in the FRAGMENT (/pause.html#t=<secret>),
+      // the part of a URL a browser never puts on the wire — though a corporate mail rewriter
+      // that re-encodes the whole URL carries it along. And nothing is sent until a person
+      // presses: mail apps and link scanners fetch every URL in an email before the reader
+      // sees it. The server answers 204 whether or not the token matches, so it can never work
+      // as an oracle for guessed tokens — a success here means "we asked", not "it was you".
       (function () {
         var root = document.documentElement;
         var button = document.getElementById('pause');
@@ -149,8 +136,7 @@
           }).then(function (response) {
             if (!response.ok) { root.setAttribute('data-pause', 'failed'); return; }
             root.setAttribute('data-pause', 'done');
-            // The secret has done its one job. Take it out of the address bar so it can't be
-            // copied out of a screenshot, shared, or walked back to from history.
+            // The secret has done its one job — take it out of the address bar.
             try { history.replaceState(null, '', location.pathname); } catch (e) { /* file:// and the like */ }
           }).catch(function () { root.setAttribute('data-pause', 'failed'); });
         }

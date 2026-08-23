@@ -1,12 +1,4 @@
-// The journal's "your data" export. GET /v1/journal/export has been live on the backend since the
-// product shipped and journalApi.exportAll() has been written against it since — with no caller, so
-// nothing in the product could reach it. This is the caller.
-//
-// Roadmap's export is a zip because roadmap has many trees; the journal is ONE continuous canvas, so
-// its archive is one continuous Markdown file, oldest first — the same shape the product is. The
-// scales are written as the fractions they are ("mood 4/5"), never as words: the canvas grades
-// nothing, and an export that translated a step into "good" would be the product saying something
-// it has never said.
+// One continuous Markdown file, oldest first. Scales are written as fractions ("mood 4/5"), never words.
 
 import { journalApi } from '../journalApi.js';
 import { isWritten, normalizePage } from '../pageCache.js';

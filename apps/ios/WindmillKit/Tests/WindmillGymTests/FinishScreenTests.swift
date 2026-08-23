@@ -1,10 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// The end of a session, read. Nothing here computes a review — what is pinned is the reading: which
-// word goes above a short session, which slot stays EMPTY on the ordinary 190 in 200, and the one
-// comparison row that is not an arrow.
-
 private let catalog = [
     Exercise(id: "back-squat", name: "Back Squat"),
     Exercise(id: "leg-press", name: "Leg Press"),
@@ -28,7 +24,6 @@ final class FinishTests: XCTestCase {
         XCTAssertEqual(short.subtitle, "Pull A")
     }
 
-    // Whether one came before it is a question about the LOG, not about this session.
     func testASessionWithNoRoutineIsNamedByWhetherItIsTheFirstOne() {
         XCTAssertEqual(Finish.head(startedAtMs: started, finishedAtMs: finished,
                                    routine: nil, slight: false, first: true).subtitle,
@@ -44,21 +39,15 @@ final class FinishTests: XCTestCase {
         XCTAssertEqual(tiles.map(\.value), ["1h 02m", "16", "122.5"])
     }
 
-    // A session with no loaded working set has no honest one-rep estimate — a chin-up at zero and a
-    // band-assisted pull-up at −20 have none — so the tile says nothing with a dash rather than
-    // printing a zero nobody lifted.
     func testASessionWithNoLoadedSetShowsADashRatherThanAZero() {
         let tiles = Finish.tiles(Review.Stats(durationMs: 660_000, workingSets: 3, topE1rm: nil))
         XCTAssertEqual(tiles.map(\.value), ["11m", "3", "—"])
     }
 
-    // The empty slot is a decision: on an ordinary session nothing takes the record line's place.
     func testNoRecordDrawsNoLineAtAll() {
         XCTAssertNil(Finish.recordSentence(nil, catalog: catalog))
     }
 
-    // The mark that was passed is named beside the one that passed it — a record with nothing to
-    // compare against is a first entry, and a first entry is not a record.
     func testEachKindOfRecordNamesWhatItBeatAndWhen() {
         let past: Int64 = 1_750_723_200_000
         let e1rm = PersonalRecord(kind: .e1rm, exerciseId: "back-squat", value: 122.5,
@@ -77,8 +66,6 @@ final class FinishTests: XCTestCase {
                        "Back Squat 8 reps at 100 kg — past 6 from \(Readout.day(past)).")
     }
 
-    // The plan is what the lifter agreed to and the log is what happened, so the arrow points from
-    // the plan when there was one.
     func testTheComparisonPointsFromThePlanAndFallsBackToLastTime() {
         let against = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1_750_723_200_000, movements: [
             Against.Movement(exerciseId: "back-squat",
@@ -96,8 +83,6 @@ final class FinishTests: XCTestCase {
                        ["5×5 @ 102.5 → 5×5 @ 105", "3×12 @ 135 → 3×12 @ 140"])
     }
 
-    // The one row that is not an arrow: a session that did not get through what was written down
-    // says so, because an arrow cannot.
     func testAMovementThatFellShortOfThePlanSaysItPlainly() {
         let against = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
@@ -108,7 +93,6 @@ final class FinishTests: XCTestCase {
                        ["planned 3×12 · did 3×10"])
     }
 
-    // Zero is not a load, it is the absence of one: a chin-up reads its count and nothing else.
     func testABodyweightMovementPrintsNoLoad() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
@@ -118,9 +102,6 @@ final class FinishTests: XCTestCase {
         XCTAssertEqual(Finish.comparison(against, catalog: catalog)?.rows.map(\.detail), ["3×7 → 3×8"])
     }
 
-    // A rep target the routine declined to set is `3 × max`, and a movement taken to max never fell
-    // short of a count it does not have — so this row is an arrow and not the "planned … · did …"
-    // sentence. The spacing follows review.js `countLabel`, so the two surfaces print one row alike.
     func testAMovementWithNoRepTargetReadsAsMaxAndNeverAsAShortfall() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
@@ -131,9 +112,6 @@ final class FinishTests: XCTestCase {
                        ["3 × max → 3×6"])
     }
 
-    // A `3 × max` plan cannot be fallen short of AT ALL: there is no rep target to miss, and a count
-    // of sets is not something this wire can be read short on either (see the ramp below). So the row
-    // is an arrow, exactly as review.js draws it.
     func testAPlanThatNamesNoRepTargetCannotBeFallenShortOf() {
         let against = Against(sessionId: "ses_0", routine: "Pull A", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "chin-up",
@@ -144,11 +122,6 @@ final class FinishTests: XCTestCase {
                        ["3 × max → 2×4"])
     }
 
-    // THE ROW THAT TOLD A FINISHED SESSION IT FELL SHORT. `now.sets` counts only the sets at the TOP
-    // LOAD, so a lifter who ramped 100·105·110·110·110 through every one of five planned sets arrives
-    // here as `sets: 3` — and the phone's own set-count term printed "planned 5×5 · did 3×5" in the
-    // loudest row on the screen, over bytes the desk read as an arrow. Set counts are not comparable
-    // on this wire and review.js has never compared them.
     func testASessionThatRampedThroughItsWholePlanIsNeverToldItFellShort() {
         let ramped = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "back-squat",
@@ -160,8 +133,6 @@ final class FinishTests: XCTestCase {
                        ["5×5 @ 100 → 3×5 @ 110"])
     }
 
-    // Nor is going heavier for fewer reps a smaller session: it is a different one, and the arrow
-    // carries both facts without grading either.
     func testGoingHeavierForFewerRepsIsADifferentSessionAndNotASmallerOne() {
         let heavier = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
@@ -172,8 +143,6 @@ final class FinishTests: XCTestCase {
                        ["3×12 @ 140 → 5×8 @ 160"])
     }
 
-    // What IS short: the reps at a load that did not go up — and a plan that names no load at all is
-    // read on the reps alone, because there is no bar to have gone up.
     func testWhatIsCalledShortIsTheRepsAtALoadThatDidNotGoUp() {
         let heldLoad = Against(sessionId: "ses_0", routine: "Legs", startedAtMs: 1, movements: [
             Against.Movement(exerciseId: "leg-press",
@@ -205,8 +174,6 @@ final class FinishedSessionTests: XCTestCase {
     private let lifted = [TrainingSet(id: "set_1", exerciseId: "back-squat", weightKg: 100, reps: 5,
                                       completedAtMs: 2_000)]
 
-    // The offer belongs to a session that had nothing written down for it. A session started FROM a
-    // routine already has one, and offering to keep it again would create a second copy of it.
     func testKeepingASessionAsARoutineIsOfferedOnlyWhenThereWasNoRoutine() {
         XCTAssertTrue(FinishedSession(session: session(routineId: nil), sets: lifted,
                                       review: nil, isFirst: true).offersRoutine)
@@ -214,8 +181,6 @@ final class FinishedSessionTests: XCTestCase {
                                        review: nil, isFirst: false).offersRoutine)
     }
 
-    // A session of nothing but warmups has no targets to write down, and RoutineWrite would refuse
-    // to compose one — so the offer is not made in the first place.
     func testASessionOfNothingButWarmupsIsNotOfferedAsARoutine() {
         let warmups = [TrainingSet(id: "set_1", exerciseId: "back-squat", weightKg: 60, reps: 5,
                                    kind: .warmup, completedAtMs: 2_000)]
@@ -223,10 +188,6 @@ final class FinishedSessionTests: XCTestCase {
                                        review: nil, isFirst: true).offersRoutine)
     }
 
-    // SCREEN 11 WINS. A short ad-hoc session satisfied both, and drew "Keep this as a routine" /
-    // "Save routine" directly above "Ended early" / "Keep it" / "Discard session" — two primary
-    // buttons and two different "keep" verbs, asking the lifter to write this into their program and
-    // to consider deleting it in the same scroll.
     func testAShortSessionIsNeverAlsoOfferedAsARoutine() {
         let short = Review(stats: Review.Stats(durationMs: 660_000, workingSets: 3), slight: true)
         let ended = FinishedSession(session: session(routineId: nil), sets: lifted,
@@ -239,8 +200,6 @@ final class FinishedSessionTests: XCTestCase {
                                    slight: ended.slight, first: ended.isFirst).title, "Ended early")
     }
 
-    // A review that never came back cannot make a session slight — and slight is what offers the one
-    // destructive action in the product, so it is never assumed.
     func testWithoutAReviewASessionIsNeverCalledShort() {
         XCTAssertFalse(FinishedSession(session: session(routineId: nil), sets: lifted,
                                        review: nil, isFirst: false).slight)

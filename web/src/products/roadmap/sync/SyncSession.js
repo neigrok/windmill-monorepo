@@ -1,20 +1,12 @@
-// The one seam SkillTreeView talks to for collaboration AND durability. It owns the
-// TreeLattice (truth), the client HLC clock, the socket, and the IndexedDB store. A local
-// edit is materialized to stamped writes, joined, persisted, and — only when live — sent as
-// one subgraph frame; a remote frame is joined the same way. TreeData is only what the view
-// renders (always lattice.toTreeData()). "The lattice is the outbox": there is no queue — the
-// pending flush is derived as lattice.deltaSince(ackedServerVector).
-//
-// Coverage discipline (the hard-won part; see GRAPH_SYNC_DESIGN.md §6 and the Step-4 red-team):
-//  - ackedServerVector is in-memory only, never persisted; the persisted value is
-//    {frame, progress, lastSeq} — both lanes in one record, so one device wipe clears both.
-//  - it is REPLACED by the graft frontier on every subscribe (so anything the server no longer
-//    holds becomes uncovered and re-flushes — this heals a server restart), and advanced only by
-//    a subgraphAck for one of our own frames. Live third-party frames never touch it.
-//  - dense seq is the live-plane gap detector: a live frame joins only when seq === lastSeq+1;
-//    a gap or a malformed frame forces a resubscribe (the graft is the resync).
-//  - sends fire only in the `live` phase, entered after the graft is joined+persisted and the
-//    flush is handed off — so the server acquires each actor's stamps as a prefix.
+// The seam SkillTreeView talks to for collaboration and durability: it owns the TreeLattice, the
+// client HLC clock, the socket and the IndexedDB store. The lattice is the outbox — the pending
+// flush is lattice.deltaSince(ackedServerVector). Coverage rules:
+//  - ackedServerVector is in-memory only, never persisted.
+//  - it is replaced by the graft frontier on every subscribe, and advanced only by a subgraphAck
+//    for one of our own frames; live third-party frames never touch it.
+//  - dense seq gates the live plane: a frame joins only when seq === lastSeq + 1, and a gap or a
+//    malformed frame forces a resubscribe.
+//  - sends fire only in the `live` phase, so the server acquires each actor's stamps as a prefix.
 
 import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, TreeLattice, VersionVector, hlcText, parseHlc, compareHlc } from './lattice.js';
@@ -30,14 +22,10 @@ const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
 const FLUSH_CHUNK_BYTES = 256 * 1024;
 const HEARTBEAT_MS = 20000;
-// Dead-socket detection counts consecutive UNANSWERED pings, not wall-clock silence: a
-// backgrounded tab's setInterval is throttled to ~once/60s, so any wall-clock threshold near
-// that floor false-trips a healthy-but-throttled socket (it fires a ping, then finds the last
-// pong ~60s old, and reconnects a live pipe). Counting pings is throttle-immune — a live peer
-// answers each ping before the next (however throttled) tick, so the count only climbs on a
-// genuinely silent pipe. STALE_MS is only for the wake/online path (events, never throttled).
+// Dead-socket detection counts consecutive unanswered pings, not wall-clock silence: a
+// backgrounded tab's setInterval throttles to ~once/60s. STALE_MS is only for the wake/online path.
 const MISSED_PINGS_LIMIT = 3;   // pings unanswered in a row ⇒ half-open ⇒ reconnect (≈60s foreground)
-const STALE_MS = 60000;         // on refocus/reconnect-to-network, a minute of silence ⇒ reconnect for a fresh graft
+const STALE_MS = 60000;         // on refocus or network return, a minute of silence ⇒ reconnect
 
 function replicaActor() {
   const nonce = crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`;
@@ -55,9 +43,7 @@ export class SyncSession {
     this.actor = replicaActor();
     this.clock = new HlcClock(this.actor);
     this.lattice = new TreeLattice(treeId, title);  // the doc title is the stampless baseline; any stamped rename dominates
-    // The private lane (§12): this account's own marks, on the same clock and in the same blob as
-    // the structure, but never in the same frame — a progress register in a subgraph would publish
-    // one user's overlay to every collaborator on the tree.
+    // This account's own marks: same clock and same blob as the structure, never the same frame.
     this.progress = new ProgressLattice();
     this.store = new SyncStore();
     this.registry = registry;                       // the device-tree index persistNow keeps fresh; null for read-only views
@@ -86,8 +72,8 @@ export class SyncSession {
     this.pagehide = null;
     this.heartbeatTimer = null;
     this.lastRecvAt = 0;        // Date.now() of the last inbound frame — the wake/online staleness clock
-    this.pingsSinceRecv = 0;    // consecutive pings with no inbound frame since — the throttle-immune liveness gauge
-    this.onVisible = null;  // refocus reconnect: a background tab's throttled timers can miss a half-open socket
+    this.pingsSinceRecv = 0;    // consecutive pings with no inbound frame since
+    this.onVisible = null;  // refocus reconnect
     this.onOnline = null;   // network-return reconnect
     this.closed = false;
   }
@@ -98,8 +84,8 @@ export class SyncSession {
   onProgress(handler) { this.progressHandler = handler; return this; }
   onDrained(handler) { this.drainedHandler = handler; return this; }
 
-  // Seed a local-only lattice from projected TreeData (the perf tree): every field takes a
-  // genesis stamp, so any later edit dominates it. No socket, no IndexedDB.
+  // Seed a local-only lattice from projected TreeData: every field takes a genesis stamp, so any
+  // later edit dominates it. No socket, no IndexedDB.
   seed(treeData) {
     const genesis = GENESIS_STAMP;
     const nodes = treeData.nodes.map((n) => ({
@@ -126,7 +112,6 @@ export class SyncSession {
     this.emitTree();
   }
 
-  // Load the durable lattice from IndexedDB (renders offline immediately), then connect.
   async start() {
     let saved = null;
     try { saved = await this.store.load(this.treeId); } catch { this.durabilityAtRisk = true; }
@@ -137,18 +122,12 @@ export class SyncSession {
       this.ready = true;
       this.emitTree();
     }
-    // The private lane comes back from the same record. Its marks are read offline AND they are
-    // the outbox: a mark made with no network, in a tab that was then closed, is still here and
-    // still uncovered, so the next graft flushes it. A corrupt lane starts empty rather than
-    // taking the structure down with it — the two are independent replicas in one blob.
+    // A corrupt private lane starts empty rather than taking the structure down with it.
     if (saved?.progress) {
       try { this.progress.join(saved.progress); }
       catch { this.progress = new ProgressLattice(); }
     }
-    // Then whatever the PRE-LANE store still holds for this tree, folded in once and cleared. Most
-    // of it the server already knows and it merges to a no-op; what it does not know — a mark made
-    // offline, or before signing in — was only ever in that key, and the lane is the only place it
-    // can still reach the server from. Uncovered by construction, so the first graft flushes it.
+    // localStorage residue folds in uncovered, so the first graft flushes it.
     if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress);
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
@@ -158,10 +137,7 @@ export class SyncSession {
     if (typeof window !== 'undefined') {
       this.pagehide = () => this.persistNow();
       window.addEventListener('pagehide', this.pagehide);
-      // Wake/online recovery: a sleep/wake or network flap can leave the socket half-open (OPEN,
-      // no bytes flowing) with no `close` to reconnect. On the tab becoming visible or the network
-      // returning, reconnect at once if the socket is down or has gone silent past the window —
-      // this catches cases a throttled background-tab heartbeat would miss.
+      // A sleep/wake or network flap can leave the socket half-open: OPEN, no bytes, no `close`.
       this.onVisible = () => { if (document.visibilityState === 'visible') this.reconnectIfStale(); };
       this.onOnline = () => this.reconnectIfStale();
       document.addEventListener('visibilitychange', this.onVisible);
@@ -176,13 +152,13 @@ export class SyncSession {
     this.ws = new WebSocket(this.url);
     this.ws.addEventListener('open', () => {
       this.phase = 'syncing';
-      // Send our coverage so the server replies with only the gap (two-way anti-entropy, §6).
+      // Send our coverage so the server replies with only the gap.
       this.ws.send(JSON.stringify({ t: 'subscribe', treeId: this.treeId, lastSeq: this.lastSeq, vector: this.ackedServerVector.toJSON() }));
-      this.startHeartbeat();  // liveness begins once subscribed — pings surface a half-open pipe
+      this.startHeartbeat();
     });
     this.ws.addEventListener('message', (event) => {
       this.lastRecvAt = Date.now();  // any inbound frame proves the pipe is alive — bump before parse
-      this.pingsSinceRecv = 0;       // and answers every outstanding ping
+      this.pingsSinceRecv = 0;
       let frame;
       try { frame = JSON.parse(event.data); } catch { return; }
       this.receive(frame);
@@ -207,12 +183,8 @@ export class SyncSession {
     try { this.ws?.close(); } catch { /* ignore */ }  // the close handler schedules the reconnect + graft resync
   }
 
-  // Application-level liveness. A half-open socket (NAT/proxy idle-timeout, laptop sleep/wake, a
-  // network flap with no clean TCP close) leaves readyState OPEN while no bytes flow and fires no
-  // `close`, so nothing reconnects and every server broadcast is lost. The heartbeat pings on a
-  // fixed interval and, once the socket has been silent past the staleness window, forces a
-  // reconnect — which closes → close handler → scheduleReconnect → a fresh graft (the existing
-  // heal path). It never touches sync semantics; the graft is the only resync.
+  // A half-open socket leaves readyState OPEN with no bytes flowing and fires no `close`, so
+  // unanswered pings force a reconnect; the graft that follows is the only resync.
   startHeartbeat() {
     this.stopHeartbeat();
     this.lastRecvAt = Date.now();
@@ -221,7 +193,7 @@ export class SyncSession {
       if (this.ws?.readyState !== WebSocket.OPEN) return;  // the close handler owns reconnection while not open
       this.ws.send(JSON.stringify({ t: 'ping', treeId: this.treeId }));
       this.pingsSinceRecv += 1;
-      if (this.pingsSinceRecv >= MISSED_PINGS_LIMIT) this.forceReconnect();  // pings in a row unanswered ⇒ half-open
+      if (this.pingsSinceRecv >= MISSED_PINGS_LIMIT) this.forceReconnect();  // unanswered ⇒ half-open
     }, HEARTBEAT_MS);
   }
 
@@ -235,36 +207,27 @@ export class SyncSession {
   }
 
   receive(frame) {
-    if (frame.t === 'pong' || frame.t === 'ping') return;  // heartbeat: liveness already bumped by the message listener
-    // Only the subscribe reply ('delta') may re-baseline coverage. Everything else on the
-    // broadcast channel — 'live', an echoed 'flush', an import 'graft' — is a seq'd delta:
-    // re-baselining on one would REPLACE coverage with that frame's own frontier, uncovering
-    // everything else and re-flushing it forever (the echo ping-pong).
+    if (frame.t === 'pong' || frame.t === 'ping') return;  // liveness already bumped by the listener
+    // Only the subscribe reply ('delta') may re-baseline coverage.
     if (frame.t === 'subgraph') return frame.intent === 'delta' ? this.receiveState(frame) : this.receiveLive(frame);
     if (frame.t === 'subgraphAck') return this.receiveAck(frame);
     if (frame.t === 'skew') return this.receiveSkew(frame);
     if (frame.t === 'presence') return void this.presenceHandler?.(frame);
     if (frame.t === 'peer') return void this.peerHandler?.(frame);
-    // The private lane's two frames. A graft re-baselines its coverage the way a subgraph delta
-    // does; an echo only folds in. Telling them apart matters: re-baselining on an echo would
-    // uncover every other mark and re-flush it forever.
+    // The private lane's two frames: a graft re-baselines its coverage, an echo only folds in.
     if (frame.t === 'progress') return frame.intent === 'graft' ? this.receiveProgressGraft(frame) : this.receiveProgress(frame);
     if (frame.t === 'progressAck') return this.receiveProgressAck(frame);
     if (frame.t === 'reject') return this.receiveReject(frame);
   }
 
-  // The subscribe response: the server's delta for the vector we sent (a fresh client gets the
-  // whole state). Re-baselines coverage and seq, then flushes whatever the server is missing.
-  // This is the only channel that advances coverage wholesale — and only from content just
-  // joined, so it can never outrun content. A delta states the server's full frontier as its
-  // coverage; a bare graft (no coverage — e.g. an HTTP bootstrap) is a full state, so the join
-  // frontier is that frontier.
+  // The subscribe response: re-baselines coverage and seq, then flushes whatever the server is
+  // missing. A frame with no `coverage` is a full state, so its join frontier is the frontier.
   receiveState(frame) {
     let frontier;
     try { frontier = this.lattice.join(frame); } catch { this.forceReconnect(); return; }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
-    this.ackedServerVector = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;  // REPLACE
+    this.ackedServerVector = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
     this.persistNow();
     this.ready = true;
     this.emitTree();
@@ -274,8 +237,7 @@ export class SyncSession {
     this.noteDrained();    // an empty flush means the server already covers everything
   }
 
-  // A live broadcast (ours echoed back, a collaborator's, or an MCP edit). Dense-seq gated;
-  // never touches coverage.
+  // A live broadcast: dense-seq gated, and never touches coverage.
   receiveLive(frame) {
     if (typeof frame.seq !== 'number') return;
     if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
@@ -295,8 +257,7 @@ export class SyncSession {
     if (vector) { this.ackedServerVector.join(vector); this.inFlight.delete(frame.frameId); this.noteDrained(); }
   }
 
-  // The claim sequence (anon-first-tree F4) waits on this: fired whenever the wire goes
-  // idle with full coverage — live, nothing pending, nothing in flight.
+  // Fires whenever the wire goes idle with full coverage: live, nothing pending, nothing in flight.
   noteDrained() {
     if (this.phase !== 'live' || this.inFlight.size > 0 || this.progressInFlight.size > 0) return;
     if (this.pendingEditCount() > 0) return;
@@ -304,9 +265,8 @@ export class SyncSession {
     this.drainedHandler?.();
   }
 
-  // The subscribe graft for the private lane: the server's whole overlay for this account. It
-  // REPLACES coverage, so a mark the server no longer holds becomes uncovered and re-flushes —
-  // the same self-healing the structure gets, and the reason an empty graft still has to arrive.
+  // The private lane's graft: the server's whole overlay for this account. It replaces coverage,
+  // so a mark the server no longer holds re-flushes; an empty graft still has to arrive.
   receiveProgressGraft(frame) {
     let frontier;
     try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
@@ -317,8 +277,7 @@ export class SyncSession {
     this.flushProgress();
   }
 
-  // A live echo: this account's other tab, an MCP agent's mark, or our own write coming back with
-  // the server's receipt instant attached. Folded in, never a coverage input.
+  // A live echo, folded in and never a coverage input.
   receiveProgress(frame) {
     let frontier;
     try { frontier = this.progress.join(frame); } catch { this.forceReconnect(); return; }
@@ -335,9 +294,8 @@ export class SyncSession {
     this.noteDrained();
   }
 
-  // A mark made here. It is stamped, folded and PERSISTED before anything is sent — the lattice is
-  // the outbox, so a mark that never reaches the socket is not lost, it is merely uncovered, and
-  // the next flush carries it. Returns the overlay the view should render.
+  // Stamped, folded and persisted before anything is sent, so a mark that never reaches the socket
+  // is merely uncovered and the next flush carries it.
   markProgress(nodeId, status) {
     const now = Date.now();
     if (!this.progress.mark(nodeId, status, this.clock.tick(now), now)) return this.progress.overlay();
@@ -369,11 +327,7 @@ export class SyncSession {
 
   receiveReject(frame) {
     if (frame.frameId) this.inFlight.delete(frame.frameId);
-    // A refused subgraph frame strands the edits banked behind it: nothing acked them, so every
-    // later flush re-derives the same doomed delta. That is true of a code this build has never
-    // heard of too — a capacity refusal (tree-too-large) used to fall through to a console.warn,
-    // and the person went on editing a tree that would never save again with nothing on screen
-    // saying so. Only a refusal that strands nothing AND names no known kind stays quiet.
+    // A refused subgraph frame strands the edits banked behind it, whatever its code.
     if (strandsTheBank(frame)) this.durabilityAtRisk = true;
     if (!strandsTheBank(frame) && !isOwnershipRefusal(frame) && !isSessionRefusal(frame)) {
       console.warn('[sync] frame rejected —', frame.code, frame.reason);
@@ -384,20 +338,19 @@ export class SyncSession {
 
   emitTree() { this.treeHandler?.(this.lattice.toTreeData()); }
 
-  // How much of the bank the server does not hold — what the honesty chrome counts.
+  // How much of the bank the server does not hold.
   pendingEditCount() {
     const pending = this.lattice.deltaSince(this.ackedServerVector);
     return pending.nodes.length + pending.edges.length + pending.kinds.length + (pending.title ? 1 : 0);
   }
 
-  // Everything the server does not yet cover — the offline outbox, derived not queued.
+  // Everything the server does not yet cover — the outbox, derived not queued.
   flush() {
     const pending = this.lattice.deltaSince(this.ackedServerVector);
     if (!pending.nodes.length && !pending.edges.length && !pending.kinds.length && !pending.title) return;
     for (const chunk of chunkDelta(pending)) this.send(chunk, 'flush');
   }
 
-  // A local edit: materialize → journal its inverse → join → render → persist → send if live.
   dispatch(gesture) {
     if (!this.ready) return;
     const writes = materialize(gesture, this.lattice, this.clock);
@@ -407,11 +360,8 @@ export class SyncSession {
     this.apply(writes);
   }
 
-  // Rename the tree: one stamped write to the title register, joined + persisted + sent like
-  // any field change (LWW against concurrent renames; banked in the outbox while offline).
-  // Not a canvas gesture, so it stays out of the undo journal. Returns whether the session
-  // took the write — before the durable lattice loads it can't, and the caller must PATCH
-  // instead so the rename is never silently lost.
+  // One stamped write to the title register, LWW against concurrent renames and out of the undo
+  // journal. Returns false before the durable lattice loads, when the caller must PATCH instead.
   renameTree(title) {
     if (!this.ready) return false;
     const next = title.trim();
@@ -452,11 +402,8 @@ export class SyncSession {
     this.ws.send(JSON.stringify(frame));
   }
 
-  // Persist the whole lattice + lastSeq atomically. Snapshot is synchronous (before any await);
-  // a save failure degrades durability honestly but never blocks liveness. A closed session
-  // never writes — deleting a tree relies on the blob staying gone. The device-tree index is
-  // touched alongside, so every persisting tree lists in the switcher — signed out included.
-  // Returns the save's settle, for callers that must be durable before navigating.
+  // Persists both lanes + lastSeq atomically; the snapshot is taken synchronously, before any
+  // await. A closed session never writes. Returns the save's settle.
   persistNow() {
     if (this.closed) return Promise.resolve();
     clearTimeout(this.saveTimer);
@@ -466,8 +413,7 @@ export class SyncSession {
     return this.store.save(this.treeId, value).catch(() => { this.durabilityAtRisk = true; });
   }
 
-  // Coalesced save for the receive path — received content is already server-durable, so lagging
-  // the blob a beat only risks over-fetching via the next graft, never a lost or poisoned write.
+  // Coalesced save for the receive path: received content is already server-durable.
   scheduleSave() {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => { this.saveTimer = null; this.persistNow(); }, 250);
@@ -478,7 +424,7 @@ export class SyncSession {
       const record = this.lattice.nodes.get(n.id);
       const inv = { id: n.id };
       if (n.createdAt) inv.deleteLife = true;   // undo a create → tombstone
-      if (n.deletedAt) inv.addLife = true;      // undo a delete → re-add (fields survive in the lattice)
+      if (n.deletedAt) inv.addLife = true;      // undo a delete → re-add; fields survive in the lattice
       if ('labelAt' in n) inv.label = record ? record.label.v : '';
       if ('iconAt' in n) inv.icon = record ? record.icon.v : '';
       if ('colorAt' in n) inv.color = record ? record.color.v : 'terracotta';
@@ -551,8 +497,7 @@ export class SyncSession {
 
   maskedWork() { return this.lattice.maskedWork(); }
 
-  // The ids a paste graft must reserve against collision — present AND tombstoned, so a
-  // colliding slug never resurrects a deleted node (F3 §01).
+  // Present and tombstoned ids, so a colliding slug never resurrects a deleted node.
   knownNodeIds() { return this.lattice.knownNodeIds(); }
 
   clearDurable() { this.store.clear(this.treeId).catch(() => {}); }
@@ -575,9 +520,8 @@ export class SyncSession {
   }
 }
 
-// Split an oversized flush by entry count so no single frame exceeds the server's byte cap.
-// Each chunk is an independently valid subgraph — joins compose, so no flushId ceremony is
-// needed. The title (one register) rides the first chunk.
+// Splits an oversized flush by entry count; each chunk is an independently valid subgraph and the
+// title rides the first.
 function* chunkDelta(delta) {
   if (JSON.stringify(delta).length <= FLUSH_CHUNK_BYTES) { yield delta; return; }
   const all = [

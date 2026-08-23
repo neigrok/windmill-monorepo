@@ -1,19 +1,7 @@
 import SwiftUI
 import WindmillPlatform
 
-// TAP-TO-TYPE — twelve keys for both numbers, and one rule that governs the whole sheet: AN INVALID
-// ENTRY NEVER SILENTLY REVERTS. The buffer stays, the echo turns alarm ink, the message names the
-// exact problem and teaches the format, and the empty case even names the value Cancel would keep.
-// The only ways out are Set, which commits, and Cancel, which keeps the number they had.
-//
-// The pad opens ON the number it was opened from, so a gesture the lifter has not made yet is never
-// drawn as a mistake. `seeded` is what makes that honest: the first digit starts a fresh number
-// rather than appending to a value nobody typed, while ± and ⌫ edit what is there, because they are
-// corrections and not entry.
-//
-// In reps mode the comma and the ± are stood DOWN, not removed — the geometry a chalked thumb
-// learned must not move between the two numbers. The native twin of
-// web/src/products/gym/logger/entry.js.
+// The native twin of web/src/products/gym/logger/entry.js.
 
 public enum KeypadEntry {
     public enum Mode: Equatable {
@@ -27,11 +15,8 @@ public enum KeypadEntry {
     public static let repsHint = "whole reps"
 
     public struct Pad: Equatable {
-        // THE BUFFER IS ASCII AND THE ECHO IS TYPOGRAPHIC. The pad is opened on the product's own
-        // spelling of a number (Readout.weight), which writes a real U+2212 minus — and `Double`
-        // reads only the hyphen, so seeding a band-assisted −20 raw would open the sheet in alarm
-        // ink on a gesture the lifter never made, then answer ± with "-−20". The sign is normalised
-        // on the way in and re-spelled by `echo` on the way out, so nothing else has to know.
+        // The buffer is ASCII: a U+2212 minus is normalised on the way in and re-spelled by `echo` on the way out.
+        // `seeded` means nothing has been typed yet: the first digit starts a fresh number, ± and ⌫ edit what is there.
         public let text: String
         public let seeded: Bool
 
@@ -45,17 +30,12 @@ public enum KeypadEntry {
             self.seeded = seeded
         }
 
-        // The echo is the raw buffer, so the lifter reads back exactly what they pressed; only the
-        // minus is swapped for the typographic one, and an empty buffer shows an em dash rather than
-        // a blank that looks like a broken sheet.
         public var echo: String {
             if text.isEmpty { return "—" }
             guard text.hasPrefix("-") else { return text }
             return "\u{2212}" + text.dropFirst()
         }
 
-        // A key that does not fit is refused WHOLE — never write a number the lifter did not type,
-        // and that includes eating the digit under their thumb to make room for a sign.
         public func pressing(_ key: String, in mode: Mode) -> Pad {
             guard KeypadEntry.isLive(key, in: mode) else { return self }
             if key == "±" {
@@ -103,8 +83,7 @@ public enum KeypadEntry {
             }
             return Reading(value: Ladder.round(value), message: weightHint)
         }
-        // 1 and not 0: the server refuses reps < 1, so a pad that took a 0 would hand back a number
-        // the log could only refuse — the one entry that looked legal here and died at the wire.
+        // The server refuses reps < 1.
         guard value >= 1, value <= 99, value == value.rounded() else {
             return Reading(value: nil, message: "Whole reps, 1 to 99")
         }

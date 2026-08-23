@@ -7,75 +7,64 @@ description: Run the full Windmill stack locally (Postgres + C++ backend + vite)
 
 ## Launch
 
-Paths are the **monorepo's** (`backend/`, `web/`) — the old `windmill-backend/` ·
-`windmill-frontend/` split is gone.
-
 ```sh
-# 1. Postgres (usually already running; db `windmill` exists)
+# 1. Postgres — db `windmill`; schema.sql is idempotent, re-apply after pulling
 pg_isready
-# schema drifts behind the binary — always safe to re-apply (idempotent):
 psql windmill -f backend/db/schema.sql
 
-# 2. Backend — REBUILD FIRST; a stale binary silently lacks newer wiring (e.g. MCP→ws fan-out)
+# 2. Backend — rebuild first; a stale binary silently lacks newer wiring
 cmake --build backend/build --target windmill_server -j 8
-# Env comes from backend/.env (gitignored; .env.example documents every variable).
-# Do NOT paste an eight-variable incantation onto the command line — the owner asked for
-# this explicitly on 2026-07-25.
 cd backend && set -a && . ./.env && set +a && ./build/windmill_server
-# Overriding one variable for a session is fine — source, then override just that one:
+# Override one variable for a session by sourcing first, then prefixing just that one:
 cd backend && set -a && . ./.env && set +a && WINDMILL_MCP_USER=<uuid> ./build/windmill_server
 
-# 3. Frontend
-cd web && npx vite --port 5173
+# 3. Frontend — vite.config.js pins port 5173
+cd web && npm run dev
 ```
 
-**Stopping the server: kill BY PORT, never `pkill -f windmill_server`.** Waves run several
-agents at once and they share this machine — on 2026-08-01 one reviewer's `pkill` killed
-three other agents' backends mid-probe. `lsof -ti tcp:<port> | xargs kill` only takes yours.
-Take a port nobody else has (agents in a wave should be handed disjoint ranges).
+Env comes from `backend/.env` (gitignored; `.env.example` documents every variable). Do not paste
+a multi-variable incantation onto the command line.
 
-- **The two ports are not free choices — pin them.** `web/src/shell/apiBase.js` HARD-CODES
-  `http://localhost:8088` (and `ws://localhost:8088/v1/socket`) in dev, and `backend/.env` sets
-  `WINDMILL_ALLOWED_ORIGINS=http://localhost:5173`. So the backend must be on **8088** and vite on
-  **5173**, or the page loads, renders chrome, and says *"Couldn't load this roadmap. It may have
-  moved, or the server is unreachable"* — which reads exactly like a broken tree and is really a
-  wrong port. Both halves bite separately: a backend on another port is a silent connection
-  failure, a vite on another port is a CORS rejection. If a parallel agent already holds 8088,
-  don't move the backend — override the origin instead (`WINDMILL_ALLOWED_ORIGINS=http://localhost:5174`)
-  AND accept that the page still talks to 8088, i.e. you cannot run two full stacks without
-  editing apiBase. Give agents disjoint ports for *backend-only* probing (curl/MCP), and keep
-  8088+5173 for whoever needs the browser.
-- `WINDMILL_ALLOWED_ORIGINS` is required — without it the dev page's credentialed fetches fail CORS ("Failed to fetch").
-- `WINDMILL_MCP_USER` must be a real uuid in `users` (the default "dev" 500s on create_tree; owner_id is uuid). The uuid above is the seeded `dev@localhost` user in the local db.
+- Stop the server **by port**: `lsof -ti tcp:<port> | xargs kill`. Never `pkill -f windmill_server`
+  — several agents share this machine and it takes all of their backends too.
+- **Pin the two ports: backend 8088, vite 5173.** Outside a production build
+  `web/src/shell/apiBase.js` falls back to `http://localhost:8088` (and
+  `ws://localhost:8088/v1/socket`) unless `VITE_API_BASE_URL` is set, and
+  `WINDMILL_ALLOWED_ORIGINS=http://localhost:5173` is what lets the page's credentialed fetches
+  through CORS. Either one wrong and the page renders chrome and says *"Couldn't load this
+  roadmap…"*, which reads like a broken tree. A second full stack therefore needs both overridden
+  (`VITE_API_BASE_URL` at its backend, `WINDMILL_ALLOWED_ORIGINS` at its vite origin); otherwise
+  give parallel agents disjoint ports for backend-only probing (curl/MCP) and keep 8088+5173 for
+  whoever needs a browser.
+- `WINDMILL_MCP_USER` must be a real uuid in `users`; a non-uuid 500s on `create_tree`.
 
-## The backend suites — and the 29 cases that skip unless you ask for them
+## Backend suites
 
 ```sh
 cmake --build backend/build -j8
-ctest --test-dir backend/build -V     # domain · mcp · adapters, with each binary's summary line
+ctest --test-dir backend/build -V     # three binaries: domain · mcp · adapters
 ```
 
 Each binary ends with `N/M cases passed, X stopped before the end, Y skipped, Z assertion(s)
-failed`. Read all four numbers: *skipped* is never counted as passed, and a case a `REQUIRE` cut
-short is counted as *stopped before the end*. `--output-on-failure` prints nothing while green, so
-use `-V` when the skip count is what you came for.
+failed`. Read all four numbers: *skipped* is never a pass, and a case a `REQUIRE` cut short counts
+as *stopped before the end*. `--output-on-failure` prints nothing while green, so use `-V` when the
+skip count is what you came for.
 
-The Postgres integration cases (`PgJournalRepositoryTest`, `PgEchoRepositoryTest`, and gym's five
-`Pg*RepositoryTest` files) need a live database and skip without `WM_PG_TEST`. They seed and clean
-their own rows, so re-running them is free — and they are the only proof the SQL half works, since
-CI runs ctest in a container with no database:
+The Postgres integration cases (`Pg*` tests in the adapters binary) need a live database and skip
+without `WM_PG_TEST`. They seed and clean their own rows, so re-running is free — and they are the
+only proof the SQL half works, since CI runs ctest in a container with no database:
 
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
-  ctest --test-dir backend/build -R adapters -V     # 393/393; without it, 364/393 and 29 skipped
+  ctest --test-dir backend/build -R adapters -V
 ```
 
-Run them before pushing a change to one of those three repositories or to the tables they read.
-They are the only Postgres adapters with an integration test — the rest are proven against fakes.
+Run them before pushing a change to a Postgres repository or to the tables it reads.
 
 ## Driving MCP edits
 
-MCP is HTTP JSON-RPC at `localhost:8088/mcp`, bearer `devtoken`. Sessions are required:
+MCP is HTTP JSON-RPC at `localhost:8088/mcp`, bearer `devtoken`. A session is required: `initialize`
+returns the `Mcp-Session-Id` every later call must carry.
 
 ```sh
 SID=$(curl -si localhost:8088/mcp -H 'Authorization: Bearer devtoken' -H 'content-type: application/json' \
@@ -85,17 +74,17 @@ curl -s localhost:8088/mcp -H "Authorization: Bearer devtoken" -H "Mcp-Session-I
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_tree","arguments":{"title":"Scratch"}}}'
 ```
 
-Make a scratch tree via `create_tree` (never seed via raw SQL — a hand-inserted legacy `document` blob backfills with zero-sentinel HLC stamps and projects as an empty tree). Open at `localhost:5173/#/app/<treeId>`. Delete scratch trees afterwards: rows in `trees`, `tree_nodes`, `tree_edges`, `tree_kinds`, `tree_ops`.
+Make scratch trees with `create_tree`, never raw SQL. Open at `localhost:5173/#/app/<treeId>`.
+Clean up afterwards: rows in `trees`, `tree_nodes`, `tree_edges`, `tree_kinds`, `tree_ops`.
 
-### Getting the browser to actually load your scratch tree
+### Getting the browser to load your scratch tree
 
-MCP-created trees belong to `WINDMILL_MCP_USER`, and the page must be **that same user**
-or the tree just reports "Couldn't load this roadmap". Don't fix that with SQL — do it by
-pointing MCP at the browser's user, which needs no ownership surgery and no cache dance:
+MCP-created trees belong to `WINDMILL_MCP_USER`, and the page must be that same user or the tree
+reports "Couldn't load this roadmap". Point MCP at the browser's user rather than doing ownership
+surgery in SQL:
 
-1. **Get a session.** Local mail can't send (502, no Resend key) but `/v1/auth/magic-link`
-   still writes the row, and you can't reverse the hash — so mint your own. The
-   `magic_links.token_hash` column is a plain `sha256(secret)`:
+1. **Mint a session.** Local mail can't send (502, no Resend key), but `magic_links.token_hash` is a
+   plain `sha256(secret)`, so write your own row and redeem it:
    ```sh
    SECRET=$(openssl rand -hex 24); HASH=$(printf '%s' "$SECRET" | shasum -a 256 | awk '{print $1}')
    NOW=$(python3 -c "import time;print(int(time.time()*1000))")
@@ -104,68 +93,66 @@ pointing MCP at the browser's user, which needs no ownership surgery and no cach
    curl -si -X POST localhost:8088/v1/auth/verify -H 'content-type: application/json' \
      -H 'Origin: http://localhost:5173' -d "{\"token\":\"$SECRET\"}"   # → Set-Cookie: wm_session=…
    ```
-   Note `dev@localhost` (the seeded user) is **rejected** by the email validator as
-   "unfinished" — use a real-looking domain.
-2. **Restart the backend with `WINDMILL_MCP_USER=<that user's uuid>`**, then `create_tree`
-   + `import_subgraph`. The tree is now natively owned by the signed-in browser user, so
-   `#/app/<id>` just works and you get the OWNER surfaces (edit rows, add-step, share).
-3. Set the cookie in the browser before navigating — over CDP that is
-   `Network.setCookie {name:'wm_session', value:…, domain:'localhost', path:'/'}`.
+   Use a domain with a dot — the email validator rejects `dev@localhost` as unfinished.
+2. **Restart the backend with `WINDMILL_MCP_USER=<that user's uuid>`**, then `create_tree` +
+   `import_subgraph`. The tree is natively owned by the signed-in browser user, so `#/app/<id>`
+   works and shows the owner surfaces (edit rows, add-step, share).
+3. Set the cookie before navigating — over CDP that is `Network.setCookie {name:'wm_session',
+   value:…, domain:'localhost', path:'/'}`.
 
-**Rooms are cached in the running server.** Any `psql` change to a tree's `visibility` or
-`owner_id` after the server has opened that room is invisible until you restart it. This
-is the single most time-wasting trap in local verification — prefer arranging ownership
-*before* the room is first opened (step 2) over editing rows and restarting.
+**Rooms are cached in the running server.** A `psql` change to a tree's `visibility` or `owner_id`
+is invisible until restart once the server has opened that room. Arrange ownership before the room
+is first opened rather than editing rows and restarting.
 
-### Driving the DOM without the extension
+## Driving the DOM
 
-The Chrome extension can't inject into these pages, but headless Chrome + CDP needs no
-dependencies: Node 20 has `WebSocket` behind `node --experimental-websocket`, so a ~40-line
-raw-CDP driver does navigation, phone emulation, taps, typing and screenshots. Launch with
-`--headless=new --remote-debugging-port=9222 --user-data-dir=<scratch>`.
+The Chrome extension can't inject into these pages. Headless Chrome + CDP needs no dependencies:
+Node 20 has `WebSocket` behind `node --experimental-websocket`, so a ~40-line raw-CDP driver does
+navigation, phone emulation, taps, typing and screenshots. Launch with `--headless=new
+--remote-debugging-port=9222 --user-data-dir=<scratch>`.
 
-- **`Emulation.setDeviceMetricsOverride` is per-CDP-session.** Reconnecting drops it and
-  you silently measure the desktop layout. Set it in the same session that navigates.
-- Return values through `JSON.stringify` inside the page — `returnByValue` chokes
-  deep-serializing DOM objects (`className` on an SVG element is not a string).
-- Guard every probe field on its own; one null element otherwise kills the whole run with
-  a bare `TypeError: Illegal invocation` and no clue which expression threw. Log the
-  failing expression.
-- **A focused input needs `Emulation.setFocusEmulationEnabled {enabled:true}`.** Headless
-  Chrome hands the page no window focus, so `autoFocus` and `.focus()` commit but no
-  `:focus` styling paints — you screenshot a resting field and conclude the ring is fine.
+- **`Emulation.setDeviceMetricsOverride` is per-CDP-session.** Reconnecting drops it and you
+  silently measure the desktop layout. Set it in the session that navigates.
+- Return values through `JSON.stringify` inside the page — `returnByValue` chokes deep-serializing
+  DOM objects (`className` on an SVG element is not a string).
+- Guard every probe field on its own and log the failing expression; one null element otherwise
+  kills the run with a bare `TypeError: Illegal invocation`.
+- **A focused input needs `Emulation.setFocusEmulationEnabled {enabled:true}`.** Headless Chrome
+  hands the page no window focus, so `.focus()` commits but no `:focus` styling paints.
 
-### Firefox (for the bugs Chrome won't show)
+### Firefox
 
-`brew install --cask firefox`, then `--headless --window-size=W,H --screenshot <path> <url>`
-is a one-liner for a settled page. **Firefox has no CDP** (Mozilla dropped it); the remote
-agent speaks WebDriver BiDi, so `/json/version` 404s and a CDP driver just hangs.
+`brew install --cask firefox`, then `--headless --window-size=W,H --screenshot <path> <url>` for a
+settled page. Firefox has no CDP; the remote agent speaks WebDriver BiDi, so `/json/version` 404s
+and a CDP driver hangs.
 
 ```sh
 firefox --remote-debugging-port=9223 --profile <scratch> about:blank   # logs the ws:// URL
 ```
 
-- Connect to `ws://127.0.0.1:<port>/session`, then `session.new` → `browsingContext.getTree`
-  → `browsingContext.navigate|setViewport|captureScreenshot`, `script.evaluate`.
-- **Always `session.end` before closing the socket.** Closing the WS alone leaves the
-  session live and the next connect dies on "Maximum number of active sessions" — which
-  reads like a bug in your script, not a leak from the last run.
-- `--screenshot` fires on the load event, so it can't catch an animation. Drive BiDi and
-  sleep instead, or the moat/typing scenes are always captured at their static end state.
+- Connect to `ws://127.0.0.1:<port>/session`, then `session.new` → `browsingContext.getTree` →
+  `browsingContext.navigate|setViewport|captureScreenshot`, `script.evaluate`.
+- **Always `session.end` before closing the socket.** Closing the WS alone leaves the session live
+  and the next connect dies on "Maximum number of active sessions".
+- `--screenshot` fires on the load event, so it cannot catch an animation. Drive BiDi and sleep.
 
-## Observing the WebGL canvas
+### The WebGL canvas
 
-- Chrome-extension screenshots time out on this page; `javascript_tool` works. Capture the canvas from inside the page instead, and grabs MUST run inside `requestAnimationFrame` (double-rAF), or the WebGL buffer reads back black (no preserveDrawingBuffer).
-- The extension blocks returning big base64 strings; POST captures to a local HTTP sink (simple python http.server on 127.0.0.1) and Read the PNGs.
-- A hidden tab has rAF suspended — activate the tab via AppleScript (`tell application "Google Chrome" …`) before capturing.
-- macOS Reduce Motion propagates into the app (`prefers-reduced-motion`) and turns all motion into snaps by design — check `matchMedia('(prefers-reduced-motion: reduce)').matches` before judging animation. The live scene instance is reachable for pokes via React fiber internals from `canvas.st-canvas`.
+- Extension screenshots time out on this page; `javascript_tool` works. Capture the canvas from
+  inside the page and inside `requestAnimationFrame` (double-rAF) — there is no
+  `preserveDrawingBuffer`, so a grab outside it reads back black.
+- The extension blocks returning big base64 strings; POST captures to a local HTTP sink (python
+  `http.server` on 127.0.0.1) and Read the PNGs.
+- A hidden tab has rAF suspended — activate it via AppleScript (`tell application "Google Chrome" …`)
+  before capturing.
+- macOS Reduce Motion propagates into the app and turns all motion into snaps by design. Check
+  `matchMedia('(prefers-reduced-motion: reduce)').matches` before judging animation. The live scene
+  instance is reachable through React fiber internals from `canvas.st-canvas`.
 
-## Signing in without mail — the two-line recipe every wave re-derives
+## Signing in without mail
 
-Local mail can't send (502, no Resend key). Every agent that needs an authenticated caller
-has independently rediscovered this; it is written down once so nobody derives it again.
-`sessions.token_hash` is a plain `sha256(secret)` hex digest, so mint your own session and
-skip the magic-link flow entirely:
+`sessions.token_hash` is a plain `sha256(secret)` hex digest, so mint a session directly and skip
+the magic-link flow:
 
 ```sh
 SECRET=$(openssl rand -hex 24); HASH=$(printf '%s' "$SECRET" | shasum -a 256 | awk '{print $1}')
@@ -174,19 +161,16 @@ NOW=$(python3 -c "import time;print(int(time.time()*1000))")
 psql windmill -q -c "INSERT INTO users (id,email) VALUES ('$UID','probe-$RANDOM@example.com')"
 psql windmill -q -c "INSERT INTO sessions (token_hash,user_id,expires_ms) \
   VALUES ('$HASH','$UID',$((NOW+86400000)))"
-# then either header works — the caller seam reads the cookie OR the bearer:
+# either header works — the caller seam reads the cookie OR the bearer:
 curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET"
 ```
 
-Clean up afterwards: deleting the `users` row cascades to sessions and to every product's
-rows. **Prefix anything you seed** (`ses_probe*`, `set_probe*`) so a parallel agent's cleanup
-never takes your rows and yours never takes theirs.
+Deleting the `users` row cascades to sessions and to every product's rows. Prefix anything you seed
+(`ses_probe*`, `set_probe*`) so a parallel agent's cleanup never takes your rows.
 
-## Gym (products/gym) — driving the training log
+## Gym — driving the training log
 
-Everything is owner-scoped and idempotent by **client-minted id**, which makes it pleasant to
-drive by hand: re-running a POST is a no-op that hands back the stored row, so a script can be
-replayed freely.
+Everything is owner-scoped and idempotent by client-minted id, so a script can be replayed freely.
 
 ```sh
 C="Authorization: Bearer $SECRET"; J='content-type: application/json'
@@ -199,52 +183,34 @@ curl -s -X POST localhost:8088/v1/gym/sessions/ses_probe0001/finish -H "$C" -H "
   -d '{"finishedAt":1785603600000}'
 curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
 
-# Routines, the plan snapshot, and the end of a session. A rep target may be OMITTED — that is how
-# "3 × max" is expressed — and since W10 so may targetSets, which is how a line is left OPEN: the
-# movement is in the day and what to do with it is decided at the rack. Both absences survive into
-# the frozen `plan` below, and a zero in either would be a target the lifter never set.
+# Routines and the frozen plan. `targetReps` and `targetSets` may each be OMITTED — that is how
+# "3 × max" and an open line are expressed. Both absences survive into the frozen `plan`; a zero in
+# either would be a target the lifter never set.
 curl -s -X POST localhost:8088/v1/gym/routines -H "$C" -H "$J" -d '{"id":"rt_probe00001",
   "name":"Push A","position":0,"entries":[
     {"exerciseId":"bench-press","targetSets":5,"targetReps":5,"targetWeightKg":82.5},
     {"exerciseId":"chin-up","targetSets":3},
     {"exerciseId":"barbell-row"}]}'
-curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C"   # + `history`: created, by whom, how many
+curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C"   # `history` rides on this read only; the list omits it
 curl -s -X POST localhost:8088/v1/gym/sessions -H "$C" -H "$J" \
   -d '{"id":"ses_probe0002","startedAt":1785686400000,"routineId":"rt_probe00001"}'   # freezes `plan`
-curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"   # stats · record? · against?
+curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"
 curl -s -X DELETE localhost:8088/v1/gym/sessions/ses_probe0002 -H "$C"               # 204, or 409 open
 ```
 
-Traps worth knowing before you burn an hour on them:
+Traps:
 
-- **`POST /v1/gym/sessions` JOINS an already-open session** rather than failing, so the reply
-  can carry a *different* id than you sent. Always compare — a script that ignores this pours
-  its sets into whatever session was already open. Send `{"joinOpenSession": false}` to mean
-  "create exactly this session, which is not now" (backfill, `lift-import`); a live workout then
-  refuses it `409 session-already-open` instead of handing you today's session to file into.
-- **A `routineId` is only read on the path that actually creates a session.** A replay and a join
-  are being handed a session that already exists, so neither 404s on a routine deleted since — and
-  neither re-plans a running workout. Pressing Start again cannot change what today is aiming at.
-- **One open session per user** is a partial unique index, and an idle one auto-closes after
-  4 h *of no activity* (measured from the last set, not from the start). The log row's
-  `closedItself` is *inferred* from `finished_at` landing exactly on the last set's instant, which
-  is what that rule stamps — there is no column.
-- A **new** set into a finished session is refused `409 session-finished`; a **replay** of one
-  that already landed still returns `200` with the stored row. That asymmetry is the whole
-  offline story — flush before you finish.
-- **A replayed create is a 200 with the stored row, everywhere** — sessions, sets, routines and
-  custom movements alike. Only an id already spent by *another* account is a 409. Re-minting on a
-  lost reply is what forks an identity, which is the one thing `gym_exercises` exists to prevent.
-- The 409s are told apart by the machine `code`, never by the sentence: `session-finished` ·
+- **`POST /v1/gym/sessions` JOINS an already-open session** rather than failing, so the reply can
+  carry a different id than you sent — always compare, or a script pours its sets into whatever was
+  already open. Send `{"joinOpenSession": false}` for a backfill; a live workout then refuses it
+  `409 session-already-open`. `routineId` is read only on the path that actually creates a session.
+- **One open session per user** (a partial unique index); an idle one auto-closes four hours after
+  its last set, not after its start. `closedItself` on the log row is inferred from `finished_at`
+  landing on the last set's instant — there is no column.
+- **A replayed create is a 200 with the stored row everywhere** — sessions, sets, routines, custom
+  movements. Only an id already spent by another account is a 409. A **new** set into a finished
+  session is refused `409 session-finished`, so flush before you finish.
+- Tell the 409s apart by the machine `code`, never the sentence: `session-finished` ·
   `set-id-taken` · `session-id-taken` · `session-already-open` · `routine-id-taken` ·
-  `exercise-id-taken` · `session-open` (discarding a workout that is still running).
-- **The review is read after the finish, and it excludes the session from its own history** — the
-  window is on the `(started_at, id)` pair. Without that every set ties itself and the record
-  silently vanishes on the only read anyone ever makes.
-- The schema seeds the catalog with `ON CONFLICT DO NOTHING`, so re-applying `schema.sql`
-  never clobbers a renamed display name — and re-applying twice is the idempotency test.
-
-## Known gotchas
-
-- Live ws frames can stall for idle/quiet tabs; state catches up in bursts via reconnect grafts (dogfood node `ws-keepalive`). If a live edit doesn't appear in seconds, it's likely this, not your change — a page reload always converges.
-- MCP arg names on some tools differ from the deployed schema (local `rename_node` wants `id`, not `nodeId`); errors don't name the expected field.
+  `exercise-id-taken` · `session-open` (discarding a running workout).
+- The review excludes its own session from its history window, so read it after the finish.

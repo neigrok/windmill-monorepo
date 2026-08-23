@@ -1,13 +1,7 @@
 import XCTest
 @testable import WindmillPlatform
 
-// The two places native auth differs from the web's, and therefore the two places it can be wrong
-// in a way no web test would catch: reading the token out of an emailed link, and lifting the
-// session out of a Set-Cookie header instead of letting a cookie jar do it.
-
 final class MagicLinkTests: XCTestCase {
-    // The shipped link is `{app}/#/auth?token=…` — the token is in the FRAGMENT. The obvious
-    // reading (URLComponents.queryItems) returns nil for this, which is the bug this guards.
     func testTheTokenIsFoundInTheFragmentOfTheShippedLink() {
         XCTAssertEqual(MagicLink.token(in: "https://windmill.works/#/auth?token=abc123"), "abc123")
     }
@@ -16,13 +10,11 @@ final class MagicLinkTests: XCTestCase {
         XCTAssertEqual(MagicLink.token(in: "  https://windmill.works/#/auth?token=abc123\n"), "abc123")
     }
 
-    // Someone who pastes just the token has done nothing wrong.
     func testABareTokenIsAcceptedAsItself() {
         XCTAssertEqual(MagicLink.token(in: "abc123"), "abc123")
         XCTAssertEqual(MagicLink.token(in: "  abc123  "), "abc123")
     }
 
-    // A mail client that appends tracking parameters must not widen the token.
     func testTrailingParametersAreNotSwallowedIntoTheToken() {
         XCTAssertEqual(MagicLink.token(in: "https://windmill.works/#/auth?token=abc123&utm_source=mail"), "abc123")
         XCTAssertEqual(MagicLink.token(in: "https://windmill.works/?token=abc123#/auth"), "abc123")
@@ -40,19 +32,12 @@ final class MagicLinkTests: XCTestCase {
     }
 }
 
-// A link that opens the APP instead of the browser (`Shell.onOpenURL` → `AuthStore.arrived`). It has
-// no call site holding a `catch` and often no screen waiting for it, so everything it can do wrong
-// is silent: signing nobody in and saying nothing, or claiming a link expired when the phone simply
-// had no signal.
 @MainActor
 final class LinkArrivalTests: XCTestCase {
     private func store() -> AuthStore {
         AuthStore(baseURL: URL(string: "https://windmill.works")!, sessions: MemorySessions())
     }
 
-    // The app claims one shape of link. Everything else on the domain — the gallery, a shared tree,
-    // the pricing page — is not its business, and answering nil is what keeps it from opening a
-    // sign-in door over a link that was never about signing in.
     func testAUrlWithNoTokenInItIsNotThisAppsBusiness() async {
         let auth = store()
         let arrival = await auth.arrived(from: URL(string: "https://windmill.works/#/gallery")!)
@@ -61,8 +46,6 @@ final class LinkArrivalTests: XCTestCase {
         XCTAssertEqual(auth.status, .unknown, "and it must not touch the seat")
     }
 
-    // "Send a fresh one" is advice nobody offline can follow, and the link in their mail is fine.
-    // Only the failure that is really about the link gets the sentence about the link.
     func testOnlyALinkFailureIsReportedAsAnExpiredLink() {
         XCTAssertEqual(MagicLink.refusal(for: MagicLink.unreadable), MagicLink.expired)
         XCTAssertEqual(MagicLink.refusal(for: WindmillApiError.refused(400, Refusal(Data()))),
@@ -71,10 +54,6 @@ final class LinkArrivalTests: XCTestCase {
     }
 }
 
-// The door's one field takes two credentials, and this is the rule that tells them apart. The pin
-// that matters most is the LAST test: the link parser accepts ANY bare string as a token, so the
-// door must ask the code question FIRST — a six-digit code that reached MagicLink would be POSTed
-// to /v1/auth/verify as a token and die there.
 final class SignInCodeTests: XCTestCase {
     func testExactlySixAsciiDigitsIsACodeAndNothingElseIs() {
         XCTAssertEqual(SignInCode.parse("483201"), "483201")
@@ -92,8 +71,6 @@ final class SignInCodeTests: XCTestCase {
                        "the parser has not changed — the door disambiguates by asking SignInCode first")
     }
 
-    // The server collapses wrong/spent/expired/unknown into one refusal; offline is the one failure
-    // that is not about the code, and it keeps its own sentence.
     func testOnlyACodeFailureIsReportedAsAnExpiredCode() {
         XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.refused(410, Refusal(Data()))),
                        SignInCode.expired)
@@ -102,9 +79,6 @@ final class SignInCodeTests: XCTestCase {
     }
 }
 
-// A wire the tests own end to end: every request the store sends is recorded, and the answer is
-// scripted. This is what lets the code door's endpoint, body and cookie capture — and restore's
-// clear-only-on-401 rule — be pinned without a server.
 final class DoorWire: URLProtocol {
     struct Sent: Equatable {
         let method: String
@@ -142,8 +116,7 @@ final class DoorWire: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    // URLSession hands a POST body to a protocol as a STREAM, not as `httpBody` — reading only the
-    // property would pin every body as empty and prove nothing.
+    // URLSession hands a POST body to a protocol as a STREAM, not as `httpBody`.
     private static func bodyOf(_ request: URLRequest) -> [String: String] {
         var data = request.httpBody
         if data == nil, let stream = request.httpBodyStream {
@@ -177,8 +150,6 @@ final class AuthStoreWireTests: XCTestCase {
                          urlSession: URLSession(configuration: configuration))
     }
 
-    // The app's mint asks for the CODE email — `door: "app"` is what makes the mail carry a code
-    // instead of a link, and the trimmed address is what verify-code will later be keyed on.
     func testRequestingACodeNamesTheAppDoor() async throws {
         let auth = store()
         DoorWire.script = [(200, [:], #"{"status":"sent"}"#)]
@@ -190,8 +161,6 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(auth.linkSentTo, "sam@example.com")
     }
 
-    // The verify-code reply is shaped exactly like verify: user in the body, session ONLY in
-    // Set-Cookie. If the capture stops working, sign-in looks successful with no credential stored.
     func testCompletingWithACodePostsEmailAndCodeAndLiftsTheSessionCookie() async throws {
         let sessions = MemorySessions()
         let auth = store(sessions: sessions)
@@ -221,12 +190,6 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(auth.status, .unknown, "a failed sign-in touches nothing")
     }
 
-    // THE RESTORE RULE: only a definitive 401 clears the Keychain, and only a definitive 401 is a
-    // sign-out. A phone opened in a basement is not signed out — clearing there deleted a live
-    // 90-day secret and stranded the gym queue's owed sets behind a bearer that no longer existed;
-    // answering signed-out there opened gym on the anonymous shelf and let go of the account's
-    // settings document. The seat is the user this device last read beside the secret, marked
-    // unverified, and every product connects under it.
     func testRestoreKeepsTheSeatUnverifiedWhenTheNetworkFails() async {
         let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
         let sessions = MemorySessions(secret: "held", user: sam)
@@ -253,10 +216,6 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(sessions.read(), "held")
     }
 
-    // R7. THE ROOMS RECONNECT WHEN THE SEAT IS VERIFIED. A room keys its connect on `Account.seat`,
-    // and the seat an unverified launch answers is a different value from the verified one for the
-    // SAME user — so the restore that finally reaches the log re-runs the room's connect, and the
-    // reads it made off the device copy land. Signed out is verified: nobody is waiting on an answer.
     func testVerifyingTheSeatMovesTheValueTheRoomsKeyTheirConnectOn() async {
         let sam = User(id: "u1", email: "sam@example.com", name: "Sam")
         let sessions = MemorySessions(secret: "held", user: sam)
@@ -281,8 +240,6 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(Account(api: auth.api, user: nil).seat, Account.Seat(userId: nil, verified: true))
     }
 
-    // A secret with no user beside it — a Keychain written before the user was kept there — has
-    // nobody to answer with, so it rests signed out until the log answers; the secret still stays.
     func testRestoreWithNoKnownUserRestsSignedOutButKeepsTheSecret() async {
         let sessions = MemorySessions(secret: "held")
         let auth = store(sessions: sessions)
@@ -294,8 +251,6 @@ final class AuthStoreWireTests: XCTestCase {
         XCTAssertEqual(sessions.read(), "held")
     }
 
-    // The log's answer is what re-verifies the seat — and it is written beside the secret so the
-    // NEXT launch in a basement has a user to answer with.
     func testASuccessfulRestoreVerifiesTheSeatAndKeepsTheUserBesideTheSecret() async {
         let sessions = MemorySessions(secret: "held")
         let auth = store(sessions: sessions)
@@ -324,10 +279,6 @@ final class AuthStoreWireTests: XCTestCase {
 final class SessionCookieTests: XCTestCase {
     private let url = URL(string: "https://windmill.works")!
 
-    // POST /v1/auth/verify answers with the user in the body and the session ONLY as a Set-Cookie
-    // (deliberately — a body would hand a 90-day secret to any XSS on the web). Native has no
-    // cookie jar it trusts, so it lifts the value here. If this stops working, magic-link sign-in
-    // silently produces a signed-in-looking app with no credential.
     func testTheSessionIsLiftedOutOfSetCookie() {
         let response = HTTPURLResponse(
             url: url, statusCode: 200, httpVersion: "HTTP/1.1",
@@ -349,11 +300,6 @@ final class SessionCookieTests: XCTestCase {
         XCTAssertNil(WindmillApi.sessionCookie(in: response, for: url))
     }
 
-    // …and the OTHER half of that rule: the app must not also let the system keep the cookie. It
-    // did, through URLSession.shared's disk-backed jar, and the server resolves a caller cookie
-    // FIRST — so a sign-out whose logout never reached the log left a live 90-day session on the
-    // phone that the app could no longer revoke, and every later request carried two credentials
-    // that could name two different accounts (audit MOBILE-2).
     func testTheAppsOwnSessionKeepsNoCookieJar() {
         let configuration = WindmillApi.cookieless.configuration
         XCTAssertNil(configuration.httpCookieStorage, "no jar means no second credential on the disk")
@@ -361,7 +307,6 @@ final class SessionCookieTests: XCTestCase {
         XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
     }
 
-    // And what an older build already left there ends with the sign-out that ended the session.
     func testSigningOutClearsAnyCookieAnOlderBuildLeftOnTheDisk() {
         let residue = HTTPCookie(properties: [
             .name: "wm_session", .value: "left-by-an-older-build", .domain: "windmill.works",
@@ -377,7 +322,6 @@ final class SessionCookieTests: XCTestCase {
 }
 
 final class RefusalTests: XCTestCase {
-    // The backend owns the house copy, so the app shows the server's sentence rather than its own.
     func testTheServersOwnWordsAreWhatGetShown() {
         let body = Data(#"{"error":"That address looks unfinished — check the ending.","code":"invalid_email"}"#.utf8)
         let error = WindmillApiError.refused(400, Refusal(body))
@@ -396,10 +340,6 @@ final class RefusalTests: XCTestCase {
     }
 }
 
-// The one part of a request no other test can see. Every seam above the wire is faked, so a URL
-// built wrongly is invisible until a real server answers 404 — which is exactly how the window read
-// and the delta feed shipped broken: `appendingPathComponent` treats the whole string as ONE path
-// segment and percent-encodes the query into it.
 final class RequestURLTests: XCTestCase {
     private let base = URL(string: "http://localhost:8088")!
 
@@ -416,8 +356,6 @@ final class RequestURLTests: XCTestCase {
         XCTAssertEqual(url?.query, "from=2026-08-01&to=2026-08-31")
     }
 
-    // The delta feed's cursor is an HLC — "ms:counter:actor" — and its colons must survive as an
-    // encoded query value rather than being read as a scheme separator.
     func testTheDeltaCursorSurvivesEncoding() {
         let url = WindmillApi.url(for: "/v1/journal/pages?since=0%3A0%3A&limit=500", base: base)
         XCTAssertEqual(url?.path, "/v1/journal/pages")

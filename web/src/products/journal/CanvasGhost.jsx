@@ -1,21 +1,12 @@
-// The canvas, before it arrives. Kept beside Canvas.jsx on purpose: every number below was read off
-// journal.css, and a ghost that stops matching the thing it stands in for is a lie the next person
-// to edit the real geometry should trip over rather than discover on a slow connection.
-//
-// BOTTOM-ANCHORED, because the canvas opens on tonight with the older days already above it. A
-// stand-in that filled from the top would promise a scroll to the newest page that never happens.
-//
-// NO MOOD PIPS. DayMarker draws neither pip nor tick for today, and the ghost's newest day is
-// today — a ghost that promises two glyphs the arriving page does not draw is a flash of furniture.
-// The five dots and three ticks below are the ScaleStrip under the writing field, which is a
-// different control and is really there.
+// The canvas, before it arrives. Every number below is read off journal.css and must keep matching it.
+// No mood pips: DayMarker draws neither pip nor tick for today, and the ghost's newest day is today.
 
 import React from 'react';
 import { Ghost, GhostBar } from '../../design-system/index.js';
 
 const COLUMN = { width: 'min(640px, 100% - 44px)', margin: '0 auto', padding: '32px 0 clamp(140px, 24vh, 280px)' };
 
-// .journal-prose is 16/28, so a 10px bar on an 18px gap keeps the arriving prose's own rhythm.
+// .journal-prose is 16/28, so a 10px bar on an 18px gap keeps the arriving prose's rhythm.
 const LINE_WIDTHS = ['100%', '94%', '88%', '40%'];
 
 const MOOD_STEPS = [1, 2, 3, 4, 5];

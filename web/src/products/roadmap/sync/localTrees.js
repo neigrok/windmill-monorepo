@@ -1,9 +1,6 @@
-// Local-born trees (anon-first-tree F1/F3): the signed-out lifecycle of a tree that
-// lives entirely on this device — bearing one, renaming or deleting one from the
-// switcher's local rows, and moving one under a fresh id when a claim hits the
-// (cryptographically unreachable) id-taken wall. Everything durable rides the same
-// lattice blob + per-tree stores the synced path uses, so a later claim is a plain
-// create + flush, never a migration.
+// The signed-out lifecycle of a tree that lives entirely on this device: bearing, renaming,
+// deleting and remapping one. Everything durable rides the same lattice blob and per-tree stores
+// the synced path uses.
 
 import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
@@ -18,8 +15,7 @@ import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
 import { ShareLedger } from '../persistence/ShareLedger.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 
-// t_ + 16 lowercase hex — byte-identical to the server's own tree ids, so the id
-// survives the claim (POST /v1/trees keeps a client-minted id).
+// t_ + 16 lowercase hex — the server's own id shape, so the id survives the claim.
 export function mintTreeId() {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   return `t_${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
@@ -27,11 +23,8 @@ export function mintTreeId() {
 
 const BIRTH_OWNER_WAIT_MS = 2000;
 
-// Who to stamp a newborn tree for. The identity probe decides it, but a birth must never wait on
-// the network: past a couple of seconds we plant with whatever this load has already confirmed,
-// which on an unconfirmed device is "anonymous" — the honest reading of a tree planted by a browser
-// that cannot prove an account, and the reading that keeps the claim door open for it. A dead
-// network answers immediately (fetch rejects) and lands in the same place.
+// A birth never waits on the network: past BIRTH_OWNER_WAIT_MS it plants with whatever this load
+// has already confirmed, which on an unconfirmed device is anonymous.
 function ownerForBirth() {
   return Promise.race([
     resolveDeviceOwner(),
@@ -39,16 +32,11 @@ function ownerForBirth() {
   ]);
 }
 
-// Signed-out ↵ on the birth canvas: the registry entry first (the claim's durable
-// input), then the lattice — the default legend at genesis (so it converges with the
-// server's claim-create, zero duplication) and the named root as a real stamped write
-// (so the claim's flush carries it up) — persisted to IndexedDB before the caller
-// navigates into the tree.
+// The registry entry first, then the lattice: the default legend at genesis, so it converges with
+// the server's claim-create, and the named root as a stamped write.
 export async function bearLocalTree({ title }) {
   const treeId = mintTreeId();
-  // Who this device is stamps the row (audit WEB-4), and it is asked of the server: a browser whose
-  // last account never signed out remembers them, and stamping a stranger's birth with that would
-  // hide the tree from the person planting it.
+  // The owner is asked of the server, never of a remembered marker.
   new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
@@ -59,22 +47,15 @@ export async function bearLocalTree({ title }) {
   return treeId;
 }
 
-// The paste-import plant, signed out (F3): same soil as bearLocalTree — the registry
-// entry, then the lattice seeded with the DEFAULT legend at genesis. NEVER the parsed
-// kinds: the claim converges with the server's empty create only while both sides seed
-// byte-equal legends (the vite.config.js pin). The parsed legend arrives as stamped
-// gestures instead — the diff first, while no node yet wears a hue RecolorKind could
-// repaint — and then the whole subgraph lands under ONE stamp, one undo entry. Imported
-// [x] marks are status SEEDS on the document, not progress rows: loadProgress's seed
-// fallback shows them everywhere, and the owner's reconcile promotes them.
+// The paste-import plant: the lattice is seeded with the default legend at genesis, never the
+// parsed kinds — the claim converges only while both sides seed byte-equal legends. The parsed
+// legend arrives as stamped gestures. Imported [x] marks are status seeds, not progress rows.
 export async function bearImportedTree({ title, nodes, kinds }) {
   const treeId = mintTreeId();
   new LocalTreeRegistry().record(treeId, title, await ownerForBirth());
   const session = new SyncSession({ treeId, title });
   session.seed({ id: treeId, title, nodes: [], kinds: DEFAULT_KINDS });
-  // LOAD-BEARING ORDER: the legend diff goes first, while no node wears a hue yet.
-  // RecolorKind repaints every node of the old hue as it lands, so a recolor after the
-  // import would silently repaint imported nodes. Never swap these two lines.
+  // The legend diff must go first, while no node wears a hue: RecolorKind repaints as it lands.
   for (const gesture of legendGestures(kinds)) session.dispatch(gesture);
   session.dispatch({
     kind: 'ImportSubgraph',
@@ -86,8 +67,7 @@ export async function bearImportedTree({ title, nodes, kinds }) {
   return treeId;
 }
 
-// What separates the parsed legend from the genesis seed, as ordinary kind gestures —
-// exactly what a user doing it by hand would have dispatched.
+// What separates the parsed legend from the genesis seed, as ordinary kind gestures.
 function legendGestures(kinds) {
   const gestures = [];
   const seeded = new Map(DEFAULT_KINDS.map((kind) => [kind.id, kind]));
@@ -108,16 +88,9 @@ function legendGestures(kinds) {
   return gestures;
 }
 
-// This device's own answer for a tree the server did not give us — a local-born tree, or any
-// tree while we are offline: the lattice blob replayed into the same TreeData shape a server
-// seed has, or null when this browser has no standing to open it.
-//
-// The standing is the whole point (audit WEB-4). The blob is keyed by tree id alone, so before
-// this gate a stranger typing #/app/<id> — or the next person on a shared browser landing there
-// from a stale bare #/app — painted the previous account's private tree in full, title, node
-// labels and all, while every server read for them 404'd. A device row visible to the account
-// the SERVER says is here is the only thing that opens the door; the remembered marker is not
-// asked, because a browser killed instead of signed out leaves it naming the person who left.
+// This device's answer for a tree the server did not give us: the lattice blob replayed into the
+// TreeData shape a server seed has, or null when this browser has no standing to open it. Only a
+// device row visible to the account the server says is here opens the door.
 export async function loadDeviceTree(treeId) {
   const entry = new LocalTreeRegistry().get(treeId, await resolveDeviceOwner());
   if (!entry) return null;
@@ -126,17 +99,13 @@ export async function loadDeviceTree(treeId) {
   const lattice = new TreeLattice(treeId, entry.title ?? '');
   lattice.join(saved.frame);
   const seed = lattice.toTreeData();
-  // The blob path carries no server `mine` bit, and a device row visible to this account IS this
-  // account's (or its own anonymous work). Without it an anon's planted quest loads mine=false and,
-  // on a phone, mobileEditable is false: a read-only dead end with no verb rail and no fork (it is
-  // yours, so there is nothing to fork). Ownership gates editing, not width (M0).
+  // The blob path carries no server `mine` bit; a device row visible to this account is its own.
   seed.mine = true;
   return seed;
 }
 
-// A switcher rename of a local row that isn't the open tree: the registry keeps the
-// listing title, and the blob takes one stamped title write — exactly what a live
-// session's renameTree would join — so the name survives the claim's flush.
+// The registry keeps the listing title and the blob takes one stamped title write, so the name
+// survives the claim's flush.
 export async function renameLocalTree(treeId, title) {
   const next = title.trim();
   if (!next) return;
@@ -152,33 +121,23 @@ export async function renameLocalTree(treeId, title) {
   await store.save(treeId, { frame: lattice.toFrame(), lastSeq: saved.lastSeq ?? 0 });
 }
 
-// A switcher delete of a local row: no server call, ever — clear the blob, the
-// per-tree stores, and the registry entry. The caller closes any live session first
-// (its pagehide flush would resurrect the blob).
+// No server call, ever. The caller must close any live session first, or its pagehide flush
+// resurrects the blob.
 export async function deleteLocalTree(treeId) {
   await new SyncStore().clear(treeId).catch(() => {});
-  new ProgressStore().clear(treeId);  // pre-lane residue; the marks themselves went with the blob
+  new ProgressStore().clear(treeId);
   new WorkspaceStore().clear(treeId);
   new LegendStore().clear(treeId);
-  // The three per-tree ledgers are this device's memory of the tree too — the completed set the
-  // last visit left, the milestones already offered, what the last share claimed. A tree that is
-  // gone must not leave them behind for the next opener of this browser to inherit.
   new ReturnLedger().clear(treeId);
   new MilestoneLedger().clear(treeId);
   new ShareLedger().clear(treeId);
   new LocalTreeRegistry().remove(treeId);
-  new PlaceStore().forget(treeId); // a dead last-place would dead-end the next magic-link landing
+  new PlaceStore().forget(treeId); // a dead last-place dead-ends the next magic-link landing
 }
 
-// The account hand-off (audit WEB-4): the roadmap gives this device up when the account holding
-// it changes. Everything that is not anonymous goes — every device-index row stamped for an
-// account, its workspace, progress, legend and ledgers, its lattice blob, and any per-tree residue
-// whose index row was lost long ago (that orphan blob is what painted a signed-out browser the
-// previous person's whole private tree).
-//
-// Dropping a signed-in account's local copy costs that account nothing: the server holds the tree
-// and hands it back on their next sign-in — so this is not a leak to "restore" later. Anonymous
-// rows stay: that work belongs to the device, and it is meant to follow whoever signs in next.
+// When the account holding this device changes, everything not anonymous goes: stamped
+// device-index rows, their per-tree stores and blobs, and residue whose index row is gone.
+// Anonymous rows stay — that work follows whoever signs in next.
 export async function forgetDeviceTrees() {
   const registry = new LocalTreeRegistry();
   const anonymous = new Set(registry.list(null).map((tree) => tree.id));
@@ -200,14 +159,12 @@ export async function forgetDeviceTrees() {
   if (stood && !anonymous.has(stood)) place.forget(stood);
 }
 
-// The id-taken remap: everything the old id owned moves under the fresh one — the blob
-// (seq reset to 0; a fresh tree has no server history), the per-tree stores, and the
-// registry entry, claim state intact.
+// Everything the old id owned moves under the fresh one: the blob with seq reset to 0, the
+// per-tree stores and the registry entry.
 export async function moveLocalTree(fromId, toId) {
   const store = new SyncStore();
   const saved = await store.load(fromId).catch(() => null);
   if (saved?.frame) {
-    // Both lanes move with the blob — the marks are in it, so they need no separate carry.
     await store.save(toId, { frame: saved.frame, progress: saved.progress, lastSeq: 0 });
     await store.clear(fromId).catch(() => {});
   }

@@ -30,40 +30,7 @@ import works.windmill.gym.store.RefusalFacts
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
-// The one place the native gym talks to the backend — the twin of the iOS GymApi and of
-// web/src/products/gym/gymApi.js, against the same routes:
-//   GET  /v1/gym/exercises            ·  POST  /v1/gym/exercises
-//   GET  /v1/gym/exercises/:id/record ·  PATCH /v1/gym/exercises/:id
-//   POST /v1/gym/sessions             ·  POST /v1/gym/sessions/:id/sets
-//   PATCH /v1/gym/sessions/:id/sets/:setId  ·  DELETE /v1/gym/sessions/:id/sets/:setId
-//   POST /v1/gym/sessions/:id/finish  ·  DELETE /v1/gym/sessions/:id
-//   GET  /v1/gym/sessions?before=&beforeId=&limit=   ·  GET /v1/gym/sessions/:id
-//   GET  /v1/gym/sessions/:id/review  ·  GET /v1/gym/last?exercise=
-//   GET  /v1/gym/exercises/last
-//   GET  /v1/gym/routines             ·  POST /v1/gym/routines
-//   PUT  /v1/gym/routines/:id         ·  DELETE /v1/gym/routines/:id
-//   GET  /v1/gym/proposals/:id
-//   POST /v1/gym/proposals/:id/apply  ·  POST /v1/gym/proposals/:id/dismiss
-//   POST /v1/gym/sessions/:id/share   ·  DELETE /v1/gym/sessions/:id/share
-//   GET  /v1/gym/preferences          ·  PUT   /v1/gym/preferences
-//   POST /v1/gym/ask
-//   GET  /v1/gym/threads              ·  GET /v1/gym/threads/:id
-//   DELETE /v1/gym/threads/:id
-// The session rides as a Bearer header rather than a cookie (WindmillApi); nothing else differs.
-//
-// `GET /v1/gym/stats` is gone from this list and NOT from the server: the statistics room was
-// retired in W1c, the wave the record page replaced it, and the route and its `get_stats` tool
-// stay as the engine an agent reads. A client asking for an answer it has nowhere to draw is the
-// orphan this room refuses to keep.
-//
-// `GET /v1/gym/shared/:token` — the coach's own read, and the one unauthenticated route in the
-// product — is deliberately NOT here. Nothing on this phone reads a shared session: the lifter is
-// the owner and reads their own log through the owner-scoped doors above. The token this client
-// mints is spelled as an address for somebody else to open (CoachShare.kt).
-//
-// EVERY PATH IS PASSED WHOLE, query included. A path-segment append percent-encodes `?` and `&`
-// into the path and silently 404s every endpoint carrying a query — WindmillApi resolves the whole
-// string against the base, and the platform's request tests exist to keep that fixed.
+// Pass every path WHOLE, query included: appending it as a path segment percent-encodes `?` and `&`.
 class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun exercises(): List<Exercise> =
         api.get<Catalog>("/v1/gym/exercises").exercises
@@ -110,9 +77,6 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun lastTime(exerciseId: String): LastTime =
         api.get<LastTime>("/v1/gym/last?exercise=${escaped(exerciseId)}")
 
-    // `last` can never collide with a movement id: the server's own `wellFormedId` wants eight
-    // characters, so no lifter can mint it and no seed is called that. It takes no arguments — the
-    // whole list comes back and the picker joins it onto the catalog by id.
     override suspend fun lastSets(): List<LastSet> =
         api.get<LastSets>("/v1/gym/exercises/last").movements
 
@@ -141,18 +105,12 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         if (refused.status == 404) null else throw refused
     }
 
-    // THE TWO TAPS. Neither carries a body — a decision has no document, and the id in the path is
-    // the whole of what is being decided. Both answer with the proposal as it now stands, so the
-    // screen draws what the log settled rather than what the thumb asked for.
     override suspend fun applyProposal(id: String): ProposalDecision =
         api.send<ProposalDecision>("POST", "/v1/gym/proposals/$id/apply")
 
     override suspend fun dismissProposal(id: String): ProposalDecision =
         api.send<ProposalDecision>("POST", "/v1/gym/proposals/$id/dismiss")
 
-    // Composed on every read and cached nowhere — server-side or here. There is no window
-    // parameter: twelve weeks is the log's own, and a client that asked for a slice would be the
-    // second place in the product deciding what the arc is.
     override suspend fun record(exerciseId: String): MovementRecord? = try {
         api.get<MovementRecord>("/v1/gym/exercises/$exerciseId/record")
     } catch (refused: WindmillApiException.Refused) {
@@ -169,27 +127,18 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/sessions/$sessionId/share")
     }
 
-    // No 404 to fold: a lifter who has never opened the settings screen is answered with the
-    // defaults, so every client gets a rest dial and a unit on the first paint.
     override suspend fun preferences(): GymPreferences =
         api.get<GymPreferences>("/v1/gym/preferences")
 
-    // WindmillJson omits a value that equals its declared default, which is exactly what this route
-    // wants: an omitted field takes its default on the server, so a document dialled back to the
-    // defaults travels as `{}` and stores as the defaults. That alignment is the wire contract's,
-    // not a coincidence of the encoder — see GymPreferences.
+    // WindmillJson omits a value equal to its declared default; the route reads an omitted field as
+    // that default.
     override suspend fun savePreferences(document: GymPreferences): GymPreferences =
         api.send<GymPreferences>("PUT", "/v1/gym/preferences", document)
 
-    // ONE QUESTION INTO ONE THREAD. Nothing is folded here: a 404 is the ROUTE being absent on this
-    // deployment rather than a missing object, and it means something to the room (the door goes)
-    // rather than nothing to a caller, so it travels as the refusal it is and AskVerdict reads it.
+    // A 404 here means the route is absent from the deployment, not a missing object.
     override suspend fun ask(question: AskQuestion): AskAnswer =
         api.send<AskAnswer>("POST", "/v1/gym/ask", question)
 
-    // The three thread doors, and a 404 here is an ordinary absence rather than an absent feature:
-    // they are mounted whether or not this deployment has a model configured, so the only thing a
-    // 404 can mean is that this account holds no such conversation.
     override suspend fun threads(): List<AskThread> =
         api.get<Conversations>("/v1/gym/threads").threads
 
@@ -203,9 +152,6 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/threads/$id")
     }
 
-    // Ids are [A-Za-z0-9_-] by the server's own rule, so this only ever has work to do on the two
-    // punctuation marks in that set — and doing it anyway costs nothing and cannot be forgotten
-    // later, when an id from somewhere else reaches a query string.
     private fun escaped(value: String): String = buildString {
         for (byte in value.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xFF
@@ -216,16 +162,9 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     }
 }
 
-// The platform's exception, stripped to the facts the verdicts read — so the four verdicts stay a
-// rule the store module proves on the JVM without importing the network. Anything that is not a
-// refusal with a status — a transport failure, a reply this build could not read, an exception
-// nobody has met — carries no facts at all, and no facts is Retry: replay is free, and a set is
-// never dropped on a guess. A refusal that arrived without a sentence stays sentence-less here;
-// the fallback ("the log refused this set") is Verdict's own.
+// No facts reads as Retry: a set is never dropped on a guess.
 fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
     is WindmillApiException.Offline -> RefusalFacts(offline = true)
-    // A transport that never carried a reply is the same fact whether the platform named it or
-    // the socket threw it — the store's "offline" is asserted only off this.
     is IOException -> RefusalFacts(offline = true)
     is WindmillApiException.Malformed -> RefusalFacts(malformed = true)
     is WindmillApiException.Refused -> RefusalFacts(
@@ -236,8 +175,6 @@ fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
 @Serializable
 private data class Catalog(val exercises: List<Exercise>)
 
-// `movements` is always present and is `[]` for a lifter who has logged nothing — so the absence of
-// a row is the only thing this reply ever says about a movement it does not carry.
 @Serializable
 private data class LastSets(val movements: List<LastSet> = emptyList())
 
@@ -247,8 +184,5 @@ private data class Log(val sessions: List<SessionSummary>)
 @Serializable
 private data class Routines(val routines: List<Routine>)
 
-// ONE KEY AND NOTHING ELSE, which is the reply's own contract: §O's list is not an inbox, so there
-// is no count, no unread total and nothing beside the conversations for a client to draw a badge
-// from — and a server that grew one would not reach a screen through this.
 @Serializable
 private data class Conversations(val threads: List<AskThread> = emptyList())

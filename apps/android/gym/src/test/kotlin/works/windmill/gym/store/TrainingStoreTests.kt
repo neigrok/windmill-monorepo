@@ -61,21 +61,11 @@ import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
-// What has to be true for a set somebody lifted to survive: it is on the device before the log is
-// consulted, it stays there when the log cannot be reached, the four refusals each get the repair
-// they ask for, and a set that will never land is SAID rather than swallowed. These are the paths
-// that lose training.
-
-// Refusals as the wire delivers them — a sentence for a human under "error", and, for the reasons
-// a client must branch on, a machine word under "code". The tests below deliberately reword the
-// sentences: the code is the contract and nothing here may read English to decide what to do.
 private fun refusal(status: Int, code: String? = null, message: String) =
     WindmillApiException.Refused(status, Refusal(message = message, code = code))
 
 private val storageFailure = refusal(500, message = "internal error")
 
-// A log that TAKES the start and loses the reply on the way back — the wire failing after the row
-// was written, which no client can tell from a wire that failed before it.
 private class LosingStartReplies(private val inner: FakeTraining) : TrainingSyncing by inner {
     var losing = true
 
@@ -105,10 +95,6 @@ class TrainingStoreTests {
         preferencesFile = File(tmp.root, "gym-prefs-${System.nanoTime()}.json")
     }
 
-    // The undo window is off here on purpose. What every test below is about is what happens to a
-    // set once the walk REACHES it — the refusals, the remints, the lanes, the ordering — and a
-    // nine-second hold in front of that would only be a delay between the tap and the subject.
-    // The window has its own tests (UndoWindowStoreTests), where it is the subject.
     private fun TestScope.makeStore(
         sync: TrainingSyncing?,
         mintSet: () -> String = Ids::set,
@@ -130,9 +116,6 @@ class TrainingStoreTests {
         sync = { if (it.isSignedIn) sync else null },
     )
 
-    // A room where each account has its own log, which is the only way to prove that a workout
-    // composed under one seat never lands on another's. Everything else here shares one fake,
-    // because everything else is about one lifter.
     private fun TestScope.makeStore(
         logs: Map<String, TrainingSyncing>,
         deviceOwner: String? = null,
@@ -148,16 +131,11 @@ class TrainingStoreTests {
         sync = { seat -> seat.user?.id?.let { logs[it] } },
     )
 
-    // One finished workout as a build from before the seats wrote it: the whole shelf at the top
-    // level, with no seat anywhere on it.
     private val legacyShelf =
         """{"finished":[{"session":{"id":"ses_before","startedAt":1000,"finishedAt":2000},""" +
             """"sets":[{"id":"set_before","exerciseId":"bench-press","weightKg":90.0,""" +
             """"reps":5,"completedAt":1100}]}]}"""
 
-    // THE FILES READ BACK AS A GIVEN SEAT WOULD SEE THEM. The seat lives in memory now, so a bare
-    // construction is the ANONYMOUS shelf — and every assertion below about a signed-in lifter's
-    // rows would quietly answer "none" against it. `u1` is what `account(signedIn = true)` is.
     private fun queueOnDisk(owner: String? = "u1") = SetQueue(queueFile, owner)
 
     private fun shelfOnDisk(owner: String? = "u1") = LocalLog(localFile, owner)
@@ -167,8 +145,6 @@ class TrainingStoreTests {
         user = if (signedIn) User(id = id, email = "sam@example.com", name = "Sam") else null,
     )
 
-    // A store standing where the room stands mid-workout: a session open on the log, a movement in
-    // hand, nothing owed yet.
     private suspend fun TestScope.liveStore(
         server: FakeTraining,
         movement: String = "bench-press",
@@ -185,8 +161,6 @@ class TrainingStoreTests {
         return store
     }
 
-    // The set is the lifter's the instant they tap and the network's problem afterwards — so a
-    // basement gym costs nothing, a relaunch costs nothing, and the words say exactly that.
     @Test
     fun testASetLoggedOfflineSurvivesARelaunchAndFlushesOnReconnect() = runTest {
         val server = FakeTraining()
@@ -211,9 +185,6 @@ class TrainingStoreTests {
         assertTrue(queueOnDisk().pending.isEmpty())
     }
 
-    // 409 `set-id-taken` means that id names a row outside this session. A new id lands the same
-    // set; treating it as terminal would drop a lift over a collision the device can repair by
-    // itself.
     @Test
     fun testASetIdAlreadySpentIsMintedAgainAndLands() = runTest {
         val server = FakeTraining()
@@ -237,8 +208,6 @@ class TrainingStoreTests {
             store.refusals.isEmpty())
     }
 
-    // 409 `session-finished` is the one refusal that costs a set: it never landed and never will.
-    // It is removed and SAID — the banner is the last copy of it, so it carries the movement too.
     @Test
     fun testASetRefusedByAClosedSessionIsDroppedAndSaidOutLoud() = runTest {
         val server = FakeTraining()
@@ -256,9 +225,6 @@ class TrainingStoreTests {
         assertTrue(queueOnDisk().pending.isEmpty())
     }
 
-    // The queue's whole premise: send in any order, any number of times, and converge on one row
-    // per minted id. A reply that never arrived leaves the set owed, and the replay answers with
-    // the row the log already stored rather than filing it a second time.
     @Test
     fun testAReplyThatNeverArrivedIsReplayedAndTheLogStillHoldsOneRow() = runTest {
         val server = FakeTraining()
@@ -277,8 +243,6 @@ class TrainingStoreTests {
         assertEquals(SaveState.OnTheLog, store.saveState)
     }
 
-    // A session that closed before a set reached it refuses that set forever, so finishing drains
-    // first and closes second. The order is the whole rule.
     @Test
     fun testFinishingSendsWhatIsOwedBeforeItClosesTheSession() = runTest {
         val server = FakeTraining()
@@ -304,8 +268,6 @@ class TrainingStoreTests {
         assertTrue("every set of this session is on the log before it closes", landed < finished)
     }
 
-    // ...and when they cannot be drained, Finish does not fire at all. Closing over an undelivered
-    // set is the one loss the device can see coming.
     @Test
     fun testFinishingIsRefusedWhileASetOfThisSessionIsStillOwed() = runTest {
         val server = FakeTraining()
@@ -320,9 +282,6 @@ class TrainingStoreTests {
         assertNotNull("the session stays open — a closed one could not take that set", store.session)
     }
 
-    // The close is a round trip, and a set logged into a session that closes under it is refused
-    // forever. The pad is shut for exactly that window — and `isFinishing` is published so the
-    // room can say where that set can still go rather than swallowing the tap.
     @Test
     fun testASetTappedWhileTheSessionIsClosingIsNotFiledIntoIt() = runTest {
         val server = FakeTraining()
@@ -336,8 +295,6 @@ class TrainingStoreTests {
         assertTrue("and nothing was left owed against it", queueOnDisk().pending.isEmpty())
     }
 
-    // A 500 is the STORE failing, not the set being refused. Keeping it queued is the difference
-    // between a five-second lock wait and a lift thrown away.
     @Test
     fun testAStorageFailureKeepsTheSetQueuedRatherThanRefusingIt() = runTest {
         val server = FakeTraining()
@@ -355,8 +312,6 @@ class TrainingStoreTests {
         assertEquals("the row stays on screen — the device is holding it", 1, store.sets.size)
     }
 
-    // Order is per (session, movement), because that is the only order the server keeps. A jam
-    // that stopped the whole queue would stop a whole workout, silently.
     @Test
     fun testASetThatCannotLandHoldsUpItsOwnMovementAndNoOther() = runTest {
         val server = FakeTraining()
@@ -373,21 +328,11 @@ class TrainingStoreTests {
             listOf("bench-press", "back-squat"), store.sets.map { it.exerciseId })
     }
 
-    // A START IS NEVER A SILENT JOIN (decisions §5). The log's default is to JOIN whatever session
-    // is open — ignoring the routineId that was tapped — so "Start workout" on routine B could land
-    // the lifter in yesterday's workout under the wrong plan. Every user-tapped start therefore
-    // states joinOpenSession: false, and the 409 that comes back while a workout is open on the
-    // account is answered by REFRESHING: the store re-reads the log, adopts the open workout with
-    // its own snapshot and sets, stands it where the lifter was through the ordinary resume — at
-    // the movement the last set went into, never in the picker over a session of sets — and
-    // repeats the refusal in the log's own words.
     @Test
     fun testStartingWhileASessionIsOpenRefusesAndSurfacesTheOpenWorkout() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
-        // Another device opened a workout after this phone's boot read — the exact shape that used
-        // to be joined silently under the wrong plan.
         server.open(Session(id = "ses_live", startedAtMs = 500,
             plan = PlanSnapshot(routine = "Push A",
                 entries = listOf(PlanEntry(exerciseId = "bench-press", sets = 5,
@@ -414,8 +359,6 @@ class TrainingStoreTests {
             "bench-press", store.exerciseId)
     }
 
-    // The number in front of the lifter before they touch anything: the plan's target while the
-    // movement is untouched, then their own last set the moment there is one.
     @Test
     fun testThePrefillTakesThePlanUntilTheLifterHasLiftedSomething() = runTest {
         val server = FakeTraining()
@@ -434,8 +377,6 @@ class TrainingStoreTests {
             Prefill(weightKg = 85.0, reps = 4), store.prefill)
     }
 
-    // Signed out is a WORKING state: a session opens on the device, its sets land on the device,
-    // and the finish moves the whole workout onto the shelf — where a relaunch still finds it.
     @Test
     fun testSignedOutASessionRunsFinishesAndSurvivesARelaunch() = runTest {
         val store = makeStore(sync = null)
@@ -465,8 +406,6 @@ class TrainingStoreTests {
         assertEquals(listOf(82.5), shelfOnDisk(null).details().single().sets.map { it.weightKg })
     }
 
-    // The signed-out program: a routine kept from a session, listed on Today, started from — with
-    // the plan frozen off the LOCAL row at start — and retargeted, all without an account.
     @Test
     fun testSignedOutARoutineIsKeptStartedFromAndRetargeted() = runTest {
         val store = makeStore(sync = null)
@@ -492,8 +431,6 @@ class TrainingStoreTests {
             105.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
     }
 
-    // "What did I do last time" answered off the device's own history: a finished local session is
-    // the next last time, warmups excluded, and no history is a first time — never a failed read.
     @Test
     fun testSignedOutLastTimeAndPrefillComeFromTheDeviceHistory() = runTest {
         val store = makeStore(sync = null)
@@ -516,9 +453,6 @@ class TrainingStoreTests {
         assertEquals(Prefill(82.5, 5), store.prefill)
     }
 
-    // The read-only rooms run off the shelf: a movement's record over the local finished sessions,
-    // and the review of one of them — the three facts and the slight rule, computed on the device.
-    // Neither invents an estimate: Epley lives on the log, and this phone draws what it can prove.
     @Test
     fun testSignedOutTheRecordAndTheReviewAreComputedFromTheShelf() = runTest {
         val store = makeStore(sync = null)
@@ -555,11 +489,6 @@ class TrainingStoreTests {
         assertEquals(5, detail.sets.size)
     }
 
-    // RENAME, AND THE IDENTITY IT PROVES: the name moves and the id does not, so every set logged
-    // under it is still the same movement afterwards — which is the whole reason §H offers the
-    // rename on the page that draws the history. A movement the shelf holds renames on the device
-    // and the claim carries the name it finds; a catalog movement the shelf has never seen needs
-    // the account, and says so rather than storing a name that would silently revert on connect.
     @Test
     fun testARenameMovesTheNameAndNeverTheIdAndTheShelfKeepsIt() = runTest {
         val store = makeStore(sync = null)
@@ -591,9 +520,6 @@ class TrainingStoreTests {
         assertEquals("Bench Press", relaunched.catalog.single { it.id == movement.id }.name)
     }
 
-    // Signed in, the rename is the log's and the catalog every other screen reads is updated off
-    // its answer — a routine card still printing the old name after the page said it changed would
-    // be the room disagreeing with itself.
     @Test
     fun testSignedInARenameGoesToTheLogAndTheCatalogFollowsIt() = runTest {
         val server = FakeTraining()
@@ -610,10 +536,6 @@ class TrainingStoreTests {
             "back-squat", store.catalog.single { it.id == "back-squat" }.id)
     }
 
-    // A NAME IS THE SEAT'S AND NOT THE PHONE'S. A rename is a per-account override, so the copy this
-    // device holds belongs to the account it was read for — and the next lifter to hold the phone,
-    // offline or signed out, may not be shown it. This is the on-device half of the wave's one
-    // catastrophic failure: a private name crossing a seat, on the first frame, indefinitely.
     @Test
     fun testARenameIsTheAccountsAndNeverCrossesToTheNextSeatOnThisPhone() = runTest {
         val hers = FakeTraining()
@@ -622,16 +544,10 @@ class TrainingStoreTests {
         alice.connect(account(signedIn = true, id = "alice"))
         alice.rename("back-squat", "Alice’s Secret Squat")
 
-        // Her own seat, with no signal at all: the copy on the device is hers and it opens on the
-        // first frame, which is the whole reason the file exists.
         val herRelaunch = makeStore(sync = null)
         herRelaunch.connect(account(signedIn = true, id = "alice"))
         assertEquals("Alice’s Secret Squat", herRelaunch.catalog.single { it.id == "back-squat" }.name)
 
-        // The next seat, equally offline — so nothing can repair the names behind his back. This is
-        // the state this room is built to work in, and the one the leak used to stand in forever.
-        // What he gets is the six under their SEEDED names, which are a constant every install
-        // carries and nobody's private naming of anything.
         val bob = makeStore(sync = null)
         bob.connect(account(signedIn = true, id = "bob"))
         assertEquals("this phone does not know Bob's names and does not borrow Alice's",
@@ -643,9 +559,6 @@ class TrainingStoreTests {
             TheSix.movements, anon.catalog)
     }
 
-    // The anonymous seat is a seat like any other, and the movements it minted are the whole catalog
-    // it has: they ride with it across a relaunch, and they ride into the account that signs in over
-    // them, because a movement no claim has landed yet is still on this device to be named.
     @Test
     fun testTheShelfsOwnMovementsSurviveARelaunchAndTheSeatTheySignInto() = runTest {
         val anon = makeStore(sync = null)
@@ -656,16 +569,11 @@ class TrainingStoreTests {
         relaunched.connect(account(signedIn = false))
         assertEquals(TheSix.movements + made, relaunched.catalog)
 
-        // A seat this phone holds no copy for, standing over the same shelf: before any account read
-        // answers, the logger still has a name to draw at 28sp over the lifter's own lift.
         val newSeat = makeStore(sync = null)
         newSeat.connect(account(signedIn = true, id = "alice"))
         assertEquals(listOf(made) + TheSix.movements, newSeat.catalog)
     }
 
-    // A record the log refused is not a record that is empty: the reason is repeated in the log's
-    // own words, and a movement it no longer holds gets the plain fact instead of a signal blamed
-    // for an answer that was on the server.
     @Test
     fun testARecordTheLogRefusesSaysWhyRatherThanDrawingNothing() = runTest {
         val server = FakeTraining()
@@ -684,11 +592,6 @@ class TrainingStoreTests {
         assertEquals(WriteFailure.NoAnswer, (store.record("back-squat") as GymResult.Failed).why)
     }
 
-    // THE CLAIM, end to end: signing in replays the shelf in the contract's order — routines
-    // first, then the finished session (start → its sets in performed order → finish), then the
-    // live session's own start — with joinOpenSession false on every claimed start, the TRUE local
-    // instants, and no log read interleaved before the last claim call. Afterwards the server is
-    // the truth and the shelf is empty.
     @Test
     fun testSigningInClaimsTheShelfInOrderAndTheServerBecomesTheTruth() = runTest {
         val server = FakeTraining()
@@ -734,8 +637,6 @@ class TrainingStoreTests {
             setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
     }
 
-    // A session id another account spent is re-minted and the same workout lands whole under the
-    // fresh id — for the live session that includes re-pointing every owed set in the queue.
     @Test
     fun testAClaimedSessionIdAlreadySpentIsMintedAgainAndTheWorkoutLandsWhole() = runTest {
         val server = FakeTraining()
@@ -762,9 +663,6 @@ class TrainingStoreTests {
         assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
-    // `session-already-open` is the WAIT. Another device holds the account's live workout, so the
-    // backlog stays whole on the shelf — nothing dropped, nothing filed into that workout — and
-    // the boot still completes.
     @Test
     fun testAClaimWaitsWholeWhileTheAccountsOtherWorkoutIsOpen() = runTest {
         val server = FakeTraining()
@@ -787,8 +685,6 @@ class TrainingStoreTests {
             setOf("ses_phone2", "ses_minted"), store.recent.map { it.id }.toSet())
     }
 
-    // Offline mid-claim is retry, never loss: the shelf keeps everything and the next connect
-    // replays it — idempotent by the minted ids, so nothing lands twice either.
     @Test
     fun testAnOfflineClaimKeepsTheShelfWholeAndTheNextConnectLandsIt() = runTest {
         val server = FakeTraining()
@@ -812,9 +708,6 @@ class TrainingStoreTests {
         assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
-    // ...and the next connect is no longer the only carrier: a claim that stopped on a retryable
-    // failure re-runs on the deliver loop's own four-second task — no remount, no tap — while a
-    // start during a scheduled re-claim still composes on the device, exactly as connect's does.
     @Test
     fun testAnOfflineClaimRetriesOnTheDeliverCadenceAndLandsWithoutARemount() = runTest {
         val server = FakeTraining()
@@ -865,11 +758,6 @@ class TrainingStoreTests {
         assertEquals("the room stands in its claimed workout", "ses_b", store.session?.id)
     }
 
-    // TWO CLAIMS MAY NEVER OVERLAP. A local finish while the cadence's re-claim is mid-replay
-    // marks the claim owed again rather than starting a second replay — and the boot read stands
-    // down while any claim runs. The alternative was the cadence's ending firing loadLog while
-    // the deferred replay held a re-opened past session open on the log: the store adopted the
-    // workout the lifter had just finished as the phone's live one, resurrected.
     @Test
     fun testAFinishDuringTheCadenceReclaimNeverAdoptsTheMidReplaySession() = runTest {
         val server = FakeTraining()
@@ -937,9 +825,6 @@ class TrainingStoreTests {
         assertTrue(store.refusals.isEmpty())
     }
 
-    // The serialization itself, pinned: a claim requested while one runs goes once more when that
-    // pass ends — each shelf session claimed exactly once, never a second runner interleaving
-    // starts with the first.
     @Test
     fun testAClaimRequestedMidReplayRunsOnceMoreAfterItRatherThanOverlapping() = runTest {
         val server = FakeTraining()
@@ -985,9 +870,6 @@ class TrainingStoreTests {
         assertTrue(store.refusals.isEmpty())
     }
 
-    // A loss said during a boot claim has no logger standing to show it: the refusal surfaces on
-    // Today — the same banner, drawn from the same store fact the logger reads — and dismissing
-    // clears what was shown.
     @Test
     fun testABootClaimLossWithNoLiveSessionSurfacesOnTodayAndDismissClears() = runTest {
         val server = FakeTraining()
@@ -1010,9 +892,6 @@ class TrainingStoreTests {
         assertEquals("dismissing clears what was shown", emptyList<RefusedWrite>(), store.refusals)
     }
 
-    // The one loss a claim can meet, said out loud: a set the server refuses forever (the session
-    // closed under a previous, partial claim) is dropped from the shelf and reported — and the
-    // rest of the session still settles.
     @Test
     fun testAClaimedSetRefusedForeverIsDroppedAndSaidAndTheRestSettles() = runTest {
         val server = FakeTraining()
@@ -1025,8 +904,6 @@ class TrainingStoreTests {
         clockMs += 60_000
         store.finish()
 
-        // The session already closed on the server — a previous claim's finish landed, this set's
-        // append never did.
         server.stored["ses_minted"] = Session(id = "ses_minted", startedAtMs = 1_000, finishedAtMs = 2_000)
         server.refuse = { refusal(409, code = "session-finished", message = "reworded on a Tuesday") }
         store.connect(account(signedIn = true))
@@ -1038,10 +915,6 @@ class TrainingStoreTests {
             shelfOnDisk().finished.isEmpty())
     }
 
-    // A WARMUP IS A KIND THE LOGGER CAN WRITE, and it counts toward nothing. Before the toggle
-    // existed every set this surface could produce was `working`, so a 60 kg ramp-up was fed to
-    // the record rules as the mark to beat — and the finish screen minted a gold personal record
-    // for it.
     @Test
     fun testAWarmupIsWrittenAsAWarmupAndCarriesNothingForward() = runTest {
         val server = FakeTraining()
@@ -1068,10 +941,6 @@ class TrainingStoreTests {
             Prefill(weightKg = 105.0, reps = 3), store.prefill)
     }
 
-    // A set refused in one lane must not take the retry away from a set merely jammed in another.
-    // Nothing else carries the jammed one: the walk cancelled the task it arrived with, so
-    // returning at the refusal left it on the device with no retry and no strip saying it was
-    // there.
     @Test
     fun testARefusalInOneLaneStillLeavesTheOtherLaneCarriedAndCounted() = runTest {
         val server = FakeTraining()
@@ -1098,9 +967,6 @@ class TrainingStoreTests {
             server.appended.count { it.exerciseId == "bench-press" } > sent)
     }
 
-    // A log that answered with a reason is not a log that went quiet. The routine was deleted from
-    // the web; the reason is repeated, and no workout is composed around it — a refusal with a
-    // reason is a fact about the account, not about the signal.
     @Test
     fun testAStartRefusedForANamedReasonSaysTheReason() = runTest {
         val server = FakeTraining()
@@ -1114,11 +980,6 @@ class TrainingStoreTests {
         assertNull(store.session)
     }
 
-    // R3 — A LIFTER IN A BASEMENT CAN BEGIN. Signed in with no signal, Start composes the workout
-    // on the device off the routine the store holds — its plan frozen here — holds it unclaimed,
-    // and the claim lands it on the cadence with every set logged into it in the meantime. The
-    // same for a log that answered 500, and for a start refused for a clock ahead of the log's:
-    // that one is transient by construction, and the claim's replay is what lands it.
     @Test
     fun testSignedInWithNoSignalAStartComposesOnTheDeviceAndTheClaimLandsIt() = runTest {
         for (quiet in listOf<(FakeTraining) -> Unit>(
@@ -1163,10 +1024,6 @@ class TrainingStoreTests {
         }
     }
 
-    // R3, THE LOST REPLY. The server start went out and the log TOOK it; only the reply was lost.
-    // The workout that composes on the device carries the SAME id, so the claim's start replays it
-    // and the log answers with its own row — never a fresh id that meets that row as
-    // "session-already-open" and parks the lifter's sets, silently, until the workout closes.
     @Test
     fun testAStartWhoseReplyWasLostComposesUnderTheSameIdAndTheClaimReplaysIt() = runTest {
         val server = FakeTraining()
@@ -1203,11 +1060,6 @@ class TrainingStoreTests {
         assertTrue(store.refusals.isEmpty())
     }
 
-    // THE UPGRADE FILE. A queue written before the `unclaimed` bit existed reads as unclaimed, and
-    // a shelf session behind a live workout the log holds makes that shelf start 409-wait on the
-    // phone's own session — the claim halts before the live start, and the live session's owed
-    // sets are parked with no cadence. The first log read adopts that workout — the log answering
-    // for it — and the parked sets walk THEN, not on the next tap.
     @Test
     fun testAnOlderQueueFileBehindAShelfSessionIsAdoptedByTheReadAndItsSetsWalk() = runTest {
         val server = FakeTraining()
@@ -1240,8 +1092,6 @@ class TrainingStoreTests {
             listOf("ses_early"), shelfOnDisk().finished.map { it.session.id })
     }
 
-    // A live start the log refuses outright is said again on every pass — the workout cannot be
-    // let go — and the banner holds ONE copy of it, not one per connect.
     @Test
     fun testARefusedLiveStartIsSaidOnceAcrossPasses() = runTest {
         val server = FakeTraining()
@@ -1263,9 +1113,6 @@ class TrainingStoreTests {
         assertEquals("the workout is still the lifter's, still held here", "ses_minted", store.session?.id)
     }
 
-    // The write that moves next week's target. It answers with what went wrong rather than with a
-    // bool nobody reads: an unreachable log and a routine gone from it are different sentences,
-    // and null is the target really standing changed.
     @Test
     fun testAWriteBackThatDidNotLandSaysWhyAndMovesNothing() = runTest {
         val server = FakeTraining()
@@ -1291,10 +1138,6 @@ class TrainingStoreTests {
             87.5, store.routines.first { it.id == "rt_push_a" }.entries.first().targetWeightKg)
     }
 
-    // THE ROUTINE CHANGED UNDER THE SESSION. The offer was raised against one plan line, by position;
-    // when the row there now names another movement the store writes NOTHING — no PUT, because a PUT
-    // of an unchanged document still moves the revision and supersedes every pending proposal — and
-    // says so. On the wire and on the shelf alike.
     @Test
     fun testARetargetWithNothingToMoveIsRefusedAndNeverPut() = runTest {
         val server = FakeTraining()
@@ -1324,7 +1167,6 @@ class TrainingStoreTests {
             100.0, shelfOnDisk(null).routine(kept.id)?.entries?.first()?.targetWeightKg)
     }
 
-    // The picker closed on a movement that was never minted, and absolutely nothing was said.
     @Test
     fun testAMovementThatWasNotCreatedSaysSoInTheLogsOwnWords() = runTest {
         val server = FakeTraining()
@@ -1343,10 +1185,6 @@ class TrainingStoreTests {
         assertEquals(TheSix.movements.map { it.name } + "Zercher Squat", store.catalog.map { it.name })
     }
 
-    // A movement is a stable id everywhere except on screen. Held only in memory, a cold launch in
-    // a basement drew `bench-press` at 28sp where `Bench Press` belongs — for the whole session. The
-    // copy is the SEAT'S: it opens with no signal at all for the account that filled it, and a name
-    // that account chose is not there for anybody else, because a rename is a per-account override.
     @Test
     fun testTheMovementNamesAreHeldOnTheDeviceForTheSeatThatReadThem() = runTest {
         val server = FakeTraining()
@@ -1357,7 +1195,6 @@ class TrainingStoreTests {
             listOf("Bench Press", "Back Squat", "Deadlift", "Overhead Press", "Barbell Row", "Chin Up"),
             store.catalog.map { it.name })
 
-        // A cold launch with no signal: nothing is read, and the names are already there.
         val relaunched = makeStore(sync = null)
         relaunched.connect(account(signedIn = true))
         assertEquals(listOf("bench-press", "back-squat", "deadlift", "overhead-press", "barbell-row",
@@ -1371,10 +1208,6 @@ class TrainingStoreTests {
             TheSix.movements, signedOut.catalog)
     }
 
-    // THE CLAIM-JOIN TRAP: a server start JOINS whatever session is open, and mid-claim the open
-    // session is a PAST one the replay just reopened. A start tapped there composes on the device
-    // instead — the alternative was today's first set filed into yesterday's workout, which the
-    // claim then closed at the shelf's stale instant, evaporating the live one.
     @Test
     fun testAStartDuringTheClaimComposesOnTheDeviceAndNeverJoinsTheReplay() = runTest {
         val server = FakeTraining()
@@ -1415,9 +1248,6 @@ class TrainingStoreTests {
         assertEquals("the room stands in its own workout", "ses_b", store.session?.id)
     }
 
-    // While the live session is unclaimed its lanes are parked, not walked: every send would 404
-    // against a session the log has never heard of, and the four-second retry would re-arm
-    // forever over a healthy connection. The claim is their road; the strip says where they are.
     @Test
     fun testAnUnclaimedSessionsSetsAreParkedRatherThanRetriedForever() = runTest {
         val server = FakeTraining()
@@ -1442,9 +1272,6 @@ class TrainingStoreTests {
         assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
     }
 
-    // The nobody pass answers "what did I do last time" off the shelf; a signed-in connect must
-    // REPLACE that answer, never inherit it. The cache dies with the seat and the movement in
-    // hand is re-asked, so the log's history stands where the shelf's "first time" was.
     @Test
     fun testSigningInReAsksLastTimeForTheMovementInHand() = runTest {
         val server = FakeTraining()
@@ -1468,9 +1295,6 @@ class TrainingStoreTests {
         assertEquals("and the dial follows the history", Prefill(82.5, 5), store.prefill)
     }
 
-    // Process death between finishOnDevice's shelf hold and the queue's forget leaves one workout
-    // both finished on the shelf and live in the queue. The relaunch converges on the shelf's
-    // copy — listed once, never resumed — and converging costs no set: the queue's merge in.
     @Test
     fun testACrashBetweenShelfHoldAndQueueForgetConvergesOnRelaunch() = runTest {
         val crashed = SetQueue(queueFile) { clockMs }
@@ -1496,10 +1320,6 @@ class TrainingStoreTests {
             2_000L, shelfOnDisk(null).details().single().session.finishedAtMs)
     }
 
-    // THE FOOT OF THE LOG IS PAGING ARITHMETIC AND NOTHING ELSE. A full page means there may be
-    // more; a short one is the bottom, and the bottom is a real arrival rather than a box that
-    // stopped offering. The cursor is the oldest row the LOG sent — never one off the shelf, which
-    // the log has never heard of.
     @Test
     fun testTheLogPagesOlderOnAskAndKnowsWhenItHasReachedTheBottom() = runTest {
         val server = FakeTraining()
@@ -1526,11 +1346,6 @@ class TrainingStoreTests {
         assertEquals("the bottom does not ask again", asked, server.calls.count { it == "sessions" })
     }
 
-    // A RE-READ MAY NOT UNDO A WALK. The delivery cadence re-reads the log on a TIMER — nobody taps
-    // anything — the moment a claim it owed comes good, and the lifter is not somewhere else while
-    // that fires: they are on the log, ten rows into a page they asked for. So the head is
-    // refreshed, the claimed session lands in it, the pages underneath stay, and the foot is still
-    // the bottom they walked to.
     @Test
     fun testTheCadencesReReadKeepsThePagesTheLifterWalked() = runTest {
         val server = FakeTraining()
@@ -1538,9 +1353,6 @@ class TrainingStoreTests {
             server.open(Session(id = "ses_$index", startedAtMs = 1_000L + index,
                 finishedAtMs = 2_000L + index))
         }
-        // A session on the shelf the log will not take yet, so the boot claim stops RETRYABLY and
-        // arms the cadence. Reads are healthy throughout — this is a claim that failed, not a phone
-        // that is offline.
         shelfOnDisk().hold(LocalLog.FinishedSession(
             Session(id = "ses_shelf", startedAtMs = 9_000, finishedAtMs = 9_500),
             listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
@@ -1570,9 +1382,6 @@ class TrainingStoreTests {
         assertEquals("and the foot is still the bottom they arrived at", Older.End, store.older)
     }
 
-    // Signed out the shelf IS the whole log, so the foot is already at the bottom — there is no
-    // page behind it to ask for, and a `Load older` over a device's own history would be a request
-    // nobody could answer.
     @Test
     fun testSignedOutTheShelfIsTheWholeLogAndThereIsNothingOlder() = runTest {
         shelfOnDisk(null).hold(LocalLog.FinishedSession(
@@ -1592,9 +1401,6 @@ class TrainingStoreTests {
         assertEquals(listOf(500.0), store.recent.map { it.tonnageKg })
     }
 
-    // §G18, AND THE BRANCH THAT DECIDES WHETHER A SET IS LOST. A session the SHELF holds has never
-    // been sent, so the correction rewrites the row that will be sent and no PATCH may go out for an
-    // id the log has never seen. The head follows: the tonnage and the top set move with the set.
     @Test
     fun testFixingASetOnAnUnclaimedSessionRewritesTheDeviceRowAndTouchesNoWire() = runTest {
         val server = FakeTraining()
@@ -1625,9 +1431,6 @@ class TrainingStoreTests {
             server.fixes.isEmpty() && server.removed.isEmpty())
     }
 
-    // THE HEADLINE OF THE WHOLE WAVE, end to end through the room: a lifter logs signed out, fixes a
-    // typo and deletes a set they never did, then signs in. The CORRECTED set replays — never the
-    // original, and never both — and the deleted one never goes out at all.
     @Test
     fun testACorrectionAndADeleteMadeSignedOutBothSurviveSigningIn() = runTest {
         val server = FakeTraining()
@@ -1657,11 +1460,6 @@ class TrainingStoreTests {
             shelfOnDisk().finished.isEmpty())
     }
 
-    // ...AND THE SAME CORRECTION MADE WHILE THE CLAIM IS ALREADY WALKING, through the whole room.
-    // The shelf's rows go on screen before the claim starts and stay there for the length of it, so
-    // this is one tap during one round trip — not an exotic race. The store takes the shelf road
-    // (the row is still there) and answers Corrected; the claim has to end with the account holding
-    // that same number, or the store told the lifter a repair landed that nothing kept.
     @Test
     fun testACorrectionMadeWhileTheClaimIsWalkingStillReachesTheAccount() = runTest {
         val server = FakeTraining()
@@ -1693,9 +1491,6 @@ class TrainingStoreTests {
             shelfOnDisk().finished.isEmpty())
     }
 
-    // ...and a session the ACCOUNT holds goes over the wire. THE LOG MOVES AND THE ROUTINE DOES
-    // NOT: the frozen plan on the session and the routine document are compared whole afterwards,
-    // because that is the caption of the entire screen.
     @Test
     fun testFixingASetOnTheAccountGoesOverTheWireAndMovesNoPlanAndNoRoutine() = runTest {
         val server = FakeTraining()
@@ -1728,11 +1523,6 @@ class TrainingStoreTests {
         assertEquals(listOf(0), store.logged.map { it.workingSetCount })
     }
 
-    // A SESSION BELOW THE HEAD PAGE IS EXACTLY AS LIKELY TO HOLD THE TYPO. The row is re-read BY ID
-    // after a correction rather than by re-reading the head: `loadLog` fetches the newest page and
-    // keeps every walked row verbatim — deliberately, so a re-read on the delivery timer cannot
-    // throw a thumb halfway down the log back to the top — which means a row the lifter walked down
-    // to would have gone on printing its pre-fix tonnage, working count and gold dot forever.
     @Test
     fun testARowWalkedDownToWithLoadOlderFollowsItsOwnCorrection() = runTest {
         val server = FakeTraining()
@@ -1756,9 +1546,6 @@ class TrainingStoreTests {
             listOf(0.0, 0), listOf(store.logged.last().tonnageKg, store.logged.last().workingSetCount))
     }
 
-    // The two terminal refusals, told apart BY CODE and never by the sentence. `set-not-found` is
-    // the row being gone — the screen drops it rather than offering a retry onto nothing — and
-    // `fix-unreadable` leaves the row standing with the log's own words beside it.
     @Test
     fun testAFixRefusalIsToldApartByItsCodeAndNeverByItsSentence() = runTest {
         val server = FakeTraining()
@@ -1789,8 +1576,6 @@ class TrainingStoreTests {
             listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
     }
 
-    // Signed out, a session the shelf does not hold is the account's. The sentence says so rather
-    // than blaming a signal nobody used — and no write is attempted at all.
     @Test
     fun testSignedOutASetOnTheAccountIsNamedRatherThanBlamedOnTheSignal() = runTest {
         val server = FakeTraining()
@@ -1805,9 +1590,6 @@ class TrainingStoreTests {
         assertTrue(server.fixes.isEmpty() && server.removed.isEmpty())
     }
 
-    // THE DELETE IS NOT TOLD UNTIL THE WINDOW CLOSES. The log has no undelete, so a delete already
-    // on the wire could only be apologised for — the row comes off the screen, the offer to take it
-    // back stands for the same nine seconds the logger's does, and only then does anything go out.
     @Test
     fun testADeleteIsWithheldUntilTheWindowClosesAndUndoTakesItBackUnsent() = runTest {
         val server = FakeTraining()
@@ -1841,10 +1623,6 @@ class TrainingStoreTests {
             listOf(270.0), store.logged.map { it.tonnageKg })
     }
 
-    // ONE SLOT, AND A SECOND DELETE SETTLES THE FIRST. Overwriting the slot would make a
-    // destructive gesture do nothing at all — the first set told to nobody, and its row walking
-    // back onto the screen underneath the second one's Undo. It is the logger's own rule: the queue
-    // holds every set inside its window and only the LAST one can be taken back.
     @Test
     fun testASecondDeleteInsideTheWindowSendsTheFirstRatherThanDroppingIt() = runTest {
         val server = FakeTraining()
@@ -1872,8 +1650,6 @@ class TrainingStoreTests {
             listOf(second.id), server.sets.getValue("ses_1").map { it.id })
     }
 
-    // A delete the log could not take must not be drawn as one that happened, and the row comes
-    // back: the store answers with what went wrong rather than with a bool nobody can act on.
     @Test
     fun testADeleteTheLogCouldNotTakeIsSaidAndTheRowStands() = runTest {
         val server = FakeTraining()
@@ -1891,9 +1667,6 @@ class TrainingStoreTests {
         assertEquals(listOf(taken.id), server.sets.getValue("ses_1").map { it.id })
     }
 
-    // A withheld delete goes with the seat, and it goes UNSENT: the row it was aimed at belongs to
-    // the account that is leaving, and settling it after the change would take a set off the log of
-    // the account that just arrived.
     @Test
     fun testAWithheldDeleteIsDroppedRatherThanSentAtSomebodyElsesLog() = runTest {
         val server = FakeTraining()
@@ -1911,9 +1684,6 @@ class TrainingStoreTests {
             server.removed.isEmpty())
     }
 
-    // A read that never came back is not an empty log. The rows already in hand stay — they are
-    // real sessions — and the foot is where the failure is SAID, with the one move that answers it:
-    // the retry re-asks the same question, from the top when nothing landed at all.
     @Test
     fun testAFailedLogReadIsSaidAtTheFootAndRetriedFromWhereItStopped() = runTest {
         val server = FakeTraining()
@@ -1933,10 +1703,6 @@ class TrainingStoreTests {
         assertEquals(Older.End, store.older)
     }
 
-    // KILOGRAMS ARE THE ONLY THING STORED, AND THIS IS THE PROOF. The unit is a display transform at
-    // the very edge; it reaches no write. An account reading in pounds logs the same 82.5 the wire
-    // has always carried, the queue holds the same number, and the string `lb` appears nowhere
-    // except in the settings document itself.
     @Test
     fun testUnitsAreADisplayTransformAndReachNoWrite() = runTest {
         val server = FakeTraining()
@@ -1953,14 +1719,10 @@ class TrainingStoreTests {
         assertFalse("no unit reached the set that was written: $written", written.contains("lb"))
         assertFalse(written.contains("units"))
 
-        // ...and switching back rewrites no history: the row on the log is the row it always was.
         assertNull(store.savePreferences(GymPreferences(units = Units.Kilograms)))
         assertEquals(listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
     }
 
-    // A room set up before signing in is the lifter's, and the sign-in claims it exactly as it
-    // claims their movements, routines and sessions. A lifter who set their rest on the bus must not
-    // lose it at the door.
     @Test
     fun testARoomSetUpSignedOutIsClaimedOntoTheAccount() = runTest {
         val server = FakeTraining()
@@ -1979,8 +1741,6 @@ class TrainingStoreTests {
         assertEquals(Units.Pounds, relaunched.preferences.units)
     }
 
-    // And the other direction: an account that already has settings hands them to a phone that has
-    // never opened the screen — rather than that phone's untouched defaults overwriting them.
     @Test
     fun testAnAccountsOwnSettingsArriveOnConnectAndAreNotOverwrittenByAFreshPhone() = runTest {
         val server = FakeTraining()
@@ -1994,9 +1754,6 @@ class TrainingStoreTests {
         assertTrue("a phone with nothing to say says nothing", server.settingsWritten.isEmpty())
     }
 
-    // A setting the log could not take is not a lost setting — the device is holding it and the
-    // claim carries it — but a room that said nothing would leave the lifter believing the account
-    // had it.
     @Test
     fun testASettingTheLogCannotTakeIsHeldHereAndSaidOutLoud() = runTest {
         val server = FakeTraining()
@@ -2015,18 +1772,8 @@ class TrainingStoreTests {
         assertEquals(90, server.settings?.restSeconds)
     }
 
-    // A SETTING THAT WILL NOT LAND RETRIES BY ITSELF, and this is the shape of that retry. It is
-    // carried on the same four-second cadence the owed sets ride — so it does not wait for the next
-    // connect — but the pass it schedules sends the DOCUMENT and nothing else. A room that folded
-    // this into `claimOwed` re-walked the whole claim every four seconds forever, re-sending a live
-    // start the log had already refused and starving the log re-read behind it, on an idle screen
-    // with an empty queue. A 404 is what a server that has not deployed this route answers, and it
-    // is retryable, so this is not a hypothetical shape.
     @Test
     fun testAnOwedSettingRetriesAloneRatherThanReWalkingTheClaim() = runTest {
-        // The phone's own workout, made signed out, against an account that already has one open:
-        // the claim's live start WAITS for that workout to close, and a wait is event-driven — it
-        // is one of the two stops that must never be polled.
         val server = FakeTraining()
         server.open(Session(id = "ses_other", startedAtMs = 500))
         val store = makeStore(sync = server)
@@ -2049,7 +1796,6 @@ class TrainingStoreTests {
         assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
         assertEquals("and the row on screen is still the lifter's", 90, store.preferences.restSeconds)
 
-        // ...and it stops the moment the log takes it: no set was ever owed, so nothing stays armed.
         server.refusePreferences = null
         advanceTimeBy(4_100)
         runCurrent()
@@ -2060,15 +1806,6 @@ class TrainingStoreTests {
         assertTrue("the cadence is not a heartbeat", server.calls.isEmpty())
     }
 
-    // THE ONE THING A FIRST SESSION HAS TO GET RIGHT, AND IT IS NOT A SCREEN. A lifter arrives with
-    // no account, no network and nothing on the phone, taps "Just start logging" (R6 retired the
-    // auto-start: every session begins with a tap now), logs four sets, and the process dies — the
-    // app swiped away, the activity destroyed, the phone out of battery. Every one of those sets
-    // has to still be there, and so does the session they belong to and the order they were walked
-    // in.
-    //
-    // The risk the design names is a first-session flow that starts through a path the local shelf
-    // does not know about. This drives the real one: the tap's start is the queue's own.
     @Test
     fun testAFreshArrivalLogsFourSetsAndARelaunchLosesNoneOfThem() = runTest {
         val arriving = makeStore(sync = null)
@@ -2091,8 +1828,6 @@ class TrainingStoreTests {
         assertEquals("the whole workout is on this device's disk and nowhere else",
             4, queueOnDisk(null).sets(arriving.session!!.id).size)
 
-        // The process dies here. Nothing was flushed on the way out, nobody signed in, and no
-        // network was ever reachable.
         val reopened = makeStore(sync = null)
         reopened.connect(account(signedIn = false))
 
@@ -2104,34 +1839,22 @@ class TrainingStoreTests {
             "bench-press", reopened.exerciseId)
     }
 
-    // WHAT A FIRST SESSION IS: a room whose reads CAME BACK, and came back empty. Nothing on this
-    // device remembers a lifter, counts an arrival or counts a decline — but "this lifter has no
-    // log" is a claim, and an empty list is only a claim once something answered with it. An empty
-    // page is not an empty history; a page that said "there is no more" is. It is what pins the six
-    // over the picker and the first-session wording — the §J22 auto-start that used to read the
-    // same fact on arrival is retired (R6).
     @Test
     fun testAFirstSessionIsALogThatAnsweredAndAnsweredEmpty() = runTest {
         val fresh = makeStore(sync = null)
         fresh.connect(account(signedIn = false))
         assertTrue("signed out the shelf IS the log, and it is already in hand", fresh.firstSession)
 
-        // A brand new account is a first session too, and for the same reason: every read landed.
         val opened = makeStore(sync = FakeTraining())
         opened.connect(account(signedIn = true))
         assertTrue("nothing on the log, and the log said so", opened.firstSession)
 
-        // A READ THAT MISSED IS NOT AN EMPTY HISTORY. This is the returning lifter on a phone with
-        // no signal, and a room that treated them as brand new would pin the six over a catalog of
-        // sixty-four it merely could not see.
         val offline = FakeTraining()
         offline.online = false
         val unreachable = makeStore(sync = offline)
         unreachable.connect(account(signedIn = true))
         assertFalse("the log page never answered", unreachable.firstSession)
 
-        // The same fact through the other read: the sessions page can answer while the routines page
-        // does not, and a routine list that never arrived is not a lifter who has written none.
         val halfRead = FakeTraining()
         halfRead.refuseRoutinesRead = IOException("offline")
         val partly = makeStore(sync = halfRead)
@@ -2152,10 +1875,6 @@ class TrainingStoreTests {
         assertFalse("and it still does on the next launch", relaunched.firstSession)
     }
 
-    // §A2'S TWO GESTURES, and the promise under both: nothing a lifter logged leaves on either. A
-    // drag moves the walk order and only the walk order, and a swipe is refused outright on a
-    // movement with a set in it — the row would be somebody's own work going off the log on a flick
-    // made at arm's length.
     @Test
     fun testAReorderMovesTheWalkAndASwipeRefusesAMovementWithASetInIt() = runTest {
         val store = makeStore(sync = null)
@@ -2187,10 +1906,6 @@ class TrainingStoreTests {
         assertEquals(listOf("back-squat", "bench-press"), queueOnDisk(null).order)
     }
 
-    // THE PICKER'S META, and the absence it is built on. A movement the lifter has never trained
-    // has NO row — there is no zero to tell apart from a real one — and the shelf is merged into
-    // the log's answer rather than losing to it, because drawing `never logged` over a lift this
-    // same phone recorded yesterday would be the product lying about the log it is standing on.
     @Test
     fun testThePickerMetaIsSparseAndTakesTheLaterOfTheLogAndTheShelf() = runTest {
         val store = makeStore(sync = null)
@@ -2211,8 +1926,6 @@ class TrainingStoreTests {
         assertNull("and a movement nobody has trained is answered by saying nothing",
             store.lastSets?.get("chin-up"))
 
-        // Signed in with a claim that cannot land: the account's own rows arrive, and the session
-        // still on this device's shelf is later than the log's line for the same movement.
         val server = FakeTraining()
         server.refuseStart = { storageFailure }
         server.served.add(LastSet("back-squat", 90.0, 5, atMs = 500))
@@ -2226,21 +1939,14 @@ class TrainingStoreTests {
             102.5, signedIn.lastSets?.getValue("back-squat")?.weightKg)
         assertEquals(80.0, signedIn.lastSets?.getValue("bench-press")?.weightKg)
 
-        // A read that never came back leaves the last answer standing: `never logged` is an
-        // assertion about a lifter's history, and a phone in a basement has not earned it.
         server.online = false
         signedIn.loadLastSets()
         assertEquals(setOf("back-squat", "bench-press"), signedIn.lastSets?.keys)
     }
 
-    // A READ THAT NEVER LANDED IS NOT A HISTORY THAT IS EMPTY, and the picker has exactly one place
-    // to keep the difference: the map itself. Absent a row it says `never logged`, so a failure that
-    // published an empty map — or half an answer — would say that about every movement in the
-    // catalog, over a log this same phone is holding.
     @Test
     fun testAFailedMetaReadSaysNothingRatherThanNeverLogged() = runTest {
         val server = FakeTraining()
-        // The claim cannot land, so the workout stays on this phone's own shelf — and it is real.
         server.refuseStart = { storageFailure }
         val store = makeStore(sync = server)
         store.connect(account(signedIn = false))
@@ -2257,19 +1963,14 @@ class TrainingStoreTests {
         assertNull("the log never answered, so the picker asserts nothing about any movement",
             store.lastSets)
 
-        // And when it does answer, the shelf's own row is merged back in rather than lost.
         server.online = true
         store.loadLastSets()
         assertEquals(80.0, store.lastSets!!.getValue("bench-press").weightKg, 0.0)
     }
 
-    // SIGNING IN UNDER THE OPEN PICKER. The account card is ON the picker (§J22), so the one screen
-    // that reads this meta is still standing when the seat changes — and its own effect does not run
-    // again, because nothing about the picker moved. The seat that arrives answers for itself.
     @Test
     fun testSigningInUnderTheOpenPickerRefillsTheMetaItJustDropped() = runTest {
         val server = FakeTraining()
-        // The claim cannot land, so the shelf keeps its session and its line stays this phone's.
         server.refuseStart = { storageFailure }
         server.served.add(LastSet("bench-press", 100.0, 3, atMs = 900))
         val store = makeStore(sync = server)
@@ -2282,18 +1983,12 @@ class TrainingStoreTests {
         store.loadLastSets()
         assertEquals(140.0, store.lastSets!!.getValue("back-squat").weightKg, 0.0)
 
-        // The lifter taps `Build my routine →` and signs in without leaving the picker. Nothing
-        // about the picker moves, so its own effect never runs again.
         store.connect(account(signedIn = true))
 
         assertEquals("the seat's own answer arrives without the lifter leaving the screen",
             setOf("back-squat", "bench-press"), store.lastSets?.keys)
     }
 
-    // WHAT THE PICKER SAYS WHEN THE CATALOG READ MISSED. The six ride with every seat, so a failed
-    // read no longer leaves an EMPTY catalog — it leaves a short one, and a lifter shown six rows
-    // out of their sixty-four with nothing said about the rest is the app quietly losing their
-    // catalog. A copy this device already held is not that: it is the catalog, one read behind.
     @Test
     fun testAMissedCatalogReadIsSaidOnlyWhenTheSixAreAllThatIsLeft() = runTest {
         val server = FakeTraining()
@@ -2304,7 +1999,6 @@ class TrainingStoreTests {
             bare.catalog.map { it.id })
         assertTrue(bare.catalogUnread)
 
-        // The read lands, and the sentence goes with it.
         server.online = true
         server.catalog = listOf(Exercise(id = "back-squat", name = "Back Squat"),
                                 Exercise(id = "hip-thrust", name = "Hip Thrust"))
@@ -2312,8 +2006,6 @@ class TrainingStoreTests {
         holding.connect(account(signedIn = true))
         assertFalse(holding.catalogUnread)
 
-        // And a device that already holds this seat's catalog says nothing either: the rows on
-        // screen are the lifter's own, one read behind.
         server.online = false
         val offline = makeStore(sync = server)
         offline.connect(account(signedIn = true))
@@ -2322,11 +2014,6 @@ class TrainingStoreTests {
             offline.catalog.map { it.id })
         assertFalse("a held copy is the catalog, not a gap in it", offline.catalogUnread)
     }
-    // ── THE AGENT PROPOSES ────────────────────────────────────────────────────────────────────
-    //
-    // What has to be true for a program not to move under its owner: nothing an agent sends changes
-    // a routine, the tap is the only thing that does, and a routine that moved first refuses the tap
-    // rather than applying over the top. These are the paths that lose a program.
 
     private fun aRoutine(id: String = "rt_1", revision: Int = 1) = Routine(
         id = id, name = "Push A", position = 0, revision = revision,
@@ -2348,8 +2035,6 @@ class TrainingStoreTests {
             exerciseId = "bench-press", before = ProposalTargets(5, 5, 82.5),
             after = ProposalTargets(5, 3, 87.5))))
 
-    // THE CARD ARRIVES WITH THE ROUTINES AND NOTHING ELSE FETCHES IT — no poll, no push, no badge.
-    // A boot read is the whole of what puts a proposal in front of a lifter.
     @Test
     fun testTheCardArrivesOnTheRoutineTheBootReadAlreadyMakes() = runTest {
         val server = FakeTraining()
@@ -2365,9 +2050,6 @@ class TrainingStoreTests {
         assertFalse("no second read went out for it", server.calls.contains("routine"))
     }
 
-    // SIGNED OUT THERE IS NOTHING, and nothing is asked for either: a proposal needs an account for
-    // an agent to have been granted anything against, so the shelf holds none, no read is made, and
-    // every verb answers about the ACCOUNT rather than about a signal nobody used.
     @Test
     fun testASignedOutRoomHasNoProposalsAndAsksForNone() = runTest {
         val server = FakeTraining()
@@ -2384,18 +2066,12 @@ class TrainingStoreTests {
         assertTrue(store.pendingProposals.isEmpty())
         assertTrue("nothing on the wire at all", server.calls.isEmpty())
 
-        // A routine the shelf holds has no history and that is an ANSWER: this device does not
-        // record the evening a local routine was typed, so the section is simply absent rather than
-        // a refusal about an account nobody is being asked for.
         assertEquals(GymResult.Ok(emptyList<RoutineEvent>()), store.routineHistory(store.routines.single().id))
         assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("a proposal needs your account — sign in first")),
             store.applyProposal("prop_1"))
         assertTrue("still nothing on the wire", server.calls.isEmpty())
     }
 
-    // THE TAP IS THE ONLY THING THAT MOVES A PROGRAM. Until it happens the routine reads exactly as
-    // it did — and afterwards it is the log's own document that lands, revision and all, with the
-    // card gone because the thing it was waiting for happened.
     @Test
     fun testNothingMovesUntilTheTapAndThenTheLogsOwnRoutineLands() = runTest {
         val server = FakeTraining()
@@ -2420,10 +2096,6 @@ class TrainingStoreTests {
         assertTrue("the card goes because the decision was taken", store.pendingProposals.isEmpty())
     }
 
-    // AND THE OTHER SURFACE'S DECISION MOVES THE PROGRAM HERE TOO. An apply on the web settles the
-    // proposal AND rewrites the routine, and nothing tells this phone: its one routines read
-    // happened at connect. So the refusal is where this room learns, and it re-reads rather than
-    // leaving a card standing on Today over a Tuesday that no longer says what it says.
     @Test
     fun testADecisionTakenOnAnotherSurfaceRedrawsTheProgramHere() = runTest {
         val server = FakeTraining()
@@ -2448,10 +2120,6 @@ class TrainingStoreTests {
             store.routine("rt_1")?.entries)
     }
 
-    // A ROUTINE THAT MOVED FIRST IS NEVER APPLIED OVER THE TOP. The mid-session save is a whole-
-    // document PUT — the exact write this base version exists to defend against — so the diff
-    // written before it is superseded, the tap is refused, and the room redraws the routine AS IT
-    // NOW STANDS rather than as the diff assumed.
     @Test
     fun testAMidSessionSaveSupersedesTheDiffAndTheTapIsRefused() = runTest {
         val server = FakeTraining()
@@ -2460,9 +2128,6 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        // The lifter's own hand, mid-workout: 87.5 goes to Push A from the change offer — through
-        // the store's own door, because the PUT is the write this whole token exists to defend a
-        // diff against and a test that moved the revision by hand would prove nothing about it.
         assertNull(store.save(87.5, toRoutine = "rt_1", atPosition = 1, forExercise = "bench-press"))
         assertEquals("the log moved the revision under the diff", 2,
             server.written.getValue("rt_1").revision)
@@ -2483,9 +2148,6 @@ class TrainingStoreTests {
             server.ledger.getValue("prop_1").state)
     }
 
-    // AND THE SCREEN KNOWS BEFORE IT ASKS. A base the room is already holding past is superseded on
-    // the spot, so the diff offers no Apply it knows would be refused — while a routine this phone
-    // is merely BEHIND is not superseded at all, because a stale read is not a moved program.
     @Test
     fun testASupersededDiffIsReadableOffTheRoutineTheRoomHolds() = runTest {
         val server = FakeTraining()
@@ -2500,8 +2162,6 @@ class TrainingStoreTests {
         assertFalse(waiting.supersededBy(aRoutine(revision = 1)))
     }
 
-    // DISMISS TAKES THE CARD AND LEAVES THE PROGRAM ALONE — no reason asked for, no routine sent
-    // back, and the proposal keeps its dated row so the routine's history can still show it.
     @Test
     fun testDismissTakesTheCardAndTouchesNothingElse() = runTest {
         val server = FakeTraining()
@@ -2520,9 +2180,6 @@ class TrainingStoreTests {
             (store.routineHistory("rt_1") as GymResult.Ok).value.mapNotNull { it.proposal?.id })
     }
 
-    // THE OTHER DECISION, ALREADY TAKEN — from the web, or from this phone before a reply was lost.
-    // It is terminal and it is not a loss: the answer is fixed, and the screen re-reads rather than
-    // sending the tap again.
     @Test
     fun testDecidingWhatWasAlreadyDecidedTheOtherWayIsTerminal() = runTest {
         val server = FakeTraining()
@@ -2534,13 +2191,9 @@ class TrainingStoreTests {
 
         assertEquals(ProposalOutcome.Settled("that proposal was already decided"),
             store.applyProposal("prop_1"))
-        // The SAME decision replays instead — a lost reply is always safe to send again.
         assertTrue(store.dismissProposal("prop_1") is ProposalOutcome.Decided)
     }
 
-    // AN APPLIED REMOVAL TAKES THE ROUTINE WITH IT, and the log sends no routine back because there
-    // is none — the absence is the removal having happened. Every set logged against it stays in
-    // the log: a proposal never touches one.
     @Test
     fun testAnAppliedRemovalTakesTheRoutineOffTheProgramAndLeavesTheLog() = runTest {
         val server = FakeTraining()
@@ -2558,10 +2211,6 @@ class TrainingStoreTests {
         assertTrue(store.pendingProposals.isEmpty())
     }
 
-    // AND A REMOVAL TAPPED TWICE — the first reply lost, the second answered "no such proposal"
-    // because the routine took its whole ledger with it. That 404 is the removal having HAPPENED,
-    // and what the room does about it is re-read the program rather than keep drawing a routine the
-    // log no longer holds.
     @Test
     fun testARemovalTappedTwiceLeavesTheProgramTellingTheTruth() = runTest {
         val server = FakeTraining()
@@ -2570,7 +2219,6 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        // The log applies it and the reply never arrives, so this room is still holding the routine.
         server.applyProposal("prop_1")
         assertEquals("rt_1", store.routine("rt_1")?.id)
 
@@ -2580,8 +2228,6 @@ class TrainingStoreTests {
         assertNull("the program was re-read rather than guessed at", store.routine("rt_1"))
     }
 
-    // A LOG THAT WENT QUIET IS NOT A DECISION. The proposal is still sitting on its routine, the
-    // card stays, and the tap is worth making again — the one refusal here that is not terminal.
     @Test
     fun testAnUnreachableLogLeavesTheCardExactlyWhereItWas() = runTest {
         val server = FakeTraining()
@@ -2596,9 +2242,6 @@ class TrainingStoreTests {
         assertEquals(ProposalState.Pending, server.ledger.getValue("prop_1").state)
     }
 
-    // A DECISION ON A PROPOSAL THAT IS NOT THERE — another account's, or one this phone read before
-    // the routine it belonged to was removed. Absent and forbidden are one answer, and there is
-    // nothing left to draw.
     @Test
     fun testAProposalThatIsNotThereIsOneFactAndNotAnError() = runTest {
         val server = FakeTraining()
@@ -2611,9 +2254,6 @@ class TrainingStoreTests {
             store.proposal("prop_gone"))
     }
 
-    // A NEWER PROPOSAL STANDING IN THE SLOT IS NOT HIDDEN BY THE OLD ONE BEING DECIDED. The log
-    // supersedes the old and puts the new one on the routine; a room that blanked the field on any
-    // decision would take a card nobody has read off the screen.
     @Test
     fun testDecidingAnOldProposalDoesNotHideTheOneThatReplacedIt() = runTest {
         val server = FakeTraining()
@@ -2622,7 +2262,6 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
 
-        // The agent proposes again: the log supersedes the first and hangs the second on the routine.
         server.ledger["prop_old"] = server.ledger.getValue("prop_old").copy(state = ProposalState.Superseded)
         server.propose(aProposal(id = "prop_new"))
         val fresh = server.written.getValue("rt_1")
@@ -2630,17 +2269,12 @@ class TrainingStoreTests {
         assertEquals("prop_new", store.routine("rt_1")?.pendingProposal?.id)
         assertEquals("prop_new", fresh.pendingProposal?.id)
 
-        // Dismissing the OLD one — from a screen opened before the new one landed — leaves the new
-        // card exactly where it is.
         server.ledger["prop_old"] = server.ledger.getValue("prop_old").copy(state = ProposalState.Pending)
         store.dismissProposal("prop_old")
 
         assertEquals("prop_new", store.routine("rt_1")?.pendingProposal?.id)
     }
 
-    // ASK READS THE ACCOUNT'S LOG, so signed out there is nothing to read and nobody to read it for.
-    // The door is not drawn signed out either — this is the floor under a session that expired
-    // mid-conversation, and it must not spend a round trip to find that out.
     @Test
     fun testAskSignedOutNeverReachesTheLogAndSaysWhy() = runTest {
         val server = FakeTraining()
@@ -2652,9 +2286,6 @@ class TrainingStoreTests {
         assertFalse(server.calls.contains("ask"))
     }
 
-    // A PROPOSAL MINTED IN A CONVERSATION IS A CARD ON TODAY, and the room must not have to be left
-    // and re-entered for it to exist. This room reads the routines once, at connect; an answer that
-    // mints one re-reads them, because the card IS this product's whole notification design.
     @Test
     fun testAProposalMintedInAConversationLandsOnTodayWithoutLeavingTheRoom() = runTest {
         val server = FakeTraining()
@@ -2663,7 +2294,6 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
         assertEquals(emptyList<Proposal>(), store.pendingProposals)
 
-        // The agent's tool mints it during the exchange; the reply carries the id and nothing else.
         server.propose(aProposal(id = "prop_1"))
         server.answers.add(AskAnswer(answer = "Done — as a proposal on Push A.",
             read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("prop_1")))
@@ -2676,9 +2306,6 @@ class TrainingStoreTests {
         assertEquals(listOf("prop_1"), store.pendingProposals.map { it.id })
     }
 
-    // The receipt is drawn from the reply and NEVER composed here: a count this room could arrive at
-    // on its own is a count the model could have invented. The store hands over exactly what the
-    // server served.
     @Test
     fun testTheReceiptIsTheServersNumberCarriedThrough() = runTest {
         val server = FakeTraining()
@@ -2693,9 +2320,6 @@ class TrainingStoreTests {
             (outcome as AskOutcome.Answered).answer.read)
     }
 
-    // The three shapes the screen acts on differently, and the one that must never be dressed as a
-    // failure: a ceiling is an answer, a quiet log is worth another tap, and a deployment with no
-    // Ask at all takes the door down.
     @Test
     fun testACeilingIsAnAnswerAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
         val server = FakeTraining()
@@ -2710,15 +2334,10 @@ class TrainingStoreTests {
         server.refuseAsk = refusal(404, message = "not found")
         assertEquals(AskOutcome.Absent, store.ask("thr_1", "what's stalled?"))
 
-        // §O'S FIFTH ANSWER: eight turns is a full conversation, so the question is fine and the
-        // THREAD is over — the room lets go of the id and the next ask opens a new one.
         server.refuseAsk = refusal(409, code = "ask-thread-full", message = "that conversation is full")
         assertEquals(AskOutcome.Fresh("that conversation is full"), store.ask("thr_1", "what's stalled?"))
     }
 
-    // §O — THE PAST IS READ AND NEVER HELD. A conversation's outcome is DERIVED by the server from
-    // the proposals it minted, so it moves the moment anybody applies or dismisses one: a list this
-    // store cached between visits would draw `waiting` under a diff the lifter decided this morning.
     @Test
     fun testTheThreadsListIsReadEveryTimeAndCarriesNoTurns() = runTest {
         val server = FakeTraining()
@@ -2738,15 +2357,10 @@ class TrainingStoreTests {
         assertEquals("no turns on the list read", listOf(0, 0), listed.value.map { it.turns.size })
         assertEquals("4 changes → Push A", listed.value[1].outcome.detail)
 
-        // Read again, and the log is asked again: nothing about a past is held between visits.
         store.threads()
         assertEquals(2, server.calls.count { it == "threads" })
     }
 
-    // ONE CONVERSATION, WHOLE — the turns as they were sent. And absent is a SENTENCE rather than a
-    // null the caller has to invent a reason for: another account's thread, a deleted one and one
-    // that never existed are one answer, because three a stranger could tell apart would say whether
-    // a conversation exists on somebody else's log.
     @Test
     fun testAConversationIsReadWholeAndAMissingOneAnswersInWords() = runTest {
         val server = FakeTraining()
@@ -2764,10 +2378,6 @@ class TrainingStoreTests {
             store.thread("thr_missing"))
     }
 
-    // §O'S RULE, PROVED RATHER THAN ASSUMED: DELETING A THREAD DELETES THE CONVERSATION AND NOT THE
-    // CONSEQUENCE. The proposal it minted was applied, and after the delete the routine's history
-    // still carries that dated row — because an applied change is a fact about the program rather
-    // than a message. What goes with the conversation is the DOOR onto it, and nothing else.
     @Test
     fun testDeletingAThreadLeavesTheChangeItAppliedInTheRoutinesHistory() = runTest {
         val server = FakeTraining()
@@ -2784,9 +2394,6 @@ class TrainingStoreTests {
         val row = history.mapNotNull { it.proposal }.single { it.id == "prop_1" }
         assertEquals(ProposalState.Applied, row.state)
         assertEquals("the row still says the change came from Ask", "ask", row.source.door)
-        // AND THE DOOR ONTO THE CONVERSATION IS WHAT WENT — `on delete set null` in the schema, so
-        // the row draws no `Ask ›` at all rather than one that opens a refusal. This is the half a
-        // fake that merely forgot the conversation would have got wrong.
         assertEquals("the door onto the conversation is gone with it", null, row.source.conversation)
         assertEquals("and the conversation it opened is gone",
             GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
@@ -2794,10 +2401,6 @@ class TrainingStoreTests {
         assertEquals("the program did not move on the delete", 2, store.routine("rt_1")?.revision)
     }
 
-    // A DELETE OF SOMETHING ALREADY GONE IS A DELETE THAT HAPPENED: the screen asked for a
-    // conversation not to be there, and it is not there. Every other refusal is said out loud and
-    // the row stays — a screen that crossed it out on the strength of its own tap would tell a
-    // lifter their past was deleted on a request that never landed.
     @Test
     fun testDeletingAConversationThatIsAlreadyGoneSucceedsAndAnythingElseIsSaid() = runTest {
         val server = FakeTraining()
@@ -2810,9 +2413,6 @@ class TrainingStoreTests {
         assertEquals(GymResult.Failed(WriteFailure(storageFailure)), store.deleteThread("thr_1"))
     }
 
-    // THE PAST IS THE ACCOUNT'S. Signed out there is nothing to read, nothing to delete and nobody
-    // to do it for — and no round trip is spent finding that out, because the door is not drawn
-    // signed out either.
     @Test
     fun testTheThreadDoorsNeverReachTheLogSignedOut() = runTest {
         val server = FakeTraining()
@@ -2826,9 +2426,6 @@ class TrainingStoreTests {
         assertTrue(server.calls.none { it in listOf("threads", "thread", "deleteThread") })
     }
 
-    // §M'S SAVE, and the rule the whole wave turns on: a day built at the kitchen table is savable
-    // while incomplete, and an open row travels as an ABSENCE the whole way — draft, wire, stored
-    // routine — because a zero would be a target of nothing and a prefill would be a guess.
     @Test
     fun testADayBuiltAtHomeSavesWithAnOpenRowIntact() = runTest {
         val server = FakeTraining()
@@ -2852,8 +2449,6 @@ class TrainingStoreTests {
             .sortedBy { it.position }.map { it.targetSets }.reversed())
     }
 
-    // A day with no name and a day with no movements are both refused BEFORE a round trip that
-    // could only repeat the refusal — and each says which of the two it is.
     @Test
     fun testAnEmptyDayIsRefusedInWordsAndNothingGoesOut() = runTest {
         val server = FakeTraining()
@@ -2868,8 +2463,6 @@ class TrainingStoreTests {
         assertTrue("nothing on the wire", server.calls.isEmpty())
     }
 
-    // SIGNED OUT IT LANDS ON THE SHELF, exactly as "Keep this as a routine" does, and the claim
-    // carries it later — what the lifter typed tonight is what the account receives.
     @Test
     fun testSignedOutTheDayLandsOnTheShelfAndSurvivesARelaunch() = runTest {
         val store = makeStore(sync = null)
@@ -2886,10 +2479,6 @@ class TrainingStoreTests {
         assertNull(relaunched.routines.single().entries.single().targetSets)
     }
 
-    // A ROUTINE THAT ALREADY STANDS IS WRITTEN WHOLE — the edit and the rename are one write, and it
-    // MOVES THE REVISION and supersedes what an agent proposed against the old document. That is
-    // what a rename is supposed to do, not something to work around: the day the diff was written
-    // about really did change.
     @Test
     fun testRenamingARoutineIsTheWholeDocumentAndSupersedesAPendingProposal() = runTest {
         val server = FakeTraining()
@@ -2910,9 +2499,6 @@ class TrainingStoreTests {
         assertEquals(ProposalState.Superseded, server.ledger.getValue("prop_1").state)
     }
 
-    // The routine's own dated history — how the day came to exist, and every proposal made about it
-    // since — off ONE read. Nothing polls a second route, so nothing can disagree with the document
-    // the screen is holding.
     @Test
     fun testTheRoutinesHistoryCarriesItsCreationAndItsProposalsInOneRead() = runTest {
         val server = FakeTraining()
@@ -2931,9 +2517,6 @@ class TrainingStoreTests {
         assertEquals("prop_1", history.first().proposal?.id)
     }
 
-    // A HISTORY THAT COULD NOT BE READ IS NOT AN EMPTY ONE. A routine with four decisions on it must
-    // never read as one nobody has ever touched, which is the false claim this room refuses to make
-    // about a log.
     @Test
     fun testAHistoryThatCouldNotBeReadIsNotAnEmptyOne() = runTest {
         val server = FakeTraining()
@@ -2950,10 +2533,6 @@ class TrainingStoreTests {
         assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.routineHistory("rt_1"))
     }
 
-    // §M'S DELETE, THE SHELF'S SIDE: a routine the device still holds leaves through the shelf's
-    // own door — no wire — and the sessions run under it keep every set and their frozen plan,
-    // dropping only the dead id, so the claim replays them ad-hoc rather than naming a routine the
-    // log must refuse.
     @Test
     fun testADroppedShelfRoutineLeavesAndItsSessionsKeepTheirSets() = runTest {
         val store = makeStore(sync = null)
@@ -2982,10 +2561,6 @@ class TrainingStoreTests {
             store.dropRoutine("rt_account"))
     }
 
-    // §M'S DELETE, THE ACCOUNT'S SIDE: the routine leaves only once the log says it is gone. A log
-    // that answered with a reason repeats the reason, an unreachable one says nobody answered, and
-    // in both cases the program stands exactly as it stood — a delete drawn as done on the strength
-    // of a request that never landed would be the room lying about somebody's program.
     @Test
     fun testADroppedAccountRoutineLeavesOnlyWhenTheLogSaysSo() = runTest {
         val server = FakeTraining()
@@ -3012,10 +2587,6 @@ class TrainingStoreTests {
         assertEquals(emptySet<String>(), server.written.keys)
     }
 
-    // A DELETE OF SOMETHING ALREADY GONE IS A DELETE THAT HAPPENED: the caller asked for the
-    // routine not to be there, and it is not there. The 404 answers as success and the list lets
-    // go — repeating "no such routine" over a delete would refuse the lifter the thing they asked
-    // for on the grounds that they already have it.
     @Test
     fun testADeleteOfARoutineAlreadyGoneAnswersAsSuccess() = runTest {
         val server = FakeTraining()
@@ -3024,7 +2595,6 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true))
         assertEquals(listOf("rt_1"), store.routines.map { it.id })
 
-        // Deleted from the web after this phone's read — the wire answers 404, not silence.
         server.written.remove("rt_1")
         server.refuseRoutineDelete = refusal(404, message = "no such routine")
 
@@ -3033,8 +2603,6 @@ class TrainingStoreTests {
         assertTrue("nothing to say out loud about a wish already granted", store.refusals.isEmpty())
     }
 
-    // §N'S SECOND QUESTION, AND IT IS THE CALLER'S ANSWER. This used to file every created movement
-    // as a barbell — a claim about somebody's gym made by a client that never asked.
     @Test
     fun testACreatedMovementCarriesTheLoadingTheLifterPicked() = runTest {
         val server = FakeTraining()
@@ -3054,9 +2622,6 @@ class TrainingStoreTests {
         assertEquals("bodyweight", local.equipment)
     }
 
-    // THE ALIAS IS THE ACCOUNT'S ROW, so the sheet may only promise it where the rename lands there.
-    // A movement this device minted and no claim has carried yet renames on a shelf that has no
-    // alias table at all.
     @Test
     fun testTheAliasIsOnlyPromisedWhereTheRenameReachesTheAccount() = runTest {
         val anon = makeStore(sync = null)
@@ -3065,8 +2630,6 @@ class TrainingStoreTests {
         assertFalse("signed out there is no alias table to keep anything in",
             anon.renameKeepsAnAlias(mine.id))
 
-        // Signed in with the claim unable to land that movement yet: it is still the shelf's, and it
-        // still renames there.
         val server = FakeTraining()
         server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"))
         server.refuseCreate = storageFailure
@@ -3077,8 +2640,6 @@ class TrainingStoreTests {
         assertFalse("one the claim has not carried yet does not", store.renameKeepsAnAlias(mine.id))
     }
 
-    // `untested` IS DERIVED ON THE SHELF TOO. It used to say `never trained` over a routine this
-    // same phone had recorded a session under — the aggregate the log computes, computed nowhere.
     @Test
     fun testAShelfRoutineTrainedOnThisDeviceIsNoLongerUntested() = runTest {
         val store = makeStore(sync = null, mintSession = { "ses_local" })
@@ -3097,20 +2658,10 @@ class TrainingStoreTests {
             store.routines.single().untested)
         assertEquals(store.recent.single().startedAtMs, store.routines.single().lastTrainedAtMs)
 
-        // And it is DERIVED rather than stored: discarding the only session that ever ran takes the
-        // word back, which a flag written at finish could never do.
         store.discard(store.recent.single().id)
         assertTrue(store.routines.single().untested)
     }
 
-    // ---- The second phone hunt (2026-08-16): the shared rules, each pinned against the fake that
-    // ---- now settles stale sessions, refuses appends into finished ones and 404s missing ones.
-
-    // R1 — THE QUEUE DRAINS BEFORE ANYTHING THAT SETTLES, the claim's start included. A set logged
-    // last night into a claimed live session, opened this morning with a shelf session behind it:
-    // the append lands FIRST (an append settles nothing), the claim's start settles the live session
-    // at that set's instant, and nothing is refused. Sent the other way round, the start closed the
-    // workout under the queue and the set met 409 session-finished forever.
     @Test
     fun testTheQueueDrainsBeforeTheClaimsStartCanSettleTheWorkoutUnderIt() = runTest {
         val server = FakeTraining()
@@ -3143,9 +2694,6 @@ class TrainingStoreTests {
         assertTrue(shelfOnDisk().finished.isEmpty())
     }
 
-    // R1 — A SETTLING READ WAITS FOR A CLAIM MID-REPLAY. The record read settles on the server, so
-    // it may not fire while the claim has a past session reopened; it waits for the runner to end
-    // and then reads.
     @Test
     fun testARecordReadWaitsForTheClaimRunnerToEnd() = runTest {
         val server = FakeTraining()
@@ -3176,9 +2724,6 @@ class TrainingStoreTests {
         assertTrue(server.calls.indexOf("record") > server.calls.lastIndexOf("finish"))
     }
 
-    // R2 — A SESSION THE LOG ALREADY HOLDS IS NEVER RE-STARTED BY THE CLAIM. A live session
-    // adopted from the log is written claimed; a relaunch's connect sends no start for it, and its
-    // sets walk rather than park. Nothing about that is derived from how a claim pass ended.
     @Test
     fun testAClaimedLiveSessionIsNotReStartedOnConnectAndItsSetsWalk() = runTest {
         val server = FakeTraining()
@@ -3194,10 +2739,6 @@ class TrainingStoreTests {
         assertEquals(SaveState.OnTheLog, relaunched.saveState)
     }
 
-    // R2 — THE PHONE'S OWN LIVE WORKOUT BEHIND A SHELF SESSION. The shelf start meets 409
-    // session-already-open on the phone's own claimed session: the claim skips that shelf session
-    // and carries on, the live session stays the log's — its sets walk, its finish goes to the
-    // log — and the finish then claims what was waiting behind it.
     @Test
     fun testAShelfSessionBehindThePhonesOwnLiveWorkoutWaitsForItsFinishRatherThanParkingIt() = runTest {
         val server = FakeTraining()
@@ -3225,9 +2766,6 @@ class TrainingStoreTests {
         assertEquals(setOf("ses_1", "ses_past"), store.recent.map { it.id }.toSet())
     }
 
-    // R5 — AN APPEND 404 FOR A SESSION THE LOG ONCE ANSWERED FOR IS THE WORKOUT GONE: discarded from
-    // another surface. The set is terminal and said, the session forgotten with everything owed to
-    // it, the log re-read; nothing retries every four seconds and nothing reads "offline" online.
     @Test
     fun testAnAppend404OnAClaimedSessionIsTheWorkoutGoneSaidOnceAndForgotten() = runTest {
         val server = FakeTraining()
@@ -3250,8 +2788,6 @@ class TrainingStoreTests {
         assertEquals("no cadence retries a workout that is gone", sent, server.appended.size)
     }
 
-    // R6 — FINISH RETURNS THE LOG'S ANSWER: no answer only for the transport, the log's own words
-    // for a refusal, and a 404 is the workout gone — forgotten here, the log re-read, and said.
     @Test
     fun testFinishSaysNoAnswerOnlyForTheTransportAndAGoneWorkoutIsForgotten() = runTest {
         val server = FakeTraining()
@@ -3271,9 +2807,6 @@ class TrainingStoreTests {
         assertTrue(server.calls.lastIndexOf("sessions") > server.calls.lastIndexOf("finish"))
     }
 
-    // R7 — SIGNED IN WITH NO SIGNAL, THE ROOM DRAWS THE ACCOUNT'S DEVICE COPY: the routines, the
-    // picker's meta and the names this phone last read for THIS seat, and the seat's own preferences
-    // untouched. Another seat on the same phone gets none of it.
     @Test
     fun testASignedInOfflineConnectDrawsTheAccountsDeviceCopyAndKeepsItsPreferences() = runTest {
         val server = FakeTraining()
@@ -3306,10 +2839,6 @@ class TrainingStoreTests {
         assertNull(stranger.lastSets)
     }
 
-    // R9 — A DEVICE-HELD SESSION GETS THE SERVER'S AUTO-CLOSE. Signed out, a workout abandoned in a
-    // drawer is over four hours after its last set, and it is finished AT that set on the next
-    // connect — never at whatever instant the app next opened — so it never claims as a multi-day
-    // workout. A session with no sets ended when it began; a fresh one is untouched.
     @Test
     fun testAnAbandonedDeviceSessionIsFinishedAtItsLastActivityOnConnect() = runTest {
         val minted = mutableListOf("ses_minted", "ses_second")
@@ -3345,11 +2874,6 @@ class TrainingStoreTests {
             startedAt, shelfOnDisk(null).row("ses_second")!!.session.finishedAtMs)
     }
 
-    // R9, THE CLAIMED SESSION. A workout the log already holds, abandoned thirty hours, is not the
-    // device's to finish — the log ends it at its last set the moment it is read. So connect LETS
-    // IT GO: no shelf, no finish call, and its owed sets stay queued to drain first, because an
-    // append settles nothing and the read that follows does. Offered again it would take a set
-    // thirty hours late.
     @Test
     fun testAClaimedSessionAbandonedForHoursIsLetGoOnConnectAndTheLogEndsIt() = runTest {
         val server = FakeTraining()
@@ -3384,7 +2908,6 @@ class TrainingStoreTests {
         assertTrue(server.finished.isEmpty())
     }
 
-    // R10 — A LANE BLOCKED BY A LAPSED SIGN-IN SAYS SO, and "offline" only when the transport failed.
     @Test
     fun testALapsedSignInIsNamedRatherThanCalledNoSignal() = runTest {
         val server = FakeTraining()
@@ -3400,10 +2923,6 @@ class TrainingStoreTests {
         assertTrue("still owed, never dropped", store.refusals.isEmpty())
     }
 
-    // MOBILE-3, THE REPLAY HALF, END TO END. A signed in A trains in a basement: the start is
-    // refused for want of a signal, the workout composes on the device, the finish moves it to the
-    // shelf. A signs out and B signs in. Nothing of A's may reach B's log — and nothing of A's may
-    // be thrown away to make that true.
     @Test
     fun testAWorkoutComposedOfflineUnderOneSeatIsNeverReplayedIntoTheNextAccount() = runTest {
         val alicesLog = FakeTraining()
@@ -3419,7 +2938,6 @@ class TrainingStoreTests {
         assertEquals("composed on the device, waiting for a signal",
             1, shelfOnDisk().let { it.adopt("alice"); it.finished.size })
 
-        // Sign out, then the next person signs in — on the same phone, still with no signal for A.
         store.connect(account(signedIn = false))
         store.connect(account(signedIn = true, id = "bob"))
 
@@ -3429,7 +2947,6 @@ class TrainingStoreTests {
         assertTrue("nor its sets", bobsLog.appended.isEmpty())
         assertEquals("and B's room draws none of it", emptyList<String>(), store.recent.map { it.id })
 
-        // And A's own workout is still A's — not dropped to close the leak.
         alicesLog.online = true
         store.connect(account(signedIn = true, id = "alice"))
         assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
@@ -3439,9 +2956,6 @@ class TrainingStoreTests {
             shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
     }
 
-    // MOBILE-3, THE LIVE HALF. A's live workout and its owed sets may not be drawn for the next
-    // seat — which is what sent A's numbers out under B's Bearer, met the server's per-user 404 and
-    // dropped the set as "vanished".
     @Test
     fun testThePreviousSeatsLiveWorkoutIsNotDrawnForTheNextOne() = runTest {
         val alicesLog = FakeTraining()
@@ -3468,8 +2982,6 @@ class TrainingStoreTests {
         assertEquals(listOf(100.0), store.sets.map { it.weightKg })
     }
 
-    // THE ANONYMOUS-FIRST DOOR, and it must not regress: work made before anybody signed in is
-    // claimed by the account that arrives, exactly as it always was.
     @Test
     fun testWorkMadeSignedOutStillClaimsOntoTheFirstAccountThatSignsIn() = runTest {
         val alicesLog = FakeTraining()
@@ -3487,9 +2999,6 @@ class TrainingStoreTests {
         assertTrue(shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
     }
 
-    // A SEAT THIS PROCESS COULD NOT CONFIRM DRAWS ITS OWN ROOM AND CLAIMS NOTHING. The basement
-    // survives — the room opens, the workout logs — but a remembered identity does not take
-    // ownership of work nobody has claimed yet until the server has answered for it.
     @Test
     fun testAnUnverifiedSeatDoesNotClaimTheAnonymousShelf() = runTest {
         val alicesLog = FakeTraining()
@@ -3516,12 +3025,6 @@ class TrainingStoreTests {
             alicesLog.stored.keys.toList())
     }
 
-    // THE UPGRADE, BRANCH ONE — THROUGH THE ORDERING THE APP ACTUALLY PERFORMS. The room mounts
-    // before /v1/me resolves, so `connect` is handed NOBODY first and the real account only after
-    // the restore lands; a migration that read the arriving account would therefore quarantine
-    // every signed-in lifter on earth. The decision is made off the session the DEVICE holds, at
-    // construction, which is why the store is built with a `deviceOwner` here and the connects
-    // below are exactly MainActivity's order.
     @Test
     fun testAShelfFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHoldingAtTheUpgrade() = runTest {
         val alicesLog = FakeTraining()
@@ -3538,8 +3041,6 @@ class TrainingStoreTests {
             listOf("ses_before"), alicesLog.stored.keys.toList())
         assertEquals(listOf(90.0), alicesLog.sets.getValue("ses_before").map { it.weightKg })
 
-        // And it went to A ALONE: the next account to hold the phone inherits none of it, on this
-        // launch or on a relaunch that reads the file fresh.
         val bobsLog = FakeTraining()
         val shared = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
         shared.connect(account(signedIn = false))
@@ -3548,11 +3049,6 @@ class TrainingStoreTests {
         assertNull(shared.unattributed)
     }
 
-    // THE UPGRADE, BRANCH TWO: the phone held NO session. "Nobody is signed in now" is not "nobody
-    // wrote this" — it may be exactly the last account's training after they signed out, which is
-    // the leak itself. So it is nobody's until a human with an account says otherwise, and the
-    // decision is WRITTEN DOWN: the legacy file is gone from the disk, so no later launch — not
-    // even one that does hold a session — can read it back and hand it to somebody.
     @Test
     fun testAShelfFromBeforeTheSeatsOnASignedOutPhoneIsQuarantinedAndReleasedByHand() = runTest {
         val alicesLog = FakeTraining()
@@ -3571,8 +3067,6 @@ class TrainingStoreTests {
         assertEquals(emptyList<String>(), store.recent.map { it.id })
         assertEquals("the door is still the only way out", 1, store.unattributed?.sessions)
 
-        // The relaunch, and the half that was only in memory before: a phone that now DOES hold a
-        // session re-reads this file and must still find a quarantine, not a shelf to hand over.
         val bobsLog = FakeTraining()
         val relaunched = makeStore(logs = mapOf("bob" to bobsLog), deviceOwner = "bob")
         relaunched.connect(account(signedIn = false))
@@ -3589,9 +3083,6 @@ class TrainingStoreTests {
         assertNull(relaunched.unattributed)
     }
 
-    // NOBODY SIGNED IN CANNOT SAY WHOSE THIS IS. Releasing onto the anonymous seat would hand the
-    // training to the next account to sign in, which is the leak the quarantine exists to refuse —
-    // so the tap is answered with the door rather than taken.
     @Test
     fun testTheQuarantineCannotBeClaimedBySomebodyWhoIsSignedOut() = runTest {
         val alicesLog = FakeTraining()
@@ -3607,10 +3098,6 @@ class TrainingStoreTests {
         assertEquals(listOf("ses_before"), alicesLog.stored.keys.toList())
     }
 
-    // A HALF-WORKING TAP IS A LOST WORKOUT. The queue can refuse where the shelf cannot — a seat
-    // already holding a workout has nowhere to put a second one — so it is asked FIRST, and a
-    // refusal leaves BOTH halves where they were rather than landing the shelf and dropping the
-    // rest in silence.
     @Test
     fun testAQuarantineTheQueueCannotTakeMovesNeitherHalfAndSaysSo() = runTest {
         val alicesLog = FakeTraining()
@@ -3622,7 +3109,6 @@ class TrainingStoreTests {
         store.connect(account(signedIn = true, id = "alice"))
         assertEquals(1, store.unattributed?.sessions)
 
-        // And now A is under a bar of their own.
         alicesLog.online = false
         store.start()
         store.choose("bench-press")
@@ -3652,8 +3138,6 @@ class TrainingStoreTests {
     }
 
 
-    // The mid-workout upgrade on a phone that WAS signed in: the lifter is put back under their own
-    // bar, not asked to find a settings row for it.
     @Test
     fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHolding() = runTest {
         val alicesLog = FakeTraining()

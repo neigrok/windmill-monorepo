@@ -1,19 +1,14 @@
-/* The landing family's shared vocabulary — the frame, the chrome of roles 1 and 8, and the
-   section grammar every landing composes from (eyebrow / title / sub, the three-beat row, the
-   why-Windmill trio, the closing CTA band). Promoted out of marketing.css, which had grown into
-   the roadmap's private stylesheet by accident. A product's own vignettes and panels stay in its
-   own <product>Landing.css; nothing product-shaped belongs here. */
+/* The landing family's shared vocabulary: the frame, the nav and footer chrome, and the section
+   grammar every landing composes from. */
 
 html { scroll-behavior: smooth; }
 
 /* ---- the frame ---- */
-/* Light for all four, always. A product's dark skin is a window inside its own moat markup,
-   never data-theme on this element — that is how a signed-out visitor ended up staring at
-   black-on-black. The frame carries data-brand only, so --color-brand follows the product. */
+/* Light always: the frame carries data-brand only, so --color-brand follows the product. */
 .landing { font-family: var(--font-body); }
 .wrap { max-width: 1280px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 64px); box-sizing: border-box; }
 
-/* ---- role 1 · nav ---- */
+/* ---- nav ---- */
 .landing-header {
   max-width: 1280px; margin: 0 auto; padding: 24px clamp(20px, 5vw, 64px);
   display: flex; align-items: center; gap: clamp(14px, 2.2vw, 28px); flex-wrap: wrap;
@@ -25,15 +20,11 @@ html { scroll-behavior: smooth; }
             font-family: var(--font-body); font-weight: 700; font-size: 14.5px; }
 .navlinks a { color: var(--text-secondary); }
 .navlinks a:hover { color: var(--text-primary); }
-/* The one brand-coloured link in the chrome: which product's landing you are standing on.
-   Everything else stays grey — a cross-nav painted in the brand hue reads as four CTAs. */
 .navlinks a[aria-current='page'] { color: var(--color-brand); }
 .navlinks-divider { width: 1px; height: 16px; background: var(--border-subtle); }
 
 .landing-cluster { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-/* Stands exactly where Sign in stood — same slot, same size class — so a sent link never
-   moves the nav. Clicking it reopens the door on its wait panel; it never resends by itself. */
 .landing-linksent {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
   border: 1px solid var(--border-subtle); border-radius: var(--radius-full);
@@ -47,7 +38,7 @@ html { scroll-behavior: smooth; }
   animation: wm-ember var(--duration-glow) var(--ease-glow) infinite;
 }
 
-/* ---- role 8 · footer ---- */
+/* ---- footer ---- */
 .landing-footer {
   max-width: 1280px; margin: 80px auto 0; padding: 32px clamp(20px, 5vw, 64px);
   border-top: 1px solid var(--border-subtle);
@@ -73,17 +64,15 @@ html { scroll-behavior: smooth; }
 .sectionSub { font-family: var(--font-body); font-size: 17px; line-height: 1.55; color: var(--text-secondary);
               max-width: 560px; margin: 0; text-wrap: pretty; }
 
-/* ---- role 3 · the loop, three beats ---- */
+/* ---- the loop, three beats ---- */
 .beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
 .beat { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl);
         padding: 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-/* min-width:0 lets the card shrink to its column instead of a fixed-width scene forcing it wide;
-   the product's mount* then zooms its scene to fit, so it scales rather than crops. */
 .beatNum { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
 .beatTitle { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--text-primary); margin: 4px 0 6px; }
 .beatCopy { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
 
-/* ---- role 6 · why Windmill ---- */
+/* ---- why Windmill ---- */
 .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
 .trioItem { display: flex; flex-direction: column; gap: 12px; }
 .trioIcon { width: 44px; height: 44px; border-radius: var(--radius-lg); background: var(--color-brand-soft);
@@ -91,7 +80,7 @@ html { scroll-behavior: smooth; }
 .trioTitle { font-family: var(--font-display); font-weight: 700; font-size: 19px; color: var(--text-primary); margin: 0; }
 .trioCopy { font-family: var(--font-body); font-size: 15px; line-height: 1.5; color: var(--text-secondary); margin: 0; }
 
-/* ---- role 7 · the closing band ---- */
+/* ---- the closing band ---- */
 .ctaBand { background: var(--color-brand-soft); border-radius: var(--radius-2xl); padding: 56px 40px; text-align: center;
            display: flex; flex-direction: column; align-items: center; gap: 8px; }
 
@@ -100,12 +89,9 @@ html { scroll-behavior: smooth; }
   .beat { flex-direction: row; align-items: center; gap: 24px; }
 }
 @media (max-width: 743px) {
-  /* A phone drops the page's own anchors — it can scroll — but never the family. Role 1 says
-     Roadmap · Journal · Gym · Pricing are always reachable, and the header wraps to hold them. */
   .navlinks-page, .navlinks-divider { display: none; }
   .beat { flex-direction: column; align-items: stretch; }
-  /* !important because a landing may widen its own trio inline (a duo, not a trio) — on a
-     phone every one of them is a single column regardless. */
+  /* !important: a landing may widen its own trio inline. */
   .trio { grid-template-columns: 1fr !important; gap: 32px; }
   .sectionTitle { font-size: 30px; }
   .ctaBand { padding: 40px 24px; }

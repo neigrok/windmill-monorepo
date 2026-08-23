@@ -10,7 +10,6 @@ function fresh(zoom = 1) {
   return cam;
 }
 
-// Run the glide to completion in fixed steps, so the whole ease is exercised, not just the ends.
 function settle(cam, dt = 0.06) {
   for (let i = 0; i < 200 && cam.isGliding(); i += 1) cam.update(dt);
 }
@@ -18,11 +17,10 @@ function settle(cam, dt = 0.06) {
 test('glideZoomAround — the tapped point stays pinned under the finger for the whole ease', () => {
   const cam = fresh(1);
   const px = 200;
-  const py = 150; // an off-centre tap — the case the old centre-glide lunged on
+  const py = 150;
   const world = cam.screenToWorld(px, py);
   cam.glideZoomAround(px, py, 1.6);
 
-  // At every frame the tapped world point maps back to the exact tap screen point.
   for (let i = 0; i < 12 && cam.isGliding(); i += 1) {
     cam.update(0.05);
     const screen = cam.worldToScreen(world.x, world.y);

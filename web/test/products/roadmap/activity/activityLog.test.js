@@ -1,10 +1,3 @@
-// The feed used to fabricate its own history: `fromTree` spaced one synthetic completion every
-// 2.6 hours back from the moment the tree loaded, so the rows were ordered right and dated wrong,
-// and re-dated themselves on every reload. Now a seeded deed carries the instant this device
-// actually recorded the completion, and a deed we hold no stamp for is undated rather than
-// plausible — the two properties this suite pins, because both are invisible to the eye that only
-// checks the order.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

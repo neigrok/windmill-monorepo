@@ -1,8 +1,4 @@
-// Live presence overlay — remote peers' cursors drawn as a DOM layer above the GPU
-// canvas. Peer state lives in peersRef (a Map the view fills from presence/peer frames);
-// this layer projects each peer's world-space cursor to screen space on its own rAF loop
-// (never through React, so a moving camera or a peer cursor at 20 Hz costs no re-renders),
-// and forwards our own pointer as world coords to the socket. Cursors are inert to input.
+// Remote peers' cursors as a DOM layer above the GPU canvas, projected on its own rAF loop.
 
 import React, { useEffect, useRef } from 'react';
 

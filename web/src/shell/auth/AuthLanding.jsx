@@ -2,9 +2,7 @@ import React from 'react';
 import { Button } from '../../design-system';
 import { track } from '../../telemetry/beacon.js';
 
-// The magic-link URL is ${APP}/#/auth?token=<secret> — the token rides in the
-// fragment's query part (location.hash), never location.search, so we split the
-// hash on '?' and read it ourselves.
+// The token rides in the fragment's query part (location.hash), never location.search.
 function readTokenFromHash() {
   const hash = window.location.hash || '';
   const query = hash.indexOf('?');
@@ -16,8 +14,6 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
   const [status, setStatus] = React.useState('verifying');
   const verified = React.useRef(false);
 
-  // The one verify path — run once on mount, and again from the unreachable retry.
-  // A network brick is honest ('unreachable'), never dressed up as an expired link.
   const runVerify = React.useCallback(() => {
     const token = readTokenFromHash();
     if (!token) {
@@ -40,7 +36,7 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
   }, [onVerify, onSignedIn, onExpired]);
 
   React.useEffect(() => {
-    if (verified.current) return; // one verify per mount — survives StrictMode's double-run
+    if (verified.current) return; // one verify per mount, through StrictMode's double-run
     verified.current = true;
     runVerify();
   }, [runVerify]);
@@ -75,8 +71,6 @@ export function AuthLanding({ onVerify, onSignedIn, onExpired, onOpenDoor }) {
     );
   }
 
-  // 'verifying' — also the calm cover held through the success handoff, until the
-  // integration navigates back to the app and unmounts us. No flash either way.
   return (
     <div style={stage}>
       <div style={{ ...column, gap: 'var(--space-5)' }}>

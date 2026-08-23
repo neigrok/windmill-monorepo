@@ -34,16 +34,6 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// One drawing of the coach share, used by the screen a session ends on and by the screen it is
-// revisited from. Nothing is minted until the tap, and nothing on screen claims a link exists until
-// the log has said so — the same rule "Keep this as a routine" follows two cards up. The state
-// machine itself is Coach's (domain/CoachShare.kt), where a test can stand on the rule that matters
-// most: A REVOKE THAT DID NOT HAPPEN LEAVES THE LINK LIVE.
-//
-// The card takes the room's CoachDoors rather than the store: the mint and the revoke are the only
-// two writes this drawing may reach, and doors.origin is where the account's own client points, so
-// a debug build talking to a local server hands over a link to that server and never to
-// windmill.works.
 @Composable
 fun CoachShareCard(coach: CoachDoors, sessionId: String) {
     val scope = rememberCoroutineScope()
@@ -51,8 +41,6 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
     var state by remember(sessionId) { mutableStateOf<Coach.State>(Coach.State.Closed()) }
     val card = Coach.card(state, coach.origin)
 
-    // The one action, whatever the card currently offers: mint, or copy the link that is already
-    // live. Copying is the only thing here that never touches the log.
     fun act() {
         val standing = state
         if (standing is Coach.State.Live) {
@@ -70,10 +58,7 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
         }
     }
 
-    // A revoke that did not happen leaves the link LIVE and says so. Drawing it as dead would tell
-    // a lifter their coach can no longer read the session on the strength of a request that failed
-    // — the one mistake this card is not allowed to make. The live state is kept across the round
-    // trip rather than replaced by Working, because that is what the failure branch falls back to.
+    // A revoke that did not happen leaves the link LIVE and says so.
     fun revokeLink() {
         val live = state
         if (live !is Coach.State.Live) return
@@ -105,8 +90,6 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
         )
 
         card.link?.let { link ->
-            // The address is shown in full and not behind the word "link": what leaves the phone is
-            // what a coach can open, and a lifter is owed the sight of it before they send it.
             SelectionContainer {
                 Text(
                     link,

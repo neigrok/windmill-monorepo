@@ -1,12 +1,6 @@
-// The searchable corpus: every page's passages, each embedded on the device. Built from the delta
-// feed and re-embedded only when a page's stamp changes. In-memory — journal-scale corpora are small
-// (a decade of daily writing is a few thousand passages, which cosine in well under a frame), so the
-// vectors and the query never touch the network, which is the whole promise.
-//
-// The index is embedder-agnostic: it chunks pages into passages and ranks them by cosine, but the
-// vectors come from whatever Embedder it was built with — the instant lexical hash or the neural model
-// (embedders.js). Building a second index with a different embedder and swapping it in is how search
-// sharpens from vocabulary-match to meaning-match without this file changing at all.
+// Every page's passages, embedded on the device and re-embedded only when a page's stamp changes.
+// In-memory: the vectors and the query never touch the network. The vectors come from whatever Embedder
+// it was built with.
 
 import { chunk } from './chunk.js';
 import { cosine, topK } from './cosine.js';
@@ -18,9 +12,7 @@ export class SearchIndex {
     this.byDay = new Map();   // day -> { stamp, passages: [{ lo, hi, text, vector }] }
   }
 
-  // Add or refresh pages. A page whose stamp is unchanged is already indexed and skipped; every new
-  // passage across all changed pages is embedded in one batch, which is what makes the neural embedder
-  // (one worker round-trip, one model call) affordable.
+  // A page whose stamp is unchanged is skipped; every new passage is embedded in one batch.
   async ingest(pages) {
     const pending = [];
     for (const page of pages) {
@@ -42,9 +34,8 @@ export class SearchIndex {
     return total;
   }
 
-  // Search a feeling. The query is embedded by the same embedder as the passages, then cosine over
-  // every passage, one POSITION per day (its best passage's [lo, hi] span), best first — each carrying
-  // an honest "why" naming a real word overlap, never an interpretation.
+  // Embedded by the same embedder as the passages: one position per day, its best passage's [lo, hi]
+  // span, best first.
   async query(text, { limit = 8, floor = this.embedder.floor } = {}) {
     const q = await this.embedder.embedQuery(text);
     const queryWords = new Set(contentWords(text));
@@ -62,10 +53,8 @@ export class SearchIndex {
   }
 }
 
-// The content word the passage and the query share, else the passage's own strongest word — one
-// token, never a phrase: "close to · comparing". A real, countable overlap; it never interprets.
-// Stays a lexical signal even under the neural embedder: the score is the meaning, the why is the
-// honest anchor.
+// The content word the passage and the query share, else the passage's own strongest word. One token,
+// never a phrase, and lexical even under the neural embedder.
 function reason(passageText, queryWords) {
   const passageWords = contentWords(passageText);
   const shared = passageWords.find((w) => queryWords.has(w));

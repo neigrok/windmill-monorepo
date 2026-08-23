@@ -4,10 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-// The decisions the logger makes before it draws anything: which movements a session holds and in
-// what order, where a lifter is standing when they come back to a workout that never stopped, and
-// the four different things the card above the weight is allowed to say.
-
 private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
                  at: Long, kind: SetKind = SetKind.Working, id: String = ""): TrainingSet =
     TrainingSet(id = id.ifEmpty { "set_$at" }, exerciseId = exerciseId,
@@ -19,8 +15,6 @@ private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
 ))
 
 class LiveOrderTests {
-    // The plan is the session's spine, and a movement the plan never named still belongs to the
-    // workout that performed it — it lands after the written ones, in the order it happened.
     @Test
     fun testThePlanLeadsAndWhateverElseWasLiftedFollowsIt() {
         val order = LiveOrder.merged(
@@ -31,24 +25,18 @@ class LiveOrderTests {
         assertEquals(listOf("bench-press", "overhead-press", "cable-fly"), order)
     }
 
-    // A movement appended on the bench mid-rest belongs where the lifter put it. A second pass that
-    // re-sorted it behind the plan would move the list under a thumb already reaching for it.
     @Test
     fun testAMovementAlreadyHeldKeepsItsPlaceAtTheHead() {
         val order = LiveOrder.merged(held = listOf("cable-fly", "bench-press"), plan = pushA, sets = emptyList())
         assertEquals(listOf("cable-fly", "bench-press", "overhead-press"), order)
     }
 
-    // A movement chosen and not yet logged is an intention, and it survives — that is the whole of
-    // "no sets yet — logging one starts it".
     @Test
     fun testAMovementWithNoSetsStaysInTheOrder() {
         val order = LiveOrder.merged(held = listOf("romanian-deadlift"), plan = null, sets = emptyList())
         assertEquals(listOf("romanian-deadlift"), order)
     }
 
-    // Coming back to a workout that never stopped stands where the last set went, not at the head of
-    // a plan the lifter finished with two movements ago.
     @Test
     fun testResumingStandsAtTheMovementTheLastSetWentInto() {
         val order = listOf("bench-press", "overhead-press", "cable-fly")
@@ -65,8 +53,6 @@ class LiveOrderTests {
 }
 
 class LiveLinesTests {
-    // "set 4 of 3" is legal, normal, and says both true things at once: the plan is what was written
-    // down, the log is what happened. Nothing here warns and nothing hides the target.
     @Test
     fun testTheCounterKeepsCountingPastThePlansSetCount() {
         val entry = PlanEntry(exerciseId = "bench-press", sets = 3, reps = 5, weightKg = 82.5)
@@ -82,17 +68,12 @@ class LiveLinesTests {
         assertEquals("no target", counter.plan)
     }
 
-    // A routine line that names sets and reps and leaves the load to last time prints no load —
-    // never a zero, which would be a target nobody wrote.
     @Test
     fun testAPlanWithNoTargetWeightPrintsNoLoad() {
         val entry = PlanEntry(exerciseId = "chin-up", sets = 3, reps = 8)
         assertEquals("plan 3 × 8", LiveLines.counter(workingSetsToday = 1, planEntry = entry).plan)
     }
 
-    // A rep target the routine declined to set is `max` — a chin-up taken to whatever it gives that
-    // day. It is not a zero and it is not a blank, and the plan line has to be able to say it or a
-    // program with chin-ups in it cannot be drawn.
     @Test
     fun testAPlanWithNoRepTargetReadsAsMax() {
         val entry = PlanEntry(exerciseId = "chin-up", sets = 3)
@@ -105,10 +86,6 @@ class LiveLinesTests {
                      LiveLines.counter(workingSetsToday = 0, planEntry = loaded).plan)
     }
 
-    // §K'S OTHER POSITION LINE — "movement 3 of 6", counted off the merged walk and by position, so
-    // a movement appended on the bench counts the moment it joins. It degrades to silence rather
-    // than to a false count: no place for a movement outside the walk, and no line at all over a
-    // walk of one, where "movement 1 of 1" would be the screen narrating itself.
     @Test
     fun testTheMovementPlaceIsCountedOffTheWalkAndDegradesToSilence() {
         val order = listOf("bench-press", "overhead-press", "cable-fly")
@@ -125,9 +102,6 @@ class LiveLinesTests {
         assertNull(LiveLines.place(emptyList(), "bench-press"))
     }
 
-    // Four states, not two. A read still in flight and a read that failed are different facts, and
-    // ONLY an answer may say "first time" — a card claiming no history over a movement squatted for
-    // a year, because the phone was in a basement, is the product lying in the pixel it exists for.
     @Test
     fun testTheCardTellsAPendingReadFromAFailedOne() {
         val reading = LiveLines.prefillCard(lastTime = null, planEntry = null, routine = null,
@@ -155,8 +129,6 @@ class LiveLinesTests {
                                            readFailed = false, now = 0))
     }
 
-    // The card names the day of the program that block came from when it was not this one. Hiding
-    // that difference is what makes a lifter read Tuesday's numbers as Thursday's.
     @Test
     fun testTheCardNamesTheOtherRoutineTheBlockCameFrom() {
         val day = 1_754_000_000_000L
@@ -189,8 +161,6 @@ class LiveLinesTests {
         assertEquals("80 × 5,   80 × 5,   80 × 5,   80 × 5,   +2 more", card.body)
     }
 
-    // Warmups carry a w and never advance the counter — they count toward no volume, no record and
-    // no history, and a row that numbered them would be the first place that stopped being true.
     @Test
     fun testWarmupsCarryAWAndNeverAdvanceTheOrdinal() {
         val rows = LiveLines.rows(listOf(
@@ -205,14 +175,6 @@ class LiveLinesTests {
         assertEquals(listOf(true, false, false), rows.map { it.isWarmup })
     }
 
-    // ONE WORD FOR WHAT COUNTS. A drop and a failure are things that happened to a set the plan never
-    // asked for, so neither advances "set 3 of 5" and neither counts toward a movement's tally — the
-    // same word log.js `workingSetsOf` counts on, over the same stored session. The phone counted
-    // everything that was not a warmup and said "set 5 of 5" where the desk said "set 4 of 5".
-    //
-    // THE TODAY LIST IS DELIBERATELY NOT THIS RULE: its ordinal numbers every set that is not a
-    // warmup, drops included, because that column is the record of what was performed and not a
-    // count toward the plan — Logger.jsx's TodayList numbers them the same way.
     @Test
     fun testOnlyWorkingSetsCountTowardThePlanCounterAndTheAssemblyList() {
         val sets = listOf(
@@ -241,7 +203,6 @@ class LiveLinesTests {
                      LiveLines.rows(sets, stalled = emptySet()).map { it.index })
     }
 
-    // A movement with nothing in it says what would start it, rather than reading as a mistake.
     @Test
     fun testTheAssemblyListSaysWhereEachMovementStands() {
         val rows = LiveLines.assemblyRows(
@@ -265,10 +226,6 @@ class LiveLinesTests {
                      listOf(false, false, true), rows.map { it.canDrop })
     }
 
-    // WHAT A SWIPE MAY TAKE, and it is the narrowest thing in this wave. A movement holding a set is
-    // a lifter's own logged work and never leaves on a sideways flick; a movement the PLAN names
-    // would walk straight back on at the next draw (`merged`), so the gesture is not offered on it
-    // either. Everything appended on the bench is free to go.
     @Test
     fun testASwipeDropsOnlyAMovementThatIsNeitherLoggedNorPlanned() {
         val sets = listOf(aSet("bench-press", 82.5, 5, at = 1_000))
@@ -280,9 +237,6 @@ class LiveLinesTests {
                      false, LiveOrder.droppable("bench-press", sets, plan = null))
     }
 
-    // THE GRAB RAIL MOVES THE WALK AND NOTHING ELSE. A reorder is a permutation: the list that comes
-    // back holds exactly what went in, whichever way the finger went, because a movement lost by a
-    // drag would be a logged movement off the screen it is being logged on.
     @Test
     fun testAReorderIsAPermutationAndNeverLosesAMovement() {
         val order = listOf("bench-press", "overhead-press", "cable-fly", "chin-up")
@@ -299,8 +253,6 @@ class LiveLinesTests {
         }
     }
 
-    // An index nobody can point at leaves the list alone: the gesture that hands these in is a thumb
-    // on a list that is moving under it.
     @Test
     fun testAReorderOffTheEndsOfTheListChangesNothing() {
         val order = listOf("bench-press", "overhead-press")
@@ -319,8 +271,6 @@ class LiveLinesTests {
                      LiveLines.onThisDeviceLine(3, Blocker.Offline))
     }
 
-    // "No signal" is asserted only when the transport failed. A log that answered 500, or a session
-    // that lapsed, blocked the same sets for a different reason, and the strip names that reason.
     @Test
     fun testTheStripNamesWhatBlockedTheSetsRatherThanAssertingNoSignal() {
         assertEquals("2 sets are saved on this device only. The log didn’t answer — they flush when it does.",

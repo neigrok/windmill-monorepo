@@ -1,5 +1,4 @@
-// Uniform bucket grid over already-placed RenderNodes. Backs pointer picking
-// (nearest) and viewport label selection (within) without scanning all nodes.
+// Uniform bucket grid over already-placed RenderNodes, for picking and viewport queries.
 
 export class SpatialGrid {
   constructor(renderNodes, cellSize) {
@@ -21,9 +20,7 @@ export class SpatialGrid {
     return `${cellX},${cellY}`;
   }
 
-  // Re-bucket a node after it moves. Positions are read from the shared node
-  // objects, so callers that mutate node.x/y are already reflected in queries;
-  // this keeps the cell index (which query cells to scan) consistent too.
+  // Call after mutating node.x/y so the cell index stays consistent.
   move(id, x, y) {
     const oldKey = this.cellByNode.get(id);
     if (oldKey === undefined) return;

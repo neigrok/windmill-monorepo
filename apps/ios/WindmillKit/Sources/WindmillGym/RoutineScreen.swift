@@ -1,25 +1,8 @@
 import SwiftUI
 import WindmillPlatform
 
-// ROUTINE DETAIL — one screen since the 13 Aug update (R2): screen 30's content under screen 5's
-// chrome. The plan's rows, one primary that starts it — "Start workout", literal, never
-// name-substituted (R1) — and History below. Edit is the header's one action; Duplicate and Delete
-// moved into the editor (R3), and the standalone Rename sheet retired with them — renaming is
-// editing the inline name.
-//
-// `untested` IS AN ABSENCE AND NOT A FLAG (`Routine.isUntested`). A routine built at home has no
-// history behind it, and the word stays until its first session — which is what allows that first
-// session to disagree with it. Nothing counts down and nothing congratulates its removal.
-//
-// IT READS THE ROUTINE AGAIN ON THE WAY IN, because history rides ONLY on the single-routine route:
-// the list read carries none, so the copy in `store.routines` has an empty one and a page that drew
-// from it would show a routine with no past. The entries on screen come from the same fresh read,
-// which is also what makes an edit made on the web visible here without leaving the room.
-//
-// SIGNED OUT — or over a routine this device is still the only home for — there is no read to make
-// and no history to draw. The rows, the name and the Start are all real from the shelf, and the
-// section is simply absent: the log has nothing to date it by, and a section drawn empty would be
-// this page asking a question it already knows nobody answered.
+// `untested` is an absence and not a flag: the word stays until the routine's first session.
+// The routine is read again on the way in: history rides only on the single-routine route.
 
 struct RoutineScreen: View {
     let routineId: String
@@ -58,10 +41,6 @@ struct RoutineScreen: View {
         .task { await read() }
     }
 
-    // The name, `Edit` beside it (R2's header), then the word and the meta under both. Edit rides
-    // with the thing it acts on rather than in a corner of the room's chrome — the top-left is the
-    // shell's capsule lane and the top-right belongs to nobody, which is the same place §H puts it.
-    // Renaming is inside the editor now: the name is a field there, not a sheet here.
     private func head(_ routine: Routine) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
@@ -95,13 +74,7 @@ struct RoutineScreen: View {
         }
     }
 
-    // Every movement is a door onto its own record (§H), and the target beside it is what the day
-    // asks for — or `open`, in the ink that says the routine named nothing rather than that it named
-    // a number. A movement this lifter minted carries `· yours` (R5 — the picker's word, everywhere),
-    // so they can recognise their own.
-    //
-    // Keyed on POSITION and never on the movement: a routine may name one twice — bench heavy then
-    // bench back-off — and two rows sharing an id in a ForEach is undefined behaviour.
+    // Keyed on position, never on the movement: a routine may name one twice, and duplicate `ForEach` ids are undefined.
     private func rows(_ routine: Routine) -> some View {
         VStack(spacing: WindmillSpace.x2) {
             ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
@@ -141,17 +114,7 @@ struct RoutineScreen: View {
                 .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // WHERE THIS DAY CAME FROM, newest first, with the creation row always last. A proposal row is a
-    // door back onto the diff it settled; the creation row opens nothing, because there is nothing
-    // further to read about it.
-    //
-    // AND THE TRAIL RUNS BOTH WAYS (§O). A change that came out of a conversation carries a second
-    // door onto it, offered ONLY where the wire sent a thread id: absent means there is nothing to
-    // open — the MCP door had no conversation, or the lifter deleted the one this came from — and
-    // the row still says the change came from Ask either way. That is the whole of "delete deletes
-    // the conversation, not the consequence", drawn.
-    //
-    // A row this build cannot classify is DROPPED rather than guessed at — see `RoutineEvent.Kind`.
+    // Newest first, creation row last. A row this build cannot classify is dropped rather than guessed at.
     @ViewBuilder
     private func history(_ routine: Routine) -> some View {
         let events = routine.history.filter { $0.kind != .unknown }
@@ -162,8 +125,7 @@ struct RoutineScreen: View {
                 .kerning(0.9)
                 .foregroundStyle(skin.inkFaint)
                 .padding(.top, WindmillSpace.x2)
-            // Its PLACE in the list is the identity a ForEach follows: two events can share an
-            // instant, and an id shared in a ForEach is undefined behaviour.
+            // The place in the list is the `ForEach` identity: two events can share an instant.
             ForEach(Array(events.enumerated()), id: \.offset) { _, event in
                 if let head = event.proposal {
                     Button { onProposal(head.id) } label: {
@@ -181,8 +143,6 @@ struct RoutineScreen: View {
         }
     }
 
-    // The second door, drawn under the row it belongs to rather than inside it: two taps in one
-    // control is how a lifter reaching for the diff lands in a chat instead.
     private var conversationDoor: some View {
         HStack(spacing: WindmillSpace.x1) {
             Text(AskThreads.fromTheConversation)
@@ -219,9 +179,6 @@ struct RoutineScreen: View {
             .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // THE ONE BUTTON THAT STARTS IT, and it reads "Start workout" — literal, never name-substituted
-    // (R1): the routine's name is the screen's title, so the verb is locked and the button never
-    // shrinks a long name into it.
     private var start: some View {
         Button(action: onStart) {
             Text("Start workout")

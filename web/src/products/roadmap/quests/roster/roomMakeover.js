@@ -1,5 +1,4 @@
-// Starter quest (F5 §03): one room in two weekends — clear and prep before you
-// paint, paint before you place, style last.
+// Starter quest: one room in two weekends.
 
 export default {
   id: 'room-makeover',
@@ -9,9 +8,7 @@ export default {
   source: null,
   kinds: [
     { id: 'make', hue: 'terracotta', label: 'Make', description: 'Color, texture, and the finishing touches' },
-    // Not id 'build': that's a seeded default wearing terracotta, and recoloring it in
-    // place would keep its rank — the planted legend would read Build, Make while the
-    // card's dots promised Make, Build. A fresh id lands in the card's own order.
+    // A fresh id, not 'build': recoloring the seeded default in place would keep its rank.
     { id: 'assemble', hue: 'sky', label: 'Build', description: 'The clearing, fixing, and assembling' },
   ],
   nodes: [

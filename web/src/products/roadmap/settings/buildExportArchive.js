@@ -1,12 +1,4 @@
-// The "Your roadmaps" export (X6 §5 · settings §04): every roadmap this account can reach,
-// each written in F3's plan grammar, zipped, and handed to the browser as a download. The
-// export format IS the paste format — a file dropped back into the composer replants — so
-// this is serializePlan (the inverse of parsePlan) run once per tree, best-effort for the
-// grammar-expressible structure.
-//
-// An ordered pipeline: list every tree, materialise each one's TreeData + progress from
-// wherever it lives (a server tree loads through its repository, a device tree replays its
-// local lattice), serialise, then store the whole set as one zip and trigger the download.
+// The export format IS the paste format: a file dropped back into the composer replants.
 
 import { listAllTrees } from '../persistence/TreeRegistry.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -39,8 +31,7 @@ export async function buildExportArchive() {
   return { count: files.length };
 }
 
-// A server tree materialises through its repository: the authored document, then this
-// user's progress overlay (which already falls back to the document's seed statuses).
+// The progress overlay already falls back to the document's seed statuses.
 async function loadServerTree(treeId) {
   const repository = new HttpTreeRepository({ treeId });
   const treeData = await repository.loadTree().catch(() => null);
@@ -49,9 +40,7 @@ async function loadServerTree(treeId) {
   return { treeData, progress: { completed: overlay.completed, inProgress: overlay.inProgress } };
 }
 
-// A device tree materialises by replaying its local blob — BOTH lanes of it, since one record
-// holds the structure and this account's marks. Falls back to the document's own seed statuses
-// when this device never marked a step.
+// One local record holds both lanes: the structure and this account's marks.
 async function loadDeviceTree(treeId) {
   const saved = await new SyncStore().load(treeId).catch(() => null);
   if (!saved?.frame) return null;
@@ -71,8 +60,7 @@ function progressFrom(treeData, overlay) {
   };
 }
 
-// One .md per tree: a slug of the title, disambiguated by a short slice of the tree id so
-// two trees sharing a title never collide in the archive.
+// One .md per tree: a slug of the title, disambiguated by a short slice of the tree id.
 function fileNameFor(treeData, treeId) {
   const slug = String(treeData.title ?? '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'roadmap';

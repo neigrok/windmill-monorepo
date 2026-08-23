@@ -1,9 +1,4 @@
-// Settings §API keys. The static MCP bearers this account has minted — a credential list
-// sibling to Connected tools, for clients that can't run the OAuth flow. One row per key:
-// its name, when it was minted and when it last authenticated. Minting reveals a token once
-// (the shared McpKeyPanel) and refreshes the list; revoking is a two-step confirm and a
-// quiet toast, because a static bearer is sensitive — the key stops working the moment it
-// goes. An empty account gets a calm line and the same create door.
+// The static MCP bearers this account has minted; revoking stops a key immediately.
 
 import React, { useEffect, useState } from 'react';
 import { Button, Toast } from '../../design-system';

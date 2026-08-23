@@ -1,13 +1,7 @@
 import XCTest
 @testable import WindmillGym
 
-// §M — a routine built at home, and the two rules that decide everything about it: an open row names
-// NOTHING (and therefore names no reps and no weight either), and a routine with no history says so
-// rather than prefilling a guess.
-
 final class RoutineDraftTests: XCTestCase {
-    // A movement added carries no target at all. That is the open row, and it is what makes a
-    // routine savable while incomplete — a program copied in over two sittings.
     func testAMovementIsAddedOpenAndTheDraftIsStillSavable() {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         draft.add("deadlift")
@@ -19,7 +13,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertTrue(draft.isSavable, "rows with no targets ask at the rack — they do not block Save")
     }
 
-    // A NAME IS THE ONE THING IT CANNOT BE SAVED WITHOUT, and whitespace is not a name.
     func testANameIsRequiredAndAMovementIsRequiredAndNothingElseIs() {
         XCTAssertFalse(RoutineDraft(name: "  \n ", entries: [.init(exerciseId: "deadlift")],
                                     position: 0).isSavable)
@@ -28,8 +21,6 @@ final class RoutineDraftTests: XCTestCase {
                                    entries: [.init(exerciseId: "deadlift")], position: 0).isSavable)
     }
 
-    // `Leave it open` clears the WHOLE row. Keeping the reps would make the half-open line the
-    // server refuses, and would leave every screen drawing "5 reps of nothing".
     func testLeaveItOpenClearsTheRepsAndTheWeightAndNotJustTheSets() {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let line = draft.add("deadlift")
@@ -44,9 +35,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertNil(draft.entries[0].targetWeightKg)
     }
 
-    // A COMMIT MAY CARRY AN ABSENCE, and the draft writes it as one. This is the whole of the sheet's
-    // promise on a line an agent wrote: `3 × max` with no load is a target, and a set of numbers put
-    // there by a screen the lifter only opened to look at would be a program nobody chose.
     func testACommitCarriesTheAbsencesRatherThanFillingThem() {
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
         let line = draft.add("chin-up")
@@ -60,9 +48,6 @@ final class RoutineDraftTests: XCTestCase {
                                       weightKg: draft.entries[0].targetWeightKg), "3 × max")
     }
 
-    // THE WHOLE PATH, THE WAY A THUMB WALKS IT: a row an agent wrote, opened in the sheet, tapped
-    // `Set` without touching a stepper, and written out. What comes back is what went in, and the
-    // body on the wire carries the two absences as absences rather than as numbers this screen chose.
     func testARowOpenedAndCommittedUntouchedComesBackTheWayItWentIn() throws {
         var draft = RoutineDraft(name: "Heavy Thursday",
                                  entries: [.init(exerciseId: "back-squat", targetSets: 5, targetReps: 5),
@@ -82,9 +67,6 @@ final class RoutineDraftTests: XCTestCase {
                        "one of the two lines names reps, and only that one sends them")
     }
 
-    // Rest survives both writes: it is how long you wait, not what you are asked to do, and it is
-    // the one field of an entry this wave draws no control for. A replace that dropped it would
-    // delete what an agent or the web had set.
     func testRestIsCarriedThroughBothWrites() {
         var draft = RoutineDraft(name: "Heavy Thursday",
                                  entries: [.init(exerciseId: "deadlift", restSeconds: 180)],
@@ -96,8 +78,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(draft.entries[0].restSeconds, 180)
     }
 
-    // An EDIT writes over the same row: a fresh id would leave the old routine standing beside it.
-    // A DUPLICATE is a new routine and takes a new one.
     func testEditKeepsTheIdAndPositionAndDuplicateTakesFreshOnes() {
         let routine = Routine(id: "rt_1", name: "Heavy Thursday", position: 2,
                               entries: [RoutineEntry(position: 1, exerciseId: "deadlift",
@@ -118,7 +98,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(copy.entries.map(\.targetWeightKg), [140])
     }
 
-    // The counter counts CHARACTERS, which is the only count a lifter watching the number can check.
     func testTheCounterIsCharactersAgainstTheClientsOwnCap() {
         XCTAssertEqual(RoutineDraft.counter("Heavy Thursday"), "14/60")
         XCTAssertEqual(RoutineDraft.counter(""), "0/60")
@@ -127,10 +106,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(RoutineDraft.maxNameBytes, 80, "and the column's, in the unit it counts in")
     }
 
-    // THE COLUMN COUNTS BYTES AND THE COUNTER COUNTS LETTERS, and in Cyrillic those run out at
-    // different words: forty-five letters is eighty-three bytes, which the log refuses outright. The
-    // field stops at what can be saved, and the counter says the name is full rather than counting
-    // on toward a sixty it will never reach.
     func testANameIsCappedByTheBytesTheColumnHoldsAndNotOnlyByItsLetters() {
         let cyrillic = String(repeating: "я", count: 45)
         XCTAssertEqual(cyrillic.count, 45)
@@ -143,7 +118,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(RoutineDraft.counter(String(repeating: "я", count: 39)), "39/60")
     }
 
-    // Latin is where the two bounds do not collide, and the character cap is the one that bites.
     func testALatinNameIsCappedAtSixtyLettersAndCountsAgainstSixty() {
         let long = String(repeating: "a", count: 61)
         XCTAssertEqual(RoutineDraft.capped(long), String(repeating: "a", count: 60))
@@ -151,8 +125,6 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(RoutineDraft.capped("Heavy Thursday"), "Heavy Thursday")
     }
 
-    // THE CUT LANDS ON A CHARACTER AND NEVER INSIDE ONE. Half a letter is bytes that are not a
-    // letter, and the column refuses those rather than storing the head of somebody's word.
     func testTheCutNeverHalvesALetter() {
         let emoji = String(repeating: "🏋️‍♀️", count: 20)
         let kept = RoutineDraft.capped(emoji)
@@ -161,7 +133,6 @@ final class RoutineDraftTests: XCTestCase {
                        "what is kept is whole letters off the front and never a piece of one")
     }
 
-    // The suggestions are three and they are never a rule: nothing refuses a name that is not one.
     func testTheSuggestionsAreOfferedAndNeverEnforced() {
         XCTAssertEqual(RoutineDraft.suggestions, ["Push C", "Lower B", "Thursday"])
         XCTAssertTrue(RoutineDraft(name: "the slanty one day",
@@ -180,10 +151,6 @@ final class RoutineDraftTests: XCTestCase {
 }
 
 final class RoutineTargetTests: XCTestCase {
-    // THE RULE THIS SHEET EXISTS TO KEEP. A row with no target at all opens on the draft's opening
-    // pair — a starting point to type over — and on NO WEIGHT, because a load nobody has lifted is
-    // the number this sheet may not invent and "whatever you did last time" is what its absence
-    // already means. Nothing here comes from any history.
     func testAnOpenRowOpensOnTheOpeningPairAndNamesNoWeight() {
         let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift"))
         XCTAssertEqual(target.sets, RoutineDraft.openingSets)
@@ -192,9 +159,6 @@ final class RoutineTargetTests: XCTestCase {
         XCTAssertEqual(target.commitLine, "Set · 3 × 5")
     }
 
-    // A ROW THAT NAMES NO REPS IS `3 × max` AND STAYS IT. An agent's chin-up line opened out of
-    // curiosity must come back the way it went in — the sheet holds the absence, the button says the
-    // word, and the commit hands the absence on.
     func testARowWithNoRepTargetOpensOnMaxAndCommitsItUnchanged() {
         let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
         XCTAssertEqual(target.sets, 3)
@@ -203,9 +167,6 @@ final class RoutineTargetTests: XCTestCase {
         XCTAssertEqual(target.commitLine, "Set · 3 × max")
     }
 
-    // AND A ROW THAT NAMES NO WEIGHT KEEPS THAT TOO. `5 × 5` with no load is "whatever you did last
-    // time", which the prefill answers at the rack; twenty kilos written in here would be this
-    // screen answering a question the routine deliberately left for the lifter.
     func testARowWithNoWeightOpensOnLastTimeAndCommitsItUnchanged() {
         let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "back-squat", targetSets: 5,
                                                       targetReps: 5))
@@ -217,8 +178,6 @@ final class RoutineTargetTests: XCTestCase {
                        "the four keys still need a number to read their bands off")
     }
 
-    // Both absences have a way BACK, and neither costs the rest of the row: `Leave it open` clears
-    // all three at once and these clear one.
     func testEitherAbsenceCanBeGivenBackWithoutTouchingTheOthers() {
         var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 4,
                                                       targetReps: 8, targetWeightKg: 20))
@@ -229,9 +188,6 @@ final class RoutineTargetTests: XCTestCase {
         XCTAssertEqual(target.sets, 4)
     }
 
-    // FROM AN ABSENCE, THE FIRST TAP IS CHOOSING TO HAVE A TARGET AT ALL rather than moving one:
-    // either rep key lands on the opening value and either rung on the empty bar, so a lifter never
-    // lands one step either side of a number they never named.
     func testFromMaxAndFromLastTimeTheFirstTapLandsOnTheOpeningNumber() {
         var down = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
         down.bumpReps(-1)
@@ -258,9 +214,6 @@ final class RoutineTargetTests: XCTestCase {
         XCTAssertEqual(target.weightKg, 110)
     }
 
-    // IT IS THE SAME LADDER AS THE RACK — the bands, the boundary rule and the rounding are
-    // `Ladder`'s, pinned across three languages by a golden. A second stepper here would step a
-    // Sunday target differently from the same weight on Thursday.
     func testTheWeightMovesOnTheLaddersOwnBands() {
         var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 3,
                                                      targetReps: 5, targetWeightKg: 140))
@@ -271,8 +224,6 @@ final class RoutineTargetTests: XCTestCase {
         XCTAssertEqual(target.weightKg, 132.5)
     }
 
-    // The steppers CLAMP INTO the wire's range rather than holding at the value, so a number from
-    // outside it climbs back in on whichever button the thumb finds first.
     func testTheSetsAndRepsSteppersStayInsideTheWiresOwnBounds() {
         var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 1,
                                                      targetReps: 1, targetWeightKg: 60))
@@ -296,7 +247,6 @@ final class RoutineTargetTests: XCTestCase {
     }
 }
 
-// §M SCREEN 30 — what the page says about a routine, and none of it a constant.
 final class RoutineReadoutTests: XCTestCase {
     private let catalog = [Exercise(id: "back-squat", name: "Back Squat"),
                            Exercise(id: "deadlift", name: "Deadlift"),
@@ -308,13 +258,11 @@ final class RoutineReadoutTests: XCTestCase {
                 entries: entries, history: history)
     }
 
-    // UNTESTED IS AN ABSENCE AND NOT A FLAG, in both directions.
     func testUntestedIsTheAbsenceOfALastTrainedStamp() {
         XCTAssertTrue(routine([]).isUntested)
         XCTAssertFalse(routine([], trained: 1_700_000_000_000).isUntested)
     }
 
-    // ONE open row is NAMED, several are COUNTED, and none says nothing at all.
     func testTheOpenRowFactNamesOneAndCountsMore() {
         let named = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
                                           targetReps: 3, targetWeightKg: 110),
@@ -332,9 +280,6 @@ final class RoutineReadoutTests: XCTestCase {
         XCTAssertNil(RoutineReadout.openRows(none, in: catalog))
     }
 
-    // The meta counts what the routine holds TODAY and dates it off the creation row. A routine the
-    // log has never heard of has no creation row and says only the count — never a built date it
-    // would have had to invent.
     func testTheMetaDatesOffTheHistoryAndCountsWhatIsThereNow() {
         let now: Int64 = 1_700_000_000_000
         let built = routine([RoutineEntry(position: 1, exerciseId: "deadlift"),
@@ -346,8 +291,6 @@ final class RoutineReadoutTests: XCTestCase {
         XCTAssertEqual(RoutineReadout.meta(shelved, now: now), "1 movement")
     }
 
-    // THE ABSENCE OF `by` IS THE CLAIM. An agent that typed the day names itself instead, and
-    // an absent `movements` makes the row say less rather than borrow today's count.
     func testTheCreatedRowReadsTheAbsenceOfADoorAsTheLiftersOwnHand() {
         let at: Int64 = 1_754_697_600_000       // 9 Aug 2025
         XCTAssertEqual(RoutineReadout.created(RoutineEvent(kind: .created, atMs: at, movements: 4)),
@@ -362,7 +305,6 @@ final class RoutineReadoutTests: XCTestCase {
     }
 }
 
-// THE OPEN ROW ON THE WIRE — absence in, absence out, and never a zero.
 final class OpenRoutineEntryWireTests: XCTestCase {
     func testAnOpenEntryOmitsItsSetCountRatherThanSendingZero() throws {
         let write = RoutineWrite(id: "rt_1", name: "Heavy Thursday", position: 0,
@@ -400,15 +342,12 @@ final class OpenRoutineEntryWireTests: XCTestCase {
                                       reps: routine.entries[1].targetReps,
                                       weightKg: routine.entries[1].targetWeightKg), "3 × 5 · 140")
 
-        // Newest first, the creation row last, and it is the one the meta dates off.
         XCTAssertEqual(routine.history.map(\.kind), [.proposal, .created])
         XCTAssertEqual(routine.history[0].proposal?.id, "pr_1")
         XCTAssertNil(routine.history[1].by, "no door named is the lifter's own hand")
         XCTAssertEqual(routine.history[1].movements, 2)
     }
 
-    // A kind this build has never heard of is neither dropped from the read nor folded into one of
-    // the two it knows — it arrives as `.unknown` and the screen leaves it out.
     func testAHistoryRowThisBuildCannotClassifyDoesNotBecomeACreationRow() throws {
         let wire = """
         {"id":"rt_1","name":"Heavy Thursday","position":1,"entries":[],
@@ -418,8 +357,6 @@ final class OpenRoutineEntryWireTests: XCTestCase {
         XCTAssertEqual(routine.history.map(\.kind), [.unknown, .created])
     }
 
-    // The shelf holds routines this device MADE, which have no history to have — so nothing writes
-    // an ageing second copy of the log's answer to disk.
     func testARoutineIsWrittenToTheDeviceWithoutItsHistory() throws {
         let routine = Routine(id: "rt_1", name: "Heavy Thursday", position: 1,
                               entries: [RoutineEntry(position: 1, exerciseId: "deadlift")],
@@ -429,8 +366,6 @@ final class OpenRoutineEntryWireTests: XCTestCase {
         XCTAssertTrue(held.contains("\"entries\""))
     }
 
-    // The frozen plan carries the same absence, and the logger reads it as no plan at all rather
-    // than counting towards a set count that was never named.
     func testAnOpenLineFrozenIntoThePlanCountsTowardsNothing() throws {
         let plan = try JSONDecoder().decode(PlanEntry.self,
                                             from: Data(#"{"exerciseId":"barbell-row"}"#.utf8))
@@ -440,8 +375,6 @@ final class OpenRoutineEntryWireTests: XCTestCase {
         XCTAssertEqual(counter.plan, "no target")
     }
 
-    // A target the routine never named is nothing to measure a session against, so the finish row
-    // falls back to last time exactly as a movement with no plan line does.
     func testTheFinishComparisonDoesNotDrawAnArrowFromAnOpenTarget() {
         let against = Against(sessionId: "ses_1", routine: "Heavy Thursday", startedAtMs: 0,
                               movements: [Against.Movement(
@@ -454,8 +387,6 @@ final class OpenRoutineEntryWireTests: XCTestCase {
     }
 }
 
-// The store's half of §M, against the device's own shelf — which is the whole log signed out, and
-// still the shelf for anything the claim has not carried yet.
 @MainActor
 final class RoutineWritingTests: XCTestCase {
     private var localURL: URL!
@@ -471,9 +402,6 @@ final class RoutineWritingTests: XCTestCase {
         super.tearDown()
     }
 
-    // The shelf is handed IN rather than opened twice: a second `LocalLog` over one file is a
-    // second copy in memory, and a test that stamped through it would be checking a store that
-    // never saw the stamp.
     private func store(on shelf: LocalLog) -> TrainingStore {
         TrainingStore(queue: SetQueue(url: FileManager.default.temporaryDirectory
                                           .appendingPathComponent("q-\(UUID().uuidString).json"),
@@ -486,8 +414,6 @@ final class RoutineWritingTests: XCTestCase {
                       sync: { _ in nil })
     }
 
-    // Signed out the routine lands on this device, open rows and all, and the claim replays it when
-    // an account arrives — there is nothing special about a day nobody has trained yet.
     func testARoutineBuiltAtHomeLandsOnTheDeviceWithItsOpenRows() async {
         let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
@@ -507,9 +433,6 @@ final class RoutineWritingTests: XCTestCase {
                        "the absence survives the disk as well as the wire")
     }
 
-    // A REPLACE MAY NOT UNTEST A ROUTINE THAT HAS BEEN TRAINED. Signed out this device stamps
-    // last-trained itself, and a document composed from the draft alone carries no such stamp — so
-    // an edit would put `untested` back over a workout that had already tested it.
     func testEditingATrainedRoutineDoesNotSendItBackToUntested() async {
         let shelf = LocalLog(url: localURL, deviceHolds: nil)
         let store = store(on: shelf)
@@ -530,9 +453,6 @@ final class RoutineWritingTests: XCTestCase {
         XCTAssertFalse(changed.isUntested)
     }
 
-    // A ROUTINE RENAME IS EDITING THE INLINE NAME (R2/R3) AND THE WHOLE DOCUMENT AGAIN — there is
-    // no rename route, because a name change has to move the revision and supersede what is
-    // pending, and a second door onto that write would be a second place the rule could drift.
     func testRenamingARoutineRewritesTheDocumentAndKeepsEveryLine() async {
         let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
@@ -549,7 +469,6 @@ final class RoutineWritingTests: XCTestCase {
         XCTAssertEqual(store.routines.first?.entries.map(\.targetSets), [5, nil])
     }
 
-    // The single-routine read is where history rides, and the shelf's own routine has none to have.
     func testTheDeviceAnswersForItsOwnRoutineAndCarriesNoHistoryForIt() async {
         let store = store(on: LocalLog(url: localURL, deviceHolds: nil))
         var draft = RoutineDraft(name: "Heavy Thursday", position: 0)
@@ -568,8 +487,6 @@ final class RoutineWritingTests: XCTestCase {
         XCTAssertEqual(why, .refused("that routine is on your account — sign in to read it"))
     }
 
-    // DELETE, FROM THE EDITOR'S FOOT (R3). A routine still on this device's shelf is the device's
-    // alone to let go of — the claim simply never replays it — and nothing else on the shelf moves.
     func testDeletingAShelfRoutineLetsGoOfItAndNothingElse() async {
         let shelf = LocalLog(url: localURL, deviceHolds: nil)
         let store = store(on: shelf)
@@ -590,7 +507,6 @@ final class RoutineWritingTests: XCTestCase {
     }
 }
 
-// §N SCREEN 31 — two questions, and the second one is really asked.
 final class CreateMovementTests: XCTestCase {
     func testExactlyFourLoadingsAreOfferedAndTheirValuesAreTheWires() {
         XCTAssertEqual(Equipment.offered.map(\.0), ["barbell", "dumbbell", "machine", "bodyweight"])
@@ -598,7 +514,6 @@ final class CreateMovementTests: XCTestCase {
     }
 }
 
-// §N SCREEN 32 — the sheet proves nothing is lost, and every line of it is a read.
 final class RenameProofTests: XCTestCase {
     private let squat = Exercise(id: "back-squat", name: "Back Squat", equipment: "barbell")
 
@@ -616,13 +531,10 @@ final class RenameProofTests: XCTestCase {
                         "searchable as an alias"])
     }
 
-    // A fact with nothing to say is LEFT OUT rather than printed as a zero: `0 · unchanged` proves
-    // nothing, and this block's whole job is proving.
     func testAMovementNobodyHasLiftedProvesOnlyWhatIsTrueOfIt() {
         XCTAssertEqual(Record.proof(MovementRecord(exercise: squat)).map(\.label), ["old name"])
     }
 
-    // A single PR is one PR, and a bar with no honest estimate keeps the count without the e1RM.
     func testThePrLineCountsAndOnlyNamesAnEstimateWhereThereIsOne() {
         let bodyweight = MovementRecord(
             exercise: Exercise(id: "chin-up", name: "Chin Up", equipment: "bodyweight"),
@@ -632,9 +544,6 @@ final class RenameProofTests: XCTestCase {
                        ["9 · unchanged", "1 PR", "searchable as an alias"])
     }
 
-    // THE ALIAS LINE IS THE LOG'S TO PROMISE. A movement still on this device's shelf is renamed in
-    // place — the old name is simply gone — so a device answer omits the line rather than promising
-    // a picker something that will not find it.
     func testADeviceAnsweredPageDoesNotPromiseAnAlias() {
         let record = MovementRecord(exercise: squat, routineCount: 1, routines: ["Heavy Thursday"],
                                     sessionCount: 3)
@@ -643,7 +552,6 @@ final class RenameProofTests: XCTestCase {
         XCTAssertTrue(Record.proof(record, from: .thisDevice).allSatisfy { $0.label != "old name" })
     }
 
-    // The page hands the sheet its proof, so the sheet asks the log nothing of its own.
     func testTheRecordPageCarriesTheProofItWasReadWith() {
         let page = Record.page(MovementRecord(exercise: squat, routineCount: 1,
                                               routines: ["Push A"], sessionCount: 12),
@@ -652,8 +560,6 @@ final class RenameProofTests: XCTestCase {
         XCTAssertEqual(page.proof.map(\.said), ["12 · unchanged", "Push A", "searchable as an alias"])
     }
 
-    // `routines` is the list and `routineCount` is its length — the subhead counts, the proof names,
-    // and the two may never disagree.
     func testTheCountAndTheNamesComeOffOneRead() throws {
         let wire = """
         {"exercise":{"id":"back-squat","name":"Back Squat","pattern":"squat","equipment":"barbell",
@@ -666,8 +572,6 @@ final class RenameProofTests: XCTestCase {
         XCTAssertEqual(record.exercise.aliases, ["High-bar squat"])
     }
 
-    // An ordinary catalog row carries no aliases at all, and an absent key is an empty list rather
-    // than a decode that fails.
     func testAnExerciseWithNoAliasesDecodesToNone() throws {
         let plain = try JSONDecoder().decode(
             Exercise.self, from: Data(#"{"id":"deadlift","name":"Deadlift"}"#.utf8))
@@ -675,7 +579,6 @@ final class RenameProofTests: XCTestCase {
     }
 }
 
-// §N — the old name keeps finding the movement, so muscle memory in the picker keeps working.
 final class MovementAliasTests: XCTestCase {
     private let catalog = [
         Exercise(id: "back-squat", name: "High-bar squat", aliases: ["Back Squat"]),
@@ -688,23 +591,17 @@ final class MovementAliasTests: XCTestCase {
         XCTAssertNil(options.create, "there is something to pick, so there is nothing to mint")
     }
 
-    // The row that was FOUND by an old name says which; no other row mentions one, because a second
-    // name on every row would compete with the one the lifter chose.
     func testOnlyTheRowTheTypingFoundByAnAliasNamesIt() {
         XCTAssertEqual(PickerOptions.matching(query: "back sq", catalog: catalog, taken: [])
                            .matches.map(\.was), ["Back Squat"])
         XCTAssertEqual(PickerOptions.matching(query: "high-bar", catalog: catalog, taken: [])
                            .matches.map(\.was), [nil])
-        // An unfiltered list is led by the six and nothing on it was found by typing at all, so no
-        // row there names an old name either.
         let unfiltered = PickerOptions.matching(query: "", catalog: catalog, taken: [])
         XCTAssertEqual(unfiltered.six.map(\.id), ["back-squat", "bench-press"])
         XCTAssertEqual(unfiltered.six.map(\.was), [nil, nil])
         XCTAssertTrue(unfiltered.matches.isEmpty)
     }
 
-    // A name the catalog holds under NEITHER a name nor an alias still opens the one door a name
-    // can answer.
     func testANameNobodyHasEverUsedStillOffersTheDoorOut() {
         let options = PickerOptions.matching(query: "zercher", catalog: catalog, taken: [])
         XCTAssertEqual(options.empty, "No movement by that name.")

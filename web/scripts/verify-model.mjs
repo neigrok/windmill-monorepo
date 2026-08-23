@@ -1,8 +1,4 @@
-// Manual gate (npm run test:model), not part of the CI `node --test` run: it loads the self-hosted
-// model from public/models with remote fetching disabled — exactly the browser's production config —
-// and asserts the property the whole feature rests on: a query reaches the passage that shares its
-// meaning across different words, and unrelated lines fall below the floor. Exits nonzero if the
-// margin collapses, so a bad model swap can't ship silently.
+// Manual gate (npm run test:model), not part of the CI `node --test` run.
 
 import { pipeline, env } from '@huggingface/transformers';
 

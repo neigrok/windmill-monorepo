@@ -1,27 +1,3 @@
-// Settings · Your training log — §I's rows: units, how long the rest is, how a logged set confirms
-// itself, and the two doors out (the CSV, and the tool that reads the log). Nothing here restates an account screen: profile,
-// appearance, plan, sessions, devices, the account's own export and its close are all on this page
-// already, above and below, and gym has no theme switch of its own.
-//
-// The section is registered through routes.js and composed by a settings page that never names the
-// gym. It stays in the `data` slot for the reason the close's own consent list gives — "export what
-// you want to keep first", meaning the product exports directly above it.
-//
-// WHO IT DRAWS FOR CHANGED THIS WAVE, and the old reason survives inside the new one. This used to
-// draw nothing at all until one read said the account had a log, so that somebody who has only ever
-// grown skill trees was never offered a file of a training log they never kept. That reason is about
-// the EXPORT, and the export row still carries it. The rows above it are how the room behaves at the
-// rack — a lifter setting their rest before their first session is the normal case, not the
-// exception — so they are drawn for anyone signed in. A read that does not come back
-// still draws nothing: a toggle whose stored state is unknown is a control that would lie.
-//
-// EVERY CHANGE IS A WHOLE-DOCUMENT PUT, sent the moment it is made and redrawn off what comes back
-// (preferences.js). There is no Save button because there is nothing to hold: each row is one value,
-// and the store's answer — an unknown unit clamped — is the truth the screen shows. A refusal reverts
-// to the document the store last CONFIRMED — every landed write moves it, including one whose reply
-// arrived after a newer write was sent — and says the store's own sentence, which names the band the
-// value fell outside.
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Switch } from '../../../design-system';
 import { listMcpKeys } from '../../../shell/auth/McpKeyClient.js';
@@ -39,17 +15,10 @@ export function GymSettingsSection({ api = gymApi } = {}) {
   const [preferences, setPreferences] = useState(null);
   const [hasLog, setHasLog] = useState(false);
   const [refused, setRefused] = useState('');
-  // The document the store last confirmed, and what a refused write goes back to. A ref because it
-  // is never drawn — what is on screen is the optimistic copy above — and because the reply that
-  // reverts is written from inside a promise that would otherwise close over a stale one.
+  // The document the store last confirmed; a ref, so a reverting reply cannot close over a stale copy.
   const stored = useRef(null);
-  // Which write is the live one. Rows move faster than a round trip, so an older reply landing after
-  // a newer one would draw a setting the lifter has already moved past.
+  // An older reply landing after a newer one must not redraw the row.
   const write = useRef(0);
-  // And which write the store last CONFIRMED. A reply that is stale for the screen is still the
-  // store's answer, and it moves what a refusal reverts to: units flipped to lb (landed), rest set
-  // to a value the store refuses — the revert must go back to lb, not to the document from before
-  // both. Only a reply older than one already taken is dropped, since the store's later word stands.
   const confirmed = useRef(0);
 
   useEffect(() => {
@@ -120,9 +89,6 @@ export function GymSettingsSection({ api = gymApi } = {}) {
             label="Sound when it ends"
           />
         </div>
-        {/* WHERE THE SWITCH IS HONOURED IS SAID IN EVERY STATE, and off is the state every lifter
-            sees first: the sentence naming the phone sat in the other branch, so the default screen
-            drew a live "Sound when it ends" beside nothing that said where it sounds. */}
         {preferences.restSeconds == null && 'Off, and off is the default. '}
         Whichever target you set, your phone runs the clock between sets and sounds it. This page
         never sounds an alarm of its own.
@@ -135,13 +101,6 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         <div style={look.switchRow}>
           <Switch checked={preferences.confirmSound} onChange={(confirmSound) => change({ confirmSound })} label="Sound" />
         </div>
-        {/* THE LIMIT IS THIS SURFACE, NOT THE BROWSER, and the row has to say the true one. It read
-            "this browser has no Vibration API", which is the design's own caption and is false where
-            the gym PWA installs: Chrome on Android has `navigator.vibrate` and honours it. What is
-            actually true is that nothing is LOGGED here — the web is the mirror and the desk (§11),
-            so there is no confirmed set for either of these to answer, and no reading of `navigator`
-            would change that. A row that gave a false reason would be believed by the next person to
-            decide whether this desk could buzz after all. */}
         Sets are logged on your phone, and that is where these are honoured — a haptic where the
         platform has one, a sound where it does not. No set is logged at this desk, so nothing here
         buzzes or beeps either way; the switch records what you want, it does not act here.
@@ -160,39 +119,12 @@ export function GymSettingsSection({ api = gymApi } = {}) {
       <ConnectedLog />
 
       {refused && <p style={look.refused}>{refused}</p>}
-      {/* AND THE SECTION ENDS HERE (W9). A footnote used to close it, listing what gym does NOT draw
-          — account, appearance, plan, sessions, devices, the account's own export — and saying gym
-          does not restate them. That is the section explaining its own boundary to somebody standing
-          at the boundary: those rows are on this page, above and below, and scrolling past them
-          teaches it without a sentence. The decision itself is in this file's header. */}
     </Section>
   );
 }
 
 export default GymSettingsSection;
 
-// THE ROW THAT NAMES THE GRANT STATE, and it names it rather than owning it: the grant itself lives
-// once, in the shell's own Connected tools section, so this reads which tools reach the training log
-// and walks to the room that explains what they may do to it. Rebuilding a revoke here would be a
-// second door onto one decision.
-//
-// WHERE IT WALKS CHANGED IN W8. It used to open the shell's /connect workbench directly, which is a
-// page written about skill trees — a lifter who tapped this row in their TRAINING settings asked
-// what an agent may do to their training, and got five verbs about planting roadmaps. #/gym/connect
-// is gym's own words around the same account-level grant, and the workbench is one tap on from it.
-//
-// A read that did not come back says nothing about the state. The door still stands — it is a place
-// to go, not a claim — and no sentence under it invents a connection or denies one.
-// WHICH CREDENTIALS REACH THE LOG IS ONE RULE AND IT IS NOT THIS FILE'S. It was written out here —
-// read the scope, keep the legacy account-wide grant, keep anything naming gym — and the room this
-// row walks to needs exactly the same answer. Two copies of a predicate about what a token can reach
-// is two chances for one of them to start saying a connection is absent while it is reading; so the
-// rule lives once, beside the words that describe it (connect/connect.js), and it takes BOTH doors:
-// an approved OAuth grant and a static personal key, which is minted account-wide and reads, writes
-// and deletes in gym without ever appearing in a grant row.
-//
-// Both reads or neither, for the same reason the room takes them together: "no tool reads your log"
-// is an assertion, and half an answer to it is a wrong one rather than a smaller one.
 function ConnectedLog() {
   const [connections, setConnections] = useState(null);
 
@@ -208,10 +140,6 @@ function ConnectedLog() {
     <a href={CONNECT_HREF} style={{ ...look.door, borderColor: 'var(--color-brand)' }}>
       <span style={look.doorMain}>
         <span style={{ ...styles.primaryText, color: 'var(--color-brand)' }}>Connected log</span>
-        {/* The name and the day it arrived, and no freshness beside them: nothing in this system
-            records when a connection last READ this log (connect.js says which stamp exists and why
-            it is a different fact). The state line is the ROOM's — one vocabulary for one object, so
-            a personal key cannot be "minted" through one door and "connected" through the other. */}
         {connections?.length > 0 && (
           <span style={styles.metaText}>
             {connections.map((row) => `${row.name} · ${connectedLabel(row)}`).join('   ·   ')}
@@ -231,16 +159,12 @@ function Row({ title, aside, children }) {
         <span style={styles.primaryText}>{title}</span>
         {aside}
       </div>
-      {/* A div and not a paragraph: two of these rows put controls above their sentence, and a
-          control nested in a <p> is markup the browser silently reshapes around. */}
+      {/* A div and not a paragraph: these rows nest controls, which a <p> would reshape around. */}
       <div style={{ ...styles.calmLine, marginTop: 8 }}>{children}</div>
     </div>
   );
 }
 
-// One value, chosen from a short row of them — units, and the four rest targets. `null` is a value
-// like any other here, which is what lets "off" be a choice rather than an absence with a switch
-// beside it.
 function Choices({ options, value, label = String, onPick }) {
   return (
     <span style={look.choices}>

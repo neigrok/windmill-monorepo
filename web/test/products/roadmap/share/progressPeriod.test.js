@@ -1,9 +1,3 @@
-// The period math behind the week card (brief #20, canon C5/C6). Everything here is pure, and
-// everything here is a number the card prints in large type — so it is pinned exhaustively: the
-// count from PLANTING (never the calendar), the Week/Day label, the honest fallback for a tree with
-// no planting time, the baseline and its period-start fallback, the skipped-period carry-over, and
-// the ledger's per-period deltas.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -18,7 +12,7 @@ import {
   DAY_UNIT,
 } from '../../../../src/products/roadmap/share/progressPeriod.js';
 
-const PLANTED = 1_700_000_000_000; // a Tuesday, which is exactly the point: the weeks close on Tuesdays
+const PLANTED = 1_700_000_000_000; // a Tuesday, so the weeks close on Tuesdays
 
 const states = (...ids) => new Map(ids.map((id) => [id, 'complete']));
 
@@ -39,7 +33,7 @@ test('the label is "Week N" by default and "Day N" by choice, both counted from 
   assert.equal(at(0, DAY_UNIT), 'Day 1');
   assert.equal(at(DAY_MS * 16, WEEK_UNIT), 'Week 3');
   assert.equal(at(DAY_MS * 16, DAY_UNIT), 'Day 17');
-  assert.equal(at(DAY_MS * 99, DAY_UNIT), 'Day 100'); // the hashtag and the card agree, which is the whole point
+  assert.equal(at(DAY_MS * 99, DAY_UNIT), 'Day 100');
   assert.equal(at(0, 'fortnight'), 'Week 1');         // an unknown unit is weeks, never a guess
 });
 
@@ -144,10 +138,7 @@ test('the ledger is one tick per elapsed period, each the stamp of the card post
 
 test('the ledger never contradicts a published card, and never guesses at an unposted period', () => {
   const period = new ProgressPeriod({ plantedAt: PLANTED, now: PLANTED + PERIOD_MS * 2 }); // week 3
-  // A week worked entirely on another device and never posted about is quiet — the row states what
-  // was published, never what a local clock happened to witness.
   assert.deepEqual(ledgerDeltas({ history: [], period }), [0, 0]);
-  // Two cards inside one period are that period's published work, together.
   const twice = [{ at: PLANTED, delta: 2 }, { at: PLANTED + DAY_MS, delta: 3 }];
   assert.deepEqual(ledgerDeltas({ history: twice, period }), [5, 0]);
   // A malformed entry can never pull a tick below the floor.

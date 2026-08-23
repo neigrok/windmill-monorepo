@@ -1,13 +1,7 @@
-// What a crash is allowed to say about where it happened (audit WEB-2). Windmill keeps its secrets
-// in the fragment so they stay out of logs and referrers; a client_error used to carry that
-// fragment verbatim to /v1/events, on to Amplitude, and into Sentry as request.url. These cases are
-// the promise that only the route FAMILY leaves the page.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-// beacon.js reads window at import time to register its pagehide/visibilitychange flushes, so the
-// page has to exist before the module does.
+// beacon.js reads window at import time, so the page has to exist before the module does.
 const sent = [];
 globalThis.window = {
   location: { hash: '', pathname: '/', hostname: 'windmill.works' },
@@ -36,8 +30,6 @@ test('routeFamily — the OAuth consent params go, the screen stays', () => {
   assert.equal(routeFamily('#/oauth/authorize?client_id=abc&code_challenge=xyz'), '#/oauth/authorize');
 });
 
-// The other half of the decision: a route that says which screen broke and opens nothing is kept
-// whole, because a report that cannot name the tree is a report nobody can act on.
 test('routeFamily — the routes that carry no capability are untouched', () => {
   assert.equal(routeFamily('#/app/t_abc123'), '#/app/t_abc123');
   assert.equal(routeFamily('#/journal'), '#/journal');
@@ -63,8 +55,6 @@ test('reportError — the beaconed payload carries the family, and no secret in 
   assert.equal(JSON.stringify(body).includes('SUPERSECRETMAGICLINKTOKEN'), false);
 });
 
-// The reviewer read this one straight out of the events table: an error that stringifies the URL it
-// failed on shipped the share id that routeFamily exists to strip.
 test('reportError — a capability in the MESSAGE is struck out too, not only in the route', async () => {
   sent.length = 0;
   window.location.hash = '#/app/t_abc123';

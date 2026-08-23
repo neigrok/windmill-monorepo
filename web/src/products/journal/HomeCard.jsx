@@ -1,7 +1,4 @@
-// The journal's /app home cell (shell contract §HomeCards) — static true copy in the journal
-// register: page, the canvas, write. No fetches, no counters, nothing unlocked or earned. The
-// auth hint (read once, never fetched) only picks which door line shows; a first-ever visitor
-// reads as signed out.
+// The journal's /app home cell: static copy, no fetches. The auth hint only picks which door line shows.
 
 import React, { useState } from 'react';
 
@@ -32,8 +29,7 @@ export function HomeCard() {
 
 export default HomeCard;
 
-// The lamp dot's fallback restates the design system's --lamp-500 for scopes that haven't
-// loaded the journal ramp — the token wins wherever it exists.
+// The lamp dot's fallback restates --lamp-500 for scopes that have not loaded the journal ramp.
 const CSS = `
   .wm-jhc { display:flex; flex-direction:column; gap:8px; text-align:left; box-sizing:border-box;
             background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-xl);

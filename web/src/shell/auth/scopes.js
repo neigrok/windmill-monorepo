@@ -1,16 +1,5 @@
-// What a grant actually reaches, read from the OAuth `scope` string — the one thing the consent
-// screen must not paraphrase. Windmill is several products behind one account, so a token minted for
-// "connect my agent" can reach a skill tree, a journal or a training log, and at three different
-// depths. A screen that names three roadmap verbs while the grant can delete a workout is the kind of
-// wrong the root CLAUDE.md forbids, so both surfaces that show a scope — the consent card and the
-// settings row — read it from here.
-//
-// The wire spelling is space-delimited `<product>:<level>`, and this mirrors
-// backend/platform/domain/ToolScope.h, including the three cases it is easy to collapse and must not:
-// an EMPTY string is the legacy account-wide grant (every token minted before scopes existed carries
-// scope ''), an unreadable token confers NOTHING, and those two are opposite answers. Telling someone
-// they granted everything when the token holds nothing is merely confusing; the other way round is
-// the lie that matters.
+// The OAuth `scope` string is space-delimited `<product>:<level>`. An empty scope is the
+// account-wide grant; a scope this build cannot read confers nothing.
 
 const PRODUCTS = {
   roadmap: 'roadmaps',
@@ -18,8 +7,6 @@ const PRODUCTS = {
   gym: 'training log',
 };
 
-// One line per level, in the person's words rather than the wire's. Each says what the tool can do
-// and stops — no reassurance, and no softening of the destructive one.
 const LEVELS = {
   read: { glyph: 'dim', verb: 'See' },
   write: { glyph: 'bud', verb: 'Add to and change' },
@@ -32,10 +19,7 @@ export function productLabel(product) {
   return PRODUCTS[product] ?? product;
 }
 
-// The requested grant, read: `{ accountWide, products: [{ product, label, levels[] }] }`, products in
-// the order they were asked for and levels in ladder order. accountWide is the legacy '' grant and
-// nothing else — an unreadable scope comes back as accountWide:false with no products, which is what
-// the backend enforces for it.
+// accountWide is the '' grant only: an unreadable scope answers accountWide:false with no products.
 export function readScope(scope) {
   const tokens = String(scope ?? '').trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return { accountWide: true, products: [] };
@@ -61,9 +45,6 @@ export function readScope(scope) {
   };
 }
 
-// The grant as capability lines grouped by product — what the consent card renders. An account-wide
-// or empty grant answers no groups; the card says those in words, because "everything" and "nothing"
-// are sentences, not lists.
 export function capabilityGroups(scope) {
   return readScope(scope).products.map((group) => ({
     product: group.product,
@@ -76,17 +57,8 @@ export function capabilityGroups(scope) {
   }));
 }
 
-// Everything the consent card draws, in one read, because its three faces are one decision and
-// splitting them is how they went wrong. `reach` is 'everything' for the legacy account-wide grant,
-// 'nothing' for a scope this build cannot read, and 'listed' when there are real lines — and the
-// first two draw the SAME zero capability lines, so a card branching on "are there any lines?"
-// called every unreadable scope "Everything in your account". That is the one direction of this
-// mistake that can hurt somebody: telling a person a token holds nothing when it holds everything
-// is confusing, the other way round is the lie.
-//
-// `canDelete` is answered here for the same reason. The account-wide grant renders no delete LINE
-// and can delete in every product there is, so a card reading the answer off its own rendered list
-// handed the widest grant in the system the sentence written for the narrowest.
+// `reach` is 'everything' (account-wide), 'nothing' (unreadable) or 'listed'; the first two draw
+// zero capability lines, so a card may not branch on the line count.
 export function consentSummary(scope) {
   const { accountWide, products } = readScope(scope);
   if (accountWide) return { reach: 'everything', groups: [], canDelete: true };
@@ -98,8 +70,6 @@ export function consentSummary(scope) {
   };
 }
 
-// The one line the settings "Connected tools" row shows under a tool's name, so a grant approved
-// months ago is still legible. A grant that can delete says so — the level is never shortened away.
 export function summarizeScope(scope) {
   const { accountWide, products } = readScope(scope);
   if (accountWide) return 'Everything in your account';

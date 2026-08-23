@@ -1,14 +1,5 @@
-// The action lane (X8 §5) — the bottom band every verb lives in, because the top of a scrolling
-// list is unreachable by definition. One rail: the view pill on the left, Share on the right (the
-// owner's twin of the visitor's Fork pill), and the centre — the Tend bar — riding ABOVE the rail
-// rather than between its ends, because a field wants the whole width where a pill wants a slot.
-// The lane grows upward from the bottom edge, so nothing on the rail moves when tending lands.
-//
-// It also reports what it occupies. Its height is not knowable in advance — the Tend bar grows
-// starter chips only while it is idle and empty, the pill comes and goes with the view — so it
-// measures from its own top edge down to the bottom of the screen and hands that number to the
-// host. The list ends its scroller exactly there, so no row is ever under a button — at rest or
-// mid-scroll.
+// Measures from its own top edge to the bottom of the screen and hands that height to the host,
+// which ends the list scroller exactly there so no row lies under a button.
 
 import React, { useEffect, useRef } from 'react';
 import { Icon } from '../../../../design-system';
@@ -43,8 +34,7 @@ export function ActionLane({ left = null, center = null, right = null, lift = 0,
   );
 }
 
-// The lane's own control shape: a ≥44px cream pill, bark type, the same weight as the view pill
-// beside it. A verb that earns the rail wears this — it is never a hue, because the rail is a tool.
+// A ≥44px cream pill, bark type — never a hue.
 export function LaneButton({ icon, label, onClick }) {
   return (
     <button type="button" onClick={onClick} style={laneButton}>

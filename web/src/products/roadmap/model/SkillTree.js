@@ -1,6 +1,4 @@
-// The tree entity: validates the DAG once at construction, then answers every
-// graph question (ranks, ancestry, render projection) from indices built here.
-// Pure — no WebGL, no React.
+// Validates the DAG at construction; answers graph questions from the indices built there.
 
 import { NODE_SIZE, DEFAULT_NODE_COLOR, nodeForm } from '../theme.js';
 import { TrunkTree } from './TrunkTree.js';

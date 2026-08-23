@@ -1,10 +1,5 @@
-// The whole conversation with the training log's public API — four routes, one retry rule. The
-// importer adds no backend surface: gym's write path is already idempotent by client-minted id,
-// which is exactly what a re-runnable import needs, so this speaks the same wire a phone does.
-
-// A refusal the server named. `code` is the machine word (session-id-taken · set-id-taken ·
-// session-finished · unknown-exercise); the sentence beside it is for a human reading a log and
-// may be reworded any day, so nothing here ever branches on it.
+// `code` is the machine word (session-id-taken · set-id-taken · session-finished ·
+// unknown-exercise); `sentence` is for a human and must never be branched on.
 export class GymRefusal extends Error {
   constructor(status, code, sentence) {
     super(`${status}${code ? ` ${code}` : ''}: ${sentence}`);
@@ -24,9 +19,7 @@ export class GymClient {
     this.sleep = sleep;
   }
 
-  // 400 and 409 are the client's own facts and terminal — retrying never makes a body readable, and
-  // never un-spends an id. 5xx and a dropped connection are the server's, and are the two the queue
-  // is meant to keep trying. That split is the entire retry policy.
+  // 5xx and a dropped connection retry; 4xx is terminal, since retrying never un-spends an id.
   async send(method, path, body) {
     let lastFailure;
     for (let attempt = 1; attempt <= this.attempts; attempt += 1) {
@@ -71,10 +64,8 @@ export class GymClient {
     return body?.exercises ?? [];
   }
 
-  // Every session this tool writes is a past one, so it must never join: without the flag, an import
-  // run while the lifter has a workout open no-ops on the one-open index, is handed the LIVE session
-  // with a 200, and files years of history into today's workout. The refusal is 409
-  // `session-already-open`, and its repair is to run again once that workout has ended.
+  // joinOpenSession:false is required: without it an import run during an open workout is handed
+  // that live session and files history into it.
   async startSession(id, startedAt) {
     return this.send('POST', '/v1/gym/sessions', { id, startedAt, joinOpenSession: false });
   }

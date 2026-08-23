@@ -1,21 +1,12 @@
-// Calm edit affordances: bark-and-cream chrome that fades in on the SELECTED node
-// and vanishes on deselect (design editing-spec v2 §2.1, §3.1 — hover shows no
-// structure). A plus chip sits on the node's outward rim — opposite its parents,
-// where a child would grow — and a couple of ports dot the free rim, at the widest
-// gaps between existing branches. Tools are neutral, data is coloured: this chrome
-// never takes a kind hue.
-//
-// A scene overlay (not React): the selected node's screen position changes every
-// frame the camera moves, so it's repositioned from the render loop. The plus is
-// live (onCreate); each port starts the shared ConnectGesture.
+// Edit chrome on the selected node — a plus chip on the outward rim, ports on free rim — repositioned from the render loop. Each port starts the shared ConnectGesture.
 import { NODE_SIZE } from '../theme.js';
 import { ConnectGesture } from './ConnectGesture.js';
 
-const NODE_RADIUS = NODE_SIZE * 0.42; // the disc's world radius (matches the shader edge)
+const NODE_RADIUS = NODE_SIZE * 0.42; // world radius; matches the shader edge
 const PLUS_GAP = 16;
 const PORT_GAP = 5;
 const PORT_COUNT = 2;
-const GRACE_MS = 260; // keep chrome alive briefly after deselect, so the plus stays reachable
+const GRACE_MS = 260; // grace after deselect, so the plus stays reachable
 
 export class AffordanceLayer {
   constructor(canvas, { camera, pick, onCreate, onConnect, onReconnect, onFadeNodes, onRestoreNodes } = {}) {
@@ -63,8 +54,6 @@ export class AffordanceLayer {
     this.clear();
   }
 
-  // Selecting a node shows its chrome; deselecting schedules a hide after a grace
-  // window (cancelled if the pointer reaches the chrome), so the plus is reachable.
   setSelected(id) {
     if (this.nodesById.has(id)) {
       this.target = id;
@@ -108,16 +97,14 @@ export class AffordanceLayer {
     this.ports.forEach((port, i) => this.place(port, sx, sy, slots[i], rim + PORT_GAP));
   }
 
-  // Away from the parents (toward where a child grows); the root fans toward its
-  // children; an isolated node just points down (world is y-down).
+  // Away from the parents; a root fans toward its children; an isolated node points down (y-down world).
   outwardAngle(parentAngles, neighborAngles) {
     if (parentAngles.length > 0) return circularMean(parentAngles) + Math.PI;
     if (neighborAngles.length > 0) return circularMean(neighborAngles);
     return Math.PI / 2;
   }
 
-  // The midpoints of the widest angular gaps between occupied directions, so ports
-  // land on free rim rather than on top of a branch or the plus.
+  // Midpoints of the widest angular gaps between occupied directions.
   freeAngles(occupied, count) {
     if (occupied.length === 0) return [0, Math.PI].slice(0, count);
     const sorted = [...occupied].sort((a, b) => a - b);

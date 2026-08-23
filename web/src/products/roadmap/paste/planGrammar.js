@@ -1,21 +1,13 @@
-// paste-import (F3): the deterministic plan grammar — plain text in, a wire-ready
-// subgraph out. Pure and dependency-free on purpose: the same module runs under bare
-// node for the contract tests, and the same text always yields the same tree (node
-// ids seed the ceremony jitter, so Date.now/random may never leak in here).
-//
-// The 8 rules (design canon guidelines/paste-import.md §03), as an ordered pipeline:
-//   scan → root → branches → depth→dependency → chain-vs-fan → status → notes → assemble.
-// Parsing can never fail — the worst case is one root and a pile of ¶ notes, still
-// plantable. Every liberty taken (clamp, note, rename) is visible in the gutter.
+// The deterministic plan grammar: plain text in, a wire-ready subgraph out. The same text must
+// always yield the same tree — node ids seed the ceremony jitter, so Date.now and random may never
+// leak in here. Parsing can never fail; the worst case is one root and a pile of ¶ notes, and
+// every liberty taken is visible in the gutter.
 
 const PLAN_HUES = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
 const ROOT_LABEL_MAX = 200;
 const KIND_LABEL_MAX = 24;
 
-// `bindOnly` (append mode, F3 §01): a heading that matches no existing kind mints a
-// fresh hue instead of relabeling the next unclaimed one. Harmless at birth (the
-// throwaway defaults) but destructive on a real tree — it would rename the user's own
-// "Research" kind — so append passes bindOnly:true. Birth callers pass nothing.
+// `bindOnly`: a heading matching no existing kind mints a fresh hue instead of relabeling one.
 export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   const lines = scanLines(text);
   const root = takeRoot(lines);
@@ -23,9 +15,8 @@ export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   return assemble(root, grove, lines);
 }
 
-// One record per raw line: indent columns (tab = 2), a kind — blank | heading | item |
-// text — and the stripped content. The indent unit is the first indented line's width,
-// so 2-space, 4-space and tabbed documents all level the same way.
+// One record per raw line: indent columns (tab = 2), a kind — blank | heading | item | text — and
+// the stripped content. The indent unit is the first indented line's width.
 function scanLines(text) {
   const raws = String(text ?? '').split(/\r\n|\r|\n/);
   let unit = 0;
@@ -54,14 +45,13 @@ function scanLines(text) {
   const step = unit || 2;
   for (const line of lines) {
     line.level = Math.floor(line.cols / step);
-    line.ragged = line.cols % step !== 0; // off the document's indent grid — flooring it is a liberty
+    line.ragged = line.cols % step !== 0; // off the document's indent grid
   }
   return lines;
 }
 
-// Rule 1 — a leading `# Heading` or a first plain line is the root and the tree's
-// name (clipped to 200). A document that opens with a list or a `##` has no name:
-// the composer asks for one word, nothing else.
+// A leading `# Heading` or a first plain line is the root and the tree's name; a document opening
+// with a list or a `##` has none, and missingRoot says so.
 function takeRoot(lines) {
   const at = lines.findIndex((line) => line.kind !== 'blank');
   if (at === -1) return { title: '', missingRoot: true, line: -1 };
@@ -75,10 +65,8 @@ function takeRoot(lines) {
   return { title: '', missingRoot: true, line: -1 };
 }
 
-// The legend ledger for one parse (rule 6): a heading matching an existing kind's
-// label binds (case-insensitive); otherwise it takes the next unclaimed existing kind
-// in order and relabels it; then it mints free hues; past six it cycles — all
-// deterministic, so the same text always paints the same legend.
+// The legend ledger for one parse: a heading matching an existing kind's label binds
+// case-insensitively, else it relabels the next unclaimed kind, mints a free hue, then cycles.
 class KindBook {
   constructor(existingKinds, bindOnly = false) {
     this.kinds = existingKinds.map((kind) => ({
@@ -90,7 +78,7 @@ class KindBook {
     }));
     this.claimed = new Set();
     this.overflow = 0;
-    this.bindOnly = bindOnly; // append: never relabel an existing kind, only bind or mint
+    this.bindOnly = bindOnly; // never relabel an existing kind, only bind or mint
   }
 
   firstHue() {
@@ -136,8 +124,7 @@ class KindBook {
   }
 }
 
-// Rules 2–7 in one ordered walk. Draft nodes carry an index-parent; `marks` is the
-// gutter's raw material, one per line that spoke.
+// Draft nodes carry an index-parent; `marks` is the gutter's raw material, one per line that spoke.
 function growNodes(lines, root, existingKinds, bindOnly = false) {
   const book = new KindBook(existingKinds, bindOnly);
   const nodes = [{ role: 'root', label: root.title, hue: book.firstHue(), parent: -1, checked: false, notes: [], links: [], line: root.line }];
@@ -151,7 +138,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   lines.forEach((line, at) => {
     if (at === root.line || line.kind === 'blank') return;
 
-    // Rule 6 — a branch heading: claim a kind, reset the indent world under it.
+    // A branch heading claims a kind and resets the indent world under it.
     if (line.kind === 'heading') {
       hue = book.claim(line.content).hue;
       nodes.push({ role: 'branch', label: line.content, hue, parent: 0, checked: false, notes: [], links: [], line: at });
@@ -161,9 +148,8 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       return;
     }
 
-    // Rules 2/3/4/5/8 — depth is dependency; numbers chain, bullets fan; [x] arrives
-    // done; a level jump past the previous line clamps to the nearest real ancestor,
-    // and an indent off the document's grid flattens just as visibly.
+    // Depth is dependency, numbers chain, bullets fan, [x] arrives done. A level jump past the
+    // previous line clamps to the nearest real ancestor.
     if (line.kind === 'item') {
       const liberties = [];
       if (line.ragged) liberties.push({ type: 'clamp', detail: 'mixed indent clamped' });
@@ -186,8 +172,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       return;
     }
 
-    // Rule 7 — anything else is a note on the nearest step; a bare URL becomes a link.
-    // Nothing is ever dropped.
+    // Anything else is a note on the nearest step; a bare URL becomes a link. Nothing is dropped.
     const nearest = nodes.length - 1;
     if (/^https?:\/\/\S+$/.test(line.content)) nodes[nearest].links.push(line.content);
     else nodes[nearest].notes.push(line.content);
@@ -197,9 +182,8 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   return { nodes, marks, kinds: book.kinds };
 }
 
-// Rule 8 and the wire shape: duplicate labels get " (2)" exhaustively, ids are
-// slug + occurrence counter (never time, never random), parents become prerequisite
-// arrays, and the gutter/readout/imperfections are laid down line-for-line.
+// Duplicate labels get " (2)" exhaustively, ids are slug + occurrence counter (never time, never
+// random), and parents become prerequisite arrays.
 function assemble(root, grove, lines) {
   const labels = new Set();
   const ids = new Set();
@@ -225,7 +209,7 @@ function assemble(root, grove, lines) {
 
   const nodes = named.map(({ draft, id, label }, index) => {
     const node = { id, label, color: draft.hue, prerequisites: index === 0 ? [] : [named[draft.parent].id] };
-    if (index === 0) node.icon = 'sparkles'; // the root wears the birth spark, exactly like a hand-planted bud
+    if (index === 0) node.icon = 'sparkles'; // the root wears the birth spark
     if (draft.checked) node.status = 'complete';
     if (draft.notes.length > 0) node.description = draft.notes.join('\n');
     if (draft.links.length > 0) node.links = [...draft.links];
@@ -269,27 +253,13 @@ function slug(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 }
 
-// serializePlan (F3, the inverse) — a TreeData back into plan-grammar markdown, the
-// packing side of the settings "export your data" feature. It is BEST-EFFORT by
-// construction, because the grammar it targets is strictly single-parent and colours a
-// node by its enclosing `## section`, never per node. A general DAG therefore cannot
-// round-trip, and the losses are deliberate and named:
-//   • prerequisites[0] becomes the indent parent; every EXTRA prerequisite — and a
-//     primary parent in another colour section that can't be indented under — is kept
-//     as a `needs also: <label>, …` note. That note reparses harmlessly into the
-//     node's description: a cross/multi edge preserved as prose, not as an edge.
-//   • nodes are grouped by colour under `## <kind label>` headings, so kind
-//     DESCRIPTIONS are lost on re-parse — parsePlan blanks a relabelled/added kind's
-//     description (source 'relabeled'/'added' carry description '').
-// What survives exactly: labels, single-parent prerequisite shape, node colours, and
-// completion marks. Completion follows the app's own rule (HttpTreeRepository.loadProgress):
-// the live per-user `progress` overlay wins when supplied; otherwise the document's own
-// `status: 'complete'` seed answers.
-//   • a link's label is NOT preserved: the grammar's only link syntax is a bare URL line
-//     (parsePlan's URL rule is `^https?://\S+$`), so export emits the url and drops the label.
+// The inverse: a TreeData back into plan-grammar markdown. Best-effort — the grammar is strictly
+// single-parent and colours a node by its enclosing `## section`, so a general DAG cannot
+// round-trip. Extra prerequisites, and a primary parent in another colour section, are kept as a
+// `needs also: <label>, …` note that reparses into the description; kind descriptions and link
+// labels are lost. Labels, single-parent shape, colours and completion marks survive exactly.
 
 // The app carries links as { url, label } objects; parsePlan produces bare url strings.
-// Normalize to the url string so a link never stringifies to "[object Object]" in the export.
 const linkUrl = (link) => (typeof link === 'string' ? link : link?.url ?? '');
 export function serializePlan(treeData, kinds, progress) {
   const nodes = treeData.nodes ?? [];
@@ -301,10 +271,8 @@ export function serializePlan(treeData, kinds, progress) {
   const completed = completedNodeIds(treeData, progress);
   const root = nodes.find((node) => node.prerequisites.length === 0) ?? nodes[0];
 
-  // Partition the non-root nodes by colour, in first-appearance order — each colour is
-  // one `## section`, except the root's own colour, which stays loose (emitted under the
-  // root before any heading) unless a branch node names it. This mirrors the grammar,
-  // where pre-heading steps hang off the root and every heading owns exactly one colour.
+  // Each colour is one `## section`, in first-appearance order, except the root's own, which stays
+  // loose unless a branch node names it.
   const order = [];
   const byColor = new Map();
   for (const node of nodes) {
@@ -338,8 +306,8 @@ export function serializePlan(treeData, kinds, progress) {
   return out.join('\n');
 }
 
-// The app's honest completion source: a live `progress` overlay (a Set, an array, or a
-// Progress `{ completed }`) wins outright; with none, the document's seed statuses answer.
+// A live overlay — a Set, an array, or a Progress `{ completed }` — wins; with none, the
+// document's seed statuses answer.
 function completedNodeIds(treeData, progress) {
   if (progress == null) return new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id));
   if (progress instanceof Set) return progress;
@@ -348,11 +316,9 @@ function completedNodeIds(treeData, progress) {
   return new Set();
 }
 
-// Emit one colour section as nested list items: prerequisites[0] is the indent parent
-// when it lives in this same section, otherwise the node sits at the top (its container —
-// the branch node or the root — becomes its reparsed parent). Notes ride under each step:
-// its description, then the `needs also` line for the edges indentation can't carry, then
-// bare-URL links.
+// One colour section as nested list items: prerequisites[0] is the indent parent when it lives in
+// this same section, otherwise the node sits at the top under the container. Notes ride under each
+// step: description, `needs also`, then bare-URL links.
 function renderForest(content, containerId, completed, byId, out) {
   const contentIds = new Set(content.map((node) => node.id));
   const childrenOf = new Map();
@@ -380,9 +346,7 @@ function renderForest(content, containerId, completed, byId, out) {
   for (const node of roots) walk(node, 0);
 }
 
-// The crux of the lossiness: every prerequisite that indentation can't express — the
-// extras beyond the first, and a primary parent that lives outside this section — kept as
-// a plain note that reparses into the description rather than vanishing.
+// The prerequisites indentation can't express, kept as a note that reparses into the description.
 function strandedPrereqs(node, contentIds, containerId, byId) {
   const stranded = node.prerequisites.filter((id, index) => !(index === 0 && (contentIds.has(id) || id === containerId)));
   if (stranded.length === 0) return null;

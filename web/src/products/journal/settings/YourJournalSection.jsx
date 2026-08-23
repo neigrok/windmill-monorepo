@@ -1,7 +1,4 @@
-// Settings · Your journal — the export, and the pages this browser could not attribute. The export
-// route it calls has been live since the product shipped; until this section there was no way to
-// reach it from inside the product, so a writer could not get their own pages out. A product owns
-// its export; the account owns its close.
+// Settings · Your journal — the export, and the pages this browser could not attribute.
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';

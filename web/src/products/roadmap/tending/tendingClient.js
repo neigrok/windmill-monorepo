@@ -1,9 +1,3 @@
-// Tending's client half: read this account's meter + receipts. One GET tells the UI everything it
-// needs — whether tending is armed at all (the composer gates on it), this month's budget and
-// spend, when it resets, and the recent runs behind the receipts. Same-origin, credentialed, and
-// tolerant of a miss: a null return simply means "no meter to show" (dark server, signed out, or
-// the read failed), which every caller already treats as "tending isn't a thing here".
-
 import { API_BASE } from '../../../shell/apiBase.js';
 
 export async function fetchTending() {
@@ -16,9 +10,7 @@ export async function fetchTending() {
   }
 }
 
-// Start a tend run: POST the sentence and get back either a 202 { runId } (the agent loop is
-// underway server-side) or a 200 refused run ({ status:'refused', refusal }) — a quiet face, not an
-// error. Null only on a transport miss, which the caller shows as the "didn't land" face.
+// 202 { runId } for a started run, 200 { status:'refused', refusal } for a refusal; null on a transport miss.
 export async function startTend(treeId, prompt) {
   try {
     const response = await fetch(`${API_BASE}/v1/trees/${encodeURIComponent(treeId)}/tend`, {
@@ -34,8 +26,7 @@ export async function startTend(treeId, prompt) {
   }
 }
 
-// The catch-up read: the run by id, however long after the socket that started it died — a phone
-// that locked mid-tend reads the finished run back here. Null on a miss.
+// The run by id, however long after the socket that started it died. Null on a miss.
 export async function fetchRun(runId) {
   try {
     const response = await fetch(`${API_BASE}/v1/tend/${encodeURIComponent(runId)}`, { credentials: 'include' });

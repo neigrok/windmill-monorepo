@@ -2,12 +2,6 @@ import React from 'react';
 import { Dialog, Input, Button, Icon } from '../../design-system';
 import { API_BASE } from '../apiBase.js';
 
-// One door, keyed by email. This component owns its own little state machine —
-// idle → sending → wait, with error branches that never turn the door red. The
-// integration hands us onSend (requestMagicLink); we only speak in props.
-//
-// Copy is verbatim from auth.md §7. Every failure ends in a next step.
-
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SignInDialog({ open, onClose, onSend, resume = null }) {
@@ -22,9 +16,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
   const sendGate = React.useRef(null);
   const resendGate = React.useRef(null);
 
-  // Reset the machine every time the door opens fresh — unless a `resume` record
-  // ({ email, at }) rides in: then the door reopens on its wait panel, with the
-  // Resend gate carried over from when that link actually went out.
+  // A `resume` record ({ email, at }) reopens the door on its wait panel, Resend gate carried over.
   React.useEffect(() => {
     if (!open) return;
     setErrorCode(null);
@@ -52,8 +44,6 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
     clearTimeout(resendGate.current);
   }, []);
 
-  // The one path a link takes out the door. Guarded by a ref so a fast double
-  // click can't fire twice while the button still reads "Email me a link".
   async function send(address) {
     if (inflight.current) return;
     inflight.current = true;
@@ -72,7 +62,7 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
       const code = err?.code;
       if (code === 'invalid_email') { setPhase('idle'); setTypo(true); }
       else if (code === 'rate_limited') { setPhase('error'); setErrorCode('rate_limited'); }
-      else { setPhase('error'); setErrorCode('unreachable'); } // the only brick
+      else { setPhase('error'); setErrorCode('unreachable'); }
     } finally {
       clearTimeout(sendGate.current);
       setShowSending(false);
@@ -126,17 +116,11 @@ export function SignInDialog({ open, onClose, onSend, resume = null }) {
             <Button type="submit">Email me a link</Button>
           )}
 
-          {/* A top-level navigation, not a fetch — the OAuth redirect must leave the SPA. The backend
-              bounces back to the app with a wm_session cookie (or unauthenticated on any failure). */}
+          {/* A top-level navigation, not a fetch: the OAuth redirect must leave the SPA. */}
           <Button type="button" variant="ghost" onClick={() => { window.location.href = `${API_BASE}/v1/auth/google/start`; }}>
             Continue with Google
           </Button>
 
-          {/* This line used to read "Signed out, Windmill still works — your work stays on this
-              device." It is one door in front of three rooms, and that sentence was only ever true
-              of one of them: the training log will not open at all without an account. A promise
-              two of three rooms do not keep is a promise the shell may not make, and the shell may
-              not name which room is which either — so it says the part that holds everywhere. */}
           <p style={reassurance}>No password. Whatever you have already made on this device is claimed when you sign in — and some rooms only open once you have an account.</p>
         </form>
       )}
@@ -228,7 +212,6 @@ const typoLine = {
   marginTop: 'calc(-1 * var(--space-1))',
 };
 
-// The 800ms breathing gold dot — same ember clock as the landing's dot.
 const sending = {
   display: 'flex',
   alignItems: 'center',

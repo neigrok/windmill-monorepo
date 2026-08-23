@@ -1,37 +1,26 @@
-/* The journal palette — every token and every pixel of the canvas lives here.
-   The surface is dusk by default and paper in north light by choice, and since 2026-08-05 that
-   choice is the app's one Appearance setting (shell/appearance.js) rather than a toggle of
-   journal's own. The GROUND is not here: both skins come from the room palette
-   (styles/tokens/palettes.css), which the shell hands down. What the two blocks below
-   own is what stands ON it — the lamp hue, the prose ink, the five-step mood scale,
-   the scrims and the panel elevation, all tokens, so a skin is one block to author
-   rather than a hunt through the rules. Nothing here uses brick/red — a day is never
-   an error. */
+/* The journal palette; the ground comes from the room palette (styles/tokens/palettes.css). */
 
 .journal-root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-canvas: #040D19;         /* the night the page floats on */
+  --surface-canvas: #040D19;
   --surface-card: #0D1824;
-  --lamp-400: #E0B972;               /* the lit "Candle" — the caret, the waiting ember */
+  --lamp-400: #E0B972;
 
-  --journal-ink: #F2ECDE;            /* prose the person writes — ~16:1 on the night */
-  --journal-ink-dim: #8A98AC;        /* the mono strip, the margin */
-  --journal-gap: var(--neutral-300, #3C3223);       /* a day not written — dim, never counted */
+  --journal-ink: #F2ECDE;
+  --journal-ink-dim: #8A98AC;
+  --journal-gap: var(--neutral-300, #3C3223);
   --journal-energy: var(--accent-olive-400, #9AA859);
 
-  /* One warm-gold hue in five steps — a scale from a dim ember to the lamp. */
   --mood-1: #6E5A34;
   --mood-2: #8F7440;
   --mood-3: #B08F4E;
   --mood-4: #C9A75F;
   --mood-5: #E0B972;
 
-  --journal-scrim: color-mix(in srgb, #000 46%, transparent);   /* the wash under a floated card */
-  --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);      /* a card lifted off the night */
+  --journal-scrim: color-mix(in srgb, #000 46%, transparent);
+  --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 
-  /* Echoes — the lamp held at alpha over the night, authored as literals exactly as the design
-     writes them (#E0B972 is --lamp-400 by night, so these ARE the lamp). The three tab weights are
-     the whole resting state: aged, the page you're on, and open. */
+  /* Echo alphas hold --lamp-400 (#E0B972) over the night; three tab weights: aged, here, open. */
   --je-tab-fill: rgba(224, 185, 114, 0.14);
   --je-tab-line: rgba(224, 185, 114, 0.32);
   --je-tab-aged-fill: rgba(224, 185, 114, 0.07);
@@ -46,36 +35,27 @@
   --je-sheet-lift: 0 -18px 50px rgba(0, 0, 0, 0.45);
 }
 
-/* Day — paper in north light, with the same lamp warmed a shade deeper so the gold still reads on
-   it. The SHEET is not this file's to choose: journal's day ground is the room palette
-   (styles/tokens/palettes.css), which the shell hands down through data-brand — a cool sheet whose
-   cool lives in the shadows, so the one warm thing in the room is the candle. This block used to
-   pin a warm parchment of its own, from before the room had a palette; the head above the room went
-   on reading the palette, and the seam between them was the whole tell. What stays here is the
-   candle, the ink, the mood scale and the echo weights — journal's own light, at day strength. */
+/* Day. The sheet comes from the room palette through data-brand; the candle, ink, mood scale and echo
+   weights are re-pointed here at day strength. */
 .journal-root[data-theme='light'] {
   color-scheme: light;
-  --lamp-400: #986B1E;               /* the candle, deepened to an ochre that carries at label size on paper */
+  --lamp-400: #986B1E;
 
-  --journal-ink: #2A2118;            /* warm near-black prose — 14.7:1 on the paper */
-  --journal-ink-dim: #74654F;        /* the mono strip, the margin — 5.3:1, readable small */
-  --journal-gap: var(--neutral-300, #D3C2A0);        /* a day not written — faint, never counted */
+  --journal-ink: #2A2118;
+  --journal-ink-dim: #74654F;
+  --journal-gap: var(--neutral-300, #D3C2A0);
   --journal-energy: var(--accent-olive-500, #7D8C43);
 
-  /* The same warmth by day: a scale from a pale gold up to a deep, lit ochre. */
   --mood-1: #E4CF9C;
   --mood-2: #D3AF66;
   --mood-3: #BE8F3D;
   --mood-4: #A5741F;
   --mood-5: #8A5E12;
 
-  --journal-scrim: color-mix(in srgb, #2A2118 26%, transparent);  /* a warm, lighter wash by day */
-  --journal-panel-shadow: 0 20px 50px rgba(74, 58, 36, 0.18);     /* soft warm elevation on paper */
+  --journal-scrim: color-mix(in srgb, #2A2118 26%, transparent);
+  --journal-panel-shadow: 0 20px 50px rgba(74, 58, 36, 0.18);
 
-  /* The palette's day ink is a cool near-black, read off the sheet. Prose is the one place journal
-     disagrees: what a person writes is warm, on a cool page, the same way the candle is — so the
-     text roles, the borders and the one elevation are re-pointed to journal's own ink here.
-     Nothing here fires in night, where the dusk ramp's own ink is the right one. */
+  /* Day only: the shared text, border and elevation roles re-pointed to journal's warm ink. */
   --text-primary: var(--journal-ink);
   --text-secondary: color-mix(in srgb, var(--journal-ink) 76%, transparent);
   --text-tertiary: var(--journal-ink-dim);
@@ -83,17 +63,10 @@
   --border-default: color-mix(in srgb, var(--journal-ink) 22%, transparent);
   --shadow-md: 0 8px 24px rgba(74, 58, 36, 0.14);
 
-  /* The two lamp steps an echo reads WITH, not just draws with: --lamp-200 is every older passage's
-     ink and --lamp-500 carries every withheld count. Their :root values (#EBD3A2, #C29A4E) are night
-     values — on parchment the first is invisible and the second will not hold at 9.5px. Re-pointed
-     here to the same warmth at day weight (~7:1 and ~6.3:1 on #FBF6EA); tokens/colors.css sanctions
-     a product re-pointing steps inside its own scope. Nothing here fires in night. */
+  /* Day only: the :root values of these two are night values, too light on paper. */
   --lamp-200: #6B4D12;
   --lamp-500: #7A5410;
 
-  /* The echo alphas re-derived for paper: the design is authored on the night canvas, where the lamp
-     is #E0B972 and a white hairline reads. By day the lamp is an ochre and the hairline must be ink,
-     or a tab loses its edge entirely. Same weights, day materials. */
   --je-tab-fill: color-mix(in srgb, var(--lamp-400) 15%, transparent);
   --je-tab-line: color-mix(in srgb, var(--lamp-400) 34%, transparent);
   --je-tab-aged-fill: color-mix(in srgb, var(--lamp-400) 8%, transparent);
@@ -117,7 +90,6 @@
   font-family: var(--font-body);
 }
 
-/* The lamplight — a soft warm pool at the foot of the canvas, under today. */
 .journal-lamp {
   position: absolute;
   left: 50%;
@@ -131,12 +103,6 @@
   filter: blur(2px);
 }
 
-/* The switcher rides the shared post (.wm-post, styles/global.css), so it stands where it stands in
-   gym too, and it draws nothing at all inside the /app shell — where the shell's own head is the
-   switcher. The account seat used to ride the opposite post; since 2026-08-07 the shell's head
-   carries it above every room, so this one is gone rather than doubled. Nothing here slides for the
-   echo margin any more either: furniture in the head cannot be covered by a panel in the room. */
-
 .journal-scroll {
   position: relative;
   z-index: 1;
@@ -146,14 +112,12 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* The measure is capped before any margin appears: 640 desktop, full-width−44 phone. */
 .journal-column {
   width: min(640px, 100% - 44px);
   margin: 0 auto;
   padding: 32px 0 clamp(140px, 24vh, 280px);
 }
 
-/* Month separators — the one place the display font (Baloo 2 700) speaks. */
 .journal-month {
   font-family: var(--font-display);
   font-weight: 700;
@@ -169,14 +133,10 @@
   margin-bottom: 34px;
 }
 
-/* Days that arrive AFTER the first paint fade in from below; the initial
-   restore never animates — the cursor waits for nothing. */
 .journal-born {
   animation: journal-fade-in-up 280ms var(--ease-soft) both;
 }
 
-/* The day marker — mono date + a mood pip + an energy tick. Sticky: it pins
-   to the top edge while its day is under you (never scripted). */
 .journal-marker {
   position: sticky;
   top: 0;
@@ -229,7 +189,6 @@
 .journal-tick-bar:nth-child(3) { height: 9px; }
 .journal-tick-bar.is-on { background: var(--journal-energy); }
 
-/* Prose is never mono. */
 .journal-prose {
   font-family: var(--font-body);
   font-weight: 400;
@@ -241,8 +200,6 @@
   margin-top: 8px;
 }
 
-/* A quiet aside beside prose, at 50% ink — the echo lab's scenario note. Never red, never a warning.
-   The canvas itself no longer draws one: a day nobody wrote is not drawn at all. */
 .journal-gap {
   font-family: var(--font-body);
   font-size: 13px;
@@ -252,9 +209,6 @@
   margin-top: 6px;
 }
 
-/* The account could not be read. Said in the canvas's own quiet voice — never red, never a banner,
-   never a retry button — because a read that failed is a fact about the network, not a fault. What
-   it must never let the canvas do is imply the account is empty. */
 .journal-unread {
   font-family: var(--font-body);
   font-size: 13px;
@@ -264,11 +218,7 @@
   margin: 18px 0 6px;
 }
 
-/* ---- The floor — the top of the canvas, which is the bottom of the journal. ----
-   A way further down rather than something that happened, so it is quieter than any day: no
-   surface, no border, no spinner. The start of the journal is a statement and reads as one; a
-   failed reach reads in the same ink as .journal-unread, because both are facts about the network
-   and neither is a fault. */
+/* The floor — the top of the canvas, which is the oldest end of the journal. */
 .journal-floor-more {
   display: block;
   width: 100%;
@@ -287,8 +237,7 @@
   transition: opacity 140ms var(--ease-standard);
 }
 .journal-floor-more:hover { opacity: 0.9; }
-/* Busy overrides hover and repeats every property hover sets — a phone leaves :hover stuck after
-   the tap, so without these the control stays lit as pressable for the whole read. */
+/* Disabled repeats every property :hover sets: a phone leaves :hover stuck after a tap. */
 .journal-floor-more[aria-disabled='true'],
 .journal-floor-more[aria-disabled='true']:hover {
   cursor: default;
@@ -319,7 +268,6 @@
   text-underline-offset: 2px;
 }
 
-/* ---- Today — the last block; writing happens inline in a growing textarea. ---- */
 .journal-input {
   display: block;
   width: 100%;
@@ -350,11 +298,7 @@
   margin: 14px 0 0;
 }
 
-/* ---- The two taps — one strip: five mood steps, three energy steps, one word. ----
-   Sizes are the canon table (Journal canvas controls, 09 Aug 2026). A POINTER gets the small
-   drawing: 44px targets are a thumb rule, and carried to desktop unchanged they made an optional
-   aside the heaviest object on the page. The phone block below puts the thumb rule back.
-   Both scales are optional, skipping costs nothing, and pressing the lit step clears it. */
+/* The two taps — one strip: five mood steps, three energy steps, one word. */
 .journal-controls {
   display: flex;
   align-items: center;
@@ -369,7 +313,6 @@
 }
 .journal-energy { gap: 3px; }
 
-/* The hairline between the two scales — the only thing that says they are two questions. */
 .journal-scale-rule {
   width: 1px;
   height: 14px;
@@ -378,8 +321,6 @@
   flex: 0 0 auto;
 }
 
-/* The word: mono, right of the strip, naming the value you last touched. Unset it reads `felt` —
-   the one place the canvas says what the dots are at all. */
 .journal-scale-word {
   margin-left: auto;
   font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
@@ -389,7 +330,6 @@
 }
 .journal-scale-word.is-set { color: var(--lamp-400); }
 
-/* Why the two taps are worth anything. Said under them once ever, on the first save. */
 .journal-scale-why {
   margin: 8px 0 0;
   font: 400 12px/19px var(--font-body), sans-serif;
@@ -428,8 +368,6 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
 }
 
-/* Bottom-aligned so the three make one rising tick, then lifted half the tallest bar so the tick
-   sits on the dots' own centre line rather than hanging below it. */
 .journal-energy-bar {
   width: 14px;
   height: 26px;
@@ -442,7 +380,6 @@
   align-items: flex-end;
   justify-content: center;
 }
-/* The same rising tick the day marker already draws, at the size it already draws it. */
 .journal-energy-bar::before {
   content: '';
   width: 5px;
@@ -461,10 +398,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
 }
 
-/* A thumb needs the thumb rule back: 44px tall targets, drawn a little larger, and still one row —
-   five mood boxes at 31px, three energy boxes at 22px and the word fit the measure at 356px with
-   room over. The row costs no more vertical space than the pointer's, because the hit boxes
-   overlap the space above and below the drawing rather than adding to it. */
+/* Phone: 44px tall targets, still one row; the hit boxes overlap the space around the drawing. */
 @media (max-width: 684px) {
   .journal-controls { margin-top: 8px; }
   .journal-mood { gap: 0; }
@@ -480,7 +414,6 @@
   .journal-scale-word { font-size: 10.5px; }
 }
 
-/* "saved" — mono, cross-fades in after typing stops, then fades. Never a button. */
 .journal-saved {
   opacity: 0;
   transition: opacity 240ms var(--ease-standard);
@@ -494,19 +427,14 @@
   to { opacity: 1; transform: none; }
 }
 
-/* Reduced motion: entrances don't travel.
-   (The global reset already collapses transitions to instant.) */
 @media (prefers-reduced-motion: reduce) {
   .journal-born {
     animation: none;
   }
 }
 
-/* ── Search — the ⌘K overlay, its results, and the passage a hit flies to ──────────────────── */
+/* ── Search ─────────────────────────────────────────────────────────────── */
 
-/* The floating affordance: a quiet lamp-ringed glyph, out of the writer's way, bottom-right. */
-/* The floating tool rail — search always, nudges when the engine is armed. Stacked bottom-right,
-   clear of the product switcher. */
 .journal-tools {
   position: fixed;
   right: 20px;
@@ -531,7 +459,6 @@
 }
 .journal-tool:hover { border-color: var(--lamp-400); transform: translateY(-1px); }
 
-/* The overlay: a dim wash over the night, a card floated over the canvas. */
 .journal-search {
   position: fixed;
   inset: 0;
@@ -598,8 +525,6 @@
   color: var(--journal-ink-dim);
   font: 400 15px/1.4 var(--font-body), 'Nunito', system-ui, sans-serif;
 }
-/* The account could not be read, said above the foot rather than in place of it — the privacy line
-   is true whether or not the network is. Same quiet ink as .journal-unread on the canvas. */
 .journal-search-unread {
   margin: 0;
   padding: 0 20px 10px;
@@ -615,8 +540,7 @@
   font: 400 11px/1.5 var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
   letter-spacing: 0.03em;
 }
-/* While the meaning model loads and re-embeds in the background, the footer breathes in the lamp —
-   a quiet sign that results are about to sharpen, never a spinner or a blocking state. */
+/* The footer breathes while the meaning model loads and re-embeds. */
 .journal-search-foot.is-sharpening {
   color: color-mix(in srgb, var(--lamp-400) 72%, transparent);
   animation: journal-sharpen 1600ms var(--ease-soft) infinite;
@@ -626,7 +550,6 @@
   50% { opacity: 1; }
 }
 
-/* The passage a search flew to — lit for a beat with the lamp, then eased back to the page. */
 .journal-highlight {
   background: color-mix(in srgb, var(--lamp-400) 26%, transparent);
   color: inherit;
@@ -646,30 +569,16 @@
   .journal-search-foot.is-sharpening { animation: none; opacity: 1; }
 }
 
-/* ── Echoes ───────────────────────────────────────────────────────────────
-   An echo is the journal remembering for you: you write tonight, it reaches back and shows an older
-   passage you wrote, and how long ago. It never concludes, advises or grades.
+/* ── Echoes ─────────────────────────────────────────────────────────────── */
+/* An echo is a lamp-tinted tab at rest; opened it is ink — a mono date and the older words, no card.
+   Terracotta is allowed on the One sheet only; never brick. */
 
-   Two forms, and only two. At rest it is a TAB on the edge of the page — the way you mark a book —
-   24px wide, lamp-tinted, carrying its count and nothing else, and fainter the older the page.
-   Opened it is INK: a mono date hung in the margin, the older words in lamp ink at reading size, and
-   the canvas stays flat. No card, no border, no fill, no glow, no shadow.
-
-   The colour law is one line — echo = lamp · buy verb = terracotta · brick never — and terracotta
-   appears on exactly one surface in this file, the One sheet. Nothing here fades, blurs or greys out
-   a word: where a free reader stops, the sentence ends mid-clause and the withheld words are counted
-   out loud. Neither form has motion; a tab is there when the page loads or not at all. */
-
-/* --- the page an echo hangs off ----------------------------------------- */
-/* The tab runs off the right edge of the measure, so the writing has to be pushed clear of it. That
-   inset — and only on pages that actually have a tab — is the one thing echoes take from the page. */
 .journal-page { position: relative; }
 .journal-page:has(.je-tab) { padding-right: 40px; }
 
-/* --- the tab, at rest ---------------------------------------------------- */
 .je-tab {
   position: absolute;
-  top: -9px;                    /* the tap row is 44px tall; the ink in it is 26px */
+  top: -9px;                    /* centres the 26px face in the 44px tap row */
   right: 0;
   z-index: 1;
   display: flex;
@@ -688,32 +597,26 @@
   width: 24px;
   height: 26px;
   border: 1px solid var(--je-tab-line);
-  border-right: 0;              /* it runs off the edge rather than sitting near it */
+  border-right: 0;
   border-radius: 8px 0 0 8px;
   background: var(--je-tab-fill);
   color: var(--lamp-400);
   font: 700 9px/1 var(--font-mono), ui-monospace, monospace;
 }
-/* Pages older than the one you're on age back. Nothing ever disappears — the edge of the canvas is
-   a map of where you keep circling, and a map does not drop the places you left. */
 .je-tab-aged .je-tab-face {
   border-color: var(--je-tab-aged-line);
   background: var(--je-tab-aged-fill);
   opacity: 0.7;
 }
-/* Open: the tab is also the close control, and the only thing on the edge that isn't a number. */
 .je-tab-open .je-tab-face {
   border-color: var(--je-tab-open-line);
   background: var(--je-tab-open-fill);
 }
-/* Below the measure's own width the canvas keeps a fixed 22px gutter, and a tab hanging in it reads
-   as a box with a missing border rather than a tab. Run it out to the screen edge, which is where
-   the design draws it — past this width the gutter is the page's, and the tab holds the measure. */
+/* -22px is the canvas gutter below the measure width: the tab must reach the screen edge. */
 @media (max-width: 684px) {
   .je-tab { right: -22px; }
 }
 
-/* --- the ink ------------------------------------------------------------- */
 .je-ink { display: flex; flex-direction: column; }
 
 .je-ink-row {
@@ -728,8 +631,7 @@
 }
 .je-ink .je-ink-row + .je-ink-row { margin-top: 22px; }
 
-/* The passage is the press target, not the whole row — the row carries the reader's answer too, and
-   a button cannot hold a button. Column, because the provenance note and the cut sit under it. */
+/* The passage is the press target, not the row: the row holds another button. */
 .je-ink-open {
   display: flex;
   flex-direction: column;
@@ -743,8 +645,6 @@
   cursor: pointer;
 }
 
-/* The margin does the labelling — date, distance and nothing else — so the passage itself is never
-   interrupted by chrome. */
 .je-ink-margin {
   flex: none;
   display: flex;
@@ -760,27 +660,22 @@
 
 .je-ink-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* Ink is the only signal: tonight is cool --text-primary, anything older is lamp. */
 .je-ink-passage {
   font: 400 15.5px/28px var(--font-body), sans-serif;
   color: var(--lamp-200);
 }
-/* The cut, stated. A blur pretends the words are there and unreadable; a count is simply true. */
 .je-ink-withheld {
   margin-top: 10px;
   font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
   letter-spacing: 0.1em;
   color: var(--lamp-500);
 }
-/* Presence is not the harm; misattribution is — a passage that isn't the writer's own says so. */
 .je-ink-note {
   margin-top: 6px;
   font: 400 11px/1.4 var(--font-body), sans-serif;
   color: var(--text-tertiary);
 }
 
-/* The others as one run of dates, in mono so it reads as record rather than prose. Every one is a
-   page you can stand on, which is what lets the tab carry a count at all. */
 .je-ink-run {
   flex: 1;
   min-width: 0;
@@ -798,10 +693,6 @@
   cursor: pointer;
 }
 
-/* The reader's answer about this one passage. Two words, no scale, no icon — the canon forbids
-   grading, so there is nothing here to be a thumb or a star. Quiet enough to sit under prose without
-   competing with it, and 42px of press area on a phone, which is negative space rather than chrome:
-   the canvas stays flat, with no border, fill or glow anywhere in this lane. */
 .je-verdict { display: flex; gap: 22px; margin-top: 2px; }
 .je-verdict-mark {
   padding: 15px 0;
@@ -811,12 +702,8 @@
   font: 400 12px/1 var(--font-body), sans-serif;
   cursor: pointer;
 }
-/* Answered, and it stays answered: `useful` comes back on every read, so this is the same mark on
-   the phone as on the laptop it was given on. Lamp, because lamp is memory on this surface. */
 .je-verdict-held { color: var(--lamp-400); font-weight: 700; }
 
-/* The free path: the older page is one scroll away and always has been. Naming it costs a few
-   conversions and buys the right to cut at all. */
 .je-free-path {
   margin: 24px 0 0;
   padding-top: 15px;
@@ -825,8 +712,6 @@
   color: var(--text-tertiary);
 }
 
-/* What is still below the fold, counted rather than guessed, and the one door out of a set that
-   wasn't worth reading. */
 .je-ink-foot {
   position: fixed;
   left: 0;
@@ -846,7 +731,6 @@
   letter-spacing: 0.09em;
   color: var(--text-tertiary);
 }
-/* Always present, and it never asks why: no reason picker, no confirm, nothing counting declines. */
 .je-not-useful {
   padding: 0;
   border: 0;
@@ -856,12 +740,8 @@
   cursor: pointer;
   pointer-events: auto;
 }
-/* The way home lifts clear of the footer when a set is open beneath it. */
 .journal-root:has(.je-ink-foot) .je-home { bottom: 58px; }
 
-/* --- said once: the first echo ever ------------------------------------- */
-/* Below tonight's page, never above the cursor, never in the first run. No motion, no celebration,
-   no "unlocked" — flat on the canvas, which is why it carries no border of its own. */
 .je-first {
   margin-top: 26px;
   padding: 18px 16px;
@@ -882,9 +762,6 @@
 .je-first .je-ink-margin { width: 44px; padding-top: 4px; }
 .je-first .je-ink-passage { font-size: 15px; line-height: 27px; }
 
-/* --- the desktop margin -------------------------------------------------- */
-/* Beside the canvas, never between the writer and the cursor. Same ink, same mono margin column,
-   same cut — the 74px day gutter and the 640px measure are untouched. */
 .je-margin {
   position: fixed;
   top: 0;
@@ -908,7 +785,6 @@
 .je-ink-desk .je-ink-passage { font-size: 14.5px; line-height: 26px; }
 .je-ink-desk .je-ink-withheld { margin-top: 9px; font-size: 9.5px; }
 .je-ink-desk .je-ink-run { font-size: 9.5px; line-height: 19px; letter-spacing: 0.06em; }
-/* A pointer needs no thumb-sized target, and this column is 300px wide — the answers tuck in. */
 .je-ink-desk .je-verdict { gap: 16px; margin-top: 6px; }
 .je-ink-desk .je-verdict-mark { padding: 4px 0; font-size: 11.5px; }
 .je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
@@ -919,13 +795,10 @@
   color: var(--text-tertiary);
 }
 
-/* The margin only exists where there is a margin to put it in. Below this width the ink opens in
-   place, under the paragraph it belongs to — the 640px measure is never squeezed to make room for
-   it, and nothing ever stands between the writer and the cursor. */
 .je-margin { display: none; }
 @media (min-width: 1240px) {
   .je-margin { display: flex; }
-  /* One ink at a time: where the margin holds it, the page does not repeat it. */
+  /* One ink at a time: the margin holds it, so the in-page copy hides. */
   .je-ink,
   .je-ink-foot { display: none; }
   .journal-root.has-margin .journal-scroll { padding-right: 300px; }
@@ -933,7 +806,6 @@
   .journal-root.has-margin .je-trail { right: 300px; }
 }
 
-/* --- walking back: the trail, and the way home -------------------------- */
 .je-trail {
   position: fixed;
   top: 0;
@@ -944,8 +816,6 @@
   background: var(--surface-canvas);
   pointer-events: none;
 }
-/* The canvas's own sticky day rows slide under this — the trail keeps a solid floor and lets the
-   page emerge below it, rather than showing a date through the chips. */
 .je-trail::after {
   content: '';
   position: absolute;
@@ -1012,9 +882,7 @@
   cursor: pointer;
 }
 
-/* --- the One sheet ------------------------------------------------------ */
-/* A sheet, not a page: the canvas stays behind it and the cursor is never lost. This is the one
-   surface in Journal that asks for money, and the only one terracotta is allowed on. */
+/* The One sheet — the surface that asks for money. */
 .journal-root.is-sheeted .journal-scroll,
 .journal-root.is-sheeted .je-margin { opacity: 0.26; }
 
@@ -1051,12 +919,10 @@
   font: 800 22px/1.25 var(--font-display), sans-serif;
   color: var(--text-primary);
 }
-/* Their cut, opened with — because that is what they are buying the end of. */
 .je-ink-sheet { margin-top: 13px; }
 .je-ink-sheet .je-ink-margin { padding-top: 3px; }
 .je-ink-sheet .je-ink-passage { font-size: 14.5px; line-height: 26px; }
 .je-ink-sheet .je-ink-withheld { margin-top: 7px; font-size: 9.5px; }
-/* What is actually sold: not your words — the pass across them. */
 .je-offer-line {
   margin: 14px 0 0;
   font: 400 13px/21px var(--font-body), sans-serif;
@@ -1117,9 +983,7 @@
   .je-sheet { animation: none; }
 }
 
-/* ── Nudges ───────────────────────────────────────────────────────────────
-   A small honest panel, only present when the engine is armed. One switch, the
-   learned hour, a channel, a week's pause — and the line that keeps the promise. */
+/* ── Nudges ─────────────────────────────────────────────────────────────── */
 .journal-nudge {
   position: fixed;
   inset: 0;
@@ -1231,9 +1095,7 @@
   .journal-nudge-knob::after { transition: none; }
 }
 
-/* ── Zoom out: the months + the week ──────────────────────────────────────
-   The whole journal pulled back to a map. A quiet week arc on top, then every
-   month as a row of day cells — warm where written, faint where not. */
+/* ── Zoom out: the week arc, then a row of day cells per month ──────────── */
 .journal-zoom {
   position: fixed;
   inset: 0;
@@ -1295,8 +1157,6 @@
 
 .journal-zoom-grid { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
 .journal-zoom-loading { color: var(--journal-ink-dim, #8A98AC); font-style: italic; }
-/* A grid of empty squares over a failed read would say "you wrote nothing this year". It says what
-   actually happened instead, in the same quiet ink the canvas uses for the same fact. */
 .journal-zoom-unread {
   max-width: 760px;
   margin: 0 auto 14px;
@@ -1330,10 +1190,7 @@
   .journal-zoom-cell:hover { transform: none; }
 }
 
-/* ── Talk ─────────────────────────────────────────────────────────────────
-   Speak a page. Talk is a TOOL and wears the rail's own face — a glyph, no price tag, nothing
-   floating over the writing. While it listens the glyph breathes in the lamp. Absent entirely
-   where voice isn't available. */
+/* ── Talk — speak a page ────────────────────────────────────────────────── */
 .journal-talk-tool.is-recording {
   border-color: var(--lamp-400);
   color: var(--lamp-400);
@@ -1345,9 +1202,7 @@
 .journal-talk-tool.is-working { opacity: 0.6; cursor: default; }
 .journal-talk-tool:disabled { opacity: 0.5; cursor: default; }
 
-/* The sheet — where the layer and the discard promise are said, together, before a word is spoken.
-   Anchored to the rail rather than the viewport, so it follows the rail when the echo margin
-   opens and never drifts over the measure. */
+/* Anchored to the rail, not the viewport, so it follows the rail when the margin opens. */
 .journal-talk-sheet {
   position: absolute;
   right: 0;

@@ -14,10 +14,6 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 
-// THE LOG'S OWN ARITHMETIC, with no screen around it: which week a session fell in, what a row says,
-// and the two places this product refuses to print a number it cannot stand behind — a tonnage of
-// zero, and the tonnage of a week that is only half loaded.
-
 class LogScreenTests {
     private val zone: ZoneId = ZoneId.systemDefault()
 
@@ -28,8 +24,6 @@ class LogScreenTests {
         TrainingSet(id = "set_$at$weightKg$reps", exerciseId = "bench-press", weightKg = weightKg,
                     reps = reps, kind = kind, completedAtMs = at)
 
-    // Composed the way the device composes a session only the device holds — so the counts and the
-    // tonnage under test are the ones a signed-out lifter really sees.
     private fun session(id: String, day: String, routine: String? = null, sets: List<TrainingSet>) =
         SessionSummary(
             Session(id = id, startedAtMs = at(day), finishedAtMs = at(day) + 3_600_000,
@@ -41,8 +35,6 @@ class LogScreenTests {
                       complete: Boolean = true) =
         LogFold.weeks(sessions, onThisDevice, complete = complete, nowMs = at("2026-08-09", hour = 20))
 
-    // Newest first, and a week is the week the lifter trained in — Monday to Sunday, in their own
-    // zone. A session on a Sunday night belongs to the week it was lived in.
     @Test
     fun sessionsFoldIntoMondayWeeksNewestFirst() {
         val log = listOf(
@@ -58,8 +50,6 @@ class LogScreenTests {
                      folded.map { week -> week.rows.map { it.summary.id } })
     }
 
-    // Four facts and no fifth. The routine names the row, or the one word this product uses for a
-    // session nobody planned.
     @Test
     fun aRowCarriesTheFourFactsALifterScans() {
         val log = listOf(session("s1", "2026-08-07", "Pull A", listOf(
@@ -79,10 +69,6 @@ class LogScreenTests {
         assertFalse("nor does a phone judge a record — that is the log's verdict", row.record)
     }
 
-    // §G'S GOLD DOT is the log's own verdict carried through and never re-derived: the three record
-    // rules need the whole history and an Epley, and this phone holds neither. So a row the log
-    // called a record draws one, and a row from a server that never spoke draws none — an omission,
-    // which is exactly what saying nothing means.
     @Test
     fun theGoldDotIsTheLogsVerdictAndNeverThisPhonesGuess() {
         val squat = set(180.0, 5, at("2026-08-07"))
@@ -107,8 +93,6 @@ class LogScreenTests {
         assertEquals(Readout.noRoutine, weeks(log).single().rows.single().title)
     }
 
-    // Today's session still carries its clock — a workout finished an hour ago is placed by the
-    // hour. Every older one is a date.
     @Test
     fun todaysRowKeepsItsClockAndOlderOnesAreDates() {
         val log = listOf(session("s1", "2026-08-09", "Push A", listOf(set(100.0, 5, at("2026-08-09")))))
@@ -116,10 +100,6 @@ class LogScreenTests {
         assertEquals("today · 18:00", weeks(log).single().rows.single().at)
     }
 
-    // AN ASSISTED SET MOVED NO EXTERNAL LOAD, so it contributes zero rather than subtracting — and a
-    // session that moved nothing at all says NOTHING where the tonnage would go. A chin-up-and-dips
-    // day did not move zero kilograms; we simply have nothing true to say about it, and `0.0 t`
-    // would be a false zero.
     @Test
     fun aSessionThatMovedNoExternalLoadPrintsNoTonnage() {
         val log = listOf(session("s1", "2026-08-07", "Pull A", listOf(
@@ -133,9 +113,6 @@ class LogScreenTests {
         assertNull(week.tonnage)
     }
 
-    // A release APK outlives a deploy. A log that sent neither number gets none invented for it —
-    // the row draws what it has and nothing else, and the week keeps its caption to itself rather
-    // than captioning a total that is quietly one session short.
     @Test
     fun aRowFromALogThatSentNeitherNumberDrawsNeither() {
         val log = listOf(
@@ -152,9 +129,6 @@ class LogScreenTests {
         assertNull("one unknown session takes the week's caption with it", week.single().tonnage)
     }
 
-    // Paging is newest-first, so every loaded week is whole EXCEPT possibly the oldest one — half of
-    // it is in hand and the rest is one tap away. Its divider says nothing until the rest arrives,
-    // for the same reason a zero says nothing.
     @Test
     fun theOldestLoadedWeekOmitsItsTonnageUntilTheLogHasBeenReadToTheBottom() {
         val log = listOf(
@@ -170,8 +144,6 @@ class LogScreenTests {
         assertEquals(listOf("1.0 t", "1.0 t"), whole.map { it.tonnage })
     }
 
-    // The ring is REAL on this surface: a signed-out lifter's whole log is saved on this device, and
-    // saying so is the same sentence home's claim card says. It is a fact, never a warning.
     @Test
     fun aRowTheShelfHoldsIsMarkedAsSavedOnThisDeviceOnly() {
         val log = listOf(
@@ -184,8 +156,6 @@ class LogScreenTests {
         assertEquals(listOf(false, true), rows.map { it.onThisDeviceOnly })
     }
 
-    // AN OPEN SESSION IS NOT IN THE LOG. It is the workout the lifter is standing in, its numbers
-    // change under them, and the logger is where it lives.
     @Test
     fun theOpenSessionIsNotADrawnRow() {
         val running = SessionSummary(

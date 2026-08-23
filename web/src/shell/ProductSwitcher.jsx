@@ -1,9 +1,3 @@
-// The product switcher — three entries, one per product, read straight from the registry.
-// The shell hard-codes nothing: add a product to shell/products.js and it appears here and
-// in the router both. Each entry links to that product's switchHash; the current one is marked.
-// Inside the /app shell the head IS the switcher, so this renders nothing there — one seam,
-// no product edits, and pre-open rooms are never re-advertised by a room's own chrome.
-
 import React from 'react';
 import { PRODUCTS } from './products.js';
 

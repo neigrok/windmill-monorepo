@@ -1,12 +1,6 @@
 import SwiftUI
 import WindmillPlatform
 
-// The small marks a day wears, and the two optional scales — the native DayMarker.jsx / MoodDots.jsx
-// / EnergyBars.jsx. Grouped in one file because they are one kind of thing: the glance summary of a
-// day, none of them larger than a few dozen lines, all three meaningless apart.
-
-// The day marker — mono date, a mood pip, an energy tick. The date and the word count are mono so
-// the eye skips them; the pip and the tick are the day at a glance.
 struct DayMarkerView<Trailing: View>: View {
     let day: LocalDay
     var mood: Mood = .none
@@ -41,8 +35,7 @@ struct DayMarkerView<Trailing: View>: View {
         .padding(.bottom, 6)
     }
 
-    // "SUN 20 JUL" — the weekday computed from the day itself, never from a formatter's locale
-    // ordering, so the string is the same shape wherever the phone is.
+    // "SUN 20 JUL" — computed rather than formatted, so the shape is the same in every locale.
     static func stamp(_ day: LocalDay) -> String {
         let weekdays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
         let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
@@ -70,8 +63,6 @@ private struct MoodPip: View {
     @State private var breathing = false
 
     var body: some View {
-        // Today's pip is the one infinite loop allowed on screen — a breathing ember (canon §10,
-        // the calm ceiling). Reduced motion gets the same ember, held still.
         if isToday {
             Circle()
                 .fill(mood.isSet ? skin.mood(mood) : skin.lamp)
@@ -104,8 +95,6 @@ private struct EnergyTick: View {
     }
 }
 
-// The mood scale — five dots, one hue in five steps. Tapping fills the ramp up to that step and
-// tints every lit dot to that step's hue; tapping the step you are on clears it. Optional always.
 struct MoodDots: View {
     let value: Mood
     let onTap: (Mood) -> Void
@@ -132,7 +121,6 @@ struct MoodDots: View {
     }
 }
 
-// The energy scale — three bars of rising height, olive. Never the mood hue, never red.
 struct EnergyBars: View {
     let value: Energy
     let onTap: (Energy) -> Void
@@ -159,8 +147,6 @@ struct EnergyBars: View {
     }
 }
 
-// The two scale names as the teaching card wears them — lamp-ringed, so the card points at the
-// controls directly under it rather than describing them.
 struct ScaleChip: ViewModifier {
     let skin: JournalSkin
 

@@ -1,19 +1,11 @@
-// The explore rules (canon §4): the lens (a kind, held), the lookup (a query, typed) and the gate
-// a locked step answers with. The first two are one predicate over the outline, so they are one
-// function here; the third is a graph walk. Pure like outline.js and editing.js — no React, no
-// DOM — so the phone's reading surfaces are testable without a screen. ListView owns the field,
-// the chips, and everything the finger revealed.
-
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../theme.js';
 import { unlocksOf } from '../ui/nextUpPlan.js';
 
 const SNIPPET_PAD = 40; // characters kept either side of a description hit
 const LINE_CAP = 6;     // hops — a breadcrumb longer than a phone width stops being an answer
 
-// A section survives when its head or one of its rows match; it keeps its head either way (depth
-// is the information, so the scaffolding stays) and hides the rest behind a count the finger can
-// open. `matches` counts exactly what the body will render — the root included — so zero IS the
-// empty state, and a row that hit on its description alone carries the fragment that proves it.
+// A section survives when its head or one of its rows match; it keeps its head either way. `matches`
+// counts exactly what the body will render, the root included, so zero IS the empty state.
 export function filterOutline(outline, nodesById, { query = '', kind = null, revealed = null } = {}) {
   const needle = query.trim().toLowerCase();
   const finder = needle === '' ? null : new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -43,7 +35,7 @@ export function filterOutline(outline, nodesById, { query = '', kind = null, rev
       const found = look(row.id);
       if (found) matched.push({ id: row.id, depth: row.depth, snippet: found.snippet });
     }
-    if (!head && matched.length === 0) continue; // 40 empty headers is not "keeping depth"
+    if (!head && matched.length === 0) continue;
     matches += matched.length + (head ? 1 : 0);
     const snippets = new Map(matched.map((row) => [row.id, row.snippet]));
     const rows = revealed?.has(section.head)
@@ -60,10 +52,7 @@ export function filterOutline(outline, nodesById, { query = '', kind = null, rev
   return { root: rootHit ? { id: outline.rootId, snippet: rootHit.snippet } : null, sections, matches };
 }
 
-// Only hues a step actually wears, in legend order, strays in palette order — never a filter that
-// returns nothing, and never a row at all on a tree of one kind, where the answer is everything.
-// Hue is the filter key because hue is what a node stores: two legend kinds sharing one hue are
-// one chip, named after the first.
+// Hue is the filter key because hue is what a node stores: two legend kinds sharing one hue are one chip.
 export function kindOptions(tree, legend = []) {
   const worn = new Set(tree.nodes.map((node) => node.color ?? DEFAULT_NODE_COLOR));
   if (worn.size < 2) return [];
@@ -80,10 +69,7 @@ export function kindOptions(tree, legend = []) {
   }));
 }
 
-// Everything a locked step waits on: the owed set, the part of it that can be started today
-// (ranked the way the whole app ranks work), how deep the gate runs — and the breadcrumb only when
-// every hop owes exactly one step, since forcing a chain onto a branching gate is a lie with good
-// typography. `clipped` says the six-hop cap dropped the far end; the near hops are the kept ones.
+// `clipped` says the six-hop cap dropped the far end; the near hops are the kept ones.
 export function gateOf(tree, states, id) {
   const step = tree.nodesById.get(id);
   if (!step) return { blockedBy: 0, frontier: [], longestChain: 0, line: null, clipped: false };
@@ -110,8 +96,7 @@ export function gateOf(tree, states, id) {
     .sort((a, b) => b.unlocks - a.unlocks || (a.node.id < b.node.id ? -1 : 1))
     .map((entry) => entry.node);
 
-  // Depth is a peel: today's frontier is layer one, what only they gate is layer two, and so on.
-  // A cycle never peels, so a round that removes nothing ends it instead of hanging the phone.
+  // A cycle never peels, so a round that removes nothing ends the walk instead of hanging.
   const peeled = new Set(frontier.map((node) => node.id));
   let longestChain = peeled.size > 0 ? 1 : 0;
   while (peeled.size < owed.size) {
@@ -130,8 +115,7 @@ export function gateOf(tree, states, id) {
     above = unmet(above[0]);
   }
 
-  // Running out of blockers AND covering the whole owed set is the proof of a line: a branch
-  // leaves nodes behind, and a cycle stops the walk with something still above it.
+  // A line is proven by running out of blockers AND covering the whole owed set.
   const straight = above.length === 0 && owed.size > 0 && walk.length - 1 === owed.size;
   return {
     blockedBy: owed.size,

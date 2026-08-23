@@ -20,11 +20,6 @@ import works.windmill.platform.design.WindmillColor
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
-// You — the shell's own surface, cut to what a one-room app spends: who is signed in, the way out,
-// and the door in. Windmill One, appearance, holdings and the web links stay on iOS and the web
-// until this shell grows a second room — a screen here could only restate what it cannot act on.
-// Always the family tokens, whatever room it opened over: the sheet is the shell's, not the room's.
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
@@ -57,17 +52,6 @@ fun YouSheet(auth: AuthStore, onDismiss: () -> Unit) {
                 }
             }
 
-            // The door, not a "please sign in" wall: signing in happens where the person is
-            // standing. Unknown lands here too — restore is in flight for at most one round trip,
-            // and the door it may replace is the truthful screen while nobody is signed in.
-            //
-            // A FINISHED SIGN-IN CLOSES THE SHEET. It used to redraw as the account it had just
-            // made, which read as the app not getting out of the way: the person came here to sign
-            // in, it worked, and a panel stayed over the room until they dismissed it by hand. The
-            // door has always taken an `onDone` for exactly this and this call site passed none, so
-            // the callback fired into nothing. Closing also keeps the promise the account verb makes
-            // — sign in and you land back where you were, mid-set — because there is only one way
-            // out of this sheet and both paths now take it.
             else -> SignInDoor(auth, onDone = onDismiss)
         }
     }

@@ -1,10 +1,3 @@
-// The app entry router (F1·F2): resolves "which tree" for the #/app family before the
-// heavy tree view mounts. #/app/:treeId opens that tree; #/app/new is the birth canvas;
-// #/app/start is the quest shelf (F5); bare #/app resolves against the union of the
-// account's trees and this device's local ones (anon-first-tree F3) — newest first, the
-// shelf when both are empty. All four live in the same lazy chunk as SkillTreeView, so
-// App only parses the hash.
-
 import React, { useEffect } from 'react';
 import { SkillTreeView } from './SkillTreeView.jsx';
 import { NewTreeBirth } from './ui/NewTreeBirth.jsx';
@@ -12,8 +5,6 @@ import { QuestShelf } from './quests/QuestShelf.jsx';
 import { listAllTrees } from './persistence/TreeRegistry.js';
 
 export function SkillTreeApp({ treeId, birth, start, demo = false }) {
-  // Bare #/app has no tree named: send it to the newest tree of the union — server or
-  // local — or to the quest shelf when there is none. Runs only while unresolved.
   useEffect(() => {
     if (birth || start || treeId) return undefined;
     let cancelled = false;
@@ -27,8 +18,7 @@ export function SkillTreeApp({ treeId, birth, start, demo = false }) {
   if (start) return <QuestShelf />;
   if (birth) return <NewTreeBirth />;
   if (!treeId) return <Resolving />;
-  // A different tree is a different world: keying by treeId lets demotion, lapse,
-  // fork state, and the scene's mode die with the old tree instead of leaking across.
+  // Keyed by treeId so per-tree state dies with the tree instead of leaking across.
   return <SkillTreeView key={treeId} treeId={treeId} demo={demo} />;
 }
 

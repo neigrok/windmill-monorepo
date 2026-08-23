@@ -1,8 +1,6 @@
-// The SSE side of the compose escalation (F3): POST /v1/compose with stream:true answers
-// text/event-stream — `delta` frames carry verbatim plan text in order, `done` closes clean,
-// `fail` means the model stopped mid-plan. parseSseFrames is the pure incremental decoder
-// (chunk boundaries land anywhere, heartbeats are ':' comment lines); readComposeStream
-// walks a fetch body through it and hands every delta to the caller, in order.
+// POST /v1/compose with stream:true answers text/event-stream: `delta` frames carry verbatim plan
+// text in order, `done` closes clean, `fail` means the model stopped mid-plan. Chunk boundaries
+// land anywhere and heartbeats are ':' comment lines.
 
 export function parseSseFrames(buffered) {
   const events = [];

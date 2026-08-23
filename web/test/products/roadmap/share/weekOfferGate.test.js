@@ -1,8 +1,3 @@
-// The week's offer's timing (weekOfferGate.js), driven on fake timers. Pinned: the cap fires an
-// idle offer once; a cap that finds a ceremony coming stands aside, and the ceremony's own follow
-// then fires the ask 120ms behind it, exactly once; a director that never goes idle cannot strand
-// the ask past three deferrals; and drop cancels everything, including an ask already on its way.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -40,7 +35,6 @@ test('the ceremony that closes the open fires the ask 120ms behind its toast, on
 
 test('a cap that finds a ceremony coming stands aside; the ceremony then fires the ask, once', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  // The defect's ordering: the phone-list arrival speaks at ~+2830ms, after the 2600ms cap.
   let busy = true;
   const gate = new WeekOfferGate(() => busy);
   let fired = 0;

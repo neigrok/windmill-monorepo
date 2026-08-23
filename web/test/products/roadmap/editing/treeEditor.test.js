@@ -1,14 +1,4 @@
-// TreeEditor is deliberately almost nothing: one field and one getter. It used to hold undo/redo
-// stacks; that moved to the SyncSession, over the lattice, and what is left is a holder so every
-// read seam in SkillTreeView (the panels, the key handlers, the persistence hooks) sees one
-// projection without threading it through React state.
-//
-// Being small is not the same as being contract-free. The whole seam rests on two properties, and
-// both are the kind a well-meaning refactor breaks while making the class "safer": `treeData` hands
-// back the very object it was given — it does not clone, so a reader and the lattice agree by
-// identity — and assigning `.present` is visible through `treeData` on the very next read, with no
-// notification step in between. A defensive copy in either place would leave every test elsewhere
-// green and quietly desynchronise the panels from the tree.
+// `treeData` shares the `nodes` array it is handed — no clone.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

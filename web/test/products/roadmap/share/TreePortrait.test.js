@@ -1,9 +1,3 @@
-// The portrait's period-ink seam (brief #20, reconciled to canon). Three things matter here: the
-// ladder inks each tier the way canon says, the edge INTO a new step is drawn in that step's own
-// kind (the route taken, which is where most of the card's meaning lives), and NOT handing over a
-// period is byte-identical to the portrait every other share surface already draws — the OG card's
-// fit test and the share clip's loop seam both pin that markup.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -30,8 +24,6 @@ const MODEL = {
   bounds: { minX: -300, minY: 0, maxX: 300, maxY: 200 },
 };
 
-// Each call mints a fresh filter id so many portraits on one page never collide — that counter is
-// the only thing that legitimately differs between two renders of the same model.
 function stable(svg) {
   return svg.replace(/wm-glow-\d+/g, 'wm-glow');
 }
@@ -54,7 +46,6 @@ test('the period ink is a four-tier ladder: only this period’s work keeps the 
   const period = treePortraitSvg(MODEL, PAL, BOX, undefined, { lit: new Set(['a']) });
 
   assert.equal((period.match(/class="wm-node"/g) || []).length, MODEL.nodes.length);
-  // The halo is what "new" looks like — the settled root gives its up, so exactly one remains.
   assert.equal((plain.match(/filter="url\(#wm-glow-\d+\)"/g) || []).length, 2);
   assert.equal((period.match(/filter="url\(#wm-glow-\d+\)"/g) || []).length, 1);
 
@@ -80,7 +71,6 @@ test('the edge INTO a new step is that step’s kind at full alpha — the route
   const plain = treePortraitSvg(MODEL, PAL, BOX);
   const period = treePortraitSvg(MODEL, PAL, BOX, undefined, { lit: new Set(['a']) });
 
-  // Unveiled: bark for the two edges leaving a done node, dimEdge for the two leaving b/…
   assert.deepEqual(edgeInk(plain), [
     '#9C6B44 1.96 0.92',   // root → a
     '#9C6B44 1.96 0.92',   // root → b

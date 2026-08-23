@@ -1,10 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// The wire, spelled out. Every field name below is the one the backend's codec writes, and every
-// absence is an omission rather than a null — a decoder with no key strategy matches these by
-// spelling alone, so a rename anywhere is a silent 404 or a silently missing number.
-
 final class TrainingWireTests: XCTestCase {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         try JSONDecoder().decode(type, from: Data(json.utf8))
@@ -33,8 +29,6 @@ final class TrainingWireTests: XCTestCase {
                        PlanEntry(exerciseId: "bench-press", sets: 5, reps: 5, weightKg: 82.5, restSeconds: 180))
     }
 
-    // A plan line with no target weight means "whatever you did last time" — an absence that is a
-    // real instruction, and never a zero.
     func testAPlanLineWithNoTargetWeightIsAnAbsenceAndNotAZero() throws {
         let entry = try decode(PlanEntry.self, #"{"exerciseId":"chin-up","sets":3,"reps":8}"#)
 
@@ -42,9 +36,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertNil(entry.restSeconds)
     }
 
-    // And a plan line with no REP target means max — `3 × max`, a movement taken to whatever it gives
-    // that day. `targetReps` was required, so a program with chin-ups in it could not be expressed at
-    // all; it is omitted when absent, like every other optional in this module, and never null.
     func testARepTargetIsOmittedWhenTheRoutineDeclinesToNameOne() throws {
         let entry = try decode(PlanEntry.self, #"{"exerciseId":"chin-up","sets":3}"#)
         XCTAssertNil(entry.reps)
@@ -74,8 +65,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(set.completedAtMs, 1_754_300_000_000)
     }
 
-    // A kind this build has never heard of reads as working. Folding it to warmup would be the quiet
-    // way to lose a lift: warmups are excluded from history, from the prefill and from every record.
     func testAKindThisBuildHasNeverHeardOfReadsAsWorking() throws {
         let set = try decode(TrainingSet.self,
                              #"{"id":"set_1","exerciseId":"x","weightKg":1,"reps":1,"kind":"cluster","completedAt":1}"#)
@@ -83,8 +72,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(set.kind, .working)
     }
 
-    // An absent optional is OMITTED, never null — the module's convention on the wire, and the same
-    // bytes this device writes to its own disk.
     func testAnAbsentOptionalIsOmittedRatherThanWrittenAsNull() throws {
         let queued = TrainingSet(id: "set_1", exerciseId: "bench-press", weightKg: 82.5, reps: 5,
                                  completedAtMs: 1_754_300_000_000)
@@ -103,10 +90,6 @@ final class TrainingWireTests: XCTestCase {
                        "and a stated false reaches the wire rather than being dropped as a default")
     }
 
-    // The log's rows are FLAT: the session's own fields with its four facts beside them, not a
-    // session nested under a key that is not there. `topSet` is decoded and not drawn on this
-    // surface (the log's row prints `topE1rm`, and only the SESSION DETAIL says `closedItself`) —
-    // so this is what keeps the model matching the wire the web's log row reads.
     func testALogRowIsTheSessionWithItsFactsBesideIt() throws {
         let row = try decode(SessionSummary.self, """
         { "id": "ses_1", "startedAt": 1754300000000, "finishedAt": 1754303720000,
@@ -122,8 +105,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertTrue(row.closedItself)
     }
 
-    // A session holding no working set has no top set, and a session somebody finished with a tap
-    // says nothing about the four-hour rule. Both absences are omissions.
     func testARowWithNoWorkingSetCarriesNoTopSetAndWasNotClosedByTheRule() throws {
         let row = try decode(SessionSummary.self, """
         { "id": "ses_2", "startedAt": 1754300000000, "finishedAt": 1754303720000, "setCount": 2 }
@@ -133,8 +114,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertFalse(row.closedItself)
     }
 
-    // A movement trained for the first time is answered 200 with the movement and nothing else — a
-    // fact, not a fault. An absent REPLY means something else entirely: the log did not answer.
     func testAFirstEverMovementComesBackNamedAndEmpty() throws {
         let answer = try decode(LastTime.self, #"{"exerciseId":"zercher-squat"}"#)
 
@@ -165,8 +144,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(review.against?.movements.first?.planned, Against.Target(sets: 3, reps: 12, weightKg: 140))
     }
 
-    // The ~190 sessions in 200 that earn nothing: three facts, and the space a record would occupy
-    // left empty. Nothing takes its place, so nothing here may invent one.
     func testAnOrdinarySessionCarriesNoRecordAndNoComparison() throws {
         let review = try decode(Review.self, #"{"stats":{"durationMs":2820000,"workingSets":14},"slight":false}"#)
 
@@ -187,7 +164,6 @@ final class TrainingWireTests: XCTestCase {
         XCTAssertEqual(routine.entries.first?.targetWeightKg, 82.5)
     }
 
-    // A routine nobody has trained sorts on the ABSENCE, not on a zero pretending to be 1970.
     func testARoutineNeverTrainedHasNoStampAtAll() throws {
         let routine = try decode(Routine.self, #"{"id":"rt_1","name":"Pull A","position":1,"entries":[]}"#)
 
@@ -202,8 +178,6 @@ final class RoutineWriteTests: XCTestCase {
                     reps: reps, kind: kind, completedAtMs: completedAtMs)
     }
 
-    // "Keep this as a routine" — the first routine is a by-product of the first session: movements in
-    // the order performed, the count of WORKING sets, the modal reps, and the heaviest working load.
     func testARoutineKeptFromASessionIsWhatWasActuallyLifted() throws {
         let write = try XCTUnwrap(RoutineWrite(named: "Push A", from: [
             aSet("bench-press", 40, 10, .warmup, at: 100),
@@ -225,8 +199,6 @@ final class RoutineWriteTests: XCTestCase {
                        "a drop set is not what next week is aimed at")
     }
 
-    // A tie on the modal reps goes to the SMALLER count: a target you can beat is a fact about last
-    // week, and one you cannot hit reads as a failed session every time it comes round.
     func testATiedModalRepCountGoesToTheSmallerTarget() throws {
         let write = try XCTUnwrap(RoutineWrite(named: "Legs", from: [
             aSet("back-squat", 100, 5, at: 100),
@@ -239,8 +211,6 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertEqual(write.entries.map(\.targetWeightKg), [110])
     }
 
-    // A routine with no entries is refused 400, and a session of nothing but warmups has none. There
-    // is nothing to create, so nothing is offered.
     func testASessionOfNothingButWarmupsKeepsNoRoutine() {
         XCTAssertNil(RoutineWrite(named: "Push A", from: [
             aSet("bench-press", 40, 10, .warmup, at: 100),
@@ -248,10 +218,6 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertNil(RoutineWrite(named: "Push A", from: [], position: 0))
     }
 
-    // The mid-session change offer, applied: ONE target moves — the line at the position the offer
-    // was raised against — and the document is otherwise the one the server handed back. The same
-    // movement twice is two rows with two positions, so the back-off at 2 does not follow the top
-    // set at 1.
     func testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
         let routine = Routine(id: "rt_1", name: "Push A", position: 0, lastTrainedAtMs: 9_000, entries: [
             RoutineEntry(position: 1, exerciseId: "bench-press", targetSets: 5, targetReps: 5,
@@ -275,8 +241,6 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertEqual(RoutineWrite(changed!).entries.map(\.targetWeightKg), [105, 80, 45])
     }
 
-    // The routine changed under the session: the position names another movement now, or is gone
-    // altogether. Nothing is written — an unchanged PUT would still supersede every pending proposal.
     func testRetargetingAPositionThatNoLongerHoldsTheMovementIsNothingToWrite() {
         let routine = Routine(id: "rt_1", name: "Push A", position: 0, entries: [
             RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5, targetReps: 5,
@@ -287,8 +251,6 @@ final class RoutineWriteTests: XCTestCase {
         XCTAssertNil(routine.retargeting(position: 2, exerciseId: "back-squat", toWeightKg: 145))
     }
 
-    // An open row has no planned weight, so it cannot be the row an offer was raised against — and a
-    // weight written onto it would be the half-open line the server refuses.
     func testRetargetingAnOpenLineIsNothingToWrite() {
         let routine = Routine(id: "rt_1", name: "Pull A", position: 0, entries: [
             RoutineEntry(position: 1, exerciseId: "chin-up"),
@@ -311,8 +273,6 @@ final class PrefillTests: XCTestCase {
         XCTAssertEqual(prefill, Prefill(weightKg: 20, reps: 5))
     }
 
-    // Three sources in a fixed order: today's own last set, then the plan, then last time. The one
-    // that loses is still on screen.
     func testTodaysLastSetWinsOverThePlanAndOverLastTime() {
         let prefill = Prefill(
             todaySets: [aSet(82.5, 5, at: 100), aSet(85, 3, at: 200)],
@@ -335,8 +295,6 @@ final class PrefillTests: XCTestCase {
         XCTAssertEqual(prefill, Prefill(weightKg: 82.5, reps: 5))
     }
 
-    // The asymmetry is deliberate: the weight comes from the LAST working set, where the lifter
-    // actually ended up, and the reps from the FIRST, before fatigue cut them.
     func testLastTimeGivesTheWeightItEndedOnAndTheRepsItStartedOn() {
         let prefill = Prefill(
             todaySets: [],
@@ -348,9 +306,6 @@ final class PrefillTests: XCTestCase {
         XCTAssertEqual(prefill, Prefill(weightKg: 90, reps: 8))
     }
 
-    // The sticky carry-forward follows the WORKING sets. A 40 kg ramp-up is not the weight the next
-    // set starts from, and carrying it would drag the dial back down the ladder the lifter has just
-    // climbed — answering "what am I about to lift" with a warmup.
     func testAWarmupIsNotCarriedForwardAsTheStickyWeight() {
         let afterAWarmup = Prefill(
             todaySets: [aSet(40, 10, at: 100, kind: .warmup)],
@@ -370,8 +325,6 @@ final class PrefillTests: XCTestCase {
                        "the last working set is the one the thumb is following")
     }
 
-    // A plan that names sets and no rep target asks for NOTHING here: an absent target means max, so
-    // the reps fall through to last time exactly as an absent weight does.
     func testAPlanWithNoRepTargetFallsThroughToLastTimeRatherThanToZero() {
         let prefill = Prefill(
             todaySets: [],
@@ -386,8 +339,6 @@ final class PrefillTests: XCTestCase {
                        Prefill(weightKg: 20, reps: 5), "and with no history at all, the empty bar")
     }
 
-    // A plan that names sets and reps and leaves the load to last time gets both halves from where
-    // each is written — the plan is not all-or-nothing.
     func testAPlanWithNoTargetWeightStillGivesItsReps() {
         let prefill = Prefill(
             todaySets: [],
@@ -399,9 +350,6 @@ final class PrefillTests: XCTestCase {
         XCTAssertEqual(prefill, Prefill(weightKg: 0, reps: 8))
     }
 
-    // The rep floor belongs where the number is MINTED and not only on the button that moves it: a 0
-    // written by a build from before the floor moved would otherwise open the pad on a value the
-    // server refuses, in alarm ink, on a gesture the lifter never made.
     func testARepCountOfZeroFromAnOlderBuildClimbsBackToOne() {
         let prefill = Prefill(todaySets: [aSet(82.5, 0, at: 100)], planEntry: nil, lastTime: nil)
 
@@ -411,9 +359,6 @@ final class PrefillTests: XCTestCase {
 }
 
 final class IdsTests: XCTestCase {
-    // The client-minted id IS the idempotency key, so it has to be legal to the server on every
-    // path: 8…64 characters of [A-Za-z0-9_-], and enough entropy that a collision is a refusal to
-    // repair rather than a thing to plan around.
     func testEveryMintedIdIsLegalToTheServerAndCarriesItsPrefix() {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
 

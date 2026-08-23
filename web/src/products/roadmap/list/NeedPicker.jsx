@@ -1,11 +1,4 @@
-// The need picker (X8 L4): connect-by-search, not connect-by-aim. A half-sheet rises over a
-// scrim; it lists the steps this one could need — legal prerequisites first, then the ones that
-// would close a loop, dimmed and inert and tagged. Search filters by name. Picking a legal row
-// links it and closes; the scrim or the × close with nothing done. Purely presentational: the
-// legal/loop split is editing.js, the link + flash are the host's. It renders through a portal
-// so the scrim/sheet clear the view pill (which shares the list layer's stacking context) and
-// sit modal above the chrome — below the fork door and the undo toast. Reduced motion keeps the
-// fade and drops the rise (the CSS opacity-only fallback).
+// Renders through a portal so the scrim and sheet clear the list layer's stacking context.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -26,7 +19,7 @@ const SEARCH_GLYPH = (
   </svg>
 );
 
-const CLOSE_MS = 280; // the teardown waits for the sheet's 280ms rise/descent (the scrim fades in its own 200ms)
+const CLOSE_MS = 280; // the teardown waits for the sheet's rise/descent
 
 export function NeedPicker({ tree, states, targetId, portalTarget, onPick, onClose }) {
   const [shown, setShown] = useState(false);
@@ -43,8 +36,7 @@ export function NeedPicker({ tree, states, targetId, portalTarget, onPick, onClo
   const candidates = useMemo(() => pickerCandidates(tree, targetId), [tree, targetId]);
   const target = tree.nodesById.get(targetId);
 
-  // The target was deleted (remotely) mid-open: there's nothing to pick for. Ask the host to
-  // close and render nothing — never throw building candidates for a step that no longer exists.
+  // The target was deleted remotely mid-open: ask the host to close and render nothing.
   useEffect(() => { if (!candidates) onClose(); }, [candidates, onClose]);
   if (!candidates) return null;
 

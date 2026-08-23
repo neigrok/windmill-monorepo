@@ -1,8 +1,3 @@
-// The week offer's rules (brief #20, reconciled to canon C7). A recurring offer earns its place
-// only if it cannot turn into nagging, so every gate is pinned here — including the two that decide
-// whether it can exist at all: it rides the RETURN (once per period, never on the first, never
-// twice), and two declines in a row retire it for that tree permanently.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -22,7 +17,6 @@ function fakeStorage() {
   };
 }
 
-// A tree planted at PLANTED, last posted about in `postedInWeek`, opened in `openInWeek`.
 function scenario({
   postedIds = ['a'],
   postedInWeek = 1,
@@ -74,7 +68,6 @@ test('never twice in one period: the ask goes out once and the rest of the week 
   considerProgressShare(args).commit();
 
   assert.deepEqual(considerProgressShare({ ...args, now: args.now + DAY_MS }), { offer: false });
-  // …and the next period asks again, because a period is exactly what it is counting.
   const nextWeek = { ...args, now: args.now + PERIOD_MS, storage };
   assert.equal(considerProgressShare(nextWeek).offer, true);
 });
@@ -94,8 +87,6 @@ test('two declines in a row retire the offer for that tree — permanently, sile
 test('an ask made where no share menu exists spends the period but never counts as a refusal', () => {
   const { storage, args } = scenario({ openInWeek: 2 });
 
-  // A phone owner has no Share door to change their mind at, so a toast that fades there is the
-  // only door closing — not a refusal. The period's one ask is still spent.
   considerProgressShare(args).commit({ countsAsDecline: false });
   assert.deepEqual(considerProgressShare({ ...args, now: args.now + DAY_MS, storage }), { offer: false });
 

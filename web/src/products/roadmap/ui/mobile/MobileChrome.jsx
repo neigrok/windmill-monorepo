@@ -1,9 +1,4 @@
-// The screen-space chrome that frames a read-only tree on phone/tablet (X5 §A). Five
-// pieces float over the WebGL canvas: the dominant-kind rule, a label plaque, the
-// brand wordmark, the Fork CTA, and a Recenter chip. The whole layer is inert to
-// pointer input (it lets pans through to the canvas); only the Fork and Recenter
-// bits opt back in. WS-A mounts this over the scene and fades `.st-mobile-chrome`
-// while panning — we only render.
+// The layer is inert to pointer input so pans reach the canvas; only Fork and Recenter opt back in.
 
 import React, { useState } from 'react';
 import { Icon } from '../../../../design-system';
@@ -40,10 +35,7 @@ export function MobileChrome({
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const listView = view === 'list';
 
-  // An anon owner's tree lives only on this device — the one honest nudge, riding inside the
-  // plaque where the tree names itself. The list view never renders it here: the list header
-  // owns the sign-in line as its own notice row. Tapping opens the sign-in door;
-  // claimLocalTrees keeps the tree and its progress on the account.
+  // The list view never renders this: the list header owns the sign-in line as its notice row.
   const signInNudge = onSignInToKeep ? (
     <button
       type="button"
@@ -71,7 +63,7 @@ export function MobileChrome({
       className="st-mobile-chrome"
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}
     >
-      {/* Dominant-kind rule — a 4px hairline across the very top (the X2 rule) */}
+      {/* Dominant-kind rule — a 4px hairline across the very top */}
       <div
         style={{
           position: 'absolute',
@@ -83,8 +75,6 @@ export function MobileChrome({
         }}
       />
 
-      {/* Plaque + wordmark — the tree view's identity chrome. The list view (X8) shows the
-          same facts in its own header and hides both; only the rule, Fork and nudge remain. */}
       {!listView && (
       <>
       {/* Plaque — a label, never a menu; sits below the status-bar-safe area */}
@@ -134,7 +124,7 @@ export function MobileChrome({
         </div>
 
         {byline ? (
-          // The demo plaque (F4 §07): one honest byline in place of the count + bar.
+          // The demo plaque: one honest byline in place of the count + bar.
           <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
             {byline}
           </span>
@@ -183,7 +173,7 @@ export function MobileChrome({
         {signInNudge}
       </div>
 
-      {/* Wordmark chip — the way home (§06): a real link on every read-only surface */}
+      {/* Wordmark chip — the way home: a real link on every read-only surface */}
       <a
         className="st-wordmark-link"
         href="#/"
@@ -253,8 +243,7 @@ export function MobileChrome({
       </button>
       )}
 
-      {/* Recenter chip — a 36px pill in a 44px touch target, only when off-center. The list
-          view never shows it (X8): the list has no camera to recenter. */}
+      {/* Recenter chip — only when off-center; the list has no camera to recenter. */}
       {showRecenter && !listView && (
         <button
           type="button"
@@ -262,10 +251,8 @@ export function MobileChrome({
           aria-label="Recenter"
           style={{
             position: 'absolute',
-            // The Fork CTA sits centered at the bottom; on a narrow phone its right edge reaches the
-            // right-aligned Recenter chip. When the fork is present (a tree that isn't yours), lift
-            // the chip clear ABOVE the fork's 50px pill so the two never collide; on your own tree
-            // (no fork) it rests at the bottom-right. Tablet puts the fork bottom-LEFT, so no lift.
+            // With a fork present on a narrow phone the chip lifts clear above its 50px pill;
+            // tablet puts the fork bottom-left, so no lift.
             bottom: onFork && !tablet ? `calc(${SAFE_BOTTOM} + 80px)` : `calc(${SAFE_BOTTOM} + 14px)`,
             right: `calc(env(safe-area-inset-right, 0px) + ${recenterRight}px)`,
             pointerEvents: 'auto',
@@ -308,8 +295,6 @@ export function MobileChrome({
         </button>
       )}
 
-      {/* List view (X8): no standalone nudge here — the list header owns the sign-in line (it
-          renders it as its own notice row), so the chrome shows only the rule, Fork and pill. */}
     </div>
   );
 }

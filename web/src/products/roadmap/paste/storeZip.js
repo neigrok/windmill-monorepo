@@ -1,12 +1,5 @@
-// A minimal store-only (no compression) ZIP writer — the packing half of the
-// settings "export your data" feature. Pure and dependency-free: it runs under bare
-// node for the contract test and in the browser for the download, and emits raw
-// bytes so the caller decides the wrapper (`new Blob([bytes], {type:'application/zip'})`).
-//
-// Store method 0 means the file data is copied verbatim — no deflate, so no vendor
-// dependency — and the archive is still a real ZIP: local file headers with a
-// hand-rolled CRC32, a central directory, and an end-of-central-directory record,
-// all little-endian. A stock `unzip` accepts and round-trips it.
+// A store-only (method 0, no compression) ZIP writer emitting raw bytes: local file headers, a
+// central directory and an end-of-central-directory record, all little-endian.
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);

@@ -73,15 +73,9 @@ import {
   Keyboard,
 } from 'lucide-react';
 
-/**
- * Icon — thin wrapper over Lucide (the design system's chosen line-icon set).
- *
- * The design system references icons by kebab/lowercase name (e.g. "chevron-down",
- * "sofa") and passes them into components as `icon={<Icon name="..." />}`. We keep
- * that name-based API but back it with an explicit registry of named imports rather
- * than pulling the whole icon set — that keeps the dev server and bundle lean. Add a
- * new icon by importing it above and registering its kebab name here.
- */
+// Icons are referenced by kebab name (`icon={<Icon name="chevron-down" />}`), backed by an explicit
+// registry of named Lucide imports rather than the whole set. Add one by importing it above and
+// registering its kebab name here.
 const REGISTRY = {
   'git-branch-plus': GitBranchPlus,
   sparkles: Sparkles,

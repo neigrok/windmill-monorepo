@@ -3,20 +3,10 @@ package works.windmill.gym.store
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-// Refusals as the wire delivers them — a sentence for a human under "error", and, for the ones a
-// client must branch on, a machine word under "code". The tests below deliberately reword the
-// sentences: the code and the status are the contract, and nothing here may read English to decide
-// what to do.
 private fun refusal(status: Int, code: String? = null, message: String? = null) =
     RefusalFacts(status = status, code = code, sentence = message)
 
-// THE SEVENTH WORD, and the one thing it must never do: offer a retry against an answer, or a
-// purchase against a ceiling. Ask is the first feature in this product with a cost per use, and the
-// cap is therefore the first refusal a lifter meets that somebody could be tempted to sell past.
 class AskVerdictTests {
-    // BOTH CEILINGS ARE ANSWERS AND NEITHER IS FOR SALE. They are said in the log's own words and
-    // nothing is drawn beside them — there is no checkout in this product, and an upgrade offered
-    // here would advertise a purchase that answers 503.
     @Test
     fun testTheDailyCapAndTheAiCeilingAreBothSaidAndNeitherIsRetried() {
         assertEquals(
@@ -31,10 +21,6 @@ class AskVerdictTests {
         )
     }
 
-    // The floor under "never offered mid-session". No client should ever draw the door while a
-    // workout is open — but three clients each remembering a rule is three chances to forget it, so
-    // the server refuses one, and this is what the screen does with that refusal: says it, and
-    // offers nothing to tap.
     @Test
     fun testAWorkoutStillOpenIsAnAnswerAndNotAFailure() {
         assertEquals(
@@ -44,17 +30,12 @@ class AskVerdictTests {
         )
     }
 
-    // A DEPLOYMENT WITH NO MODEL DOES NOT REGISTER THE ROUTE, so the answer is the framework's bare
-    // 404 with no body at all. That is the feature being ABSENT rather than something failing, and
-    // the room takes the door down rather than saying anything about it.
     @Test
     fun testABare404IsTheFeatureBeingAbsentAndNotAnError() {
         assertEquals(AskVerdict.Absent, AskVerdict.refusing(refusal(404)))
         assertEquals(AskVerdict.Absent, AskVerdict.refusing(refusal(404, message = "not found")))
     }
 
-    // The one worth another tap, and the only one. A dead upstream, a store that fell over and a
-    // phone in a basement are all "nobody answered", which a second tap can change.
     @Test
     fun testOnlyALogThatWentQuietIsWorthAnotherTap() {
         assertEquals(AskVerdict.Again("Ask didn't answer. Try again in a moment"),
@@ -67,8 +48,6 @@ class AskVerdictTests {
             AskVerdict.refusing(refusal(502, message = "Ask didn't answer. Try again in a moment")))
     }
 
-    // A thread the server could not read never becomes readable on a retry, and an expired session
-    // wants a sign-in rather than another send. Both are the log answering, in its own words.
     @Test
     fun testATerminalRefusalCarriesTheLogsOwnSentence() {
         assertEquals(AskVerdict.Said("that isn't a conversation Ask can answer"),

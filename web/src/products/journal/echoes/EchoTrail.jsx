@@ -1,9 +1,4 @@
-// How you got here — the receipt of a walk back through the journal's own resonances.
-//
-// It records where you came from and nothing else: no "3 of 5", no next button, no path anyone
-// designed for you. Depth is unlimited and unremarked; nothing congratulates you for going deep.
-// Every hop is a position, so every chip is a URL you can stand on again — and tonight is always
-// one tap away, down at the bottom of the canvas where it always is.
+// Where you came from. Every hop is a position, so every chip is a URL you can stand on again.
 
 import React from 'react';
 import { distanceTrail, stampPlain } from './echoDates.js';

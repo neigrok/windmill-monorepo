@@ -1,8 +1,4 @@
-// The keyboard-shortcuts reference (brief #14): a wide, two-column card built to scan.
-// It reads the canonical map (shortcutMap), splits each chip into a Keycap — a raised,
-// mono cap with real cap depth — or a GesturePill — a soft sunken pill for a pointer move,
-// so a glance says whether a row is a key or a gesture. A Mac / Windows toggle checks the
-// other platform's keys; read-only trees drop the editing groups. It never edits anything.
+// The keyboard-shortcuts reference, rendered from shortcutMap.
 
 import React, { useState } from 'react';
 import { Dialog } from '../../../design-system';

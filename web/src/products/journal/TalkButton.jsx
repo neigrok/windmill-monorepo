@@ -1,17 +1,6 @@
-// Talk: speak a page instead of typing it. It is a tool, so it lives where the tools live — in the
-// rail beside search and the zoom, never floating over the writing and never wearing a price tag.
-// Canon (Journal canvas controls, 09 Aug 2026): a badge prices the thing before anyone has asked for
-// it, so the button is a glyph and the SHEET states the layer and the discard promise together.
-//
-// The paywall stays honest UP FRONT — the mic never records a non-subscriber's words only to lose
-// them to a 403. A signed-out writer is sent to the door; a signed-in writer without Windmill One is
-// told the plan is not open, and once plans arm the same press opens checkout and the mic unlocks
-// the moment it completes. Only once entitlement is confirmed does the button record: the browser's
-// own recorder captures audio, sends it to the voice endpoint, and drops the transcript straight
-// into today — no separate view, no audio kept anywhere (the server transcribes and discards; the
-// vendor is OpenAI). It hides itself when voice isn't available: a browser without a recorder never
-// shows it, and a 503 (no vendor wired) retires it for the session. The query for text is the only
-// thing that leaves.
+// Talk: speak a page instead of typing it. Entitlement is checked before the mic opens, so no recording
+// is lost to a 403. Audio goes to the voice endpoint and the transcript drops into today; no audio is
+// kept. A browser without MediaRecorder never shows it, and a 503 retires it for the session.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
@@ -20,7 +9,6 @@ import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useEntitlements } from '../../shell/billing/EntitlementsProvider.jsx';
 import { beginUpgrade, paidPlansOpen } from '../../shell/billing/checkout.js';
 
-// Said in the sheet, every time, before a word is spoken — not in a footnote and not once ever.
 const DISCARD_PROMISE = 'The recording is transcribed and thrown away. No audio is kept anywhere.';
 
 function pickMime() {
@@ -32,24 +20,20 @@ function pickMime() {
 }
 
 export function TalkButton({ onTranscript, onNeedSignIn }) {
-  // starting is a phase of its own because asking for the microphone is SLOW — the permission
-  // prompt is seconds of a live UI still reading 'idle'. Without it a second press inside that
-  // window opens a second recorder over the first, and the first stream is then held by nothing:
-  // no onstop will ever release it and the unmount cleanup can only see the last one, so the
-  // browser's recording light stays on until the tab closes.
+  // `starting` is a phase of its own: without it a second press opens a second recorder over the first,
+  // and the first stream is then released by nothing.
   const [phase, setPhase] = useState('idle');   // idle | starting | recording | working | hidden
-  const [open, setOpen] = useState(false);      // the sheet — closed is the resting state
+  const [open, setOpen] = useState(false);      // the sheet
   const [note, setNote] = useState('');
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const { status } = useAuth();
   const { loading: entLoading, windmillOne, refresh } = useEntitlements();
 
-  // Leaving the page mid-sentence must never leave the mic hot: release the stream on unmount.
+  // Release the stream on unmount: leaving the page mid-sentence must never leave the mic hot.
   useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
 
-  // Escape closes the sheet, and closing it stops a recording — the same as pressing the tool
-  // again. A dialog that only its own link can dismiss is a dialog you can be stuck in.
+  // Escape closes the sheet, and closing it stops a recording — the same as pressing the tool again.
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
@@ -90,10 +74,9 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
         const text = await journalApi.transcribe(blob, blob.type);
         if (text && text.trim()) onTranscript(text.trim());
         setPhase('idle');
-        setOpen(false);            // the words are in the page; the sheet has nothing left to say
+        setOpen(false);
       } catch (error) {
-        // The up-front gate makes these the rare races — a session or subscription that lapsed
-        // between the check and the send. Re-sync the truth so the mic re-locks rather than lying.
+        // A session or subscription that lapsed between the check and the send: re-sync so the mic re-locks.
         if (error.status === 403) { setPhase('idle'); refresh(); flash('Talk is part of Windmill One'); }
         else if (error.status === 401) { setPhase('idle'); setOpen(false); onNeedSignIn?.(); }
         else { setPhase('hidden'); setOpen(false); }   // 503 (no vendor) or worse — retire it quietly
@@ -106,9 +89,6 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
 
   const stop = () => recorderRef.current?.stop();
 
-  // One press, three readings of the same state. A signed-out writer never opens a sheet about a
-  // plan — the door is what they need. An entitled writer's press IS the record, and the sheet that
-  // opens with it is where the promise is made. Everyone else gets the sheet, and it is honest.
   const press = () => {
     if (checking || phase === 'starting') return;
     if (status !== 'signed-in') { onNeedSignIn?.(); return; }
@@ -150,10 +130,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   );
 }
 
-// Recording. The one sentence about the audio is on screen while the audio exists — that is the
-// whole point of moving it off the button and into here. While the browser is still asking for the
-// microphone there is nothing to stop and nothing to close, so the sheet says what it is waiting
-// for and offers no control that would race the recorder into existence.
+// While the browser is still asking for the microphone there is nothing yet to stop, so no control.
 const TALK_STATES = {
   starting: 'Waiting for the microphone…',
   recording: 'Listening',
@@ -174,14 +151,11 @@ function TalkSheet({ phase, onStop, onClose }) {
   );
 }
 
-// The paywall, said in full before a single word is spoken: which layer this is, what happens to the
-// audio, and — while Windmill One is not on sale (shell/billing/checkout.js — paidPlansOpen) — that
-// there is no door behind the price yet. Sending this writer to a checkout would spend their press
-// on a failure. The moment plans arm, the same button is a checkout again.
+// While `paidPlansOpen()` is false there is no door behind the price; the same button becomes a checkout
+// the moment plans arm.
 function LockedSheet({ onClose, onFlash, onRefresh }) {
   const openDoor = async () => {
-    // The webhook that flips the subscription live can trail checkout.completed by a beat, so
-    // re-read once now and once shortly after rather than leaving the mic locked on a paid account.
+    // The webhook that flips the subscription live can trail checkout.completed, so re-read twice.
     const opened = await beginUpgrade({ onCompleted: () => { onRefresh(); setTimeout(onRefresh, 2500); } });
     if (!opened) onFlash('Couldn’t open checkout');
   };

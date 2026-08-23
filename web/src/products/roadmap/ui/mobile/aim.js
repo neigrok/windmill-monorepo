@@ -1,7 +1,5 @@
-// The connect aim mode's pure legality (M3), re-expressing the desktop ConnectGesture's
-// cycle guard as tap-then-tap: which nodes a tap may NOT land on, and which way the edge
-// the tap creates points. A cycle or a duplicate edge is illegal; multiple parents are
-// fine. Pure — a SkillTree in, a Set or an {from,to} out; no scene, no React.
+// Tap-then-tap legality: which nodes a tap may NOT land on, and which way the edge it creates points.
+// A cycle or a duplicate edge is illegal; multiple parents are fine.
 
 export function illegalTargets(tree, sourceId, direction) {
   const illegal = new Set([sourceId]);

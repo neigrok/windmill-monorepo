@@ -5,10 +5,7 @@ standing policies on fonts and the logo. Product-specific canon lives in the pro
 beside this file; the drawn form of everything here is the Foundations page of the
 Windmill · Design System Figma file, and the shipped values are `web/src/styles/tokens/`.
 
-Carried from the design canon and trimmed to what is still binding — the sections describing an
-older folder layout were dropped rather than kept as history.
-
-## Direction (from the brief)
+## Direction
 - Minimalistic, animation-rich
 - Light, airy base with a warm Tuscan earth palette (terracotta / olive / gold)
 - Organic vine/branch metaphor
@@ -16,21 +13,7 @@ older folder layout were dropped rather than kept as history.
 - Soft, glowy motion (pulses, fades) rather than mechanical or bouncy
 - Simple line icons (Lucide)
 
-## Caveats — please read
-- **Built before the codebase existed.** This system was authored before the code existed — the repo had no commits at first build, so the visual direction here is original, inferred from the brief — not a
-  recreation.
-- **No logo file exists.** You described "spinning millstones" as a mark, but per policy this
-  system never invents or draws a company's logo — only a wordmark (Baloo 2, plain type) is
-  used wherever a mark would go. If you have an actual logo file, attach it and it'll be
-  dropped into `assets/` and swapped in everywhere.
-- **Fonts are Google Fonts substitutes**, not licensed brand fonts — see Typography below.
-
----
-
 ## Content fundamentals
-
-No real product copy existed to study, so this voice is proposed, not observed — validate it
-against how your team actually talks.
 
 - **Voice**: encouraging and a little playful, but not jokey. Copy stays domain-neutral — it
   works for a room makeover, a fitness goal, or a product launch alike.
@@ -48,15 +31,13 @@ against how your team actually talks.
   Natural earth hues carry all brand/interactive meaning: **terracotta** (primary — CTAs),
   **olive** (available/success/growth), **gold** (ochre — warnings, small flourishes; a
   *kind*, never a state). Brick red is reserved for danger; a muted Tuscan-sky blue exists
-  for info only. Nothing vivid or "chemical" — every hue is muted toward earth. See
-  `guidelines/colors-*.card.html`.
+  for info only. Nothing vivid or "chemical" — every hue is muted toward earth.
 - **Theming (light + dark)**: light is the default. A full dark theme ships as a token layer
   scoped to `[data-theme="dark"]` — set it on `<html>` for the whole app, or on any element
   to darken just that subtree. Because every surface, border, text and glow token is
   redefined under that scope, all components adapt with no per-component work. Dark is a warm
   brown-black "night sky" (never cold gray): a near-black canvas with slightly-elevated
-  warm-dark cards, warm off-white text, brighter accent steps, and intensified glows. See
-  `guidelines/colors-dark-theme.card.html`.
+  warm-dark cards, warm off-white text, brighter accent steps, and intensified glows.
 - **Type**: two families. **Baloo 2** (rounded, bold, high personality) for display — page
   headers, big numbers. **Nunito** (rounded, readable) for body/UI text. **JetBrains Mono**
   for count readouts ("6/17 done") and item IDs only — never for prose.
@@ -98,29 +79,24 @@ against how your team actually talks.
 
 ## Iconography
 
-- **System**: [Lucide](https://lucide.dev) — simple, consistent 2px-stroke line icons, loaded
-  from CDN. This is a **substitution**: no icon set shipped with the brand brief, and Lucide
-  was chosen as the closest free match to the "simple line icons" direction you picked.
-- **Usage**: `<i data-lucide="name">` + `lucide.createIcons()`, or the small `Icon`/`WMIcon`
-  wrapper. Components never bundle icons directly — `Button`/`IconButton` accept an `icon`
-  prop so any icon source works.
+- **System**: [Lucide](https://lucide.dev) — simple, consistent 2px-stroke line icons, from the
+  `lucide-react` package.
+- **Usage**: the `Icon` wrapper (`web/src/design-system/Icon.jsx`). Components never bundle icons
+  directly — `Button`/`IconButton` accept an `icon` prop so any icon source works.
 - **Unicode glyphs**: used minimally for tiny UI chrome only (the `×` close glyph on
   Tag/Toast, the `▾` caret on Select) — not as illustrative icons.
-- **No SVG illustrations exist** in this system — none were provided, and none were
-  hand-drawn per policy.
+- **No SVG illustrations exist** in this system.
 
-## Font substitution — please provide real files if you have them
-No font files were attached. **Baloo 2** and **Nunito** (plus **JetBrains Mono**) were chosen
-from Google Fonts as the nearest match to "warm rounded sans." They're loaded via a Google
-Fonts CSS import in `tokens/fonts.css`. If Windmill has licensed fonts, drop the `.woff2`
-files in `assets/fonts/` and swap the `@font-face`/`@import` in that file — nothing else
-needs to change.
+## Fonts
+
+**Baloo 2**, **Nunito** and **JetBrains Mono** are Google-Fonts stand-ins, not licensed brand
+fonts. They are self-hosted via `@fontsource`, imported in `web/src/styles/fonts.js`; the stacks
+live in `web/src/styles/tokens/fonts.css`.
 
 ## Logo
-No logo file was provided. Every place a mark would appear uses the plain wordmark "Windmill"
-set in Baloo 2 Bold — **no logo has been drawn or invented**, per policy. Attach a real logo
-(SVG/PNG) and it will be copied into `assets/` and used everywhere a mark currently reads as
-text.
+
+No logo file exists. Every place a mark would appear uses the plain wordmark "Windmill" set in
+Baloo 2 Bold — this system never invents or draws a logo.
 
 ---
 
@@ -128,11 +104,7 @@ text.
 Avatar, Badge, Button, Card, Checkbox, Dialog, IconButton, Input, Radio, Select, Switch,
 Tabs, Tag, Toast, Tooltip.
 
-No component source existed to define an inventory, so a standard set was authored, sized
-to a small SaaS app. The five Windmill-specific families that were once grouped here —
-**SkillNode**, **SkillConnector**, **Checklist**, **KindLegend**, **ProgressBar** — now live
-with the roadmap product (`web/src/products/roadmap/ui/tree/`): they are the roadmap's
-vocabulary, not the brand's, and a sibling
-product would inherit words it has no use for. `ProgressBar` moved with them because its
-only use was branch completion; if notes or gym needs a generic bar, author one here rather
-than reaching across.
+The Windmill-specific families — **SkillNode**, **SkillConnector**, **Checklist**,
+**KindLegend**, **ProgressBar** — live with the roadmap product
+(`web/src/products/roadmap/ui/tree/`): they are the roadmap's vocabulary, not the brand's. If
+journal or gym needs a generic progress bar, author one here rather than reaching across.

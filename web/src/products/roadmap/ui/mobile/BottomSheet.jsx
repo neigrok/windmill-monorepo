@@ -1,15 +1,5 @@
-// The phone node-detail sheet (X5 §S2). A bottom-edge sheet that opens at a peek
-// (216px default) and lifts to at most a fraction of the viewport (62vh default) — the
-// canvas is never fully covered, and there is only ever one. The taller editor sheet
-// (M1) passes its own peekHeight/maxVh. The grabber is the whole gesture surface: a tap
-// toggles peek↔expanded, a drag follows the finger, and a drag well past the peek
-// dismisses. The parent tapping the canvas dismisses too (it flips `open`). `children`
-// is the detail content the parent supplies — we own only the shell + gestures.
-//
-// The keyboard contract (X8 L5.5): a rename input inside the sheet raises the on-screen
-// keyboard; the sheet rises above it, never under it. We measure the inset the same way the
-// list does (innerHeight − visualViewport.height), force the sheet fully expanded so its top
-// header clears the keyboard, and pad the scroller so its lower content can reach above it.
+// Opens at a peek and lifts to at most MAX_VH, so the canvas is never fully covered.
+// A raised keyboard forces the sheet fully expanded and pads the scroller by the measured inset.
 
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -38,8 +28,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
 
   const reduced = prefersReducedMotion();
 
-  // Track the keyboard inset while the sheet is open (visualViewport shrinks as the keyboard
-  // opens; innerHeight stays the layout height). Drops back to 0 the moment the sheet closes.
+  // visualViewport shrinks as the keyboard opens; innerHeight stays the layout height.
   useEffect(() => {
     if (!open) { setKbInset(0); return undefined; }
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
@@ -106,10 +95,7 @@ export function BottomSheet({ open, onDismiss, children, peekHeight = PEEK_HEIGH
 
   if (!rendered) return null;
 
-  // max(0px, …) so a peek taller than the sheet (a tall editor peek on an ultra-short
-  // landscape viewport) can't push resting negative and float the sheet off the bottom edge.
-  // A raised keyboard forces the sheet fully expanded so its header rides clear of the keyboard
-  // (and freezes the drag — you can't pull the sheet down while typing into it).
+  // max(0px, …) so a peek taller than the sheet can't push resting negative and float it off the bottom edge.
   const lifted = kbInset > 0;
   const followingFinger = dragOffset != null && !lifted;
   const resting = expanded || lifted ? 'translateY(0)' : `translateY(max(0px, calc(${maxVh}vh - ${peekHeight}px)))`;

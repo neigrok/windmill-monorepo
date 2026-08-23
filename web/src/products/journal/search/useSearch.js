@@ -1,19 +1,8 @@
-// Owns the on-device index for the canvas, and sharpens it in place. The first time search opens it
-// pulls the whole corpus once and builds the instant lexical index, so ⌘K answers immediately. Then,
-// in the background, it loads the neural model and rebuilds the same corpus as a meaning index; when
-// that's ready it swaps in and bumps `version`, so a query already on screen re-ranks from "shares your
-// words" to "shares your meaning" without a flicker. If the model never loads, search simply stays
-// lexical — there's no broken state to explain. The query never leaves the device either way.
-//
-// The corpus is the account's pages AND this device's (pageStore.js `corpus`), never the account's
-// alone: a signed-out writer's pages are real pages that live on this device, and ⌘K was blind to
-// every one of them. `source` rides out with the results so the overlay can say when it is searching
-// a journal it could not read all of, rather than answering "nothing close to that yet."
-//
-// AND THE INDEX BELONGS TO ONE ACCOUNT. `account` is the user id the corpus was built for; when it
-// changes — a sign-out, a hand-over to somebody else — the index built for the previous one is
-// dropped and rebuilt rather than kept. Built once and kept, it was a second copy of the departed
-// account's private pages, answering ⌘K for the person who arrived after them (JOURNAL-1).
+// Owns the on-device index: the first open builds the lexical index, then the neural model loads in the
+// background and the same corpus is rebuilt, swapped in with a `version` bump so a query on screen
+// re-ranks. If the model never loads, search stays lexical, and the query never leaves the device either
+// way. The corpus is the account's pages and this device's (pageStore.js `corpus`); `source` rides out
+// with the results. The index belongs to one account and is dropped when `account` changes.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { corpus } from '../pageStore.js';
@@ -35,8 +24,7 @@ export function useSearch(active, account = null) {
 
   useEffect(() => {
     if (builtForRef.current === account) return;
-    // Whatever is in hand was built for somebody else, so it stops answering the moment the account
-    // changes — before the overlay is ever opened again, not when the rebuild happens to land.
+    // Whatever is in hand was built for somebody else: it stops answering the moment the account changes.
     activeIndexRef.current = null;
     setReady(false);
     setMode('lexical');

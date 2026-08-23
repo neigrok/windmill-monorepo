@@ -1,5 +1,4 @@
-// Starter quest (F5 §03): twelve weeks from a baseline mile to a 10k finish line —
-// the long-run ladder gates race day, and rest is load-bearing, not optional.
+// Starter quest: twelve weeks from a baseline mile to a 10k finish line.
 
 export default {
   id: 'run-a-10k',

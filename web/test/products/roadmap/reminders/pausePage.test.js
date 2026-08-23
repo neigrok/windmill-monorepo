@@ -1,9 +1,5 @@
-// The pause door, held to what it can actually know. The server answers 204 whether or not the
-// token matched — deliberately, so a guessed link is no oracle — which means this page only ever
-// learns that it ASKED. A headline saying the reminder is off would be a claim it cannot back.
-// The other two assertions are the GET-safety contract: the secret rides in the fragment, and
-// nothing is sent until a person presses the button, because mail apps and corporate link
-// scanners open every URL in an email on their own.
+// The server answers 204 whether or not the token matched, so the page may only say it ASKED.
+// GET-safety: the secret rides in the fragment, and nothing is sent until a person presses.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

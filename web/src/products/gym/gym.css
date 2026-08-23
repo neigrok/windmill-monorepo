@@ -1,47 +1,13 @@
-/* ============================================================
-   Windmill Gym — scoped palette (brief G2)
-   ------------------------------------------------------------
-   Scoped to .gym-root. Nothing here touches the shell, the
-   account seat, settings, roadmap or journal.
-
-   ALIGNMENT NOTE (v2)
-   The first pass invented its own dark surfaces — a canvas at
-   #0B0A07 where the system's night sky is #0D0B07, borders one
-   step off the ramp, and a pure-white numeral. The system's
-   dark theme is a re-authored ramp, not an inversion, and it
-   already ships every surface, border and text step gym needs.
-   So this file DERIVES from the theme's semantic tokens and
-   re-points no hue of its own. Two consequences:
-     · gym inherits any future correction to its ground
-     · gym cannot drift warmer or colder than its siblings
-   Product meanings still get product names (--set-done,
-   --target-ink) so no surface reads a raw ramp index.
-
-   WHERE THE COLOURS COME FROM (2026-08-07)
-   Gym's ground and hue are the room palette — basalt at night,
-   pietra by day, lit by iris — declared once in
-   styles/tokens/palettes.css and stamped on the shell root as
-   data-theme + data-brand. This file used to re-point the brand
-   to steel in both skins; steel was the INFO semantic doing
-   double duty as a brand, and it is retired. Nothing here names
-   a brand hue any more: --target-ink reads --color-brand and
-   the palette decides what that is.
-   ============================================================ */
+/* Windmill Gym's palette, scoped to .gym-root. Every value derives from the theme's semantic tokens;
+   product meanings get product names (--set-done, --target-ink) so no surface reads a raw ramp index. */
 
 /* ── Instrument — the room's night, in gym's own vocabulary ── */
 .gym-root[data-theme="dark"] {
-  /* Every DS semantic the template paints with gets a gym name,
-     restated in BOTH skins, so a surface never reads a raw role
-     and product meaning always has a product word. */
   --gym-on-accent: #1B1408;                      /* dark ink on iris-300 — 6.18:1 */
   --gym-scrim: var(--surface-overlay);
-  --alarm-fill: var(--accent-brick-500);         /* destructive FILL — brick-400 is too light
-                                                    to carry white at 5.5:1, so the fill uses
-                                                    500 in both skins while --alarm-ink keeps
-                                                    the per-skin step for text */
+  --alarm-fill: var(--accent-brick-500);         /* 500 in both skins: brick-400 cannot carry white */
   --gym-on-alarm: #FFFFFF;
 
-  /* Surfaces — the night sky as authored. No new values. */
   --gym-canvas: var(--surface-canvas);
   --gym-surface: var(--surface-card);
   --gym-raised: var(--surface-hover);
@@ -49,61 +15,31 @@
   --gym-line: var(--border-subtle);
   --gym-line-strong: var(--border-default);
 
-  /* Ink. The weight is the brightest thing in the product, but
-     bright here means the ramp's top step — a warm near-white.
-     Pure #FFF is the one thing the dark theme forbids, and at
-     104px Baloo 800 the ramp top is already the loudest pixel
-     on the screen. */
+  /* Ink. Bright here is the ramp's top step, a warm near-white; pure #FFF the dark theme forbids. */
   --weight-ink: var(--neutral-900);
   --gym-ink: var(--text-primary);
   --gym-ink-dim: var(--text-secondary);
   --gym-ink-faint: var(--text-tertiary);
 
-  /* Product states — mapped onto the system's semantics, so a
-     gym surface never invents a meaning the brand already has. */
-  --set-done: var(--color-success);              /* logged. settled, not celebrated */
+  --set-done: var(--color-success);              /* logged */
   --set-done-soft: var(--color-success-bg);
   --set-done-glow: rgba(154, 168, 89, 0.8);      /* dark-theme glow depth, per --kind-*-glow */
   --warmup-ink: var(--neutral-500);              /* does not count toward volume */
-  --unsynced-ink: var(--neutral-500);            /* saved on this device only — the phones' own ink
-                                                    for it (unsyncedInk, GymSkin.swift/.kt). Nothing
-                                                    the web reads can be in this state; the log row
-                                                    can say it and never invents one */
+  --unsynced-ink: var(--neutral-500);            /* saved on this device only; the web never is */
   --target-ink: var(--color-brand);              /* what the plan said */
-  --pr-ink: var(--color-warning);                /* gold as a KIND of moment, not a state */
+  --pr-ink: var(--color-warning);                /* a personal record */
   --pr-soft: var(--color-warning-bg);
-  /* The lit brick step, not --color-danger. The semantic does not move between rooms — this is
-     gym's own ink for it, exactly as --alarm-fill already carries its own step for the same
-     reason in the other direction. brick-400 was cut for the family's near-black night and
-     measures 3.98:1 on gym's card; the room is basalt now, and the destructive and the invalid
-     must never be the hardest line to read. */
-  --alarm-ink: var(--accent-brick-300);          /* the destructive, the invalid, and a read or
-                                                    write that failed (§G16). Nothing else */
+  --alarm-ink: var(--accent-brick-300);          /* the destructive, the invalid, a failed request */
   --alarm-soft: var(--color-danger-bg);
 
-  /* Numeral treatment — the one place gym extends rather than
-     re-points, because the type scale stops at 60px. */
+  /* The shared type scale stops at 60px, so gym extends it here. */
   --weight-size: 104px;
   --weight-leading: 92px;
   --reps-size: 54px;
   --readout-size: 15px;
 }
 
-/* ── Daylight — the same product on an outdoor rack ───────────
-   This block used to restate the family's light ramp as twelve
-   literals, because a light subtree inside a DARK ancestor reads
-   dark surfaces through --surface-canvas and friends. Its own
-   comment said the honest fix was for the SHELL to own theme
-   scope rather than for gym to fight its ancestor. The shell now
-   does (chrome/Shell.jsx stamps one data-theme + data-brand on
-   the room), so the literals are gone and this skin derives from
-   the same roles the instrument does — pietra instead of the
-   family cream, because gym's day is a quarry.
-
-   Two values still differ by skin rather than following a role,
-   and both are contrast, not taste: the ink that rides ON the
-   accent, and the PR gold (--color-warning is the 500 step,
-   which will not carry as text on pale stone).               */
+/* ── Daylight ─────────────────────────────────────────────── */
 .gym-root[data-theme="light"] {
   --gym-on-accent: #FFFFFF;                      /* white on iris-600 — 8.9:1 */
   --gym-scrim: var(--surface-overlay);
@@ -128,11 +64,8 @@
   --warmup-ink: var(--neutral-500);
   --unsynced-ink: var(--neutral-500);
   --target-ink: var(--color-brand);
-  /* The 600, because --color-warning is the 500 and gold gets lighter, not darker, from here.
-     MEASURED, not assumed: on the tinted record card it is 3.4:1 at 10.5px — a real miss of the
-     4.5 gate, inherited from before this palette (it was 3.6 on the family cream) and made a
-     shade worse by stone. Left standing because this skin has no producer: gym's room pins dark
-     (routes.js), so nothing in the app renders it. Fix it when the room can be seen in daylight. */
+  /* The 600, gold getting lighter and not darker from --color-warning's 500. It measures 3.4:1 at
+     10.5px on the tinted record card, under the 4.5 gate; nothing renders this skin, gym pinning dark. */
   --pr-ink: var(--accent-gold-600);
   --pr-soft: rgba(161, 120, 34, 0.14);
   --alarm-ink: var(--color-danger);
@@ -144,12 +77,7 @@
   --readout-size: 15px;
 }
 
-/* ============================================================
-   Module styles — the log surface (canon G3, the phase-0
-   skeleton). Everything below paints with the tokens above and
-   stays scoped under .gym-root; the shell, its seat and its
-   dialogs keep their own chrome.
-   ============================================================ */
+/* Everything below paints with the tokens above and stays scoped under .gym-root. */
 
 .gym-root {
   position: fixed;
@@ -161,15 +89,9 @@
   font-family: var(--font-body);
 }
 
-/* The switcher and the seat ride the shared posts (.wm-post, styles/global.css) — the same two
-   coordinates journal floats them on, now said once instead of twice, so "one building" is a rule
-   the markup obeys rather than a claim a comment made. Both are drawn only when this surface is
-   the whole page: inside the /app shell the chrome above the room already carries them, and the
-   room says which frame it is in on its root (GymApp.jsx). */
+/* Drawn only when this surface is the whole page; inside the /app shell the chrome already has them. */
 
-/* One centred column on every device — arm's-length legible on a phone,
-   never a sprawl on a desk. The 76px above the column is this surface clearing its own floating
-   furniture; a room inside the shell has none to clear, so it starts where the room starts. */
+/* One centred column on every device; the 76px clears this surface's own floating furniture. */
 .gym-column {
   max-width: 560px;
   margin: 0 auto;
@@ -188,8 +110,7 @@
   color: var(--gym-ink);
 }
 
-/* One title and nothing beside it — the doors a room offers sit in .gym-log-head, never opposite
-   the title itself. */
+/* One title and nothing beside it — the doors a room offers sit in .gym-log-head. */
 .gym-head {
   display: flex;
   align-items: flex-start;
@@ -203,10 +124,7 @@
   color: var(--gym-ink-dim);
 }
 
-/* A read that did not come back, and it wears the alarm. §G16 settles what that ink is FOR: a
-   failed read or a failed write, and nothing else — alongside the destructive and the invalid it
-   already carried. This line used to be dim on the argument that nothing was lost; nothing is, but
-   a number that never arrived is exactly the case a lifter must not mistake for a number. */
+/* The alarm ink is for a failed read or write, the destructive and the invalid, and nothing else. */
 .gym-read-failed {
   margin: 0;
   display: flex;
@@ -230,7 +148,6 @@
   background: var(--gym-raised);
 }
 
-/* The sign-in door — the log is account-bound; this is the whole pitch. */
 .gym-door {
   display: flex;
   flex-direction: column;
@@ -262,7 +179,7 @@
   background: var(--color-brand-active);
 }
 
-/* The log — one row per session, recognisable without opening, under a divider per week (§G16). */
+/* The log — one row per session, recognisable without opening, under a divider per week. */
 .gym-log-count {
   margin: 3px 0 0;
   font-family: var(--font-mono);
@@ -270,10 +187,7 @@
   color: var(--gym-ink-faint);
   font-variant-numeric: tabular-nums;
 }
-/* The week carries the tonnage, because the scale of a week is the one thing a row cannot show and
-   a lifter still wants: the label, a rule across the gap, and the sum at the end of it. A week we
-   cannot sum honestly — the oldest loaded one, or one that adds up to nothing — draws the rule and
-   stops there (log.js). */
+/* A week that cannot be summed honestly draws the rule and stops there (log.js). */
 .gym-week + .gym-week {
   margin-top: 8px;
 }
@@ -309,9 +223,6 @@
   flex-direction: column;
   gap: 7px;
 }
-/* What the session was and when, then what it held. Two lines and no third column: the top set's
-   own column is retired, because the e1RM below is the estimate of it and one of the two is
-   enough. */
 .gym-row {
   display: flex;
   flex-direction: column;
@@ -341,10 +252,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* THE GOLD DOT — a personal record happened in there (§G16). Filled, and gold, because it IS a
-   moment that happened: the ring below is hollow for the opposite reason. At most one dot on a row
-   and nothing beside it says how big — the session itself, and the movement's record, are where
-   that is answered. */
+/* The gold dot — a personal record happened in there. At most one on a row. */
 .gym-row-pr {
   flex: none;
   width: 7px;
@@ -352,8 +260,6 @@
   border-radius: 99px;
   background: var(--pr-ink);
 }
-/* Hollow, never filled: a filled dot is a moment that happened and this is a place a session has
-   not got to yet. */
 .gym-row-ring {
   flex: none;
   width: 7px;
@@ -379,16 +285,13 @@
   color: var(--gym-ink-dim);
   font-variant-numeric: tabular-nums;
 }
-/* A close nobody pressed is a fact about the session, never a fault of it. */
 .gym-row-closed {
   margin-top: 4px;
   font-size: 12px;
   color: var(--gym-ink-faint);
 }
 
-/* THE FOOT OF THE LOG — four states, and each one is the same box wearing what it means (§G16).
-   One page deeper per press: quieter than a session row, because it is a way further down and not
-   something that happened. */
+/* The foot of the log — four states, each the same box. */
 .gym-older {
   width: 100%;
   min-height: 46px;
@@ -412,9 +315,7 @@
   border-color: var(--gym-line-strong);
   color: var(--gym-ink);
 }
-/* Loading is the same box dimmed — no spinner, and no skeleton rows pretending to be sessions.
-   Busy overrides hover and must repeat every property hover sets: a phone leaves :hover stuck
-   after the tap, so without these the button stays lit as pressable for the whole load. */
+/* Busy overrides hover and must repeat every property hover sets: a phone leaves :hover stuck. */
 .gym-older[aria-disabled='true'],
 .gym-older[aria-disabled='true']:hover {
   cursor: default;
@@ -428,7 +329,6 @@
   border-radius: 99px;
   background: var(--gym-ink-faint);
 }
-/* The bottom is a date, not an empty box. */
 .gym-log-bottom {
   margin: 16px 0 0;
   text-align: center;
@@ -437,7 +337,7 @@
   color: var(--gym-ink-faint);
   font-variant-numeric: tabular-nums;
 }
-/* The whole box is the retry, because the one move on offer is the one that failed. */
+/* The whole box is the retry. */
 .gym-log-failed {
   width: 100%;
   min-height: 46px;
@@ -468,8 +368,6 @@
 .gym-detail-head {
   margin-bottom: 18px;
 }
-/* The routine sits beside the day, never instead of it: a session is a date first, and one with no
-   routine reads one step quieter rather than looking degraded. */
 .gym-detail-routine {
   font-size: 15px;
   font-weight: 600;
@@ -485,8 +383,7 @@
   white-space: pre;
 }
 
-/* The chip that names the snapshot the sets below are read against — a dot in the plan's own ink,
-   because "what the plan said" is one colour everywhere in this product. */
+/* The chip that names the snapshot the sets below are read against — a dot in the plan's own ink. */
 .gym-detail-plan {
   display: inline-flex;
   align-items: center;
@@ -510,8 +407,7 @@
 .gym-exercise {
   margin-bottom: 22px;
 }
-/* The movement on the left, what the plan asked of it on the right and one step dimmer — the
-   arrangement IS the thesis of this screen. */
+/* The movement on the left, what the plan asked of it on the right and one step dimmer. */
 .gym-exercise-head {
   display: flex;
   align-items: baseline;
@@ -532,8 +428,6 @@
   color: var(--target-ink);
   font-variant-numeric: tabular-nums;
 }
-/* A movement the plan never named has no target to print, so this says which case it is instead —
-   a fact about the session, in the ink of a fact and not of a plan. */
 .gym-exercise-plan.is-added {
   color: var(--gym-ink-faint);
 }
@@ -555,14 +449,12 @@
   border-bottom: 1px solid var(--gym-line);
   font-variant-numeric: tabular-nums;
 }
-/* On the coach's shared page the row IS the list item; in a session read whole it is a button
-   inside one (§G18 opens on any set), and the rule sits at the end of both shapes. */
+/* The row is the list item on the shared page and a button inside one in a session read whole. */
 .gym-set:last-child,
 li:last-child > .gym-set {
   border-bottom: none;
 }
-/* THE ROW AS A DOOR. Everything here is a reset — the row's own drawing is the rule above, and the
-   only thing a button adds to it is that it can be pressed. */
+/* The row as a door: everything here is a reset. */
 button.gym-set {
   width: 100%;
   border-left: none;
@@ -585,11 +477,8 @@ button.gym-set:hover,
   align-items: baseline;
   gap: 10px;
 }
-/* TAP TO FIX (§G17) — the annotation the design draws on the row under the thumb, and it lands on
-   the row under the POINTER here for the same reason: eleven of them at once is noise, and this
-   list is read far more often than it is corrected. A device with no pointer has no "under the
-   thumb" to draw it in, so there it is simply always on. The slot is held open either way, so
-   nothing on the row moves when the label arrives. */
+/* The annotation lands on the row under the pointer, and is always on where there is none. The slot
+   is held open either way, so nothing on the row moves when the label arrives. */
 .gym-set-fix {
   font-size: 11px;
   font-weight: 700;
@@ -611,8 +500,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 13px;
   color: var(--gym-ink-faint);
 }
-/* A set is a thing that happened, so it is marked rather than numbered: the tick is the same
-   --set-done the logger settles a set with. A warmup gets a bare point, in its own ink. */
+/* A set is marked rather than numbered; a warmup gets a bare point, in its own ink. */
 .gym-set-mark {
   width: 12px;
   color: var(--set-done);
@@ -623,10 +511,8 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: var(--readout-size);
   font-weight: 600;
 }
-/* WHAT THE PLAN MAKES OF THIS SET, in one word at the end of its line (§G17). Never coloured: a
-   miss and an overreach are facts with a direction, not grades, and the one thing this column may
-   not become is a score. The push to the end of the row is the tail's now — this word and `tap to
-   fix` travel together, and two auto margins would have split the gap between them. */
+/* Never coloured. The push to the end of the row is the tail's: this word and `tap to fix` travel
+   together, and two auto margins would split the gap. */
 .gym-set-plan {
   font-size: 11px;
   color: var(--gym-ink-faint);
@@ -657,14 +543,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--warmup-ink);
 }
 
-/* ============================================================
-   The instrument pieces the rooms share. The set logger (canon
-   G1) used to live here; capture moved to the phone rooms (§11)
-   and what remains is what the desk still draws — the live dot
-   that marks a running session, the toast voice, and the sheet
-   chrome the keypad and the movement picker bring to the
-   backfill form and the routine editor.
-   ============================================================ */
+/* The pieces the rooms share: the live dot, the toast voice, and the sheet chrome. */
 
 @keyframes gym-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -675,9 +554,7 @@ button.gym-set:focus-visible .gym-set-fix,
   to { transform: none; }
 }
 
-/* The mark of a session running somewhere else — on the mirror's
-   head and on the backfill door's refusal, never beside a control
-   that could drive it. */
+/* The mark of a session running somewhere else, never beside a control that could drive it. */
 .gym-live-dot {
   width: 7px;
   height: 7px;
@@ -705,8 +582,7 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.4;
   animation: gym-rise 240ms var(--ease-soft);
 }
-/* THE TAKE-BACK, and it is up for exactly as long as it is true (fix.js). Brand ink rather than
-   alarm: taking a delete back is not the destructive move, it is the one that keeps everything. */
+/* The take-back, up for exactly as long as it is true (fix.js). Brand ink rather than alarm. */
 .gym-toast-undo {
   margin-left: auto;
   min-height: 34px;
@@ -735,12 +611,9 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: pointer;
 }
 
-/* Sheets — one chrome for the keypad, the movement picker, the target sheet and the fix (§G18).
-
-   FIXED, NOT ABSOLUTE: .gym-root is the scroller, so an absolutely-placed sheet is pinned to the
-   top of the scrolled CONTENT and not to the screen — a sheet opened from a set thirty rows down
-   would open above the window, off-screen, with the page apparently frozen behind an invisible
-   catch. Nothing inside .gym-root transforms, so the viewport is what `fixed` resolves against. */
+/* Sheets — one chrome for the keypad, the picker, the target sheet and the fix.
+   FIXED, not absolute: .gym-root is the scroller, and nothing inside it transforms, so the viewport is
+   what `fixed` resolves against. */
 .gym-sheet-catch {
   position: fixed;
   inset: 0;
@@ -749,15 +622,11 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   justify-content: flex-end;
 }
-/* The session stays visible behind the fix, dimmed (§G18): the number being corrected only means
-   anything beside the ones around it. The keypad and the picker carry no scrim — they are opened
-   from a form the lifter is still reading. */
+/* The session stays visible behind the fix, dimmed. The keypad and the picker carry no scrim. */
 .gym-sheet-catch.is-dimmed {
   background: var(--gym-scrim);
 }
-/* A sheet is as wide as the room it rises into and no wider: this surface is one centred column on
-   every device (.gym-column), and a sheet stretched to a desk's full window is the one piece of it
-   that would not be. */
+/* A sheet is as wide as .gym-column and no wider. */
 .gym-sheet,
 .gym-keypad {
   width: min(560px, 100%);
@@ -792,10 +661,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
   font-size: 17px;
 }
-/* THE SAME EXIT, NAMED. A sheet that only shows something closes
-   on a glyph; a sheet that ASKS something — the two questions of
-   screen 31 — says the word, because a form is left rather than
-   dismissed. One or the other on a head, never both. */
+/* A sheet that only shows something closes on a glyph, one that asks says the word; never both. */
 .gym-sheet-cancel {
   margin-left: auto;
   height: 34px;
@@ -901,14 +767,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* ── Fix this set · §G18 ────────────────────────────────────
-   The sheet a logged set is corrected in. It is the log's own
-   instrument, so it borrows the sheet chrome above and brings
-   only what the design draws: the weight loud enough to read
-   from a chair, the logger's ladder under it, the reps stepper,
-   the four kinds, and — last, and quiet — the one destructive
-   control in the room with the sentence that says what it does
-   not touch. */
+/* ── Fix this set ─────────────────────────────────────────── */
 .gym-sheet.gym-fix {
   padding: 20px 16px 30px;
   border-radius: 26px 26px 0 0;
@@ -918,10 +777,7 @@ button.gym-set:focus-visible .gym-set-fix,
   align-items: baseline;
   gap: 10px;
 }
-/* A SHEET THAT IS ABOUT SOMETHING NAMES IT, in the display face: the correction sheet over one set,
-   the target sheet over one line of a routine. `.gym-sheet-title` above is the other kind — a sheet
-   about an ACTION (`Rename this movement`, `not in the library`), where the noun is in the field
-   under it. One rule and two names, because they are one heading in two rooms. */
+/* A sheet that is ABOUT something names it; `.gym-sheet-title` above is for a sheet about an action. */
 .gym-fix-title,
 .gym-target-movement {
   font-family: var(--font-display);
@@ -934,9 +790,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* THE NUMBER BEING CORRECTED, and it is the loudest thing on the screen because it is the whole
-   reason the screen is open. It is also a door onto the keypad: the ladder moves a weight and only
-   typing replaces one. */
+/* Also a door onto the keypad: the ladder moves a weight and only typing replaces one. */
 .gym-fix-weight {
   width: 100%;
   margin-top: 14px;
@@ -963,10 +817,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 700;
   color: var(--gym-ink-faint);
 }
-/* The same set, the way the session behind this sheet reads it — drawn only for an account reading
-   in pounds, where the kilogram field above and the row being corrected are two numerals for one
-   weight (log.js `alsoReadsLabel`). Centred under the numeral it explains, and quiet: it is a
-   reading of the number, not a second number. */
+/* Drawn only for an account reading in pounds (log.js `alsoReadsLabel`). */
 .gym-fix-reads {
   margin: 6px 0 0;
   text-align: center;
@@ -974,8 +825,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* The ladder is the logger's own (logger/ladder.js) — at 47.5 kg this row reads −5 · −2.5 · +2.5 ·
-   +5 — and the loud pair is the inner one, because the fine step is the step actually used. */
+/* The ladder is the logger's own (logger/ladder.js); the loud pair is the inner, fine step. */
 .gym-rungs {
   margin-top: 14px;
   display: grid;
@@ -1060,7 +910,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
   font-weight: 800;
 }
-/* One word for what counts, in the ink the log settles a set with. */
 .gym-kind.is-working.is-on {
   border-color: var(--set-done);
   background: var(--set-done-soft);
@@ -1086,9 +935,7 @@ button.gym-set:focus-visible .gym-set-fix,
   justify-content: space-between;
   gap: 10px;
 }
-/* Alarm ink, and no fill: it is the destructive control, not the primary one. It promises nothing —
-   there is no trash behind it and no thirty days — and the line beside it says the one thing a
-   lifter needs to know before pressing it. */
+/* Alarm ink and no fill: the destructive control, not the primary one. */
 .gym-fix-delete {
   padding: 0;
   border: none;
@@ -1143,10 +990,7 @@ button.gym-set:focus-visible .gym-set-fix,
   margin: 8px 0 0;
   padding: 0;
 }
-/* A row is the name over its meta (§B7's picker), so it stacks
-   rather than sitting on one line — and it keeps a floor rather
-   than a fixed height, because the second line only appears once
-   the read behind it has answered. */
+/* A floor rather than a fixed height: the second line arrives only once its read has answered. */
 .gym-picker-row {
   display: flex;
   flex-direction: column;
@@ -1176,11 +1020,8 @@ button.gym-set:focus-visible .gym-set-fix,
   text-transform: uppercase;
   color: var(--color-brand);
 }
-/* The lifter's own last set of this movement, or the fact that
-   there isn't one. Mono and tabular so a column of loads lines up
-   under a column of names. */
-/* WHY THIS ROW MATCHED, when the query found a name this account
-   used to call the movement rather than the one it has now. */
+/* Mono and tabular, so a column of loads lines up under a column of names. */
+/* Why this row matched, when the query hit an alias rather than the name. */
 .gym-picker-alias {
   font-size: 11px;
   color: var(--gym-ink-faint);
@@ -1209,10 +1050,7 @@ button.gym-set:focus-visible .gym-set-fix,
   width: min(402px, 100vw);
   box-sizing: border-box;
   display: grid;
-  /* Three rooms, and the count is stated here and in the JSX that fills it (GymApp.jsx). Both have
-     to move together — a fourth anchor over a three-column grid wraps the tab bar onto two rows.
-     There is no fourth room: §B cuts the Insights tab, and the statistics room that stood in that
-     column is retired with it. */
+  /* The room count is stated here and in GymApp.jsx; both have to move together. */
   grid-template-columns: repeat(3, 1fr);
   padding: 0 14px 22px;
   background: linear-gradient(to bottom, transparent, var(--gym-canvas) 40%);
@@ -1231,7 +1069,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--color-brand);
 }
 
-/* The focus ring is the brand's, not the browser's — a keyboard is not a second-class hand. */
+/* The focus ring is the brand's, not the browser's. */
 .gym-picker :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
@@ -1241,19 +1079,9 @@ button.gym-set:focus-visible .gym-set-fix,
   border-color: var(--color-brand);
 }
 
-/* ============================================================
-   The rooms (canon A/B/C and G8) — Today and its mirror,
-   Routines and its editor, the session review, the past-workout
-   form. Every one of them is drawn in .gym-column, the 560px
-   centred column the log has always used: these are desk
-   screens, read and typed at, never touched mid-set — capture
-   and its 402px slab live in the phone rooms (§11).
-   ============================================================ */
+/* The rooms, every one of them drawn in the 560px .gym-column. */
 
-/* One header shape wherever a title has a door beside it: the log's
-   past-workout door and the routines list's New. Both are ghosts —
-   findable because the header never scrolls far, never competing
-   with the thing the room is for. */
+/* One header shape wherever a title has a door beside it. */
 .gym-log-head {
   justify-content: space-between;
   align-items: baseline;
@@ -1278,9 +1106,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* Nothing failed, so this is not the alarm: the live dot and the
-   surface of an ordinary card, never --alarm-ink. The workout is
-   simply still running. */
 .gym-refusal {
   margin: 14px 0;
   padding: 13px 14px;
@@ -1315,9 +1140,6 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: pointer;
 }
 
-/* The two facts a session only tells you once its sets are in hand,
-   and the log row cannot: what the top set was, and whether anybody
-   pressed Finish. */
 .gym-detail-top {
   margin: 4px 0 0;
   font-family: var(--font-mono);
@@ -1331,8 +1153,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 12.5px;
   color: var(--gym-ink-faint);
 }
-/* The way from a session to its review — sessions close on the phone now, so this door is how the
-   review surface is reached at all. */
 .gym-detail-review {
   display: inline-block;
   margin: 10px 0 0;
@@ -1359,10 +1179,8 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* The mirror (§11.2) — the live session as it happens, read-only.
-   A card on the neutral surface with the live dot, never a control:
-   nothing on it can drive the workout it shows. The digits are mono
-   so the clocks tick without the line breathing. */
+/* The mirror — the live session, read-only: nothing on it can drive the workout it shows. The digits
+   are mono so the clocks tick without the line breathing. */
 .gym-mirror {
   padding: 14px 16px 15px;
   border: 1px solid var(--color-brand);
@@ -1404,11 +1222,7 @@ button.gym-set:focus-visible .gym-set-fix,
   text-overflow: ellipsis;
 }
 
-/* An empty log (canon screen 1) — the reason on a dim line, and
-   under it the one verb of that screen this desk can honestly
-   offer. The button is the design's secondary: an outline, never
-   the brand fill, because the primary it sits under is on the
-   phone. */
+/* An empty log — the reason on a dim line, and one verb under it. */
 .gym-first {
   margin-top: 4px;
   padding: 14px 15px;
@@ -1422,12 +1236,6 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.5;
   color: var(--gym-ink-dim);
 }
-/* NO DASHED BOX HERE ANY MORE (W9). This held `.gym-first-why` — the
-   room explaining itself rather than telling a lifter to do anything,
-   which its own comment admitted. The verb below had its own top margin
-   before and has its own now — nothing was inherited from the box, which
-   carried its own. One number moved: 12 → 14, so the button keeps a
-   little air now that the block above it is a single line. */
 .gym-first-write {
   margin-top: 14px;
   height: 44px;
@@ -1495,8 +1303,6 @@ button.gym-set:focus-visible .gym-set-fix,
 
 /* ── Routines, and one of them under the hand ──────────────── */
 
-/* Screen 1's CTA, on the desk: the empty state points at the one
-   next move, in the same iris every commit on this surface wears. */
 .gym-routines-build {
   display: flex;
   align-items: center;
@@ -1554,9 +1360,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 13px;
   color: var(--gym-ink-faint);
 }
-/* Duplicating is deliberate and semi-destructive in the way every
-   copy is — it makes a thing that then has to be named — so it is
-   the smaller target of the two, exactly as the logger's chips are. */
 .gym-routine-copy {
   flex: none;
   width: 46px;
@@ -1609,9 +1412,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   cursor: pointer;
 }
-/* Inert rather than absent, and the line beneath says which of the
-   two things is missing: a Save that vanishes leaves a lifter
-   pressing at nothing to find out why. */
+/* Inert rather than absent, and the line beneath says which of the two things is missing. */
 .gym-editor-save.is-inert {
   background: var(--gym-raised);
   color: var(--gym-ink-faint);
@@ -1621,9 +1422,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 12.5px;
   color: var(--gym-ink-faint);
 }
-/* WHAT THE ROUTINE IS, under its name (§M 30). `untested` is not a
-   warning and is not drawn in the alarm ink: it says the first
-   session is allowed to disagree with this. */
+/* `untested` is not a warning and is not drawn in the alarm ink. */
 .gym-editor-meta {
   display: flex;
   align-items: center;
@@ -1643,9 +1442,6 @@ button.gym-set:focus-visible .gym-set-fix,
   text-transform: uppercase;
   color: var(--gym-ink-dim);
 }
-/* WHICH LINES WILL ASK AT THE RACK — a fact about the day, not a
-   fault in the document, so it sits under the list in the ink
-   every other quiet statement on this surface uses. */
 .gym-editor-open {
   margin: 12px 2px 0;
   font-size: 12.5px;
@@ -1670,8 +1466,7 @@ button.gym-set:focus-visible .gym-set-fix,
   border-radius: 12px;
   background: var(--gym-surface);
 }
-/* Lifted while it is under the finger, and it must not be caught by
-   the pointer test of the rows it passes over. */
+/* Lifted under the finger, and must not be caught by the pointer test of the rows it passes over. */
 .gym-entry.is-dragging {
   position: relative;
   z-index: 3;
@@ -1689,9 +1484,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
   font-size: 15px;
   cursor: grab;
-  /* The browser must not take the drag for a scroll: a rail that
-     scrolls the page instead of moving the row is a rail that does
-     nothing at all on a phone. */
+  /* The browser must not take the drag for a scroll. */
   touch-action: none;
 }
 .gym-entry.is-dragging .gym-entry-rail {
@@ -1707,8 +1500,7 @@ button.gym-set:focus-visible .gym-set-fix,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A movement this account minted, in the picker's own word. Beside
-   the name and never under it: the row is one line high. */
+/* Beside the name and never under it: the row is one line high. */
 .gym-entry-yours {
   margin-left: 7px;
   font-size: 10px;
@@ -1783,25 +1575,18 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 700;
   cursor: pointer;
 }
-/* Inert on exactly what Done is inert on: a copy of a draft the store would refuse is a refusal
-   this screen can already see coming, and the missing line above it says which half. */
+/* Inert on exactly what Done is inert on. */
 .gym-editor-duplicate.is-inert {
   border-color: var(--gym-line);
   color: var(--gym-ink-faint);
 }
-/* The target sheet (§M 29) — two counts under a thumb, the ladder
-   the rack uses, and the weight on the keypad every other number in
-   this product is typed on. */
-/* Where you are in the day, beside the movement being asked about:
-   the sheet stands over the list rather than beside it. */
+/* The target sheet — two counts, the ladder, and the weight on the keypad. */
+/* Where you are in the day, beside the movement being asked about. */
 .gym-target-place {
   margin-left: 9px;
   font-size: 11px;
   color: var(--gym-ink-faint);
 }
-/* THE ONE SENTENCE THIS SHEET OWES A LIFTER, and it is about their
-   training: a routine nobody has trained has no last time to
-   prefill from, so the numbers under it are theirs. */
 .gym-target-never {
   margin: 2px 2px 10px;
   font-size: 12.5px;
@@ -1864,17 +1649,14 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: underline;
   cursor: pointer;
 }
-/* The target, the way the rows behind this sheet read it — drawn only for an account reading in
-   pounds, where the kilogram field and the reading are two numerals for one weight (log.js
-   `alsoReadsLabel`). It explains a number rather than saying anything new about the bar. */
+/* Drawn only for an account reading in pounds (log.js `alsoReadsLabel`). */
 .gym-target-reads {
   margin: 6px 2px 0;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* WHAT THE ROW WILL READ, on the button that makes it read that —
-   so the commit is never a guess at what was just typed. */
+/* What the row will read, on the button that makes it read that. */
 .gym-target-set {
   width: 100%;
   height: 52px;
@@ -1888,10 +1670,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   cursor: pointer;
 }
-/* THE WAY OUT OF HAVING A TARGET AT ALL, and it is a second verb
-   rather than a hidden one: a routine is savable while incomplete,
-   and an open row simply asks at the rack. Quiet, because it is
-   the answer for one line in ten rather than the usual one. */
+/* A second verb and not a hidden one: a routine is savable while incomplete. */
 .gym-target-open {
   display: flex;
   align-items: baseline;
@@ -1933,9 +1712,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
 }
 
-/* Three facts, and the third is a dash when there is no honest one-rep
-   estimate to print — a chin-up at zero and a band-assisted pull-up
-   at −20 have none. */
+/* The third fact is a dash where there is no honest one-rep estimate to print. */
 .gym-stats {
   list-style: none;
   display: grid;
@@ -1967,9 +1744,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* Gold as a KIND of moment, not a state, and it is the only loud
-   thing here. On the ~190 sessions in 200 that earn nothing, this
-   block is absent and NOTHING takes its place. */
+/* On a session that earns nothing this block is absent and nothing takes its place. */
 .gym-record {
   margin-top: 14px;
   padding: 13px 14px;
@@ -1992,9 +1767,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* A fact with a direction, never a grade: no percentage, no arrow
-   coloured for the direction it points, nothing green and nothing
-   red. */
+/* A fact with a direction, never a grade: nothing green and nothing red. */
 .gym-against {
   margin-top: 20px;
 }
@@ -2091,9 +1864,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* The only destructive action in the product. Alarm ink is earned
-   here in the one way it is earned anywhere: what this button does
-   cannot be undone. */
+/* Destructive, and it cannot be undone. */
 .gym-short {
   margin-top: 18px;
 }
@@ -2121,8 +1892,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-on-alarm);
 }
 
-/* Offered, never taken: nothing is created until Save is tapped, and
-   declining costs nothing because the offer comes back next session. */
 .gym-keep {
   margin-top: 22px;
   padding: 16px;
@@ -2235,9 +2004,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 15px;
   font-weight: 700;
 }
-/* One remembered fact per row — weight × reps × how many — and the
-   two numerals are separate targets because the keypad takes one
-   value at a time, here as in the logger. */
+/* The two numerals are separate targets: the keypad takes one value at a time. */
 .gym-line {
   display: flex;
   align-items: center;
@@ -2333,9 +2100,6 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: pointer;
 }
 
-/* Overlapping times usually mean that visit is already half-logged,
-   so the answer is not "pick another time" but "that one is already
-   here" — and the way out of it opens that session. */
 .gym-overlap {
   margin: 18px 0 0;
   padding: 13px 14px;
@@ -2380,8 +2144,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* The door out of the picker's last silence: it quotes what was
-   typed, because that string is about to become an identity. */
 .gym-picker-create {
   width: 100%;
   height: 50px;
@@ -2400,25 +2162,8 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--color-brand);
 }
 
-/* ── A movement's record (§H) ─────────────────────────────────
-   The room that replaced the statistics tab, and the difference
-   is the whole point: one movement, not a dashboard. No weekly
-   bars, no volume by muscle group, nothing ranked against
-   anybody — those went with the tab, and §B says why in as many
-   words: there is no dashboard in this product.
-
-   Matter-of-fact by construction, as that room was: nothing
-   animates on the way in, and no number hides behind a hover —
-   this is read on a phone at a rack, where hover does not exist.
-   The one colour in it is the gold, and it marks ONE mark
-   wherever that mark appears: the tile that prints the standing
-   best, the bar that holds it when that session is inside the
-   window, and its row in the ladder once a mark has been passed
-   — a first-ever session has a standing best and no ladder row,
-   so it wears gold twice and never three times. Never a second
-   number: at most one per session is the palette's rule, and a
-   page with gold on a third of its bars is a page where gold
-   means nothing.                                              */
+/* ── A movement's record ─────────────────────────────────────
+   The one colour in it is the gold, and it marks one mark wherever that mark appears. */
 .gym-record-screen {
   display: flex;
   flex-direction: column;
@@ -2454,10 +2199,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* TWO TILES, OR ONE, OR NONE. A movement Epley has no answer for
-   carries no best-e1RM tile at all — never a dash in the frame
-   where a number goes — so this row is drawn on whatever it has
-   and each tile takes the width it is given. */
+/* Two tiles, or one, or none — never a dash in the frame where a number goes. */
 .gym-record-tiles {
   list-style: none;
   display: flex;
@@ -2491,10 +2233,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
   font-variant-numeric: tabular-nums;
 }
-/* Gold on the standing best, and this is the one page it belongs
-   on: the finish screen's gold is a MOMENT and happens once,
-   while this page is the mark itself — what somebody opens to
-   ask where a movement stands. */
+/* Gold on the standing best. */
 .gym-record-tile.is-standing .gym-record-tile-value {
   color: var(--pr-ink);
 }
@@ -2507,15 +2246,8 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
 }
 
-/* ONE CHART, AND IT IS BARS — a training log is discrete events,
-   and a line between them implies days that never happened. They
-   start at zero, because a bar's LENGTH is its value.
-
-   THE INK IS MEASURED, NOT PICKED. The board draws a resting bar
-   in --gym-raised, which is #2E2B32 on a #262329 card: 1.11:1,
-   a chart with nothing visible in it. Iris measures 5.25:1 on
-   the same card and gold 7.58, so the quiet bar is the room's
-   one vibrant hue and the loud one is the record's. */
+/* Bars, never a line, starting at zero: a bar's length is its value. --gym-raised measures 1.11:1 on
+   this card and is invisible, so the quiet bar is iris at 5.25:1 and the loud one gold at 7.58:1. */
 .gym-record-chart {
   margin: 9px 0 0;
   padding: 16px 14px 12px;
@@ -2560,9 +2292,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-record-bar.is-standing .gym-record-bar-fill {
   background: var(--pr-ink);
 }
-/* The two ends of the window, as the days actually on screen —
-   never "the last 12 weeks", which would claim training that may
-   not have happened in the last of them. */
+/* The days actually on screen, never "the last 12 weeks". */
 .gym-record-span {
   display: flex;
   justify-content: space-between;
@@ -2576,9 +2306,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-record-block {
   margin-top: 18px;
 }
-/* NOT `.gym-record-title` — that name is the finish screen's (above), where it is the gold heading
-   over a session's record and the one loud thing on that page. A second rule under the same name
-   won everywhere by source order and repainted it faint mono inside its own gold box. */
+/* NOT `.gym-record-title`: that name is the finish screen's above and would win by source order. */
 .gym-record-block-title {
   margin: 0;
   font-family: var(--font-mono);
@@ -2589,9 +2317,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* EVERY SESSION THAT BEAT EVERY SESSION BEFORE IT, newest first.
-   The first row is the one that still stands and wears the gold;
-   the rest are history, and history is not a trophy shelf. */
+/* Newest first; the first row still stands and wears the gold. */
 .gym-record-marks {
   list-style: none;
   display: flex;
@@ -2633,10 +2359,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* The last ten times it was trained, in the order they were
-   performed — one row per session, under the day it happened.
-   Read-only, and nothing here says otherwise: correcting a set
-   is the session's own screen, not this one. */
+/* One row per session, in the order performed, read-only. */
 .gym-record-days {
   list-style: none;
   display: flex;
@@ -2662,12 +2385,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* ── A NAME A LIFTER TYPES (§M 28 · §N 31 · §N 32) ───────────
-   One field, one counter and one primary, wherever the question
-   is asked: what to call a routine you are writing out, what to
-   call a movement your gym has no word for, and what to call one
-   you are renaming. Three screens, one shape — a name asked three
-   ways would read as three different questions. */
+/* ── A name a lifter types — one field, one counter, one primary ── */
 .gym-name-sub {
   margin: 4px 0 18px;
   font-size: 13.5px;
@@ -2694,8 +2412,6 @@ button.gym-set:focus-visible .gym-set-fix,
   outline: none;
   border-color: var(--color-brand);
 }
-/* The cap said out loud rather than discovered by a key that does
-   nothing. Inside the field, dim: it is a limit, not a score. */
 .gym-name-count {
   position: absolute;
   top: 50%;
@@ -2707,12 +2423,8 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-/* ALREADY OVER, WHICH IS A REAL STATE AND NOT A TYPO: the field
-   stops typing at sixty, but a name arrives PREFILLED — from the
-   store, which keeps eighty, or from a search box that caps
-   nothing — so `70/60` is the true count of a field that has
-   stopped accepting keys. The number stays honest and this is what
-   says why it looks stuck. */
+/* Already over is a real state: a name arrives prefilled from a store that keeps eighty, so `70/60`
+   is the true count of a field that has stopped accepting keys. */
 .gym-name-count.is-over {
   color: var(--alarm-ink);
 }
@@ -2724,8 +2436,7 @@ button.gym-set:focus-visible .gym-set-fix,
   letter-spacing: 0.02em;
   color: var(--gym-ink-dim);
 }
-/* SUGGESTIONS, NEVER RULES — a way past a blank field rather than
-   a set to choose from, so they wear no selected state at all. */
+/* Suggestions, never rules: no selected state at all. */
 .gym-name-openers {
   display: flex;
   flex-wrap: wrap;
@@ -2765,10 +2476,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
   cursor: default;
 }
-/* UNDER THE COMMIT AND QUIETER THAN IT (screen 32's `Rename` /
-   `Cancel`). Leaving a name alone is one of the two answers this
-   sheet asks for, so it is a control with a word on it — and it
-   carries no border, because the loud one is the decision. */
 .gym-name-cancel {
   width: 100%;
   height: 44px;
@@ -2782,10 +2489,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 700;
   cursor: pointer;
 }
-/* HOW IT IS LOADED — the one question at creation that changes
-   anything, so it is four faces and not a select. The label is
-   the stored word, capitalised here rather than in the markup:
-   `barbell` is what goes on the wire. */
+/* The label is capitalised here rather than in the markup: `barbell` is what goes on the wire. */
 .gym-equipment {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2809,9 +2513,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
   font-weight: 700;
 }
-/* THE PROOF, AND EVERY LINE OF IT IS A READ (§N 32). Quiet ink on
-   a sunken block: it is a receipt under the field, never a second
-   thing to decide. */
 .gym-follows {
   margin-top: 14px;
   padding: 12px 13px;
@@ -2856,10 +2557,6 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.4;
 }
 
-/* A NAME IS A DOOR (§H), and it is drawn as the text it already
-   was: underlining every movement in a session would turn a page
-   of facts into a page of links. The record is one tap away and
-   nothing about the line has to announce it. */
 .gym-movement-door {
   color: inherit;
   text-decoration: none;
@@ -2867,23 +2564,15 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-movement-door:hover {
   color: var(--color-brand);
 }
-/* In a routine's row the door takes the row's full inner height — the 40px the grab rail already
-   sets — rather than the 20px its text occupies. A thumb aiming at a name between two controls is
-   otherwise aiming at a line, and the row itself does not grow by a pixel.
-   THE HEIGHT IS A LINE BOX AND NOT A FLEX BOX: `text-overflow: ellipsis` is a property of a block
-   box's own inline content, and a flex container has none — `display: flex` here left a long name
-   hard-clipped mid-word, which reads as a complete name and is exactly the lie an ellipsis exists
-   to prevent (the Rename field takes 80 characters). */
+/* The door takes the row's full 40px inner height. That height is a LINE BOX and not a flex box:
+   `text-overflow: ellipsis` reads a block box's own inline content, and a flex container has none, so
+   `display: flex` here hard-clips a long name mid-word. */
 .gym-entry .gym-movement-door {
   align-self: stretch;
   line-height: 40px;
 }
 
-/* ── The coach share ──────────────────────────────────────────
-   A quiet block on a neutral surface, never a call to action and
-   never the loudest thing on the screen it sits at the bottom
-   of. There is no icon row, no card, no image and no share
-   sheet: this is a link to one person, and it looks like one. */
+/* ── The coach share ────────────────────────────────────────── */
 .gym-share {
   margin-top: 22px;
   padding: 14px;
@@ -2921,9 +2610,7 @@ button.gym-set:focus-visible .gym-set-fix,
   border-color: var(--color-brand);
   color: var(--color-brand);
 }
-/* A real field, selectable, because a clipboard the browser
-   refuses is a normal outcome and the way through has to be
-   there already rather than arrive as an apology. */
+/* A real field, selectable: a clipboard the browser refuses is a normal outcome. */
 .gym-share-link {
   width: 100%;
   box-sizing: border-box;
@@ -2973,10 +2660,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--alarm-ink);
   border-color: var(--alarm-ink);
 }
-/* The terms are ON the screen before the link can be copied.
-   They are the honest description of the thing the tap made,
-   which is exactly the sentence a lifter needs before they
-   send it to somebody. */
+/* The terms are on the screen before the link can be copied. */
 .gym-share-terms {
   list-style: none;
   margin: 12px 0 0;
@@ -2995,13 +2679,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* ── Ask ──────────────────────────────────────────────────────
-   §L, and the one thing it is not is a coach. A room rather
-   than a panel: the thread runs down the column, the composer
-   sits under it, and there is no avatar, no typing dot, no
-   unread mark and no personality anywhere in here. It does not
-   speak first, so an empty room is one paragraph pointing at
-   the free door and nothing else. */
+/* ── Ask ────────────────────────────────────────────────────── */
 .gym-ask {
   padding-bottom: 24px;
 }
@@ -3015,9 +2693,6 @@ button.gym-set:focus-visible .gym-set-fix,
   gap: 12px;
   margin: 8px 0 18px;
 }
-/* THE PAST, as one quiet door and never a count (§O). A number
-   here would be an inbox saying something is waiting, and
-   nothing in this room ever waits for anybody. */
 .gym-ask-threads-door {
   flex: none;
   padding-top: 4px;
@@ -3030,9 +2705,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-ask-threads-door:hover {
   color: var(--color-brand);
 }
-/* What it reaches and — in the same breath — that proposing is
-   the most it can do. On screen before a word is typed, never
-   in a tooltip after. */
+/* On screen before a word is typed, never in a tooltip after. */
 .gym-ask-terms {
   margin: 4px 0 0;
   font-family: var(--font-mono);
@@ -3040,10 +2713,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* THE EMPTY ROOM POINTS SOMEWHERE ELSE. It is the strongest
-   thing this product can say about itself, so it is drawn as a
-   statement and not as a hint — full width, quiet ink, and one
-   real door under it. */
 .gym-ask-empty {
   padding: 16px;
   border: 1px solid var(--gym-line);
@@ -3087,10 +2756,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 8px;
 }
-/* The lifter's own turn, set in from the edge in the brand's
-   soft ink — the one bubble on the screen, because it is the
-   one thing here somebody typed. The answer is flush and
-   unboxed: it is the page speaking, not a character. */
+/* The lifter's turn is the one bubble on the screen; the answer is flush and unboxed. */
 .gym-ask-turn.is-lifter {
   align-self: flex-end;
   max-width: 80%;
@@ -3106,10 +2772,7 @@ button.gym-set:focus-visible .gym-set-fix,
   white-space: pre-wrap;
   color: var(--gym-ink);
 }
-/* THE RECEIPT. Server-counted, over the rows it actually served
-   — this line is the whole difference between a claim and a
-   checkable one, so it is mono and tabular and never omitted
-   when the wire carries it. */
+/* Server-counted over the rows it served: mono and tabular, never omitted when the wire carries it. */
 .gym-ask-read {
   margin: 0;
   font-family: var(--font-mono);
@@ -3118,8 +2781,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-variant-numeric: tabular-nums;
   color: var(--gym-ink-faint);
 }
-/* And WHERE it looked, one step quieter than how much: the
-   count is the audit, the tools are the trail behind it. */
 .gym-ask-steps {
   margin: 0;
   font-size: 11.5px;
@@ -3127,10 +2788,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* A PROPOSAL IT MINTED, drawn as the diff every other door
-   draws (§D14). The card is the brand's, like the one waiting
-   on Today, because it is the same object arriving by another
-   route. */
+/* A proposal it minted, drawn as the diff every other door draws. */
 .gym-ask-proposal {
   padding: 14px 15px 13px;
   border: 1px solid var(--color-brand);
@@ -3144,16 +2802,13 @@ button.gym-set:focus-visible .gym-set-fix,
   height: 42px;
   font-size: 14px;
 }
-/* Both halves of the promise: the tap is on the diff, and a set
-   you lifted is never in one. */
 .gym-ask-proposal-note {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.45;
   color: var(--gym-ink-faint);
 }
-/* The proposal exists — it was minted — and this read did not
-   answer. The door is what a lifter needs either way. */
+/* The proposal was minted and this read did not answer; the door stands either way. */
 .gym-ask-proposal-door {
   display: inline-flex;
   align-items: center;
@@ -3207,10 +2862,7 @@ button.gym-set:focus-visible .gym-set-fix,
   cursor: default;
 }
 
-/* A room that has closed, and a room that is full, share a face:
-   a plain sentence where the composer would have been. Neither
-   is an alarm, and neither offers anything to buy — there is
-   nothing behind either one to sell. */
+/* A closed room and a full room share a face: a plain sentence where the composer would have been. */
 .gym-ask-closed {
   margin: 0;
   font-size: 14.5px;
@@ -3244,9 +2896,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--color-brand);
 }
 
-/* WHAT IT HANDS BACK. Standing, quiet, under everything —
-   because it is true of every answer and not of one refusal,
-   and nothing on this wire says which set a refusal was about. */
 .gym-ask-hand-back {
   display: flex;
   flex-wrap: wrap;
@@ -3265,10 +2914,7 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: none;
 }
 
-/* THE DOOR, in Today's bottom band. Outlined in the brand rather
-   than filled with it: the loud control on a phone's band is
-   Start, and at this desk nothing starts — so Ask is the whole
-   band and still must not read as the room's purpose. */
+/* The door, in Today's bottom band; outlined in the brand rather than filled with it. */
 .gym-ask-door {
   display: flex;
   align-items: center;
@@ -3302,9 +2948,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* The same door from a proposal, and only ever as a link: the
-   two verbs on that screen are the decision, and nothing beside
-   them may look like a third. */
+/* Only ever a link: the two verbs on that screen are the decision. */
 .gym-ask-aside {
   display: inline-flex;
   align-items: center;
@@ -3318,12 +2962,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--text-link-hover);
 }
 
-/* ── Threads (§O, screen 33) ──────────────────────────────────
-   The question in the lifter's own words on top, what came of
-   it underneath. Nothing on this list is loud: there is no
-   unread ink, no dot, no badge and no count anywhere — the only
-   row that carries the brand is one whose changes were APPLIED,
-   which is a fact about a program rather than an alert. */
+/* ── Threads — the question on top, what came of it underneath ── */
 .gym-threads {
   padding-bottom: 24px;
 }
@@ -3373,12 +3012,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-thread-row.is-applied {
   border-color: var(--color-brand);
 }
-/* The lifter's own sentence, drawn whole. It wraps rather than
-   truncating: an ellipsis is this surface editing somebody's
-   question, which is the summary §O bans arriving as a
-   courtesy. pre-wrap for the same reason — the line breaks were
-   typed, and collapsing them here would draw the same bytes two
-   ways, since the turn bubble below keeps them. */
+/* Drawn whole, wrapping rather than truncating, and pre-wrap: the line breaks were typed. */
 .gym-thread-title {
   font-size: 14.5px;
   font-weight: 700;
@@ -3417,9 +3051,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* The one control at the foot, and it opens a NEW conversation
-   rather than continuing an old one — which is the whole shape
-   of this section: the past is read here and asked in Ask. */
+/* Opens a NEW conversation rather than continuing an old one. */
 .gym-threads-new {
   display: flex;
   align-items: center;
@@ -3433,9 +3065,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   text-decoration: none;
 }
-/* The file, offered where the conversations are. Quiet, like the
-   export row in settings: it is a promise being kept, not a
-   feature being sold. */
 .gym-threads-export {
   display: flex;
   flex-direction: column;
@@ -3459,11 +3088,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* ONE CONVERSATION, READ BACK. The turns are the room's own —
-   the same bubbles Ask draws, so a thread on this screen and the
-   exchange that made it are one object — with the instant each
-   was said under it, which is the one thing a six-week-old
-   conversation needs and a live one does not. */
+/* The same bubbles Ask draws, with the instant each turn was said under it. */
 .gym-thread {
   padding-bottom: 24px;
 }
@@ -3500,10 +3125,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-thread-proposals {
   margin-top: 20px;
 }
-/* THE DELETE, and it says what it does before it is tapped
-   rather than in a toast after. Armed, it does not turn red —
-   there is no red in this product — it brightens and says the
-   whole sentence out loud instead. */
+/* Armed, it does not turn red — there is no red in this product — it brightens. */
 .gym-thread-delete {
   margin-top: 26px;
   padding-top: 16px;
@@ -3531,10 +3153,7 @@ button.gym-set:focus-visible .gym-set-fix,
   border-color: var(--gym-ink);
   color: var(--gym-ink);
 }
-/* The conversation a change was asked for in, offered from the
-   diff and from the routine's history — and only where the wire
-   carried one, because a deleted thread leaves the change and
-   takes the messages. */
+/* Drawn only where the wire carried a thread. */
 .gym-proposal-thread,
 .gym-history-thread {
   display: inline-flex;
@@ -3553,9 +3172,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--text-link-hover);
 }
 
-/* ── The coach's page ─────────────────────────────────────────
-   No chrome, no tabs, no seat, no switcher and no sign-in door.
-   A coach did not come here to make an account. */
+/* ── The coach's page — no chrome, no tabs, no seat, no sign-in door ── */
 .gym-shared {
   padding-bottom: 40px;
 }
@@ -3587,19 +3204,9 @@ button.gym-set:focus-visible .gym-set-fix,
 }
 
 /* ── Proposals ────────────────────────────────────────────────
-   An agent reads and proposes, and it never rewrites a day you
-   already have: a change it wants arrives here as a diff and
-   waits for a tap. (A brand-new day it adds lands directly — it
-   takes nothing away — which is the one write with no card.) The
-   ink says so before a word is read — the brand hue for what is
-   only ever an OFFER, the log's own greens and bricks for what an
-   applied one would add and take away. Nothing on this surface
-   uses the brand fill for a routine an agent already changed,
-   because there is no such thing. */
+   The brand hue is for what is only ever an OFFER, the log's own greens and bricks for what an
+   applied one would add and take away. */
 
-/* THE CARD, ON TODAY (canon screen 4). It sits under the mirror
-   and over the last session — the one thing on this screen that
-   asks for attention, in a product that has no notifications. */
 .gym-proposals {
   display: flex;
   flex-direction: column;
@@ -3632,8 +3239,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 500;
   color: var(--gym-ink-faint);
 }
-/* One mark for "something is waiting", shared by the card, the
-   routine's row and the routine's history — learned once. */
+/* One mark for "something is waiting", shared by the card, the routine's row and its history. */
 .gym-proposal-dot {
   flex: none;
   width: 6px;
@@ -3647,8 +3253,7 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.45;
   color: var(--gym-ink);
 }
-/* What a removal would do, said by us rather than by the agent's
-   own summary — so it is drawn as a fact and not as prose. */
+/* What a removal would do, said by us rather than by the agent's own summary. */
 .gym-proposal-intent {
   margin: 6px 0 0;
   font-size: 13px;
@@ -3673,9 +3278,7 @@ button.gym-set:focus-visible .gym-set-fix,
   background: var(--color-brand-hover);
 }
 
-/* THE SAME FACT ON THE ROUTINE'S ROW (screen 5). The name keeps
-   its ellipsis, which is why it is the only thing in this line
-   allowed to shrink. */
+/* The name keeps its ellipsis and is the only thing in this line allowed to shrink. */
 .gym-routine-line {
   display: flex;
   align-items: center;
@@ -3695,10 +3298,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--color-brand);
 }
 
-/* THE ROUTINE'S HISTORY (screen 6) — dated records, sunken,
-   because they are the program's past rather than anything to do
-   now. A pending one wears the dot and is a door onto the diff,
-   exactly like a settled one is a door onto what was decided. */
+/* The routine's history. A pending row wears the dot and is a door onto the diff. */
 .gym-history {
   margin-top: 22px;
 }
@@ -3734,8 +3334,7 @@ button.gym-set:focus-visible .gym-set-fix,
   background: var(--gym-raised);
   border-color: var(--gym-line-strong);
 }
-/* The row that says the day was written is not a door: there is
-   nothing behind it to read, so it carries no hover and no chevron. */
+/* The row that says the day was written is not a door: it carries no hover and no chevron. */
 .gym-history-row.is-flat {
   margin: 0;
   cursor: default;
@@ -3750,8 +3349,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 14px;
 }
 
-/* THE DIFF (screen 14) — the whole document, on the surface that
-   is best placed to read one. */
+/* The diff — the whole document. */
 .gym-proposal-head {
   display: flex;
   align-items: flex-start;
@@ -3768,9 +3366,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* The state, said in a word. Superseded is the one canon never
-   drew and it is deliberately the quietest: nobody turned it down
-   — the routine moved first. */
+/* The state, said in a word; superseded is the quietest. */
 .gym-proposal-chip {
   flex: none;
   padding: 4px 9px;
@@ -3797,9 +3393,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* WHAT THE LIST IS, over the list. The diff draws the whole run and
-   not only the changed lines, so this says which rows are which
-   before the eye starts sorting them. */
+/* The diff draws the whole run and not only the changed lines. */
 .gym-diff-caption {
   margin: 0 0 10px;
   font-size: 12.5px;
@@ -3825,10 +3419,7 @@ button.gym-set:focus-visible .gym-set-fix,
   border-radius: 13px;
   background: var(--gym-surface);
 }
-/* Added and removed carry their own ink, because they are the two
-   rows a lifter scans for. Retargeted and renamed do not: they are
-   a number moving, and a coloured box around every one of them
-   would leave nothing quiet enough to make these two loud. */
+/* Added and removed carry their own ink; retargeted and renamed do not. */
 .gym-diff-row.is-added {
   border-color: var(--set-done);
   background: var(--set-done-soft);
@@ -3837,10 +3428,7 @@ button.gym-set:focus-visible .gym-set-fix,
   border-color: var(--alarm-ink);
   background: var(--alarm-soft);
 }
-/* AND A LINE THAT DID NOT CHANGE IS DRAWN FLAT — no border, no
-   fill, dim ink. It is on the list because the order of the run is
-   part of what applies and this row is the only place a move shows;
-   it is quiet because four changes have to still read as four. */
+/* A line that did not change is drawn flat — no border, no fill, dim ink. */
 .gym-diff-row.is-kept {
   padding: 6px 13px;
   border-color: transparent;
@@ -3850,9 +3438,7 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 600;
   color: var(--gym-ink-dim);
 }
-/* One line, name then numbers — the shape a routine's own row has in
-   the editor, so an untouched line looks like the routine rather
-   than like a change with its mark missing. */
+/* Name then numbers — the shape a routine's own row has in the editor. */
 .gym-diff-row.is-kept .gym-diff-note {
   flex-basis: auto;
   margin-left: auto;
@@ -3897,8 +3483,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-diff-field {
   color: var(--gym-ink-faint);
 }
-/* The before, struck through, and the after in the ink every
-   target in this product is drawn in. */
+/* The before, struck through, and the after in the ink every target in this product is drawn in. */
 .gym-diff-was {
   color: var(--gym-ink-dim);
   text-decoration: line-through;
@@ -3911,8 +3496,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 700;
 }
 
-/* A SETTLED PROPOSAL STAYS, with its timestamp: the program's
-   history, not a toast that disappears. */
 .gym-proposal-settled {
   margin: 16px 0 0;
   padding: 13px 14px;
@@ -3924,9 +3507,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* THE TAP. Dismiss needs no reason and Apply is all of it or
-   none — the line under them says so, and it is the sentence this
-   whole surface exists to make true. */
 .gym-proposal-decide {
   margin-top: 20px;
 }
@@ -3966,9 +3546,7 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-proposal-apply:hover {
   background: var(--color-brand-hover);
 }
-/* Inert while the tap is in the air, both of them: the two verbs
-   settle the same proposal, and a Dismiss pressed under a landing
-   Apply would ask the store for the other decision. */
+/* Both inert while a tap is in the air: the two verbs settle the same proposal. */
 .gym-proposal-apply.is-inert {
   background: var(--gym-raised);
   color: var(--gym-ink-faint);
@@ -3984,13 +3562,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* ── The connected log (§D12/13) ──────────────────────────────
-   The pitch and the grant, one room. It wears NO lock, no tier
-   chip and no price — W8 deleted the price rather than drawing
-   it, so there is no locked face in this stylesheet to inherit
-   and nothing here paints one. The one accent is the brand, and
-   it marks the exchange and the door, which are the two things
-   a lifter is actually deciding between. */
+/* ── The connected log ─────────────────────────────────────── */
 .gym-connect {
   padding-bottom: 40px;
 }
@@ -4012,8 +3584,6 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.5;
   color: var(--gym-ink-dim);
 }
-/* Beside the door and not at the top of the room: it says whose
-   screen is on the other side of the tap. */
 .gym-connect-handoff {
   margin: 26px 0 0;
   font-size: 13px;
@@ -4021,10 +3591,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-/* THE EXCHANGE IS THE CARD. Sunday's sentence on the room's own
-   surface, Monday's object in the brand — the asymmetry is the
-   argument: one of these is typed somewhere else, and the other
-   arrives here. */
 .gym-connect-exchange {
   display: flex;
   flex-direction: column;
@@ -4089,11 +3655,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--set-done);
 }
 
-/* The precondition and the free line are the two quiet blocks,
-   and they are quiet on purpose: neither is a sales line. One
-   says who this is not for yet; the other says nothing is being
-   withheld. A badge on either would be a price tag with a zero
-   on it. */
 .gym-connect-precondition,
 .gym-connect-free {
   margin: 14px 0 0;
@@ -4146,19 +3707,14 @@ button.gym-set:focus-visible .gym-set-fix,
   font-weight: 800;
   color: var(--gym-ink);
 }
-/* `connected 3 Aug · read · write` and nothing more. There is no
-   last-READ of this log anywhere in the system, so no freshness
-   is spelled here — see connect.js, where the reasoning lives. */
+/* There is no last-READ of this log anywhere in the system, so no freshness is spelled here. */
 .gym-connect-state {
   flex: none;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--set-done);
 }
-/* Under a personal key only: it is on this list because it reads
-   this log, and it reaches every product at every level, which is
-   a sentence rather than a row. Its own line, full width, so the
-   name above it keeps its one-line ellipsis. */
+/* Its own line, full width, so the name above keeps its one-line ellipsis. */
 .gym-connect-whole {
   flex: 1 0 100%;
   font-size: 12.5px;
@@ -4194,9 +3750,7 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.45;
   color: var(--gym-ink-dim);
 }
-/* The sentence that says a granted level is real reach. It wears
-   the alarm's ink because `delete` is destructive and permanent,
-   and the design's card said it could not delete at all. */
+/* Alarm ink because `delete` is destructive and permanent. */
 .gym-connect-care {
   margin: 10px 2px 0;
   font-size: 12.5px;
@@ -4250,11 +3804,7 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* THE INVITATION, on Routines and on a diff. An invitation and
-   never a gate: no lock glyph, no chip, no strikethrough price,
-   and the verb is a plain link into the room. It sits under the
-   content it follows rather than over it, because nothing here
-   is more urgent than the program a lifter came to read. */
+/* An invitation and never a gate: no lock glyph, no chip, no strikethrough price. */
 .gym-connect-invite {
   display: flex;
   flex-direction: column;

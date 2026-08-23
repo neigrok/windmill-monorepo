@@ -1,8 +1,5 @@
-// The share "score" — what makes a frame worth posting (X2 spec, note 5). Counts
-// done vs. total steps and elects the tree's dominant kind: the most common kind
-// among DONE nodes (ties resolve to terracotta, the brand hue). The dominant kind
-// is the only place a frame takes color — it tints the rule, the title dot and the
-// panel edge; everything else stays neutral so the family reads as one identity.
+// Counts done vs total steps and elects the tree's dominant kind: the most common kind among done
+// nodes, a shared maximum or no done nodes falling to terracotta.
 
 import { KIND_ORDER } from './palette.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
@@ -28,8 +25,6 @@ export class ShareStats {
     return new ShareStats({ done, total: tree.nodes.length, dominantKind: ShareStats.dominant(tally) });
   }
 
-  // A sole highest count wins its kind; a shared maximum (or no done nodes at
-  // all) is a tie and falls to terracotta, the brand hue (spec S3).
   static dominant(tally) {
     let best = 0;
     for (const count of tally.values()) if (count > best) best = count;

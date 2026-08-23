@@ -1,7 +1,3 @@
-// An edge's selection identity is its ordered (from, to) endpoint pair, folded to a string key
-// so it lives in a Set alongside node-id keys. These pin the round-trip and the direction/collision
-// guarantees the desktop edge multi-select leans on (React selection state ⇄ ConnectorBatch highlight).
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { edgeKey, parseEdgeKey } from '../../../../src/products/roadmap/scene/edgeKey.js';

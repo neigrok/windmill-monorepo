@@ -1,18 +1,6 @@
 import SwiftUI
 import WindmillPlatform
 
-// RENAME (§N screen 32) — the sheet a MOVEMENT renames from, over its record. A routine used to
-// share it from its own header; since the 13 Aug update (R2/R3) a routine renames by editing the
-// inline name in the one editor, so the movement's record is this sheet's only door now.
-//
-// A NAME IS A LABEL ON A STABLE ID, so renaming is not destructive and never forks a record. That is
-// the claim, and this screen is the one place in the product whose whole job is to PROVE it — which
-// is why every number in the block below comes off a read the page behind this sheet already made.
-// A constant there would be the product asserting something it did not check, on the one screen that
-// cannot afford to.
-//
-// The sheet stays up until the log answers. A rename that did not happen may not close as though it
-// had, and the refusal is repeated in the log's own words where it sent any.
 struct RenameSheet: View {
     let title: String
     let prompt: String
@@ -54,12 +42,7 @@ struct RenameSheet: View {
                     .lineSpacing(3)
             }
 
-            // WHITESPACE AND NEWLINES BOTH, and the two must be the same trim. `.whitespaces` is
-            // spaces and tabs and NOT `\n`, so a pasted newline passed this guard as a name — and on
-            // a movement still on this device's shelf there is no server behind it to state the
-            // emptiness rule, which left the room drawing a blank at 28pt. What a name may be is
-            // still the log's to say; that it is not blank is a thing this sheet already claimed to
-            // check, and it now checks it.
+            // Trim whitespace and newlines: `.whitespaces` excludes `\n`.
             Button {
                 Task {
                     saving = true
@@ -95,10 +78,7 @@ struct RenameSheet: View {
                 .focused($typing)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.words)
-                // The client's cap, applied where the name is TYPED: sixty characters (§N) and the
-                // eighty BYTES the column counts, whichever runs out first. It refuses nothing
-                // already stored — a name that arrived longer is drawn and counted as it stands, and
-                // only fresh typing is bounded.
+                // Sixty characters or eighty bytes, whichever runs out first; only fresh typing is bounded.
                 .onChange(of: name) { _, typed in
                     let kept = RoutineDraft.capped(typed)
                     guard kept != typed else { return }
@@ -115,9 +95,6 @@ struct RenameSheet: View {
             .strokeBorder(skin.accent, lineWidth: 1.5))
     }
 
-    // The proof, in the ink the room keeps for something that is settled rather than celebrated. It
-    // replaced a paragraph explaining that a rename is safe: the paragraph was an argument about how
-    // we built this, and these are four facts about the lifter's own log.
     private var proven: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             HStack(spacing: WindmillSpace.x2) {

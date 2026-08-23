@@ -2,10 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
 
-// Rasterizes each distinct node icon into an alpha-mask atlas canvas that the
-// node shader samples for its glyph. Reuses the app's Icon registry (one source
-// of truth, only registered icons bundle). Rasterization is async (SVG -> Image
-// decode); onReady fires once the canvas is filled so the scene can re-upload it.
+// Rasterizes node icons into an alpha-mask atlas the node shader samples; onReady fires once the canvas is complete so the scene can re-upload it.
 const CELL = 192;
 const CAPACITY = 64;
 const GLYPH_INSET = 0.28;

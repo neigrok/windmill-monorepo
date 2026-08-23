@@ -37,10 +37,6 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 
-// The interface's doors, proven implementable before the HTTP twin arrives — and the
-// behaviors every implementation leans on, pinned against the fake: the minted id is the
-// idempotency key, a start joins the open session, an absent session reads as null, and an
-// unreachable log throws rather than answering empty.
 class TrainingSyncingTests {
     @Test
     fun testAReplayOfAMintedIdAnswersTheStoredRowEvenAfterFinish() = runTest {
@@ -79,8 +75,6 @@ class TrainingSyncingTests {
         assertNull("no second session was opened", server.stored["ses_fresh"])
     }
 
-    // The claim's start refuses to join — a replayed past session filed into a live workout is the
-    // bug the flag exists against — and the refusal is the machine word the claim waits on.
     @Test
     fun testAStartThatDeclinesToJoinIsRefusedWhileAnotherSessionIsOpen() = runTest {
         val server = FakeTraining()
@@ -95,7 +89,6 @@ class TrainingSyncingTests {
         }
         assertNull("nothing was opened and nothing was joined", server.stored["ses_past"])
 
-        // Its own row answers regardless — a replay is not a second session.
         val replayed = server.startSession(SessionStart(id = "ses_live", startedAt = 500, joinOpenSession = false))
         assertEquals("ses_live", replayed.id)
     }
@@ -123,25 +116,10 @@ class TrainingSyncingTests {
         completedAt = at)
 }
 
-// The refusals this log answers with, as the wire delivers them: a sentence for a human, and — for
-// the reasons a client must branch on — a machine word under `code`. The code is the contract, so
-// nothing that reads these may read the English to decide what to do.
 private fun refusal(status: Int, code: String? = null, message: String) =
     works.windmill.platform.net.WindmillApiException.Refused(
         status, works.windmill.platform.net.Refusal(message = message, code = code))
 
-// A log entirely under the test's control: it can be unreachable, it can already hold a session
-// and its sets, it can refuse a named movement, and it can store a set and then lose the reply.
-// The port of the iOS FakeTraining, kept beside the interface so the store wave can drive
-// TrainingStore against the same log the doors were proven with — swapping the placeholder
-// exceptions for the platform's once that seam exists.
-//
-// THREE OF THE LOG'S OWN RULES ARE MODELLED HERE, because the phone hunt of 2026-08-16 found that
-// a fake without them let a whole class of lost lifts stay green: a settling read (a start, a log
-// page, a movement's record) auto-closes an open session with no activity for four hours, at its
-// last activity; an append into a finished session is 409 `session-finished`; and an append or a
-// finish into a session the log does not hold is 404. The clock the settle runs on is the test's
-// (`nowMs`), and a test that never sets it settles nothing.
 internal class FakeTraining : TrainingSyncing {
     var online = true
     var nowMs: () -> Long = { 0L }
@@ -150,11 +128,7 @@ internal class FakeTraining : TrainingSyncing {
     val stored = mutableMapOf<String, Session>()
     val sets = mutableMapOf<String, MutableList<TrainingSet>>()
     val written = mutableMapOf<String, Routine>()
-    // The proposal ledger, and it is append-and-settle rather than delete: a decided proposal keeps
-    // its row, because it is a dated record on the routine and not a message that was read.
     val ledger = mutableMapOf<String, Proposal>()
-    // How each routine came to exist, filled by `createRoutine` and seedable by a test that wants a
-    // particular day behind it.
     val creations = mutableMapOf<String, RoutineEvent>()
     var createdAtMs = 500L
     var settledAtMs = 9_000L
@@ -167,14 +141,11 @@ internal class FakeTraining : TrainingSyncing {
     var refuseStart: (SessionStart) -> Exception? = { null }
     var refuseCreate: Exception? = null
     var refuseRoutine: (RoutineWrite) -> Exception? = { null }
-    // The READ, apart from the write above it: a page that misses while the log is otherwise
-    // reachable is what tells "this lifter has written none" from "nobody answered".
     var refuseRoutinesRead: Exception? = null
     var refuseShare: Exception? = null
     var refuseRevoke: Exception? = null
     var refuseRecord: Exception? = null
     var refuseRename: Exception? = null
-    // The ROUTINE read, refused — which is the history read too, since the history rides on it.
     var refuseRoutineRead: Exception? = null
     var refuseApply: Exception? = null
     var refuseDismiss: Exception? = null
@@ -183,21 +154,12 @@ internal class FakeTraining : TrainingSyncing {
     var refuseRoutineDelete: Exception? = null
     var refusePreferences: Exception? = null
     var refuseAsk: Exception? = null
-    // Answers queued in the order they will be given, so a test can put a proposal in the second
-    // reply and nothing in the first.
     val answers = mutableListOf<AskAnswer>()
     val asked = mutableListOf<AskQuestion>()
-    // The conversations this account holds, by id — the ledger §O's three doors read, delete from
-    // and refuse out of. A thread is stored WHOLE and served two ways: the list drops the turns,
-    // the detail carries them, and a test that could not tell those apart would not notice a client
-    // drawing a chat log to render a table of contents.
     val conversations = mutableMapOf<String, AskThread>()
     var refuseThreads: Exception? = null
     var swallowReplies = 0
-    // The close is a round trip, and this is the only way a test can stand inside it.
     var onFinish: suspend () -> Unit = {}
-    // So is every append, and a claim is mostly appends — this is where a test stands to make the
-    // §G18 gesture a lifter can make while the claim is walking their shelf under them.
     var onAppend: suspend (SetWrite) -> Unit = {}
 
     val appended = mutableListOf<SetWrite>()
@@ -216,9 +178,6 @@ internal class FakeTraining : TrainingSyncing {
         if (!online) throw IOException("offline")
     }
 
-    // The log's lazy auto-close, run before a start and on the reads that settle (ARCHITECTURE
-    // §3.2): an open session with no activity for four hours ended at its last set, and one with no
-    // sets ended when it began. `closedItself` is what the log row would say about it.
     private fun settle() {
         val now = nowMs()
         for (open in stored.values.filter { it.isOpen }) {
@@ -245,9 +204,6 @@ internal class FakeTraining : TrainingSyncing {
         return made
     }
 
-    // The server's own resolution order: the caller's own row under the id first — a replay is
-    // never a second session — then the open session, which a `joinOpenSession: false` start
-    // refuses rather than joins.
     override suspend fun startSession(start: SessionStart): Session {
         calls.add("start")
         started.add(start)
@@ -275,11 +231,7 @@ internal class FakeTraining : TrainingSyncing {
         reachable()
         refuse(write)?.let { throw it }
         val session = stored[sessionId] ?: throw refusal(404, message = "no such session")
-        // The id IS the idempotency key: a replay answers with the stored row, even after the
-        // session closed, and never files a second one.
         sets[sessionId]?.firstOrNull { it.id == write.id }?.let { return it }
-        // A set that never landed is refused once the session is over — the rule the whole queue
-        // is shaped around.
         if (!session.isOpen) throw refusal(409, "session-finished", "that session is finished")
 
         val number = (sets[sessionId] ?: emptyList()).count { it.exerciseId == write.exerciseId } + 1
@@ -294,10 +246,6 @@ internal class FakeTraining : TrainingSyncing {
         return row
     }
 
-    // §G18's correction. It moves the row it names and nothing else — no session field, no routine
-    // — and an identical fix answers the same stored row. A set this session does not hold is the
-    // same 404 `set-not-found` whether it is absent, already deleted or logged into a DIFFERENT
-    // workout. A FINISHED SESSION IS NOT A REFUSAL: the typo is seen after the workout.
     override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
         calls.add("fixSet")
         fixes.add(Triple(sessionId, setId, fix))
@@ -312,8 +260,6 @@ internal class FakeTraining : TrainingSyncing {
         return corrected
     }
 
-    // 204 for a set that is already gone, one that never existed and one belonging to somebody else
-    // — absent stays byte-identical to forbidden, and a lost reply is always safe to send again.
     override suspend fun deleteSet(sessionId: String, setId: String) {
         calls.add("deleteSet")
         removed.add(sessionId to setId)
@@ -328,8 +274,6 @@ internal class FakeTraining : TrainingSyncing {
         onFinish()
         reachable()
         val live = stored[sessionId] ?: throw refusal(404, message = "no such session")
-        // First-writer-wins, exactly as the log's close is: a replayed finish answers the stored
-        // row unchanged.
         if (!live.isOpen) return live
         val closed = live.copy(finishedAtMs = finishedAtMs)
         stored[sessionId] = closed
@@ -343,10 +287,6 @@ internal class FakeTraining : TrainingSyncing {
         sets.remove(sessionId)
     }
 
-    // Paged the way the log pages: newest first, and the cursor is BOTH halves of the sort key,
-    // because two sessions can share an instant and an instant alone would repeat one across the
-    // page edge or skip it. The row itself is composed by the summary's own rule — the working
-    // count and the tonnage a client reads off a page are the same aggregation either side.
     override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
         calls.add("sessions")
         reachable()
@@ -381,8 +321,6 @@ internal class FakeTraining : TrainingSyncing {
         return lastTimes[exerciseId] ?: LastTime(exerciseId)
     }
 
-    // Sparse, exactly as the route is: a movement this log has never held simply has no row here,
-    // and there is no zero for a client to mistake for one.
     override suspend fun lastSets(): List<LastSet> {
         calls.add("lastSets")
         reachable()
@@ -396,10 +334,6 @@ internal class FakeTraining : TrainingSyncing {
         return written.values.sortedBy { it.position }
     }
 
-    // THE ONE READ THAT CARRIES A HISTORY, as the log composes it: the proposals this routine has
-    // carried, newest first, and the CREATED row always last. The default creation row carries no
-    // `movements`, which is the routine made before the count was stored — a test that wants the
-    // count seeds `creations` itself.
     override suspend fun routine(id: String): Routine? {
         calls.add("routine")
         reachable()
@@ -425,32 +359,20 @@ internal class FakeTraining : TrainingSyncing {
                     targetWeightKg = entry.targetWeightKg, restSeconds = entry.restSeconds)
             })
         written[made.id] = made
-        // The count the day was BUILT with, stored at the write: counting the document later is a
-        // different number the moment the routine is edited.
         creations[made.id] = RoutineEvent(kind = "created", atMs = createdAtMs,
             movements = write.entries.size)
         return made
     }
 
-    // THE HUMAN'S HAND, with the two lines that make the ledger safe beside it — and they are
-    // modelled here rather than assumed, because a fake that only replaced the document would leave
-    // a client free to ignore the revision entirely and stay green. The store does all of this in
-    // one transaction: the lines are laid down again, the REVISION MOVES, and every proposal still
-    // pending on this routine is superseded in the same breath. The mid-session "Save 87.5 to Push
-    // A" is exactly this write, and it is the one the base version exists to defend a diff against.
     override suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine {
         calls.add("replaceRoutine")
         reachable()
         refuseRoutine(write)?.let { throw it }
         val standing = written[id] ?: throw refusal(404, message = "no such routine")
-        // The day it was last trained is the LOG's and survives the replace: it is read off the
-        // sessions, and no PUT can say when a lifter stood under the bar.
         val saved = Routine(write)
             .copy(revision = standing.revision + 1, lastTrainedAtMs = standing.lastTrainedAtMs)
         written.remove(id)
         written[saved.id] = saved
-        // Superseded, never deleted: it drops into the routine's dated history, where a lifter can
-        // still read what an agent suggested and what they did instead.
         ledger.values.filter { it.routineId == id && it.isPending }.forEach {
             ledger[it.id] = it.copy(state = ProposalState.Superseded, settledAtMs = settledAtMs)
         }
@@ -464,10 +386,6 @@ internal class FakeTraining : TrainingSyncing {
         written.remove(id)
     }
 
-    // THE PROPOSAL LEDGER, as the log keeps it: one row per proposal, and the pending one ALSO
-    // hanging off the routine it targets — which is where every card in the product is drawn from.
-    // Nothing here mints one, exactly as no client can: a test puts one on the shelf with `propose`,
-    // standing in for the agent that would have.
     fun propose(proposal: Proposal) {
         ledger[proposal.id] = proposal
         if (!proposal.isPending) return
@@ -481,14 +399,6 @@ internal class FakeTraining : TrainingSyncing {
         return ledger[id]
     }
 
-    // APPLY, as the log applies it: refused outright when the routine has moved past the base the
-    // diff was written on — never merged over the top — and a REPLAY of the decision already taken
-    // answers 200 with the settled row rather than an error. The routine comes back with it, and
-    // does not when the intent was to remove the routine, because there is none left to send.
-    //
-    // A proposal ALREADY SET ASIDE is its own refusal and not the other decision having been taken:
-    // the store tells `superseded` from `dismissed` before it looks at a revision at all, so the two
-    // answers a client must draw differently arrive differently.
     override suspend fun applyProposal(id: String): ProposalDecision {
         calls.add("applyProposal")
         reachable()
@@ -508,18 +418,10 @@ internal class FakeTraining : TrainingSyncing {
         val settled = standing.copy(state = ProposalState.Applied, settledAtMs = settledAtMs)
         ledger[id] = settled
         if (settled.intent == ProposalIntent.Remove) {
-            // The routine goes and its whole ledger goes with it — which is why a second tap on an
-            // applied removal is answered "no such proposal" rather than replayed: there is no row
-            // left to replay, and the 404 IS the removal having happened.
             written.remove(base.id)
             ledger.values.removeAll { it.routineId == base.id }
             return ProposalDecision(settled)
         }
-        // THE DIFF LANDS, exactly as the domain lands it (`documentOf`): the routine's lines are
-        // laid down again from the proposal's own rows in order, and the run STOPS at the first
-        // removed row — what a removal takes away is listed after the document rather than inside
-        // it. Everything else is the base's and stays the base's: the id, the position, the day it
-        // was last trained.
         val moved = base.copy(
             name = settled.name.ifBlank { base.name },
             revision = base.revision + 1,
@@ -549,14 +451,9 @@ internal class FakeTraining : TrainingSyncing {
         val settled = standing.copy(state = ProposalState.Dismissed, settledAtMs = settledAtMs)
         ledger[id] = settled
         written[settled.routineId]?.let { written[it.id] = it.copy(pendingProposal = null) }
-        // No routine rides on a dismissal, exactly as the route sends none: nothing about the
-        // program moved, and a client that needed one back to drop the card would be reading a
-        // field the wire does not carry.
         return ProposalDecision(settled)
     }
 
-    // The record read, and the one absence it can produce on its own: a movement the catalog does
-    // not hold is the same 404 another account's private one gives, and folds to null.
     override suspend fun record(exerciseId: String): MovementRecord? {
         calls.add("record")
         reachable()
@@ -575,8 +472,6 @@ internal class FakeTraining : TrainingSyncing {
         return renamed
     }
 
-    // Idempotent on the session, exactly as the log is: a second mint for a session that already
-    // has a live share hands back the same token rather than a second capability.
     override suspend fun share(sessionId: String): SessionShare {
         calls.add("share")
         reachable()
@@ -595,16 +490,12 @@ internal class FakeTraining : TrainingSyncing {
         shares.remove(sessionId) ?: throw IllegalStateException("404")
     }
 
-    // NEVER A 404: an account with no row is served the defaults, so this answers a document
-    // whether or not anything has ever been written.
     override suspend fun preferences(): GymPreferences {
         calls.add("preferences")
         reachable()
         return settings ?: GymPreferences()
     }
 
-    // A whole-document replace that answers with the STORED document — the rest band clamped — so a
-    // client that drew its own send would disagree with the account.
     override suspend fun savePreferences(document: GymPreferences): GymPreferences {
         calls.add("savePreferences")
         settingsWritten.add(document)
@@ -615,9 +506,6 @@ internal class FakeTraining : TrainingSyncing {
         return stored
     }
 
-    // ASK. The question that went out is kept whole, because what the client has to get right is
-    // which THREAD it landed in — a fresh id opens a conversation and a spent one continues it, and
-    // a fake that only answered would prove nothing about that.
     override suspend fun ask(question: AskQuestion): AskAnswer {
         calls.add("ask")
         asked.add(question)
@@ -629,8 +517,6 @@ internal class FakeTraining : TrainingSyncing {
         return answers.removeAt(0)
     }
 
-    // The list, newest question first and WITHOUT the turns — the reply's own shape, so a screen
-    // that drew a conversation from the list would draw nothing here either.
     override suspend fun threads(): List<AskThread> {
         calls.add("threads")
         reachable()
@@ -647,11 +533,6 @@ internal class FakeTraining : TrainingSyncing {
         return conversations[id]
     }
 
-    // The conversation goes and the CONSEQUENCE stays — every proposal it minted is still on the
-    // ledger, still applied, still saying it came from Ask. What goes with it is the `thread` on
-    // each of those proposals, which is `on delete set null` in the schema and is the whole of the
-    // door: a history row that kept a dangling id would draw `Ask ›` onto a conversation the log
-    // would then refuse. A fake that only forgot the thread would have modelled that bug as fine.
     override suspend fun deleteThread(id: String) {
         calls.add("deleteThread")
         reachable()

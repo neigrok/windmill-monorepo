@@ -1,17 +1,4 @@
 // The canvas — one continuous scroll, oldest at the top, today at the bottom.
-// It OPENS on tonight, on the first frame, with the older days already above it —
-// a restore, not an entrance, and never a scroll the writer watches happen; a
-// dated position opens on that day the same way, and a
-// search result flies to the exact passage and lights it for a beat. Days present
-// at first paint never animate — only ones that arrive later fade in from below.
-// Today is the last block: writing happens inline in a growing textarea, the two
-// taps sit under it as one labelled strip, and a mono note fades in after each write
-// naming where the words actually are. Today's marker draws no pip and no tick — the
-// strip is the one drawing of those two values, and the same day drawn twice at two
-// sizes read as two different things. When the account could not be read the canvas
-// says so and draws nothing implying it is empty — a read that failed is not a first run.
-// At the other edge sits the floor: one window deeper per press, and the start of the
-// journal said out loud once a read has reached it.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePages } from './usePages.js';
@@ -54,7 +41,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   bodyRef.current = body;
   const columnRef = useRef(null);
   const openingRef = useRef(true);   // the canvas is still opening — the position is ours to take
-  const placedRef = useRef(0);       // where we last put it, so a scroll that is NOT ours is visible
+  const placedRef = useRef(0);       // where we last put it, so a scroll that is not ours is visible
   const focusedRef = useRef(false);
   const bornSet = useRef(null); // the dates present at first paint — these never animate
   const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
@@ -73,10 +60,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     if (el) el.scrollIntoView({ block });
   };
 
-  // The echoes surfaces measure inside this canvas from outside it — the margin follows the scroll,
-  // the ink footer counts what is below the fold — so the canvas hands them the scroller it already
-  // holds and the lookup it already does. Nothing out there names `.journal-scroll` or `[data-date]`
-  // any more: a rename here is a compile-time move, not a silent no-op three files away.
+  // Echoes measure inside this canvas from outside it: it hands them the scroller and the day lookup.
   const { holdCanvas } = echoes || {};
   useEffect(() => {
     if (!holdCanvas) return undefined;
@@ -84,9 +68,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => holdCanvas(null);
   }, [holdCanvas]);
 
-  // Talk sits in the tool rail with search and the zoom now, not over the writing — so the canvas
-  // hands the rail the one thing a transcript needs, a write into today, exactly as it hands the
-  // echoes surfaces its scroller above. Nothing out there touches the store or the field directly.
+  // The rail gets one thing: a write into today. Nothing out there touches the store or the field.
   useEffect(() => {
     if (!holdWriter) return undefined;
     holdWriter((text) => {
@@ -96,13 +78,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => holdWriter(null);
   }, [holdWriter, setBody]);
 
-  // The one sentence that says what the two taps are FOR, said under them once ever and on the
-  // first save — never before there is a page to have felt something about, and never again once
-  // the question has been answered or skipped.
-  //
-  // It is spent by being READ, not by being rendered. A save that lands a beat before the account's
-  // own mood merges in paints this line for a single frame nobody perceives; burning the one showing
-  // on that frame would retire the sentence without anyone ever having seen it.
+  // Said once ever, on the first save, and spent by being read rather than by being rendered.
   const [whyDue] = useState(() => !whySaid());
   const why = whyDue && saveTick > 0 && mood == null ? WHY_LINE : null;
   useEffect(() => {
@@ -113,8 +89,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => clearTimeout(timer);
   }, [why]);
 
-  // Grow the composer to its content. Runs before the restore below, so the
-  // bottom is measured at the field's full height.
+  // Grow the composer to its content before the restore below measures the bottom.
   useLayoutEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -122,21 +97,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     ta.style.height = `${ta.scrollHeight}px`;
   }, [body]);
 
-  // OPENING IS NOT A SCROLL — the canvas opens ON tonight, with the older days already above it,
-  // and a dated hash opens on its day the same way. Taken in a layout effect, so it is done before
-  // the browser paints and there is nothing for the writer to watch happen.
-  //
-  // AND IT IS TAKEN AGAIN EVERY TIME THE CANVAS CHANGES SIZE UNDER IT, because a cold load is laid
-  // out three times before it is finished: the room's own height settles, the account's window
-  // lands ABOVE tonight, and then the webfonts swap and re-flow every line of prose. A position
-  // taken once, in the middle of that, ends up wherever the last reflow left it — and one taken
-  // while the scroller had no overflow yet does NOTHING AT ALL, silently, which is how a canvas
-  // that had already "opened" was still sitting at the top of July.
-  //
-  // It ends when the writer takes the scroll — a wheel, a drag, a key, any scroll that did not put
-  // the canvas where we last placed it. From then on the position is theirs, and nothing here
-  // moves it again; a canvas that pulled someone back down to tonight mid-paragraph would be a
-  // worse thing than the one this replaces.
+  // Taken in a layout effect before paint, and again on every resize: a cold load lays out several times
+  // and a position taken while the scroller has no overflow does nothing. Ends when the writer scrolls.
   const takePosition = () => {
     const scroller = scrollRef.current;
     if (!openingRef.current || !scroller) return;
@@ -148,7 +110,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const takeRef = useRef(takePosition);
   takeRef.current = takePosition;
 
-  // A new position asked for by the URL re-opens the canvas on it, even if the writer had scrolled.
+  // A position asked for by the URL re-opens the canvas on it, even if the writer had scrolled.
   useLayoutEffect(() => { openingRef.current = true; }, [focusDate]);
 
   useLayoutEffect(() => {
@@ -164,9 +126,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => takeRef.current());
     observer?.observe(scroller);
     if (columnRef.current) observer?.observe(columnRef.current);
-    // The scroll that is not ours ends the opening. Ours always lands where `placedRef` says, so
-    // this can tell the writer's wheel from the canvas taking its own position — no flags, no
-    // guessing at which event came from where.
+    // The scroll that is not ours ends the opening: ours always lands where `placedRef` says.
     const onScroll = () => {
       if (openingRef.current && Math.abs(scroller.scrollTop - placedRef.current) > 8) {
         openingRef.current = false;
@@ -179,11 +139,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     };
   }, []);
 
-  // Reaching back PREPENDS months above the viewport, which would otherwise shove the page the
-  // writer is reading down the screen by however much history arrived. So the press records how far
-  // the scroller is from its own bottom — the one distance a prepend cannot change — and the layout
-  // pass that follows the read puts it back. Measured before the read and restored after it
-  // SETTLES, so a reach that failed or found nothing simply restores the same position it took.
+  // A reach back prepends above the viewport, so hold the distance from the scroller's bottom — the one
+  // distance a prepend cannot change — and put it back once the read settles.
   const startReachBack = () => {
     openingRef.current = false;   // they went looking — the canvas stops taking its own position
     const scroller = scrollRef.current;
@@ -198,15 +155,9 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     anchorRef.current = null;
   }, [reach, history.length]);
 
-  // Fly to a search hit: bring its day to centre, neighbours intact, and light the
-  // matched passage for a beat — a position, never a detail view. A hit older than the
-  // rendered window is loaded first (extendTo), then scrolled once it's in the DOM; a hit
-  // on today lands in the composer, its span selected, since today is a field not prose.
-  //
-  // Loading months of history PREPENDS them above the target, which slides it out from under the
-  // flight while it is in the air — so keep re-aiming for a few frames rather than firing once and
-  // hoping the layout was finished. A hundred milliseconds of correction nobody can see, versus
-  // landing at the bottom of the canvas roughly half the time.
+  // A hit older than the rendered window is loaded first, then scrolled; a hit on today lands in the
+  // composer with its span selected. Prepends keep moving the target, so the flight re-aims for a few
+  // frames instead of firing once.
   useEffect(() => {
     if (!flyTo || loading) return;
     openingRef.current = false;   // a flight is a position the writer asked for
@@ -235,8 +186,6 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => { cancelled = true; if (fade) clearTimeout(fade); };
   }, [flyTo, loading, extendTo, today]);
 
-  // The page you are standing on — its tab burns at full weight, every other page's has aged. The
-  // edge of the canvas is a map of where you keep circling, and the map says where you are.
   const standingOn = focusDate || today;
 
   const rendered = [];
@@ -262,12 +211,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const todayMonth = today.slice(0, 7);
   if (todayMonth !== lastMonth) rendered.push(<MonthDivider key={`m-${todayMonth}`} iso={today} />);
 
-  // The floor belongs to an account that answered, and to nothing else. A canvas still loading has
-  // no edge yet; a read that FAILED has not earned the right to say anything about where the
-  // journal starts (gym's log foot draws the same line); and signed out there is no account to
-  // reach into at all — the device is the whole record and the save note already says so. The one
-  // ready state it stays out of is an account with no pages: "that's the start of your journal"
-  // over an empty canvas is noise, and the first-run placeholder is what belongs there.
+  // Only an account that answered has an edge to reach past, and an empty one shows the first run.
   const showFloor = readState === 'ready' && !(history.length === 0 && reach === 'end');
 
   return (
@@ -311,14 +255,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   );
 }
 
-// THE FLOOR OF THE JOURNAL. Gym's log foot answers "is this everything?" at the bottom of a list;
-// the top of a canvas is the same question upside down, and it gets the same three answers: one
-// window deeper per press, said in words rather than a spinner — and the beginning stated OUT LOUD,
-// because "that's where your journal starts" is what someone checking whether their history came
-// across is actually looking for.
-//
-// A read that FAILED is never that answer. It says what happened and offers the step again: a
-// writer with two years of pages must never be told their journal starts in June.
+// One window deeper per press. A failed read is never "the beginning": it offers the step again.
 function CanvasFloor({ reach, onReach }) {
   if (reach === 'end') return <p className="journal-floor-end">That’s the start of your journal.</p>;
   if (reach === 'failed') {
@@ -329,8 +266,7 @@ function CanvasFloor({ reach, onReach }) {
       </p>
     );
   }
-  // aria-disabled rather than disabled: a real `disabled` drops focus to the body mid-press, and
-  // what actually makes a second press safe is the store's own guard, never the attribute.
+  // aria-disabled, not disabled: a real `disabled` drops focus to the body mid-press.
   return (
     <button
       type="button"
@@ -349,9 +285,7 @@ function MonthDivider({ iso }) {
   return <div className="journal-month">{MONTHS[month - 1]} {year}</div>;
 }
 
-// The writing and its echoes share one positioning context — .journal-page — because an echo's tab
-// hangs off the right edge of the paragraph it belongs to, and its ink opens directly under it.
-// Nothing an echo draws is ever above the cursor or on the day chip.
+// The writing and its echoes share one positioning context, .journal-page.
 function DayBlock({ day, born, highlight = null, echoes = null, standing = false }) {
   return (
     <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
@@ -364,7 +298,7 @@ function DayBlock({ day, born, highlight = null, echoes = null, standing = false
   );
 }
 
-// Wrap the matched [lo, hi) char range in a soft lamp-tinted mark — the passage a search flew to.
+// Wrap the matched [lo, hi) char range in a mark.
 function markSpan(body, { lo, hi }) {
   return (
     <>
@@ -375,18 +309,13 @@ function markSpan(body, { lo, hi }) {
   );
 }
 
-// Mono, one line per write, fading in and easing back out — never a button, never a spinner, never
-// a toast. Each state names where the words actually are, and none of them may flatter: a browser
-// that refused the bytes while the network was down is holding nothing, and says so.
+// One line per write, naming where the words actually are.
 const SAVE_NOTES = {
   saved: 'saved',
   device: 'saved on this device',
   offline: 'offline · saved here',
   unsaved: 'not saved — no room on this device',
-  // Deliberately says nothing about WHY. The store settles this on any refusal the server will
-  // repeat — too long is the common one, but a garbled stamp or a day the server will not take
-  // answer the same way, and telling somebody their page is too long when it is not is a claim
-  // nobody checked.
+  // Settled on any refusal the server will repeat, not only on a page that is too long.
   refused: 'kept here · not synced',
 };
 
@@ -395,10 +324,7 @@ function SavedNote({ state, tick }) {
   useEffect(() => {
     if (tick === 0) return undefined;
     setVisible(true);
-    // Every other state is a beat that passes — saved, offline, and the retry that re-announces it.
-    // `refused` is the one that does NOT come back: nothing is retrying, so a note that fades after
-    // two seconds leaves a canvas that looks saved while nothing is syncing. It stays until the
-    // next save changes the answer.
+    // `refused` is the one state nothing retries, so it stays until the next save changes the answer.
     if (state === 'refused') return undefined;
     const timer = setTimeout(() => setVisible(false), 2200);
     return () => clearTimeout(timer);

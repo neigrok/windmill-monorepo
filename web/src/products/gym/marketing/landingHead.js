@@ -1,21 +1,8 @@
-// The crawlable shell /gym wears — head copy, structured data, and the words a visitor without
-// JavaScript is served. Beside the landing it describes, because a page's words are its product's.
-// Pure data, no browser globals: the build script reads this chain in plain Node.
-//
-// Every line here describes what the product DOES, and none of them describes when it arrives. That
-// is deliberate, and it paid off: gym flipped to `shell.status: 'open'` on 2026-08-08 (products/gym/
-// routes.js) and not one word here needed editing. A sentence dated against that word is false
-// either before the word moves or after. The one action is the same door in both states — #/gym
-// renders the log and upgrades in place to /app/gym.
-
 import { SITE_ORIGIN, SHARE_CARD_ALT } from '../../../shell/marketing/siteIdentity.js';
 
 export const gymLandingHead = {
   path: '/gym',
   module: 'src/products/gym/marketing/GymLanding.jsx',
-  // The SERP title names the thing and then says it in our voice; ogTitle and twitterTitle below
-  // stay pure voice, because a share card is read by someone who already clicked, and a search
-  // result by someone typing "training log". Same page, two readers, two first lines.
   title: 'Windmill Gym — a training log that remembers what you lifted',
   description: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, a link that hands one workout to your coach, and a CSV of every set you have logged.',
   ogTitle: 'Windmill Gym — it remembers what you lifted',
@@ -24,9 +11,7 @@ export const gymLandingHead = {
   twitterDescription: 'A training log for barbell programs — squat, bench, deadlift, press, rows, chins. Two taps between sets, and the next session opens with last time’s numbers already in the field.',
   imageAlt: SHARE_CARD_ALT,
   fallback: {
-    // --accent-iris-600, gym's brand since 2026-08-07 (styles/tokens/palettes.css). This is the
-    // only fallback field with a live counterpart on the page, so it is the only one that can
-    // drift: the crawlable shell painted its CTA steel for a room that had stopped being steel.
+    // --accent-iris-600 in styles/tokens/palettes.css.
     accent: '#4C4374',
     badge: 'Barbell training log',
     h1: 'It remembers what you lifted.',
@@ -35,14 +20,6 @@ export const gymLandingHead = {
       { href: '#/gym', label: 'Open your training log →' },
       { href: '#how', label: 'See how it works' },
     ],
-    // The precondition, said at the door rather than behind it: gym answers a visitor with no
-    // account with a sign-in pitch, and a log kept on an account is the honest reason why.
-    //
-    // IT NAMES THE ACCOUNT AND NOT A SUBSCRIPTION (W8). This line read "one account and one
-    // subscription" and was byte-identical to the landing's own ACCOUNT_LINE, which is the whole
-    // reason to keep it that way — but a subscription is a thing nobody can have: `paidPlansOpen()`
-    // is a hardcoded false and BillingApi 503s a checkout. The crawlable shell is the copy a visitor
-    // with no JavaScript reads, so a false line here is the one that reaches them first.
     trust: 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.',
     notes: [
       'How it works: Log the set → It remembers → See the line.',

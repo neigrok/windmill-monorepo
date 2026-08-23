@@ -1,9 +1,5 @@
-/* The family chrome the plain-HTML pages in public/ wear — the same geometry the SPA landings
-   render (src/shell/marketing/LandingChrome.jsx): a 1280 frame on clamp gutters, a 22px wordmark,
-   14.5px/700 family cross-nav, buttons cut to the design system's Button size="sm". Tokens are
-   resolved to concrete values because these pages are light-only. It used to be pasted into all
-   eight heads under a comment admitting the problem; served once, it cannot drift. The faces
-   arrive separately, on /fonts.css. */
+/* Chrome for the plain-HTML pages in public/. Light-only, so tokens are resolved to concrete
+   values; the faces arrive on /fonts.css. */
 
 * { box-sizing: border-box; }
 body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -12,8 +8,6 @@ body { margin: 0; background: #F9F5EB; color: #211B13; font-family: 'Nunito', ui
 .skip { position: fixed; left: -9999px; top: 12px; z-index: 60; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 14px; color: #211B13; text-decoration: none; box-shadow: 0 8px 24px rgba(33, 27, 19, 0.08), 0 2px 6px rgba(33, 27, 19, 0.05); }
 .skip:focus { left: 12px; }
 
-/* The cross-nav wraps rather than hiding below 744px — these pages carry no section anchors of
-   their own, so every link in the header is a way out of the page and none of them may vanish. */
 header { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(14px, 2.2vw, 28px); max-width: 1280px; margin: 0 auto; padding: 24px clamp(20px, 5vw, 64px); }
 .wm { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 22px; color: #211B13; text-decoration: none; }
 .fam { display: flex; align-items: center; flex-wrap: wrap; gap: clamp(12px, 1.8vw, 24px); font-weight: 700; font-size: 14.5px; }

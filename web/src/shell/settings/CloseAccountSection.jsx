@@ -1,15 +1,4 @@
-// Settings · Close your account — the account's own door, and the last thing on the page.
-//
-// It lives in the shell rather than in a product because that is what it acts on. Until 2026-08-07
-// it was half of the roadmap's "Your data" section, which is how it came to describe one product's
-// data while closing an account that also holds journal pages and gym sessions. The rule that
-// replaces that, and which gym's own settings section already states out loud, is: a product owns
-// its EXPORT, the account owns its CLOSE, and no product may grow a second door that closes it.
-//
-// No danger-zone theater. The row is quiet until it is opened, the deal is stated plainly
-// (accountClosure.js, which is also where the reasoning behind every line is written down), and the
-// confirmation is typing your own email — which catches the wrong-account case that "type DELETE"
-// never does. Its button is the one brick in all of settings.
+// The confirmation is typing your own email, which catches the wrong-account case.
 
 import React, { useState } from 'react';
 import { Button, Input } from '../../design-system';
@@ -19,9 +8,6 @@ import { PRODUCTS } from '../products.js';
 import { closingDeal } from './accountClosure.js';
 import { Section, styles } from './Section.jsx';
 
-// Every registered product, open or not: the account holds a pre-open product's data just the same,
-// and a consent screen that listed only the rooms with a door on the web would be quietly narrower
-// than the thing the button does.
 const DEAL = closingDeal(PRODUCTS.map((product) => product.label));
 
 export function CloseAccountSection() {
@@ -49,10 +35,6 @@ export function CloseAccountSection() {
     }
   };
 
-  // The close is done. The server's reply carries a `closingOn` date, and this screen deliberately
-  // does not render it: nothing on the server enforces that date — signing in revives a closed
-  // account whenever it happens (AuthService.cpp `revived()`), and no job ever removes the rows. A
-  // date printed here would be the one thing on the page nobody keeps.
   if (closed) {
     return (
       <Section title="Close your account">

@@ -1,16 +1,11 @@
 import XCTest
 @testable import WindmillGym
 
-// The pad's one promise: an invalid entry never silently reverts, and never silently commits. Every
-// case below is a way a chalked thumb gets a number wrong, and what the sheet says back about it.
-
 final class KeypadEntryTests: XCTestCase {
     private func pad(_ text: String) -> KeypadEntry.Pad {
         KeypadEntry.Pad(opening: "0").pressing("0", in: .weight).backspaced.typing(text)
     }
 
-    // The pad opens ON the number it was opened from, and the first digit starts a fresh one rather
-    // than appending to a value nobody typed — 102.5 then a 9 is 9, not 102.59.
     func testTheFirstDigitReplacesTheSeededNumberAndTheNextOneAppends() {
         let opened = KeypadEntry.Pad(opening: "102.5")
         XCTAssertEqual(opened.echo, "102.5")
@@ -18,7 +13,6 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(opened.pressing("9", in: .weight).pressing("5", in: .weight).text, "95")
     }
 
-    // ± and ⌫ are corrections, not entry: they edit what is there, so the seeded number survives them.
     func testTheSignAndTheBackspaceEditTheSeededNumberRatherThanReplacingIt() {
         let opened = KeypadEntry.Pad(opening: "20")
         XCTAssertEqual(opened.pressing("±", in: .weight).text, "-20")
@@ -27,8 +21,6 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(opened.backspaced.text, "2")
     }
 
-    // In reps mode the comma and the ± are stood DOWN, not removed: the geometry a chalked thumb
-    // learned must not move between the two numbers.
     func testTheCommaAndTheSignAreInertInRepsModeAndTheKeysDoNotMove() {
         XCTAssertEqual(KeypadEntry.keys.count, 12)
         XCTAssertFalse(KeypadEntry.isLive(",", in: .reps))
@@ -37,7 +29,6 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(KeypadEntry.Pad(opening: "5").pressing("±", in: .reps).text, "5")
     }
 
-    // A key that does not fit is refused whole — never eat the digit under the thumb to make room.
     func testABufferAtItsLimitRefusesTheKeyRatherThanDroppingOne() {
         let full = pad("12345678")
         XCTAssertEqual(full.text.count, KeypadEntry.maxBuffer)
@@ -52,7 +43,6 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(KeypadEntry.Pad(opening: "").echo, "—")
     }
 
-    // A comma and a point both read as a decimal — one keyboard, two continents.
     func testACommaAndAPointBothReadAsADecimal() {
         XCTAssertEqual(KeypadEntry.read(pad("72,5"), as: .weight, keeping: 0).value, 72.5)
         XCTAssertEqual(KeypadEntry.read(pad("72.5"), as: .weight, keeping: 0).value, 72.5)
@@ -65,15 +55,10 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(reading.message, "One decimal point only — 72,5 or 72.5")
     }
 
-    // Band-assisted work is a normal point on the number line, so a negative weight commits.
     func testANegativeWeightIsAValidLoad() {
         XCTAssertEqual(KeypadEntry.read(pad("-20"), as: .weight, keeping: 0).value, -20)
     }
 
-    // The pad is opened on the PRODUCT'S OWN SPELLING of the number, and `Readout.weight` writes a
-    // real U+2212 minus that `Double` cannot read. Seeded raw, the sheet opened on a band-assisted
-    // −20 in alarm ink, said "Not a number yet", greyed out Set, and answered ± with "-−20" — an
-    // error on a gesture the lifter never made, on every set of that movement from then on.
     func testThePadOpenedOnABandAssistedLoadReadsItBackRatherThanRefusingIt() {
         let opened = KeypadEntry.Pad(opening: Readout.weight(-20))
 
@@ -97,8 +82,6 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertEqual(KeypadEntry.read(pad("500"), as: .weight, keeping: 0).value, 500)
     }
 
-    // 1 and not 0: the server refuses reps < 1, so a pad that took a zero would hand back a number
-    // the log could only refuse — the one entry that looked legal here and died at the wire.
     func testZeroRepsIsRefusedHereBecauseTheLogRefusesItThere() {
         let zero = KeypadEntry.read(pad("0"), as: .reps, keeping: 5)
         XCTAssertNil(zero.value)
@@ -108,14 +91,11 @@ final class KeypadEntryTests: XCTestCase {
         XCTAssertNil(KeypadEntry.read(pad("100"), as: .reps, keeping: 5).value)
     }
 
-    // A typed weight lands on the ladder's grid, so the pad and the step buttons cannot produce two
-    // different numbers for the same load.
     func testATypedWeightIsRoundedOnTheLaddersGrid() {
         XCTAssertEqual(KeypadEntry.read(pad("102,505"), as: .weight, keeping: 0).value, 102.51)
     }
 }
 
-// Typing a whole string into a pad, key by key, the way a thumb would.
 private extension KeypadEntry.Pad {
     func typing(_ text: String) -> KeypadEntry.Pad {
         text.reduce(self) { pad, character in

@@ -38,8 +38,7 @@ dependencies {
     api(libs.androidx.lifecycle.viewmodel.compose)
     api(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    // api, not implementation: HttpUrl is in this module's public signatures (WindmillApi.baseUrl,
-    // the AuthStore constructor), so consumers must be able to name it without re-declaring okhttp.
+    // api: HttpUrl is in this module's public signatures.
     api(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)

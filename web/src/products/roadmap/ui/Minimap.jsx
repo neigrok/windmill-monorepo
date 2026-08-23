@@ -1,8 +1,5 @@
-// Small always-visible map of the whole tree: a dot per node, colored by its
-// current state, plus a rectangle for the camera's current viewport. Clicking
-// anywhere on it pans the scene there. Two stacked canvases keep it smooth: the
-// dots redraw only when nodes/states/bounds change, while the viewport rectangle
-// tracks the camera every frame through `subscribeViewport` — never through React.
+// The dots redraw only when nodes/states/bounds change; the viewport rectangle tracks the camera
+// every frame through `subscribeViewport`, never through React.
 
 import React, { useEffect, useRef } from 'react';
 import { NODE_COLORS, DEFAULT_NODE_COLOR, nodeTier } from '../theme.js';
@@ -12,8 +9,6 @@ const HEIGHT = 128;
 const PADDING = 10;
 const VIEWPORT_STROKE = NODE_COLORS.terracotta.base;
 
-// A dot keeps its kind's hue; an unavailable node drops to the family's lighter
-// tint so it reads as faded without losing its color.
 function dotColor(color, state) {
   const family = NODE_COLORS[color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
   return nodeTier(state) === 0 ? family.soft : family.base;

@@ -2,25 +2,12 @@ import SwiftUI
 import UIKit
 import WindmillPlatform
 
-// THE COACH SHARE — one workout, handed to one person, by the lifter's own hand. It is the whole of
-// gym's sharing and the shape is the point: a capability that EXPIRES and is REVOKED by deleting one
-// row, per session, never per account. There is no profile, no feed, no gallery and no social share
-// sheet; nothing about a session is discoverable without the token, and every other read in this
-// product is still `WHERE user_id = :caller`.
-//
-// What the copy has to say, in every state it can be in, because a link that leaves your phone is a
-// thing you are owed the truth about: ANYONE WHO HAS IT CAN READ THIS ONE WORKOUT · IT EXPIRES ·
-// YOU CAN REVOKE IT. The expiry is the server's fact and is printed from the reply, never counted
-// off this device's clock — a device-local clock can support an omission, never an assertion.
-
-// What `POST /v1/gym/sessions/{id}/share` answers with. Idempotent on the session: tapping Share
-// twice hands back the link that is already live rather than a second capability to revoke later.
+// The expiry is printed from the server's reply, never counted off this device's clock.
+// `POST /v1/gym/sessions/{id}/share` is idempotent on the session: sharing twice hands back the live link.
 public struct SessionShare: Equatable, Codable, Sendable {
     public let token: String
     public let expiresAtMs: Int64
-    // The link, composed by the SERVER, because it is the only participant that knows where the
-    // browser app is served. Optional so a phone talking to a backend older than this field still
-    // decodes; `Coach.link` says what happens then.
+    // Optional on the wire; `Coach.link` composes the fallback.
     public let url: String?
 
     public init(token: String, expiresAtMs: Int64, url: String? = nil) {
@@ -37,9 +24,6 @@ public struct SessionShare: Equatable, Codable, Sendable {
 }
 
 public enum Coach {
-    // The offer, and the sentence under it that is the same whether the door has never been opened
-    // or the log just refused to open it. Said before anything is minted, so it names no expiry date
-    // — there is no share yet and therefore no day to name.
     public static let offer = """
         A link to this one workout — every set, load and rep in it, and nothing else about your \
         account. Anyone who has the link can read it. It expires, and you can revoke it whenever \
@@ -52,22 +36,16 @@ public enum Coach {
         public let link: String?
         public let action: String
         public let revoke: String?
-        public let note: String?          // the log's own words, when a door did not open
+        public let note: String?  // the log's own words, when a door did not open
     }
 
-    // Four states, and `note` rides on the two that can carry a refusal: a mint that failed leaves
-    // the card closed WITH a reason, and a revoke that failed leaves the link live WITH one — the
-    // link is still out there and a card that said otherwise would be the lie that matters most here.
     public enum State: Equatable {
         case closed(note: String? = nil)
         case working
         case live(share: SessionShare, copied: Bool = false, note: String? = nil)
         case revoked
 
-        // The whole state machine, as one pure step. It is here rather than inside the view because
-        // the rule that matters most in it — A REVOKE THAT DID NOT HAPPEN LEAVES THE LINK LIVE — is
-        // a decision about what a lifter is told about a capability that is still out there, and a
-        // decision like that belongs somewhere a test can stand.
+        // A revoke that did not happen leaves the link live.
         public func after(_ event: Event) -> State {
             switch event {
             case .asked:
@@ -81,8 +59,6 @@ public enum Coach {
                 return .live(share: share, copied: true, note: note)
             case .revoked:
                 return .revoked
-            // The note is the news, so the copied flag goes back down with it: the button under a
-            // failure reads "Copy link" again rather than claiming a clipboard state from before it.
             case .revokeFailed(let why):
                 guard case .live(let share, _, _) = self else { return self }
                 return .live(share: share, note: why)
@@ -99,13 +75,6 @@ public enum Coach {
         case revokeFailed(String)
     }
 
-    // The address the coach opens, and it is the server's to compose rather than ours. This phone
-    // knows where the API answers; it does not know where the browser app is served, and the two are
-    // one host in production — which is exactly how this shipped pointing at `/v1/gym/shared/…`, the
-    // JSON route, so a coach tapping a link from a phone was handed a page of JSON.
-    //
-    // The fallback is the reader page's own route and never the API's, so the worst case against an
-    // older backend is a link built from the wrong host rather than one that opens the wrong thing.
     public static func link(_ share: SessionShare, base: URL) -> String {
         if let sent = share.url, !sent.isEmpty { return sent }
         let origin = base.absoluteString.hasSuffix("/")
@@ -139,19 +108,12 @@ public enum Coach {
     }
 }
 
-// The two doors the room lends this card, already bound to one session, plus where the log lives so
-// the token can be spelled as an address. Passed as a value for the same reason the finish screen
-// takes `onDiscard` rather than the store: a screen that holds the store can write to the log in
-// ways its own copy does not describe.
 struct CoachDoors {
     let base: URL
     let mint: () async -> Result<SessionShare, TrainingStore.WriteFailure>
     let revoke: () async -> TrainingStore.WriteFailure?
 }
 
-// One drawing of the share, used by the screen a session ends on and by the screen it is revisited
-// from. Nothing is minted until the tap, and nothing on screen claims a link exists until the log
-// has said so — the same rule "Keep this as a routine" follows two cards up.
 struct CoachShareCard: View {
     let doors: CoachDoors
 
@@ -172,8 +134,6 @@ struct CoachShareCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let link = card.link {
-                // The address is shown in full and not behind the word "link": what leaves the phone
-                // is what a coach can open, and a lifter is owed the sight of it before they send it.
                 Text(link)
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.accent)
@@ -218,8 +178,6 @@ struct CoachShareCard: View {
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // The one action, whatever the card currently offers: mint, or copy the link that is already
-    // live. Copying is the only thing here that never touches the log.
     private func act() async {
         if case .live(let share, _, _) = state {
             UIPasteboard.general.string = Coach.link(share, base: doors.base)
@@ -235,10 +193,6 @@ struct CoachShareCard: View {
         }
     }
 
-    // A revoke that did not happen leaves the link LIVE and says so. Drawing it as dead would tell a
-    // lifter their coach can no longer read the session on the strength of a request that failed —
-    // the one mistake this card is not allowed to make. The live state is kept across the round trip
-    // rather than replaced by `.working`, because that is what the failure branch has to fall back to.
     private func revokeLink() async {
         guard case .live = state else { return }
         let live = state

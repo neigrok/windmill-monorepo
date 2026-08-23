@@ -1,8 +1,5 @@
-// The X6 magic-link API — one door keyed by email: passwordless, single-use links,
-// rolling sessions. Every call carries the session cookie; every failure throws an
-// AuthError whose `code` maps straight to the copy in auth.md §7. A dead server is
-// never a crash — requestMagicLink/verifyToken report `unreachable`; fetchMe answers
-// null only for a real 401, undefined for a blip (unknown — not signed out).
+// The magic-link API. Every failure throws an AuthError whose `code` maps to copy; fetchMe answers
+// null only for a real 401 and undefined for a blip.
 
 import { API_BASE } from '../apiBase.js';
 
@@ -26,8 +23,6 @@ export async function requestMagicLink(email, { forkOf } = {}) {
   return response.json();
 }
 
-// The link-sent record a successful request leaves behind — the marketing nav reads it
-// to show the "Link sent — check your email" chip. Expires with the link itself (15 min).
 export function pendingMagicLink() {
   try {
     const record = JSON.parse(sessionStorage.getItem(LINK_SENT_KEY) ?? 'null');
@@ -52,18 +47,16 @@ export async function verifyToken(token) {
 export async function fetchMe() {
   try {
     const response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include' });
-    if (response.status === 401) return null; // the one honest "no session"
-    if (!response.ok) return undefined; // a server blip is unknown, never a sign-out
+    if (response.status === 401) return null;
+    if (!response.ok) return undefined;
     const body = await response.json();
     return body.user;
   } catch {
-    return undefined; // unreachable — unknown, never a crash on boot
+    return undefined;
   }
 }
 
 export async function logout() {
-  // Going ghost is a local decision; a failed logout call must never block it.
-  // Any pending link ceremony is moot once you choose to go ghost.
   try { sessionStorage.removeItem(LINK_SENT_KEY); } catch { /* storage unavailable */ }
   await fetch(`${API_BASE}/v1/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
 }
@@ -77,7 +70,6 @@ async function send(path, body) {
       credentials: 'include',
     });
   } catch {
-    // fetch only rejects when the request never reached the server — the one true brick.
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
 }

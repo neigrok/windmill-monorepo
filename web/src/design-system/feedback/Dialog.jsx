@@ -8,15 +8,14 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
   const wasOpen = useRef(false);
   const [closeHover, setCloseHover] = useState(false);
 
-  // Capture the opener at the open transition, during render — before React commits the
-  // dialog's autoFocus (commitMount runs before any effect fires), so we still see the
-  // trigger element, not a field that autofocuses inside the card.
+  // Capture the opener during render, before React commits the dialog's autoFocus (commitMount
+  // runs before any effect), so this sees the trigger and not a field inside the card.
   if (open && !wasOpen.current) openerRef.current = document.activeElement;
   wasOpen.current = open;
 
-  // While open: move focus into the dialog (unless a field inside already claimed it,
-  // e.g. an autoFocus input), and restore focus to the opener on close. Escape closes,
-  // and we stop the event so a host's own global Esc handler doesn't also fire behind us.
+  // While open: move focus into the dialog unless a field inside already claimed it, and restore
+  // it to the opener on close. Escape closes, and the event is stopped so a host's own global Esc
+  // handler does not fire behind it.
   useEffect(() => {
     if (!open) return undefined;
     const card = cardRef.current;
@@ -27,13 +26,12 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
       event.stopPropagation();
       onCloseRef.current?.();
     };
-    // Capture phase: a host's global Esc handler is typically a bubble listener on window,
-    // registered first, so only stopping the event before the bubble phase keeps it from
-    // also deselecting/closing behind the dialog.
+    // Capture phase: a host's global Esc handler is a bubble listener on window, so only stopping
+    // the event before the bubble phase keeps it from firing too.
     window.addEventListener('keydown', onKeyDown, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
-      openerRef.current?.focus?.();  // return focus to the opener (works for autoFocus dialogs too)
+      openerRef.current?.focus?.();
     };
   }, [open]);
 
@@ -62,9 +60,9 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
           position: 'relative',
           width: width,
           maxWidth: '90vw',
-          maxHeight: '90vh',           // never taller than the viewport…
+          maxHeight: '90vh',
           display: 'flex',
-          flexDirection: 'column',     // …the body scrolls, the header/close/footer stay pinned
+          flexDirection: 'column',     // the body scrolls, header/close/footer stay pinned
           background: 'var(--surface-card)',
           borderRadius: 'var(--radius-2xl)',
           boxShadow: 'var(--shadow-lg)',
@@ -105,10 +103,9 @@ export function Dialog({ open, onClose, title, children, footer, width = 420 }) 
             {title}
           </div>
         )}
-        {/* Scrolling makes this a clip box on BOTH axes — CSS computes the paired overflow-x up
-            from `visible` to `auto` — and a field paints its focus ring outside its own box, so a
-            full-width one had the ring shaved flat down each side. Borrow the card's padding back
-            as this element's own: the clip edge lands on the card wall, clear of what it holds. */}
+        {/* Scrolling makes this a clip box on BOTH axes (CSS computes the paired overflow-x up
+            from `visible` to `auto`), and a field paints its focus ring outside its own box. The
+            card's padding is borrowed back here so the clip edge lands on the card wall. */}
         <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto', margin: 'calc(-1 * var(--space-1)) calc(-1 * var(--space-8))', padding: 'var(--space-1) var(--space-8)' }}>
           {children}
         </div>

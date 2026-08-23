@@ -20,7 +20,6 @@ const MODEL = {
 };
 const META = { model: MODEL, title: 'Learn to sail', done: 2, total: 5, dominantKind: 'terracotta' };
 
-// The readout the frame draws (done/total) at a given time.
 function readoutAt(t) {
   const svg = buildShareVideoFrameSvg({ ...META, t });
   const match = svg.match(/>(\d+)\/(\d+)</);
@@ -58,8 +57,7 @@ test('the score assembles: fewer done shown mid-grow than at rest', () => {
 test('the loop is seamless: the last frame is byte-identical to the first', () => {
   const first = buildShareVideoFrameSvg({ ...META, t: 0 });
   const last = buildShareVideoFrameSvg({ ...META, t: LOOP - 1 });
-  // Every transient (bloom, breath, pulse, travel head) windows to zero at the seam, so the grown
-  // frame at t≈LOOP renders identically to the grown frame at t=0 — no begin/end flash on loop.
+  // Every transient windows to zero at the seam, so t≈LOOP renders identically to t=0.
   assert.equal(first, last);
 });
 

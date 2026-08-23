@@ -1,7 +1,5 @@
-// The neural embedder as the index sees it: the same shape as LexicalEmbedder (embedAll / embedQuery /
-// floor), backed by the Web Worker that runs the model. `ready` resolves once the model is up and
-// rejects if it never loads, so the client can build the neural index only when there's a model to
-// build it with — and otherwise stay on the instant lexical one, no degraded state to explain.
+// The same shape as LexicalEmbedder (embedAll / embedQuery / floor), over the Web Worker that runs the
+// model. `ready` resolves once the model is up and rejects if it never loads.
 
 const BATCH = 32;   // passages per worker round-trip — bounds model memory on a large corpus
 

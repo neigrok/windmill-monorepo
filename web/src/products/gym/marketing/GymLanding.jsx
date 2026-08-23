@@ -1,24 +1,3 @@
-// The gym landing at /gym — ported from the static public/gym/index.html the 2026-08-01
-// landing-family build produced from canon (marketing/briefs-landings/03-gym-landing.md).
-// Same sections, same copy, same numbers, same timings; what changed is the runtime. Nav,
-// footer and the sign-in door now come from the family chrome, so a signed-in lifter is
-// recognised on the first frame and Sign in opens the door in place instead of navigating to
-// /?signin#/gym — the URL that rendered the dark GymApp under a black-on-black modal.
-//
-// The page describes the product and never dates itself against `shell.status` (products/gym/
-// routes.js). It carried the pre-open carve-out until 2026-08-07 — an "In design" badge, a hero
-// that pointed at what was already open, and a promise that gym "joins the same account when it
-// opens" — and every one of those had stopped being true: the log, the logger, routines, the
-// finish, statistics, the coach share, the CSV and the MCP tools are all built and reachable at
-// #/gym, on the account this page names. The one verb is that same door, and it was the same door
-// across the flip to 'open' on 2026-08-08: #/gym renders the log and now upgrades in place to
-// /app/gym.
-//
-// The nav's verb is a RESUME and not a CTA, which is the one place the account shows through the
-// copy: gym answers a visitor with no account with a sign-in pitch, so the nav offers the log to
-// somebody it will open for and offers everyone else Sign in. The hero keeps its door for both and
-// says the precondition in the line directly under it.
-
 import React from 'react';
 import { Badge, Button } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
@@ -32,18 +11,9 @@ const SECTION_LINKS = [
   { href: '/changelog.html', label: 'Changelog' },
 ];
 
-// The hero's verb, and the nav's for a lifter the door already opens for. One href in three places
-// on this page, because it is one door.
 const LOG_HREF = '#/gym';
 const OPEN_LOG = 'Open your training log →';
 const RESUME = { href: LOG_HREF, label: 'Open your log' };
-// WHAT THE ACCOUNT IS, AND NOT WHAT IT COSTS. This said "one account and one subscription" until
-// W8, and the subscription is a thing no visitor can have: `paidPlansOpen()` in shell/billing/
-// checkout.js is a hardcoded false, no surface offers a checkout, and BillingApi 503s one anyway.
-// The sentence stayed true-sounding by describing a shape rather than a purchase, which is exactly
-// how a false line survives — and it contradicted the connected-log section further down this same
-// page, which says in as many words that there is nothing here to buy. The brand root and the other
-// two landings still carry the older wording; that is theirs to fix, and it is on the ledger.
 const ACCOUNT_LINE = 'Your log lives on your Windmill account — one account across Roadmap, Journal and Gym.';
 
 const PANEL_LABEL = {
@@ -51,12 +21,6 @@ const PANEL_LABEL = {
   textTransform: 'uppercase', color: 'var(--text-tertiary)',
 };
 
-// The five lifts that have an honest one-rep estimate, and the one that does not. A chin-up at
-// bodyweight logs a load of zero, and Epley has no answer at or below zero — so the statistics tab
-// draws that movement on the reps of its top set and prints no estimate at all (products/gym/
-// stats.js). This card says the same thing, because a landing that promised "chins · BW+20 e1RM"
-// was promising a number the product had already decided it would not invent: bodyweight is stored
-// nowhere in gym, so nothing here can be computed over it.
 const LIFTS = [
   { name: 'Squat', value: '140', unit: 'e1RM', d: 'M4,38 L20,36 L36,32 L52,33 L68,28 L84,25 L100,26 L116,21 L132,18 L148,19 L164,13 L176,10', cy: 10 },
   { name: 'Bench', value: '100', unit: 'e1RM', d: 'M4,37 L20,35 L36,34 L52,30 L68,29 L84,25 L100,26 L116,22 L132,20 L148,17 L164,15 L176,12', cy: 12 },
@@ -74,20 +38,6 @@ const AGENT_CAN = [
   'Propose next week’s routine — you read the diff and tap Apply.',
 ];
 
-// THE GRANT IS THE REAL SAFETY MODEL, AND IT IS NOT THE WHOLE OF IT. Three separate levels,
-// approved one at a time, and a level you did not approve is a tool the connection cannot even see
-// in its own tool list. What no level buys is a change to a day of the program you ALREADY have: a
-// mutation that takes nothing away lands immediately — a set, a session, a movement, a day that did
-// not exist until now — and a mutation that rewrites or removes a day that already stands mints a
-// proposal that does nothing until you tap Apply on the diff (backend §2.9, GymToolCatalog's own
-// `create_routine` / `propose_routine_change` split). So `write` and `delete` are named here by what
-// they actually do — creating a new day INCLUDED, because a level line that named only the
-// proposing half would be selling a safety property this product does not have.
-// THE THREE LINES COME FROM THE PRODUCT, not from this page. They are the same sentences the
-// connected-log room prints (products/gym/connect/connect.js), so what `gym:write` buys cannot read
-// one way in a pitch and another in the room a lifter arrives in. What stays here is the
-// ILLUSTRATION — which of the three this imagined connection approved — because that is a picture
-// and not a claim about the catalog.
 const GRANT_LEVELS = [
   { scope: 'gym:read', line: LEVEL_LINES.read, granted: true },
   { scope: 'gym:write', line: LEVEL_LINES.write, granted: true },
@@ -355,32 +305,6 @@ function ForTheBarbell() {
   );
 }
 
-// THE SECTION THAT PRICES THE PRODUCT, so it is the section a wave can most easily make lie. Until
-// W7 it sold a coach panel under one finished workout, gated on Windmill One: that panel is deleted
-// and Ask stands where it stood, over the WHOLE log rather than one workout, open to everyone with a
-// daily cap the room states in words (backend AskService: kAskPerDay = 10, and no plan decides who
-// may ask). So both halves of the old sentence had to go — the feature and the price — and what
-// replaced them is the one honest reading: no feature in gym is behind a plan, and nothing in
-// Windmill can be bought (shell/billing/checkout.js `paidPlansOpen()` is a hardcoded false).
-//
-// ONE THING IN GYM DOES READ THE PLAN, and it is a ceiling rather than a door: AskService asks
-// `aiAllowanceFor`, which picks the monthly dollar allowance by `hasWindmillOne`. Same room, same
-// tools, two heights — and since nobody can buy One, every account alive is on the free one. Writing
-// "gym reads the plan nowhere" here would be the shorter sentence and the false one.
-//
-// Ask can also PROPOSE, which the panel could not — its grant is the reads plus the two tools that
-// mint a proposal — so a line calling it read-only would be a safety promise that is nearly true,
-// which is worth less than none.
-//
-// W8 ADDED THE EXCHANGE AND THE PRECONDITION, which is §D12's pitch minus its price. What the design
-// drew here was a paid gate ending in a Connect button under the words Windmill One; that gate
-// gates nothing (gym's MCP tools read no entitlement and never did), cannot be bought, and its
-// button would land on a checkout that answers 503. So the pitch is built and the price is deleted:
-// what is valuable was never the money, it is the concrete trade — one sentence typed on Sunday in a
-// tool that is not ours, one proposal waiting in gym on Monday — and the precondition under it.
-//
-// The three level lines are imported rather than written here, so this page and the room a visitor
-// lands in cannot describe `gym:write` differently.
 function ConnectedLog() {
   return (
     <section className="wrap" style={{ paddingTop: 96 }}>
@@ -446,10 +370,6 @@ function ConnectedLog() {
           </div>
         </div>
       </div>
-      {/* THE PRECONDITION, ON THE PAGE AND NOT BEHIND IT. This section describes a feature that
-          needs something we do not sell and cannot give you — an AI tool of your own — so it says so
-          in the same frame as the pitch. A page that let a visitor read this far before finding out
-          would be selling a promise the product cannot keep on its own. */}
       <p style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--text-tertiary)', maxWidth: 720, marginTop: 20 }}>
         {PRECONDITION}
       </p>
@@ -457,9 +377,6 @@ function ConnectedLog() {
   );
 }
 
-// THE EXCHANGE (§D12) — the whole pitch as one trade rather than a diagram of a protocol: the
-// sentence you type on Sunday in a tool that is not ours, and the object that is waiting in gym on
-// Monday. It is the concrete thing, and it is the part that survived W8 deleting the price around it.
 function Exchange() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 18, marginTop: 36 }}>

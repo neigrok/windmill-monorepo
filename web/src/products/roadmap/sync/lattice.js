@@ -1,11 +1,7 @@
-// The client's half of the graph CRDT — the exact mirror of the backend's domain/Crdt.h +
-// domain/LooseGraph.h + domain/Subgraph.h, in JS. A tree's truth is a lattice of stamped
-// registers; TreeData is only its present-time projection. Everything that syncs is a
-// subgraph joined here. The register laws (add-biased life, last-writer-wins fields) are written
-// to match the backend bit-for-bit, and nothing enforces that: this module's own tests
-// (sync/materialize, sync/reorder, paste/graftPlan) never leave JS, and backend/test/golden holds
-// the laws in fixtures that neither lattice reads. Changing a law here means changing it there by
-// hand — backend/test/golden/SCHEMA.md says what a real cross-language pin would take.
+// The client's half of the graph CRDT, mirroring the backend's domain/Crdt.h, LooseGraph.h and
+// Subgraph.h. A tree's truth is a lattice of stamped registers; TreeData is its present-time
+// projection. The register laws — add-biased life, last-writer-wins fields — must match the
+// backend bit-for-bit, and nothing enforces it.
 
 const UNSET = { ms: 0, counter: 0, actor: '' };
 
@@ -29,7 +25,7 @@ function hlcIsSet(h) {
   return h.ms !== 0 || h.counter !== 0 || h.actor !== '';
 }
 
-// -1 / 0 / 1 for a vs b, ordered by (ms, counter, actor) — the backend's Hlc spaceship.
+// -1 / 0 / 1 for a vs b, ordered by (ms, counter, actor).
 export function compareHlc(a, b) {
   if (a.ms !== b.ms) return a.ms < b.ms ? -1 : 1;
   if (a.counter !== b.counter) return a.counter < b.counter ? -1 : 1;
@@ -60,8 +56,7 @@ export class HlcClock {
   }
 }
 
-// An add-biased life register: present iff added and no strictly-later remove cancels it. An
-// add that ties a remove wins — "keep more, lose less".
+// Present iff added and no strictly-later remove cancels it: an add that ties a remove wins.
 function lifePresent(life) {
   return hlcIsSet(life.addedAt) && !(compareHlc(life.removedAt, life.addedAt) > 0);
 }
@@ -100,10 +95,8 @@ function newKind() {
 const EDGE_SEP = String.fromCharCode(0);
 const edgeKey = (from, to) => `${from}${EDGE_SEP}${to}`;
 
-// A causal frontier — the greatest stamp seen per actor. Mirrors the backend VersionVector
-// (domain/Subgraph.h): join is pointwise max; `covers` asks whether a stamp is accounted for.
-// It advances ONLY through content the replica has durably joined (the coverage law), so it is
-// a safe basis for "what the server already has" and thus for the offline flush delta.
+// A causal frontier — the greatest stamp seen per actor; join is pointwise max. It may advance
+// only through content the replica has durably joined.
 export class VersionVector {
   constructor(marks = new Map()) { this.marks = marks; }
 
@@ -135,8 +128,8 @@ export class VersionVector {
   }
 }
 
-// Emit one stamped field into a wire entry, unless it is unset (no information) or already
-// covered by `vector` (masked out of a delta). A null vector masks nothing — a full frame.
+// Emits one stamped field unless it is unset or already covered by `vector`; a null vector masks
+// nothing.
 function emitField(entry, key, atKey, value, at, vector) {
   if (!hlcIsSet(at)) return;
   if (vector && vector.covers(at)) return;
@@ -181,12 +174,8 @@ export class TreeLattice {
   addLife(life, at) { if (compareHlc(at, life.addedAt) > 0) life.addedAt = at; }
   removeLife(life, at) { if (compareHlc(at, life.removedAt) > 0) life.removedAt = at; }
 
-  // Fold a subgraph frame (the parsed wire envelope) into the lattice, field by field, and
-  // return the frontier of the stamps it carried. This is the one merge — a live edit, a
-  // snapshot graft, and a reconnect delta all land here. Two-phase and all-or-nothing: it
-  // validates every entry before mutating, so a malformed frame leaves the lattice untouched
-  // and the caller can treat the throw as a gap (I8). The returned frontier lets the caller
-  // advance coverage/clock from the join itself, so folded-but-not-applied is impossible.
+  // Folds a subgraph frame into the lattice and returns the frontier of the stamps it carried.
+  // Every entry is validated before mutating, so a malformed frame leaves the lattice untouched.
   join(frame) {
     for (const n of frame.nodes ?? []) if (typeof n?.id !== 'string') throw new Error('malformed node entry');
     for (const e of frame.edges ?? []) if (typeof e?.from !== 'string' || typeof e?.to !== 'string') throw new Error('malformed edge entry');
@@ -238,7 +227,7 @@ export class TreeLattice {
     return frontier;
   }
 
-  // Fold every stamp the lattice carries into a clock, so a fresh mint dominates them all.
+  // Folds every stamp the lattice carries into a clock, so a fresh mint dominates them all.
   seedClock(clock) {
     for (const record of this.nodes.values()) {
       for (const reg of [record.life.addedAt, record.life.removedAt, record.label.at, record.icon.at,
@@ -257,9 +246,8 @@ export class TreeLattice {
     return !!record && lifePresent(record.life);
   }
 
-  // Every id the lattice has a record for — present AND tombstoned. A `created` write
-  // re-lives a tombstone (its old fields and edges survive the delete, see maskedWork),
-  // so a graft must reserve these ids against collision, not just the present ones.
+  // Every id the lattice has a record for, present and tombstoned. A `created` write re-lives a
+  // tombstone, so a graft must reserve these ids against collision, not just the present ones.
   knownNodeIds() { return [...this.nodes.keys()]; }
 
   edgePresent(from, to) {
@@ -267,7 +255,7 @@ export class TreeLattice {
     return !!record && lifePresent(record);
   }
 
-  // Present edges between present, distinct endpoints — the drawable graph.
+  // Present edges between present, distinct endpoints.
   liveEdges() {
     const live = [];
     for (const [key, record] of this.edges) {
@@ -284,10 +272,8 @@ export class TreeLattice {
     return colors;
   }
 
-  // "Keep more, lose less" made visible: nodes deleted while a subtree of live children hangs
-  // off them (a delete that raced a concurrent build). The delete stands and the children float,
-  // but the deleted node's fields survive — resurrecting it (a fresh life.add) re-connects the
-  // subtree. Returns { id, label, children } per tombstoned parent that still has present children.
+  // { id, label, children } per tombstoned node that still has present children; a fresh life.add
+  // re-connects the subtree.
   maskedWork() {
     const childrenOf = new Map();  // present edge `from` -> [present `to`, ...]
     for (const [key, edge] of this.edges) {
@@ -322,7 +308,7 @@ export class TreeLattice {
     return present.map(({ id, hue, label, description }) => ({ id, hue, label, description }));
   }
 
-  // The frontier of everything the lattice holds — every stamp folded together.
+  // The frontier of everything the lattice holds.
   frontier() {
     const vector = new VersionVector();
     for (const record of this.nodes.values()) {
@@ -339,8 +325,7 @@ export class TreeLattice {
   }
 
   // A subgraph frame carrying every entry with a stamp `vector` does not cover, covered fields
-  // masked out. A null vector masks nothing — the whole lattice as one frame (toFrame). This is
-  // both the offline flush payload (deltaSince the server's acked frontier) and the IndexedDB blob.
+  // masked out. A null vector masks nothing — the whole lattice as one frame.
   deltaSince(vector) {
     const nodes = [];
     for (const [id, record] of this.nodes) {
@@ -383,12 +368,12 @@ export class TreeLattice {
     return frame;
   }
 
-  // The whole lattice as one frame — for the IndexedDB blob and a fresh peer bootstrap.
+  // The whole lattice as one frame.
   toFrame() {
-    return this.deltaSince(null);  // null vector masks nothing; title rides along
+    return this.deltaSince(null);
   }
 
-  // The present-time projection every render path already consumes.
+  // The present-time projection every render path consumes.
   toTreeData() {
     const parentsOf = new Map();
     for (const { from, to } of this.liveEdges()) {
@@ -403,8 +388,8 @@ export class TreeLattice {
         label: record.label.v,
         icon: record.icon.v,
         color: record.color.v,
-        order: record.order.v,                 // the sibling sort key (layout reads it; '' ⇒ creation-time fallback)
-        createdAt: { ...record.life.addedAt },  // read-only creation stamp the layout's fallback compares
+        order: record.order.v,                 // the sibling sort key; '' ⇒ creation-time fallback
+        createdAt: { ...record.life.addedAt },  // the creation stamp that fallback compares
         prerequisites: parentsOf.get(id) ?? [],
         position: record.position.v ? { ...record.position.v } : undefined,
         status: record.status.v ?? undefined,

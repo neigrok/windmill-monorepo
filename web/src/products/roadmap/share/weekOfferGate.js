@@ -1,19 +1,15 @@
-// The week's offer's timing, as one policy over a clock and a probe. Armed during the load; fired
-// 120ms behind the ceremony that closes the open (`follow`, from the scene's one toast sink); and
-// caught by a cap when no ceremony speaks. The cap is a safety net, not a schedule: on its tick it
-// asks the director whether a ceremony is still coming — live or waiting for the floor — and if
-// one is, it stands aside for another tail rather than racing a toast that would replace the ask
-// unread. Bounded, so a director that wedges (a settle poll on a frozen clock) can never strand the
-// offer; after the last deferral it fires whatever the probe says.
+// The week offer's timing: armed during the load, fired WEEK_OFFER_GAP_MS behind the ceremony that
+// closes the open, and caught by a cap when no ceremony speaks. On its tick the cap stands aside
+// while a ceremony is still coming, bounded by CEREMONY_TAIL_MAX_DEFERRALS.
 
-export const WEEK_OFFER_GAP_MS = 120;         // the offer follows the ceremony's last beat, never races it (#20 C7)
-export const CEREMONY_TAIL_CAP_MS = 2600;     // past the director's 2400ms structural budget: no ceremony coming, fire anyway
-export const CEREMONY_TAIL_MAX_DEFERRALS = 3; // ~8s of standing aside for a ceremony that never speaks, then the net closes
+export const WEEK_OFFER_GAP_MS = 120;         // the offer follows the ceremony's last beat
+export const CEREMONY_TAIL_CAP_MS = 2600;
+export const CEREMONY_TAIL_MAX_DEFERRALS = 3; // ~8s of standing aside, then the net closes
 
 export class WeekOfferGate {
   constructor(ceremonyBusy) {
     this.ceremonyBusy = ceremonyBusy; // () => boolean — is a ceremony live or pending right now
-    this.armed = null;                // { run, timer, deferrals } — run is null once the ask is on its way
+    this.armed = null;                // { run, timer, deferrals }; run is null once the ask is away
   }
 
   arm(run) {
@@ -39,7 +35,7 @@ export class WeekOfferGate {
     this.fire(0);
   }
 
-  // The ask goes out once: the first fire spends `run`, and every later follow or cap finds it gone.
+  // The ask goes out once: the first fire spends `run`.
   fire(delay) {
     const armed = this.armed;
     if (!armed?.run) return;

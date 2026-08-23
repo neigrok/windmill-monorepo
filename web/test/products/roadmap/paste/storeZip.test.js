@@ -1,7 +1,3 @@
-// The store-only ZIP writer contract: the byte structure a reader relies on (local
-// headers, a known CRC32, the central directory, the end-of-central-directory record)
-// and the ultimate proof — a stock `unzip` accepts the archive and hands the files back.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

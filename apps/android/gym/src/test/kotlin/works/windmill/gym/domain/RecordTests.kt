@@ -7,13 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-// What the record page is allowed to draw, and what it must refuse to invent. Two halves: the wire
-// shape exactly as the backend writes it — every optional OMITTED and never null — and the one rule
-// that turns it into a page on a phone with no scrub and no hover.
-//
-// A DATE IN AN EXPECTED STRING IS SPELLED BY `Readout` ITSELF, so these assertions pin the SENTENCE
-// and not this machine's calendar.
-
 class RecordTests {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -37,9 +30,6 @@ class RecordTests {
     private fun session(id: String, at: Long, sets: List<TrainingSet>, open: Boolean = false) =
         SessionDetail(Session(id = id, startedAtMs = at, finishedAtMs = if (open) null else at + 3_600_000), sets)
 
-    // The reply as the server writes it, with the absences that mean something: a movement with no
-    // e1RM has no series, no records and no best, and a heaviest mark at zero load carries no
-    // estimate of its own.
     @Test
     fun testTheWireShapeDecodesWithEveryAbsenceIntact() {
         val record = decoded("""
@@ -68,8 +58,6 @@ class RecordTests {
         assertEquals(listOf("set_1"), record.recentDays.single().sets.map { it.id })
     }
 
-    // A movement in the catalog nobody has lifted answers with two zero counts and nothing else,
-    // and zero is a REAL answer here rather than an absence.
     @Test
     fun testAMovementNobodyHasLiftedDecodesAsTwoZeroesAndDrawsNoFurniture() {
         val record = decoded("""
@@ -91,8 +79,6 @@ class RecordTests {
         assertNull("there is no estimate MISSING — there is no training", page.noEstimate)
     }
 
-    // An older server sends no counts at all, and a `0` defaulted in for one would print `never
-    // logged` over a movement with thirty-four sessions in it.
     @Test
     fun testCountsTheServerNeverSentAreDroppedRatherThanReadAsZero() {
         val record = decoded("""
@@ -116,8 +102,6 @@ class RecordTests {
         assertEquals("barbell · in 2 routines · 34 sessions", Record.page(many, now = today).subhead)
     }
 
-    // The two tiles §H draws, and the caption each one carries: the set that made the estimate, and
-    // the unit and reps under a load whose number is already above it.
     @Test
     fun testTheTwoTilesCarryTheSetThatMadeThemAndTheDayItHappened() {
         val record = MovementRecord(
@@ -132,9 +116,6 @@ class RecordTests {
                      page.tiles)
     }
 
-    // EPLEY IS UNDEFINED AT OR BELOW ZERO LOAD, so a bodyweight movement has no e1RM at all: no
-    // best tile, no chart, no personal records. It draws the set it can stand behind, and "heaviest
-    // 0 × 12" is a sentence about a weight nobody lifted — the tile says what it really has.
     @Test
     fun testABodyweightMovementDrawsNoEstimateAnywhereAndNeverAZeroLoad() {
         val record = MovementRecord(
@@ -153,8 +134,6 @@ class RecordTests {
         assertEquals(listOf(Record.Day("today", "0 × 12")), page.days)
     }
 
-    // The band-assisted case, one step below zero: −20 kg is a real point on the number line, the
-    // least assisted set IS the heaviest one, and Epley still has nothing to say about it.
     @Test
     fun testABandAssistedMovementKeepsItsHeaviestAndItsRealMinus() {
         val record = MovementRecord(exercise = chin, routineCount = 0, sessionCount = 8,
@@ -164,9 +143,6 @@ class RecordTests {
                      Record.page(record, now = today).tiles)
     }
 
-    // BARS ARE MEASURED FROM ZERO, and they are measured UP TO THE STANDING BEST — the number the
-    // tile above the chart prints. A window past its own peak may not restate itself as full
-    // height: that is the floating baseline this page refuses, arrived at from the top.
     @Test
     fun testAWindowPastItsPeakIsDrawnAgainstTheStandingBestAndNotItsOwn() {
         val lastYear = today - 300 * 86_400_000L
@@ -185,8 +161,6 @@ class RecordTests {
         assertEquals("163.3", page.tiles.first().value)
     }
 
-    // An axis whose two ends are the same day is a POINT. Printing the date twice would dress one
-    // session as a span, so it is said once.
     @Test
     fun testAChartOfOneDaySaysItsDateOnceRatherThanAtBothEnds() {
         val record = MovementRecord(
@@ -202,9 +176,6 @@ class RecordTests {
         assertNull("one point is not a span", chart.to)
     }
 
-    // BARS ARE MEASURED FROM ZERO. A floating baseline overstates every difference on it, and an
-    // eighteen per cent climb has to read as eighteen per cent — the same rule the room applied to
-    // a count, and the reason the peak sits in the tile above rather than in a caption.
     @Test
     fun testBarsAreMeasuredFromZeroAndOnlyTheStandingBestIsGold() {
         val record = MovementRecord(
@@ -226,9 +197,6 @@ class RecordTests {
         assertEquals("an axis end is a date and never a word", "11 Aug", chart.to)
     }
 
-    // A CHART WITH A HOLE IN IT IS NOT THE TRUE STORY. Drawing the missing point at zero would be a
-    // bar nobody lifted; skipping it would be a session silently gone from twelve weeks. Neither is
-    // honest, so the card is not drawn.
     @Test
     fun testASeriesMissingOneEstimateDrawsNoChartAtAll() {
         val record = MovementRecord(
@@ -242,8 +210,6 @@ class RecordTests {
         assertNull(Record.page(record, now = today).chart)
     }
 
-    // The personal records list, newest first, with the one still holding marked — the row the gold
-    // bar and the best-e1RM tile are both about.
     @Test
     fun testPersonalRecordsReadNewestFirstAndOnlyTheStandingOneIsMarked() {
         val record = MovementRecord(
@@ -261,8 +227,6 @@ class RecordTests {
                      Record.page(record, now = today).records)
     }
 
-    // Recent sets by day, in the order they were performed, with the day said the way a person says
-    // the one they are standing in.
     @Test
     fun testRecentSetsAreOneLinePerDayInPerformedOrder() {
         val record = MovementRecord(
@@ -281,9 +245,6 @@ class RecordTests {
                      Record.page(record, now = today).days)
     }
 
-    // A SET RIDES WITH ITS KIND. The log sends the kind exactly so a drop is legible as one; a line
-    // that dropped it would count a back-off set as work, under a subhead that counts sessions by
-    // working sets only — one page telling two stories about the same afternoon.
     @Test
     fun testADropSetIsPrintedAsOneRatherThanCountedAsWork() {
         val record = MovementRecord(
@@ -300,10 +261,6 @@ class RecordTests {
                      Record.page(record, now = today).days)
     }
 
-    // THE TWO SILENCES ARE NOT ONE. A loaded movement with no estimate is this device holding the
-    // sets alone — the anonymous log, whose marks carry no e1RM — and that is a fact about the
-    // account rather than about the training, so it is said. A bodyweight movement's silence is
-    // Epley's own and is not (the test above).
     @Test
     fun testALoadedMovementWithNoEstimateSaysWhereTheEstimateLives() {
         val record = MovementRecord(exercise = squat, routineCount = 0, sessionCount = 1,
@@ -316,8 +273,6 @@ class RecordTests {
         assertEquals(listOf(Record.Tile("heaviest", "105", "kg · for 5", loud = false)), page.tiles)
     }
 
-    // The signed-out record, composed off the shelf by the server's own rules — and refusing the
-    // one number this phone does not compute.
     @Test
     fun testTheShelfComposesTheSameRecordMinusTheEstimator() {
         val routines = listOf(
@@ -350,7 +305,6 @@ class RecordTests {
                      listOf("s2"), record.recentDays.last().sets.map { it.id })
     }
 
-    // The shelf keeps the same ceiling the log does — ten days, newest first.
     @Test
     fun testTheShelfKeepsTheSameTenDayCeilingTheLogDoes() {
         val history = (0 until 14).map { day ->
@@ -366,8 +320,6 @@ class RecordTests {
                      listOf(record.recentDays.first().sessionId, record.recentDays.last().sessionId))
     }
 
-    // A movement the shelf has never seen a set of is the same empty page a fresh catalog row is —
-    // and never a failure.
     @Test
     fun testAMovementTheShelfNeverSawIsAnEmptyRecordAndNotAFailure() {
         val record = MovementRecord.of(chin, listOf(
@@ -380,10 +332,6 @@ class RecordTests {
                      Record.page(record, now = today).nothingYet)
     }
 
-    // §N'S PROOF BLOCK — every line of it a READ. A name is a label on a stable id, so nothing under
-    // it moves when the name does; these are the numbers that let a lifter see that before they tap,
-    // and a constant among them would be the one screen whose job is proof asserting something it
-    // never checked.
     @Test
     fun testTheRenameProofIsFourReadsAndNeverAConstant() {
         val record = MovementRecord(
@@ -405,9 +353,6 @@ class RecordTests {
             Record.proof(record, aliased = true))
     }
 
-    // A LINE WITH NOTHING BEHIND IT IS NOT DRAWN. An older server sends no counts, a movement in no
-    // routine has no routines, and `0 sessions · unchanged` under a heading that says everything
-    // follows is furniture rather than proof.
     @Test
     fun testAProofLineWithNothingBehindItIsDroppedRatherThanZeroed() {
         val untouched = MovementRecord(exercise = squat, sessionCount = 0)
@@ -417,9 +362,6 @@ class RecordTests {
         assertEquals(listOf(Record.Proof("routines", "Push A")), Record.proof(older, aliased = false))
     }
 
-    // The alias is the ACCOUNT's row, so it is promised only where the rename lands there — a
-    // movement this device minted and no claim has carried yet renames on a shelf with no alias
-    // table and no picker rule reading one.
     @Test
     fun testTheAliasIsPromisedOnlyWhereTheRenameLandsOnTheAccount() {
         val record = MovementRecord(exercise = squat, sessionCount = 3)
@@ -430,8 +372,6 @@ class RecordTests {
                      Record.proof(record, aliased = true))
     }
 
-    // A movement Epley has nothing to say about — bodyweight, band-assisted — keeps its records line
-    // if it has one and never prints an estimate it does not have.
     @Test
     fun testTheRecordsLineDropsWhicheverHalfIsMissing() {
         val noEstimate = MovementRecord(exercise = chin,
@@ -445,8 +385,6 @@ class RecordTests {
                      Record.proof(onlyStanding, aliased = false))
     }
 
-    // The shelf answers the same four questions off the device's own reads — signed out, the sheet
-    // is still proof and not a promise.
     @Test
     fun testTheShelfNamesTheRoutinesAMovementIsIn() {
         val routines = listOf(

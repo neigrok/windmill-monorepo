@@ -1,10 +1,6 @@
-// The paste composer (F3 §02): a plain text well whose gutter IS the live parse —
-// ◉ root · ├ branch · · step · ✓ arrives done · ¶ kept as a note — measured with an
-// invisible mirror so every glyph sits exactly on its (wrapped) line. The preview is
-// the confirmation: no separate confirm step, no red ever. The deterministic parser
-// is the only door into TreeData — the optional AI handle below only ever rewrites
-// the TEXT — streamed into the well as the model speaks — which then walks through
-// the same parser like anything typed.
+// A plain text well whose gutter is the live parse — ◉ root · ├ branch · · step · ✓ arrives done ·
+// ¶ kept as a note — measured with an invisible mirror so every glyph sits on its wrapped line.
+// The deterministic parser is the only door into TreeData; the AI handle only rewrites the text.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KindLegend } from '../ui/tree/KindLegend.jsx';
@@ -59,8 +55,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   const hasText = text.trim() !== '';
   const lines = useMemo(() => text.split(/\r\n|\r|\n/), [text]);
 
-  // The well takes focus on the desktop dock; the sheet's peek is readout + Plant,
-  // so it never pops the keyboard uninvited.
+  // The well takes focus on the desktop dock only, so the sheet never pops the keyboard uninvited.
   useEffect(() => {
     if (sheet) return;
     const well = textRef.current;
@@ -69,8 +64,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     well.setSelectionRange(well.value.length, well.value.length);
   }, [sheet]);
 
-  // The mirror-measure: one rAF after every text change reads each mirrored line's
-  // offsetTop, so glyphs track soft wrapping exactly.
+  // One rAF after every text change reads each mirrored line's offsetTop, so glyphs track wrapping.
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       const mirror = mirrorRef.current;
@@ -86,11 +80,9 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     clearTimeout(aiTimer.current);
   }, []);
 
-  // The well is readOnly while shaping, so a text change mid-shape is either the stream's
-  // own flush landing or external — a dropped plan file replacing the draft. The stream is
-  // append-only, so a committed text that PREFIXES the latest flush is just a stale frame
-  // racing the ref (killing on it would strand the partial with no undo); only genuinely
-  // foreign text retires the stream.
+  // The well is readOnly while shaping, so a mid-shape text change is the stream's own flush or a
+  // dropped file. The stream is append-only: text that prefixes the latest flush is a stale frame,
+  // and only genuinely foreign text retires the stream.
   useEffect(() => {
     if (ai.phase !== 'shaping') return;
     if (text === streamedText.current) return;
@@ -100,9 +92,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     setAi({ phase: 'idle', prior: null });
   }, [text]);
 
-  // The drop door retires the stream synchronously, ahead of any pending rAF flush —
-  // the event fires before the drop's setDraft, so the flush's generation check fails
-  // and the dropped file can never be overwritten by a late stream write.
+  // The drop door retires the stream synchronously, ahead of any pending rAF flush.
   useEffect(() => {
     const onReplaced = () => {
       if (ai.phase !== 'shaping') return;
@@ -115,8 +105,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     return () => window.removeEventListener('wm-draft-replaced', onReplaced);
   }, [ai.phase]);
 
-  // The composer owns its keys: Esc back to the bud (draft kept), ⌘↵ plants, and
-  // nothing leaks out to the birth input's own Esc → history.back().
+  // Esc goes back to the bud with the draft kept and ⌘↵ plants; nothing leaks out to the bud.
   const onKeyDown = (event) => {
     event.stopPropagation();
     if (event.key === 'Escape') {
@@ -137,8 +126,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
 
   function plant() {
     if (planting || !hasText) return;
-    // Append hands the raw parse to the parent, which owns the graft transform — there is
-    // no name gate (a headless list attaches directly; append never forces a wrapper name).
+    // Append hands the raw parse to the parent, which owns the graft transform: no name gate.
     if (append) {
       onPlant(parse);
       return;
@@ -152,9 +140,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     onPlant({ title, nodes, kinds: parse.kinds.map(({ id, hue, label, description }) => ({ id, hue, label, description })) });
   }
 
-  // Legend edits are pure Legend.js ops over the LOCAL draft, which feeds straight
-  // back into parsePlan. Editing a kind the parse minted adopts it into the draft, so
-  // it stops being provisional and keeps its heading's binding.
+  // Legend edits are Legend.js ops over the local draft, which feeds back into parsePlan. Editing
+  // a kind the parse minted adopts it into the draft, keeping its heading's binding.
   const draftIds = new Set(kinds.map((kind) => kind.id));
   const adopt = (id, patch) => {
     const minted = parse.kinds.find((kind) => kind.id === id);
@@ -169,12 +156,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     }]);
   };
 
-  // The shape door. It used to open only for text that read as loose notes — six or more spoken
-  // lines, sixty percent of them prose — which meant the one paste that most wants shaping, a
-  // document someone already wrote, arrived as a wall of headings and got no offer at all. So the
-  // handle is now offered for anything with real content in it. The grammar still parses every
-  // paste on its own; shaping is the way to a better plan, not a rescue from a broken one.
-  // Text past the server's byte cap keeps it quiet: a handle that can only fail is no handle.
+  // The shape door is offered for real content only; text past the server's byte cap keeps it quiet.
   const spoken = parse.gutter.filter((entry) => entry.glyph !== null);
   const prose = spoken.length >= 6 && spoken.filter((entry) => entry.glyph === '¶').length / spoken.length >= 0.6;
   const shapeable = spoken.length >= 3 && new TextEncoder().encode(text).length <= COMPOSE_TEXT_MAX_BYTES;
@@ -186,12 +168,9 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     aiTimer.current = setTimeout(() => setAi({ phase: 'idle', prior: null }), AI_RESET_MS);
   };
 
-  // Shaping streams: the request asks for SSE and every delta grows the well text on
-  // your eyes — the parser, gutter and ghost animate on their ordinary keystroke paths,
-  // throttled to one flush per animation frame. A reply that isn't a stream (an older
-  // server, or any pre-stream error) walks the buffered road; a stream that breaks
-  // before its first word gets one buffered retry. The pre-shape text taken here is
-  // the undo slot either way — even when the stream stops mid-plan.
+  // Every delta grows the well text, throttled to one flush per animation frame. A reply that
+  // isn't a stream walks the buffered road, and a stream that breaks before its first word gets one
+  // buffered retry. The pre-shape text taken here is the undo slot.
   async function shape(source = text) {
     if (ai.phase === 'shaping') return;
     const prior = source;
@@ -210,10 +189,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       signal: controller.signal,
     });
 
-    // Shaping failing quietly is how a broken feature stays broken: the well keeps your text, the
-    // handle stays calm, and nothing anywhere goes red. So every failure the reader actually SEES
-    // is reported — the reason and the size of the attempt only. The text itself is never sent:
-    // it is the user's, and it is the one thing an error tracker must not keep.
+    // A report carries the reason and the attempt's size only: the text must never reach a tracker.
     const reportShapeFailure = (reason) =>
       reportError(new Error(`shape ${reason} (${new TextEncoder().encode(prior).length}B)`), 'shape');
 
@@ -298,7 +274,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       }
 
       streamedText.current = streamed;
-      onTextChange(streamed); // the last flush — everything the stream managed to say stays visible
+      onTextChange(streamed); // the last flush; everything the stream said stays visible
       if (outcome === 'done') {
         settleUndo();
         return;
@@ -310,8 +286,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     }
   }
 
-  // The original is one tap away the whole time: while shaping, restore aborts the stream
-  // and hands the words back; after (undo / a stopped partial), it just swaps the text in.
+  // While shaping, restore aborts the stream and hands the words back; afterwards it swaps them in.
   const restore = () => {
     if (ai.phase === 'shaping') {
       shapeGen.current += 1;
@@ -323,9 +298,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     setAi({ phase: 'idle', prior: null });
   };
 
-  // Try again re-fires the shape from the ORIGINAL notes — the stopped partial keeps them in
-  // ai.prior, a pre-stream fail never touched the well — and shape's generation bump retires
-  // whatever the last attempt left in flight.
+  // Try again re-fires the shape from the original notes; the generation bump retires the last one.
   const tryAgain = () => {
     const source = ai.phase === 'stopped' ? ai.prior : text;
     clearTimeout(aiTimer.current);
@@ -423,10 +396,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     </div>
   );
 
-  // The shape zone wears one face per phase: the idle handle carries the offer line, the
-  // Shape door and the honesty disclosure (the tap is the consent); shaping shows the live
-  // status + Cancel; the outcomes read back where the text is and offer Try again / undo.
-  // The kept strip rides shaping and the after-states — the words are never gone.
+  // One face per phase: idle carries the offer line, the Shape door and the honesty disclosure,
+  // shaping shows the status + Cancel, and the outcomes offer Try again / undo.
   const keptVisible = ai.phase === 'shaping' || ai.phase === 'undo' || ai.phase === 'stopped';
   const shapeZone = aiVisible && (
     <div className="pc-shape">
@@ -501,8 +472,7 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
   );
 
   if (sheet) {
-    // The X5 sheet order: everything the 216px peek must show first — title, readout,
-    // chip, Plant — then the well and legend for the expanded reach.
+    // Sheet order: everything the peek must show first — title, readout, chip, Plant — then the rest.
     return (
       <section className="pc pc--sheet" onKeyDown={onKeyDown}>
         {head}

@@ -1,20 +1,15 @@
 import SwiftUI
 import WindmillPlatform
 
-// The journal's own surface — the native statement of web/src/products/journal/journal.css. Canon
-// §10 is explicit that the product owns this skin and the design system owns the lamp ramp: the
-// values below are the shipped ones, and the shell, the seat and the other products are untouched
-// by them. Night is the default this surface was designed as; day is a choice, kept per device.
-
 public struct JournalSkin {
     public let canvas: Color
     public let card: Color
-    public let lamp: Color          // the lit "Candle" — the caret, the waiting ember
+    public let lamp: Color          // the caret, the waiting ember
     public let ink: Color           // prose the person writes
     public let inkDim: Color        // the mono strip, the margin
-    public let gap: Color           // a day not written — dim, never counted
+    public let gap: Color           // a day not written
     public let energy: Color
-    public let mood: [Color]        // one hue in five steps: a scale, not five competing colours
+    public let mood: [Color]        // one hue in five steps
 
     public static let night = JournalSkin(
         canvas: Color(hex: 0x040D19),
@@ -47,8 +42,6 @@ public struct JournalSkin {
 
 extension JournalSkin: Equatable {}
 
-// Reading a skin out of the environment keeps every glyph free of a `skin:` parameter it would only
-// pass along. The default is night so a view rendered outside the room still paints correctly.
 private struct JournalSkinKey: EnvironmentKey {
     static let defaultValue = JournalSkin.night
 }

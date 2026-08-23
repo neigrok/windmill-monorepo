@@ -1,6 +1,4 @@
-// Minimal WebGL2 helpers. This feature needs a narrow slice of GL — instanced
-// quads, batched triangles, one ortho transform — so we drive raw WebGL2 rather
-// than a general 3D engine whose instancing abstraction fought us.
+// Minimal WebGL2 helpers.
 
 export function createProgram(gl, vertexSource, fragmentSource) {
   const program = gl.createProgram();

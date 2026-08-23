@@ -8,9 +8,7 @@
     <link rel="canonical" href="https://windmill.works/connect.html" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
 
-    <!-- Unfurl: this page's own title and description, and the family share card. A shelf page is
-         pasted into a chat as often as it is found in a search — without these it arrived as a bare
-         URL. staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
+    <!-- staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Windmill" />
     <meta property="og:title" content="Windmill MCP server — connect Claude, Cursor or Codex" />
@@ -36,10 +34,9 @@
     <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/chrome.css" />
     <style>
-      /* This page's own type only. The family chrome — frame, header, buttons, footer — and the
-         faces both arrive on the two sheets linked above, served by scripts/staticPageAssets.js so
-         every static page wears one geometry. Colours are light-theme token values resolved
-         from src/styles/tokens/*.css; these pages are light-only. */
+      /* This page's own type only — the family chrome and the faces arrive on the two sheets
+         linked above, served by scripts/staticPageAssets.js. Light-theme token values from
+         src/styles/tokens/*.css; these pages are light-only. */
       .doc { max-width: 640px; padding: 40px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
       .upd { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace; font-size: 12px; color: #92805F; margin-top: 8px; }
@@ -51,19 +48,16 @@
       .doc a { color: #9D5330; }
       .doc a:hover { color: #7C3F23; }
 
-      /* Five verbs, each wearing its node hue (the legend is the identity — no logos). */
       .verbs { list-style: none; padding: 0; margin: 16px 0 0; }
       .verbs li { display: flex; align-items: baseline; gap: 12px; margin-top: 10px; }
       .vd { width: 10px; height: 10px; border-radius: 50%; flex: none; position: relative; top: 2px; }
 
-      /* Client name chips — names, never invented logos. */
       .clients { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
       .client { font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-size: 13.5px; font-weight: 700; color: #6F5F45; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 999px; padding: 6px 14px; white-space: nowrap; }
 
       .tool { margin-top: 20px; }
       .tool code { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace; font-size: 13px; background: #F1EADA; padding: 1px 6px; border-radius: 6px; color: #6F5F45; }
 
-      /* One dark snippet well — mirrors the connect workbench: URL in gold, comments muted. */
       .well { background: #211B13; border-radius: 12px; overflow: hidden; margin: 12px 0 0; }
       .wl { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .07em; color: #8A785A; padding: 12px 14px 0; }
       .pre { margin: 0; padding: 10px 14px 14px; font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace; font-size: 12.5px; line-height: 1.65; color: #F4EEDF; white-space: pre-wrap; word-break: break-word; }

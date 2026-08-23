@@ -1,35 +1,15 @@
 import Foundation
 
-// A CHANGE AN AGENT WANTS MADE, AND HAS NOT MADE — the native statement of
-// backend/products/gym/domain/Proposal.h, and the object §D screen 14 draws.
-//
-// The rule the whole file exists to serve: a mutation that RECORDS something that already happened
-// lands immediately at every door, and a mutation that changes something that WILL happen mints one
-// of these and does nothing at all until the lifter taps Apply. "Log 100 × 5" is the first kind —
-// the bar is already back on the rack and the blast radius is one legible row. Next Tuesday's bench
-// is the second: it speaks to a tired future person in a room where the conversation that caused it
-// is gone, and Apply is the only UI that decision will ever have.
-//
-// NOTHING HERE IS EVER WRITTEN FROM THIS DEVICE. The phone never mints a proposal, never keeps one
-// on its shelf and never sends one — a proposal belongs to an ACCOUNT, so there is no anonymous
-// half of this object and nothing for the claim replay to carry. That is why every type below is
-// `Decodable` and not `Codable`: the one direction it travels is inward.
-//
-// THE ENUMS ARE CLOSED, and this is the one place in gym where a lenient default would not be
-// honest. `SetKind(parsing:)` folds an unknown word to `working` because the SERVER has that same
-// default; there is no such default here, and a row this build could not draw would be a row
-// MISSING from a diff the lifter taps Apply on once, for all of it. So a word this build has never
-// heard of fails the read and the room draws no card at all, rather than a partial truth with a
-// button under it.
+// The native statement of backend/products/gym/domain/Proposal.h; every type here is `Decodable` only — a proposal is
+// never written from this device.
+// The enums are closed with no lenient default: an unknown word must fail the read rather than drop a row from a diff.
 
 public enum ProposalIntent: String, Decodable, Sendable {
     case revise
     case remove
 }
 
-// The four states, and the room's own word for the fourth. The wire calls it `superseded`; on
-// screen it is SET ASIDE, because the lifter superseded nothing — their own hand landed on the
-// routine first, and this diff was written against a program that no longer stands.
+// The wire calls the fourth `superseded`; on screen it is set aside.
 public enum ProposalState: String, Decodable, Sendable {
     case pending
     case applied
@@ -46,24 +26,12 @@ public enum ProposalState: String, Decodable, Sendable {
     }
 }
 
-// WHICH DOOR IT CAME THROUGH, and which agent behind it. "A change appeared in my Tuesday and I
-// cannot tell whether it was my own Claude or the app's own Ask" is the exact mental-model failure
-// this column exists to prevent — so provenance is a field on every proposal rather than a fork in
-// the object. The two doors mint the same type through the same mechanism; only this field differs.
-//
-// `door` stays a String where `state` and `kind` are closed enums, and the difference is what each
-// one decides: a door this build has never heard of only picks which fallback name to print, while
-// an unknown state or kind would put a wrong control or a missing row in front of a tap.
+// `door` stays a String where `state` and `kind` are closed enums: an unknown door only picks a fallback name.
 public struct ProposalSource: Equatable, Decodable, Sendable {
     public let door: String
     public let connection: String?
     public let agent: String?
-    // THE CONVERSATION THIS CAME OUT OF (§O), and its ABSENCE is a fact rather than a gap: either
-    // the change came through the MCP door, where there was no conversation, or the lifter deleted
-    // the one it came from. Deleting a thread deletes the conversation and not the consequence — the
-    // history row still says the change came from Ask, it just no longer opens something that is
-    // gone. So the door onto it is offered only where this key is present, and never inferred from
-    // `door == "ask"`.
+    // nil is a fact, not a gap: there was no conversation, or it was deleted. Never inferred from `door == "ask"`.
     public let thread: String?
 
     public init(door: String, connection: String? = nil, agent: String? = nil,
@@ -74,20 +42,13 @@ public struct ProposalSource: Equatable, Decodable, Sendable {
         self.thread = thread
     }
 
-    // The wire OMITS `connection` and `agent` today — the MCP transport carries no identity for the
-    // server to store — so this is a fallback in practice and not in theory. "your connected agent"
-    // is the true thing to say about a name gym does not have; printing a vendor nobody read would
-    // be worse than saying less.
     public var agentName: String {
         guard let agent, !agent.isEmpty else { return door == "ask" ? "Ask" : "your connected agent" }
         return agent
     }
 }
 
-// WHAT A CARD AND A HISTORY ROW ARE DRAWN FROM — everything except the diff itself, which is one
-// more read away. The room holds a list of these and nothing else: `GET /v1/gym/proposals` answers
-// every proposal on the account, newest first, and both the pending cards and every routine's
-// history are folds over that one list.
+// `GET /v1/gym/proposals` answers every proposal on the account, newest first.
 public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
     public let id: String
     public let routineId: String
@@ -116,10 +77,6 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
 
     public var isPending: Bool { state == .pending }
 
-    // What the card says when the agent wrote no summary. It is a count and a routine name rather
-    // than an invented sentence: the agent's own words are the only voice allowed to describe its
-    // own diff, and a room that made one up for it would be putting words in a mouth the lifter is
-    // about to judge.
     public func line(about routineName: String) -> String {
         guard summary.isEmpty else { return summary }
         guard intent == .revise else { return "A proposal to remove \(routineName)." }
@@ -131,21 +88,14 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         return "Review \(changes)"
     }
 
-    // What the routines list marks a routine with (§B screen 5). The board draws `1 proposal` and
-    // this is a COUNT, because the ledger's rule is one pending proposal per door: two doors put two
-    // on one routine, and a mark that said "1" over both would be the room miscounting the only
-    // thing it is there to say.
+    // A count: the ledger keeps one pending proposal per door, so two doors put two on one routine.
     public static func waitingLine(_ count: Int) -> String {
         count == 1 ? "1 proposal" : "\(count) proposals"
     }
 
-    // THE DAY THE RECORD IS ABOUT — the one the History row prints, and the one that section is
-    // ordered by. A proposal written on Sunday and applied on Tuesday belongs to Tuesday in the
-    // program's history, so the date and the order have to come off the same instant: read one way
-    // and sorted the other, a list runs backwards.
+    // The date and the History order come off the same instant: a settled proposal belongs to the day it settled.
     public var recordedAtMs: Int64 { settledAtMs ?? createdAtMs }
 
-    // The routine's History row (§B screen 6): `2 Aug · applied 3 changes from Claude`.
     public func historyLine(now: Int64) -> String {
         let when = Readout.when(recordedAtMs, now: now)
         let what = intent == .revise ? changes : "a removal"
@@ -157,8 +107,6 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         }
     }
 
-    // `4 changes` — the count as a NOUN, for the two places that print it without a verb in front:
-    // the review button's own label above, and the chip on the card Ask draws in its message stream.
     public var changes: String { Readout.changeCount(changeCount) }
 
     enum CodingKeys: String, CodingKey {
@@ -177,17 +125,13 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         changeCount = try fields.decodeIfPresent(Int.self, forKey: .changeCount) ?? 0
         createdAtMs = try fields.decode(Int64.self, forKey: .createdAtMs)
         settledAtMs = try fields.decodeIfPresent(Int64.self, forKey: .settledAtMs)
-        // A door is the least this can carry and the server always sends one; an answer without it
-        // still names the agent the only way this room ever could.
         source = try fields.decodeIfPresent(ProposalSource.self, forKey: .source)
             ?? ProposalSource(door: "")
     }
 }
 
-// ONE LINE OF THE DIFF. The rows are the document as well as the diff: rows up to the first
-// `removed` are the run the routine would take on, in order, and the rest are what it would take
-// away. `before` is absent on an added row, `after` on a removed one, and `loggedSets` rides only
-// on a removed one — where 0 is a real answer and not a missing field.
+// Rows up to the first `removed` are the run the routine would take on, in order; the rest are what it would take away.
+// `before` is absent on an added row, `after` on a removed one, and `loggedSets` rides only on a removed one, where 0 is real.
 public struct ProposalChange: Equatable, Decodable, Sendable {
     public enum Kind: String, Decodable, Sendable {
         case kept
@@ -196,14 +140,8 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         case retargeted
     }
 
-    // What a routine asks a movement for. The same three numbers `RoutineEntry` carries, under the
-    // names the proposal wire uses — absent reps is `max`, absent weight is whatever you did last
-    // time, absent rest is the global target, and absent SETS is the open row (§M): the routine
-    // names nothing and the movement is decided at the rack.
-    //
-    // WHICH SIDE OF A DIFF IS MISSING IS `kind` AND NEVER AN ABSENT `sets`. `added` has no `before`
-    // and `removed` has no `after`; a reader that inferred the side from a null set count would
-    // read `+ Deadlift · open` as a line with nothing added to it.
+    // Absent reps is `max`, absent weight is last time's, absent rest is the global target, and absent sets is the open row.
+    // Which side of a diff is missing is `kind`, never an absent `sets`.
     public struct Targets: Equatable, Decodable, Sendable {
         public let sets: Int?
         public let reps: Int?
@@ -219,7 +157,6 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         }
     }
 
-    // One field that moved, spelled both ways. Drawn as `sets 5 × 5 → 5 × 3` (§D14).
     public struct Move: Equatable, Sendable {
         public let field: String
         public let before: String
@@ -243,18 +180,12 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         self.loggedSets = loggedSets
     }
 
-    // THE FIELD-LEVEL ROWS, and sets and reps are ONE move rather than two: `5 × 5` is how this
-    // product says what a movement is asked for on every other screen, and splitting it would put
-    // two lines on screen for one decision. A target the proposal declines to name prints the
-    // product's own mark for a fact it does not have.
+    // Sets and reps are one move rather than two.
     public var moves: [Move] {
         guard let before, let after else { return [] }
         var moved: [Move] = []
         if before.sets != after.sets || before.reps != after.reps {
-            // A side with no set count is the OPEN row (§M) — the routine names nothing at all —
-            // and it prints that one word rather than a count of nothing. `Readout.target` carries
-            // no weight here on purpose: the load is its own row two lines down, and naming it
-            // twice would be one decision drawn as two.
+            // The load is its own row, so no weight is passed here.
             moved.append(Move(field: "sets",
                               before: Readout.target(sets: before.sets, reps: before.reps,
                                                      weightKg: nil),
@@ -274,8 +205,6 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         return moved
     }
 
-    // `added · 3 × 10 · 24 · after Bench Press` — the PLACE is part of the change, because a
-    // movement arriving third is a different program from the same movement arriving first.
     public func addedLine(after previous: String?) -> String {
         var said = ["added"]
         if let after { said.append(Readout.target(sets: after.sets, reps: after.reps, weightKg: after.weightKg)) }
@@ -283,9 +212,7 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
         return said.joined(separator: " · ")
     }
 
-    // `removed from the routine · 41 logged sets kept`. The count is what the removal DOES NOT
-    // touch, and zero is a real answer rather than a missing one — a movement removed before it was
-    // ever trained says so instead of pretending the reassurance applies.
+    // The count is what the removal does not touch, and zero is a real answer.
     public var removedLine: String {
         guard let loggedSets else { return "removed from the routine" }
         guard loggedSets > 0 else { return "removed from the routine · never logged" }
@@ -298,20 +225,14 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
     }
 }
 
-// WHAT SCREEN 14 DRAWS, top to bottom. A `kept` row is the document and never a change, so it is
-// not here; a renamed routine IS a change and is, because the count under the button includes it
-// and a diff whose rows did not add up to its own button would be the worst kind of quiet lie.
+// A `kept` row is not a change and is not here; a renamed routine is, and the count under the button includes it.
 public enum ProposalRow: Equatable, Sendable {
     case renamed(from: String, to: String)
-    // `follows` is the movement this entry would come after, and it is read only on an added row —
-    // the one row whose position is a fact the lifter has to be told.
+    // `follows` is read only on an added row.
     case entry(ProposalChange, follows: String?)
 }
 
-// THE WHOLE PROPOSAL: the head, the base it was written against, and the typed diff. `baseRevision`
-// is the token apply is atomic against — a proposal minted before a human's own edit is set aside
-// rather than merged over the top — and this device never checks it: only the server sees both
-// halves at once, under the lock that owns them.
+// `baseRevision` is the token apply is atomic against; this device never checks it.
 public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     public let head: ProposalHead
     public let baseRevision: Int
@@ -345,17 +266,12 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
         return drawn
     }
 
-    // THE COUNT IS THE SERVER'S AND NEVER THE ROWS THIS BUILD MANAGED TO DRAW. The button states
-    // what the tap DOES, and apply is atomic against the whole document — so a build that drew four
-    // of five rows must still not promise to apply four. That is the same rule the tool names live
-    // under: never promise an effect you do not have.
+    // The server's count, never the rows this build drew: apply is atomic against the whole document.
     public var applyLabel: String {
         guard intent == .revise else { return "Remove \(baseName)" }
         return "Apply all \(head.changeCount)"
     }
 
-    // "All four or none. Nothing is applied until you tap." The count is a WORD here and a NUMERAL
-    // on the button, because one is a sentence and the other is a control.
     public var footnote: String {
         guard intent == .revise else {
             return "The routine goes and your logged sets stay. Nothing is removed until you tap."
@@ -364,9 +280,6 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
         return "All \(Proposal.spelled(head.changeCount)) or none. Nothing is applied until you tap."
     }
 
-    // Settled states say so with a timestamp and STAY — the program's history, not a toast that
-    // disappears. A superseded one explains itself, because "set aside" is the only outcome here
-    // that the lifter did not choose.
     public func settledNote(now: Int64) -> String? {
         guard let settledAtMs = head.settledAtMs else { return nil }
         let when = "\(Readout.when(settledAtMs, now: now)) at \(Readout.time(settledAtMs))"
@@ -382,7 +295,6 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
         }
     }
 
-    // Prose stops spelling numbers where the word stops being easier to read than the digit.
     private static func spelled(_ count: Int) -> String {
         let words = ["two", "three", "four", "five", "six", "seven",
                      "eight", "nine", "ten", "eleven", "twelve"]
@@ -394,8 +306,7 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
         case baseRevision, baseName, name, changes
     }
 
-    // The head's fields are on the SAME flat object, so it is decoded from the same container
-    // rather than repeated field for field — one wire shape, one statement of it.
+    // The head's fields are on the same flat object, so both decode from one container.
     public init(from decoder: Decoder) throws {
         head = try ProposalHead(from: decoder)
         let fields = try decoder.container(keyedBy: CodingKeys.self)
@@ -406,8 +317,7 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     }
 }
 
-// What an applied proposal answers with. The routine is ABSENT when the intent was to remove —
-// there is no routine left to describe — which is the shape rather than a null.
+// The routine is absent when the intent was to remove.
 public struct AppliedProposal: Equatable, Decodable, Sendable {
     public let proposal: Proposal
     public let routine: Routine?

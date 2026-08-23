@@ -1,21 +1,7 @@
 <!--
-  Windmill transactional email — magic link (SIGN-IN) · X7 flagship
-  From:      Windmill <sign-in@windmill.works>
-  Subject:   Your sign-in link
-  Preheader: Works once and lasts 15 minutes — tap and you're in.
-  Plain-text pair: magic-link.txt
-
-  Template variable: {{{magic_link}}}  — the full sign-in URL the X6 AuthService builds
-  (${WINDMILL_APP_URL}/#/auth?token=<secret>). It appears twice below: the button href
-  and the raw fallback (as href AND visible text). See emails/README.md for the Resend
-  wiring; if your engine HTML-escapes, use the triple-brace {{{magic_link}}}.
-
-  Shell rules: guidelines/email.md. Table-based + inline CSS (Gmail/Outlook/Apple Mail);
-  brand fonts never load in email — the stacks below are the fallback contract. No logo
-  file exists (readme policy): the wordmark is real text, which is also the images-off
-  fallback. When a mark ships, swap in <img src="https://windmill.works/email/logo.png"
-  alt="Windmill"> in the header. This mail is light-only: color-scheme is pinned to
-  'light' so Apple Mail / iOS Mail render the designed palette instead of auto-darkening.
+  Resend template `magic-link`; plain-text twin magic-link.txt.
+  {{{magic_link}}} is the full sign-in URL and appears twice: the button href, and the raw
+  fallback as both href and visible text. Triple brace substitutes raw, so the URL keeps its & = ?.
 -->
 <!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -51,14 +37,12 @@
       <!--[if mso]><table role="presentation" align="center" width="520" cellpadding="0" cellspacing="0" border="0"><tr><td width="520"><![endif]-->
       <table role="presentation" width="520" align="center" cellpadding="0" cellspacing="0" border="0" style="width:520px; max-width:100%; margin:0 auto;">
 
-        <!-- header: the wordmark (text = the alt fallback) -->
         <tr>
           <td align="center" class="wm-wordmark" style="padding:6px 0 22px; font-family:'Baloo 2','Trebuchet MS','Segoe UI',sans-serif; font-size:23px; font-weight:700; color:#BC6C42; letter-spacing:-0.2px;">
             Windmill
           </td>
         </tr>
 
-        <!-- the card -->
         <tr>
           <td class="wm-card wm-card-pad" bgcolor="#FFFFFF" style="background:#FFFFFF; border:1px solid #E5D9C0; border-radius:24px; padding:38px 44px 34px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -73,7 +57,6 @@
                 </td>
               </tr>
 
-              <!-- the one button -->
               <tr>
                 <td align="center" style="padding:28px 0 12px;">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
@@ -93,7 +76,6 @@
                 </td>
               </tr>
 
-              <!-- raw fallback URL -->
               <tr>
                 <td class="wm-div" style="border-top:1px solid #F1EADA; padding-top:22px;">
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -119,7 +101,7 @@
           </td>
         </tr>
 
-        <!-- footer: auth mail never carries unsubscribe -->
+        <!-- auth mail carries no unsubscribe -->
         <tr>
           <td align="center" class="wm-mut" style="padding:22px 12px 0; font-family:'Nunito','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; font-size:12.5px; line-height:1.6; color:#92805F;">
             Sent because this address was entered at windmill.works.<br>

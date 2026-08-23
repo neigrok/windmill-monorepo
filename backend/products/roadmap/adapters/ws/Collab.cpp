@@ -317,9 +317,11 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   send(conn, ack);
 }
 
-// The private per-user lane: refused whole or applied whole, joins no op log, and is echoed
-// only to the same account's other sessions. The client mints the stamp; the server records the
-// receipt instant.
+// The private per-user lane: joins no op log, and is echoed only to the same account's other
+// sessions. A frame is REFUSED whole — one bad mark, one skewed stamp or a failed read gate turns
+// the whole frame back before anything is written — but it APPLIES per mark: each is an independent
+// LWW register write, so a frame can land in part, and only the marks that landed are echoed.
+// The client mints the stamp; the server records the receipt instant.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId,
                       const Json::Value& frame) {
   const Principal& principal = principalOf(conn);

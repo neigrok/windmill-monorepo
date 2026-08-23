@@ -1,24 +1,3 @@
-// ADD A PAST WORKOUT — the one place in gym where a set is written from memory instead of from the
-// bar. It is a door on the log and never a Start, and it admits to being a form: the unit of entry
-// is the LINE (weight × reps × how many), because "3 × 8 at 82.5" is one fact a lifter remembers
-// rather than three rows to fill in, and every value is typed on the training log's own keypad.
-//
-// The refusals are not the same shape and must not read as one. Times that CROSS a session
-// already in the log are a fact about the log, so the panel offers to open that session — one visit
-// is one session, and the missing sets belong in it. Times that run PAST NOW are a fact about the
-// form, so that panel only asks for the times again. A session already running is not a fault at
-// all, so its panel carries the live dot on a neutral surface and never alarm ink; it is checked
-// here before the request, and the wire still carries `joinOpenSession: false` so the store's
-// refusal is the rule rather than this client's promise (backfill.js).
-//
-// AND THE DRAFT NEVER LEAVES THE SCREEN UNTIL THE WHOLE OF IT IS IN THE LOG. The save files every
-// set or none, and anything short of all of them keeps the form standing with the workout intact —
-// these sets were typed from memory and there is no second copy of them anywhere (backfill.js).
-//
-// G8's desk sentence — "Live training happens on your phone" — is true on this build at last: the
-// web's own Start is gone (§11), so it is spoken where it earns its place, in the mid-workout
-// refusal that names where the running session lives.
-
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import {
@@ -45,8 +24,6 @@ export function Backfill({ log }) {
   const [typing, setTyping] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Any edit to the draft retires every refusal: each of them is an answer about times and sets that
-  // have just changed, and a panel left standing would be answering a question nobody asked again.
   const edit = (change) => {
     setForm((held) => ({ ...held, ...change }));
     setOverlap(null);
@@ -70,8 +47,6 @@ export function Backfill({ log }) {
       setOverlap(crossed);
       return;
     }
-    // A past workout ends in the past: the wire checks the start against the clock and nothing
-    // checks the end, so a session that would close in forty minutes is refused here (backfill.js).
     const runsPastNow = endsAhead({ startedAt, durationMs });
     if (runsPastNow) {
       setAhead(runsPastNow);
@@ -84,15 +59,10 @@ export function Backfill({ log }) {
       await gymApi.startSession({ id, startedAt, joinOpenSession: false });
     } catch (error) {
       setSaving(false);
-      // The store's own check, reached by a tab that did not know a workout had started. It speaks
-      // the door's sentence and never a status, because nothing failed here either.
       if (error.sessionAlreadyOpen) setRefused(true);
       else log.say(`That workout didn’t reach the log — ${failureReason(error)}.`);
       return;
     }
-    // Every set or none, and the draft stays under the hand until every one of them is in the log:
-    // these sets were typed from memory and exist nowhere else, so leaving this screen is how they
-    // are destroyed (backfill.js).
     const filed = await fileBackfill({ api: gymApi, id, sets, finishedAt: startedAt + durationMs });
     const report = saveReport({ ...filed, startedAt });
     setSaving(false);
@@ -127,7 +97,6 @@ export function Backfill({ log }) {
           aria-label="Start time"
           value={`${String(form.hour).padStart(2, '0')}:${String(form.minute).padStart(2, '0')}`}
           onChange={(event) => {
-            // A cleared field is not a time. The one it had stands until another one is typed.
             const [hour, minute] = event.target.value.split(':');
             if (hour !== undefined && minute !== undefined) edit({ hour: Number(hour), minute: Number(minute) });
           }}
@@ -150,11 +119,7 @@ export function Backfill({ log }) {
           <h2 className="gym-block-name">{nameOfMovement(log.catalog, block.exerciseId)}</h2>
           {block.lines.map((line, lineIndex) => (
             <div className="gym-line" key={`${line.weightKg}-${line.reps}-${lineIndex}`}>
-              {/* THE UNIT IS ON THE FIELD, and it has to be from the wave that gave the account a
-                  choice of reading (units.js): every other numeral on this surface is spelled in
-                  that reading, so a bare `82.5` on a form that types KILOGRAMS is read as pounds by
-                  the lifter who set pounds — and typed over as pounds. The keypad that opens from
-                  here says `kg` in its hint; this is the same word on the value it opens with. */}
+              {/* Always kilograms, whatever unit the account reads in. */}
               <button
                 type="button"
                 className="gym-line-value"

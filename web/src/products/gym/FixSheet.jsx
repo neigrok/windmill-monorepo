@@ -1,16 +1,3 @@
-// FIX THIS SET (§G18) — a sheet over the session, and the desk's answer to the thing somebody
-// actually sits down at a laptop to do: correct last Tuesday. The session stays visible behind it,
-// dimmed, with the row being fixed marked, because the number being corrected only means anything
-// beside the ones around it.
-//
-// The weight moves on the ladder the loggers move it on (logger/ladder.js) and is typed on the
-// keypad every other number in this product is typed on — the pad has carried the "editing a
-// logged set" title since the wave that built it, waiting for this screen to be the caller.
-//
-// NOTHING HERE PROMISES RECOVERY. There is no trash, no thirty days and no destination in settings:
-// what is deleted leaves the log. The one take-back is the five seconds the toast is up, and it is
-// real because the write is withheld for exactly that long rather than sent and regretted (Log.jsx).
-
 import React, { useState } from 'react';
 import { alsoReadsLabel, fmtKg } from './log.js';
 import { fixDraftOf, fixOf, fixSubtitle, keepsItsOwnNumbers, SET_KINDS, withReps, withWeight } from './fix.js';
@@ -20,8 +7,7 @@ import { LADDER_KEYS, ladderLabels } from './logger/ladder.js';
 export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) {
   const [draft, setDraft] = useState(() => fixDraftOf(set));
   const [typing, setTyping] = useState(null);
-  // Both are DOM order and the pairing is by index — the module states it once and this is the one
-  // place that relies on it, so the labels and the keys are read together rather than re-derived.
+  // `LADDER_KEYS` and these labels pair by index.
   const rungs = ladderLabels(draft.weightKg);
   const keeps = keepsItsOwnNumbers(session);
   const alsoReads = alsoReadsLabel(draft.weightKg);
@@ -33,10 +19,6 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
           <div className="gym-fix-head">
             <span className="gym-fix-title">Fix this set</span>
             <span className="gym-fix-sub">{fixSubtitle(movement, set)}</span>
-            {/* The design draws no way out but Save, which a phone answers with a swipe down and a
-                desk cannot. A draft dropped by an accidental click on the scrim would be a silent
-                revert — the one thing the keypad beside this sheet exists to refuse — so the exit
-                is a control a lifter can aim at. */}
             <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
           </div>
 
@@ -44,11 +26,7 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
             <span className="gym-fix-kg">{fmtKg(draft.weightKg)}</span>
             <span className="gym-fix-unit">kg</span>
           </button>
-          {/* THE SAME WEIGHT, THE WAY THE SESSION BEHIND THIS SHEET READS IT. The number here is a
-              kilogram FIELD — what is typed lands in the log as it stands — while the row being
-              corrected shows the account's own reading two inches behind it, dimmed but legible. In
-              pounds those are two numerals for one set, and a lifter has no way to know that. Null
-              in kilograms, where they are the same number. */}
+          {/* The field is kilograms; null when the account also reads kilograms. */}
           {alsoReads && <p className="gym-fix-reads">{alsoReads}</p>}
 
           <div className="gym-rungs">
@@ -92,9 +70,7 @@ export function FixSheet({ set, movement, session, onSave, onDelete, onClose }) 
           </div>
         </div>
       </div>
-      {/* Beside the sheet and never inside it, exactly as the routine editor's target sheet has it:
-          the keypad brings its own tap-to-commit surface, and nested inside this one a tap on it
-          would close the sheet under the number it had just set. */}
+      {/* Keep the keypad outside the sheet; nested, a tap on it closes the sheet. */}
       {typing && (
         <Keypad
           key={typing}

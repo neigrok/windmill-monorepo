@@ -1,7 +1,6 @@
-// First-party funnel telemetry (event-spine). track() queues; batches flush to
-// POST /v1/events when the queue fills, on a short debounce, and on page hide via
-// sendBeacon. Fire-and-forget by contract: a failed send is silently dropped and
-// must never affect product behavior.
+// First-party funnel telemetry. track() queues; batches flush to POST /v1/events when the queue
+// fills, on a short debounce, and on page hide via sendBeacon. Fire-and-forget by contract: a
+// failed send is silently dropped and must never affect product behavior.
 
 import { API_BASE } from '../shell/apiBase.js';
 import { captureError } from './sentry.js';
@@ -26,37 +25,29 @@ export function track(name, props) {
   if (flushTimer === null) flushTimer = window.setTimeout(() => flush('fetch'), FLUSH_AFTER_MS);
 }
 
-// A crash — caught by the React boundary or a global handler — beacons once and flushes NOW,
-// because the page may reload before the debounce would fire. The props stay a flat object
-// under the endpoint's 1KB budget (message + stack truncated), so it lands like any event and
-// is queryable as `name = 'client_error'`. Still fire-and-forget: reporting a crash can't crash.
+// A crash beacons once and flushes NOW, because the page may reload before the debounce fires.
+// The props stay a flat object under the endpoint's 1KB budget.
 export function reportError(error, kind = 'error') {
   if (typeof window === 'undefined') return;
   const stack = scrubbed(String(error?.stack ?? ''));
   const message = scrubbed(String(error?.message ?? error ?? 'unknown'));
   const route = routeFamily(window.location?.hash || window.location?.pathname || '');
   track('client_error', { kind: String(kind).slice(0, 40), message: message.slice(0, 280), stack: stack.slice(0, 480), route });
-  captureError(kind, message, stack, route); // also surface in Sentry (fuller message + stack) — no-op without a DSN
+  captureError(kind, message, stack, route); // no-op without a DSN
   flush('beacon');
 }
 
-// Windmill puts its secrets in the fragment precisely so they never reach a log, a referrer or a
-// vendor: #/auth?token=<magic link>, #/gym/shared/<coach-share token>, #/oauth/authorize?…. A crash
-// while one of those routes was current used to copy the live credential into the events table and
-// on to Amplitude and Sentry (audit WEB-2), so the route is cut down to its FAMILY before it leaves
-// the page — the part that says which screen broke and nothing that can be spent. The query is
-// dropped whole (nothing after a `?` names a screen), and the two segments that ARE capabilities
-// become `*`: a coach-share token, and the tree id in a #/t/ share link, which is the whole of what
-// makes an unlisted tree readable. An id that only names a thing the server still guards for its
-// owner — #/app/<treeId> — is kept, because that is what makes a crash report actionable.
+// Secrets ride in the fragment (#/auth?token=…, #/gym/shared/<token>, #/oauth/authorize?…), so a
+// route is cut to its FAMILY before it leaves the page: the query is dropped whole, and the two
+// segments that ARE capabilities — a coach-share token and the tree id in a #/t/ link — become `*`.
+// An id the server still guards for its owner (#/app/<treeId>) is kept.
 export function routeFamily(route) {
   const path = String(route).split('?')[0].slice(0, 120);
   return path.replace(/^(#\/gym\/shared)\/.+$/, '$1/*').replace(/^(#\/t)\/.+$/, '$1/*');
 }
 
-// The same secrets can ride a message or a stack — an error that stringifies the URL it failed on is
-// one of the commonest shapes there is — so every capability routeFamily strips is struck out of the
-// prose too, wherever in the string it appears, plus the `code=` an OAuth error carries.
+// The same secrets can ride a message or a stack, so every capability routeFamily strips is struck
+// out of the prose too, wherever it appears, plus the `code=` an OAuth error carries.
 function scrubbed(text) {
   return text
     .replace(/token=[^&\s'"]+/gi, 'token=*')

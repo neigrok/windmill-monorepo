@@ -1,9 +1,4 @@
-// The settings home (X6 §5) — windmill.works/#/settings, the plain account chrome shared
-// with /connect, reached from the seat's "Account settings" row. Signed in, it renders its
-// sections in order and nothing else — several of which draw nothing at all when the feature
-// behind them isn't a thing on this server yet, which is how the page stays short.
-// A ghost visitor gets the same calm copy-gate /connect uses — a line and the sign-in door,
-// never a wall — because the worst case of auth is the product's normal signed-out state.
+// The settings home, in the account chrome shared with /connect.
 
 import React, { Suspense } from 'react';
 import { AccountChrome } from '../account/AccountChrome.jsx';
@@ -19,9 +14,8 @@ import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
 import { CloseAccountSection } from './CloseAccountSection.jsx';
 
-// The product-owned settings sections, gathered from the registry so this neutral page names no
-// product. `main` sections sit in the product zone right after the account identity; `data` sections
-// render last, beside the account's own close. A product with none contributes nothing.
+// `main` sits in the product zone after the account identity; `data` renders last, beside the
+// account's own close.
 const PRODUCT_MAIN_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.main ?? []);
 const PRODUCT_DATA_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.data ?? []);
 
@@ -48,8 +42,6 @@ export function SettingsPage({ inShell = false }) {
             <Suspense fallback={null}>
               {PRODUCT_DATA_SECTIONS.map((Section, i) => <Section key={i} />)}
             </Suspense>
-            {/* Dead last, and after every product's export on purpose: its consent list says "export
-                what you want to keep first", and the exports it means are the ones directly above. */}
             <CloseAccountSection />
           </>
         ) : (
@@ -59,8 +51,7 @@ export function SettingsPage({ inShell = false }) {
           </div>
         )}
 
-        {/* Outside the sign-in branch on purpose: appearance is a preference of this device, not of
-            an account, so it is here whether or not anyone is signed in. */}
+        {/* Outside the sign-in branch: appearance is a device preference. */}
         <AppearanceSection />
       </AccountChrome>
 

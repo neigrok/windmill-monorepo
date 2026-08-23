@@ -16,9 +16,6 @@ import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 
-// What has to be true for the shelf to be trusted with a signed-out training history: it comes
-// back from disk whole, an unreadable or older file opens without taking the history down, and the
-// claim's repairs — remint a spent id, let go of what landed — move exactly what they say.
 class LocalLogTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -57,18 +54,11 @@ class LocalLogTests {
         assertTrue(shelf.finished.isEmpty())
     }
 
-    // WHO A FILE FROM BEFORE THE SEATS BELONGS TO — branch one: the phone was SIGNED IN when it
-    // upgraded, so those rows were written by that account and are seated to it. Every field is
-    // optional either way, so an older build's file — or a future build's with keys this one never
-    // wrote — still opens with what it does hold, never as empty.
     @Test
     fun testAPartialFileFromBeforeTheSeatsBelongsToTheSeatTheDeviceWasHolding() {
         val file = logFile()
         file.writeText("""{"routines":[{"id":"rt_1","name":"Push Day"}],"unknownKey":true}""")
 
-        // The device was holding A's session when this file was opened. That, and never the account
-        // the room is later connected for, is what names the owner: the room mounts before the seat
-        // resolves, so the arriving account is nobody on every launch.
         val shelf = LocalLog(file, deviceOwner = "alice")
         assertEquals(listOf("Push Day"), shelf.routines.map { it.name })
         assertNull("no door is needed and none is offered", shelf.unattributed)
@@ -90,10 +80,6 @@ class LocalLogTests {
         assertNull("and the decision was written, so it is not made again", relaunched.unattributed)
     }
 
-    // Branch two: the device held NO session at the upgrade. "Nobody is signed in now" is not
-    // "nobody wrote this" — it may be the last account's work after they signed out, which is the
-    // leak itself — so it opens QUARANTINED, stays that way for every account that signs in
-    // afterwards, and a human is what releases it.
     @Test
     fun testAFileFromBeforeTheSeatsOnASignedOutDeviceStaysQuarantined() {
         val file = logFile()
@@ -124,10 +110,6 @@ class LocalLogTests {
             listOf("Push Day"), relaunched.routines.map { it.name })
     }
 
-    // THE QUARANTINE IS ON DISK BEFORE ANYTHING ELSE HAPPENS. A decision left in memory is a legacy
-    // file still sitting there byte-for-byte, and the next launch — one that DOES hold a session —
-    // would read it as that lifter's own and hand them a stranger's training. Nothing is done to
-    // this store but construct it.
     @Test
     fun testASignedOutMigrationIsWrittenDownAtOnce() {
         val file = logFile()
@@ -140,8 +122,6 @@ class LocalLogTests {
         assertEquals(1, later.unattributed?.routines)
     }
 
-    // The other answer the row takes, and the only door in this product that deletes training —
-    // nothing quarantined has landed on any log, so this is the last copy of it.
     @Test
     fun testDiscardingTheQuarantineTakesItOffTheDiskAndLeavesTheSeatAlone() {
         val file = logFile()
@@ -149,7 +129,6 @@ class LocalLogTests {
         shelf.hold(Routine(id = "rt_mine", name = "Mine"))
         shelf.adopt("alice")
         shelf.hold(Routine(id = "rt_alice", name = "Alice's"))
-        // A file from before the seats, dropped in beside a shelf this build wrote.
         file.writeText("""{"routines":[{"id":"rt_old","name":"Somebody's"}]}""")
 
         val reopened = LocalLog(file, deviceOwner = null)
@@ -160,9 +139,6 @@ class LocalLogTests {
         assertNull("and it is gone from the disk too", LocalLog(file, null).unattributed)
     }
 
-    // THE SEAT IS THE KEY — the whole of MOBILE-3's shelf half. A shelf filled under one account is
-    // not readable under the next one, on this launch or any later one, and the first lifter's rows
-    // are still theirs when they come back.
     @Test
     fun testAShelfFilledUnderOneSeatIsNeverDrawnForTheNext() {
         val file = logFile()
@@ -189,9 +165,6 @@ class LocalLogTests {
             listOf("ses_alice"), relaunched.finished.map { it.session.id })
     }
 
-    // The anonymous-first door, and it must not regress: work made with nobody signed in is
-    // claimable by whoever signs in, and it MOVES rather than copying — a shelf carried twice would
-    // land the same workout on two accounts.
     @Test
     fun testAnonymousWorkRidesOntoTheFirstConfirmedSeatAndOnlyOnce() {
         val file = logFile()
@@ -212,9 +185,6 @@ class LocalLogTests {
         assertTrue("so no second account gets it", shelf.exercises.isEmpty() && shelf.finished.isEmpty())
     }
 
-    // A SEAT THIS PROCESS COULD NOT CONFIRM MAY DRAW ITS OWN ROOM AND NOTHING ELSE. Painting is
-    // free; taking ownership of unclaimed work is irreversible, and a phone with no signal does not
-    // know whether that remembered identity is still live.
     @Test
     fun testAnUnconfirmedSeatLeavesTheAnonymousShelfWhereItIs() {
         val file = logFile()
@@ -249,8 +219,6 @@ class LocalLogTests {
         assertEquals(82.5, summaries.first().topSet?.weightKg)
     }
 
-    // A spent movement id changes everywhere the shelf wrote it, or the claim would land sets
-    // against an id the catalog never minted.
     @Test
     fun testRemintingAMovementReachesRoutinesPlansAndSets() {
         val shelf = LocalLog(logFile())
@@ -286,10 +254,6 @@ class LocalLogTests {
         assertEquals("rt_fresh", shelf.finished.single().session.routineId)
     }
 
-    // Holding a finished session again replaces its row — never a second one — and merges the
-    // sets by id, so neither copy's lifts are lost to the convergence. This is the crash between
-    // finishOnDevice's hold and the queue's forget: the workout finishes a second time carrying
-    // everything the first hold did plus whatever was lifted since.
     @Test
     fun testHoldingAFinishedSessionAgainReplacesTheRowAndKeepsEverySet() {
         val shelf = LocalLog(logFile())
@@ -305,8 +269,6 @@ class LocalLogTests {
         assertEquals(listOf("set_b", "set_a"), shelf.finished.single().sets.map { it.id })
     }
 
-    // The claim's terminal let-go for a routine: the document leaves, and the sessions that named
-    // it keep their frozen plan — only the id that will never resolve goes.
     @Test
     fun testOrphaningARoutineDropsTheDocumentAndOnlyTheIdFromItsSessions() {
         val shelf = LocalLog(logFile())
@@ -325,8 +287,6 @@ class LocalLogTests {
         assertEquals(listOf("set_a"), shelf.finished.single().sets.map { it.id })
     }
 
-    // The claim's one loss door and its one success door: a refused set leaves alone, and a
-    // confirmed session leaves whole.
     @Test
     fun testDroppingASetAndForgettingASessionMoveExactlyWhatTheySay() {
         val shelf = LocalLog(logFile())
@@ -342,10 +302,6 @@ class LocalLogTests {
         assertTrue(shelf.finished.isEmpty())
     }
 
-    // §G18 ON A SESSION NO ACCOUNT HOLDS. The row has never been sent, so the correction rewrites
-    // the version that WILL be sent — in place, under the same id, so the claim replays the
-    // corrected set rather than a second one beside it. And it moves nothing else: the frozen plan
-    // and the routine id are the caption of the whole screen.
     @Test
     fun testFixingASetOnTheShelfRewritesTheRowAndLeavesThePlanAlone() {
         val shelf = LocalLog(logFile())
@@ -373,8 +329,6 @@ class LocalLogTests {
         assertEquals("rt_1", shelf.finished.single().session.routineId)
     }
 
-    // A set the shelf does not hold answers null, and that null is how the store tells a device row
-    // from an account row — a PATCH may never go out for an id the log has never seen.
     @Test
     fun testFixingASetTheShelfDoesNotHoldAnswersNothingAtAll() {
         val shelf = LocalLog(logFile())
@@ -387,10 +341,6 @@ class LocalLogTests {
         assertEquals(listOf(82.5), shelf.detail("ses_1")?.sets?.map { it.weightKg })
     }
 
-    // THE TOMBSTONE, and the reason it is kept rather than only a hole being left: this session may
-    // be HALF CLAIMED — a pass that landed the start and some sets and then stopped — so the claim
-    // has to be told the set is gone, or the next pass would leave it standing on the account while
-    // this device shows it deleted.
     @Test
     fun testDeletingASetOnTheShelfLeavesATombstoneTheClaimCanRead() {
         val file = logFile()
@@ -412,8 +362,6 @@ class LocalLogTests {
             listOf("set_a"), reopened.finished.single().deleted)
     }
 
-    // The queue's copy of the same workout still carries the set §G18 removed — the crash repair in
-    // `connect` re-holds it — and a merge that took it back would resurrect a set the lifter deleted.
     @Test
     fun testHoldingASessionAgainCannotResurrectASetItsTombstoneNames() {
         val shelf = LocalLog(logFile())
@@ -430,8 +378,6 @@ class LocalLogTests {
         assertEquals(listOf("set_a"), shelf.finished.single().deleted)
     }
 
-    // The claim's repairs rewrite the row, and a rewrite that dropped the tombstones would lose the
-    // deletes with them — every one of these goes through `copy` for exactly that reason.
     @Test
     fun testTheClaimsRepairsCarryTheTombstonesThrough() {
         val shelf = LocalLog(logFile())

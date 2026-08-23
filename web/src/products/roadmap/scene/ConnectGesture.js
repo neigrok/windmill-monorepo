@@ -1,16 +1,4 @@
-// Dragging one end of a branch to a node (design editing-spec §03–§04). A dashed
-// ghost follows the cursor from the pinned end; the node under it gets an olive
-// ring when it's a valid target, or a brick ring + "would create a loop" tip when
-// dropping there would make a cycle. A drop that's valid but costly — crossing
-// into another branch, or already implied by an existing path — keeps working but
-// shows an amber cost ring with a hint tip. Every node a drop on which would close a
-// loop is collected up front and faded via onFadeNodes for the whole drag (§3.1);
-// the same set is the cyclic predicate, so a faded node can never take the drop.
-// Two entry points share the gesture: `start` pulls a brand-new edge from a rim
-// port, `startReconnect` re-aims one end of an existing edge — same targeting,
-// same cycle guard, one drops onConnect, the other onReconnect. Reconnect judges
-// cycles against the graph with the old edge already removed, so dropping back
-// where it started is a no-op rather than a false loop.
+// Dragging a branch end onto a node: start() pulls a new edge from a rim port, startReconnect() re-aims one end of an existing one; the node under the cursor rings by verdict — valid, cyclic, or valid-but-costly.
 import { NODE_SIZE } from '../theme.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -50,8 +38,7 @@ export class ConnectGesture {
     this.parents = parents;
   }
 
-  // Rim port → a brand-new edge sourceId → target. A hit becomes the child, so
-  // the loop-closers are the source's ancestors.
+  // The hit becomes the child, so the loop-closers are the source’s ancestors.
   start(sourceId, event) {
     if (!sourceId || !this.nodesById.has(sourceId)) return;
     this.begin(event, {
@@ -64,10 +51,7 @@ export class ConnectGesture {
     });
   }
 
-  // Edge endpoint handle → re-aim one end; the other stays pinned as the anchor.
-  // Moving the child-end, loop-closers are the fixed parent's ancestors; moving
-  // the parent-end they're the fixed child's descendants — both walked on the
-  // pending graph (old edge removed).
+  // Re-aim one end, the other pinned; the loop-closers are walked on the graph with the old edge already removed.
   startReconnect(edge, movingEnd, event) {
     if (!this.nodesById.has(edge.from) || !this.nodesById.has(edge.to)) return;
     const parents = this.parentsWithout(edge.from, edge.to);
@@ -164,16 +148,14 @@ export class ConnectGesture {
     if (this.onReconnect) this.onReconnect(edge.from, edge.to, result.from, result.to);
   };
 
-  // A copy of the parents map with one edge removed — the pending graph a reconnect
-  // is judged against, so the edge being moved never counts against itself.
+  // The parents map with one edge removed, so a reconnect never counts the moving edge against itself.
   parentsWithout(from, to) {
     const clone = new Map();
     for (const [id, list] of this.parents) clone.set(id, id === to ? list.filter((p) => p !== from) : list);
     return clone;
   }
 
-  // Every node reachable from id along the adjacency map (id itself excluded):
-  // ancestors when walked over parents, descendants when walked over children.
+  // Nodes reachable from id along the adjacency map, id itself excluded.
   reachable(id, adjacency) {
     const result = new Set();
     const stack = [...(adjacency.get(id) || [])];

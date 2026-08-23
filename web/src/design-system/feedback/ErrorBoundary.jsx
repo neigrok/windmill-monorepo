@@ -1,7 +1,5 @@
-// The one crash net (observability): a render/lifecycle error anywhere below is caught here
-// so it becomes a recoverable screen with a Reload — never the blank white page an uncaught
-// throw leaves behind (which is invisible in prod). componentDidCatch beacons the crash so a
-// broken screen is queryable, not silent. Global (non-React) errors are reported from main.jsx.
+// A render/lifecycle error anywhere below becomes a recoverable screen with a Reload, and
+// componentDidCatch beacons it. Global (non-React) errors are reported from main.jsx.
 
 import React from 'react';
 import { reportError } from '../../telemetry/beacon.js';

@@ -1,15 +1,4 @@
-/* Gym's own visual language on the landing: the dark instrument window opened inside a light
-   page. Everything the family shares — wrap, section type, beats, trio, ctaBand, the auth
-   cluster — lives in landing.css and the chrome owns it. What is here is only the skin the
-   moat wears: the chips, the set rows, the weight readout, the e1RM cards.
-
-   The token block mirrors src/products/gym/gym.css's .gym-root[data-theme="dark"] — the same
-   derivation from the room's own roles, cut down to what the landing actually paints with. The
-   old static page hardcoded these as hex, which is how a landing drifts away from the product it
-   is advertising; derived, the moat inherits any future correction to gym's night. That is why
-   each window carries data-brand="gym" beside its data-theme (GymLanding.jsx): the room's ground
-   and hue are keyed on the PAIR (styles/tokens/palettes.css), so a window naming only the theme
-   would advertise the family's night rather than gym's basalt. */
+/* The token block mirrors gym.css's .gym-root[data-theme="dark"]. */
 
 .gyw[data-theme="dark"] {
   --gym-on-accent: #1B1408;
@@ -32,7 +21,6 @@
   --alarm-ink: var(--color-danger);
 }
 
-/* ---- the moat: one instrument panel, floated over the cream page ---- */
 .gyMoat {
   width: min(720px, 100%);
   background: var(--gym-canvas);
@@ -43,7 +31,6 @@
   text-align: left;
 }
 
-/* ---- the three beat stages: the same window, card-sized ---- */
 .gyStage {
   background: var(--gym-canvas);
   border: 1px solid var(--gym-line);
@@ -63,7 +50,6 @@
   color: var(--gym-ink-faint);
 }
 
-/* ---- the set logger's controls ---- */
 .gychip {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 52px; height: 44px;
@@ -88,7 +74,6 @@
   border-color: var(--color-brand) !important;
 }
 
-/* ---- the log itself ---- */
 .gyset { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; }
 .gyck { margin-left: auto; color: var(--set-done); }
 .gycard {
@@ -99,8 +84,7 @@
   text-align: left;
 }
 
-/* Arrivals ride classes, not inline styles, so the reduced-motion block below can actually
-   outrank them. */
+/* Arrivals ride classes, not inline styles, so the reduced-motion block below outranks them. */
 .gyFade { animation: wmgFade 280ms var(--ease-standard); }
 .gyRise { animation: wmgRise 480ms var(--ease-soft); }
 @keyframes wmgFade { 0% { opacity: 0; } 100% { opacity: 1; } }

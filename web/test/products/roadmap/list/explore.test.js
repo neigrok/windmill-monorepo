@@ -56,8 +56,7 @@ test('filterOutline — the snippet keeps ±40 characters around the hit and ell
   }]);
 });
 
-// The index must come off the ORIGINAL string: lowercasing 'İ' yields two code units, so an offset
-// taken from a lowercased copy slides the window right off the match it just found.
+// The index must come off the ORIGINAL string: lowercasing 'İ' yields two code units.
 test('filterOutline — a description whose case folding changes length still frames its own hit', () => {
   const t = tree([
     node('r', []),
@@ -104,8 +103,6 @@ test('filterOutline — a section with no hit at all drops out entirely', () => 
   });
 });
 
-// The root sits in no section (buildOutline places it before the walk begins), so a filter that
-// could not name it would assert "no steps match" over a step in plain sight.
 test('filterOutline — the root is matched by its own name, and by its description alone', () => {
   const t = tree([
     node('r', [], { label: 'Cold baseline', description: 'Where the whole tree starts' }),
@@ -310,8 +307,6 @@ test('gateOf — the frontier is what can be started today, the count is the who
   });
 });
 
-// The frontier is a "what do I do first" set, so it answers with the app's one ranking rule
-// (nextUpPlan's unlocksOf) rather than an alphabet.
 test('gateOf — the frontier ranks by what each step would unlock, ties by id', () => {
   const t = tree([
     node('r', []),
@@ -453,9 +448,6 @@ test('gateOf — an unblocked step owes nothing, and an unknown id answers the s
   assert.deepEqual(gateOf(t, states, 'gone'), { blockedBy: 0, frontier: [], longestChain: 0, line: null, clipped: false });
 });
 
-// SkillTree refuses to construct a cycle (sortTopologically throws), so the guard is pinned
-// against a stand-in carrying the three members gateOf reads. A cyclic gate has no frontier and
-// never peels — what matters is that the phone comes back at all.
 test('gateOf — a cycle terminates instead of hanging the phone', () => {
   const nodes = [
     { id: 'a', label: 'A', prerequisites: ['b'] },

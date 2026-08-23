@@ -1,10 +1,3 @@
-// The docked step panel — the one home for everything about the selected step:
-// inline-editable name, the state block (a correction chip + its menu, the lone
-// forward action, and a calm timestamp line), kind swatches with live recolor
-// preview, the prerequisite checklist, per-node History, and the destructive
-// control at the bottom. Purely presentational; SkillTreeView derives every prop
-// via UnlockRules and owns all state + persistence.
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
 import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
@@ -16,8 +9,6 @@ const noop = () => {};
 
 const CHIP_LABEL = { available: 'Not started', active: 'In progress', complete: 'Complete', locked: 'Locked' };
 
-// The chip menu's three targets, paired with the state each one lands the node in
-// so the current one wears the check.
 const STATE_CHOICES = [
   { target: 'notstarted', label: 'Not started', state: 'available' },
   { target: 'active', label: 'In progress', state: 'active' },
@@ -26,7 +17,7 @@ const STATE_CHOICES = [
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// A calmer tone than the feed's terse relativeTime: never seconds, never ticking.
+// Never seconds, never ticking.
 function relativeTime(at, now) {
   const seconds = Math.max(0, Math.round((now - at) / 1000));
   if (seconds < 60) return 'just now';
@@ -59,7 +50,7 @@ function cap(hue) {
   return hue.charAt(0).toUpperCase() + hue.slice(1);
 }
 
-// The node's shared annotation: authored intent that travels with the tree, distinct from the per-user workspace.
+// Authored intent that travels with the tree, distinct from the per-user workspace.
 export function NodeAnnotation({ description, links = [] }) {
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -97,7 +88,6 @@ export function NodeAnnotation({ description, links = [] }) {
   );
 }
 
-// One line, most-recent event visible; hover reveals the absolute time(s) of both.
 function TimestampLine({ state, startedAt, completedAt, now }) {
   const title = [
     startedAt ? `Started ${absoluteTime(startedAt)}` : null,
@@ -109,9 +99,7 @@ function TimestampLine({ state, startedAt, completedAt, now }) {
   return <div className="st-state-time" title={title}>{text}</div>;
 }
 
-// One dock, two reads: the shared/mobile viewer gets the compact read-only detail
-// (no editing chrome at all), everyone else gets the full editor below. Split so the
-// dispatcher itself holds no hooks — each read owns its own, called unconditionally.
+// The shared/mobile viewer gets the compact read-only detail, everyone else the full editor.
 export function StepPanel(props) {
   if (props.readOnly) return <ReadOnlyStep {...props} />;
   return <EditorStep {...props} />;
@@ -132,8 +120,6 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
     inputRef.current?.select();
   }, [editingName]);
 
-  // On open, land focus on the current state so arrow keys walk from there; a click
-  // anywhere outside the chip or its menu dismisses it.
   useEffect(() => {
     if (!menuOpen) return;
     const checked = menuRef.current?.querySelector('[aria-checked="true"]');
@@ -167,8 +153,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
     if (label !== node.label) onRename(node.id, label);
   };
 
-  // Esc closes the menu (not the panel); arrows walk the rows. stopPropagation keeps
-  // the app's global Esc / ⌘Z / ⌫ shortcuts quiet while the menu has focus.
+  // Esc closes the menu, not the panel. stopPropagation keeps the app's global Esc / ⌘Z / ⌫ quiet while it has focus.
   const onMenuKeyDown = (event) => {
     event.stopPropagation();
     if (event.key === 'Escape') { event.preventDefault(); setMenuOpen(false); chipRef.current?.focus(); return; }
@@ -395,12 +380,7 @@ function EditorStep({ node, state, prerequisites, startedAt, completedAt, histor
   );
 }
 
-// The read-only detail (§S2 / X8 L5.2): the visitor's sheet, at the same density as the
-// owner's. A one-line header merges the state fruit, the name and — only where the fruit
-// can't speak (done date, lock) — a chip; the description and why-locked ride at the top;
-// the DAG closes it as jump chips (tap eases the camera to that node and retargets in
-// place, onJump). The phone sheet dismisses by swipe/canvas-tap, so its × is dropped
-// (fill); the standing tablet/desktop panel keeps the × as its dismiss.
+// onJump eases the camera to that node and retargets in place.
 function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completedAt, onMarkComplete, onJump, onClose = noop, fill = false }) {
   if (!node) return null;
 
@@ -418,8 +398,6 @@ function ReadOnlyStep({ node, state, prerequisites = [], unlocks = [], completed
           {node.label || 'Unnamed step'}
         </span>
         {showChip && <ReadOnlyStateChip state={state} hue={hue} completedAt={completedAt} />}
-        {/* Complete-only (F4 §03): the demo's one write — mark the ready step done. Passed
-            only in the demo, so a plain read-only share never offers it. */}
         {onMarkComplete && state === 'available' && (
           <Button variant="primary" size="sm" onClick={() => onMarkComplete(node.id)} icon={<Icon name="check" />}>
             Mark it done
@@ -473,11 +451,7 @@ export function ReadOnlyStateChip({ state, hue, completedAt }) {
 }
 
 
-// The sheet's density pieces (X8 L5.2), shared by the owner editor sheet and this read-only
-// one. The state fruit leads the one-line header, speaking done/ready/active/locked through
-// its treatment (so ready needs no chip); the jump chips close the sheet, each a mini state
-// dot + name that eases the camera to that node (onJump). The kind hue drives both; the
-// treatment styles mirror the list's fruit/dot 1:1 so a sheet and a list row read identically.
+// The sheet's density pieces, shared by the owner editor sheet and the read-only one.
 function stateFruitStyle(state, hue) {
   const base = { flexShrink: 0, width: 22, height: 22, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
   if (state === 'complete') return { ...base, background: hue.base, boxShadow: `0 0 7px ${hue.glow}` };

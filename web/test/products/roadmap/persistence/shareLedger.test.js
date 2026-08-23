@@ -37,8 +37,6 @@ test('load / save / clear — a round-trip keeps the completed set, the moment a
 test('history — a card states its own stamp, so the ledger row can never outrun what was published', () => {
   const ledger = new ShareLedger(fakeStorage());
 
-  // The week card knows what it claimed (its "+3"), and says so; the ledger records that verbatim
-  // rather than re-deriving it later from a set that has moved on.
   ledger.save('t_1', { completed: ['a'], at: 10, count: 1, delta: 3 });
   ledger.save('t_1', { completed: ['a', 'b', 'c'], at: 20, count: 2, delta: 2 });
 
@@ -94,8 +92,6 @@ test('since — work done on another device counts: no local timestamp is ever c
 });
 
 test('since — the baseline survives your own completions, unlike the return ledger', () => {
-  // The whole reason this file exists: finishing steps yourself does not re-baseline the share
-  // slot, so a fortnightly poster still has a truthful "since you last shared" to point at.
   const prior = { completed: ['a'], at: 1, count: 1 };
   const states = statesOf([['a', 'complete'], ['b', 'complete'], ['c', 'complete']]);
   assert.deepEqual(ShareLedger.since(new Set(['a', 'b', 'c']), prior, states), ['b', 'c']);

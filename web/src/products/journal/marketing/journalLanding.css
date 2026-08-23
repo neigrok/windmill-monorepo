@@ -1,10 +1,8 @@
-/* The journal landing's own visual language — what the family chrome and landing.css don't own:
-   the window of night in the moat, the year dots, the week columns, the scene frames. The static
-   page baked the design tokens into a :root block because it could not import a stylesheet; here
-   the tokens are the real ones, and the window of night wears the design system's journal dusk
-   scope (data-theme + data-brand on that one element) instead of a copy of its values. */
+/* What the family chrome and landing.css don't own: the window of night in the moat, the year dots, the
+   week columns, the scene frames. The window of night wears the journal dusk scope (data-theme +
+   data-brand on that one element). */
 
-/* The cursor already waiting — the moat's one continuous motion. */
+/* The moat's one continuous motion. */
 .jn-cursor {
   display: inline-block;
   width: 2px;
@@ -34,8 +32,7 @@
   border-radius: var(--radius-lg);
 }
 
-/* Year-grid dots (beat 02) — one class per lamp step. A day nobody wrote stays hollow: drawn as
-   a gap rather than filled in, because it is a gap. */
+/* One class per lamp step. A day nobody wrote stays hollow. */
 .jn-day { aspect-ratio: 1; border-radius: 50%; }
 .jn-day--lamp2 { background: var(--lamp-200); }
 .jn-day--lamp4 { background: var(--lamp-400); }

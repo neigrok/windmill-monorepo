@@ -1,11 +1,3 @@
-// The keypad sheet — the same twelve keys for both numbers, with the comma and the ± stood down
-// in reps mode rather than removed, so the geometry a chalked thumb learned never moves.
-//
-// The guarantee this component exists to keep: an invalid entry never silently reverts and never
-// silently dismisses. Return and a tap outside commit exactly like Set — but only when the entry is
-// valid; when it is not they leave the sheet up with the message that names the problem. The lifter
-// leaves by deciding: Set writes the number, Cancel keeps the one they had.
-
 import React, { useEffect, useState } from 'react';
 import { backspace, echoOf, isKeyLive, KEYS, openPad, parseEntry, pressKey } from './entry.js';
 

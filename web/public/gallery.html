@@ -32,16 +32,13 @@
     <meta name="twitter:image:alt" content="The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark." />
     <style>
       /* This page's own type only — the family chrome and the faces arrive on the two sheets
-         linked above, served by scripts/staticPageAssets.js. Colours are light-theme values from
-         src/styles/tokens/*.css and the share palette (src/products/roadmap/share/palette.js, light).
-         The card below is the X2 #12 gallery thumb rendered as plain HTML: same frame, same kind
-         rule, same progress readout. The server (adapters/http/GalleryApi.cpp) fills the fenced
-         block with one <a class="card"> per listed tree; everything else on this page is static. */
+         linked above, served by scripts/staticPageAssets.js; these pages are light-only.
+         The server (adapters/http/GalleryApi.cpp) fills the fenced block below with one
+         <a class="card"> per listed tree; everything else on this page is static. */
       .lede { max-width: 640px; padding: 40px 0 30px; }
       .lede h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
       .lede p { font-size: 16.5px; line-height: 1.6; color: #6F5F45; margin: 14px 0 0; }
 
-      /* The wall. auto-fill so one tree doesn't stretch across the page and twenty don't crush. */
       .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 20px; padding-bottom: 8px; }
 
       .card { display: block; background: #FFFFFF; border: 1px solid #E5D9C0; border-radius: 18px; overflow: hidden; text-decoration: none; box-shadow: 0 1px 2px rgba(33, 27, 19, .05); transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1); }
@@ -59,13 +56,8 @@
       .meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px; font-weight: 700; color: #6F5F45; }
       .meta .sep { display: block; width: 3px; height: 3px; border-radius: 50%; background: #C9BCA0; flex: none; }
       .meta .forks { color: #92805F; }
-      /* Lineage is last on the line and the only thing allowed to clip: .meta is a nowrap flex
-         row, so a long source title would otherwise push the n/m off the card edge. */
       .meta .from { color: #92805F; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-      /* The empty wall. Not an error — an invitation, and honest about why it's bare. It is a
-         child of the same grid the cards fill, so it must claim every column or it renders as a
-         lone card-width sliver against an empty page. */
       .empty { grid-column: 1 / -1; border: 1px dashed #D3C2A0; border-radius: 18px; padding: 48px 28px; text-align: center; }
       .empty h2 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 21px; margin: 0; color: #211B13; }
       .empty p { font-size: 15px; line-height: 1.65; color: #6F5F45; margin: 10px auto 0; max-width: 430px; }

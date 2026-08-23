@@ -1,7 +1,4 @@
-// The pure half of the import: read a Lift export, fold its free-text exercise names onto catalog
-// ids, derive the Windmill ids, and refuse every row the training log's domain would refuse —
-// before a single byte goes over the wire. Nothing here touches the network or the disk, so every
-// rule below is a unit test away.
+// The pure half of the import: no network, no disk.
 
 export const MAX_INSTANT_MS = 253402300799000;   // 9999-12-31T23:59:59Z — Training.h kMaxInstantMs
 export const MIN_WEIGHT_KG = -500;               // negative is LEGAL: band-assisted work
@@ -11,24 +8,21 @@ export const MAX_REPS = 500;
 
 export class ImportRefusal extends Error {}
 
-// The server's one id-shape rule, mirrored from Training.cpp `wellFormedId` so the tool can prove
-// its derivation satisfies it instead of finding out over HTTP.
+// Mirrors Training.cpp `wellFormedId`.
 export function wellFormedId(id) {
   return typeof id === 'string' && id.length >= 8 && id.length <= 64 && /^[A-Za-z0-9_-]+$/.test(id);
 }
 
-// The whole idempotency story in one line: the same Lift UUID always becomes the same Windmill id,
-// so a second run replays onto the rows the first run wrote and changes nothing. 'ses_' + 32 hex
-// is 36 characters — inside the server's 8..64 band.
+// The same Lift UUID must always become the same Windmill id, so a second run replays rather than
+// duplicates. Prefix + 32 hex is 36 characters, inside the server's 8..64 band.
 export function windmillId(prefix, liftUuid) {
   const hex = String(liftUuid ?? '').toLowerCase().replace(/-/g, '');
   if (!/^[0-9a-f]{32}$/.test(hex)) throw new ImportRefusal(`not a lift uuid: ${liftUuid}`);
   return prefix + hex;
 }
 
-// Lift's worst decision was that an exercise is a free-text string, so "Bench Press", "Bench press"
-// and "bench press" are three lifts forever. One normal form undoes it: case, punctuation, spacing
-// and plurals all fold away, and what is left is compared against the catalog's display names.
+// Case, punctuation, spacing and plurals fold away before the name meets the catalog's display
+// names.
 export function normalizeName(name) {
   return String(name ?? '')
     .toLowerCase()
@@ -61,10 +55,8 @@ export function buildCatalogIndex(exercises) {
   return index;
 }
 
-// Exactly one catalog movement under the normal form is a match. Nothing else is: a name that hits
-// nothing, or hits two (display names are mutable user text, and phase-2 customs can collide with a
-// seed), comes back for a human to decide. Ambiguity surfaced beats ambiguity guessed — the whole
-// corpus's integrity is one bad guess away.
+// Exactly one catalog movement under the normal form is a match; zero or two come back for a human
+// to decide.
 export function matchExercise(name, index) {
   const key = normalizeName(name);
   if (key === '') return { status: 'unresolved', exerciseId: null, candidates: [] };
@@ -74,8 +66,7 @@ export function matchExercise(name, index) {
   return { status: 'unresolved', exerciseId: null, candidates: nearestMovements(key, index) };
 }
 
-// Suggestions for the human, never a decision: catalog names sharing tokens with the unmatched one,
-// best overlap first. These are printed beside the name in the mapping file as "what was considered".
+// Suggestions only: catalog names sharing tokens, best overlap first.
 export function nearestMovements(key, index, limit = 5) {
   const wanted = new Set(key.split(' ').filter(Boolean));
   const scored = [];
@@ -91,9 +82,8 @@ export function nearestMovements(key, index, limit = 5) {
   return scored.slice(0, limit).map(({ id, name }) => ({ id, name }));
 }
 
-// Phase one of the fold: every distinct Lift name either lands on a catalog id or lands in the
-// unresolved list. A human mapping (mapping.json) wins over the automatic match — including a
-// mapping the catalog cannot honor, which is itself an unresolved name, not a silent fallback.
+// A mapping.json entry wins over the automatic match; one the catalog cannot honor is itself
+// unresolved, never a silent fallback.
 export function resolveNames(names, catalog, overrides = {}) {
   const index = buildCatalogIndex(catalog);
   const catalogIds = new Set(catalog.map((exercise) => exercise.id));
@@ -154,10 +144,6 @@ export function isInstant(value) {
   return Number.isInteger(value) && value > 0 && value <= MAX_INSTANT_MS;
 }
 
-// Phase two: the export plus the resolved names becomes the exact list of writes to make — and,
-// beside it, every row that will not be made and why. Lift's coach path applied no clamping at all,
-// so its store holds rows the training log's constructors refuse; each one is dropped HERE, counted,
-// and named in the summary. Silent failure is Lift's house style and is explicitly not ours.
 export function planSessions(document, resolved) {
   const sessions = [];
   const skips = [];
@@ -252,8 +238,7 @@ export function planSessions(document, resolved) {
         skips.push({ scope: 'set', label: setLabel, reason: `completedAt is not an instant: ${rawSet?.completedAt}` });
         continue;
       }
-      // The store is numeric(6,2): a third decimal would be rounded on the way in. Nothing is lost
-      // that a lifter can feel, but it is a change to their number and it gets counted, not hidden.
+      // The store is numeric(6,2): a third decimal is rounded on the way in, so count it.
       if (Math.abs(rawSet.weight * 100 - Math.round(rawSet.weight * 100)) > 1e-9)
         counts.setsWeightRounded += 1;
 
@@ -267,8 +252,7 @@ export function planSessions(document, resolved) {
       });
     }
 
-    // A setless session is Lift's accidental-Finish artifact — noise, not history. So is a session
-    // whose every set was refused: an empty shell in the log would claim a workout that has no reps.
+    // A session with no surviving sets is never written: it would claim a workout with no reps.
     if (sets.length === 0) {
       if (rawSets.length === 0) {
         counts.sessionsSkippedNoSets += 1;
@@ -284,9 +268,8 @@ export function planSessions(document, resolved) {
     const lastSetAt = sets[sets.length - 1].completedAt;
     const closeAt = Math.max(lastSetAt, raw.startedAt);
 
-    // An open session ends at its last real activity, not at whenever we noticed — gym's own
-    // auto-close rule, applied to Lift's abandoned sessions. A finish the session could not have
-    // had (absent, out of band, or running backwards against its own start) gets the same instant.
+    // A session ends at its last set when the export's finish is absent, out of band, or earlier
+    // than its own start.
     let finishedAt = raw?.finishedAt;
     let finishedFrom = 'export';
     if (finishedAt === null || finishedAt === undefined) {

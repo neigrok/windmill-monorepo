@@ -1,19 +1,12 @@
-// One instanced draw for every fruit. A base quad drawn N times; per-instance
-// attributes carry position/color/tier/glow/icon. Color picks the kind hue; the
-// tier picks the treatment, mirroring the design's dag-clean-colors states:
-//   unavailable → same hue at low opacity, muted ring, no glow
-//   available   → flat saturated fill + kind ring, glow on hover
-//   inprogress  → available's fill + ring + a soft glow breathing at half the crown (no ring)
-//   activated   → same + an outer ring and a static halo (only the root breathes)
-// The body is procedural; no per-node JS runs per frame.
+// One instanced draw for every node; per-instance attributes carry position/color/tier/glow/icon. Tier: 0 unavailable, 1 available, 2 ember, 3 activated.
 import { createProgram, uniformLocations } from './glcore.js';
 import { NODE_COLORS, NODE_COLOR_NAMES, nodeTier, BACKGROUND, NODE_SIZE, BARK } from '../theme.js';
 import { isGrouped } from '../selection/bulkSelection.js';
 
 const QUAD_PADDING = 1.9;
 const NC = NODE_COLOR_NAMES.length;
-const BLOOM_NONE = -1000; // sentinel: this node is not blooming
-const ARC_NONE = -1;      // sentinel arc target: this node has no sub-tasks -> no arc, no track
+const BLOOM_NONE = -1000; // sentinel: not blooming
+const ARC_NONE = -1; // sentinel: no arc
 
 const VERTEX_SRC = `#version 300 es
 precision highp float;
@@ -93,8 +86,7 @@ void main() {
   float pressE = feedbackEase(aFeedback.z, aFeedback.w, uTime, PRESS_DUR);
   float fbScale = (1.0 + 0.06 * hoverE) * (1.0 - 0.03 * pressE);
   if (uMotion < 0.5) fbScale = 1.0;
-  // grouped set (>=2): suppress the single-select scale bump so the set reads calm — a set is one
-  // thing, not N loud suns. A single selection (uGrouped 0) keeps the 0.14 lift byte-identical.
+  // uGrouped (a set of >=2) suppresses the single-select scale bump
   float size = uNodeSize * (1.0 + aSelected * 0.14 * (1.0 - uGrouped) + aEmphasis * 0.55) * settle * fbScale * uPadding;
   vec2 world = aOffset + aQuad * size;
   vec2 screen = (world - uCamera) * uZoom;
@@ -160,8 +152,7 @@ float feedbackEase(float start, float target, float now, float dur) {
   float e = t * t * (3.0 - 2.0 * t);
   return mix(1.0 - target, target, e);
 }
-// straight-alpha source-over: composite a translucent (sc, sa) onto (dc, da) so the
-// track reads at its true .18 -- the crown idiom would square small alphas to near nothing.
+// Straight-alpha source-over, so a small alpha composites at its true value.
 vec4 over(vec3 sc, float sa, vec3 dc, float da) {
   float a = sa + da * (1.0 - sa);
   return vec4(a > 0.0 ? (sc * sa + dc * da * (1.0 - sa)) / a : dc, a);
@@ -181,9 +172,8 @@ void main() {
   float bodyMask = 1.0 - smoothstep(EDGE - 0.02, EDGE + 0.015, dist);
   float ringBand = smoothstep(EDGE - 0.12, EDGE - 0.05, dist) * (1.0 - smoothstep(EDGE - 0.02, EDGE + 0.005, dist));
 
-  // ---- fill / ring / glyph: a litness lerp, cross-faded fromTier->toTier on bloom ----
-  // Litness 0 = muted (unavailable), 1 = full (available/activated share a palette).
-  // A bloom eases litness from the tier the node left to the tier it woke into.
+  // ---- fill / ring / glyph ----
+  // litness 0 = muted (unavailable), 1 = full; a bloom eases it fromTier->toTier
   float toLit = tier == 0 ? 0.0 : 1.0;
   float lit = toLit;
   if (vBloom.x > -900.0) {
@@ -207,12 +197,10 @@ void main() {
 
   vec3 body = mix(fill, ringColor, ringBand);
   body = mix(body, glyphColor, iconMask * uIconOpacity);
-  // The loud single-select body lift belongs to a LONE selection; a grouped member (uGrouped 1)
-  // keeps its resting brightness and wears the quiet bark ring below instead. singleSel == vSelected
-  // when uGrouped is 0, so the single-select and read-only single-tap look stay byte-identical.
+  // the loud body lift is single-select only; a grouped member wears the bark ring below instead
   float singleSel = vSelected * (1.0 - uGrouped);
   body *= (1.0 + singleSel * 0.20);
-  // hover brightness: a subtle lift kept even under reduced motion (color feedback)
+  // hover brightness: kept even under reduced motion
   float hoverE = feedbackEase(vFeedback.x, vFeedback.y, uTime, HOVER_DUR);
   body *= (1.0 + 0.12 * hoverE);
 
@@ -222,9 +210,7 @@ void main() {
   float strength = 0.0;
   if (tier == 3) {
     strength = HALO_STEADY; // no oscillation -- a still a .28 halo
-    // blossom overshoot: a finite lift ->overshoot->steady, starting +80ms after ignite.
-    // It swells from wherever the glow already sat -- 0 from available, the ember glow from an
-    // in-progress node -- so an ember->complete never dips to black before it blooms.
+    // blossom overshoot: lift->overshoot->steady from wherever the glow already sat, +80ms after ignite
     if (vBloom.w > 0.5 && vBloom.x > -900.0 && uMotion > 0.5) {
       float fromGlow = int(vBloom.y + 0.5) == 2 ? EMBER_MID : 0.0;
       float bt = (uTime - vBloom.x - 0.08) / BLOSSOM;
@@ -237,10 +223,9 @@ void main() {
       }
     }
   } else if (tier == 2) {
-    // ember: no static halo, no outer ring -- just a soft glow breathing in phase with the
-    // crown at half its amplitude, resting at a .22 and peaking below complete's a .28.
+    // ember: no static halo or outer ring, just a glow breathing at half the crown's amplitude
     strength = EMBER_MID + (crownWave - 0.5) * (CROWN_HI - CROWN_LO) * EMBER_AMP;
-    // kindle glow-in: the glow rises from 0 (the available it woke from) over the bloom window.
+    // kindle glow-in: the glow rises from 0 over the bloom window
     if (vBloom.x > -900.0 && uMotion > 0.5) {
       float gt = clamp((uTime - vBloom.x) / max(vBloom.z, 0.001), 0.0, 1.0);
       strength *= smoothstep(0.0, 1.0, gt);
@@ -248,8 +233,7 @@ void main() {
   }
   if (vEmphasis > 0.5) strength = mix(CROWN_LO, CROWN_HI, crownWave); // crown halo a .22<->.34
   if (tier >= 1) strength = max(strength, singleSel); // the loud kind-hue glow is single-select only
-  // arrival pulse: a finite double-bump when an event lands (any tier), 2400ms with two
-  // decaying crests (a .42->.34) -- felt on the graph first (design F). Gated by motion.
+  // arrival pulse: a finite double-bump on any tier when an event lands, gated by motion
   float pt = uTime - vPulseStart;
   if (vPulseStart > -900.0 && pt >= 0.0 && pt < PULSE_DUR) {
     float amp = mix(PULSE_CREST1, PULSE_CREST2, (pt - PULSE_CYCLE * 0.5) / PULSE_CYCLE);
@@ -268,11 +252,8 @@ void main() {
   color = color * (1.0 - outerA) + base * outerA;
   float alpha = max(max(bodyMask, glowAmt), outerA);
 
-  // ---- grouped multi-select + marquee preview: a quiet bark ring, a faint bark halo, no scale ----
-  // A set of >=2 (grouped) wears bark where a lone selection wears the loud terracotta lift above, so
-  // the set reads as one thing. A node the marquee is dragging over (vPreview, pre-commit) takes a
-  // LIGHTER bark ring — honest before commit; release promotes it to a full member. uGrouped is 0 for
-  // a single selection and no marquee sets vPreview, so both terms vanish and the single look is exact.
+  // ---- grouped multi-select + marquee preview: bark ring, faint bark halo, no scale ----
+  // a marquee-preview node (pre-commit) takes a lighter ring than a committed member
   float grouped = vSelected * uGrouped;
   float barkRing = 1.0 - smoothstep(0.04, 0.09, abs(dist - 0.98)); // a thin band hugging the body rim
   float ringA = max(barkRing * 0.85 * grouped, barkRing * 0.42 * vPreview * (1.0 - grouped));
@@ -307,11 +288,7 @@ void main() {
     alpha = max(alpha, dashA);
   }
 
-  // ---- progress arc: a kind-hued gauge on nodes with sub-tasks (never on complete) ----
-  // An information layer orthogonal to tier: a thin ~2px ring just outside the body with a
-  // faint full-circle track behind it, sweeping from 12 o'clock clockwise across the fraction.
-  // Locked dims to a .32, complete draws nothing (the halo owns that radius), and it fades
-  // out below 60% zoom where the 2px would alias to noise.
+  // ---- progress arc: a kind-hued gauge on nodes with sub-tasks, never on complete ----
   if (vArc.y >= 0.0 && tier != 3) {
     float frac = vArc.y;
     if (uMotion > 0.5) {
@@ -369,7 +346,7 @@ export class NodeBatch {
     this.selectedIndex = -1;
     this.hoveredIndex = -1;
     this.pressedIndex = -1;
-    this.grouped = 0; // 1 once the selection is a set of >=2 — the shader swaps terracotta for bark
+    this.grouped = 0; // 1 once the selection is a set of >=2
 
     this.program = createProgram(gl, VERTEX_SRC, FRAGMENT_SRC);
     this.u = uniformLocations(gl, this.program, [
@@ -442,22 +419,22 @@ export class NodeBatch {
     const colors = this.colors;
     const glowSeeds = new Float32Array(count);
     this.selected = new Float32Array(count);
-    this.preview = new Float32Array(count); // 1 while a marquee drag touches this node (pre-commit)
+    this.preview = new Float32Array(count); // 1 while a marquee drag touches this node
     const iconCells = new Float32Array(count);
     this.tiers = new Float32Array(count);
     const forms = new Float32Array(count);
     this.faded = new Float32Array(count);
     const emphasis = new Float32Array(count);
     this.pulseStarts = new Float32Array(count).fill(-1000); // sentinel: no pulse
-    this.bloom = new Float32Array(count * 4); // (start, fromTier, durSec, blossom) per node
+    this.bloom = new Float32Array(count * 4); // (start, fromTier, durSec, blossom)
     for (let i = 0; i < count; i++) this.bloom[i * 4] = BLOOM_NONE;
     this.feedback = new Float32Array(count * 4); // (hoverStart, hoverTo, pressStart, pressTo)
     for (let i = 0; i < count; i++) {
       this.feedback[i * 4] = BLOOM_NONE;     // hoverStart sentinel
       this.feedback[i * 4 + 2] = BLOOM_NONE; // pressStart sentinel
     }
-    this.arc = new Float32Array(count * 3); // (fromFraction, targetFraction, easeStart) per node
-    for (let i = 0; i < count; i++) this.arc[i * 3 + 1] = ARC_NONE; // target sentinel: no sub-tasks
+    this.arc = new Float32Array(count * 3); // (fromFraction, targetFraction, easeStart)
+    for (let i = 0; i < count; i++) this.arc[i * 3 + 1] = ARC_NONE; // no-arc sentinel
 
     renderNodes.forEach((node, i) => {
       this.idToIndex.set(node.id, i);
@@ -504,8 +481,6 @@ export class NodeBatch {
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 2 * 4, this.offsets, i * 2, 2);
   }
 
-  // Recolour one node in place — the live kind preview while a swatch is hovered.
-  // No history; the model rebuild on commit (or restore on leave) supersedes it.
   setColor(id, name) {
     if (!this.colors) return;
     const i = this.idToIndex.get(id);
@@ -516,8 +491,7 @@ export class NodeBatch {
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.colors, i, 1);
   }
 
-  // Fire a one-shot arrival pulse on one node — stamps the current time into its
-  // aPulseStart; the shader draws the decaying double-bump for the next 2400ms.
+  // Stamp aPulseStart so the shader draws the arrival double-bump.
   pulse(id, atSeconds) {
     if (!this.pulseStarts) return;
     const i = this.idToIndex.get(id);
@@ -528,15 +502,13 @@ export class NodeBatch {
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 4, this.pulseStarts, i, 1);
   }
 
-  // Ignite one node: the animated state-rise. Records the tier it's leaving, snaps
-  // the resting tier to toTier, and stamps a bloom the shaders read for the next
-  // ~500ms — a color cross-fade, a scale settle, and (on a full node) a halo bloom.
+  // Records the tier the node leaves, snaps the resting tier to toTier, and stamps the bloom the shaders read.
   igniteNode(id, atSeconds, toTier, opts = {}) {
     if (!this.bloom) return;
     const i = this.idToIndex.get(id);
     if (i === undefined) return;
     const durationMs = opts.durationMs ?? 280;
-    const blossom = opts.blossom ?? (toTier === 3); // the halo bloom belongs to complete
+    const blossom = opts.blossom ?? (toTier === 3);
     const fromTier = this.tiers[i];
     this.tiers[i] = toTier;
     this.bloom[i * 4] = atSeconds;
@@ -564,9 +536,7 @@ export class NodeBatch {
     if (changed) this.upload(this.tierBuffer, this.tiers);
   }
 
-  // Set one node's progress arc. A fraction in [0,1] eases from the resting value over 280ms
-  // (the shader snaps under reduced motion); a fresh arc snaps in (from == target, no grow).
-  // fraction null/absent/< 0 clears it to the no-arc sentinel. Mirrors setColor's GPU sub-update.
+  // A fraction in [0,1] eases from the resting value; null / absent / negative clears it to the no-arc sentinel.
   setArc(id, fraction, atSeconds) {
     if (!this.arc) return;
     const i = this.idToIndex.get(id);
@@ -577,9 +547,7 @@ export class NodeBatch {
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 12, this.arc, i * 3, 3);
   }
 
-  // Bulk arc push: nodes in the map take their fraction, every other node clears — so a node
-  // that lost its sub-tasks loses its arc without the caller tracking removals. One buffer
-  // upload, like setStates; runs on workspace-data change, never per frame.
+  // Nodes in the map take their fraction, every other node clears; one buffer upload.
   setArcs(map, atSeconds) {
     if (!this.arc) return;
     for (const [id, i] of this.idToIndex) this.writeArc(i, map.get(id), atSeconds);
@@ -604,38 +572,30 @@ export class NodeBatch {
   setSelected(id) {
     if (!this.selected) return;
     const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
-    this.selected.fill(0);  // clear EVERY prior highlight — incl. a setSelectedSet sweep, which left selectedIndex=-1
+    this.selected.fill(0); // clear every prior highlight, incl. a setSelectedSet sweep
     this.selectedIndex = i;
-    this.grouped = 0; // a lone node keeps the loud terracotta look
+    this.grouped = 0;
     if (i >= 0) this.selected[i] = 1;
     this.upload(this.selectedBuffer, this.selected);
   }
 
-  // Multi-select highlight: every node in the set reads aSelected=1, every other 0 — the
-  // shader already lifts a selected node (size/brightness/glow), so a whole set highlights
-  // for free. One buffer sweep, mirroring setFaded. Clears the single-index bookkeeping so a
-  // later setSelected does not try to unset a stale slot (the full sweep is the authority).
+  // One buffer sweep; it clears the single-index bookkeeping so a later setSelected cannot unset a stale slot.
   setSelectedSet(idSet) {
     if (!this.selected) return;
     for (const [id, i] of this.idToIndex) this.selected[i] = idSet.has(id) ? 1 : 0;
     this.selectedIndex = -1;
-    // A set of >=2 wears the quiet bark ring (grouped); one (or none) keeps the loud terracotta look.
-    // The same gate lights the phone bulk bar's members, so desktop and mobile read identically.
     this.grouped = isGrouped(idSet.size) ? 1 : 0;
     this.upload(this.selectedBuffer, this.selected);
   }
 
-  // The live marquee preview: every node the drag rect is touching reads aPreview=1 (a lighter bark
-  // ring), the rest 0 — honest before commit; release promotes them to full members. One whole-buffer
-  // sweep + upload per drag move, mirroring setSelectedSet; an empty set clears it (commit/cancel).
+  // Every node the drag rect touches reads aPreview=1; an empty set clears the preview.
   setMarqueePreview(idSet) {
     if (!this.preview) return;
     for (const [id, i] of this.idToIndex) this.preview[i] = idSet.has(id) ? 1 : 0;
     this.upload(this.previewBuffer, this.preview);
   }
 
-  // Hover feedback (decoupled from selection): the newly hovered node swells; the
-  // node we left eases back out. Stamps atSeconds so the shader runs the ease.
+  // Stamps atSeconds so the shader eases the newly hovered node in and the last one out.
   setHover(id, atSeconds) {
     if (!this.feedback) return;
     const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
@@ -653,7 +613,7 @@ export class NodeBatch {
     }
   }
 
-  // Press feedback: same shape as hover but on the (z, w) slot -- the node dips 0.97.
+  // Press feedback: same shape as hover, on the (z, w) slot.
   setPress(id, atSeconds) {
     if (!this.feedback) return;
     const i = id == null ? -1 : this.idToIndex.get(id) ?? -1;
@@ -677,8 +637,6 @@ export class NodeBatch {
     gl.bufferSubData(gl.ARRAY_BUFFER, i * 16, this.feedback, i * 4, 4);
   }
 
-  // Dim the nodes a connect-drag can't target (they'd create a cycle). A whole-
-  // buffer upload, but it runs once per gesture — not per frame.
   setFaded(idSet) {
     if (!this.faded) return;
     for (const [id, i] of this.idToIndex) this.faded[i] = idSet.has(id) ? 1 : 0;

@@ -1,10 +1,3 @@
-// Tap-to-type, pinned. Two rules are under test. The first is the one Lift got wrong: an invalid
-// entry never silently reverts — every refusal below names the problem AND teaches the format, and
-// the empty buffer even names the value Cancel would keep. The second is that the pad never writes
-// a number the lifter did not type: it opens on the value it was opened from, the first digit
-// starts a fresh number rather than appending to that seed, and a key that will not fit is refused
-// whole instead of pushing a typed digit off the end.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -66,8 +59,6 @@ test('a key that will not fit is refused whole — the sign never eats a typed d
   assert.deepEqual(pressKey(pad('12345678'), '±', 'weight'), pad('12345678'));
   assert.deepEqual(pressKey(pad('1234567'), '±', 'weight'), pad('-1234567'));
   assert.deepEqual(pressKey(pad('-1234567'), '±', 'weight'), pad('1234567'));
-  // The case that made this a correctness defect and not a cosmetic one: capping the SIGNED
-  // string turned a typed 499 into a committable −49.
   assert.deepEqual(pressKey(pad('00000499'), '±', 'weight'), pad('00000499'));
   assert.deepEqual(parseEntry(pressKey(pad('00000499'), '±', 'weight'), 'weight', 20), {
     valid: true, value: 499, message: WEIGHT_HINT,
@@ -127,8 +118,6 @@ test('parseEntry — reps are whole, 1 to 99, and the comma cannot reach them', 
   assert.deepEqual(parseEntry(pad('14'), 'reps', 5), { valid: true, value: 14, message: REPS_HINT });
   assert.deepEqual(parseEntry(pad('1'), 'reps', 5), { valid: true, value: 1, message: REPS_HINT });
   assert.deepEqual(parseEntry(pad('99'), 'reps', 5), { valid: true, value: 99, message: REPS_HINT });
-  // The refusal that was the defect: 0 read as valid here and the server refuses reps < 1, so the
-  // only word the lifter got was a refusal banner after the set had already failed to land.
   assert.deepEqual(parseEntry(pad('0'), 'reps', 5), {
     valid: false, value: null, message: 'Whole reps, 1 to 99',
   });

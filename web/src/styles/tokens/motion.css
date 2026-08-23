@@ -17,29 +17,23 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Crown/pulse waveform (motion-language.md §crown/pulse): colour-agnostic,
-   reads the per-node glow colour from --nd-glow. Infinite use is reserved for
-   the crowned root (2400ms ease-glow); everything else breathes finitely.
-   (The old fixed-colour wm-pulse-glow / wm-pulse-glow-olive were retired —
-   this waveform replaced them.) */
+/* Crown/pulse waveform: colour-agnostic, reading the per-node glow from --nd-glow. Infinite use is
+   reserved for the crowned root (2400ms ease-glow); everything else breathes finitely. */
 @keyframes wm-pulse-node {
   0%, 100% { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
   50%      { box-shadow: 0 0 0 5px var(--nd-glow), 0 0 34px var(--nd-glow); }
 }
 
-/* Ember — the in-progress breath (F1). Same 2400ms clock as the crown, in
-   phase; amplitude peaks BELOW a complete node's resting halo, and there is
-   no ring offset — the halo is earned at complete. Colour-agnostic via
-   --nd-glow. Use: `wm-ember var(--duration-glow) var(--ease-glow) infinite`.
-   Reduced motion: freeze at mid-breath (static face: --glow-ember, shadows.css). */
+/* Ember — the in-progress breath. Same 2400ms clock as the crown and in phase; amplitude peaks
+   BELOW a complete node's resting halo, with no ring offset. Colour-agnostic via --nd-glow.
+   Use: `wm-ember var(--duration-glow) var(--ease-glow) infinite`. */
 @keyframes wm-ember {
   0%, 100% { box-shadow: 0 0 6px 0 color-mix(in srgb, var(--nd-glow) 28%, transparent), 0 0 13px 2px color-mix(in srgb, var(--nd-glow) 12%, transparent); }
   50%      { box-shadow: 0 0 9px 1px color-mix(in srgb, var(--nd-glow) 60%, transparent), 0 0 18px 3px color-mix(in srgb, var(--nd-glow) 26%, transparent); }
 }
 
-/* Reduced motion: freeze the ember at its static mid-breath face (--glow-ember).
-   Canon SkillNode also guards this via JS noMotion; this keeps DOM consumers that
-   apply wm-ember unconditionally (AuthLanding / SignInDialog) reduced-motion-safe. */
+/* Reduced motion: freeze the ember at its static mid-breath face (--glow-ember), for DOM consumers
+   that apply wm-ember unconditionally. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes wm-ember {
     0%, 100% { box-shadow: var(--glow-ember); }
@@ -52,9 +46,8 @@
   100% { transform: scale(1); }
 }
 
-/* Bloom — a node igniting to `complete` (motion-language.md §bloom).
-   DOM approximation of the two-phase ignite+blossom; the renderer follows the
-   full spec. Use: `wm-bloom 560ms var(--ease-soft) 1`, with --nd-glow set. */
+/* Bloom — a node igniting to `complete`. A DOM approximation of the two-phase ignite+blossom; the
+   renderer follows the full spec. Use: `wm-bloom 560ms var(--ease-soft) 1`, with --nd-glow set. */
 @keyframes wm-bloom {
   0%   { transform: scale(1); box-shadow: 0 0 0 0 transparent; filter: saturate(0.6) brightness(0.97); }
   30%  { filter: none; }
@@ -62,9 +55,8 @@
   100% { transform: scale(1); box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
 
-/* Pulse ×2, decaying — the finite attention beat that marks a new frontier
-   (motion-language.md §crown/pulse). Two double-time cycles inside one run.
-   Use: `wm-pulse-echo 2400ms var(--ease-glow) 1` — never infinite. */
+/* Pulse ×2, decaying — the finite attention beat that marks a new frontier, two double-time cycles
+   in one run. Use: `wm-pulse-echo 2400ms var(--ease-glow) 1` — never infinite. */
 @keyframes wm-pulse-echo {
   0%, 100% { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
   20%      { box-shadow: 0 0 0 6px var(--nd-glow), 0 0 40px var(--nd-glow); }

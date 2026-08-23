@@ -1,8 +1,3 @@
-// The paste-import grammar contract (F3 §03): every table row, the messy-input
-// variants, and the invariants the rest of the system leans on — deterministic ids
-// (the ceremony jitter hashes them), exhaustive dupe renames (SkillTree throws on a
-// duplicate id), and a gutter entry for every line (the composer renders them 1:1).
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan, serializePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
@@ -152,13 +147,10 @@ test('a heading matching an existing kind binds case-insensitively — no relabe
 });
 
 test('bindOnly (append): an unmatched heading mints a fresh hue, never relabeling an existing kind', () => {
-  // Birth mode relabels the next unclaimed existing kind — fine on throwaway defaults.
   const birth = parsePlan('Plan\n## Deploy\n- ship', KINDS);
   assert.equal(birth.kinds[0].label, 'Deploy');
   assert.equal(birth.kinds[0].source, 'relabeled');
 
-  // Append mode must never rename the user's real kinds: "Build" stays "Build", and the
-  // unmatched "Deploy" mints the first free palette hue instead.
   const append = parsePlan('Plan\n## Deploy\n- ship', KINDS, { bindOnly: true });
   assert.deepStrictEqual(append.kinds, [
     { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make', source: 'existing' },
@@ -360,25 +352,20 @@ test('serializePlan is best-effort on a multi-parent DAG — primary parent inde
   assert.equal(find('Dogfood it for a week').color, 'sky');
   assert.equal(find('Run a friendly beta').color, 'gold');
 
-  // prerequisites[0] survives as the indent parent, even across a two-parent node.
   assert.deepStrictEqual(find('Build the walking skeleton').prerequisites, [find('Pick a boring stack and deploy it').id]);
   assert.deepStrictEqual(find('Launch it where your people are').prerequisites, [find('Run a friendly beta').id]);
   assert.deepStrictEqual(find('Ship the first fix release').prerequisites, [find('Launch it where your people are').id]);
 
-  // Extra prerequisites are preserved as a `needs also` note reparsed into the description.
   assert.match(find('Build the walking skeleton').description, /needs also: Sketch the core flow on paper/);
   assert.match(find('Launch it where your people are').description, /needs also: Make the landing page, Wire up analytics and feedback/);
   assert.match(find('Run a friendly beta').description, /needs also: Smooth the first-run experience, Handle failure gracefully/);
 
-  // A cross-kind primary parent can't be indented under (wrong section), so it too rides as a note.
   assert.match(find('Dogfood it for a week').description, /needs also: Make the core feature real/);
   assert.match(find('Wire up analytics and feedback').description, /needs also: Make the core feature real/);
 });
 
 test('serializePlan emits the url string from { url, label } link objects, never [object Object]', () => {
-  // The live app carries node.links as { url, label } objects (lattice + TreeJson), not the
-  // bare strings parsePlan produces. Export must emit the url, or every link in the archive
-  // becomes the literal "[object Object]".
+  // The live app carries node.links as { url, label } objects; export must emit the url.
   const tree = {
     title: 'Reading list',
     nodes: [
@@ -396,7 +383,6 @@ test('serializePlan emits the url string from { url, label } link objects, never
   assert.ok(markdown.includes('https://example.com/tri'), markdown);
   assert.ok(markdown.includes('https://bare.example/x'), markdown);
 
-  // and the bare urls round-trip back into link entries
   const back = parsePlan(markdown, kinds);
   const child = back.nodes.find((node) => node.label === 'Draw a triangle');
   assert.deepStrictEqual(child.links, ['https://example.com/tri', 'https://bare.example/x']);

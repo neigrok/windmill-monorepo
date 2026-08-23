@@ -1,7 +1,5 @@
-// A page's body split into passages — roughly sentences — each kept with its half-open [lo, hi) char
-// range into the body. The range is what makes a hit a POSITION rather than a document: search points
-// at exactly the words that resonated, and the canvas highlights that span in place. Pure and
-// span-exact: body.slice(lo, hi) === passage.text for every passage returned.
+// A page's body split into passages — roughly sentences — each with its half-open [lo, hi) char range
+// into the body. Span-exact: body.slice(lo, hi) === passage.text for every passage returned.
 
 export function chunk(body) {
   const passages = [];

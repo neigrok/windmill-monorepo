@@ -1,17 +1,11 @@
-// The "what's next" ranking (design: whats-next-panel) — the one shared rule for the work a
-// tree offers right now. A step's rank is how many children THIS completion ALONE would open
-// (X4-honest: the child isn't done and its every other prerequisite already is), ties broken by
-// id; the offer is capped at three, at most two per kind. Pure — no React, no storage — so both
-// the activity dock's Next-up section (NextUp.jsx) and the phone list's shelf (list/outline.js)
-// read it the same way and stay in step.
+// A step's rank is how many children THIS completion ALONE would open (the child isn't done and its
+// every other prerequisite already is), ties broken by id.
 
 import { DEFAULT_NODE_COLOR } from '../theme.js';
 
 const FEATURED_CAP = 3;
 const KIND_CAP = 2;
 
-// The rank itself, exported because it is the one number the app orders work by — the plan below
-// ranks the ready set with it, and a locked step's frontier (list/explore.js) ranks with it too.
 export function unlocksOf(tree, states, id) {
   return tree.childrenOf(id).filter((child) =>
     states.get(child.id) !== 'complete'

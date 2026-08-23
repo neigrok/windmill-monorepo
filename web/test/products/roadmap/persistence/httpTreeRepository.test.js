@@ -59,11 +59,6 @@ test('loadTree throws on a status, so the caller can fall back to the local blob
   });
 });
 
-// The bootstrap read answers with the overlay to OPEN at, folded from the same stamped-register
-// frame the socket lane joins — one codec for both doors. `loadServerProgress` is gone with the
-// diff it existed for: nothing asks "which marks has the server never heard of" any more, because
-// an unacked register answers that question by itself.
-
 test('loadProgress folds the server frame into the overlay to open at, credentialed', async () => {
   const body = {
     marks: [

@@ -1,7 +1,5 @@
-// The door to the fixtures: pick a corpus, and the journal opens on it.
-//
-// Dev only — `journalRoutes` compiles this route out of a production build. Pick a scenario here, or
-// jump straight to one with #/journal/echoes-lab?scenario=one and land on the canvas with it loaded.
+// The door to the fixtures: pick a corpus, or jump straight to one with #/journal/echoes-lab?scenario=one.
+// Dev only — `journalRoutes` compiles this route out of a build.
 
 import React, { useEffect } from 'react';
 import { SCENARIOS } from './fixtures.js';

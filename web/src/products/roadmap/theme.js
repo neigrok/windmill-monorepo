@@ -1,17 +1,5 @@
-// Design tokens the WebGL scene needs as concrete values — WebGL can't read CSS
-// custom properties. These are pulled from the Windmill design system
-// (tokens/colors.css `--kind-*` + the dag-clean-colors exploration) so the GPU
-// look matches it 1:1.
-//
-// A node's look is two orthogonal things:
-//   • color — the node's *kind* (a category). Picks the hue: `base` (accent-500)
-//     is the flat fill, `ring` (accent-600) the border, `soft` (accent-200) the
-//     glyph, `glow` the halo.
-//   • state — one of four tiers in the tree (design: dag-clean-colors):
-//       unavailable → the same hue at low opacity, no glow (locked)
-//       available   → saturated fill + ring, no resting glow (glow on hover)
-//       inprogress  → available's fill + ring + a soft glow breathing at half the crown
-//       activated   → same + an outer ring + a breathing halo
+// Concrete token values the WebGL scene needs; it cannot read CSS custom properties.
+// Per hue: base = fill, ring = border, soft = glyph, glow = halo.
 
 export const NODE_COLORS = {
   terracotta: { base: '#BC6C42', ring: '#9D5330', soft: '#EAC6B0', glow: 'rgba(188,108,66,0.50)' },
@@ -25,43 +13,32 @@ export const NODE_COLORS = {
 export const NODE_COLOR_NAMES = Object.keys(NODE_COLORS);
 export const DEFAULT_NODE_COLOR = 'terracotta';
 
-// The tree's four visual tiers. Indices are what the shaders receive; higher = more
-// progress, so a state diff reads growth as a rise in tier. In-progress ("ember") is a
-// third calm read between available and complete — not a re-hue and not a fourth read.
+// Tier indices are what the shaders receive; higher = more progress.
 const TIER_LOCKED = 0;
 const TIER_AVAILABLE = 1;
 export const TIER_EMBER = 2;
 export const TIER_COMPLETE = 3;
 export function nodeTier(state) {
-  if (state === 'complete') return TIER_COMPLETE; // activated — earned
-  if (state === 'active') return TIER_EMBER;      // in-progress — kindled, not yet earned
+  if (state === 'complete') return TIER_COMPLETE;
+  if (state === 'active') return TIER_EMBER;
   if (state === 'available') return TIER_AVAILABLE;
-  return TIER_LOCKED; // locked → unavailable
+  return TIER_LOCKED;
 }
 
-// A node's structural *form*, orthogonal to its tier — a dashed ring the editing
-// gestures reveal. `bud` is a just-born, still-unnamed tip (grows a name/edges);
-// `unlinked` is a stray with neither parents nor children (a leaf whose last
-// branch was cut) that wants re-attaching. Authored nodes are always `linked`.
+// `bud` is a just-born, still-unnamed tip; `unlinked` is a stray with neither parents nor children.
 export function nodeForm(label, parentCount, childCount) {
   if (parentCount === 0 && childCount === 0) return 2; // unlinked — a detached stray
   if (!label || label.trim() === '') return 1; // bud — created but not yet named
   return 0; // linked
 }
 
-// An edge grows once its source is complete (the dependency is satisfied).
 export function isDone(state) {
   return state === 'complete';
 }
 
 export const CONNECTOR = { inactive: '#D3C2A0' };
 
-// The grouped multi-selection treatment (brief #10): a set of two or more wears a quiet bark
-// ring + faint bark glow (never the loud single-select terracotta), so the set reads as one
-// thing — shared by the desktop marquee/action-card and the phone bulk bar alike. The GL scene
-// bakes concrete values (WebGL can't read CSS vars), mirroring the light `--color-bark` token.
-// BARK_CREAM is the warm cream a branch brightens toward when BOTH its endpoints are in the set,
-// so the selection reads as one connected shape (quieter than a white single-edge select).
+// BARK_CREAM is the warm cream a branch brightens toward when BOTH its endpoints are in the set.
 export const BARK = '#9C6B44';
 export const BARK_CREAM = '#EAD8B0';
 

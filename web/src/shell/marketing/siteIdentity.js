@@ -1,18 +1,9 @@
-// Who stands behind every page, and the one share card they all unfurl with. Brand-level facts, so
-// they live on the shell side and each product's landing head imports them rather than restating
-// them — three copies of an organization block is three chances to disagree about our own name.
-//
-// Split out of landingHeads.js so a product's landing head can reach these without importing the
-// shell's composition file, which imports the registry, which imports every product. Pure data and
-// no imports of its own: scripts/build-landing-shells.mjs reads this chain in plain Node.
+// Pure data with no imports of its own, so scripts/build-landing-shells.mjs can read it in Node.
 
 export const SITE_ORIGIN = 'https://windmill.works';
 
-// og-image.png is the one share card the whole family owns, so its alt describes that card. A
-// journal or gym link still unfurls with the roadmap's picture — the fix for that is art, not copy.
 export const SHARE_CARD_ALT = 'The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark.';
 
-// One site and one publisher stand behind all four shells — only the page-level entities differ.
 export const SITE_SCHEMA = [
   {
     '@type': 'WebSite',
@@ -38,10 +29,6 @@ export const SITE_SCHEMA = [
   },
 ];
 
-// The two shelves every page in the family ends on. They live here, in the one marketing module
-// that holds no React, because both readers need them and only one of them can run a component:
-// LandingChrome renders them for the visitor, and scripts/build-landing-shells.mjs writes them
-// into the static shell for the crawler that never runs it.
 export const LEGAL_LINKS = [
   { href: '/pricing.html', label: 'Pricing' },
   { href: '/privacy.html', label: 'Privacy' },
@@ -50,9 +37,6 @@ export const LEGAL_LINKS = [
   { href: '/changelog.html', label: 'Changelog' },
 ];
 
-// The shelf's second row is the products off the registry, then the two crawlable surfaces that
-// are pages rather than products. Connect is the only door left to /connect.html, which is why it
-// may never go missing.
 export const SURFACE_LINKS = [
   { href: '/gallery', label: 'Gallery' },
   { href: '/connect.html', label: 'Connect' },

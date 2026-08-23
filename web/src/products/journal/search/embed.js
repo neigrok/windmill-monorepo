@@ -1,17 +1,11 @@
-// The on-device embedder: a passage becomes a fixed-dimension unit vector by hashing each of its
-// features (words + trigrams) into the vector and L2-normalizing. No model download, no network, no
-// dependency — instant, private, offline, and deterministic (a test can pin it exactly). It matches
-// on shared vocabulary and morphology, which is already well past keyword: two passages that circle
-// the same thing in different words land close. The interface — embed(text) -> Float32Array(DIM) —
-// is the seam a neural model (transformers.js / WebGPU) drops behind for true meaning-search, the
-// production upgrade the canon calls for (§8.2); nothing else in the search path would move.
+// A passage becomes a fixed-dimension unit vector by hashing its features (words + trigrams) into it and
+// L2-normalizing. No model, no network, deterministic.
 
 import { features } from './tokenize.js';
 
 export const DIM = 256;
 
-// A small stable string hash (FNV-1a), folded to a bucket + a sign so features can cancel as well as
-// add — a cheap approximation of a learned projection.
+// FNV-1a, folded to a bucket plus a sign so features can cancel as well as add.
 function hash(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {

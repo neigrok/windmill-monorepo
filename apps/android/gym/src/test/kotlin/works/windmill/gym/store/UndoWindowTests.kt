@@ -13,16 +13,6 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
 
-// THE UNDO WINDOW — the one promise in gym that the DEVICE keeps rather than asks the log for. A
-// logged row can be taken off the log (§G18's delete), but that is a repair made at rest, on a past
-// session, with a sheet and a second gesture; the only moment a MIS-TAP can be taken back without
-// telling anybody is while this device is still the only place it exists.
-//
-// The iOS suite drives these promises through TrainingStore; the store arrives in the next wave,
-// so they are pinned here at the queue — the level that actually keeps them. Everything below is a
-// way the window can go wrong: a set that never leaves because the hold never ends, a set taken
-// back after the log already has it, and a session closing over a set still inside its nine
-// seconds — which the log would refuse forever.
 class UndoWindowTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -47,8 +37,6 @@ class UndoWindowTests {
         queue.flush()
     }
 
-    // The set is on the device the instant it is tapped — the window changes when it is SENT,
-    // never whether it was kept.
     @Test
     fun testASetJustLoggedIsOnTheDeviceAndNotYetOnTheLog() {
         logSet("set_1")
@@ -60,9 +48,6 @@ class UndoWindowTests {
         assertEquals("and it is on disk, not in memory", 1, SetQueue(file).pending.size)
     }
 
-    // "Offline" would be the wrong word for a send nobody has attempted. The walk offers nothing
-    // while the window is open, so there is nothing for a save line to report — silence is the
-    // honest state (SaveState.Idle.line is null, VerdictTests pins the words).
     @Test
     fun testASetInsideItsWindowIsNotOfferedToTheWalk() {
         logSet("set_1")
@@ -72,8 +57,6 @@ class UndoWindowTests {
             emptyList<SetQueue.Entry>(), queue.pending.filter { !it.isHeld(clockMs) })
     }
 
-    // The gesture the window exists for: the set never reaches the log at all, so nothing already
-    // written is destroyed by one tap.
     @Test
     fun testUndoTakesTheSetBackAndTheLogNeverHearsOfIt() {
         logSet("set_1")
@@ -85,7 +68,6 @@ class UndoWindowTests {
         assertNull(queue.withdrawable())
     }
 
-    // Undo answers the tap the lifter just made, not the oldest one still waiting.
     @Test
     fun testUndoTakesBackTheNewestSetAndLeavesTheRest() {
         logSet("set_1")
@@ -98,8 +80,6 @@ class UndoWindowTests {
         assertEquals(listOf(82.5), queue.sets.map { it.weightKg })
     }
 
-    // Once the window closes the set goes out on its own — a hold that never ended would be a set
-    // that never landed.
     @Test
     fun testWhenTheWindowClosesTheSetIsOfferedByItself() {
         logSet("set_1")
@@ -109,9 +89,6 @@ class UndoWindowTests {
         assertNull("and there is nothing left to take back", queue.withdrawable())
     }
 
-    // Past the window the log holds the row, and this door does not reach the account's. The answer
-    // is no rather than a screen that quietly disagrees with it — the set comes off through §G18's
-    // delete on the session read back, never through the logger mid-workout.
     @Test
     fun testUndoAfterTheSetHasLandedRefusesRatherThanPretending() {
         logSet("set_1")
@@ -126,10 +103,6 @@ class UndoWindowTests {
         assertNull(queue.withdrawable())
     }
 
-    // A forced walk passes null for `readyAt`, and it ends every window: a finish is this device's
-    // statement that everything is delivered (a close would refuse a skipped set FOREVER), leaving
-    // the room takes the affordance with the subtree, and a boot read settles the session over a
-    // gesture nobody can still make.
     @Test
     fun testAForcedWalkOffersASetStillInsideItsWindow() {
         logSet("set_1")
@@ -146,8 +119,6 @@ class UndoWindowTests {
         assertTrue(queue.pending.isEmpty())
     }
 
-    // A relaunch is the other end of the same rule: the row is gone from the screen, so the window
-    // is protecting a gesture nobody can still make — the boot read walks forced and sends it.
     @Test
     fun testARelaunchStillOwesTheSetAndAForcedWalkOffersIt() {
         logSet("set_1")
@@ -157,9 +128,6 @@ class UndoWindowTests {
         assertEquals("set_1", relaunched.nextOwed(skipping = emptySet(), readyAt = null)?.set?.id)
     }
 
-    // A queue file written before the window existed has no heldUntilMs and no order key. It must
-    // still open — a file that failed to decode opens EMPTY and takes a live session's sets down
-    // with it.
     @Test
     fun testAQueueFileWrittenBeforeTheWindowExistedStillOpens() {
         val old = File(tmp.root, "gym-old-${System.nanoTime()}.json")
@@ -168,8 +136,6 @@ class UndoWindowTests {
                 """{"id":"set_a","exerciseId":"bench-press","weightKg":82.5,"reps":5,""" +
                 """"completedAt":1100},"sessionId":"ses_1","needsPush":true,"remints":0}}}""")
 
-        // From before the seats as well as from before the window: the phone was holding this
-        // lifter's session at the upgrade, so the workout is theirs and opens as itself.
         val opened = SetQueue(old, "u1") { clockMs }
         assertEquals("ses_1", opened.session?.id)
         assertEquals(listOf("set_a"), opened.pending.map { it.set.id })

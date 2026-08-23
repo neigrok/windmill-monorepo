@@ -1,30 +1,7 @@
 import SwiftUI
 import WindmillPlatform
 
-// THE RECORD — one exercise, one page, twelve weeks of it (§H), and a READ-ONLY screen a tab opens
-// over itself rather than a place to stand: the room's at-rest places are its three tabs, and this
-// is reached by tapping a movement's NAME — on a home routine card, in a routine's detail, in a
-// session read back. It carries the plain bar and no rail, for the same reason the logger does.
-//
-// It stands where the statistics screen used to. What a lifter wanted from that board is this page:
-// best e1RM, the trend, every record with its date, then the recent sets. And it is the surface that
-// makes stable exercise identity VISIBLE — rename Back Squat here and the history stays whole,
-// because the id never moves and only the name a lifter reads does.
-//
-// It RENDERS what `Record.page` decided and computes nothing itself: no e1RM, no normalisation, no
-// sorting, no arithmetic in a view body.
-//
-// A CHART ON A PHONE HAS NO SCRUB AND NO HOVER, so every number a mark would otherwise reveal on
-// touch is printed beside it — the tiles carry the two standing bests and the axis line carries both
-// ends of the series with their own values. A chart whose numbers can only be reached by a gesture
-// the surface does not have is a decoration, and this product does not draw those.
-//
-// WHERE EPLEY IS UNDEFINED THERE IS NO E1RM ANYTHING. A bodyweight or band-assisted movement gets no
-// best-e1RM tile and no chart — not a zero, not a dash in a chart frame — and the page says why in
-// one line. FOUR DIFFERENT FACTS CAN LEAVE THAT CHART OUT and they may not share a sentence: the
-// bar carried no load, the twelve weeks hold nothing, the movement was never worked in a working
-// set at all, or this DEVICE answered and computes no estimate for anything. `Record.why` decides
-// which; this screen only has the words for it.
+// Renders what `Record.page` decided and computes nothing itself.
 
 struct RecordScreen: View {
     let exerciseId: String
@@ -56,13 +33,8 @@ struct RecordScreen: View {
                         if !page.records.isEmpty { records(page.records) }
                         if !page.days.isEmpty { days(page.days) }
                     }
-                    // Outside the branch above, because the sentence is at its truest exactly where
-                    // it was unreachable: a page the LOG answered with nothing at all, over a
-                    // movement this device has a session of, is the one that owes the explanation.
                     if page.source == .theLog, store.unclaimed(exerciseId) { unclaimed }
                 } else if let failure {
-                    // In the log's own words when it sent any. A 500 that said "internal error" is
-                    // not a phone with no signal, and this screen may not report it as one.
                     silence(failure.line("this record isn’t drawn"), retry: true)
                 } else {
                     silence("reading your log…", retry: false)
@@ -72,15 +44,9 @@ struct RecordScreen: View {
             .padding(.top, WindmillSpace.x10)
             .padding(.bottom, WindmillSpace.x8)
         }
-        // Read on the way in and shaped once, outside the body. There is no cache to key on a
-        // collection's length and get wrong: a second visit asks again, and a set logged in between
-        // counts the next time this page is opened.
+        // Shaped once, outside the body; a second visit asks again.
         .task { await read() }
         .sheet(isPresented: $renaming) {
-            // THE PROOF COMES OFF THE READ THIS PAGE ALREADY MADE (§N screen 32) — not a second
-            // call, and not a constant. It is why the sheet cannot be opened before the page has
-            // landed: `Rename` lives inside `head`, which only draws once there is something true
-            // to say under it.
             RenameSheet(current: page?.name ?? "",
                         title: "Rename this movement",
                         prompt: "Movement name",
@@ -92,9 +58,6 @@ struct RecordScreen: View {
         }
     }
 
-    // The name at 30, and the one action this page offers beside it. Rename sits INSIDE the scroll
-    // rather than in a corner of the room's chrome: the top-left is the shell's capsule lane and the
-    // top-right belongs to nobody, so a screen's own action rides with the thing it acts on.
     private func head(_ page: Record.Page) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x1) {
             HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
@@ -115,9 +78,6 @@ struct RecordScreen: View {
         }
     }
 
-    // The two standing bests, side by side. The best e1RM is the one gold number on the page — the
-    // same gold the log's row and the finish screen use for a mark that was passed — and the heaviest
-    // is stated in the room's own ink, because a load is a fact and not a celebration.
     private func tiles(_ page: Record.Page) -> some View {
         HStack(spacing: WindmillSpace.x2) {
             if let best = page.best { tile(best, ink: skin.prInk) }
@@ -144,9 +104,6 @@ struct RecordScreen: View {
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // ONE CHART, and it plots e1RM per session — the only figure that compares a 5 × 100 to a
-    // 3 × 110. Bars, not a line: a training log is discrete events, and a line between them implies
-    // days that never happened.
     private func chart(_ chart: Record.Chart) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             HStack(alignment: .firstTextBaseline) {
@@ -184,8 +141,6 @@ struct RecordScreen: View {
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // Three tints and each one is a fact: the session holding the standing best is gold, a session
-    // that passed every session before it is lit, and the rest are the room's own stone.
     private func ink(of mark: Record.Mark) -> Color {
         switch mark {
         case .best: return skin.prInk
@@ -197,10 +152,6 @@ struct RecordScreen: View {
     private func records(_ rows: [Record.Row]) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             caption("Personal records")
-            // Newest first, and the newest one IS the standing best — so it wears the gold edge and
-            // every mark under it is a step on the way there. A row's id is its PLACE on the ladder,
-            // because two sessions can share a start instant and an id shared in a `ForEach` is
-            // undefined behaviour.
             ForEach(rows) { row in
                 let leading = row.id == 0
                 HStack(spacing: WindmillSpace.x3) {
@@ -228,8 +179,6 @@ struct RecordScreen: View {
         }
     }
 
-    // Grouped by the day they were lived in, warmups already dropped by the read — a warmup counts
-    // toward nothing here, and one listed beside a working set would be showing a ramp-up as work.
     private func days(_ days: [Record.Day]) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             caption("Recent sets")
@@ -254,8 +203,6 @@ struct RecordScreen: View {
             .padding(.top, WindmillSpace.x2)
     }
 
-    // A movement in the catalog you have never lifted is a real and common case — the picker says
-    // `never logged` for it — so the page says so and draws no chart furniture over nothing.
     private var neverLogged: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text("Never logged.")
@@ -271,15 +218,6 @@ struct RecordScreen: View {
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
     }
 
-    // WHY THERE IS NO CHART, in the room's own voice — `Record.why` decided WHICH fact it is, and
-    // these are the words for it. The four may not share a sentence: no estimate at all is a fact
-    // about the barbell, a standing best with nothing recent is a fact about the window, a movement
-    // worked only in drops is a fact about what counts, and a device answer is a fact about where
-    // Epley is computed. Saying "no e1RM" under a tile printing one, or blaming a 40 kg drop set for
-    // having no load, would each be this page contradicting itself two lines apart.
-    //
-    // The device's own case is the one that needs the room and not just the page: the remedy is to
-    // sign in, or — already signed in, with the create still owed — to wait for the claim.
     private func noChart(_ why: Record.NoChart) -> String {
         switch why {
         case .onThisDevice:
@@ -296,12 +234,7 @@ struct RecordScreen: View {
         }
     }
 
-    // What the page cannot see, said where it would otherwise be silently missing: a session this
-    // device has not claimed yet is not on the log, and this page is the log's answer.
-    //
-    // It is asked PER MOVEMENT and never off the log's `deviceOnly`, which is a set of session ids:
-    // one unclaimed Bench session would otherwise print a caveat about nothing on the Squat page,
-    // and a caveat that is noise everywhere is read nowhere.
+    // Asked per movement, never off `deviceOnly`, which is a set of session ids.
     private var unclaimed: some View {
         Text("Sessions this device hasn’t claimed yet aren’t counted here.")
             .font(GymType.numeral(12))
@@ -309,9 +242,6 @@ struct RecordScreen: View {
             .lineSpacing(3)
     }
 
-    // Mono, quiet, never a spinner and never an alert — the room's one voice for a door that did not
-    // open. The read is offered again rather than retried forever: this page is somewhere a lifter
-    // chose to stand, and a poll behind it would spend a basement's signal on a chart.
     private func silence(_ line: String, retry: Bool) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Text(line)
@@ -330,8 +260,6 @@ struct RecordScreen: View {
         }
     }
 
-    // Shaped once, here, and never in the body: a page recomputed on every frame is the trend
-    // recomputed on every keystroke elsewhere in the app, which is the banked lesson from Lift.
     private func read() async {
         failure = nil
         switch await store.record(of: exerciseId) {
@@ -343,9 +271,7 @@ struct RecordScreen: View {
         }
     }
 
-    // A rename that landed is re-read rather than patched into what is on screen: the log decides
-    // what this account calls a movement, and a page that wrote the new name in itself would be
-    // stating a fact it only asked for.
+    // A rename that landed is re-read rather than patched into what is on screen.
     private func rename(to name: String) async -> TrainingStore.WriteFailure? {
         guard let failed = await store.rename(exerciseId, to: name) else {
             renaming = false
@@ -356,20 +282,6 @@ struct RecordScreen: View {
     }
 }
 
-// THE DOOR ONTO THIS PAGE, drawn once and the same in the three places §H names — a session read
-// back, a routine, and home's card of the next one. A name means the same thing wherever it is
-// printed, and a door drawn three ways is three doors.
-//
-// TWO OTHER SURFACES NAME A MOVEMENT AND ARE NOT DOORS, both on purpose. Inside a LIVE session the
-// picker's tap is the pick and the logger's name is the movement in hand, and a live session
-// outranks every away screen in this room — a door there would either do nothing or walk a
-// lifter out of their workout mid-set. And the FINISH screen, whose record sentence, comparison rows
-// and keep-as-routine preview all name movements: it outranks `showing` in `GymRoom.stage` for the
-// same kind of reason — a workout that just ended owns the screen, and the offer on it dies when it
-// leaves — so a door drawn there would open a page nobody could see.
-//
-// The chevron sits on the NAME rather than at the end of the row, because the other half of these
-// rows is a target or a plan line and the door is not onto those.
 struct MovementDoor: View {
     let exerciseId: String
     let name: String
@@ -395,7 +307,3 @@ struct MovementDoor: View {
         .accessibilityHint("opens this movement’s record")
     }
 }
-
-// RENAME lives in RenameSheet.swift now, because §N gives a ROUTINE the same sheet from its own
-// header (screen 30) — the paragraph that used to sit here, explaining that a rename is safe, was
-// replaced by the block that PROVES it out of this page's own read.

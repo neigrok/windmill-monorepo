@@ -1,29 +1,11 @@
 import SwiftUI
 import WindmillPlatform
 
-// THREADS, DRAWN (§O screen 33) and the one conversation a row opens. Both are AWAY screens on the
-// room's own stack, reached from Ask's header and from a routine's History row — never from the
-// rail, because a list of past conversations is not one of the three places a lifter stands.
-//
-// THE LIST IS NOT AN INBOX and this file is where that would be lost first. There is no unread
-// count, no badge, no dot, no notification and nothing that resurfaces a thread on its own; there is
-// no search, no filter, no folder and no pin. A row is the lifter's own words and what came of them,
-// grouped by the month it was last asked in, and that is the whole surface.
-//
-// EVERY DETAIL ON A ROW IS THE SERVER'S OBSERVATION — the count and the routine off the ledger, the
-// state off the log. Nothing here says why anybody did anything, because nothing observes why: see
-// the head of AskThreads.swift for the one line of the board this refuses to draw.
-
-// What the room lends these two screens, already bound to one account — the same shape `AskDoors`
-// and `CoachDoors` take, and for the same reason: a screen holding the API could reach the log in
-// ways its own copy does not describe.
 struct ThreadDoors {
     let list: () async -> Result<[AskThread], AskRefusal>
-    // Absent is `nil` rather than a failure: a conversation deleted from the web while this room was
-    // open is gone, and the screen says so instead of offering a retry at something that will never
-    // come back.
+    // A success carrying nil is a conversation that is gone, not a failure.
     let read: (String) async -> Result<AskThread?, AskRefusal>
-    // The sentence when it did not happen, and nothing when it did.
+    // The sentence when it did not happen, nil when it did.
     let delete: (String) async -> String?
     let openThread: (String) -> Void
     let openProposal: (String) -> Void
@@ -57,9 +39,6 @@ struct ThreadsScreen: View {
             }
             foot
         }
-        // Re-read every time this screen appears rather than cached: a conversation deleted on
-        // another surface, or a proposal applied from the routine screen since, must not still be
-        // drawn here with the outcome it had an hour ago.
         .task { await read() }
     }
 
@@ -68,9 +47,6 @@ struct ThreadsScreen: View {
             Text(AskThreads.title)
                 .font(WindmillFont.display(19))
                 .foregroundStyle(skin.ink)
-            // The count is what was actually read and never a promise about what is there: before
-            // the read lands there is no number to print, so none is — and a full page says `200+`
-            // rather than asserting a total the reply does not carry (`AskThreads.meta`).
             if let threads {
                 Text(AskThreads.meta(threads.count))
                     .font(GymType.numeral(11))
@@ -99,9 +75,6 @@ struct ThreadsScreen: View {
         }
     }
 
-    // THE ROW: the question in the lifter's own words, then what came of it. The title is drawn as
-    // it was typed — no clipping to a neat length, no case change, no quotation marks added around
-    // somebody's sentence — and it wraps rather than trailing off, because the words are the point.
     private func row(_ thread: AskThread) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text(thread.title)
@@ -186,17 +159,7 @@ struct ThreadsScreen: View {
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 }
 
-// ONE CONVERSATION, READ BACK. It is the turns as they were sent, byte for byte, the proposals it
-// minted as doors onto their diffs, and the delete.
-//
-// IT IS READ-ONLY, AND THAT IS A DECISION. The wire would take another question into this thread,
-// and §O does not draw one being asked here — the foot of the list says `Ask something new`, which
-// is a new conversation. So this screen carries no composer: what it is for is coming back to
-// something, and a chat box on a six-week-old evening is a different product from the one drawn.
-//
-// AND NO RECEIPT LINE UNDER A RECALLED ANSWER. The server stores the turns and not the accounting
-// for them — a stored turn is `{from, text, at}` — so there is no `read 214 sets` to print, and
-// printing one this screen worked out would be the exact tally §L exists to refuse.
+// A stored turn is `{from, text, at}` and carries no accounting to print.
 struct ThreadScreen: View {
     let threadId: String
     let doors: ThreadDoors
@@ -235,8 +198,6 @@ struct ThreadScreen: View {
         .task { await read() }
     }
 
-    // THE TITLE IS THE FIRST MESSAGE AND IT IS DRAWN VERBATIM — the same string the row printed, so
-    // a lifter arriving here recognises what they tapped rather than meeting a second name for it.
     private func head(_ thread: AskThread) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             Text(thread.title)
@@ -252,8 +213,6 @@ struct ThreadScreen: View {
         }
     }
 
-    // The conversation as it was said. A lifter's turn keeps the shape it has in the live stream —
-    // indented, in the accent's wash — so reading a thread back and asking one look the same.
     private func turns(_ thread: AskThread) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
             ForEach(Array((thread.turns ?? []).enumerated()), id: \.offset) { _, turn in
@@ -282,8 +241,6 @@ struct ThreadScreen: View {
         }
     }
 
-    // A door onto the diff, which is the only place a pending one can be applied. The state beside
-    // it is the log's word and not this screen's memory of what was tapped.
     private func proposal(_ minted: ThreadProposal) -> some View {
         Button { doors.openProposal(minted.id) } label: {
             HStack(spacing: WindmillSpace.x2) {
@@ -305,9 +262,6 @@ struct ThreadScreen: View {
         }
     }
 
-    // Destructive, in the room's alarm ink, with the sentence that makes it honest under it — the
-    // same shape the one other delete in this product takes, and no dialog: what it does and what it
-    // does not do are both on screen before the tap rather than in a sheet after it.
     private var delete: some View {
         VStack(spacing: WindmillSpace.x2) {
             Button { Task { await remove() } } label: {
@@ -359,9 +313,7 @@ struct ThreadScreen: View {
         }
     }
 
-    // THE SCREEN ONLY LEAVES ONCE THE LOG SAYS IT IS GONE. A delete drawn as done on the strength of
-    // a request that never landed would tell a lifter a conversation had been deleted when it had
-    // not — which on this screen is the one claim that has to be true.
+    // The screen only leaves once the log says it is gone.
     private func remove() async {
         guard !deleting else { return }
         deleting = true

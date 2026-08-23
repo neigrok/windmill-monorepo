@@ -1,24 +1,10 @@
 import SwiftUI
 import WindmillPlatform
 
-// THIS SESSION, as a list — the only thing in the logger that moves the lifter between movements.
-// Nothing advances on its own: not when a plan's set count is reached, not when a rest lands. The
-// sheet says where everything stands and the choice stays theirs.
-//
-// IT IS THE ASSEMBLY SURFACE (§A screen 2). The first routine is a by-product of the first session:
-// nobody assembles a six-exercise program standing in a gym, but everybody performs one — so this
-// list, appended to on the bench mid-rest, IS the routine offered at the end. That is why the two
-// gestures are here and not in an editor: drag to reorder, swipe to drop.
-//
-// WHAT A GESTURE MAY NOT DO is the whole of its safety. A drag moves ids and never sets — the sets
-// are keyed by session and movement and this list does not hold them — and a swipe only reaches a
-// movement nothing is holding on to: no sets logged, and no line in the frozen plan
-// (`LiveOrder.droppable`). A lift cannot be swiped away, and the list cannot lose one by being
-// rearranged.
-
+// A drag moves ids and never sets; a swipe only reaches a movement with no sets and no line in the frozen plan.
 struct JumpSheet: View {
     let rows: [LiveLines.JumpRow]
-    let assembling: Bool        // false once the session is walking a routine — see `teaching`
+    let assembling: Bool  // false once the session is walking a routine
     let onJump: (String) -> Void
     let onMove: (IndexSet, Int) -> Void
     let onDrop: (String) -> Void
@@ -40,10 +26,6 @@ struct JumpSheet: View {
                     .frame(minHeight: GymTap.minimum)
             }
 
-            // A List rather than the ScrollView this used to be, and only for the two gestures: it is
-            // what carries `onMove` and the trailing swipe. Every piece of its own chrome is turned
-            // off — the room draws its own rows, and a system separator in here would be the one
-            // hairline in gym that came from somewhere else.
             List {
                 ForEach(rows) { row in
                     Button { onJump(row.id) } label: { movement(row) }
@@ -80,10 +62,6 @@ struct JumpSheet: View {
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
 
-            // §A screen 2's primary, and it exists exactly when there is something to aim it at: the
-            // movement just added, which is the one thing on this list with no sets in it yet. It is
-            // the row's own tap, given the thumb zone — a lifter who added a movement mid-rest is
-            // going back to the bar, not reading a list.
             if let next = rows.first(where: \.isJustAdded) {
                 Button { onJump(next.id) } label: {
                     Text("Log a set of \(next.name)")
@@ -99,23 +77,6 @@ struct JumpSheet: View {
         .background(skin.canvas)
     }
 
-    // The gestures are invisible until they are used, so they are named once, here.
-    //
-    // TWO SCREENS OF THE BOARD DISAGREE AND THIS SENTENCE IS WHERE IT SHOWS. Screen 2 says "this list
-    // is the routine you will be offered at the end"; screen 3 offers one composed "in the order you
-    // did them" (`RoutineWrite(named:from:)`, which reads the sets and never this order). They only
-    // differ once a drag has moved a movement out of the order it was performed in — so what is
-    // promised here is what is true of both: the movements you LIFT become the routine, in the order
-    // you lifted them. A drag moves today's walk, which is what a lifter mid-session is asking of it.
-    //
-    // The second half is withheld from a session that already has a routine written down for it,
-    // because that one is never offered another at the end — and promising it would be the room
-    // describing a screen the lifter will not be shown. That is ONE of the three things
-    // `FinishedSession.offersRoutine` asks, and the only one that can be known while this sheet is
-    // open: whether the session ends up too slight to say anything about, and whether any working
-    // set is ever logged into it, are facts about a workout still being performed. Both can only
-    // narrow the offer, and both are narrowed by the lifter doing less — so a sentence about what
-    // "what you lift" becomes stays true of every session that lifts anything.
     private var teaching: String {
         guard assembling else { return "Drag to reorder, swipe to drop." }
         return "Drag to reorder, swipe to drop. What you lift here becomes the routine you’re offered "
@@ -124,8 +85,6 @@ struct JumpSheet: View {
 
     private func movement(_ row: LiveLines.JumpRow) -> some View {
         HStack(alignment: .top, spacing: WindmillSpace.x3) {
-            // The grab rail §A screen 2 puts on every row. It is a sign rather than a handle — the
-            // whole row drags — so it is drawn and never tapped.
             VStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { _ in
                     Capsule().fill(row.isCurrent ? skin.accent : skin.inkFaint).frame(height: 2)

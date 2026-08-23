@@ -1,10 +1,6 @@
 import XCTest
 @testable import WindmillGym
 
-// The ladder's truth is packages/api-contract/gym-ladder.json, read here straight out of the repo
-// working tree — not copied into the test bundle as a resource. A copied fixture is a copy, and
-// copies are the thing that package exists to prevent.
-
 final class LadderTests: XCTestCase {
     struct Golden: Decodable {
         let bands: [GoldenBand]
@@ -39,14 +35,8 @@ final class LadderTests: XCTestCase {
         let up: Int
     }
 
-    // Every golden value sits on the 0.01 grid and is therefore exact as decimal — but binary
-    // doubles are not, so 20.01 − 2 lands a few ulps off −22.01. The tolerance is for the
-    // representation, never for the rule.
     let tolerance = 1e-9
 
-    // Walk up from this file until the golden turns up, rather than counting directories: a
-    // hard-coded depth is a tripwire that fires the day the package moves, and this suite is
-    // exactly the thing that must not quietly stop finding its contract when that happens.
     static let goldenURL: URL = {
         let relative = "packages/api-contract/gym-ladder.json"
         var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -61,31 +51,21 @@ final class LadderTests: XCTestCase {
     var golden: Golden!
 
     override func setUpWithError() throws {
-        // A golden that cannot be found must fail the suite, never quietly skip it — an unrun
-        // contract is drift nobody sees. The throw stops the bodies from running on nil.
         if !FileManager.default.fileExists(atPath: Self.goldenURL.path) {
             XCTFail("ladder golden not found at \(Self.goldenURL.path) — this suite reads the repo's packages/api-contract/gym-ladder.json, not a bundled copy")
         }
         golden = try JSONDecoder().decode(Golden.self, from: Data(contentsOf: Self.goldenURL))
     }
 
-    // A loop over an empty array is a green test, so every case-driven test below is only as honest
-    // as the fixture is full. Emptying it disarms BOTH languages at once from a file neither owns —
-    // exactly the move someone makes to turn a red build green.
     func testTheGoldenStillCarriesItsCases() {
         XCTAssertEqual(golden.bands.count, 3, "the golden's band table changed shape")
         XCTAssertGreaterThanOrEqual(golden.weightCases.count, 22, "weightCases shrank to \(golden.weightCases.count)")
         XCTAssertGreaterThanOrEqual(golden.roundCases.count, 8, "roundCases shrank to \(golden.roundCases.count)")
         XCTAssertGreaterThanOrEqual(golden.repCases.count, 4, "repCases shrank to \(golden.repCases.count)")
-        // Both signs must survive. The assisted rows are the only ones that kill a rule read off the
-        // SIGNED weight, which makes them the first thing a pruner mistakes for redundant.
         XCTAssertTrue(golden.weightCases.contains { $0.weight < 0 }, "no assisted weights left")
         XCTAssertTrue(golden.weightCases.contains { $0.weight > 0 }, "no loaded weights left")
     }
 
-    // A weight is rehydrated from storage on both surfaces, so it is not always a number a lifter
-    // typed. Swift cannot fall off the band table the way JS can, but the ANSWER still has to match:
-    // anything unorderable reads the top band.
     func testUnorderableWeightReadsTheTopBand() {
         for value in [Double.nan, .infinity, -.infinity] {
             for lightening in [false, true] {
@@ -117,8 +97,6 @@ final class LadderTests: XCTestCase {
         }
     }
 
-    // Every roundCase is an exact IEEE tie — the one place the two languages' default rounding
-    // rules disagree, and reachable because typed entry rounds whatever the keypad accepts.
     func testEveryRoundCase() {
         for expected in golden.roundCases {
             XCTAssertEqual(Ladder.round(expected.value), expected.rounded, accuracy: tolerance, "round(\(expected.value))")
@@ -131,15 +109,9 @@ final class LadderTests: XCTestCase {
             XCTAssertEqual(Ladder.bumpReps(expected.reps, direction: -1), expected.down, "down from \(expected.reps) reps")
             XCTAssertEqual(Ladder.bumpReps(expected.reps, direction: 1), expected.up, "up from \(expected.reps) reps")
         }
-        // The floor is 1 because the server refuses reps < 1: at 0 the logger drew a tappable set the
-        // log could only answer with a refusal. The golden pins 1 and the stored 0; anything below
-        // that is unreachable through the UI, and the down key still answers there — by climbing.
         XCTAssertEqual(Ladder.bumpReps(-3, direction: -1), 1)
     }
 
-    // The law that makes one rule serve both sides of zero: bump(−w, −direction, big) is exactly
-    // −bump(w, direction, big). An implementation that reads its down-band off the SIGNED weight
-    // gets the loaded side right and breaks here.
     func testMirrorSymmetry() {
         for expected in golden.weightCases {
             for direction in [-1, 1] {

@@ -1,12 +1,3 @@
-// The gym wire contract from the client's side — what each status means to a flush queue that has
-// to decide, without a human, whether a set is lost, retryable, or already durable, and which
-// machine code tells it how to repair the one that isn't. The sentences here are deliberately not
-// the ones the server ships: a refusal reworded overnight must classify the same.
-//
-// The routine, review and discard routes are here too, with the three refusals they brought. A
-// client branches on those by hand rather than in a queue, and it reads them the same way it reads
-// the other four: the code, never the English.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -33,8 +24,6 @@ function ok(body) {
   return { ok: true, status: 200, json: async () => body };
 }
 
-// A 204 with a body that cannot be parsed, because the client must never try: the two deletes
-// answer with no bytes at all, and a reply asked for its json would fail on the success.
 function nothing() {
   return { ok: true, status: 204, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } };
 }
@@ -97,17 +86,6 @@ test('every call is cookie-credentialed json against the gym root', async () => 
   });
 });
 
-// THE PICKER'S META, IN ONE READ (§B7) — and the shape of it is the whole contract: the reply
-// carries an entry for a movement this account has a LAST TIME for and NOTHING for one it has not.
-// The bytes below are read off the writer and the handler rather than off a probe — no server was
-// running when this landed, so the claim is only as strong as those two files: `movements` is the
-// object's one key (TrainingApi.cpp::lastSets) and each line is exactly exerciseId · weightKg · reps ·
-// at, with no name and no nulls (TrainingJson.cpp::toJson(vector<LastSet>)). The account here has
-// two movements behind it and sixty-two it has no last time for; there is no row for those
-// sixty-two — no null, no zero, no sentinel — which is what the picker draws `no last time` from,
-// and it is why nothing here may fill a gap in.
-//
-// It takes no arguments. The list is a join key order (ascending id), not a draw order.
 test('lastSets — every movement’s last set, sparse, and it asks for nothing', async () => {
   const movements = [
     { exerciseId: 'back-squat', weightKg: 100, reps: 5, at: 1_785_600_000_000 },
@@ -125,11 +103,6 @@ test('lastSets — every movement’s last set, sparse, and it asks for nothing'
   });
 });
 
-// A lifter with no finished block behind them is answered with the key present and the list empty,
-// which is a whole answer and not a missing one: every row on their picker says `no last time`
-// because every row is absent from this list. That is the first-session case — the workout they are
-// in right this minute is not a last time until it is over — and it is exactly why the sentence
-// those rows draw does not claim they have never trained.
 test('lastSets — an account with no history answers an empty list, never an absent one', async () => {
   serve(ok({ movements: [] }));
   assert.deepEqual(await gymApi.lastSets(), []);
@@ -140,8 +113,6 @@ test('sessions — the pager sends the instant AND the id, and sends neither whe
   assert.deepEqual(await gymApi.sessions(), []);
   assert.deepEqual(wireOf(calls[0]).path, '/v1/gym/sessions');
 
-  // `record` is always on a row and its false is a real answer — a personal record happened in
-  // there, or one did not (log.js draws the dot off nothing else).
   serve(ok({ sessions: [{ id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'], record: false }] }));
   assert.deepEqual(await gymApi.sessions({ before: 1_900_000_000_000, beforeId: 'ses_1', limit: 20 }), [
     { id: 'ses_1', startedAt: 1_900_000_000_000, setCount: 5, exercises: ['Back Squat'], record: false },
@@ -163,9 +134,6 @@ test('session — an absent session is null, not an error: absent and another ow
   assert.deepEqual(await gymApi.session('ses_1'), detail);
 });
 
-// The mirror's freshness ride: a 200's weak ETag comes back on the reply, goes up again as
-// If-None-Match, and the 304 while nothing changed is the UNCHANGED sentinel — never null, which
-// already means "no such session" on this same read.
 test('session — the ETag rides the reply, If-None-Match rides the next ask, and 304 is UNCHANGED', async () => {
   const detail = { session: { id: 'ses_1', startedAt: 1_900_000_000_000 }, sets: [] };
   const tagged = {
@@ -189,9 +157,6 @@ test('session — the ETag rides the reply, If-None-Match rides the next ask, an
   assert.equal(calls[0].options.headers['if-none-match'], 'W/"0-0-0"');
 });
 
-// The bytes below are what the running server answered on the probe of this route: the movement
-// echoed back, the finished session, the routine frozen in its plan snapshot, and the working sets
-// in order with the warmup already dropped.
 test('lastTime — one read, and the answer arrives whole', async () => {
   const reply = {
     exerciseId: 'back-squat',
@@ -219,9 +184,6 @@ test('lastTime — one read, and the answer arrives whole', async () => {
   assert.equal(wireOf(calls[0]).path, '/v1/gym/last?exercise=ez-bar%20curl');
 });
 
-// A movement trained for the first time is a fact, not a fault: the server names it and stops, and
-// the answer must survive as an answer — a client that treated it as a failure would show the same
-// card for "you have never squatted" as for "the log did not reply".
 test('lastTime — a first-ever movement answers 200 with the movement and nothing else', async () => {
   serve(ok({ exerciseId: 'deadlift' }));
   assert.deepEqual(await gymApi.lastTime('deadlift'), { exerciseId: 'deadlift' });
@@ -271,9 +233,6 @@ test('appendSet — a replay of a stored set answers 200 with the stored row, fi
   });
 });
 
-// THE CORRECTION (§G18). The body is the fix and nothing else: an omitted field is left as stored,
-// which is the whole reason the rpe and the note this sheet never draws survive it. The stored set
-// comes back bare, in the same shape the POST above answers.
 test('fixSet — the fix carries only what moved, and the stored set comes back', async () => {
   const stored = {
     id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 50, reps: 5,
@@ -290,8 +249,6 @@ test('fixSet — the fix carries only what moved, and the stored set comes back'
   });
 });
 
-// A body a fix may not carry is refused whole — the store never ignores a field it will not take,
-// so a client that sent `exerciseId` learns it rather than believing a set was moved.
 test('fix-unreadable — a fix the store would not take is terminal, and retrying those bytes never lands', async () => {
   serve(refusal(400, 'could not read that fix', 'fix-unreadable'));
   await assert.rejects(() => gymApi.fixSet('ses_1', 'set_3', { exerciseId: 'bench-press' }), (error) => {
@@ -320,9 +277,6 @@ test('fix-unreadable — a fix the store would not take is terminal, and retryin
   });
 });
 
-// Absent, another account's, already deleted, and this account's set in a DIFFERENT workout are one
-// answer and one byte. It is a 404, so neither `terminal` nor `retryable` by status — and it is
-// still the end of this edit: there is nothing to retry, and the repair is to read the session.
 test('set-not-found — one answer for all four ways a set can fail to be in that workout', async () => {
   serve(refusal(404, 'no such set', 'set-not-found'));
   await assert.rejects(() => gymApi.fixSet('ses_1', 'set_gone', { reps: 5 }), (error) => {
@@ -351,9 +305,6 @@ test('set-not-found — one answer for all four ways a set can fail to be in tha
   });
 });
 
-// A FINISHED SESSION IS NOT A REFUSAL ON THIS ROUTE. A lifter reads the log after the workout, which
-// is when they see the typo — so there is no `session-finished` here, no `session-open`, and no 409
-// at all. The client must never grow a branch for one.
 test('fixSet — a set in a session that is over corrects like any other', async () => {
   const stored = {
     id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 5,
@@ -364,10 +315,6 @@ test('fixSet — a set in a session that is over corrects like any other', async
   assert.equal(calls.length, 1);
 });
 
-// 204 AND NOTHING BACK, for a set just removed as readily as for one already gone — which is what
-// makes a retry after a lost reply safe, and what keeps absent byte-identical to forbidden. The
-// reply is never asked for its json: there are no bytes, and asking would turn a success into a
-// parse error.
 test('deleteSet — the set does not stand, and a delete of a set that never did answers the same', async () => {
   serve(nothing());
   assert.equal(await gymApi.deleteSet('ses_1', 'set_3'), null);
@@ -382,8 +329,6 @@ test('deleteSet — the set does not stand, and a delete of a set that never did
   assert.deepEqual(wireOf(calls[1]), wireOf(calls[0]));
 });
 
-// The store failing is the ONE thing a delete can answer besides 204 and a sign-in, and it is
-// retryable — which the screen reads as "the set is still in the log" and says so.
 test('deleteSet — a store that failed is retryable, and it is the only non-204 with a body', async () => {
   serve(refusal(500, 'the log is not answering'));
   await assert.rejects(() => gymApi.deleteSet('ses_1', 'set_3'), (error) => {
@@ -395,8 +340,6 @@ test('deleteSet — a store that failed is retryable, and it is the only non-204
   });
 });
 
-// Each of the four arrives here under a sentence NOBODY wrote — the point of the code is that a
-// reworded refusal still classifies, so the fixture rewords every one of them.
 test('session-finished — the code, not the sentence, says this set will never land here', async () => {
   serve(refusal(409, 'this session was closed at 18:42', 'session-finished'));
   await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_new' }), (error) => {
@@ -509,9 +452,6 @@ test('unknown-exercise — a 400 with a repair of its own: reload the catalog, n
   });
 });
 
-// The courtesy path: a server deployed before the codes shipped answers with the sentence alone,
-// and mid-deploy a client talks to both. The four still classify, and error.code still reads the
-// same machine word — a caller never learns which server it reached.
 test('a codeless refusal still classifies by the sentence it shipped with', async () => {
   const sentences = [
     [409, 'that session is finished', 'session-finished'],
@@ -548,8 +488,6 @@ test('a codeless refusal still classifies by the sentence it shipped with', asyn
   }
 });
 
-// A conflict this client has never heard of is still a conflict: terminal, and repaired by none of
-// the three. Guessing one of them would re-mint an id that was never the problem.
 test('a 409 with an unknown code, or none at all, is terminal but unrepairable', async () => {
   serve(refusal(409, 'that routine is already running', 'routine-running'));
   await assert.rejects(() => gymApi.appendSet('ses_1', { id: 'set_1' }), (error) => {
@@ -741,9 +679,6 @@ test('401 and 404 are neither terminal nor retryable — they wait for a sign-in
   });
 });
 
-// The plan snapshot is the SERVER's: `routineId` asks for one, and what comes back is frozen. A
-// client that composed the snapshot itself would freeze whatever it last read, which is exactly the
-// staleness the snapshot exists to prevent.
 test('startSession — routineId travels, and an unasked option is absent rather than false', async () => {
   const open = {
     id: 'ses_1',
@@ -783,8 +718,6 @@ test('createExercise — a movement the lifter minted, with the equipment defaul
   });
 });
 
-// Every number on the finish screen arrives computed. The client renders this and decides none of
-// it, so web and iOS cannot disagree about which line is the loud one.
 test('review — the finish screen arrives whole, and omissions are omissions', async () => {
   const review = {
     stats: { durationMs: 3_720_000, workingSets: 16, topE1rm: 122.5 },
@@ -836,10 +769,6 @@ test('discardSession — the one destructive call, and 204 is read as a status a
   });
 });
 
-// ONE MOVEMENT'S PAGE IS ONE READ (§H). No window parameter and no route per block: every number in
-// it is the domain's, and a client that could ask for a different window would be a client that
-// could ask for a different answer. What the old statistics room read — /v1/gym/stats — is still
-// mounted for the agent behind `get_stats`, and this surface no longer calls it at all.
 test('record — a movement’s page in one read, with the wire’s omissions kept as omissions', async () => {
   const reply = {
     exercise: { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
@@ -868,9 +797,6 @@ test('record — a movement’s page in one read, with the wire’s omissions ke
     body: undefined,
   });
 
-  // A chin-up: no estimate anywhere, so the three e1RM-shaped answers are absent TOGETHER, and a
-  // movement nobody has worked answers 200 with two counts and nothing else. Neither absence
-  // arrives as a null to be mistaken for a zero.
   const bodyweight = {
     exercise: { id: 'chin-up', name: 'Chin-up', pattern: 'pull', equipment: 'bodyweight', stepKg: 1, custom: false },
     routineCount: 1,
@@ -896,21 +822,15 @@ test('record — a movement’s page in one read, with the wire’s omissions ke
   });
 });
 
-// Absent and another account's private movement are ONE fact on this wire, exactly as they are for
-// a session and a routine, so a null here says nothing about which.
 test('record — a movement that is not this account’s is null, not an error', async () => {
   serve(refusal(404, 'no such movement'));
   assert.equal(await gymApi.record('ex_somebody_elses'), null);
 
-  // And an id with a slash or a space in it is one segment of the path, never two.
   serve(refusal(404, 'no such movement'));
   await gymApi.record('back squat/2');
   assert.equal(wireOf(calls[0]).path, '/v1/gym/exercises/back%20squat%2F2/record');
 });
 
-// THE NAME MOVES AND THE IDENTITY DOES NOT. One field goes up, the stored movement comes back under
-// the SAME id — which is the promise the record page exists to make visible, and the reason nothing
-// in the log has to be rewritten when a lifter renames a lift.
 test('renameExercise — one field, and the id it answers with is the id it was given', async () => {
   const stored = { id: 'back-squat', name: 'High-bar Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false };
   serve(ok(stored));
@@ -923,8 +843,6 @@ test('renameExercise — one field, and the id it answers with is the id it was 
     body: '{"name":"High-bar Squat"}',
   });
 
-  // A name the store will not take is a refusal it READ — terminal, so the repair is a different
-  // name and never the same one again when the signal comes back.
   serve(refusal(400, 'could not read that name'));
   const refused = await gymApi.renameExercise('back-squat', '').catch((error) => error);
   assert.equal(refused.status, 400);
@@ -933,9 +851,6 @@ test('renameExercise — one field, and the id it answers with is the id it was 
   assert.equal(failureReason(refused), 'the log wouldn’t take it as written');
 });
 
-// The mint is idempotent ON THE SESSION — there is no id for a client to send, so tapping Share
-// twice is one capability and not two links to revoke separately. Which is why this is a POST with
-// no body at all, and why nothing calls it on a render.
 test('shareSession — the coach link, minted on a tap, with no document to send', async () => {
   serve(ok({ token: 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0', expiresAt: 1_911_600_000_000 }));
   assert.deepEqual(await gymApi.shareSession('ses_1'), {
@@ -963,8 +878,6 @@ test('revokeShare — revoked is deleted, and 204 is read as a status and never 
   });
 });
 
-// A 404 on the revoke is "nothing to revoke" (§6): the link is not live, which is exactly the state a
-// revoke asks for. Read as a failure it kept a dead link drawn on the screen as "still live".
 test('revokeShare — nothing to revoke is revoked, and a store that failed is still a failure', async () => {
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.revokeShare('ses_gone'), null);
@@ -972,9 +885,6 @@ test('revokeShare — nothing to revoke is revoked, and a store that failed is s
   await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && error.retryable);
 });
 
-// THE ONE UNAUTHENTICATED READ. The token is the whole credential, the reply names no account and
-// holds no id at any depth, and the movement travels as its display NAME because a reader with no
-// account holds no catalog to resolve a slug against.
 test('sharedSession — one workout, no ids in it, and one null for all three ways a token can fail', async () => {
   const reply = {
     startedAt: 1_909_000_000_000,
@@ -995,8 +905,6 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
   assert.equal(wireOf(calls[0]).path, '/v1/gym/shared/JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0');
   assert.equal(JSON.stringify(reply).includes('"id"'), false);
 
-  // Revoked, expired and never-minted are one byte on this wire, so they are one value here: the
-  // client may not invent the difference back.
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.sharedSession('revoked'), null);
   serve(refusal(404, 'no such session'));
@@ -1005,15 +913,10 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
   assert.equal(await gymApi.sharedSession('never-existed'), null);
 });
 
-// The export is not a call at all. Nothing is fetched, parsed or held: the browser follows the link
-// and the server's Content-Disposition saves the file, so a log too big for a tab's heap lands.
 test('EXPORT_HREF — a link the browser follows, on the same origin as every other gym call', () => {
   assert.equal(EXPORT_HREF, `${API_BASE}/v1/gym/export`);
 });
 
-// Only the device holding the offline queue knows every set landed, so a workout somebody is still
-// logging into cannot be deleted out from under it — the refusal is a fact about the session, not
-// about the request, and the client branches on the code to say so.
 test('session-open — a discard against a live session is refused, and it is not repairable', async () => {
   serve(refusal(409, 'that session is still running', 'session-open'));
   await assert.rejects(() => gymApi.discardSession('ses_live'), (error) => {
@@ -1062,9 +965,6 @@ test('routines — the list, the read, and an absent routine answered the way an
   assert.equal(await gymApi.routine('rt_someone_elses'), null);
 });
 
-// A write carries the entry ORDER and no entry positions; what comes back carries both, because the
-// store numbered them. PUT replaces the whole document, which is why the editor reads before it
-// writes — sending one changed entry would delete the rest of the program.
 test('routines — create sends the document, replace sends it whole, delete answers 204', async () => {
   const write = {
     id: 'rt_pull_a',
@@ -1102,10 +1002,6 @@ test('routines — create sends the document, replace sends it whole, delete ans
   assert.equal(wireOf(calls[0]).path, '/v1/gym/routines/rt_pull_a');
 });
 
-// A ROUTINE CARRIES THE PROPOSAL WAITING ON IT. The card on Today and the dot on the routines list
-// are drawn out of this read and no other — a proposal always targets a routine, so the read those
-// rooms were already making is the read that answers "is anything waiting". `revision` rides along
-// and is READ-ONLY: it is what a proposal is frozen against, and this client never sends one.
 test('routines — a pending proposal and the revision it is frozen against ride the routine', async () => {
   const routine = {
     id: 'rt_push_a',
@@ -1128,17 +1024,12 @@ test('routines — a pending proposal and the revision it is frozen against ride
   serve(ok({ routines: [routine] }));
   assert.deepEqual(await gymApi.routines(), [routine]);
 
-  // A routine with nothing waiting carries no key at all — an omission, never a null, exactly as
-  // every other optional on this wire.
   const quiet = { id: 'rt_pull_a', name: 'Pull A', position: 1, revision: 1, entries: [] };
   serve(ok({ routines: [quiet] }));
   assert.deepEqual(await gymApi.routines(), [quiet]);
   assert.equal('pendingProposal' in quiet, false);
 });
 
-// THE ROUTINE'S DATED HISTORY (screen 6), and the whole ledger when nothing is asked of it. `state`
-// recognises the literal "pending" and nothing else, so a client that guessed a word gets the whole
-// history rather than an empty screen.
 test('proposals — the ledger, filtered by routine and by the one state word the server knows', async () => {
   const head = {
     id: 'prop_2f9c40a1',
@@ -1170,9 +1061,6 @@ test('proposals — the ledger, filtered by routine and by the one state word th
   assert.equal(wireOf(calls[0]).path, '/v1/gym/proposals?routineId=rt_push_a&state=pending');
 });
 
-// ONE PROPOSAL, WHOLE: the head, the base it was written against, and the change rows that are the
-// document as well as the diff. Absent and another account's are one fact here as they are for a
-// session, a routine and a movement.
 test('proposal — the diff arrives whole, and one that is not this account’s is null', async () => {
   const whole = {
     id: 'prop_2f9c40a1',
@@ -1211,10 +1099,6 @@ test('proposal — the diff arrives whole, and one that is not this account’s 
   assert.equal(await gymApi.proposal('prop_someone_elses'), null);
 });
 
-// THE TAP, AND IT CARRIES NO DOCUMENT. The proposal is what was written and frozen; a client that
-// could send fields here would be a client that could apply something the lifter never read. What
-// comes back is the settled proposal AND the routine as it now stands, so the screen redraws off the
-// store rather than off what it hoped had happened.
 test('applyProposal and dismissProposal — a POST with no body, and the store’s own answer back', async () => {
   const settled = { id: 'prop_2f9c40a1', routineId: 'rt_push_a', state: 'applied', changeCount: 2, settledAt: 1_754_086_400_000 };
   const routine = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 2, entries: [] };
@@ -1228,7 +1112,6 @@ test('applyProposal and dismissProposal — a POST with no body, and the store�
     body: undefined,
   });
 
-  // A removal that landed has no routine to hand back — the key is absent, not null.
   const removal = { id: 'prop_9a17', routineId: 'rt_push_b', intent: 'remove', state: 'applied', settledAt: 1_754_086_400_000 };
   serve(ok({ proposal: removal }));
   assert.deepEqual(await gymApi.applyProposal('prop_9a17'), { proposal: removal });
@@ -1245,11 +1128,6 @@ test('applyProposal and dismissProposal — a POST with no body, and the store�
   });
 });
 
-// THE TWO WAYS THE WORLD MOVES UNDER A DIFF, and both are terminal. `proposal-superseded` is the
-// human's own hand winning — the routine was saved after the proposal was written, so its base is
-// gone and NOTHING from it was applied. `proposal-settled` is the other decision already taken, on
-// another tab or on a phone. Neither is repairable by sending the same request again, and a client
-// that read either as a network failure would offer a retry that fails identically forever.
 test('proposal-superseded and proposal-settled — the world moved, and neither can be retried', async () => {
   serve(refusal(409, 'Push A changed after this proposal was written', 'proposal-superseded'));
   await assert.rejects(() => gymApi.applyProposal('prop_2f9c40a1'), (error) => {
@@ -1304,10 +1182,6 @@ test('proposal-superseded and proposal-settled — the world moved, and neither 
   });
 });
 
-// A proposal that is gone is a bare 404 with no code — absent, another account's and never-existed
-// are one fact, exactly as they are on every other read here. It is neither terminal nor retryable
-// by status, and the screen reads the status: after a lifter's OWN apply of a removal it is a
-// SUCCESS, because the routine went and its ledger row went with it.
 test('a settled route answers 404 for a proposal that is not there, and it carries no code', async () => {
   serve(refusal(404, 'no such proposal'));
   await assert.rejects(() => gymApi.applyProposal('prop_gone'), (error) => {
@@ -1321,9 +1195,6 @@ test('a settled route answers 404 for a proposal that is not there, and it carri
   });
 });
 
-// §I's settings. THE READ NEVER 404s — a lifter with nothing stored is served the defaults —
-// so there is no null branch here at all, which is the whole difference between this route and every
-// other read in this file.
 test('preferences — one read that always answers, and a whole-document write that answers with the store’s copy', async () => {
   const stored = {
     units: 'kg',
@@ -1342,7 +1213,6 @@ test('preferences — one read that always answers, and a whole-document write t
     body: undefined,
   });
 
-  // The screen draws what came back rather than what it hoped it sent.
   const write = { ...stored, units: 'lb' };
   serve(ok(stored));
   assert.deepEqual(await gymApi.savePreferences(write), stored);
@@ -1355,10 +1225,6 @@ test('preferences — one read that always answers, and a whole-document write t
   });
 });
 
-// Three refusals, all 400 and all carrying a code. Nothing here branches on one — the SENTENCE is what
-// the lifter is shown, because it names the band the value fell outside — but a refusal must still
-// arrive as a terminal GymError with the code intact, because a client that read it as a network
-// failure would offer a retry that fails identically forever.
 test('preferences — every refusal is terminal, keeps its code, and carries the band in words', async () => {
   const refusals = [
     ['preferences-unreadable', 'that isn’t a settings document'],
@@ -1375,8 +1241,6 @@ test('preferences — every refusal is terminal, keeps its code, and carries the
   }
 });
 
-// The two id conflicts share one repair — mint another and send the same document again — and they
-// are told apart only by which id was spent. A client that read "409" alone would have to guess.
 test('routine-id-taken and exercise-id-taken — a spent id, and the same repair on each', async () => {
   serve(refusal(409, 'that routine id is taken', 'routine-id-taken'));
   await assert.rejects(() => gymApi.createRoutine({ id: 'rt_push_a', name: 'Push A', position: 0, entries: [] }), (error) => {
@@ -1431,9 +1295,6 @@ test('routine-id-taken and exercise-id-taken — a spent id, and the same repair
   });
 });
 
-// A routine entry naming a movement no catalog holds is the WRITE path's refusal, reused: the same
-// code the queue already repairs by reloading the catalog, and the same 400 that says this body
-// never lands however many times it is sent.
 test('unknown-exercise — a routine entry can reach the same refusal a set can', async () => {
   serve(refusal(400, 'no such exercise', 'unknown-exercise'));
   await assert.rejects(
@@ -1465,9 +1326,6 @@ test('unknown-exercise — a routine entry can reach the same refusal a set can'
   );
 });
 
-// The map is exhaustive on purpose: classification never depends on which of the two fields the
-// server it reached happened to fill in, so a refusal that arrives as a sentence alone raises the
-// same flag as the one that arrives with its code.
 test('the three routine-era refusals classify from the sentence alone as well', async () => {
   const sentences = [
     ['that routine id is taken', 'routine-id-taken'],
@@ -1503,10 +1361,6 @@ test('the three routine-era refusals classify from the sentence alone as well', 
   }
 });
 
-// THE EIGHTH CODED REFUSAL, which had no flag and no sentence in the map. It is what a start
-// carrying `joinOpenSession: false` gets when a workout is running — the backfill form's own
-// request — and the only way to tell it apart from `session-id-taken` was the status both share, so
-// a colliding id spoke the mid-workout refusal's words and a stale tab could read either as either.
 test('session-already-open — a backfill that met a live workout is its own refusal, not a 409', async () => {
   for (const answer of [
     refusal(409, 'another session is already open', 'session-already-open'),
@@ -1538,7 +1392,6 @@ test('session-already-open — a backfill that met a live workout is its own ref
       return true;
     });
   }
-  // The one it used to be indistinguishable from, on the same status.
   serve(refusal(409, 'that session id is taken', 'session-id-taken'));
   await assert.rejects(() => gymApi.startSession({ id: 'ses_1', startedAt: 1, joinOpenSession: false }), (error) => {
     assert.equal(error.sessionAlreadyOpen, false);
@@ -1547,33 +1400,16 @@ test('session-already-open — a backfill that met a live workout is its own ref
   });
 });
 
-// A 400 or a 409 is the store REFUSING the document, and telling a lifter with full signal to try
-// again when they have some is the app blaming the network for its own answer — on a retry that
-// fails identically forever.
 test('failureReason — a refusal, a lapsed sign-in, a row that is gone and a silence each get their own sentence', async () => {
   assert.equal(failureReason(new GymError(400, 'a routine needs at least one movement')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new GymError(409, 'that routine id is taken', 'routine-id-taken')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new GymError(503, '')), 'the log didn’t answer. Try again when you have signal');
-  // A lapsed cookie is not a signal problem, and neither is a session that was discarded under the
-  // screen: told to wait for signal, a lifter with full bars retries into the same answer forever.
   assert.equal(failureReason(new GymError(401, 'sign in to open your training log')), 'you’re signed out. Sign in and try again');
   assert.equal(failureReason(new GymError(404, 'no such session')), 'it isn’t in the log any more');
-  // A request that never produced a response rejects before a GymError exists at all.
   assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
   assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });
 
-// ASK (§L, §O) — the one route in this file that may not exist. There is no session id in the path:
-// Ask is about the LOG, which is what made it a room instead of a composer under one finished
-// workout.
-//
-// W7 SENT THE WHOLE CONVERSATION AND §O REVERSED IT. The thread is stored now, so the body is an id
-// and ONE question: the server assembles the prompt from what it holds, which is what makes the
-// conversation a lifter reads back the conversation the model actually saw.
-//
-// The reply's `read` is the SERVER's count of the rows it served this exchange, deduped by id — the
-// number an answer is checked against — and it arrives whole. Nothing in this client sums it, and
-// the test asserts the object comes back untouched rather than reshaped on the way through.
 test('ask — one question into one thread, and the answer with its receipt, steps and proposals back', async () => {
   serve(ok({
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
@@ -1599,10 +1435,6 @@ test('ask — one question into one thread, and the answer with its receipt, ste
   });
 });
 
-// THE FOUR REFUSALS A ROOM BRANCHES ON, and it branches on the CODE — the sentence beside it is
-// prose that may be reworded any day. Two of them are 429s and they are different facts: one is
-// about pace, the other about a rolling 30-day AI ceiling. Neither is a purchase, and the bare 404
-// is the framework's own — the route was never mounted, so there is no Ask on this deployment.
 test('ask — every refusal arrives with the machine word the room reads it by', async () => {
   const refusals = [
     [409, 'finish your workout first', 'ask-session-open'],
@@ -1618,7 +1450,6 @@ test('ask — every refusal arrives with the machine word the room reads it by',
     assert.equal(error.code, code);
     assert.equal(error.detail, sentence);
   }
-  // The absence: no body at all, because the framework answered before gym did.
   serve({ ok: false, status: 404, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
   const absent = await gymApi.ask('thr_1', 'q').catch((held) => held);
   assert.equal(absent.status, 404);
@@ -1626,12 +1457,6 @@ test('ask — every refusal arrives with the machine word the room reads it by',
   assert.equal(absent.detail, '');
 });
 
-// ── Ask's past (§O) ─────────────────────────────────────────────────────────────────────────────
-
-// THE LIST, and the one key it has. `threads` is the whole reply — there is no unread count on this
-// wire, no badge and nothing waiting, so a client that wanted one would have to invent it. The
-// title is the lifter's first message, byte for byte, and it arrives that way: this client neither
-// trims it nor decides anything about it.
 test('threads — every conversation, newest first, and one key in the reply', async () => {
   const august = new Date(2026, 7, 11, 21, 14).getTime();
   serve(ok({
@@ -1662,8 +1487,6 @@ test('threads — every conversation, newest first, and one key in the reply', a
   });
 });
 
-// ONE CONVERSATION, and it is the only read that carries `turns`. Null on 404 — absent and another
-// account's are one fact on this wire, exactly as they are for a session, a routine and a proposal.
 test('thread — the turns arrive on the detail alone, and 404 is one answer for two facts', async () => {
   serve(ok({
     id: 'thr_1',
@@ -1692,8 +1515,6 @@ test('thread — the turns arrive on the detail alone, and 404 is one answer for
   assert.equal(await gymApi.thread('thr_somebody_elses'), null);
 });
 
-// DELETE DELETES THE CONVERSATION AND NOT THE CONSEQUENCE (§O). 204 with no bytes, and a thread
-// already gone answers exactly the same, which is what makes a retry after a lost reply safe.
 test('deleteThread — 204 and nothing back, for a conversation deleted twice as readily as once', async () => {
   serve(nothing());
   assert.equal(await gymApi.deleteThread('thr_1'), null);
@@ -1708,8 +1529,6 @@ test('deleteThread — 204 and nothing back, for a conversation deleted twice as
   assert.equal(await gymApi.deleteThread('thr_1'), null);
 });
 
-// A SECOND FILE RATHER THAN MORE COLUMNS, because a set and a sentence are not one shape — and a
-// link rather than a call, for the sets export's reason: nothing is held in a tab's heap.
 test('EXPORT_THREADS_HREF — the conversations as their own file, on the same origin', () => {
   assert.equal(EXPORT_THREADS_HREF, `${API_BASE}/v1/gym/export/threads`);
   assert.notEqual(EXPORT_THREADS_HREF, EXPORT_HREF);

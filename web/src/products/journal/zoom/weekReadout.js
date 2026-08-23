@@ -1,7 +1,4 @@
-// The last seven days, read back as a small arc: how many you wrote, the mood and energy of each, and
-// the words they came to. Pure over the pages and an explicit `today` (passed in, never read from the
-// clock here), so the readout is deterministic and testable. Oldest of the seven first, so the arc
-// reads left-to-right toward now.
+// The last seven days, oldest first. Pure over the pages and an explicit `today`, never the clock.
 
 import { daysBefore } from '../hlc.js';
 

@@ -1,16 +1,5 @@
-// The one sign-in door — one piece of state, one mount, one address.
-//
-// Before this, ten surfaces each kept their own `signInOpen` flag and their own SignInDialog,
-// and the only way to open somebody else's was a counter prop-drilled from the router through
-// three product route tables. A static marketing page can hand over nothing but a URL, so
-// /gym's "Sign in" had nothing to aim at: it navigated to the app root and hoped. The door now
-// answers to `?signin` on any URL — `/?signin#/gym` opens gym's own door — and the flag is
-// stripped the moment it is read, so a refresh doesn't reopen it.
-//
-// Surfaces no longer own the door; they ask for it (useSignInDoor) and lend it their skin
-// (useSignInDoorHost). The modal is portalled into the innermost lent host, so it still wears
-// the room it opens over — including journal's live light/dark — and DOM containment decides
-// which host that is, never the order two effects happened to run in.
+// The one sign-in door. Surfaces ask for it (useSignInDoor) and lend it their skin
+// (useSignInDoorHost); the modal is portalled into the innermost lent host.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -22,14 +11,13 @@ const SIGN_IN_PARAM = 'signin';
 
 const DoorContext = createContext(null);
 
-// Ask for the door: open() shows it, open({ resume }) reopens it on its wait panel, and
-// open({ onSent }) tells the caller a link went out (the landing's "check your email" chip).
+// open() shows the door, open({ resume }) reopens it on its wait panel, open({ onSent }) tells the
+// caller a link went out.
 export function useSignInDoor() {
   return useContext(DoorContext).open;
 }
 
-// Lend the door your skin: put this ref on the element that carries your data-theme/data-brand
-// and the modal renders inside it, inheriting the tokens it already sets for its own subtree.
+// Put this ref on the element carrying your data-theme/data-brand and the modal renders inside it.
 export function useSignInDoorHost() {
   const { lendHost } = useContext(DoorContext);
   const lent = useRef(null);
@@ -54,8 +42,7 @@ export function SignInDoorProvider({ children }) {
     setHosts((current) => (lending ? [...current, element] : current.filter((held) => held !== element)));
   }, []);
 
-  // `?signin` on any URL, read on arrival and on every navigation. Consuming it rewrites the
-  // URL in place, so the address is a one-shot instruction and never sticky state.
+  // `?signin` is stripped from the URL the moment it is read, so a refresh does not reopen the door.
   useEffect(() => {
     const claim = () => {
       const url = new URL(window.location.href);
@@ -73,28 +60,23 @@ export function SignInDoorProvider({ children }) {
     };
   }, []);
 
-  // Held until we know who is asking: a link followed by someone already signed in is already
-  // through the door, and opening it at them would be a modal with nothing behind it.
   useEffect(() => {
     if (!urlAsked || status === 'loading') return;
     setUrlAsked(false);
     if (status !== 'signed-in') open();
   }, [urlAsked, status, open]);
 
-  // Sign-in usually lands in the other tab, where the link was opened. Whichever surface is
-  // showing, the door that asked for it is done.
   useEffect(() => {
     if (status === 'signed-in') setRequest(null);
   }, [status]);
 
   const send = useCallback(async (email) => {
     const result = await requestMagicLink(email);
-    request?.onSent?.(); // only on a link that actually went out — a throw never reaches here
+    request?.onSent?.(); // only on a link that actually went out
     return result;
   }, [request]);
 
-  // Several skinned surfaces are mounted at once — the shell, and the product room inside it.
-  // The door belongs to the innermost, and containment says which that is.
+  // With several skinned surfaces mounted, the door belongs to the innermost.
   const host = useMemo(
     () => hosts.reduce((inner, element) => (inner && !inner.contains(element) ? inner : element), null),
     [hosts],

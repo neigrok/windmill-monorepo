@@ -1,31 +1,11 @@
 import SwiftUI
 import WindmillPlatform
 
-// GYM'S SETTINGS (§I). Everything here changes how the room behaves AT THE RACK: units, how long you
-// rest, how a logged set confirms itself, and where the log goes when it leaves. Nothing here restates an account screen. Appearance,
-// plan, sessions, devices, export-everything and delete live in You; this room has no theme switch of
-// its own and draws no notification rows for pushes it does not send.
-//
-// WHERE IT IS REACHED FROM IS A GAP, NOT A DECISION. §I walks into it from You: gym registers a
-// settings SECTION and the shell composes it, exactly as web/src/products/gym/routes.js registers
-// `GymSettingsSection`. The native `ProductModule` seam has no such slot — `room`, `hubLine`, `entry`,
-// `holdings`, and nothing about settings — and the shell is not this product's territory, so the door
-// sits at the foot of home (Routines) until the seam exists. When it lands, this screen is what
-// the section shows and the row on home goes with it.
-//
-// EVERY TAP WRITES THE WHOLE DOCUMENT, because the route replaces it whole: `store.save` sends all
-// seven answers, and a screen that sent one field would reset the six it did not touch to their
-// defaults. Nothing here is a draft — a tap is the change, on the device first and on the log next,
-// the same order every other write in this room takes.
-//
-// Every target is 46, which is the room's rule and six points more than the board draws: this screen
-// is read in the same gym, by the same chalked hands.
+// Every tap writes the whole preferences document: the route replaces it whole, so one field would reset the rest.
 
 struct SettingsScreen: View {
     @ObservedObject var store: TrainingStore
     let web: URL
-    // What actually reaches this log, read once by the room. The row below NAMES it rather than
-    // guessing at it — and says nothing at all when the read did not come back.
     let connected: ConnectedLogState
     let onConnectedLog: () -> Void
     let say: (String?) -> Void
@@ -58,10 +38,7 @@ struct SettingsScreen: View {
         .padding(.bottom, WindmillSpace.x2)
     }
 
-    // ROW 1 — the one setting that changes nothing this room draws, and says so. Kilograms are what
-    // gym stores under either answer; what this records is how the lifter reads a number, kept on the
-    // account for the surfaces that can spell it. This one cannot yet, and a caption is the honest
-    // way to say that — the alternative is a toggle that moves and quietly does nothing.
+    // Kilograms are stored under either answer.
     private var units: some View {
         card {
             HStack(spacing: WindmillSpace.x3) {
@@ -93,9 +70,7 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 2 — off by default, and that is the decision rather than an omission: a timer nobody asked
-    // for, beeping in a gym, is the kind of thing this product does not do. A routine that writes its
-    // own rest against a movement still wins over this for that movement.
+    // A routine's own rest against a movement wins over this for that movement.
     private var restTimer: some View {
         card {
             HStack(spacing: WindmillSpace.x3) {
@@ -130,11 +105,6 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 3 — the intent is the account's; what a surface can honour is the surface's, and this one
-    // has a haptic and uses it. The caption under it named that, and then named what the INSTALLED
-    // WEB APP does instead — which is a sentence about another surface, on a screen a lifter opened
-    // to change this one. It came off on 2026-08-12 with the rest of the room's explaining; the two
-    // switches say what they do by being switches.
     private var confirmation: some View {
         card {
             Text("Set confirmation")
@@ -149,18 +119,6 @@ struct SettingsScreen: View {
         }
     }
 
-    // ROW 4 — the two doors out of the log. The export is still the web's, because a CSV is a file
-    // this app has nowhere to put yet.
-    //
-    // THE CONNECTED LOG IS NO LONGER A LINK OUT, and what changed is that this client can now answer
-    // the question. The row used to point at the web because the grant state was "an entitlements
-    // read this client does not have" — it was never an entitlement, it is the account's own
-    // credentials, `GET /v1/oauth/grants` and `GET /v1/mcp-keys`, and the room reads both. So the
-    // row names the real state and opens the screen that spells out what a connection can and can
-    // never do (§D13); the web keeps the two acts it owns, making a connection and ending one.
-    //
-    // WHAT THE LINE SAYS WHEN THE READ DID NOT COME BACK IS NOTHING about the state. A door is a
-    // place to go rather than a claim, so it describes the destination and denies no connection.
     private var doors: some View {
         VStack(alignment: .leading, spacing: 9) {
             Link(destination: page("/#/settings")) {
@@ -175,9 +133,7 @@ struct SettingsScreen: View {
         }
     }
 
-    // `away` is the glyph and the glyph is a promise about where the tap goes: the arrow leaves this
-    // app for a browser, the chevron stays in the room. A door that wore the wrong one would be the
-    // smallest lie on this screen and the one a thumb learns fastest.
+    // `away` draws the arrow that leaves this app for a browser; the chevron stays in the room.
     private func door(title: String, line: String, lit: Bool, away: Bool) -> some View {
         HStack(spacing: WindmillSpace.x3) {
             VStack(alignment: .leading, spacing: 3) {
@@ -225,14 +181,12 @@ struct SettingsScreen: View {
                 .strokeBorder(skin.line, lineWidth: 1))
     }
 
-    // The dial's own words, and `off` is one of them: there is no zero here, and no `false`.
+    // nil spells `off`: there is no zero here and no `false`.
     static func spell(_ seconds: Int?) -> String {
         guard let seconds else { return "off" }
         return Readout.clock(Int64(seconds) * 1000)
     }
 
-    // The export resolves against the account's own host, so a debug build pointed at a local server
-    // opens that one rather than windmill.works.
     private func page(_ path: String) -> URL {
         URL(string: path, relativeTo: web) ?? web
     }

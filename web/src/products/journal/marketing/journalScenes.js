@@ -1,15 +1,10 @@
-// The journal landing's five vignettes, ported from the static page's inline script with every
-// timing intact. Each mounts on the element React hands it and returns a teardown, the way
-// treeScenes does for roadmap. The markup React renders IS the settled end state, so a scene's
-// first act is to wind it back and replay — and a teardown puts it back the way React rendered
-// it, so a remount finds its end state again. Under prefers-reduced-motion nothing is wired and
-// nothing is wound back: the page is already at rest, which is the legible end state.
-// Behaviour hooks are data-* attributes on purpose — journalLanding.css paints none of them.
+// The landing's five vignettes. Each mounts on the element React hands it and returns a teardown. The
+// markup React renders is the settled end state, so a scene winds it back before replaying and a teardown
+// puts it back. Under prefers-reduced-motion nothing is wired. Behaviour hooks are data-* attributes.
 
 const PRM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// A line rests a beat on punctuation. A flat pace reads as a machine typing; this reads as someone
-// thinking between clauses.
+// A line rests a beat on punctuation.
 const PUNCTUATION = /[.,;—]/;
 
 function timers() {
@@ -20,8 +15,7 @@ function timers() {
   };
 }
 
-// One typewriter for all three typed lines. It holds rather than racing through a scene in a tab
-// nobody is looking at.
+// One typewriter for all three typed lines; it holds rather than racing through a hidden tab.
 function typeOut(kit, target, text, pace, settled) {
   target.textContent = '';
   let written = 0;
@@ -36,9 +30,8 @@ function typeOut(kit, target, text, pace, settled) {
   kit.after(pace.lead, step);
 }
 
-// The moat — the window of night. Tonight's line types itself, rests, and the echo blooms under
-// it. This is the page's one infinite-motion budget, so it is spent only where it can be seen:
-// it plays on entry, rests when it scrolls away, and picks up again on the way back.
+// The moat: tonight's line types itself, rests, and the echo blooms under it. The page's one
+// infinite-motion budget, so it plays on entry and rests when it scrolls away.
 export function mountNightWindow(root) {
   if (PRM) return () => {};
   const kit = timers();

@@ -1,8 +1,5 @@
-// The whole journal pulled back to a map: every month from the first thing you wrote to the last,
-// each day a cell that knows whether it was written and, if so, its mood and energy. Pure over the
-// pages the zoom view loads — no dates invented, no today assumed — so the grid is exactly the span
-// you've lived on the page, and a test can pin it. Oldest month first, matching the canvas's downward
-// flow of time.
+// Every month from the first thing written to the last, each day a cell. Pure over the pages: no dates
+// invented, no today assumed. Oldest month first.
 
 function daysInMonth(year, month) {
   return new Date(year, month, 0).getDate();   // month is 1-based; day 0 rolls back to the last of it

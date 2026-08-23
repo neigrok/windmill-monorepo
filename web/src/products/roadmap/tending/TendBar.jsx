@@ -1,10 +1,3 @@
-// The Tend bar (guidelines/tending.md §2, §3) — the thin input you tell the tree what to change,
-// and watch it do it. Phone: the action lane's centre tenant, full width above the rail (X8 §5).
-// Desktop: the same bar summoned to centre with ⌘K / `/`, over a soft scrim. One field, no mode
-// switch; the working state is a thinking line with X6's breathing dot, never a spinner. The
-// effects are the reply — the tree reflows live and a receipt lands — so nothing here scrolls
-// back like a chat.
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
 
@@ -13,8 +6,7 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
   const inputRef = useRef(null);
   const desktop = variant === 'desktop';
 
-  // Desktop is summoned deliberately, so it takes focus the moment it opens; the phone bar is
-  // ambient and must not yank the keyboard up until tapped.
+  // Desktop takes focus on open; the phone bar must not raise the keyboard until tapped.
   useEffect(() => {
     if (desktop && !working) inputRef.current?.focus();
   }, [desktop, working]);
@@ -27,8 +19,6 @@ export function TendBar({ variant = 'phone', placeholder = 'Tell the tree what t
     setValue('');
   };
 
-  // What tending can do, surfaced as one-tap starters — the review wedge ("Is this realistic?") is
-  // invisible otherwise. Tapping fills the field so you can tweak before sending, never fires blind.
   const starters = !working && !value && examples.length > 0 && (
     <div style={exampleRow}>
       {examples.map((example) => (
@@ -106,7 +96,7 @@ const send = {
   border: 'none', borderRadius: 'var(--radius-full)', background: 'var(--color-brand)', color: 'var(--text-on-accent)',
   cursor: 'pointer', transition: 'opacity var(--duration-fast) var(--ease-standard)',
 };
-const phoneForm = { width: '100%' }; // the lane places it; the bar only fills the slot it is given
+const phoneForm = { width: '100%' }; // the lane places it
 const scrim = {
   position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
   paddingTop: '18vh', background: 'rgba(33,27,19,.14)', pointerEvents: 'auto',

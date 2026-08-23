@@ -1,15 +1,7 @@
 name: Backend CI/CD
 
-# Monorepo: the C++ backend lives under backend/. Path-filtered so a web-only change
-# never rebuilds the image. Build context is backend/ — the Dockerfile COPYs from there.
-#
-# The journal echo embedder (services/embedder) ships from here too, as a second image under the
-# SAME package, tagged `embedder-<sha>`: the deploy pulls both by one IMAGE_TAG, and one package
-# means one visibility setting — the host pulls the backend image with no login, and a second
-# package would have been born private and failed the pull. Before 2026-08-15 the compose file
-# bind-mounted services/embedder from the host, a directory the deploy never shipped, so the
-# sidecar could not come up on a host nobody had hand-provisioned. Its own checks (embedder.yml)
-# still gate on its own paths; this only builds and publishes.
+# services/embedder ships from here as a second image under the SAME package, tagged
+# `embedder-<sha>`: one package means one visibility setting, and the host pulls with no login.
 
 on:
   push:
@@ -30,14 +22,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Image name follows the monorepo repository. The deploy compose (backend/deploy/) must
-  # reference this same name — reconcile both if the repo is renamed.
+  # The deploy compose (backend/deploy/) must reference this same image name.
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  # Build the builder stage only — it compiles everything and runs ctest, so a red
-  # suite fails here. Runs on every push and PR; shares the buildx layer cache with the
-  # image build below, so main doesn't recompile from scratch.
+  # The builder stage compiles everything and runs ctest, so a red suite fails here.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -52,7 +41,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Build the slim runtime image and publish it to GHCR, tagged by commit SHA (+ latest).
   build-and-push:
     needs: test
     if: github.event_name != 'pull_request'
@@ -78,9 +66,7 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # The embedder, same sha, same package. Its Dockerfile prunes onnxruntime to the target arch
-      # in the npm ci layer (see services/embedder/Dockerfile); the model is NOT in the image — the
-      # compose file mounts the deployed web root's weights, the bytes the browser downloads.
+      # The model is not in this image: the compose file mounts the deployed web root's weights.
       - uses: docker/build-push-action@v7
         with:
           context: services/embedder

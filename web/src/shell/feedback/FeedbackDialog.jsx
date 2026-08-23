@@ -1,8 +1,4 @@
-// One feedback door, mounted wherever it's opened from — Settings for a signed-in account,
-// the landing footer for a signed-out visitor. Same dialog either way; only the opener
-// differs. Its little state machine goes form → sending → done, with a failed send falling
-// back to the form so the reporter's words are never lost. Copy stays honest: the email is
-// optional and only "if you'd like a reply" — nothing here promises one.
+// A failed send falls back to the form so the reporter's words are never lost.
 
 import React, { useEffect, useState } from 'react';
 import { Dialog, Input, Button } from '../../design-system';
@@ -15,8 +11,6 @@ export function FeedbackDialog({ open, onClose }) {
   const [error, setError] = useState(null);
   const [focused, setFocused] = useState(false);
 
-  // A fresh door on every open, so a prior send's thank-you (or error) never greets the
-  // next reporter.
   useEffect(() => {
     if (!open) return;
     setMessage('');

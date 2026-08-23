@@ -1,8 +1,3 @@
-// The seed-packet thumbnail (F5 §02): the quest's REAL layout, rendered fresh through
-// the same SkillTree + radial engine the arrival will use — a tree that hasn't happened
-// yet. Solid tier tints: the crowned root at available, everything else locked-dim,
-// edges dormant. Pure SVG; the shelf's stylesheet owns the halo's one resting breath.
-
 import React from 'react';
 import { SkillTree } from '../model/SkillTree.js';
 import { RadialLayoutEngine } from '../layout/RadialLayoutEngine.js';
@@ -11,7 +6,7 @@ import { NODE_COLORS, CONNECTOR, NODE_SIZE, DEFAULT_NODE_COLOR } from '../theme.
 const LOCKED_INK = 0.28;
 const HALO_RADIUS = NODE_SIZE * 1.15;
 
-// Quests are static content — each layout is computed once per session, ever.
+// Each quest layout is computed once per session.
 const scenes = new Map();
 
 export function QuestThumb({ quest }) {
@@ -40,9 +35,7 @@ export function QuestThumb({ quest }) {
 
 export default QuestThumb;
 
-// Quest module → placed circles, via the real entity + engine (GhostSkeleton's recipe,
-// minus the cap and stagger a live parse needs). A quest the tree entity refuses hides
-// its thumbnail instead of ever crashing the shelf — the gate test makes this unreachable.
+// A quest the tree entity refuses hides its thumbnail rather than crashing the shelf.
 function layoutQuest(quest) {
   let tree;
   try {

@@ -1,11 +1,3 @@
-// The docked activity panel (design option A — the recommended placement): the
-// dock's resting state, a flat reverse-chron feed with day separators. When the
-// tree has work to offer it becomes the stacked dock (whats-next-panel §01): the
-// NEXT UP section leads, the feed follows under an Activity separator — one dock,
-// pin / `a` / esc grammar unchanged. Purely presentational — SkillTreeView
-// supplies the day groups, the count, the NextUp section + its ready pill, and
-// the row↔canvas handlers, plus the hovered node so a hovered fruit lights its rows.
-
 import React from 'react';
 import { Icon, IconButton } from '../../../design-system';
 import { EventRow } from './EventRow.jsx';

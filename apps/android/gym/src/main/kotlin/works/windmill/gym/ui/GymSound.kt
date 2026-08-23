@@ -11,25 +11,8 @@ import kotlin.math.PI
 import kotlin.math.pow
 import kotlin.math.sin
 
-// THERE ARE EXACTLY TWO SOUNDS IN WINDMILL GYM, EVER, AND THIS FILE IS THE WHOLE LIST. Nothing makes
-// noise on finish, on undo, on a personal record, on an error or on a sync — a training log does not
-// congratulate. The Android statement of web/src/products/gym/logger/sound.js, at the same two pitches.
-//
-// Sound carries the one confirmation the screen cannot: the rest landing while the phone is in a
-// pocket. Everything else the product confirms it confirms visually — the set row appearing, the
-// button saying the weight back at 64dp — and, since W4, in the hand: this platform has a haptic,
-// and §I's Set confirmation rows decide which of the two a logged set gets. Neither tone below
-// plays unconditionally any more; GymConfirm is the door, and the lifter's document is what opens
-// it. `setLogged` is OFF by default here for exactly that reason — on native the haptic is the
-// confirmation and the tone is the option.
-//
-// Both halves of the iOS `.ambient` category are kept: USAGE_ASSISTANCE_SONIFICATION MIXES, so a
-// lifter's music is never interrupted by a log, and the ringer check obeys the silence switch, so a
-// silenced phone stays silent. Every call is wrapped, because a device that will not make a sound
-// must never break a set.
-//
-// Main-thread by construction: reached from the one thread that taps buttons, so the handler below
-// needs no lock and cannot be raced.
+// USAGE_ASSISTANCE_SONIFICATION mixes, so a lifter's music is never interrupted, and the ringer check
+// obeys the silence switch. Every call is wrapped: a device that will not make a sound must not break a set.
 object GymSound {
     fun setLogged(context: Context) {
         play(context, hz = 760.0, seconds = 0.07)
@@ -69,9 +52,6 @@ object GymSound {
         }
     }
 
-    // A sine under an exponential decay — the same envelope the web ramps its gain along and iOS
-    // fills its PCM buffer with, so the three surfaces make the same shape of sound rather than the
-    // same frequency with different edges.
     private fun tone(hz: Double, seconds: Double): ShortArray {
         val frames = (sampleRate * seconds).toInt()
         return ShortArray(frames) { frame ->

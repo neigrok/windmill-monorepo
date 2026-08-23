@@ -44,44 +44,23 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// THIS SESSION, AS A LIST — and the list is the routine that gets offered at the end. §A2's whole
-// idea lives here: nobody assembles a six-exercise program standing in a gym, but everybody
-// performs one, so the session IS the assembly surface. A movement appended here, on the bench,
-// mid-rest, is how a routine gets written in this product — not in an editor, before the first set,
-// standing up.
-//
-// It is also the only thing that moves a lifter between movements. Nothing advances on its own: not
-// when a plan's set count is reached, not when a rest lands. The list says where everything stands
-// and the choice stays theirs.
-//
-// TWO GESTURES, AND THE RULE UNDER BOTH IS THAT NOTHING LOGGED CAN LEAVE. A drag moves the walk
-// order and only the walk order — sets are keyed by movement, never by position — and a swipe is
-// offered on a row with no sets in it and on no other row (`LiveOrder.droppable`). A movement a
-// lifter has already lifted comes off a log through §G18's repair, at rest, behind a window, and
-// never through a sideways flick at arm's length in a room with a rack in it.
+// Nothing advances a lifter on its own. A drag moves the walk order only (sets are keyed by movement,
+// never by position), and a swipe is offered only on a row with no sets (`LiveOrder.droppable`).
 @Composable
 fun AssemblySheet(
     rows: List<LiveLines.MovementRow>,
     elapsedMs: Long,
     onJump: (String) -> Unit,
     onReorder: (from: Int, to: Int) -> Unit,
-    // Answers whether the movement actually left. A row that could not go slides back rather than
-    // sitting off the edge of a list it is still part of — the store is the one that decides, and
-    // throwing its answer away is how a refusal becomes an invisible row.
     onDrop: (String) -> Boolean,
     onAdd: () -> Unit,
     onClose: () -> Unit,
 ) {
     val listState = rememberLazyListState()
-    // The list as it stands RIGHT NOW, read from inside a gesture that outlives the composition it
-    // started in: the drag detector is keyed on the row's own id so a reorder mid-drag does not
-    // cancel the drag, which means the list it captured would otherwise be the one from before the
-    // first swap.
+    // Read from inside a gesture that outlives its composition: the drag detector is keyed on the row id.
     val standing by rememberUpdatedState(rows)
     var dragging by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    // A row leaves at roughly a thumb's width of travel. Far enough that a scroll that wanders
-    // sideways never takes a movement off the session; near enough to be one deliberate flick.
     val dropAt = with(LocalDensity.current) { 108.dp.toPx() }
 
     Column(
@@ -94,10 +73,6 @@ fun AssemblySheet(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("This session", style = WindmillFont.display(20), color = GymSkin.ink)
             Spacer(Modifier.width(WindmillSpace.x3))
-            // HOW LONG THIS WORKOUT HAS BEEN RUNNING, which is the context line the design gives an
-            // in-session list (§A2's own head carries it). It moved here in W9: the logger's one
-            // clock is the rest, and two clocks in one strip is the lifter reading the wrong number
-            // between sets.
             Text(Readout.clock(elapsedMs), style = GymType.numeral(13), color = GymSkin.inkFaint)
             Spacer(Modifier.weight(1f))
             Box(
@@ -119,8 +94,6 @@ fun AssemblySheet(
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        // The dragged card rides above its neighbours and follows the finger; every
-                        // other card sits where the list just put it.
                         .zIndex(if (held) 1f else 0f)
                         .graphicsLayer {
                             translationY = if (held) dragOffset else 0f
@@ -134,8 +107,6 @@ fun AssemblySheet(
                             if (row.justAdded || row.isCurrent) GymSkin.accent else GymSkin.line,
                             RoundedCornerShape(WindmillRadius.lg),
                         )
-                        // Only a row that CAN leave takes the gesture at all, so a movement with
-                        // sets in it does not slide and spring back with nothing said.
                         .pointerInput(row.id, row.canDrop) {
                             if (!row.canDrop) return@pointerInput
                             detectHorizontalDragGestures(
@@ -173,15 +144,8 @@ fun AssemblySheet(
                                         dragging = null
                                         dragOffset = 0f
                                     },
-                                    // ONE STEP AT A TIME, AND ONLY PAST A NEIGHBOUR'S MIDPOINT.
-                                    // Anything looser oscillates, and this list is the one place
-                                    // that shows: the cards are different heights — one holds four
-                                    // logged sets and the next holds none — so a rule that swapped
-                                    // as soon as the dragged card's centre entered the other card's
-                                    // BOUNDS swapped, and then found itself inside the bounds it had
-                                    // just made, and swapped back on the very next event. Watched on
-                                    // a device it read as a row that would not move; in the log it
-                                    // was a row moving twenty times a second.
+                                    // One step at a time, past a neighbour's MIDPOINT: the cards are
+                                    // different heights, so swapping on bounds oscillates.
                                     onDrag = { change, amount ->
                                         change.consume()
                                         dragOffset += amount.y
@@ -198,11 +162,6 @@ fun AssemblySheet(
                                             else -> return@detectDragGesturesAfterLongPress
                                         }
                                         onReorder(from, over.index)
-                                        // The card stays under the finger across the swap, and where
-                                        // it lands depends on which way it went: up, it takes the
-                                        // neighbour's own top; down, it ends flush with the
-                                        // neighbour's bottom, which is a different place whenever
-                                        // the two are different heights.
                                         val landed = if (over.index < from) over.offset
                                             else over.offset + over.size - card.size
                                         dragOffset += (card.offset - landed)
@@ -255,8 +214,6 @@ fun AssemblySheet(
             }
         }
 
-        // Appending is a REST-TIME action and not a setup task, which is the whole of why this
-        // button is here rather than on a screen a lifter would have to visit before training.
         Box(
             Modifier
                 .fillMaxWidth()
@@ -268,9 +225,6 @@ fun AssemblySheet(
             Text("+ Add next movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
         }
 
-        // The one thing left to do about a movement that was just appended: log a set of it, which
-        // is what starts it. It appears only while there is such a movement — a button naming the
-        // movement already in hand would be a primary action for closing a sheet.
         rows.firstOrNull { it.justAdded }?.let { added ->
             Box(
                 Modifier
@@ -292,10 +246,6 @@ fun AssemblySheet(
     }
 }
 
-// The three bars the design puts on every row, and the only part of a card that answers a long
-// press: the card itself is a tap that jumps, so a drag that could start anywhere on it would make
-// every reach for a movement a coin toss. The bars are the design's 16 wide and the TARGET is
-// twice that, for the reason every target in this room is bigger than it looks — chalked hands.
 @Composable
 private fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
     Column(

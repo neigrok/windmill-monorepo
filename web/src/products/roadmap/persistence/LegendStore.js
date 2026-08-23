@@ -1,9 +1,5 @@
-// Local persistence for a tree's color legend (F6 — Custom color legend): the
-// ordered kinds (their hues, labels, descriptions) plus whether the key is open.
-// Keyed by tree id — hues no node wears simply read as count 0. Best-effort like
-// ProgressStore and WorkspaceStore: storage errors are never fatal. The backend
-// will own this per tree and sync via the op log (F6 backend tasks); until then
-// the legend lives here, the same interim pattern as progress and workspaces.
+// A tree's legend — ordered kinds plus whether the key is open — keyed by tree id. Storage
+// errors are never fatal.
 
 const KEY_PREFIX = 'windmill:legend:';
 
@@ -12,7 +8,6 @@ export class LegendStore {
     this.storage = storage;
   }
 
-  // The saved legend for this tree, or null if there is none.
   load(treeId) {
     try {
       const text = this.storage.getItem(KEY_PREFIX + treeId);
@@ -29,12 +24,10 @@ export class LegendStore {
         open: legend.open,
       }));
     } catch {
-      // storage full or unavailable — persistence is best-effort, never fatal
     }
   }
 
-  // Every tree this device holds a legend for. The account hand-off sweeps by tree id, and
-  // residue written for a tree the device index never knew is only reachable through the keys.
+  // Residue for a tree the device index never knew is reachable only through the keys.
   treeIds() {
     try {
       return Object.keys(this.storage).filter((key) => key.startsWith(KEY_PREFIX)).map((key) => key.slice(KEY_PREFIX.length));
@@ -47,7 +40,6 @@ export class LegendStore {
     try {
       this.storage.removeItem(KEY_PREFIX + treeId);
     } catch {
-      // ignore
     }
   }
 }

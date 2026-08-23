@@ -1,11 +1,3 @@
-// Every date and every distance the echo surface renders. There is no server-side counterpart to
-// check these against — the wire carries two ISO days and nothing else, so every number a reader
-// sees on an echo is computed here, and a wrong one is a claim about their own life.
-//
-// The sharp case is `monthsApart` returning zero. It fed the one screen that asks for money:
-// "One is what read across zero months to find it", on a reach of up to a whole calendar month.
-// Both sides of the month midpoint are pinned below so the rounding cannot quietly go back.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -73,8 +65,6 @@ test('reachInWords — the sheet says how far it read, and it is never "zero mon
   assert.equal(reachInWords('2023-09-05', '2026-03-05'), 'two and a half years');
 });
 
-// The minimum gap is seven days, so this is the shortest reach the sheet can ever be asked to
-// describe — and it is the one that used to read "zero months".
 test('reachInWords — no reach a page can carry reads as nothing', () => {
   for (let days = 7; days <= 400; days += 1) {
     const newer = new Date(Date.UTC(2026, 0, 1) + days * 86400000).toISOString().slice(0, 10);

@@ -1,13 +1,4 @@
-// The mobile editor sheet (M1 / X8 L5.2): the read-only detail grown a set of editing verbs
-// for the tree's owner, at the list's density. It flows top-to-bottom, read-first: a one-line
-// header (state fruit + rename-in-place name + a chip only where the fruit can't speak — done
-// date, lock), then the description and why-locked at peek, then the verb rail, the recolor
-// swatches, the foot Delete, and the DAG closing as Needs/Unlocks jump chips (tap eases the
-// camera and retargets the sheet in place, onJump). Purely presentational: every verb
-// dispatches through the handlers SkillTreeView passes, which wrap the same handle* callbacks
-// the desktop editor uses (with a mobile undo snackbar). The phone seats it inside the
-// BottomSheet (which supplies the card + scroll); `panel` wraps it in its own card + inner
-// scroll so the tablet can stand it up in the detail panel column.
+// The phone seats this inside the BottomSheet; `panel` wraps it in its own card and inner scroll for the tablet.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Card } from '../../../../design-system';

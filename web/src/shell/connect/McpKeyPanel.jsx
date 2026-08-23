@@ -1,9 +1,5 @@
-// The mint-and-reveal panel for a personal MCP key — the one credential surface, shared by
-// the connect page's Advanced disclosure and settings' API keys section. A named form mints
-// a static bearer; once minted the form gives way to a one-time reveal, because the server
-// keeps only the token's hash and this is the only moment it exists in the clear. The reveal
-// well is token-driven, not literal hex, so it reads as a dark code well in light mode and a
-// readable light well under [data-theme="dark"] — it survives both mounts and both themes.
+// Mint-and-reveal panel for a personal MCP key. The server keeps only the token's hash, so the
+// reveal after a mint is the only moment it exists in the clear.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input } from '../../design-system';
@@ -133,9 +129,6 @@ const honesty = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--tex
 const usage = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-tertiary)', margin: '8px 2px 0', wordBreak: 'break-word' };
 const errorLine = { fontSize: 'var(--text-xs)', color: 'var(--color-danger)', margin: '8px 0 0' };
 
-// The well reads its colors from the neutral ramp, which is re-authored (not inverted) per
-// theme: neutral-900 is dark ink in light mode and warm cream in dark, neutral-0 the reverse
-// — so bg/text stay in contrast in both, a dark well by day and a light one by night.
 const well = { background: 'var(--neutral-900)', borderRadius: 'var(--radius-md)', overflow: 'hidden' };
 const wellHead = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px 0 12px' };
 const wellLang = { flex: 1, fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '.07em', color: 'var(--neutral-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };

@@ -1,15 +1,5 @@
-// Every landing renders through the SPA, whose dist/index.html carries the BRAND ROOT's shell.
-// Served as-is at a landing's own pathname, that shell would tell a crawler the wrong story twice:
-// canonical folds the page into /, and the no-JS body — the only body a crawler without JavaScript
-// ever sees — greets a journal reader with "Any goal, as a skill tree". This postbuild step writes
-// one shell per landing: the same built page (hashed asset URLs are absolute, so it boots from any
-// path) with the head, the structured data and the fallback body swapped for that landing's own,
-// out of landingHeads.js — the same data the runtime head swap reads, so a shell and its live page
-// can never disagree.
-//
-// Every swap asserts the string it is replacing is there and unambiguous, so a head or a fallback
-// edited in web/index.html and forgotten here fails the build instead of shipping a stale shell.
-
+// Writes one shell per landing: dist/index.html with the head, structured data and no-JS body
+// swapped for that landing's own, out of landingHeads.js.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -23,11 +13,6 @@ const built = readFileSync(join(dist, 'index.html'), 'utf8');
 const root = LANDING_HEADS.find((head) => head.path === '/');
 if (!root) throw new Error('build-landing-shells: landingHeads.js declares no "/" entry — the brand-root shell is what dist/index.html holds and every swap reads from it');
 
-// The shelf the React footer renders, written out for the crawler that never runs it — so the
-// gallery, the MCP listing and the policies stay reachable from every landing without JavaScript.
-// Both rows come from the modules LandingChrome renders them from. Safe from plain Node: every
-// route table keeps its components behind lazy(() => import(...)), so nothing .jsx is touched
-// resolving the registry — the same property landingHeads.js warns about at the top of that file.
 const LEGAL_SHELF = LEGAL_LINKS.map((link) => [link.href, link.label]);
 const PRODUCT_SHELF = [
   ...PRODUCTS.map((product) => [product.landing.href, product.label]),
@@ -41,9 +26,7 @@ function swapOnce(text, from, to, where) {
   return text.slice(0, first) + to + text.slice(first + from.length);
 }
 
-// The brand root's description, og:description and twitter:description are byte-identical, so a
-// swap has to be scoped to one tag rather than hunt the document for a unique string. `[^>]`
-// spans newlines, which is what lets this match a tag however its attributes wrapped.
+// description, og:description and twitter:description are byte-identical: scope each swap to one tag.
 function swapInTag(html, marker, from, to) {
   const tags = html.match(new RegExp(`<[a-z]+[^>]*${marker}[^>]*>`, 'g'));
   if (!tags) throw new Error(`build-landing-shells: dist/index.html has no <… ${marker} …> tag to swap`);
@@ -51,9 +34,6 @@ function swapInTag(html, marker, from, to) {
   return swapOnce(html, tags[0], swapOnce(tags[0], from, to, `the ${marker} tag`), `dist/index.html at ${marker}`);
 }
 
-// Shared site and publisher, this page as a page of it, then whatever this page's own content
-// backs — a roadmap app, a journal app, a gym app, the brand root's FAQ. Every landing asserts the
-// thing its own page is for; none of them asserts anything the product does not yet do.
 function renderSchema(head) {
   if (!head.schema) throw new Error(`build-landing-shells: the ${head.path} row declares no schema — a shell that reuses the brand root's would assert the wrong url from this one`);
   const url = `${SITE_ORIGIN}${head.path}`;
@@ -71,9 +51,7 @@ function renderSchema(head) {
   return `<script type="application/ld+json">\n${json}\n    </script>`;
 }
 
-// React's createRoot().render() replaces this on mount, so it is a pure fallback — which is exactly
-// why it has to mirror the page's own hero rather than the brand root's. Inline-styled so it reads
-// correctly before the CSS bundle loads, and before there is a bundle at all.
+// Replaced on mount; inline-styled so it reads before the CSS bundle.
 function renderFallback(head) {
   const page = head.fallback;
   const missing = ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes'].filter((field) => !page?.[field]);
@@ -104,14 +82,9 @@ ${notes.join('\n')}
     </div>`;
 }
 
-// windmill_server rewrites everything between these when it serves a share page (/t/:id), so a
-// shell that lost them would unfurl every shared tree as the landing it was built from.
+// windmill_server rewrites everything between these when it serves a share page (/t/:id).
 const UNFURL_SENTINELS = ['<!-- meta:unfurl:start -->', '<!-- meta:unfurl:end -->'];
 
-// The shell already preloads the entry and its static imports; a landing's own chunk is a dynamic
-// import, so nothing in the HTML mentions it and the browser only learns it exists once the entry
-// has arrived and run. On a phone that is a whole serial round trip spent looking at the fallback.
-// Naming it here moves the request into the same flight as the rest of the page.
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'));
 
 function preloadTags(head) {
@@ -156,19 +129,6 @@ for (const head of LANDING_HEADS) {
 
 console.log(`build-landing-shells: ${shells.length} shells written — head, structured data and no-JS body asserted and swapped in each — ${shells.join(', ')}`);
 
-// The sitemap, read off the pages themselves rather than kept by hand beside them. It was a file in
-// public/, and by the time anyone looked it had grown a /gym row dated a week before gym opened and
-// priorities nobody had revisited — a list of the site as it was remembered, not as it is.
-//
-// One rule builds it: a page belongs in the sitemap under the URL its own <link rel="canonical">
-// names, unless its own robots meta says noindex. So /gallery arrives as /gallery (gallery.html's
-// canonical), 404 and pause.html stay out because they said so themselves, and a new page is listed
-// the moment it exists. staticPageAssets.js is the other half — it fails the build for an indexable
-// page with no canonical, which is the only way a page could go missing here.
-//
-// No <lastmod>, <changefreq> or <priority>. Search engines ignore the last two outright and distrust
-// the first unless it is accurate — and nothing in this build knows a page's true edit date (CI
-// checks out shallow, so mtimes are checkout time). A date we cannot stand behind is worse than none.
 const sitemap = new Set(LANDING_HEADS.map((head) => `${SITE_ORIGIN}${head.path}`));
 for (const file of readdirSync(dist).filter((name) => name.endsWith('.html'))) {
   const html = readFileSync(join(dist, file), 'utf8');

@@ -1,12 +1,4 @@
-/* The roadmap landing's own visual language — the live tree vocabulary and the sections only this
-   page has. The family vocabulary it used to carry (.wrap, the nav, the eyebrow/section type, the
-   beat cards, the trio, the CTA band, the a11y helpers) now lives in shell/marketing/landing.css,
-   which every landing loads first; this file loads after it and only adds what is roadmap — the
-   .beatStage among them, because the roadmap is the only landing that mounts a world into one.
-
-   Ported from the design system's ui_kits/marketing/index.html <style> block. The design references
-   bare --kind-<hue> vars (the six kind hues); this app names them --accent-<hue>-500, so the :root
-   below bridges the gap (values from theme.js NODE_COLORS). */
+/* Bridges bare --kind-<hue> names to --accent-<hue>-500 (values from theme.js NODE_COLORS). */
 
 :root {
   --kind-terracotta: #BC6C42;
@@ -17,7 +9,7 @@
   --kind-plum:       #8D4F83;
 }
 
-/* ---- node vocabulary (X1/X5 — physics per motion-language.md) ---- */
+/* ---- node vocabulary ---- */
 .nd { position: absolute; transform: translate(-50%,-50%); border-radius: 50%; box-sizing: border-box; z-index: 2;
       transition: background-color 280ms var(--ease-standard), border-color 280ms var(--ease-standard),
                   box-shadow 280ms var(--ease-standard), opacity 280ms var(--ease-standard); }
@@ -51,13 +43,11 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
 
 /* ---- hero band: the live moat ---- */
 .heroBleed { margin: 44px calc(50% - 50vw) 0; }
-/* Reserve the exact height fit() assigns at runtime (HH=560, s=clamp(w/980,.60,1.08),
-   full-bleed width ≈ 100vw → 560*57.14% of vw) so the band doesn't collapse from 0
-   before JS mounts it. Matches wrap.style.height in treeScenes, so mounting = no shift (CLS). */
+/* Reserve the height fit() assigns at runtime, matching wrap.style.height in treeScenes, so mounting causes no shift. */
 .heroBleed > div { height: clamp(336px, 57.14vw, 605px); }
 .heroWrap { position: relative; overflow: hidden; }
 .heroStage { position: absolute; left: 50%; top: 0; transform-origin: top center; }
-.labels-off .ndlabel { opacity: 0; }   /* X5 §5: labels hide below 0.8× — zoomed out, the tree reads as fruit */
+.labels-off .ndlabel { opacity: 0; }   /* labels hide below 0.8× */
 .scrim-t, .scrim-b { position: absolute; left: 0; right: 0; z-index: 5; pointer-events: none; }
 .scrim-t { top: 0; height: 64px; background: linear-gradient(to bottom, rgba(249,245,235,.94), rgba(249,245,235,0)); }
 .scrim-b { bottom: 0; height: 108px; background: linear-gradient(to top, rgba(249,245,235,.94), rgba(249,245,235,0)); }
@@ -78,9 +68,7 @@ path.eb { transition: opacity 280ms var(--ease-standard), stroke 280ms var(--eas
         text-decoration: none; color: var(--text-on-accent); background: var(--color-brand); border: none; border-radius: 999px;
         padding: 12px 22px; cursor: pointer; box-shadow: 0 3px 12px rgba(188,108,66,.35);
         transition: background 150ms var(--ease-standard), transform 150ms var(--ease-standard); }
-/* The Fork CTA is a solid button that only happens to be an <a>, so it has to outrank global.css's
-   a:hover (0,1,1) — which beats a bare .fcta (0,1,0). Lose this and hovering the button turns its
-   label the link colour on terracotta. */
+/* Outranks global.css's a:hover (0,1,1), which beats a bare .fcta (0,1,0). */
 a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 .fcta:hover { background: var(--color-brand-hover); }
 .fcta:active { transform: translateX(-50%) scale(.97); }
@@ -96,10 +84,8 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 .toastp b { color: var(--accent-gold-400); }
 .toastp.tin { opacity: 1; }
 
-/* ---- the loop's stage: the roadmap is the one landing whose beats mount a live world ---- */
-/* min-height reserves BEAT_H, the same bargain .heroBleed strikes above: the scenes mount off the
-   critical path, so an unreserved stage is 0px tall until idle and then shoves the page down.
-   A phone column zooms the world below 190 and simply keeps the breathing room. */
+/* ---- the loop's stage ---- */
+/* min-height reserves BEAT_H: the scene mounts off the critical path, so an unreserved stage shoves the page down. */
 .beatStage { background: var(--surface-canvas); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
              display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer;
              min-width: 0; min-height: 190px; }
@@ -120,7 +106,7 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
 .questDots { display: flex; gap: 4px; padding-bottom: 2px; }
 .questDots span { width: 8px; height: 8px; border-radius: 50%; }
 
-/* ---- build with your AI tools (F17) — names carry identity, no logos ---- */
+/* ---- build with your AI tools ---- */
 .aiPanel { margin-top: 40px; background: var(--surface-card); border: 1px solid var(--border-subtle);
            border-radius: var(--radius-2xl); box-shadow: var(--shadow-sm); padding: 36px 40px;
            display: grid; grid-template-columns: 1.05fr 1fr; gap: 44px; align-items: start; }
@@ -148,7 +134,7 @@ a.fcta:link, a.fcta:visited, a.fcta:hover { color: var(--text-on-accent); }
   .paths { grid-template-columns: 1fr; }
   .aiPanel { grid-template-columns: 1fr; gap: 28px; padding: 28px 24px; }
   .plq .tn { font-size: 13px; }
-  /* Match fit()'s phone pad (treeScenes): +72px clear band below the tree for the Fork CTA. */
+  /* Match fit()'s phone pad in treeScenes: +72px clear band below the tree for the Fork CTA. */
   .heroBleed > div { height: calc(clamp(336px, 57.14vw, 605px) + 72px); }
 }
 @media (prefers-reduced-motion: reduce) {

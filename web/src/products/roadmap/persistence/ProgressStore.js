@@ -1,13 +1,6 @@
-// LEGACY RESIDUE. Progress lives in the private lane of the SyncStore blob now
-// (sync/progressLattice.js), and nothing WRITES these keys any more — but real browsers are still
-// holding them from before the lane, and not all of it is redundant. A mark the server already
-// knows is; a mark made offline, or before signing in, or in the minutes around the lane's own
-// deploy, reached nothing but this key. Dropping the reader outright would have discarded exactly
-// the marks that were only ever here — so `drainInto` moves them into the lane first, and only
-// then is the key cleared.
-//
-// Delete this file once the drain has plausibly run everywhere; `treeIds` + `clear` are what the
-// device sweep in sync/localTrees.js needs until then.
+// Reads the localStorage progress keys that browsers still hold; nothing writes them. `drainInto`
+// moves residue into the SyncStore private lane and clears the key.
+// TODO: delete this file once the drain has plausibly run everywhere.
 const KEY_PREFIX = 'windmill:progress:';
 
 export class ProgressStore {
@@ -15,13 +8,8 @@ export class ProgressStore {
     this.storage = storage;
   }
 
-  // Fold this tree's pre-lane marks into a ProgressLattice and clear them. Stamped by the instant
-  // the mark itself recorded, under a `legacy` actor, so the ordering is the truth as this device
-  // knew it: a legacy mark genuinely made after a server row still wins, and one the server has
-  // since superseded still loses. A mark with no instant at all gets the smallest stamp there is —
-  // it loses to everything, which is right, and still lands where nothing contests it.
-  //
-  // Returns how many registers it moved, so a caller can decide whether the lane needs a flush.
+  // Marks are stamped by the instant they recorded, under a `legacy` actor; a mark with no
+  // instant gets the smallest stamp and loses to everything. Returns how many registers it moved.
   drainInto(treeId, lattice) {
     let saved = null;
     try {
@@ -42,14 +30,13 @@ export class ProgressStore {
     try {
       lattice.join({ marks });
     } catch {
-      return 0;  // unreadable residue is not worth taking the tree down for
+      return 0;
     }
     this.clear(treeId);
     return marks.length;
   }
 
-  // Every tree this device holds progress for. The account hand-off sweeps by tree id, and
-  // residue written for a tree the device index never knew is only reachable through the keys.
+  // Residue for a tree the device index never knew is reachable only through the keys.
   treeIds() {
     try {
       return Object.keys(this.storage).filter((key) => key.startsWith(KEY_PREFIX)).map((key) => key.slice(KEY_PREFIX.length));
@@ -62,7 +49,6 @@ export class ProgressStore {
     try {
       this.storage.removeItem(KEY_PREFIX + treeId);
     } catch {
-      // ignore
     }
   }
 }

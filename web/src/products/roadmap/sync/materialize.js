@@ -1,8 +1,5 @@
-// The one place gesture semantics execute on the client: each editing gesture becomes a
-// list of stamped writes — a partial subgraph — computed against the current lattice, all
-// sharing one HLC stamp so the gesture is atomic on the wire. This retires editing/edits.js:
-// the splice, fan-out, and reduction logic lives here now, over the lattice instead of over
-// TreeData, and there is exactly one encoding of it.
+// Each editing gesture becomes a list of stamped writes — a partial subgraph — computed against
+// the current lattice, all sharing one HLC stamp so the gesture is atomic on the wire.
 
 import { hlcText } from './lattice.js';
 import { keyBetween, nKeysBetween } from './fractionalIndex.js';
@@ -38,8 +35,8 @@ function kind(id, at, fields) {
   return entry;
 }
 
-// gesture: { kind, ...payload }. Returns { nodes, edges, kinds } — a partial subgraph. The
-// caller stamps it with a frameId/actor and joins + sends it.
+// gesture: { kind, ...payload } → { nodes, edges, kinds }, a partial subgraph the caller stamps
+// with a frameId/actor, then joins and sends.
 export function materialize(gesture, lattice, clock) {
   const at = clock.tick(Date.now());
   const data = lattice.toTreeData();
@@ -50,8 +47,7 @@ export function materialize(gesture, lattice, clock) {
 
   switch (g.kind) {
     case 'CreateNode': {
-      // Slot the new node just after its last-ordered sibling under the same parent (roots share
-      // the virtual canvas-center parent), so a create always appends rather than renumbering.
+      // Slot the new node after its last-ordered sibling, so a create appends rather than renumbers.
       const parentId = g.parentId ?? null;
       const siblings = data.nodes.filter((n) => (parentId ? n.prerequisites.includes(parentId) : n.prerequisites.length === 0));
       let lastOrder = null;
@@ -61,18 +57,9 @@ export function materialize(gesture, lattice, clock) {
       if (g.parentId) edges.push(addEdge(g.parentId, g.id, at));
       break;
     }
-    // A pasted plan (paste-import F3): the whole parsed subgraph lands as one gesture —
-    // every write under this one stamp, one persist, one undo entry. Append mode also
-    // carries the plan's new kinds (g.kinds), so the graft's added legend rides the same
-    // stamp — one undo removes nodes, edges AND kinds together. Each kind is born fully
-    // (hue + label + description) in a single created write; ranks step past the last so
-    // they land in order. AddKind repaints nothing (nodes carry their hue as a string).
+    // The whole pasted subgraph lands as one gesture: one stamp, one persist, one undo entry.
     case 'ImportSubgraph': {
-      // Seed order for pasted nodes so a graft appends after the target parent's existing children
-      // instead of sorting to the front (an empty order sorts first). Group by primary parent — a
-      // pasted node's first edge, else the virtual center for a pasted root — and hand each group
-      // keys past that parent's last existing child. A doc round-trip that already carries an order
-      // (n.order) keeps it; only un-ordered paste/quest nodes get seeded.
+      // Seed order so a graft appends after the parent's children; an empty order sorts first.
       const primaryParent = new Map();
       for (const e of g.edges) if (!primaryParent.has(e.to)) primaryParent.set(e.to, e.from);
       const needKeys = new Map();
@@ -109,11 +96,11 @@ export function materialize(gesture, lattice, clock) {
       })));
       break;
     }
-    case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // re-add life only; the tombstoned fields survive
+    case 'ResurrectNode': nodes.push(node(g.id, at, { created: true })); break;  // life only; the tombstoned fields survive
     case 'RenameNode': nodes.push(node(g.id, at, { label: g.label })); break;
     case 'DescribeNode': nodes.push(node(g.id, at, { description: g.description })); break;
     case 'SetNodeColor': nodes.push(node(g.id, at, { color: g.color })); break;
-    case 'SetNodeOrder': nodes.push(node(g.id, at, { order: g.order })); break;  // one register write — siblings re-sort, none renumber
+    case 'SetNodeOrder': nodes.push(node(g.id, at, { order: g.order })); break;  // one register write; siblings re-sort, none renumber
     case 'AddEdge': edges.push(addEdge(g.from, g.to, at)); break;
     case 'RemoveEdge': edges.push(removeEdge(g.from, g.to, at)); break;
     case 'ReconnectEdge':
@@ -128,27 +115,22 @@ export function materialize(gesture, lattice, clock) {
       for (const child of data.nodes) {
         if (!child.prerequisites.includes(g.id)) continue;
         const others = child.prerequisites.filter((p) => p !== g.id);
-        if (others.length > 0) continue;  // the child keeps a live parent — nothing to re-tether
+        if (others.length > 0) continue;  // the child keeps a live parent
         for (const grand of new Set(grandparents)) {
           if (grand !== child.id) edges.push(addEdge(grand, child.id, at));  // splice the child up
         }
       }
       break;
     }
-    // A multi-node delete as one atomic gesture (bulk-delete): every doomed node is
-    // tombstoned, and any surviving child that loses ALL its parents to the deletion is
-    // spliced up to its nearest SURVIVING ancestors — walking UP through doomed ancestors so
-    // the gap closes to live ground, never re-tethering to another doomed node or to itself.
-    // DeleteNode's single-node splice is exactly the g.nodeIds.length === 1 case of this. The
-    // edges list (v1 passes []) drops any explicit edge whose endpoint dies with a tombstone.
+    // A surviving child that loses all its parents is spliced up to its nearest live ancestors.
     case 'BulkDelete': {
       const doomed = new Set(g.nodeIds);
       const byId = new Map(data.nodes.map((n) => [n.id, n]));
       for (const id of g.nodeIds) if (byId.has(id)) nodes.push(node(id, at, { deleted: true }));
       for (const child of data.nodes) {
         if (doomed.has(child.id)) continue;
-        if (!child.prerequisites.some((p) => doomed.has(p))) continue; // no doomed parent — untouched
-        if (child.prerequisites.some((p) => !doomed.has(p))) continue; // keeps a live parent — not spliced
+        if (!child.prerequisites.some((p) => doomed.has(p))) continue; // no doomed parent
+        if (child.prerequisites.some((p) => !doomed.has(p))) continue; // keeps a live parent
         const survivors = new Set();
         const seen = new Set();
         const stack = child.prerequisites.filter((p) => doomed.has(p));
@@ -169,11 +151,6 @@ export function materialize(gesture, lattice, clock) {
       }
       break;
     }
-    // A multi-node recolor as one atomic gesture (bulk-recolor): every selected node still
-    // present in the projection gets one color write under this single stamp — one persist, one
-    // undo. captureInverse banks each node's prior color generically, so that one undo restores
-    // every original hue. Edges carry no color; they follow their source node's hue, so outgoing
-    // edges repaint for free. A one-element BulkRecolor is exactly SetNodeColor on the projection.
     case 'BulkRecolor': {
       const present = new Set(data.nodes.map((n) => n.id));
       for (const id of g.nodeIds) if (present.has(id)) nodes.push(node(id, at, { color: g.color }));

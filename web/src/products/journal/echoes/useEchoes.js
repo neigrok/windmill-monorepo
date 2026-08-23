@@ -1,20 +1,7 @@
-// The echoes the server left on your pages, and everything the surface does with them. They are
-// derived from the writer's own save (backend ECHOES.md, "Delivery") rather than by a nightly pass,
-// which is why nothing here polls and nothing here shows a spinner: the page is re-read on the next
-// ordinary read, and the journal never speaks on its own initiative.
-//
-// Three rules shape this file:
-//
-//   The count is the array. The server sends only matches it verified, the client re-locates every
-//   one before the tab draws its number, so the count on the edge of a page is a count of rows the
-//   reader can open. Nothing here ever computes a total from something it hasn't got.
-//
-//   A quote is re-located in the live body at render, or it is not shown. The wire carries passage
-//   TEXT and an occurrence index — never an offset — so an edit to an old page can't silently
-//   re-point a quote at the wrong sentence, and the two sides never disagree about an encoding.
-//
-//   Under ~20 pages, nothing at all. No tabs, no offer — unless the server says `floorWaived`,
-//   which it does for owner accounts so the people building this can see their own echoes. There is nothing true to sell yet.
+// Echoes arrive on an ordinary read; nothing here polls. The count is the array, never a total computed
+// from something not in hand. A quote is re-located in the live body at render or it is not shown — the
+// wire carries passage text and an occurrence index, never an offset. Under PAGE_FLOOR pages nothing
+// renders unless the server says `floorWaived`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
@@ -23,10 +10,8 @@ import { localDay } from '../hlc.js';
 const PAGE_FLOOR = 20;
 const FIRST_ECHO_KEY = 'windmill:journal-first-echo';
 
-// `occurrenceHint` says WHICH occurrence of this text the passage is — the third "I want to teach",
-// not a character position. It is a hint and nothing more: the server omits it when the body has
-// moved under the passage, and the text search below is what actually decides whether a quote
-// renders. A hit yields the char range in this body, which is what the canvas lights when you walk.
+// `occurrenceHint` is which occurrence of the text this is, not a character position, and only a hint:
+// the text search decides whether a quote renders. Answers the char range in this body.
 export function locate(body, text, occurrence) {
   if (!body || !text) return null;
   const want = typeof occurrence === 'number' && occurrence >= 0 ? occurrence : 0;
@@ -56,11 +41,10 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   const [retiredOffers, setRetiredOffers] = useState(new Set());
   const [openDay, setOpenDay] = useState(null);        // the one page whose ink is open
   const [sheetDay, setSheetDay] = useState(null);
-  const [hops, setHops] = useState([]);                // the walk, tonight first — a receipt, not a wizard
+  const [hops, setHops] = useState([]);                // the walk, tonight first
   const [followedDay, setFollowedDay] = useState(null); // which page the desktop margin sits beside
-  // The canvas, handed over by Canvas.jsx when it mounts: its scroller and its own day lookup.
-  // Every echo surface measures through this — none of them knows what the canvas's markup is
-  // called, and none of them can be left querying a class that has been renamed.
+  // Handed over by Canvas.jsx on mount: its scroller and its day lookup. Every echo surface measures
+  // through this rather than querying the canvas's own markup.
   const [canvas, setCanvas] = useState(null);
   const holdCanvas = useCallback((next) => setCanvas(next), []);
 
@@ -71,10 +55,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
 
   useEffect(() => {
     let cancelled = false;
-    // Everything below is the ACCOUNT's own prose — the quotes, and the bodies fetched to re-locate
-    // them — so a change of who is signed in drops all of it before anything is asked again. An
-    // echo left standing across a hand-over is the previous person's writing on the new person's
-    // canvas: JOURNAL-1, one room over.
+    // All of it is the account's own prose, so a change of who is signed in drops it before asking again.
     setPages(new Map());
     setFloored(false);
     setFirstEver(false);
@@ -87,9 +68,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     journalApi.echoes('0001-01-01', today)
       .then((reply) => {
         if (cancelled) return;
-        // The floor is a rule about whether there is anything true to sell yet, and the server
-        // waives it for the accounts building this — below it nothing renders at all, so a working
-        // echo and a broken pipeline look identical on the one journal that has to be watched.
+        // Below the floor nothing renders; the server waives it for the accounts building this.
         if (!reply.floorWaived
             && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
           setFloored(true);
@@ -108,9 +87,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     return () => { cancelled = true; };
   }, [today, account]);
 
-  // Fetch the bodies this page's quotes live in, re-locate every one, and drop the ones that no
-  // longer stand. Runs when a page's tab mounts, because the tab carries the count at rest: a number
-  // that shrank the moment you opened it would be exactly the lie this feature must not tell.
+  // Fetch the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
   const verify = useCallback(async (day) => {
     const page = pagesRef.current.get(day);
     if (!page || page.verified || verifying.current.has(day)) return;
@@ -147,10 +124,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   const openSheet = useCallback((day) => setSheetDay(day), []);
   const closeSheet = useCallback(() => setSheetDay(null), []);
 
-  // "Not now" — the sheet closes and the page is answered. Nothing on the canvas ever asks, so
-  // there is nothing here to suppress; this is the record that the page was answered, so nothing
-  // ever asks it again. Held locally first and posted after: a server that refuses the decline must
-  // not cost the reader the answer they gave, and must not be told it twice.
+  // "Not now" — held locally first, posted after, never posted twice.
   const retireOffer = useCallback((day) => {
     setSheetDay((current) => (current === day ? null : current));
     if (retiredOffers.has(day)) return;
@@ -158,11 +132,8 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     journalApi.dismissEchoOffer(day).catch(() => { /* answered here regardless */ });
   }, [retiredOffers]);
 
-  // "Not useful" — the whole set for that page is retired, never asked about, never counted.
-  //
-  // One request for the set, not one per match. This looped the pair door until 2026-08-09, so a
-  // nine-match page cost nine round trips that could each fail on its own and leave the page half
-  // faded on the next read — the exact shape ECHOES.md rules out.
+  // "Not useful" on a page: one request for the whole set, never one per match — per-match calls can
+  // each fail on their own and leave a page half faded on the next read.
   const retireEcho = useCallback((day) => {
     const held = pagesRef.current.get(day);
     setOpenDay((current) => (current === day ? null : current));
@@ -176,15 +147,8 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     });
   }, []);
 
-  // "Not useful" on one pairing. Only that passage goes — the rest of the page was not what the
-  // reader answered about, and retiring it would be putting words in their mouth.
-  //
-  // THE REFUSAL PUTS IT BACK, here and above, and that is the deliberate half. A dismissal the
-  // server did not take is one the next read hands straight back: leaving it hidden buys a few
-  // minutes of looking obedient and pays for them with an echo that returns days later for no reason
-  // the reader can name — the failure ECHOES.md calls the most trust-destroying this feature has.
-  // Coming back at once is at least legible, and the control is right there to press again. No retry
-  // queue: a queue would be a second, invisible copy of the reader's answer.
+  // "Not useful" on one pairing: only that passage goes, and a refusal puts it back at once. No retry
+  // queue — a queue would be a second, invisible copy of the reader's answer.
   const retireMatch = useCallback((day, matchDay) => {
     const held = pagesRef.current.get(day);
     if (!held) return;
@@ -200,10 +164,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     });
   }, []);
 
-  // "Useful" — the one answer given on purpose, and the whole point of the pair. Marked here first
-  // because the reader must never wait on a round trip to see their own answer land, and unmarked
-  // again if the server refused, for the same reason the dismissal comes back: `useful` is served on
-  // the next read, so a mark the server never took is a mark that quietly disappears later.
+  // Marked here first, and unmarked again if the server refused, since `useful` is served on the next read.
   const markUseful = useCallback((day, matchDay) => {
     const answer = (useful) => (current) => {
       const held = current.get(day);
@@ -215,11 +176,9 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     journalApi.echoUseful(day, matchDay).catch(() => setPages(answer(false)));
   }, []);
 
-  // Walking back: a position is a URL, so the hop is a hash change; the canvas loads the day and
-  // lights the passage. The page you land on has its own ink already open, because every page
-  // reaches further back than the one you came from and that is the whole point of the walk.
+  // A position is a URL: the hop is a hash change, and the canvas loads the day and lights the passage.
   const walkTo = useCallback((triggerDay, match) => {
-    journalApi.echoOpened(triggerDay, match.day).catch(() => { /* a lost signal is not the reader's problem */ });
+    journalApi.echoOpened(triggerDay, match.day).catch(() => { /* a lost signal changes nothing here */ });
     setHops((current) => {
       const trail = current.length ? current : [today];
       const seen = trail.indexOf(match.day);
@@ -230,8 +189,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     onFly({ day: match.day, lo: match.lo, hi: match.hi });
   }, [today, onFly]);
 
-  // Stepping back onto a page already in the trail. Not a new echo opened — no signal, and the trail
-  // folds back to where you now stand rather than growing a loop.
+  // Stepping back onto a page already in the trail folds the trail rather than growing a loop.
   const standOn = useCallback((day) => {
     setHops((current) => {
       const seen = current.indexOf(day);
@@ -249,8 +207,8 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     onFly({ day: today });
   }, [today, onFly]);
 
-  // The once-ever card belongs to the newest page that has an echo — tonight's, the night it happens.
-  // The server owns the claim; the device flag can only withhold the card, never assert it.
+  // The once-ever card belongs to the newest page with an echo. The server owns the claim; the device
+  // flag can only withhold the card, never assert it.
   const firstEchoDay = useMemo(() => {
     if (!firstEver || !pages.size) return null;
     return [...pages.keys()].sort().pop();
@@ -260,15 +218,12 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     try { localStorage.setItem(FIRST_ECHO_KEY, 'seen'); } catch { /* storage unavailable — it may say itself twice */ }
   }, []);
 
-  // The desktop margin panel follows the scroll, so it has to actually watch it: the echo page nearest
-  // the top of the canvas is the one the panel sits beside, and when none is on screen there is
-  // nothing to say and the panel goes.
+  // The desktop margin sits beside the echo page nearest the top of the canvas; with none on screen it goes.
   useEffect(() => {
     if (!pages.size) { setFollowedDay(null); return undefined; }
     if (!canvas) return undefined;
     const { scroller, dayElement } = canvas;
-    // The page you are reading is the last one whose day row has passed the upper half of the canvas —
-    // the same page a sticky day marker is showing. Nothing on screen, nothing to sit beside.
+    // The page being read is the last one whose day row has passed the upper half of the canvas.
     const pick = () => {
       const frame = scroller.getBoundingClientRect();
       const waterline = frame.top + frame.height * 0.55;

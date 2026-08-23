@@ -1,8 +1,3 @@
-// The director's `busy()` — what the week's offer asks before its safety cap closes. Pinned: it is
-// true from the moment a ceremony is scheduled until its last beat has run, whether that ceremony
-// speaks (the arrival's toast), speaks nothing (a summary-less plan, the demo's suppressed arrival),
-// or is cut short (reduced motion, cancel); and true while a changeset waits for the floor.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CeremonyDirector } from '../../../../src/products/roadmap/ceremony/CeremonyDirector.js';

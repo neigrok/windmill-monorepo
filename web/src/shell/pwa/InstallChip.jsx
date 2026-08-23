@@ -1,8 +1,4 @@
-// The install chip — the one place the shell offers the PWA install. The browser's event is
-// stashed at boot by ./installPrompt.js (it fires long before this chip mounts); here we only
-// read it. iOS Safari never fires the event, so this renders nothing there — the manifest is
-// what makes Add-to-Home-Screen correct on the real device. Dismissal is remembered forever;
-// the chip never nags.
+// The PWA install offer. iOS Safari never fires the event, so this renders nothing there.
 
 import React, { useState, useSyncExternalStore } from 'react';
 import { Button, Icon, IconButton } from '../../design-system';
@@ -15,7 +11,7 @@ function readDismissed() {
 }
 
 function rememberDismissed() {
-  try { localStorage.setItem(DISMISSED_KEY, '1'); } catch { /* storage refused — never load-bearing */ }
+  try { localStorage.setItem(DISMISSED_KEY, '1'); } catch { /* storage unavailable */ }
 }
 
 const CSS = `
@@ -44,9 +40,7 @@ export function InstallChip() {
   const [dismissed, setDismissed] = useState(readDismissed);
   if (!captured || dismissed) return null;
 
-  // The stash is dropped before prompt() is called, so a double-tap finds nothing to prompt
-  // with, and the call is awaited inside the catch: a replayed prompt() rejects, and a
-  // rejection nobody awaited beacons as a client error the user never caused.
+  // Drop the stash before prompt() so a double-tap finds nothing; a replayed prompt() rejects.
   const accept = async () => {
     forgetInstallPrompt();
     try {
@@ -55,7 +49,7 @@ export function InstallChip() {
       if (outcome !== 'dismissed') return;
       rememberDismissed();
       setDismissed(true);
-    } catch { /* the browser refused the prompt — the offer just goes away */ }
+    } catch { /* the browser refused the prompt */ }
   };
   const dismiss = () => {
     rememberDismissed();

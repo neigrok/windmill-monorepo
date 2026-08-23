@@ -1,15 +1,5 @@
-// The MCP OAuth consent screen (F17 §2) — the ONE frontend surface in the whole
-// OAuth flow. The backend's /oauth/authorize validates the request and redirects the
-// browser here, at #/oauth/authorize?…, with the PKCE/anti-CSRF params riding in the
-// hash. We show the user who's asking, take one Allow/Cancel, and follow the redirect
-// the backend returns — we never touch a code, token, or PKCE secret.
-//
-// Reconciled with the design mock: the params live in OAuth, so "Allow blooms once →
-// Connected" plays optimistically over the decision round-trip and then the browser
-// hands back to the tool (there is no post-Allow Windmill screen — that lives on the
-// client's callback). Deny is a redirect too, carrying access_denied. The three states
-// the mock never drew — unknown app, mismatched redirect, expired request — render in
-// the calm register; only "can't reach" is a brick, per auth.md.
+// The MCP OAuth consent screen: takes one Allow/Cancel and follows the redirect the backend
+// returns. It never touches a code, token or PKCE secret.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Icon } from '../../design-system';
@@ -18,9 +8,8 @@ import { useSignInDoor } from './SignInDoor.jsx';
 import { fetchConsentClient, postDecision } from './OAuthClient.js';
 import { consentSummary } from './scopes.js';
 
-// Read the OAuth params out of the hash's query (…#/oauth/authorize?client_id=…).
-// Three of these (code_challenge, resource, state) are opaque and echoed back untouched; `scope` is
-// echoed untouched too, but it is no longer opaque to US — it is the thing this screen is for.
+// The OAuth params out of the hash's query; code_challenge, resource, state and scope are echoed
+// back untouched.
 function readParams() {
   const hash = window.location.hash;
   const q = hash.indexOf('?');
@@ -52,8 +41,7 @@ export function OAuthConsent() {
 
   const signedIn = status === 'signed-in' && Boolean(user);
 
-  // Fetch the verified client once we're signed in — never before, and never from the
-  // URL. A redirect_uri the client never registered is a spoof attempt: refuse it.
+  // Fetch the verified client only once signed in, never from the URL.
   useEffect(() => {
     if (missingParams || !signedIn || client || failure) return undefined;
     let cancelled = false;
@@ -80,7 +68,7 @@ export function OAuthConsent() {
         state: params.state,
         approve,
       });
-      window.location.href = redirect; // hands the browser back to the MCP client — we're done
+      window.location.href = redirect;
     } catch (err) {
       setPhase('idle');
       if (err.code === 'unauthenticated') { pendingApprove.current = approve; refresh(); openSignInDoor(); }
@@ -89,9 +77,7 @@ export function OAuthConsent() {
     }
   }, [params, refresh]);
 
-  // Sign-in resolves in another tab (magic link) and AuthProvider flips this one. The door
-  // shuts itself on that flip; what's ours is the replay — if a decision was mid-flight when
-  // the session lapsed, run it again. Nothing in the client re-runs; the params never left the URL.
+  // Replay a decision that was mid-flight when the session lapsed, once sign-in resolves.
   useEffect(() => {
     if (!signedIn) return;
     if (pendingApprove.current !== null) {
@@ -134,16 +120,8 @@ export function OAuthConsent() {
 
 export default OAuthConsent;
 
-// ---- the pieces ---------------------------------------------------------
-
-// The card renders THE REQUEST — the scopes this client actually asked for, grouped by product — and
-// never a fixed list. Windmill is several products behind one account, so the tool asking may be
-// reaching for a training log; three hardcoded roadmap lines would have been a screen that describes
-// a different grant from the one the button hands over.
 function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onNotYou }) {
   const name = user.name?.trim() || user.email;
-  // Three faces, not two — see consentSummary. "No capability lines" is what an account-wide grant
-  // and an unreadable one have in common, and it is not what tells them apart.
   const { reach, groups, canDelete } = consentSummary(scope);
   return (
     <Card>
@@ -159,8 +137,6 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
       </div>
 
       {reach === 'everything' ? (
-        // The legacy grant: a client that asked for nothing in particular gets the account-wide one
-        // this server issued before it had a vocabulary, and it is named rather than dressed up.
         <div style={{ marginTop: 6 }}>
           <div style={{ ...grow, ...growGone }}>
             <span className="wm-oc-nd wm-oc-gone" />
@@ -168,9 +144,6 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
           </div>
         </div>
       ) : reach === 'nothing' ? (
-        // Asked for, and got, nothing this server can read. The backend answers such a token with an
-        // empty grant, so the card says the same — and Allow still works, because a scope nobody can
-        // parse is a tool that will find no tools rather than a screen that should refuse to draw.
         <div style={{ marginTop: 6 }}>
           <div style={grow}>
             <span className="wm-oc-nd wm-oc-dim" />
@@ -207,8 +180,6 @@ function ConsentCard({ user, client, scope, redirectHost, onAllow, onCancel, onN
   );
 }
 
-// Allow blooms once — the olive check wakes while the decision round-trips, then the
-// browser follows the redirect back to the tool (F17 §2, reconciled with the OAuth flow).
 function ApprovedBloom({ clientName }) {
   return (
     <Card>
@@ -307,8 +278,6 @@ function Card({ children }) {
   return <div style={card}>{children}</div>;
 }
 
-// ---- style ---------------------------------------------------------------
-
 const shell = {
   position: 'fixed',
   inset: 0,
@@ -379,8 +348,6 @@ const grow = {
   marginTop: 5,
 };
 
-// Delete does not wear the same face as the rest. The line a person skims past is the one that
-// takes something away, so it is the one line on the card that is allowed to look different.
 const growGone = { color: 'var(--color-danger)' };
 
 const cant = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-tertiary)', margin: '10px 2px 0' };
@@ -389,9 +356,7 @@ const btnRow = { display: 'flex', gap: 8, marginTop: 14 };
 
 const foot = { fontSize: '10px', color: 'var(--text-tertiary)', lineHeight: 1.5, textAlign: 'center', marginTop: 10 };
 
-// The node glyphs (F17 §3, inline hues — there are no --kind-* tokens on the DOM side),
-// the button pseudo-states, and the one wake keyframe Allow blooms with. `gone` is the delete level:
-// a hollow brick ring rather than a filled node, because the level it marks is the one that empties.
+// `gone` is the delete level.
 const GLYPH_CSS = `
   .wm-oc-nd { width:14px; height:14px; border-radius:50%; box-sizing:border-box; flex:none; }
   .wm-oc-dim  { border:2px solid rgba(95,132,148,.32); background:rgba(95,132,148,.22); }

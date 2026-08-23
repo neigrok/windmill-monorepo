@@ -1,12 +1,3 @@
-// The bucket grid behind pointer picking (`nearest`) and viewport label selection (`within`). It
-// is small enough to look obviously right and has two edges that are not: the floor on negative
-// coordinates (a tree is laid out around the origin, so half of every canvas is negative), and the
-// fact that `nearest` scans only the 3×3 cells around the query — so a node inside maxRadius but
-// two cells away is simply NOT found. That second one is not a bug, it is the grid's contract with
-// its caller: CELL SIZE MUST BE >= MAX RADIUS, or picking silently misses nodes at the edge of the
-// hit circle. It is pinned here because the pick radius and the cell size are chosen in two
-// different files, and nothing else would catch them drifting apart.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -15,8 +6,7 @@ import { SpatialGrid } from '../../../../src/products/roadmap/model/SpatialGrid.
 const node = (id, x, y) => ({ id, x, y });
 
 test('every node is bucketed by its floored cell, on both sides of the origin', () => {
-  // cellSize 100: cell 0 is [0,100), cell -1 is [-100,0). The origin is a cell BOUNDARY, so a node
-  // one unit to the left of it belongs to cell -1, not cell 0 — the classic off-by-one.
+  // cellSize 100: cell 0 is [0,100), cell -1 is [-100,0) — the origin is a cell boundary.
   const grid = new SpatialGrid([
     node('origin', 0, 0),
     node('justLeft', -1, -1),
@@ -40,7 +30,7 @@ test('every node is bucketed by its floored cell, on both sides of the origin', 
 test('nearest picks the closest node and counts one exactly on maxRadius as in range', () => {
   const grid = new SpatialGrid([node('near', 3, 4), node('far', 10, 0)], 100);
 
-  assert.equal(grid.nearest(0, 0, 100), 'near');   // 5 vs 10
+  assert.equal(grid.nearest(0, 0, 100), 'near');
   assert.equal(grid.nearest(9, 0, 100), 'far');
   assert.equal(grid.nearest(0, 0, 5), 'near');     // distance 5, radius 5 — inclusive
 });
@@ -54,22 +44,14 @@ test('nearest is null when nothing is inside maxRadius, and null on an empty gri
 });
 
 test('nearest never looks past the 3x3 cells around the query, so cellSize must be >= maxRadius', () => {
-  // The node is 35 world units away and the radius is 100 — well in range by distance. With a cell
-  // size of 10 it sits three cells out, past the neighbourhood the scan walks, and is missed.
   const tooFineGrid = new SpatialGrid([node('a', 35, 0)], 10);
   assert.equal(tooFineGrid.nearest(0, 0, 100), null);
   assert.equal(tooFineGrid.nearest(0, 0, 35), null);
-  // one cell out is inside the neighbourhood and is found
   assert.equal(new SpatialGrid([node('a', 15, 0)], 10).nearest(0, 0, 100), 'a');
-  // and with cellSize >= maxRadius the miss is impossible: anything within the radius is at most
-  // one cell away by construction.
   assert.equal(new SpatialGrid([node('a', 35, 0)], 100).nearest(0, 0, 100), 'a');
 });
 
 test('nearest resolves a tie in favour of the last candidate it scans', () => {
-  // Both nodes are 10 away and land in the same cell, so the scan sees them in insertion order and
-  // the later one wins (the comparison rejects only strictly-worse candidates). Deterministic, and
-  // worth pinning: a hover that flickers between two overlapping nodes is a real bug.
   const grid = new SpatialGrid([node('first', 50, 60), node('second', 50, 40)], 1000);
 
   assert.equal(grid.nearest(50, 50, 100), 'second');
@@ -77,7 +59,6 @@ test('nearest resolves a tie in favour of the last candidate it scans', () => {
 });
 
 test('within returns the nodes inside the exact box, not everything in the cells it scanned', () => {
-  // cellSize 10, so the box below spans several cells and each of them holds a node just outside it.
   const grid = new SpatialGrid([
     node('in1', 0, 0),
     node('in2', 12, 7),
@@ -108,8 +89,6 @@ test('within reaches into negative cells', () => {
 });
 
 test('move re-buckets a node so it is picked at its new place and not at its old one', () => {
-  // The grid reads coordinates off the shared node objects, so a caller moves the node and then
-  // tells the grid — exactly what the scene does on a drag.
   const moving = node('moving', 5, 5);
   const grid = new SpatialGrid([moving, node('parked', 305, 5)], 100);
 

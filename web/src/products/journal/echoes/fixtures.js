@@ -1,12 +1,5 @@
-// A journal with a couple of years in it, so every echo state can be seen without a backend.
-//
-// The corpus is one person circling the same idea across two and a half years, because that is what
-// an echo is for: you may have forgotten you ever planned it. Days are computed from today, so the
-// distances read the way the design writes them ("five months ago", "one year, two months") whenever
-// you open this, not only on the day it was written.
-//
-// Every quote here is a real substring of the page body it points at — the surface re-locates each
-// one in the live body at render, so a fixture that lied about its own corpus would render nothing.
+// A journal with a couple of years in it, so every echo state can be seen without a backend. Days are
+// computed from today. Every quote is a real substring of the page body it points at.
 
 import { localDay } from '../hlc.js';
 
@@ -21,14 +14,12 @@ function daysBack(days) {
   return localDay(new Date(year, month - 1, day - days));
 }
 
-// Keep the opening words, count what the cut held back. The count is computed, never asserted — a
-// withheld number that disagreed with the passage would be exactly the lie this feature must not tell.
+// Keep the opening words, count what the cut held back. The count is computed, never asserted.
 function cut(text, keepWords) {
   const words = text.split(/\s+/);
   return { text: words.slice(0, keepWords).join(' '), withheldWords: words.length - keepWords };
 }
 
-// One page of the corpus: a passage with a little life around it, so re-location has something to do.
 const CORPUS = [
   {
     back: 5, on: 14, keep: 12,
@@ -142,8 +133,7 @@ function corpusPages() {
   ];
 }
 
-// Tonight reaches back nine times; yesterday twice; and the page five months back has its own four,
-// so a walk keeps finding pages that were already reaching further back than the one you came from.
+// Tonight reaches back nine times; yesterday twice; the page five months back has its own four.
 function corpusEchoes(entitled) {
   return [
     {

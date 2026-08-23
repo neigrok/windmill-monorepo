@@ -4,12 +4,6 @@ import androidx.compose.runtime.saveable.SaverScope
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-// THE TAB THROUGH A RECREATION, and the one restore in this room that has to survive a BUILD
-// CHANGE: the Bundle can hand back a tab saved by an app whose tabs were different — "Today" died
-// in the 13 Aug wave — and a room that crashed unparceling a constant that no longer exists would
-// be a room a lifter cannot open. The tab is therefore saved as its NAME, and a name this build
-// does not recognise lands on home.
-
 class GymTabsTests {
     @Test
     fun testATabRoundTripsThroughItsName() {

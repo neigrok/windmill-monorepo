@@ -1,5 +1,4 @@
-// Starter quest (F5 §03): a first season in a sailing dinghy, from rigging at
-// the dock to a first solo sail — every safety drill genuinely gates going alone.
+// Starter quest: a first season in a sailing dinghy, from rigging at the dock to a first solo sail.
 
 export default {
   id: 'learn-to-sail',

@@ -1,12 +1,8 @@
-// Top overlay bar: the Windmill wordmark (links home to the landing root) on the
-// left, camera controls on the right.
-
 import React from 'react';
 import { IconButton, Tooltip, Icon } from '../../../design-system';
 import { keyHint } from '../shortcuts/shortcutMap.js';
 
 export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFitToView, canReset, onResetEdits, onShare, onShowShortcuts, activityOpen, activityUnread, activityPing, readyCount = 0, onToggleActivity }) {
-  // The (A) / (?) key hints come from the canonical shortcut map, never a duplicated literal.
   const activityHint = keyHint('Activity feed');
   const shortcutsHint = keyHint('Keyboard shortcuts');
   return (
@@ -15,14 +11,10 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
         <a className="st-brand-home" href="#/" aria-label="Windmill — home">
           <span className="st-brand-name">Windmill</span>
         </a>
-        {/* The tree identity plaque (F1·F2): the TreeSwitcher docks here when given,
-            else the static title. It's the one home for "which tree am I in". */}
         {titleSlot ?? (title && <span className="st-brand-title" style={{ marginLeft: 'var(--space-2)' }}>{title}</span>)}
       </div>
 
       <div className="st-controls">
-        {/* Tending's front door on desktop — the bar is summoned (⌘K / `/`), so this labelled
-            chip is how you discover it exists at all. Shown only for an owner of an armed tree. */}
         {onTend && (
           <Tooltip label="Tell your tree what to change · ⌘K" side="bottom">
             <button type="button" className="st-tend-chip" onClick={onTend}>
@@ -31,8 +23,6 @@ export function ControlBar({ title, titleSlot, onTend, onZoomIn, onZoomOut, onFi
             </button>
           </Tooltip>
         )}
-        {/* The standing offer (whats-next-panel): "Next · N" while steps are ready,
-            the plain Activity chip at zero; the unseen-activity badge rides along. */}
         <Tooltip label={readyCount > 0 ? `What’s next (${activityHint})` : `Activity (${activityHint})`} side="bottom">
           <button
             type="button"

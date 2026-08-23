@@ -1,7 +1,3 @@
-// The F4 gate (F5 §03): every starter quest passes the demo's test on itself before it
-// ships — one obvious first move, a visible cascade, an honest DAG, no pre-lit status.
-// npm test and npm run build both run this suite, so a roster violation refuses the build.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ROSTER } from '../../../../src/products/roadmap/quests/roster/index.js';
@@ -22,7 +18,7 @@ const PINNED = [
 ];
 
 const KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const CLOCKISH_ESTIMATE = /\d\s*(?:h|hrs?|hours?|m|mins?|minutes?)\b/i; // "12h 30m" precision is dishonest
+const CLOCKISH_ESTIMATE = /\d\s*(?:h|hrs?|hours?|m|mins?|minutes?)\b/i;
 const LABEL_MAX = 40;
 
 test('the roster is the nine pinned quests, dev wedge first', () => {

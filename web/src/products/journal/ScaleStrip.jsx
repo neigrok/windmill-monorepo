@@ -1,14 +1,6 @@
-// The two taps — how the day felt, and how much was in the tank. One control, because they are one
-// question asked twice, and drawing them as two unlabelled clusters is what made the canvas ask
-// nothing at all (canon: Journal canvas controls, 09 Aug 2026).
-//
-// THE WORD IS THE LABEL. Two permanent labels don't fit the measure and wouldn't be read, so a
-// single mono word sits at the right of the strip naming the value you last touched — mood at rest,
-// energy for a beat after an energy tap, then back. Unset, it reads `felt`, which is the only place
-// this surface ever says what the dots are.
-//
-// Tapping the step you are on clears it (pageStore holds that rule); the strip states it on hover
-// rather than in a hint bubble. Both scales are optional always and skipping costs nothing.
+// The two taps — how the day felt, and how much was in the tank — as one control. The mono word at the
+// right names the value last touched; unset it reads `felt`. Both scales are optional, and tapping the
+// step you are on clears it (pageStore holds that rule).
 
 import React, { useEffect, useState } from 'react';
 

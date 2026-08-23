@@ -1,19 +1,10 @@
-// The coach chip (F4 §02) — the one element the demo adds to the read-only chrome,
-// and a temporary one. It mounts ONCE EVER per human: after the arrival settles, a
-// beat of idle, and a quiet pointer, it points an arrow tab at the single ready step
-// while that node pulses ×2 in its own kind colour (the tree stays fully lit and
-// interactive — never a scrim with a hole). One sentence, one button, one quiet ✕.
-// It retires on ✕/Esc/any completion/fork and never returns (wm-coach-done). Under
-// reduced motion the GPU pulse is invisible, so the card draws its own static
-// kind-glow ring; the mount is a fade with no rise.
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { COACH_DONE_KEY, DEMO_COPY } from './demoStage.js';
 import { NODE_COLORS, DEFAULT_NODE_COLOR, NODE_SIZE } from '../theme.js';
 
-const ARRIVAL_SETTLE_MS = 1200; // the bloom cascade + a beat — "arrival settles" before we consider mounting
-const IDLE_MS = 800;            // pointer-quiet the coach waits out — one that interrupts exploring has failed
-const SETTLE_AT = 0.9;          // the camera pre-ease is 90% done before the chip mounts (§02)
+const ARRIVAL_SETTLE_MS = 1200;
+const IDLE_MS = 800;            // pointer-quiet required before mounting
+const SETTLE_AT = 0.9;          // camera settle fraction required before mounting
 const POLL_MS = 100;
 const CARD_WIDTH = 264;
 const ANCHOR_GAP = 18;          // px between the node's edge and the card
@@ -34,11 +25,10 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
   if (baselineRef.current === null) baselineRef.current = completionCount;
 
   const reduced = prefersReducedMotion();
-  const node = scene?.nodesById?.get(nodeId) ?? null; // live world position + kind, straight from the scene
+  const node = scene?.nodesById?.get(nodeId) ?? null;
   const hue = NODE_COLORS[node?.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
 
-  // Retire is the one exit: set the once-ever note (never returns — not on reload, not
-  // on revisit) and stop rendering. Idempotent, so every retire path can call it freely.
+  // Idempotent: every retire path may call it.
   const retire = useCallback(() => {
     if (retiredRef.current) return;
     retiredRef.current = true;
@@ -46,15 +36,11 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
     setRetired(true);
   }, []);
 
-  // Doing beats being told (§03): a completion — the guided beat itself, an unlock, or the
-  // visitor completing anything first — retires the coach. A completion already banked when
-  // the coach first rendered means it never mounts at all.
   useEffect(() => {
     if (completionCount !== baselineRef.current) retire();
   }, [completionCount, retire]);
 
-  // The mount sequence: arrival-settle → idle → pointer-quiet → camera pre-ease → 90%
-  // settle. Only then does the chip appear and the pulse start together.
+  // The mount sequence: arrival-settle → idle → pointer-quiet → camera pre-ease → 90% settle.
   useEffect(() => {
     if (!scene || !nodeId || retiredRef.current) return undefined;
     if (baselineRef.current > 0) { retire(); return undefined; } // completed before we could mount
@@ -75,8 +61,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
       if (now - lastPointerAt < IDLE_MS) return;
       if (!revealed) {
         revealed = true;
-        // Ease the camera only if the node sits OUTSIDE the central 80% frame (§02) — a
-        // node already comfortably in view is never chased.
+        // Ease the camera only if the node sits OUTSIDE the central 80% frame.
         const here = scene.nodesById?.get(nodeId);
         const p = here && scene.projectToScreen?.(here.x, here.y);
         const framed = p && p.x > window.innerWidth * 0.1 && p.x < window.innerWidth * 0.9
@@ -86,8 +71,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
       }
       if ((scene.settleProgress?.() ?? 1) < SETTLE_AT) return;
       clearInterval(poll);
-      // Shown counts as used: burn the once-ever note now, so a passive ignore + reload
-      // never re-arms it (§03 "one chip, ever, per human").
+      // Shown counts as used: burn the once-ever note now.
       try { localStorage.setItem(COACH_DONE_KEY, '1'); } catch { /* private mode — the session ref still holds */ }
       if (!pulsedRef.current && !reduced) { pulsedRef.current = true; scene.pulseNode?.(nodeId); }
       setShown(true);
@@ -101,9 +85,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
     };
   }, [scene, nodeId, reduced, retire]);
 
-  // Anchor the card + arrow tab to the node every frame the camera moves (subscribeViewport
-  // fires per moved frame, off React — the NodeOverlay pattern). The card sits beside the
-  // node and flips to the other side rather than run off-screen; a far-off node hides it.
+  // Anchor the card and ring to the node on every viewport frame, off React.
   useEffect(() => {
     if (!scene || !nodeId || !shown) return undefined;
     const place = () => {
@@ -147,8 +129,7 @@ export function CoachChip({ scene, nodeId, onMarkDone, completionCount = 0 }) {
     return () => { unsubscribe?.(); window.removeEventListener('resize', place); };
   }, [scene, nodeId, shown]);
 
-  // ✕ or Esc retires the chip and nothing else (capture + stop, like VisitorNotice) — the
-  // same press must not also deselect a node underneath.
+  // Esc retires the chip and nothing else — capture + stop, so the press cannot also deselect.
   useEffect(() => {
     if (!shown) return undefined;
     const onKey = (event) => {

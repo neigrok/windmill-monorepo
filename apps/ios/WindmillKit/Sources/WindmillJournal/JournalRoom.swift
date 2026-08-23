@@ -1,22 +1,12 @@
 import SwiftUI
 import WindmillPlatform
 
-// The canvas — one continuous scroll, oldest at the top, today at the bottom, the cursor waiting
-// where you left it. The native statement of web/src/products/journal/Canvas.jsx, and the same
-// rules: opening RESTORES to the bottom (a restore, not an entrance — nothing animates before you
-// can type), a day marker pins while its day is under you, a gap is drawn as a gap, and the only
-// thing that ever moves on its own is today's ember.
-
 public struct JournalRoom: View {
     private let account: Account
 
     @StateObject private var store = PageStore()
-    // The one teaching moment in the whole product, and it retires the first time it is answered.
     @AppStorage("windmill:journal-scales-taught") private var scalesTaught = false
     @Environment(\.scenePhase) private var scenePhase
-    // Journal follows the app's Appearance (You → Light · Dark · System) like every other surface.
-    // It used to own a night/day toggle of its own, which meant the setting in You did not reach
-    // the room and the app carried two controls for one thing.
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var writing: Bool
 
@@ -44,40 +34,29 @@ public struct JournalRoom: View {
                 }
                 composer
             }
-            // The measure, capped before any margin appears: full width − 44 on a phone (canon §4).
             .padding(.horizontal, 22)
             .padding(.top, WindmillSpace.x8)
             .padding(.bottom, 150)
         }
         .defaultScrollAnchor(.bottom)
         .scrollDismissesKeyboard(.interactively)
-        // The lamp and the one control are overlaid, and the night is painted behind — never
-        // siblings in a stack. A sibling that ignores the safe area drags the scroll view up with
-        // it, and the day markers then pin beneath the status bar and land on top of the prose.
+        // Overlays, never siblings: a sibling that ignores the safe area drags the scroll view up.
         .overlay(alignment: .top) { statusBarScrim }
         .overlay(alignment: .bottom) { lamplight }
         .overlay(alignment: .bottom) { bar }
         .background(skin.canvas.ignoresSafeArea())
         .environment(\.journalSkin, skin)
-        // The room owns its skin inside its own scope and nowhere else (canon §10, the same rule
-        // the web follows with .journal-root). `roomChrome` is the one thing it says outward: the
-        // shell reads it to dress the capsule in the lane journal reserves and never paints.
+        // `roomChrome` is the one thing the room says outward, so the shell can dress the capsule.
         .roomChrome(colorScheme)
-        // Re-runs whenever who is signed in changes: on sign-in this claims what was written on the
-        // device before there was an account, then loads the window. And once more when an
-        // unverified seat is verified — that is when a window the launch could not read can land.
+        // Re-runs whenever the seat changes, including a verification.
         .task(id: account.seat) { await store.connect(to: account) }
-        // Leaving settles what was typed; COMING BACK asks what day it is. A phone spends the night
-        // in a pocket, so the store's own midnight timer is asleep with it — this is the half that
-        // catches the writer opening the canvas in the morning on a page that ended hours ago.
+        // Coming back asks what day it is: the store's midnight timer sleeps with the phone.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await store.rollOver(to: .today()) } }
             else { Task { await store.flushPendingWrite() } }
         }
     }
 
-    // Today — the last block. Writing happens inline in a field that grows, never in a composer
-    // that opens; mood and energy sit under it in thumb reach.
     private var composer: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x5) {
             TextField(
@@ -107,9 +86,6 @@ public struct JournalRoom: View {
                     .foregroundStyle(skin.ink.opacity(0.5))
             }
 
-            // Appears once the first page is saved, and teaches the one thing the canvas cannot say
-            // for itself: the two scales are optional, and skipping them costs nothing. Dismissed
-            // once is dismissed forever — this is the only card journal ever shows.
             if showScalesCard { scalesCard }
         }
         .padding(.bottom, WindmillSpace.x8)
@@ -152,7 +128,6 @@ public struct JournalRoom: View {
             .padding(.bottom, 34)
     }
 
-    // The month confirms itself as you scroll into it, rather than needing a rail of its own.
     private func monthDivider(_ day: LocalDay) -> some View {
         Text(Self.monthName(day))
             .font(WindmillFont.display(20))
@@ -182,8 +157,6 @@ public struct JournalRoom: View {
         return "\(months[max(0, min(11, index))]) \(pieces[0])"
     }
 
-    // Journal has no tabs and now no controls of its own, so its one bottom bar carries just the
-    // shell's seat, at the same right edge it sits at in every other app, past a hairline.
     private var bar: some View {
         HStack {
             Spacer(minLength: 0)
@@ -193,9 +166,6 @@ public struct JournalRoom: View {
         .padding(.bottom, WindmillSpace.x2)
     }
 
-    // The canvas scrolls under the status bar, as everything on this platform does. This is the
-    // gradient the web puts behind its day marker, doing the same job here: prose dissolves into
-    // the night before it can collide with the clock.
     private var statusBarScrim: some View {
         LinearGradient(colors: [skin.canvas, skin.canvas, skin.canvas.opacity(0)],
                        startPoint: .top, endPoint: .bottom)
@@ -204,7 +174,6 @@ public struct JournalRoom: View {
             .ignoresSafeArea(edges: .top)
     }
 
-    // The lamplight — a soft warm pool at the foot of the canvas, under today.
     private var lamplight: some View {
         RadialGradient(
             colors: [skin.lamp.opacity(0.13), skin.lamp.opacity(0)],
@@ -217,8 +186,6 @@ public struct JournalRoom: View {
 
 }
 
-// Mono "saved" that fades in on each write and eases back out — never a button, never a spinner,
-// never a toast. Silence is the resting state.
 private struct SavedNote: View {
     let state: PageStore.SaveState
     let tick: Int

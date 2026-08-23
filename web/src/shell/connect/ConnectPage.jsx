@@ -1,11 +1,4 @@
-// The connect surface (F17 §2) — windmill.works/connect. One page that answers exactly
-// three things: which tool, what to paste, what happens next. Tool tabs (tools, not
-// transports), one dark snippet well with one Copy, per-tool steps, the passive waiting
-// seat, and the five-verb capability chips. The snippet carries no secret — the promise
-// line replaces the auth wall, and first connect opens the browser to approve (§3, the
-// grant, is OAuthConsent). Signed out, the page still shows; Copy opens the sign-in door.
-//
-// Canon: guidelines/mcp-connect.md. Copy, snippets, and steps are cited from it verbatim.
+// The connect surface: which tool, what to paste, what happens next. The snippet carries no secret.
 
 import React, { useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
@@ -18,8 +11,6 @@ const MCP_URL = 'https://windmill.works/mcp';
 const JSON_TEXT = `{\n  "mcpServers": {\n    "windmill": { "url": "${MCP_URL}" }\n  }\n}`;
 const JSON_COPY = `{ "mcpServers": { "windmill": { "url": "${MCP_URL}" } } }`;
 
-// One roster for the tabs — the snippet, its label, and the follow-up steps all swap per
-// tool; the URL inside never varies (§2 per-tool snippets). Default tab is Claude Code.
 const CLIENTS = [
   { id: 'desktop', tab: 'Claude Desktop', who: 'Claude Desktop', lang: 'CONNECTOR URL', copyLbl: 'Copy URL',
     copy: MCP_URL, pre: MCP_URL,
@@ -40,7 +31,6 @@ const CLIENTS = [
     steps: [['·', 'Streamable HTTP + OAuth 2.1 — no SSE transport; a GET answers 405']] },
 ];
 
-// The five verbs, each wearing its node hue (§4) — the canonical block, compact.
 const CAPS = [
   ['plant roadmaps', 'terracotta'],
   ['add & connect steps', 'olive'],
@@ -49,8 +39,6 @@ const CAPS = [
   ['read your trees', 'sky'],
 ];
 
-// The one dark well highlights just the URL (gold) and mutes comment lines — enough to read
-// "code" without a full tokenizer.
 function Snippet({ text }) {
   return text.split('\n').map((line, i) => {
     const key = `${i}`;
@@ -79,8 +67,7 @@ export function ConnectPage({ inShell = false }) {
   const [advOpen, setAdvOpen] = useState(false);
   const client = CLIENTS[active];
 
-  // Copy is the sign-in gate: connecting needs an account, so a signed-out Copy opens the
-  // door instead of copying (§2). Signed in, it copies and flips to olive "Copied" for 1.4s.
+  // Signed out, Copy opens the sign-in door instead of copying.
   const onCopy = () => {
     if (!signedIn) { openSignInDoor(); return; }
     try { navigator.clipboard?.writeText(client.copy); } catch { /* clipboard unavailable */ }
@@ -164,8 +151,6 @@ export function ConnectPage({ inShell = false }) {
 }
 
 export default ConnectPage;
-
-// ---- style ---------------------------------------------------------------
 
 const title = { fontFamily: 'var(--font-display)', fontSize: '19px', fontWeight: 700, lineHeight: 1.25, margin: '4px 0 2px' };
 const sub = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 12px' };

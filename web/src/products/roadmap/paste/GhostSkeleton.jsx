@@ -1,7 +1,5 @@
-// The composer's ghost preview (paste-import F3 §02): the parsed plan grows beside
-// the text as dashed, kind-tinted buds on dormant edges — pure SVG on the birth
-// stage, no WebGL, structural only (no glow, no icons, no labels). The real radial
-// layout places it, so the ghost is an honest preview of the arrival's shape.
+// The composer's ghost preview: the parsed plan as dashed, kind-tinted buds on dormant edges,
+// pure SVG and structural only. The real radial layout places it.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { SkillTree } from '../model/SkillTree.js';
@@ -25,7 +23,7 @@ export function GhostSkeleton({ nodes }) {
         setScene(null);
         return;
       }
-      // Entering ghosts fade in on the feedback cadence — 150ms, staggered ~40ms apiece.
+      // Entering ghosts fade in staggered by STAGGER_MS apiece.
       const entering = next.placed.filter((node) => !shownIds.current.has(node.id)).map((node) => node.id);
       next.delayOf = new Map(entering.map((id, index) => [id, Math.min(index * STAGGER_MS, STAGGER_CAP_MS)]));
       shownIds.current = new Set(next.placed.map((node) => node.id));
@@ -67,9 +65,8 @@ export function GhostSkeleton({ nodes }) {
 
 export default GhostSkeleton;
 
-// Parsed nodes → placed ghosts, through the same SkillTree + radial layout the real
-// arrival will use. A parse the tree entity refuses (it can't, by grammar contract —
-// but belt and braces) hides the ghost instead of ever crashing the composer.
+// Parsed nodes → placed ghosts, through the same SkillTree + radial layout the real arrival uses.
+// A parse the tree entity refuses hides the ghost rather than crashing.
 function layoutGhost(nodes) {
   if (!nodes || nodes.length === 0) return null;
   const capped = nodes.slice(0, GHOST_CAP);

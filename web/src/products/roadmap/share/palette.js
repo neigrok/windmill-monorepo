@@ -1,9 +1,5 @@
-// The palette for everything that leaves the app (X2 share identity). Light is
-// the design system 1:1 — kinds are pulled straight from theme.js (→ tokens/
-// colors.css), so an exported tree can never drift from the in-app tree. Dark is
-// the export-only night skin the live renderer doesn't have. Per theme: chrome
-// colors (mat/panel/edge/track/brand/grad*) drive the frame; per-kind {c,rgb,soft}
-// drive the tree portrait — c = fill, rgb = glow, soft = panel edge / dim wash.
+// The palette for everything that leaves the app. Light kinds come straight from theme.js; dark is
+// an export-only skin. Per kind: c = fill, rgb = glow, soft = panel edge / dim wash.
 
 import { NODE_COLORS, NODE_COLOR_NAMES } from '../theme.js';
 

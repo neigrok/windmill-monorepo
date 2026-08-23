@@ -31,9 +31,6 @@ test('buildOutline — root above sections, heads carry the DFS walk BENEATH the
   });
 });
 
-// The head IS the section (canon §2), so it is rendered once — as the section's own row. A head
-// that also sat in its rows would render twice: a fold header and a step, same node, two hit
-// targets, different affordances.
 test('buildOutline — a section head never appears among its own rows', () => {
   const t = tree([
     node('r', []),
@@ -141,8 +138,7 @@ test('nextUp — the shared whats-next ranking (unlocks desc → id), kind-cappe
     ['x', 'locked'], ['y', 'locked'], ['z', 'locked'],
   ]);
 
-  // b unlocks 2 (y,z), a unlocks 1 (x), c and d unlock 0. The third terracotta (c) is dropped by
-  // the two-per-kind cap; the olive d fills the third slot.
+  // b unlocks 2 (y,z), a unlocks 1 (x), c and d unlock 0; the two-per-kind cap drops c for d.
   assert.deepEqual(nextUp(t, states, 3), {
     entries: [{ id: 'b', unlocks: 2 }, { id: 'a', unlocks: 1 }, { id: 'd', unlocks: 0 }],
     readyCount: 4,
@@ -153,8 +149,6 @@ test('nextUp — the shared whats-next ranking (unlocks desc → id), kind-cappe
   });
 });
 
-// Under the lens the two-per-kind mix cap means nothing — every offer is that kind — so the shelf
-// ranks the whole ready set of it, and the readout counts that kind alone.
 test('nextUp — the lens ranks within one kind, past the plan mix cap', () => {
   const t = tree([
     node('r', []),
@@ -183,9 +177,6 @@ test('nextUp — the lens ranks within one kind, past the plan mix cap', () => {
   assert.deepEqual(nextUp(t, states, 3, 'plum'), { entries: [], readyCount: 0 });
 });
 
-// The readout counts what the shelf would offer, never a step it just refused: a root with no
-// prerequisites is available on nearly every incomplete tree, so counting it read "1 ready" over
-// an empty shelf — and "4 ready" over three rows on every tree with one.
 test('nextUp — a single root is excluded from the offer AND from the readout', () => {
   const t = tree([
     node('r', []),

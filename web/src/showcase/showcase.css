@@ -1,5 +1,4 @@
-/* Showcase-only layout styles for the component gallery (App.jsx).
-   Component visuals live in the components themselves; this is page chrome. */
+/* Showcase-only page chrome; component visuals live in the components themselves. */
 
 .wm-page {
   min-height: 100vh;

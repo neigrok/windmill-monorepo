@@ -1,8 +1,3 @@
-// The roadmap's /app home cell (shell contract §HomeCards) — the resume truth. Seeds from
-// the per-email trees cache the landing maintains (windmill:trees:<email> — never trusted,
-// only a first frame), then the registry corrects it. While resolving, the resume door shows
-// only if the cache holds a tree: a loading cell never claims a zero count.
-
 import React, { useEffect, useState } from 'react';
 import { listTrees } from './persistence/TreeRegistry.js';
 
@@ -15,9 +10,7 @@ const KIND_DOT = {
   plum: 'var(--kind-plum)',
 };
 
-// Both keys are read-only here: the auth hint (AuthProvider's) names whose cache to read,
-// the trees cache (the landing's) seeds the first frame. A ghost or unknown tab reads nothing,
-// so one device never shows another account's trees.
+// Reads only the cache keyed by the signed-in email; a ghost or unknown tab reads nothing.
 function cachedTrees() {
   try {
     const hint = JSON.parse(localStorage.getItem('windmill:auth-hint') || 'null');

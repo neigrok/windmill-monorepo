@@ -14,10 +14,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-// The wire, spelled out. Every field name below is the one the backend's codec writes, and every
-// absence is an omission rather than a null — the decoder matches these by spelling alone, so a
-// rename anywhere is a silent 404 or a silently missing number.
-
 private val json = Json { ignoreUnknownKeys = true }
 
 private inline fun <reified T> fields(value: T): JsonObject = json.encodeToJsonElement(value).jsonObject
@@ -42,8 +38,6 @@ class TrainingWireTests {
                      session.plan?.entry("bench-press"))
     }
 
-    // A plan line with no target weight means "whatever you did last time" — an absence that is a
-    // real instruction, and never a zero.
     @Test
     fun testAPlanLineWithNoTargetWeightIsAnAbsenceAndNotAZero() {
         val entry = json.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"chin-up","sets":3,"reps":8}""")
@@ -52,8 +46,6 @@ class TrainingWireTests {
         assertNull(entry.restSeconds)
     }
 
-    // And a plan line with no REP target means max — `3 × max`, a movement taken to whatever it gives
-    // that day. It is omitted when absent, like every other optional in this module, and never null.
     @Test
     fun testARepTargetIsOmittedWhenTheRoutineDeclinesToNameOne() {
         val entry = json.decodeFromString(PlanEntry.serializer(), """{"exerciseId":"chin-up","sets":3}""")
@@ -85,8 +77,6 @@ class TrainingWireTests {
         assertEquals(1_754_300_000_000, set.completedAtMs)
     }
 
-    // A kind this build has never heard of reads as working. Folding it to warmup would be the quiet
-    // way to lose a lift: warmups are excluded from history, from the prefill and from every record.
     @Test
     fun testAKindThisBuildHasNeverHeardOfReadsAsWorking() {
         val set = json.decodeFromString(TrainingSet.serializer(),
@@ -95,8 +85,6 @@ class TrainingWireTests {
         assertEquals(SetKind.Working, set.kind)
     }
 
-    // An absent optional is OMITTED, never null — the module's convention on the wire, and the same
-    // bytes this device writes to its own disk.
     @Test
     fun testAnAbsentOptionalIsOmittedRatherThanWrittenAsNull() {
         val queued = TrainingSet(id = "set_1", exerciseId = "bench-press", weightKg = 82.5, reps = 5,
@@ -112,17 +100,10 @@ class TrainingWireTests {
         assertNull("a start that declines to state the flag omits it — and an omitted flag IS the " +
             "join, which is why every real start on this phone states false", start["joinOpenSession"])
 
-        // Every real start — user-tapped (decisions §5) and the claim's replays alike — rides with
-        // an EXPLICIT false: a start that silently joined a live workout would land the lifter in
-        // yesterday's session under the wrong plan, or file a replayed past session into today's.
         val stated = fields(SessionStart(id = "ses_1", startedAt = 1, joinOpenSession = false))
         assertEquals(false, stated["joinOpenSession"]?.jsonPrimitive?.boolean)
     }
 
-    // The log's rows are FLAT: the session's own fields with its four facts beside them, not a
-    // session nested under a key that is not there. `topSet` is decoded and drawn nowhere on this
-    // phone, and `closedItself` reaches exactly one sentence (the session detail's four-hour-rule
-    // line) — so this is what keeps the model matching the wire the web's log row reads.
     @Test
     fun testALogRowIsTheSessionWithItsFactsBesideIt() {
         val row = json.decodeFromString(SessionSummary.serializer(), """
@@ -139,8 +120,6 @@ class TrainingWireTests {
         assertTrue(row.closedItself)
     }
 
-    // A session holding no working set has no top set, and a session somebody finished with a tap
-    // says nothing about the four-hour rule. Both absences are omissions.
     @Test
     fun testARowWithNoWorkingSetCarriesNoTopSetAndWasNotClosedByTheRule() {
         val row = json.decodeFromString(SessionSummary.serializer(), """
@@ -151,8 +130,6 @@ class TrainingWireTests {
         assertFalse(row.closedItself)
     }
 
-    // A movement trained for the first time is answered 200 with the movement and nothing else — a
-    // fact, not a fault. An absent REPLY means something else entirely: the log did not answer.
     @Test
     fun testAFirstEverMovementComesBackNamedAndEmpty() {
         val answer = json.decodeFromString(LastTime.serializer(), """{"exerciseId":"zercher-squat"}""")
@@ -185,10 +162,6 @@ class TrainingWireTests {
         assertEquals(Target(sets = 3, reps = 12, weightKg = 140.0), review.against?.movements?.first()?.planned)
     }
 
-    // AN OPEN ROW ARRIVES AS AN EMPTY OBJECT — `"planned": {}` — because the codec omits every
-    // absent field and keeps the object. A REQUIRED `sets` here threw MissingFieldException on the
-    // whole reply, and the room read that loss as silence: one open line in a routine cost the
-    // finish screen its stats, its record and its comparison, under "the log didn't answer".
     @Test
     fun testAnOpenRowsFrozenTargetDecodesAsAnAbsenceAndNotAsAMissingField() {
         val review = json.decodeFromString(Review.serializer(), """
@@ -210,8 +183,6 @@ class TrainingWireTests {
         )
     }
 
-    // The ~190 sessions in 200 that earn nothing: three facts, and the space a record would occupy
-    // left empty. Nothing takes its place, so nothing here may invent one.
     @Test
     fun testAnOrdinarySessionCarriesNoRecordAndNoComparison() {
         val review = json.decodeFromString(Review.serializer(),
@@ -235,7 +206,6 @@ class TrainingWireTests {
         assertEquals(82.5, routine.entries.first().targetWeightKg)
     }
 
-    // A routine nobody has trained sorts on the ABSENCE, not on a zero pretending to be 1970.
     @Test
     fun testARoutineNeverTrainedHasNoStampAtAll() {
         val routine = json.decodeFromString(Routine.serializer(),
@@ -245,9 +215,6 @@ class TrainingWireTests {
     }
 }
 
-// THE PICKER'S META — the wire's sparse row, and the device's own answer to the same question. Both
-// halves matter: a phone that computed `never logged` differently from the log would draw one thing
-// signed out and another signed in over the same lift.
 class LastSetTests {
     private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
                      kind: SetKind = SetKind.Working, at: Long): TrainingSet =
@@ -257,7 +224,6 @@ class LastSetTests {
     private fun aSession(id: String, startedAt: Long, finishedAt: Long?, sets: List<TrainingSet>) =
         SessionDetail(Session(id = id, startedAtMs = startedAt, finishedAtMs = finishedAt), sets)
 
-    // `at` is the SESSION's start and not the set's own instant, and it is spelled `at` on the wire.
     @Test
     fun testTheWireRowIsTheSessionsMarkAndSpellsItAt() {
         val row = json.decodeFromString(LastSet.serializer(),
@@ -268,9 +234,6 @@ class LastSetTests {
         assertEquals(1_785_600_000_000, row.atMs)
     }
 
-    // THE LAST SET OF THE LAST-TIME BLOCK, and never the heaviest one: the prefill dials off what
-    // the lifter finished on, and a picker naming their best set instead would answer a different
-    // question in the same words.
     @Test
     fun testTheShelfAnswersWithTheLastSetOfTheLastTimeBlock() {
         val rows = LastSet.of(listOf(
@@ -289,9 +252,6 @@ class LastSetTests {
         assertEquals(LastSet("back-squat", 120.0, 3, atMs = 5_000), rows.first())
     }
 
-    // A WARMUP IS NOT A LAST TIME and an OPEN SESSION is not one either, however heavy — the log's
-    // own two predicates, restated on the shelf. Drop and failure sets ride along, because both are
-    // things that happened to a set the plan asked for.
     @Test
     fun testAWarmupOnlyMovementAndAnOpenSessionAreBothAbsent() {
         val rows = LastSet.of(listOf(
@@ -314,10 +274,6 @@ class LastSetTests {
         assertEquals(emptyList<LastSet>(), LastSet.of(emptyList()))
     }
 
-    // R8 — LAST TIME IS THE SERVER'S BLOCK: the newest finished session's NON-warmup sets of the
-    // movement, in performed order. A drop set and a set taken to failure are part of last time;
-    // only the warmup is not. And the prefill dials off that block — the weight it ended on and the
-    // reps it started on — so the phone opens the same number signed out as the log dials signed in.
     @Test
     fun testLastTimeIsTheNonWarmupBlockAndThePrefillDialsOffIt() {
         val history = listOf(
@@ -343,7 +299,6 @@ class LastSetTests {
             LastSet("bench-press", 60.0, 12, atMs = 5_000), LastSet.of(history).single())
     }
 
-    // A movement only ever warmed up has no last time — the same absence the log answers with.
     @Test
     fun testAMovementOnlyWarmedUpHasNoLastTime() {
         val last = LastTime.of("chin-up", listOf(
@@ -364,8 +319,6 @@ class RoutineWriteTests {
     private fun aDetail(sets: List<TrainingSet>): SessionDetail =
         SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
 
-    // "Keep this as a routine" — the first routine is a by-product of the first session: movements in
-    // the order performed, the count of WORKING sets, the modal reps, and the heaviest working load.
     @Test
     fun testARoutineKeptFromASessionIsWhatWasActuallyLifted() {
         val write = RoutineWrite.from("Push A", aDetail(listOf(
@@ -391,8 +344,6 @@ class RoutineWriteTests {
                      write.entries[1])
     }
 
-    // A tie on the modal reps goes to the SMALLER count: a target you can beat is a fact about last
-    // week, and one you cannot hit reads as a failed session every time it comes round.
     @Test
     fun testATiedModalRepCountGoesToTheSmallerTarget() {
         val write = RoutineWrite.from("Legs", aDetail(listOf(
@@ -407,8 +358,6 @@ class RoutineWriteTests {
         assertEquals(listOf(110.0), write.entries.map { it.targetWeightKg })
     }
 
-    // A routine with no entries is refused 400, and a session of nothing but warmups has none. There
-    // is nothing to create, so nothing is offered.
     @Test
     fun testASessionOfNothingButWarmupsKeepsNoRoutine() {
         assertNull(RoutineWrite.from("Push A", aDetail(listOf(
@@ -417,10 +366,6 @@ class RoutineWriteTests {
         assertNull(RoutineWrite.from("Push A", aDetail(emptyList()), position = 0))
     }
 
-    // The mid-session change offer, applied: one target moves and the document is otherwise the one
-    // the server handed back — a PUT is a whole-document replace, so a dropped line is a deleted one.
-    // Addressed by POSITION: a program that holds the same movement twice (top set, then back-off)
-    // has the top set moved and the back-off left exactly where it stood.
     @Test
     fun testSavingAHeavierWeightMovesOneTargetAndKeepsTheRest() {
         val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
@@ -446,9 +391,6 @@ class RoutineWriteTests {
             retargeted)
     }
 
-    // The routine changed under the session: the row at that position now names another movement, or
-    // there is no such row any more. Either is NOTHING TO WRITE — a PUT of an unchanged document
-    // would still move the revision and supersede every pending proposal.
     @Test
     fun testRetargetingARowThatNoLongerHoldsTheMovementWritesNothing() {
         val routine = Routine(id = "rt_1", name = "Push A", position = 0, entries = listOf(
@@ -476,8 +418,6 @@ class PrefillTests {
         assertEquals(Prefill(weightKg = 20.0, reps = 5), prefill)
     }
 
-    // Three sources in a fixed order: today's own last set, then the plan, then last time. The one
-    // that loses is still on screen.
     @Test
     fun testTodaysLastSetWinsOverThePlanAndOverLastTime() {
         val prefill = Prefill.of(
@@ -502,8 +442,6 @@ class PrefillTests {
         assertEquals(Prefill(weightKg = 82.5, reps = 5), prefill)
     }
 
-    // The asymmetry is deliberate: the weight comes from the LAST working set, where the lifter
-    // actually ended up, and the reps from the FIRST, before fatigue cut them.
     @Test
     fun testLastTimeGivesTheWeightItEndedOnAndTheRepsItStartedOn() {
         val prefill = Prefill.of(
@@ -516,9 +454,6 @@ class PrefillTests {
         assertEquals(Prefill(weightKg = 90.0, reps = 8), prefill)
     }
 
-    // The sticky carry-forward follows the WORKING sets. A 40 kg ramp-up is not the weight the next
-    // set starts from, and carrying it would drag the dial back down the ladder the lifter has just
-    // climbed — answering "what am I about to lift" with a warmup.
     @Test
     fun testAWarmupIsNotCarriedForwardAsTheStickyWeight() {
         val afterAWarmup = Prefill.of(
@@ -539,8 +474,6 @@ class PrefillTests {
                      Prefill(weightKg = 85.0, reps = 5), afterAWorkingSet)
     }
 
-    // A plan that names sets and no rep target asks for NOTHING here: an absent target means max, so
-    // the reps fall through to last time exactly as an absent weight does.
     @Test
     fun testAPlanWithNoRepTargetFallsThroughToLastTimeRatherThanToZero() {
         val prefill = Prefill.of(
@@ -557,8 +490,6 @@ class PrefillTests {
                                 lastTime = null))
     }
 
-    // A plan that names sets and reps and leaves the load to last time gets both halves from where
-    // each is written — the plan is not all-or-nothing.
     @Test
     fun testAPlanWithNoTargetWeightStillGivesItsReps() {
         val prefill = Prefill.of(
@@ -571,9 +502,6 @@ class PrefillTests {
         assertEquals(Prefill(weightKg = 0.0, reps = 8), prefill)
     }
 
-    // The rep floor belongs where the number is MINTED and not only on the button that moves it: a 0
-    // written by a build from before the floor moved would otherwise open the pad on a value the
-    // server refuses, in alarm ink, on a gesture the lifter never made.
     @Test
     fun testARepCountOfZeroFromAnOlderBuildClimbsBackToOne() {
         val prefill = Prefill.of(todaySets = listOf(aSet(82.5, 0, at = 100)), planEntry = null, lastTime = null)
@@ -585,9 +513,6 @@ class PrefillTests {
 }
 
 class IdsTests {
-    // The client-minted id IS the idempotency key, so it has to be legal to the server on every
-    // path: 8…64 characters of [A-Za-z0-9_-], and enough entropy that a collision is a refusal to
-    // repair rather than a thing to plan around.
     @Test
     fun testEveryMintedIdIsLegalToTheServerAndCarriesItsPrefix() {
         val allowed = ('a'..'z').toSet() + ('A'..'Z') + ('0'..'9') + setOf('_', '-')

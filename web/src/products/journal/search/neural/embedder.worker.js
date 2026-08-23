@@ -1,27 +1,13 @@
-// The neural embedder's engine room, off the main thread. It loads a small sentence-embedding model
-// (bge-small-en-v1.5, int8) once and turns batches of text into 384-dim unit vectors. The model is
-// served from our own origin (env below), so building the index and running a query never send a byte
-// about the writer anywhere.
+// Off the main thread: bge-small-en-v1.5 int8, loaded once, turning batches of text into 384-dim unit
+// vectors. The model is served from our own origin, so no writer data leaves the device.
+// Runs on wasm (CPU), never WebGPU: onnxruntime-web's WebGPU path miscomputes this quantized model.
+// Protocol: the main thread posts { id, kind: 'passages' | 'query', texts } and gets back
+// { id, ok, vectors } or { id, ok: false, error }; a one-time { ready } / { failed } says whether the
+// model came up at all.
 //
-// KNOWN GAP, and the sentence above is narrower than it looks. No writer data leaves — but the
-// WASM RUNTIME does not come from our origin. `env.backends.onnx.wasm.wasmPaths` is left at its
-// default, which is a jsdelivr CDN URL, so onnxruntime-web fetches its .wasm from a third party at
-// first use. Proven by blocking DNS: "no available backend found. ERR: [wasm] Failed to fetch
-// dynamically imported module: https://cdn.jsdelivr.net/npm/@huggingface/transformers@.../
-// ort-wasm-simd-threaded.jsep.mjs". If jsdelivr is unreachable the neural index silently never
-// builds and search falls back to lexical with no visible failure. Closing it: copy the two ORT
-// wasm files into public/ and set `env.backends.onnx.wasm.wasmPaths` beside the lines below.
-//
-// Runs on wasm (CPU), deliberately not WebGPU: onnxruntime-web's WebGPU path miscomputes this
-// quantized model — it returns plausible but wrong embeddings that collapse the ranking (verified
-// in-browser: unrelated lines outscored real matches under WebGPU, matched node exactly under wasm).
-// A 33MB int8 model on wasm loads in a few hundred ms and embeds a diary in well under a second, so
-// there's nothing to gain and correctness to lose. WebGPU only pays off with an fp16/fp32 model 4× the
-// download — a trade to revisit if inference ever feels slow, never at the cost of a wrong result.
-//
-// Protocol: the main thread posts { id, kind: 'passages' | 'query', texts }, and gets back
-// { id, ok, vectors } or { id, ok: false, error }. A one-time { ready } / { failed } announces whether
-// the model came up at all, so the client can stay on the instant lexical embedder if it didn't.
+// TODO: `env.backends.onnx.wasm.wasmPaths` is left at its default jsdelivr CDN URL, so onnxruntime-web
+// fetches its .wasm from a third party at first use. To close it, copy the ORT wasm files into public/
+// and set `wasmPaths` beside the env lines below.
 
 import { pipeline, env } from '@huggingface/transformers';
 

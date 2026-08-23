@@ -1,10 +1,3 @@
-// NEXT UP — the "what's next" section that leads the activity dock (design:
-// whats-next-panel): up to three steps ready right now, an in-place expander for
-// the rest, and two empty states that never dead-end. The ranking is the shared
-// planNextUp rule (nextUpPlan.js, also read by the phone list's shelf); the host
-// computes the plan and hands it in. This file keeps the section's presentation
-// and considerAutoOpen — the return-visit rule over a per-tree localStorage stamp.
-
 import React, { useState } from 'react';
 import { Icon } from '../../../design-system';
 import { NODE_COLORS, DEFAULT_NODE_COLOR } from '../theme.js';
@@ -14,11 +7,7 @@ const AUTO_OPEN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const MIN_AUTO_OPEN_STEPS = 12;
 const VISIT_KEY_PREFIX = 'windmill:nextup:';
 
-// The return-visit rule (§04): stamp every open; auto-open only when the last open
-// was ≥12h ago, ≥1 step is ready, the tree has ≥12 steps, and at most once a day.
-// A first-ever open is not a return — the user is already looking. The daily budget
-// isn't burned at decision time (X6): commit() stamps it, and the caller invokes
-// commit() only at the moment the auto-open actually fires.
+// Every open is stamped; commit() burns the daily budget and only a caller that actually auto-opened invokes it.
 export function considerAutoOpen({ treeId, readyCount, stepCount, now = Date.now(), storage = window.localStorage }) {
   let record = null;
   try { record = JSON.parse(storage.getItem(VISIT_KEY_PREFIX + treeId)); } catch { record = null; }
@@ -86,12 +75,9 @@ export function NextUp({ plan, nodesById, states, onHoverNode, onLeaveNode, onOp
   );
 }
 
-// One row (§03.1): the fruit at its canvas treatment — a white disc in a kind-hue
-// ready ring, or the static ember for a blocker — the name body-bold, one line of
-// consequence in counts only (a leaf says nothing), and a hover-revealed fly.
 function StepRow({ entry, node, state, ember = false, onHover, onLeave, onOpen }) {
   if (!node) return null; // deleted while the plan was frozen — the row simply retires
-  if (state !== (ember ? 'active' : 'available')) return null; // live state left the tier — same silent retirement, no reshuffle (X5)
+  if (state !== (ember ? 'active' : 'available')) return null; // live state left the tier — silent retirement
   const hue = NODE_COLORS[node.color] ?? NODE_COLORS[DEFAULT_NODE_COLOR];
   return (
     <button

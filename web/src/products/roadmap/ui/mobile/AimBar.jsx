@@ -1,9 +1,5 @@
-// The aim mode's chrome (M3): a slim bar that stands in for the editor sheet while the canvas
-// is a connect chooser, plus its sibling remove-link bar. Both are bark/cream — tools are
-// neutral, only nodes carry category color — and every control clears the 44px touch floor.
-// One surface at a time: SkillTreeView mounts exactly one of these or the sheet, never two, and
-// the undo snackbar floats above either. Phone docks it to the bottom edge; `inPanel` drops the
-// fixed positioning so the tablet can seat the same bar in-flow inside the detail panel column.
+// SkillTreeView mounts exactly one of this, its sibling remove-link bar, or the sheet — never two.
+// `inPanel` drops the fixed positioning so the tablet seats it in the detail panel column.
 
 import React from 'react';
 import { Icon } from '../../../../design-system';

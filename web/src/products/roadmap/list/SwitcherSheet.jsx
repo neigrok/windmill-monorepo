@@ -1,20 +1,11 @@
-// The tree switcher (X8 L6): the list header's name grows a caret for owners, and tapping it
-// raises this half-sheet — one row per tree you own (kind dot · name · n/m + mini-bar ·
-// updated-when · a lineage line where the data carries it), the current tree highlighted
-// brand-soft, and a ghost "Plant a new tree" last. It is never a page: a scrim tap costs
-// nothing, picking a tree loads it in the view you last used there (the host navigates on
-// onPick). It renders through the same portal NeedPicker uses — the list layer is a z-18
-// stacking context that would trap the scrim under the view pill — and follows the picker's
-// rise / scrim-fade / pointer-events discipline and its keyboard-inset seam. Search appears
-// only past eight trees; below that the list is short enough to read at a glance. Reduced
-// motion keeps the fade and drops the rise, exactly as the picker does.
+// Renders through a portal so the scrim clears the list layer's stacking context.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hueOf, hueVars, prefersReducedMotion, useKeyboardInset } from './ListView.jsx';
 
-const CLOSE_MS = 280; // the descent matches the sheet's 280ms rise (the scrim fades in its own 200ms)
-const SEARCH_THRESHOLD = 8; // a shorter list reads whole; past this a search field earns its place
+const CLOSE_MS = 280; // the descent matches the sheet's rise
+const SEARCH_THRESHOLD = 8; // trees past this add a search field
 
 const SEARCH_GLYPH = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -35,8 +26,6 @@ const BUD_GLYPH = (
   </svg>
 );
 
-// The public-wall door (og-tree-cards build-findings §1): a compass to explore, an arrow to say
-// it leaves for #/browse rather than switching a tree in place.
 const COMPASS_GLYPH = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />

@@ -1,13 +1,6 @@
-// Zoom out: the whole journal pulled back to a map. At the top, this week read as a small arc — how
-// many days you wrote, the mood and energy of each, the words they came to. Below, every month as a row
-// of day cells, warm where you wrote and faint where you didn't — a year you can take in at a glance.
-// Tap any day to fall back into it (the canvas flies there). Read-only, assembled from pages the view
-// loads once; it invents nothing the page doesn't already hold.
-//
-// It draws the account's pages AND this device's (pageStore.js `corpus`) — a signed-out writer's
-// days are on this device and belong in their own year. And a year it could not READ is drawn with
-// that fact printed on it: a grid of empty squares over a failed read would say "you wrote nothing"
-// to someone with two years of pages, which is the exact lie the canvas refuses to tell.
+// This week as a small arc, then every month as a row of day cells; tapping a day flies the canvas there.
+// Read-only, over the account's pages and this device's (pageStore.js `corpus`). A year it could not read
+// says so rather than drawing a grid of empty squares.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { corpus } from '../pageStore.js';

@@ -1,8 +1,3 @@
-// The private lane's replica. These cases are the laws the old overlay tried to keep in prose —
-// "a mark cleared elsewhere must not be resurrected", "a mark the server never heard of is not
-// stale" — restated as merge properties, which is the point of moving progress onto the lattice:
-// they now hold by construction instead of by a diff someone remembered to write.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -175,10 +170,6 @@ test('the clock is seeded past every stamp held, so the next mark dominates them
   assert.equal(clock.tick(1000).ms, 9000); // not the wall clock's 1000 — a mark must not tie backwards
 });
 
-// Found by driving the real app: our own mark comes back as an echo carrying the SAME stamp, so a
-// strict "later wins" test skips it — and the provisional instant this device guessed would stand
-// forever. On a device with a wrong clock that is wrong forever, which is the whole failure mode
-// the two-clock split exists to prevent.
 test('an echo of our own mark replaces the provisional instant with the server\'s', () => {
   const lattice = new ProgressLattice();
   const clock = new HlcClock('r_me');
@@ -199,9 +190,6 @@ test('an equal-stamp frame with no instant leaves the one already held alone', (
   assert.deepEqual(lattice.overlay().completedAt, { a: 4321 });
 });
 
-// The pre-lane localStorage store is not simply redundant. Marks the server already knows merge to
-// a no-op, but a mark made offline or before signing in reached nothing else — dropping the reader
-// without draining it first would have discarded exactly those.
 test('draining the pre-lane store lands its marks in the lane and clears the key', () => {
   const storage = new Map();
   storage.set('windmill:progress:t_1', JSON.stringify({

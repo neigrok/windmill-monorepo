@@ -1,13 +1,7 @@
 import Foundation
 import WindmillPlatform
 
-// The journal's domain, mirroring backend/products/journal/domain/Page.h — the same grouping the
-// backend uses (the day, the two optional scales, the page itself in one file) so the two
-// statements of one model can be read side by side.
-
-// A calendar day in the writer's own zone. Not an instant: the page for a day is the same page
-// whether it is opened at 23:04 or 00:10, and the zone is always the device's, never UTC. The ISO
-// shape sorts lexicographically into true date order, so `<` is exactly the canvas order.
+// A calendar day in the device's own zone, never UTC; the ISO text sorts into date order.
 public struct LocalDay: Hashable, Comparable, Codable, Sendable, CustomStringConvertible {
     public let iso: String
 
@@ -28,15 +22,13 @@ public struct LocalDay: Hashable, Comparable, Codable, Sendable, CustomStringCon
     public var description: String { iso }
     public static func < (lhs: LocalDay, rhs: LocalDay) -> Bool { lhs.iso < rhs.iso }
 
-    // Calendar arithmetic, never 86_400_000ms arithmetic: a day is 23 or 25 hours twice a year in
-    // most of the world, and a writer's page must not shift on those two nights.
+    // Calendar arithmetic, never fixed milliseconds: a day is 23 or 25 hours twice a year.
     public func advanced(by days: Int, calendar: Calendar = .current) -> LocalDay {
         guard let date = calendar.date(byAdding: .day, value: days, to: startOfDay(calendar)) else { return self }
         return LocalDay(date, calendar: calendar)
     }
 
-    // How long until this device's calendar turns over — what a canvas nobody closed waits for.
-    // Floored at a second so a sleep that wakes a hair early cannot spin.
+    // Floored at a second so an early wake cannot spin.
     public static func untilTomorrow(now: Date = Date(), calendar: Calendar = .current) -> TimeInterval {
         let midnight = LocalDay(now, calendar: calendar).advanced(by: 1, calendar: calendar).startOfDay(calendar)
         return max(midnight.timeIntervalSince(now), 1)
@@ -72,13 +64,11 @@ public struct LocalDay: Hashable, Comparable, Codable, Sendable, CustomStringCon
     }
 }
 
-// Mood is one hue in five steps — a scale, not five competing colours (canon §10). `none` is the
-// unset state: drawn, never counted, never a failure. Energy is the same shape in three steps.
+// `none` is the unset state.
 public enum Mood: Int, Codable, Sendable, CaseIterable {
     case none = 0, m1, m2, m3, m4, m5
 
-    // Out of range clamps to none, exactly as the backend does — a bad value can only narrow,
-    // never lie about what someone felt.
+    // Out of range clamps to none.
     public init(clamping value: Int) { self = Mood(rawValue: value) ?? .none }
     public var isSet: Bool { self != .none }
 }
@@ -90,17 +80,14 @@ public enum Energy: Int, Codable, Sendable, CaseIterable {
     public var isSet: Bool { self != .none }
 }
 
-// How the words arrived. A spoken page carries no audio — transcription happens off the page and
-// the audio is discarded; source is the only trace that it was talked, not typed.
+// A spoken page carries no audio; source is the only trace it was talked.
 public enum Source: String, Codable, Sendable {
     case typed, spoken
 
     public init(parsing text: String) { self = text == "spoken" ? .spoken : .typed }
 }
 
-// The unit of the whole product: one page per local day. `stamp` is the HLC the writing device
-// minted and is the sole convergence key — two devices editing the same day converge on the
-// greater stamp, last-writer-wins, with no CRDT text and no room.
+// One page per local day; `stamp` is the sole convergence key, greater stamp wins.
 public struct Page: Equatable, Codable, Sendable {
     public var day: LocalDay
     public var body: String
@@ -121,17 +108,14 @@ public struct Page: Equatable, Codable, Sendable {
         self.updatedAtMs = updatedAtMs
     }
 
-    // A day the writer touched at all. A page with a mood and no words was still a day someone
-    // showed up for, so it counts — and a day nobody touched is simply not drawn.
+    // A mood with no words still counts as written.
     public var isWritten: Bool { !body.isEmpty || mood.isSet || energy.isSet }
 
     public var wordCount: Int {
         body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
     }
 
-    // Last writer wins, by stamp — the single convergence rule, stated once. Ties go to the page
-    // already held: an identical stamp means the same write arriving twice, and preferring the
-    // incumbent keeps a re-read from looking like a change.
+    // Ties keep the page already held.
     public static func winner(of incoming: Page, and held: Page?) -> Page {
         guard let held else { return incoming }
         return incoming.stamp > held.stamp ? incoming : held

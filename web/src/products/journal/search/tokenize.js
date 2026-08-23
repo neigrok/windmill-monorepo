@@ -1,8 +1,4 @@
-// The words a passage is made of, and — for the ones that carry meaning — their character trigrams.
-// Words carry vocabulary; trigrams carry morphology ("walk" ≈ "walking" ≈ "walked") so a search on a
-// feeling reaches inflections and near-spellings it never typed exactly. Function words ("the", "and",
-// "was") are dropped from the meaning layer: they're in every page, so matching on them buries the
-// passage that actually shares a feeling under the one that merely shares grammar. Pure, no I/O.
+// Words carry vocabulary, trigrams carry morphology ("walk" ≈ "walking"). Function words are dropped.
 
 const STOPWORDS = new Set((
   'a an and are as at be been but by can could did do does for from had has have how i if in into is ' +
@@ -26,8 +22,7 @@ export function trigrams(word) {
   return grams;
 }
 
-// Every feature a text contributes to its embedding: its content words (weighted heavier, they carry
-// meaning) and those words' trigrams (lighter, they carry shape). Returned as [feature, weight] pairs.
+// [feature, weight] pairs — content words heavier, their trigrams lighter.
 export function features(text) {
   const out = [];
   for (const word of contentWords(text)) {

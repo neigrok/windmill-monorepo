@@ -97,11 +97,8 @@
   --color-brand-active: var(--accent-terracotta-700);
   --color-brand-soft: var(--accent-terracotta-50);
 
-  /* ---- Node KINDS: color by category, independent of tier.
-     A node's colour comes from its kind; its tier (locked / available /
-     active / complete) is treatment only — see components/tree/SkillNode.
-     (The old --node-<tier>-* single-hue exemplar ramp was retired Jul 12 —
-     kinds + treatments are the only node color API.) ---- */
+  /* ---- Node KINDS: colour comes from a node's kind; its tier (locked / available / active /
+     complete) is treatment only. Kinds + treatments are the whole node colour API. ---- */
   --kind-terracotta:      var(--accent-terracotta-500);
   --kind-terracotta-soft: var(--accent-terracotta-200);
   --kind-terracotta-glow: rgba(188, 108, 66, 0.5);
@@ -137,11 +134,9 @@
   --color-leaf-light: var(--accent-olive-400);
   --color-leaf-vein: var(--accent-olive-600);
 
-  /* ---- Candle lamp: the journal's lit hue. Authored, never aliased onto --accent-gold-*
-     (gold feeds --kind-gold, and a product without kinds must not inherit kind vocabulary).
-     The ramp is the design system's (tokens/colors.css) — palettes.css reads it for the journal
-     room in both skins, so it must resolve at :root, not only inside .journal-root. 400/600 are the
-     shipped fixed points; a product may still re-point steps inside its own scope. ---- */
+  /* ---- Candle lamp: the journal's lit hue. Authored, never aliased onto --accent-gold-* (gold
+     feeds --kind-gold). It must resolve at :root, since palettes.css reads it for the journal room
+     in both skins. A product may re-point steps inside its own scope. ---- */
   --lamp-100: #F3E4C6;
   --lamp-200: #EBD3A2;
   --lamp-400: #E0B972;
@@ -151,19 +146,13 @@
 }
 
 /* ============================================================
-   DARK THEME — "night sky" skill tree
+   DARK THEME
    ------------------------------------------------------------
-   Scope: set data-theme="dark" on <html> for the whole app,
-   or on any element to darken just that subtree (used by the
-   side-by-side specimen cards). Light is the default; nothing
-   here fires unless data-theme="dark" is present.
+   Scope: data-theme="dark" on <html> for the whole app, or on any element to darken just that
+   subtree. Light is the default; nothing here fires without data-theme="dark".
 
-   The neutral ramp is re-authored (NOT a linear inversion):
-   low indices stay deep warm surfaces, high indices become
-   warm off-whites for text — so surface/text semantic tokens
-   that reference the ramp keep working. Accents shift toward
-   their lighter, brighter steps so nodes and CTAs glow against
-   the near-black canvas, exactly like a game skill grid.
+   The neutral ramp is re-authored, NOT inverted: low indices stay deep warm surfaces and high
+   indices become warm off-whites, so surface/text tokens that reference the ramp keep working.
    ============================================================ */
 [data-theme="dark"] {
   /* ---- Neutrals: warm brown-black surfaces → warm cream text ---- */
@@ -253,7 +242,6 @@
   --color-leaf-light: var(--accent-olive-200);
   --color-leaf-vein: var(--accent-olive-500);
 
-  /* ---- Candle lamp: the ramp holds, only the glow intensifies — matching how every
-     --kind-*-glow deepens from 0.5 to 0.8 on dark ---- */
+  /* ---- Candle lamp: the ramp holds, only the glow intensifies, like every --kind-*-glow ---- */
   --lamp-glow: rgba(224, 185, 114, 0.8);
 }

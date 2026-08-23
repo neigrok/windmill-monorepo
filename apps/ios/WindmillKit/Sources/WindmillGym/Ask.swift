@@ -1,37 +1,7 @@
 import Foundation
 import WindmillPlatform
 
-// ASK (§L, screens 26–27) — gym's own chat, and the SECOND DOOR onto the engine the connected log
-// already describes: same reads, same typed diffs, same tap, for the lifter who does not have an
-// assistant of their own. This file is everything Ask decides; AskScreen.swift only draws
-// it, which is why every rule worth a test is a value or a function here.
-//
-// WHAT IT IS NOT IS A COACH. It answers questions about numbers the lifter owns and it can still
-// only ever propose — so nothing in this file encourages, congratulates, speaks first, or suggests a
-// training decision nobody asked for, and the word itself is not in this product's chat vocabulary.
-// The coach SHARE (CoachShare.swift) is a different object — a link to one workout, minted by the
-// lifter's own hand — and it keeps the word honestly.
-//
-// EVERY NUMBER UNDER AN ANSWER IS THE SERVER'S. `read 214 sets · 12 weeks · 34 sessions` is printable
-// only because those rows were served to this connection, so the count is made in the tool envelope
-// and carried on the wire. A tally this file added up would be a number the model could have made up,
-// laundered through our own chrome — which is worse than no number at all.
-//
-// THE ROUTE IS CONDITIONAL. A deployment with no Anthropic key does not mount `POST /v1/gym/ask` at
-// all, and the framework's own 404 comes back with no body. That is the one refusal that takes the
-// door away rather than saying a sentence about it — see `AskRefusal.closesTheDoor`. The three
-// THREAD routes are mounted unconditionally beside it, so a Windmill with no vendor key still reads,
-// exports and deletes every conversation ever had on it.
-//
-// THE SERVER KEEPS THE CONVERSATION (§O, 2026-08-13) — it did not when Ask shipped. W7 built this
-// stateless on purpose and the client resent the whole thread with every question; §O reverses that,
-// and what goes out now is ONE question and the id of the thread it belongs to. The server assembles
-// the prompt from what it stored, so the conversation a lifter reads back is the one the model saw.
-// The thread itself, and everything this surface may say about a past one, is AskThreads.swift.
-
-// WHAT THE SERVER SERVED THIS EXCHANGE, counted by identity where the ids are and deduped there, so
-// two tool calls over one week count that week once. Never summed across answers and never computed
-// here: this type has no arithmetic in it on purpose.
+// What the server served this exchange. Never summed across answers and never computed here.
 public struct ReadTally: Equatable, Decodable, Sendable {
     public let sets: Int
     public let sessions: Int
@@ -43,9 +13,6 @@ public struct ReadTally: Equatable, Decodable, Sendable {
         self.weeks = weeks
     }
 
-    // `read 214 sets · 12 weeks · 34 sessions`, in the design's own order. A zero is OMITTED rather
-    // than printed — "0 sessions" is a fact nobody needs and reads as a failure — and an answer that
-    // touched no log rows at all says so plainly instead of printing an empty line.
     public var line: String {
         var counted: [String] = []
         if sets > 0 { counted.append(Readout.setCount(sets)) }
@@ -56,9 +23,6 @@ public struct ReadTally: Equatable, Decodable, Sendable {
     }
 }
 
-// ONE TOOL THE MODEL ASKED FOR, in call order. The opening read Ask makes on the lifter's behalf is
-// not one of these — the model did not choose it — so this list is exactly what the answer was
-// steered by.
 public struct AskStep: Equatable, Decodable, Sendable {
     public let tool: String
     public let failed: Bool
@@ -68,8 +32,6 @@ public struct AskStep: Equatable, Decodable, Sendable {
         self.failed = failed
     }
 
-    // The tool's own name, unchanged. It is the name a lifter's own Claude sees over MCP, and
-    // renaming it here would put two vocabularies on one catalog — the seam §2 exists to keep single.
     public var line: String {
         failed ? "\(tool) · no answer" : tool
     }
@@ -85,10 +47,7 @@ public struct AskStep: Equatable, Decodable, Sendable {
     }
 }
 
-// ONE ANSWER. `read` is decoded STRICTLY and not defaulted: §L's rule is that every answer states
-// what it read, so a body this build cannot find a receipt in is not an answer it may draw — it
-// fails the read and becomes "Ask didn't answer", which is the honest thing to say about prose we
-// cannot check.
+// `read` is decoded strictly and never defaulted: a body without it fails the decode.
 public struct AskAnswer: Equatable, Decodable, Sendable {
     public let answer: String
     public let steps: [AskStep]
@@ -116,26 +75,11 @@ public struct AskAnswer: Equatable, Decodable, Sendable {
     }
 }
 
-// A QUESTION THAT DID NOT GET AN ANSWER, and the three facts the screen needs about it: what to say,
-// whether trying again is worth offering, and whether Ask is on this deployment at all.
-//
-// The server's ladder is nine rungs since §O added the two thread refusals — `threadMalformed` and
-// `threadTaken` (backend/products/gym/application/AskService.h) — and this collapses them to
-// one struct with one flag rather than to nine cases. Seven are treated identically — the screen
-// prints the server's sentence and offers nothing else — and only the two the flag below names are
-// branched on, because those two are about the thread and not the question. That the other seven
-// share a shape is not laziness, it is the money decision (contract §4): the daily limit and the AI
-// ceiling are stated plainly and NOTHING is sold against either, so the case that would carry an
-// upgrade button does not exist to be filled in later.
 public struct AskRefusal: Equatable, Error, Sendable {
     public let line: String
     public let mayRetry: Bool
     public let closesTheDoor: Bool
-    // THE TWO REFUSALS THAT ARE ABOUT THE THREAD RATHER THAN THE QUESTION, and the only two codes
-    // this client reads. A conversation that has taken its eight turns, and an id another account
-    // already holds, are both answered by opening a NEW thread — which is what the server's own
-    // sentence asks for — so the retry carries the same question into a fresh id. Everything else in
-    // the ladder still reads the same to a lifter and is branched on nowhere.
+    // Answered by opening a new thread: the retry carries the same question into a fresh id.
     public let opensAFreshThread: Bool
 
     public init(line: String, mayRetry: Bool = false, closesTheDoor: Bool = false,
@@ -146,9 +90,6 @@ public struct AskRefusal: Equatable, Error, Sendable {
         self.opensAFreshThread = opensAFreshThread
     }
 
-    // The log's own words wherever it sent any — the sign-in line, the mid-session line, the daily
-    // limit and the ceiling are all written on the server, so the three surfaces cannot drift apart
-    // in tone. Only the two silences below are spelled here, because there was nothing to repeat.
     public init(_ error: Error) {
         guard let failure = error as? WindmillApiError else {
             self = AskRefusal(line: "Ask didn’t answer. Try again in a moment", mayRetry: true)
@@ -158,19 +99,12 @@ public struct AskRefusal: Equatable, Error, Sendable {
         case .offline:
             self = AskRefusal(line: failure.line, mayRetry: true)
         case .malformed:
-            // A 2xx whose body this build could not read. The lifter's consequence is identical to
-            // the 502's — no answer — and a second attempt may well land, so it is offered the same
-            // sentence and the same retry rather than a paragraph about JSON.
             self = AskRefusal(line: "Ask didn’t answer. Try again in a moment", mayRetry: true)
         case .refused(404, _):
-            // The route is ABSENT, not failing: this deployment has no Anthropic key, so there is no
-            // Ask here to try again at. The tab falls back to its quiet stance, in the same words.
+            // 404 is the route being absent: this deployment has no Anthropic key.
             self = AskRefusal(line: Ask.absentLine, closesTheDoor: true)
         case .refused(502, let refusal):
-            // NOTHING WAS STORED. Turns land only once an answer has, and a run that never answered
-            // takes its own empty thread back — so the same thread and the same question sent again
-            // land exactly once, and the retry below is safe rather than a second copy of a
-            // question in somebody's conversation.
+            // Nothing was stored, so the same thread and question sent again land exactly once.
             self = AskRefusal(line: refusal.message ?? "Ask didn’t answer. Try again in a moment",
                               mayRetry: true)
         case .refused(409, let refusal) where refusal.code == "ask-thread-full"
@@ -184,9 +118,6 @@ public struct AskRefusal: Equatable, Error, Sendable {
     }
 }
 
-// ONE QUESTION AND WHAT BECAME OF IT. The thread is a list of these rather than a list of turns,
-// because a question that was refused produced no answer at all — and a refused question resent as a
-// bare extra turn would be two lifter turns side by side, a 400 the lifter never caused.
 public struct AskExchange: Equatable, Sendable, Identifiable {
     public enum Outcome: Equatable, Sendable {
         case waiting
@@ -205,9 +136,6 @@ public struct AskExchange: Equatable, Sendable, Identifiable {
     }
 }
 
-// One row of the compact diff §L draws inside the message stream: the movement, and what would
-// happen to it. The full document — every field, both spellings, the atomic tap — is one screen away
-// and is the only place the change can actually be applied.
 public struct AskDiffRow: Equatable, Sendable {
     public let name: String
     public let change: String
@@ -218,13 +146,7 @@ public struct AskDiffRow: Equatable, Sendable {
     }
 }
 
-// ONE CONVERSATION AS THIS DEVICE HOLDS IT: the thread the server knows it by, and the exchanges
-// drawn on screen. The id is CLIENT-MINTED — a fresh one opens a thread, and the server refuses one
-// another account already holds rather than joining it.
-//
-// THE EXCHANGES ARE STILL THE ROOM'S AND STILL DIE WITH IT, and that is no longer a loss: what the
-// visit forgets, the log keeps, and the whole conversation is on the threads list the next time
-// anybody looks for it.
+// The thread id is client-minted: a fresh one opens a thread, and the server refuses one another account holds.
 public struct AskConversation: Equatable, Sendable {
     public private(set) var threadId: String
     public var exchanges: [AskExchange]
@@ -234,27 +156,16 @@ public struct AskConversation: Equatable, Sendable {
         self.exchanges = exchanges
     }
 
-    // A NEW CONVERSATION — the foot of the threads list, and the two refusals that are about the
-    // thread rather than the question. The exchanges on screen STAY when the id is replaced by a
-    // refusal: they were said, and clearing the screen because the server declined a ninth turn
-    // would delete the eight a lifter is still reading.
     public mutating func openAFreshThread() {
         threadId = Ask.mintThreadId()
     }
 }
 
 public enum Ask {
-    // The one bound the COMPOSER can respect, restated so a question meets it while it can still be
-    // edited rather than as a 400. The thread's own ceiling — eight turns — is not here: nothing on
-    // screen is decided by it, and a copy of a number this client never reads would be a second
-    // statement of the server's rule waiting to drift from it. It arrives as a 409 and opens a new
-    // conversation (`kMaxThreadTurns`, backend/products/gym/domain/Thread.h).
+    // The composer's bound; the thread's own turn ceiling arrives as a 409 instead.
     public static let maxTurnBytes = 1000
 
-    // A THREAD ID THIS DEVICE MINTS, in the server's own alphabet ([A-Za-z0-9_-], 8–64). It is
-    // client-minted for the reason every other id in gym is: the question that opens a conversation
-    // and the conversation itself land in one call, and a reply lost on the way back is then a
-    // retry rather than a second thread.
+    // The server's alphabet: [A-Za-z0-9_-], 8–64.
     public static func mintThreadId() -> String {
         "thr_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
@@ -262,19 +173,10 @@ public enum Ask {
     public static let title = "Ask"
     public static let subtitle = "reads your log · proposes only"
 
-    // THE TAB'S TWO STANCES (R7, decisions §3). A tab cannot be absent the way a door could be, so
-    // the two states that used to take the door away are DESIGNED screens now: signed out, the tab
-    // says what Ask is and that it needs the account the log lives on — never a 401 — and on a
-    // deployment with no Anthropic key it says plainly that there is no Ask here. Both are quiet
-    // statements of fact; neither counts anything or sells anything.
     public static let needsSignIn = "Ask reads your log, so it needs you signed in."
     public static let signIn = "Sign in"
     public static let absentLine = "Ask isn’t available on this Windmill."
 
-    // What Ask is, said before it has said anything — it does not speak first, so this is a
-    // description of the surface and never an opening line from it. It names the ceiling of what Ask
-    // can do in the same breath as the floor, because the safeguard ladder's third rung (never
-    // writes) is the fact a lifter is most likely to test.
     public static let scope = """
         Ask about anything in your log — a movement that stalled, what a week actually looked like, \
         whether a routine is doing what you wanted. It reads what you have logged and it can propose \
@@ -282,14 +184,6 @@ public enum Ask {
         in the log.
         """
 
-    // THE LINE THAT TELLS YOU HOW TO STOP NEEDING THIS SCREEN (contract §5). An in-app chat that
-    // points at the free door costs one paragraph and is the strongest proof we have that the MCP
-    // thesis is real — shipping Ask without it would be the retreat.
-    //
-    // IT NAMES THE SAME LIST THE DOOR IT OPENS NAMES. This paragraph used to say "Claude or ChatGPT"
-    // and the button under it now lands on `ConnectedLog.precondition`, which drops ChatGPT because
-    // web/src/shell/connect/ConnectPage.jsx carries a recipe for Claude Desktop, Claude Code, Cursor,
-    // Codex and any MCP client and none for ChatGPT. One surface may not offer two lists.
     public static let freeDoor = """
         If you already use Claude, Cursor, Codex or anything else that speaks MCP, connect it \
         instead — it’s free, and it’s better, because it knows the rest of your life.
@@ -297,19 +191,10 @@ public enum Ask {
 
     public static let connect = "Connect your own"
 
-    // Said under every proposal Ask mints, in the stream, before the lifter ever reaches the diff.
     public static let proposalNote = """
         Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.
         """
 
-    // THE CAP, SAID BEFORE IT IS HIT (contract §4). Ask is the first thing in this product with a
-    // marginal cost per use and therefore the first with a structural incentive to ration, so the
-    // ration is a line on the screen rather than an ops detail a lifter meets for the first time as a
-    // refusal. Both numbers are the server's — `kAskPerDay` and `kAskBackToBack`,
-    // backend/products/gym/application/AskService.h — and they move together with it.
-    //
-    // Nothing is sold against it, here or at the 429: the cap is what keeps Ask open to everybody
-    // rather than a locked door with a price on it.
     public static let dailyLimit = """
         It answers about ten questions a day, three back to back. That cap is what keeps Ask open to \
         everyone — when you reach it, it says so, and it answers again later.
@@ -318,42 +203,22 @@ public enum Ask {
     public static let placeholder = "Ask about your training"
     public static let waiting = "reading your log…"
 
-    // Said in the composer, while the question can still be shortened — never after the fact, and
-    // never instead of sending what was typed. It is the server's own refusal (`questionTooLong`,
-    // 400 "that question is longer than Ask takes") reached before a lifter spends a question on it.
     public static let tooLong = "That question is longer than Ask takes. Shorten it to send."
 
-    // ASK IS THE THIRD TAB SINCE THE 13 AUG PROMOTION (R7) — the tab itself always stands, and the
-    // two states that used to take a door away are its designed stances above. What this gate rules
-    // now is the DOORS beside the tab (the proposal card's Ask chip): a door is absent rather than
-    // dead where the tab would only answer with a stance. "Never mid-session" survives structurally
-    // — a live session owns the whole screen, rail included — and the server enforces it too (409
-    // `ask-session-open`); this states the client half once, so no two surfaces disagree about it.
     public static func doorIsOpen(signedIn: Bool, sessionIsOpen: Bool, onThisDeployment: Bool) -> Bool {
         signedIn && !sessionIsOpen && onThisDeployment
     }
 
-    // WHETHER A QUESTION MAY GO OUT AS TYPED, asked in the composer BEFORE anything is sent. A
-    // question is never shortened to fit: one clipped on the way out is answered half-asked, and the
-    // thread then shows the lifter a question they did not finish typing — two lies for the price of
-    // one, where the honest move is to say so while it can still be edited. The ceiling is the
-    // server's own byte count (`kMaxAskTurnBytes`, backend/products/gym/application/AskService.h).
     public static func fits(_ draft: String) -> Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count <= maxTurnBytes
     }
 
-    // The question, or nothing at all. Blank is not a question and too long is not a shorter one —
-    // both are drafts that stay in the composer, which is why this answers with an optional rather
-    // than with the best string it could make out of what it was handed.
     public static func question(from draft: String) -> String? {
         let asked = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !asked.isEmpty, fits(asked) else { return nil }
         return asked
     }
 
-    // THE COMPACT DIFF, and every word of it is the diff screen's own (`ProposalChange`), never a
-    // second grammar for the same change. A card in the stream and the document it opens saying the
-    // same removal two different ways is exactly the drift this product has one `Readout` to prevent.
     public static func diffRows(of proposal: Proposal, in catalog: [Exercise]) -> [AskDiffRow] {
         proposal.rows.map { row in
             switch row {
@@ -373,8 +238,7 @@ public enum Ask {
                     guard !moved.isEmpty else { return AskDiffRow(name: name, change: "retargeted") }
                     return AskDiffRow(name: name, change: moved.joined(separator: " · "))
                 case .kept:
-                    // Unreachable: `Proposal.rows` drops every kept entry, because a row the routine
-                    // already says is the document rather than a change.
+                    // Unreachable: `Proposal.rows` drops every kept entry.
                     return AskDiffRow(name: name, change: "unchanged")
                 }
             }

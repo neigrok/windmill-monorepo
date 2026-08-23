@@ -1,10 +1,4 @@
-// Selected-branch chrome (editing-spec v2 §4.2–§4.3): clicking a branch selects
-// it, which shows a midpoint × to delete it and a grab handle at each end to
-// re-aim it; the chrome stays until the edge is deselected. A scene overlay
-// (plain DOM + callbacks, like AffordanceLayer) repositioned per frame. The ×
-// sits perpendicular off the path so the branch stays visible; the handles ride
-// the path just outside each node's rim. Pressing a handle hands the edge and
-// which end to the shared connect gesture, which owns the ghost from there.
+// Chrome for the selected branch: a midpoint × to delete it and a handle at each end to re-aim it.
 import { NODE_SIZE } from '../theme.js';
 
 const NODE_RADIUS = NODE_SIZE * 0.42;
@@ -54,8 +48,7 @@ export class EdgeChrome {
 
   beginReconnect(end, event) {
     if (this.edge && this.onReconnectStart) this.onReconnectStart(this.edge, end, event);
-    // The chrome stays --on so the captured handle keeps its pointer events; the
-    // scene clears the selection when the drop commits a new model.
+    // Chrome stays --on so the captured handle keeps its pointer events.
   }
 
   update(camera) {

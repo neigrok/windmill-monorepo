@@ -27,17 +27,11 @@ import works.windmill.gym.store.ClaimReplay.Outcome
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
-// The claim's own fine grain, driven directly: the order of the shelves, the timestamp repairs,
-// and the id remints with their references re-pointed. The through-the-store paths live in
-// TrainingStoreTests; this file is where each rule is the subject.
 class ClaimReplayTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
     private fun shelf() = LocalLog(File(tmp.root, "local-${System.nanoTime()}.json"))
-    // Untouched, and that is the ordinary case: a seat that never opened the settings screen holds
-    // no document, so the claim's first step sends nothing and every `calls` assertion below reads
-    // exactly as it did before preferences joined the order.
     private fun settings() = LocalPreferences(File(tmp.root, "prefs-${System.nanoTime()}.json"))
     private fun queue() = SetQueue(File(tmp.root, "queue-${System.nanoTime()}.json"))
 
@@ -47,8 +41,6 @@ class ClaimReplayTests {
     private fun aSet(id: String, exerciseId: String = "bench-press", at: Long) = TrainingSet(
         id = id, exerciseId = exerciseId, weightKg = 82.5, reps = 5, completedAtMs = at)
 
-    // Movements before routines before sessions, sessions oldest first — a set may not reach the
-    // log before the movement it names, and a start may not name a routine the account lacks.
     @Test
     fun testTheShelvesClaimInOrderAndSessionsOldestFirst() = runTest {
         val server = FakeTraining()
@@ -73,9 +65,6 @@ class ClaimReplayTests {
         assertTrue(localLog.finished.isEmpty() && localLog.routines.isEmpty() && localLog.exercises.isEmpty())
     }
 
-    // PREFERENCES RIDE FIRST, and only when this device owes them. Nothing downstream references
-    // them, so they lead because they are one cheap PUT and because a lifter who set their rack
-    // before signing in should see it survive the moment the account arrives.
     @Test
     fun testTheRackClaimsBeforeAnythingElseAndOnlyWhenItIsOwed() = runTest {
         val server = FakeTraining()
@@ -93,17 +82,11 @@ class ClaimReplayTests {
         assertEquals(90, server.settings?.restSeconds)
         assertFalse("the log took them — nothing is owed", settings.owed)
 
-        // And a second pass over a settled device sends nothing at all: the claim is not a heartbeat.
         server.calls.clear()
         ClaimReplay(server, localLog, queue(), settings).run()
         assertFalse("savePreferences" in server.calls)
     }
 
-    // A RACK THAT DID NOT LAND MAY NOT PARK A WORKOUT, and it may not re-arm one either. The claim
-    // carries on past it and every session behind it still replays; what stays owed is the
-    // DOCUMENT, on LocalPreferences, and `runPreferences` is what carries it. `retryable` keeps
-    // meaning "another pass of the shelf could change this" — folding the rack into it would put
-    // the whole walk on a four-second poll, including the two stops that must never be polled.
     @Test
     fun testARackThatCannotBeSentStopsNothingBehindIt() = runTest {
         val server = FakeTraining()
@@ -124,10 +107,6 @@ class ClaimReplayTests {
         assertTrue("nothing was lost, so nothing is said", outcome.said.isEmpty())
     }
 
-    // THE TWO STOPS THAT MUST NEVER BE POLLED, with a rack owed behind them. A live workout the
-    // account already has open WAITS for that workout to close, and a live start the log refuses
-    // outright is over — both wait for the next connect, and neither becomes a four-second retry
-    // because a settings PUT could not land in the same pass.
     @Test
     fun testAnOwedRackDoesNotPutTheHaltsOnACadence() = runTest {
         for (answer in listOf(refusal(409, code = "session-already-open"),
@@ -148,7 +127,6 @@ class ClaimReplayTests {
         }
     }
 
-    // ...and the step that stands alone sends alone: no start, no append, one PUT.
     @Test
     fun testTheRackRetriesByItselfWithoutWalkingTheShelf() = runTest {
         val server = FakeTraining()
@@ -165,10 +143,6 @@ class ClaimReplayTests {
         assertTrue(said.isEmpty())
     }
 
-    // A DOCUMENT THE LOG WILL NEVER TAKE AS WRITTEN is said out loud and let go, exactly as a
-    // refused movement or routine is — a terminal write re-sent on every connect would jam the
-    // claim forever behind an answer that cannot change. The device keeps drawing what the lifter
-    // set; the account's own copy replaces it on the next read.
     @Test
     fun testARackTheLogRefusesOutrightIsSaidAndLetGo() = runTest {
         val server = FakeTraining()
@@ -185,8 +159,6 @@ class ClaimReplayTests {
         assertFalse("nothing here is worth another pass", outcome.retryable)
     }
 
-    // A clock that lied once may not cost the session: every instant is repaired into the server's
-    // (0, 253402300799000] bound, and a finish never lands before its own start.
     @Test
     fun testBrokenTimestampsAreRepairedBeforeTheyRide() = runTest {
         val server = FakeTraining()
@@ -202,9 +174,6 @@ class ClaimReplayTests {
         assertEquals(listOf("ses_1" to 1L), server.finished)
     }
 
-    // A spent set id is re-minted under the claim's own budget, and the fresh id is written back
-    // to the shelf — so a claim that dies mid-way replays under the SAME repaired id and the log
-    // still converges on one row.
     @Test
     fun testASpentSetIdIsMintedAgainAndTheShelfLearnsTheFreshId() = runTest {
         val server = FakeTraining()
@@ -227,8 +196,6 @@ class ClaimReplayTests {
         assertTrue("the session settled and left the shelf", localLog.finished.isEmpty())
     }
 
-    // A spent routine id re-points the sessions that ran it before any of them replays, so a
-    // claimed start still names the routine that actually landed.
     @Test
     fun testASpentRoutineIdIsMintedAgainAndItsSessionsFollow() = runTest {
         val server = FakeTraining()
@@ -253,9 +220,6 @@ class ClaimReplayTests {
         assertNull(server.written["rt_spent"])
     }
 
-    // A routine the server refuses outright would be re-sent identically on every connect
-    // forever. It is SAID and orphaned instead: the document leaves the shelf, and the sessions
-    // that named it keep their frozen plan and replay ad-hoc.
     @Test
     fun testARoutineRefusedOutrightIsSaidOrphanedAndItsSessionsReplayAdHoc() = runTest {
         val server = FakeTraining()
@@ -277,9 +241,6 @@ class ClaimReplayTests {
         assertTrue("the session itself still settled", localLog.finished.isEmpty())
     }
 
-    // A movement the server refuses outright ends the same way: SAID and let go, and the claim
-    // moves on to the shelves behind it — its sets keep the id and are refused by name if the
-    // log turns them away when they replay.
     @Test
     fun testAMovementRefusedOutrightIsSaidLetGoAndTheClaimMovesOn() = runTest {
         val server = FakeTraining()
@@ -300,9 +261,6 @@ class ClaimReplayTests {
         assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
     }
 
-    // THE CORRECTION MADE SIGNED OUT SURVIVES THE CLAIM, and it is the whole of §G18's hard half.
-    // The session was never sent, so the fix rewrote the row that WILL be sent: the corrected set
-    // replays, the original never does, and there is exactly one row at the end of it.
     @Test
     fun testASetCorrectedBeforeTheClaimReplaysCorrectedAndNeverTwice() = runTest {
         val server = FakeTraining()
@@ -323,10 +281,6 @@ class ClaimReplayTests {
         assertTrue("and nothing needed correcting after the fact", server.fixes.isEmpty())
     }
 
-    // THE HALF-CLAIMED SESSION, which is the case that silently loses a correction. An earlier pass
-    // landed the set and then stopped retryably, so the shelf still holds the row — and a replay of
-    // an already-stored id answers with the row AS IT WAS LOGGED. The shelf is what the lifter
-    // fixed it to, so the account is moved to the shelf rather than the other way round.
     @Test
     fun testASetCorrectedAfterItAlreadyLandedIsMovedOnTheAccountRatherThanLostToTheReplay() = runTest {
         val server = FakeTraining()
@@ -334,7 +288,6 @@ class ClaimReplayTests {
         localLog.hold(LocalLog.FinishedSession(
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
-        // A first pass that landed both sets and then could not close the session.
         server.onFinish = { throw IOException("offline") }
         assertTrue(ClaimReplay(server, localLog, queue(), settings()).run().retryable)
         server.onFinish = {}
@@ -351,9 +304,6 @@ class ClaimReplayTests {
         assertTrue("and the session settled", localLog.finished.isEmpty())
     }
 
-    // ...and the delete's own half. Dropping the set from the shelf alone would let the survivors
-    // replay and leave the deleted one standing on the account forever — the delete undoing itself.
-    // The tombstone is what tells the log, and a DELETE is 204 for a set it never had.
     @Test
     fun testASetDeletedAfterItAlreadyLandedIsTakenOffTheAccountByItsTombstone() = runTest {
         val server = FakeTraining()
@@ -374,12 +324,6 @@ class ClaimReplayTests {
             localLog.finished.isEmpty())
     }
 
-    // THE CORRECTION MADE WHILE THE CLAIM IS WALKING, which is the window a snapshot of the shelf
-    // loses. `connect` publishes the shelf's rows BEFORE the claim starts and the deliver cadence
-    // re-runs it every few seconds, so a session being replayed is a session on screen: the lifter
-    // fixes a set while the pass is out on the wire, and it is written to the row behind the walk.
-    // A snapshot would send the numbers they fixed away from and then forget the row holding the
-    // repair — the correction lost with nothing said. Every pass re-reads instead.
     @Test
     fun testASetCorrectedWhileTheClaimIsWalkingIsCarriedRatherThanForgottenWithTheRow() = runTest {
         val server = FakeTraining()
@@ -404,10 +348,6 @@ class ClaimReplayTests {
         assertTrue(localLog.finished.isEmpty())
     }
 
-    // ...and the same window over the CLOSE, which is the last round trip before the row is
-    // forgotten. Neither route refuses a set in a finished session — a lifter reads the log after
-    // the workout, which is exactly when they see the typo — so the delete still goes, and the row
-    // is forgotten only by a pass that found nothing left to do.
     @Test
     fun testASetDeletedWhileTheClaimIsClosingTheSessionIsStillTakenOffTheAccount() = runTest {
         val server = FakeTraining()
@@ -425,8 +365,6 @@ class ClaimReplayTests {
             localLog.finished.isEmpty())
     }
 
-    // A tombstone for a set that never reached the log costs one 204 and nothing else — the route
-    // answers the same for a set that never existed as for one it just took away.
     @Test
     fun testATombstoneForASetTheLogNeverHadIsStillSentAndCostsNothing() = runTest {
         val server = FakeTraining()
@@ -445,8 +383,6 @@ class ClaimReplayTests {
         assertTrue(localLog.finished.isEmpty())
     }
 
-    // A delete the log could not take is not a delete that is lost: the route has no terminal
-    // refusal at all, so the session stays on the shelf and a later pass carries it.
     @Test
     fun testADeleteTheLogCouldNotTakeKeepsTheSessionOnTheShelfForAnotherPass() = runTest {
         val server = FakeTraining()
@@ -467,10 +403,6 @@ class ClaimReplayTests {
         assertTrue(localLog.finished.isEmpty())
     }
 
-    // A correction the log will never read is a repair that is lost, and it is SAID: the account
-    // keeps the numbers the set was logged with, and this banner is the last copy of what the
-    // lifter meant instead. The session still settles — a terminal write re-sent on every connect
-    // would jam the claim behind an answer that cannot change.
     @Test
     fun testACorrectionRefusedOutrightIsSaidAndTheSessionStillSettles() = runTest {
         val server = FakeTraining()
@@ -494,10 +426,6 @@ class ClaimReplayTests {
         assertTrue(localLog.finished.isEmpty())
     }
 
-    // The one 404 a claimed start can meet: the routine was claimed on an earlier connect, then
-    // deleted from another surface. The plan is a frozen snapshot, so the id that will never
-    // resolve is orphaned — everywhere the shelf wrote it — and the start retries plain rather
-    // than jamming the whole claim behind a deterministic refusal forever.
     @Test
     fun testAClaimedStartMeetingADeletedRoutine404OrphansItAndRetries() = runTest {
         val server = FakeTraining()
@@ -522,12 +450,6 @@ class ClaimReplayTests {
         assertTrue("a deterministic 404 is a repair, not a loss", outcome.said.isEmpty())
         assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
     }
-    // NO PROPOSAL IS EVER REPLAYED, and the shelf is why: a proposal needs an account for an agent
-    // to have been granted anything against, so nothing signed out can hold one. A routine that
-    // somehow arrived on the shelf wearing a card — a disk file written by a build that held one,
-    // a routine copied from a read — lands on the account as the plain document it is: the write
-    // is `RoutineWrite`, which carries neither the card nor the revision, and no proposal door is
-    // touched by the claim at all.
     @Test
     fun testTheClaimCarriesTheRoutineAndNeverACardOnIt() = runTest {
         val server = FakeTraining()
@@ -548,10 +470,6 @@ class ClaimReplayTests {
         assertTrue(localLog.routines.isEmpty())
     }
 
-    // R2 — A LIVE SESSION THE LOG ALREADY HOLDS IS NEVER RE-STARTED. The queue's persisted bit says
-    // whether the log answered for it: a claimed one is skipped outright — no start replay, which
-    // is a settling call, goes out for it — and an unclaimed one is started once and then written
-    // claimed for its id, so the next pass skips it too.
     @Test
     fun testAClaimedLiveSessionIsNeverReStartedAndAnUnclaimedOneIsClaimedOnce() = runTest {
         val server = FakeTraining()
@@ -576,11 +494,6 @@ class ClaimReplayTests {
         assertTrue(third.liveLanded)
     }
 
-    // R2 — A SHELF START THAT MEETS THE PHONE'S OWN LIVE WORKOUT SKIPS THAT SESSION AND CARRIES ON.
-    // The queue holds a session the log has answered for, so the account's one open workout is this
-    // phone's: the shelf session stays on the shelf for the finish and the next connect to walk, the
-    // walk continues past it, and the pass ends without a wait — the live session's own state is
-    // never derived from that stop.
     @Test
     fun testAShelfStartMeetingThePhonesOwnLiveWorkoutSkipsItRatherThanHalting() = runTest {
         val server = FakeTraining()
@@ -603,16 +516,12 @@ class ClaimReplayTests {
         assertEquals(Outcome(said = emptyList(), liveLanded = true, retryable = false), outcome)
         assertFalse("and the live session stays the log's", queue.sessionIsUnclaimed)
 
-        // Somebody ELSE'S open workout is still the wait.
         queue.hold(null)
         val waited = ClaimReplay(server, localLog, queue, settings()).run()
         assertEquals(Outcome(said = emptyList(), liveLanded = false, retryable = false), waited)
         assertEquals(1, localLog.finished.size)
     }
 
-    // R4 — A START REFUSED FOR A CLOCK AHEAD OF THE LOG'S RETRIES ON THE CADENCE, because it is
-    // transient by construction: the instant ages into the past. Any OTHER 400 on a shelf start is
-    // said under the session's name and the row let go — never a silent skip re-sent every connect.
     @Test
     fun testAClockAheadStartRetriesAndAnyOther400IsSaidAndLetGo() = runTest {
         val server = FakeTraining()
@@ -639,9 +548,6 @@ class ClaimReplayTests {
         assertEquals("nothing left to walk", listOf("start", "start"), server.calls)
     }
 
-    // R5 — AN APPEND 404 AFTER THE START ANSWERED IS THE WORKOUT GONE FROM THE LOG, discarded from
-    // another surface between the two calls: said once under the session's name, forgotten, and
-    // never re-sent against an id the log will never know again.
     @Test
     fun testAnAppend404AfterTheStartAnsweredIsTheWorkoutGoneAndIsSaidOnce() = runTest {
         val server = FakeTraining()

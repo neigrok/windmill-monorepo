@@ -55,14 +55,11 @@ test('runFace — the four refusal faces, out-of-allowance never a wall', () => 
   const out = runFace({ status: 'refused', refusal: 'out-of-allowance' });
   assert.equal(out.kind, 'out');
   assert.match(out.line, /edit by hand/);
-  assert.doesNotMatch(out.line, /[Uu]pgrade/);  // §6: never "upgrade to continue"
+  assert.doesNotMatch(out.line, /[Uu]pgrade/);
   assert.equal(runFace({ status: 'refused', refusal: 'prompt-too-long' }).kind, 'long');
   assert.equal(runFace({ status: 'refused', refusal: 'prompt-empty' }).kind, 'empty');
 });
 
-// The AI ceiling wears the same face as the run allowance — a ceiling is a ceiling — and it is held
-// to the same two rules: it never sells anything, and it says the window comes back rather than
-// leaving the reader to think tending is gone.
 test('runFace — the AI ceiling is a rolling window, and never a paywall', () => {
   const out = runFace({ status: 'refused', refusal: 'out-of-budget' });
   assert.equal(out.kind, 'out');

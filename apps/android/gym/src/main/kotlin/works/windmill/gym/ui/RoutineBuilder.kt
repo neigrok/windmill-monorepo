@@ -71,31 +71,9 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.net.WindmillJson
 
-// THE ONE EDITOR (§M / R3, screens 28 and 6) — a name, a list, and a button that adds to it, all on
-// ONE screen: the name inline at the top rather than a step before, so movements can come first and
-// the name last, or the reverse, and the whole day is visible the entire time. The same screen
-// creates and edits, differing only in what is already in the list — and in the two quiet rows edit
-// mode carries at the foot: Duplicate, and Delete routine.
-//
-// SAVE LIVES IN THE HEADER AND ONLY THERE (R3 — §M's own sentence wins over the drawn footer). It
-// enables when the draft is savable: named and holding at least one movement to create, and for an
-// edit only once something actually changed — a Save that rewrote a document with itself would move
-// the revision and supersede a pending proposal for nothing.
-//
-// THEN TARGETS IN A SHEET OVER THE LIST, so the shape of the day stays visible while numbers are
-// typed into it. The sheet is where two rules live: there is no history behind a routine built at
-// home, so it SAYS SO instead of prefilling a guess, and `Leave it open` is a first-class answer
-// rather than a failure to fill something in.
-//
-// NO WIZARD, NO STEP COUNTER, NO TEMPLATE GALLERY, NO WEEK. One screen, savable from the moment it
-// holds a name and a movement: a routine is a list with a name, and a week is a thing lifters keep
-// in their head and we would only get wrong.
-
-// A HALF-TYPED ROUTINE EXISTS NOWHERE BUT IN MEMORY — not on the log, not on the shelf, not in the
-// queue — so it is saved the way the room saves a conversation, and for the same reason: an activity
-// reclaimed mid-build would otherwise take an evening at the kitchen table with it. A draft that
-// cannot be written answers null, which drops it rather than crashing the room; the loss is the same
-// one the lifter would have had without any of this.
+// Save enables when the draft is savable — named and holding at least one movement — and for an edit
+// only once something actually changed: a Save that rewrote a document with itself would move the
+// revision and supersede a pending proposal for nothing.
 val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
     save = { draft -> draft?.let { runCatching { WindmillJson.encodeToString(RoutineDraft.serializer(), it) }.getOrNull() } ?: "" },
     restore = { written ->
@@ -104,10 +82,8 @@ val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
     },
 )
 
-// The three numbers standing on the target sheet, carried by the sheet stack rather than held
-// inside the sheet — because typing a weight LEAVES that sheet for the pad and comes back, and a
-// dial that lived only in the sheet would answer the trip by forgetting the sets and reps the
-// lifter had just dialled. Absent on the way in, where the row's own targets seed it.
+// The three numbers on the target sheet are carried by the sheet stack, because typing a weight leaves
+// that sheet for the pad and comes back.
 private data class Dial(val sets: Int, val reps: Int, val weightKg: Double)
 
 private sealed interface BuilderSheet {
@@ -124,11 +100,6 @@ fun RoutineBuilder(
     store: TrainingStore,
     saving: Boolean,
     onDraft: (RoutineDraft) -> Unit,
-    // THE SAVE IS THE ROOM'S AND NOT THIS SCREEN'S, for the reason every write in this product is
-    // owned by something that outlives the surface it was made on: this composition dies the moment
-    // the draft is let go of, and a back gesture inside the round trip would cancel a routine
-    // half-way onto the log with nothing left standing to say so. The delete is the room's for the
-    // same reason.
     onSave: () -> Unit,
     onDelete: (String) -> Unit,
     onClose: () -> Unit,
@@ -138,15 +109,12 @@ fun RoutineBuilder(
     var sheet by remember { mutableStateOf<BuilderSheet?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Every programmatic close falls through the sheet's own hide animation, exactly as the
-    // logger's does: Compose fires no dismiss callback on one, so nothing waits for it.
+    // Compose fires no dismiss callback on a programmatic close, so nothing waits for one.
     fun close() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
     }
 
-    // R3'S ENABLE RULE. `savable` is the domain's (named, ≥1 movement); `changed` is this screen's
-    // half, read against the routine as it stands — an edit that changed nothing has nothing to
-    // save, and writing it anyway would supersede a pending proposal for free.
+    // `savable` is the domain's (named, ≥1 movement); `changed` is read against the routine as it stands.
     val standing = draft.id?.let { store.routine(it) }
     val changed = standing == null || draft != RoutineDraft.of(standing)
     val editing = draft.id != null
@@ -163,9 +131,6 @@ fun RoutineBuilder(
             onAdd = { sheet = BuilderSheet.Picker },
             onSave = onSave,
             onCancel = onClose,
-            // A copy is the day as it stands ON SCREEN — nothing typed tonight is thrown away by
-            // duplicating — and deliberately unnamed: a copy is a new day, and §M asks for every
-            // day's name.
             onDuplicate = { onDraft(draft.duplicated(position = store.routines.size)) },
             onDelete = { draft.id?.let(onDelete) },
         )
@@ -195,10 +160,6 @@ fun RoutineBuilder(
                         close()
                     },
                 )
-                // The same pad the rack types on, over the same sheet stack: the ladder reaches
-                // every weight in the product and 140 from an empty bar is fourteen taps of it.
-                // Both ways out carry the dial back, so a trip to the pad costs nothing typed —
-                // Cancel keeps the number that was there and Set brings the typed one home.
                 is BuilderSheet.Weight -> KeypadSheet(
                     mode = KeypadEntry.Mode.Weight,
                     current = open.dialled.weightKg,
@@ -210,10 +171,6 @@ fun RoutineBuilder(
                 BuilderSheet.Picker -> MovementPicker(
                     catalog = store.catalog,
                     taken = draft.entries.map { it.exerciseId },
-                    // The picker's meta is what a lifter last did with a movement, and it is
-                    // deliberately not asked for here: this screen is not aiming a set, it is
-                    // writing down a day, and a `last 82.5 × 5` beside every row would be the
-                    // prefill this wave refuses arriving through the side door.
                     lastSets = null,
                     nowMs = 0,
                     title = "Add movement",
@@ -229,9 +186,6 @@ fun RoutineBuilder(
                         .padding(WindmillSpace.x5),
                     onClose = { close() },
                 )
-                // §N's own screen, reached from the door the picker has always had: a movement the
-                // catalog has never heard of is minted with the name that was typed and the loading
-                // the lifter picks, and lands in the day it was created for.
                 is BuilderSheet.Create -> CreateMovementSheet(
                     name = open.name,
                     onCancel = { sheet = BuilderSheet.Picker },
@@ -251,13 +205,6 @@ fun RoutineBuilder(
     }
 }
 
-// THE ONE SCREEN — header, name, movements, the dashed add, and edit mode's two quiet rows. The
-// header is the modal editor's (screens 28/6): Cancel, the mode's own title, Save.
-//
-// A MOVEMENT LEAVES BY THE SAME GESTURE IT LEAVES A SESSION BY — a sideways flick, the assembly
-// list's own (§A2), at the same thumb's width of travel. Nothing here has been logged, so every row
-// can go; the list is a draft, and a movement added by mistake must have a way out that is not
-// abandoning the evening.
 @Composable
 private fun BuildStep(
     draft: RoutineDraft,
@@ -277,8 +224,6 @@ private fun BuildStep(
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // A fresh create has exactly one thing to do first, so the keyboard is already up over the
-    // name. An edit arrives named and asks for nothing.
     LaunchedEffect(Unit) {
         if (draft.id == null && draft.name.isEmpty()) {
             focus.requestFocus()
@@ -361,9 +306,6 @@ private fun BuildStep(
             Box(Modifier.fillMaxWidth().height(1.dp).background(GymSkin.lineStrong))
         }
 
-        // SUGGESTIONS, WHILE THE NAME IS EMPTY (R3, screen 28's chips). Tapping one fills the field
-        // and typing over it is the expected case; nothing here is a category and nothing is
-        // remembered.
         if (draft.name.isEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
                 Program.suggestions.forEach { suggestion ->
@@ -438,8 +380,7 @@ private fun BuildStep(
             }
         }
 
-        // Appending is the same dashed slot the assembly list uses, and it means the same thing
-        // here: a place waiting to be filled. It goes at the ceiling the log itself refuses past.
+        // The dashed slot goes at the ceiling the log itself refuses past.
         if (!draft.full) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -453,10 +394,6 @@ private fun BuildStep(
             }
         }
 
-        // EDIT MODE'S TWO QUIET ROWS (R3, screen 6's foot): a copy of the day, and the end of it.
-        // Delete wears the alarm ink because it destroys a document — the sessions that named this
-        // day keep every set they logged, and the sentence under the pair says the half that is not
-        // obvious.
         if (editing) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -492,17 +429,7 @@ private fun BuildStep(
     }
 }
 
-// SCREEN 29's SHEET — one movement's targets, over the list so the shape of the day stays visible
-// while numbers are typed into it.
-//
-// `Never logged — these are your numbers.` IS A FACT ABOUT THIS ROUTINE and not about the movement:
-// a day built at the kitchen table has never been run, so there is no last time to dial to and the
-// sheet says so rather than prefilling a guess and attributing it to the lifter. It is withheld from
-// an edit of a day that HAS run, where it would simply be false.
-//
-// THE LADDER IS THE ONE THE RACK USES — `LadderRow`, the same function, over the same `Ladder` band
-// table. There is no second stepper in this product: a kitchen table that rounded differently from
-// the rack would be two answers to what a target weight is.
+// `Never logged — these are your numbers.` is a fact about this ROUTINE and not the movement.
 @Composable
 private fun TargetSheet(
     draft: RoutineDraft,
@@ -514,9 +441,7 @@ private fun TargetSheet(
     onOpen: () -> Unit,
 ) {
     val entry = draft.entry(exerciseId)
-    // The dial the sheet opens on: what came back from the pad, then what the row already asks for,
-    // then the product's own starting point — three sets of five at the empty bar, which is a
-    // constant precisely BECAUSE nothing here reaches for this lifter's history.
+    // The dial opens on what came back from the pad, then the row's own targets, then three fives.
     var sets by remember(exerciseId, dialled) {
         mutableIntStateOf(dialled?.sets ?: entry?.targetSets ?: RoutineDraft.startingSets)
     }
@@ -575,7 +500,6 @@ private fun TargetSheet(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                // The numeral is the door onto the pad, exactly as it is at the rack.
                 BasicText(
                     Readout.weight(weightKg),
                     maxLines = 1,
@@ -606,9 +530,7 @@ private fun TargetSheet(
             )
         }
 
-        // A FIRST-CLASS ANSWER AND NOT A CANCEL. It clears the whole row — the log refuses reps or a
-        // weight on a line with no sets — and the day is savable with it, because a row that decides
-        // at the rack is a row a written program is allowed to have.
+        // It clears the whole row: the log refuses reps or a weight on a line with no sets.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -624,8 +546,6 @@ private fun TargetSheet(
     }
 }
 
-// One counted target and its two steps — sets and reps, side by side, each the number it changes
-// with a step either side of it. The steps are `Step`, the rack's own.
 @Composable
 private fun Counted(label: String, value: Int, modifier: Modifier, onStep: (Int) -> Unit) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {

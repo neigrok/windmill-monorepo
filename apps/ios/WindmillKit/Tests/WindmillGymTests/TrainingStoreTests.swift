@@ -2,14 +2,6 @@ import XCTest
 @testable import WindmillGym
 @testable import WindmillPlatform
 
-// What has to be true for a set somebody lifted to survive: it is on the device before the log is
-// consulted, it stays there when the log cannot be reached, the four refusals each get the repair
-// they ask for, and a set that will never land is SAID rather than swallowed. These are the paths
-// that lose training.
-
-// Refusals as the wire delivers them — a sentence for a human under "error", and, for the reasons a
-// client must branch on, a machine word under "code". The tests below deliberately reword the
-// sentences: the code is the contract and nothing here may read English to decide what to do.
 private func refusal(_ status: Int, code: String = "", message: String) -> WindmillApiError {
     let body = code.isEmpty
         ? #"{"error":"\#(message)"}"#
@@ -44,10 +36,6 @@ final class TrainingStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: accountURL)
     }
 
-    // The undo window is off here on purpose. What every test below is about is what happens to a
-    // set once the walk REACHES it — the refusals, the remints, the lanes, the ordering — and a
-    // nine-second hold in front of that would only be a delay between the tap and the subject.
-    // The window has its own tests (UndoWindowTests), where it is the subject.
     private func makeStore(sync: FakeTraining?,
                            mintSet: @escaping () -> String = { Ids.set() },
                            retryAfter: Duration = .seconds(4)) -> TrainingStore {
@@ -66,9 +54,6 @@ final class TrainingStoreTests: XCTestCase {
         )
     }
 
-
-    // An inspection read names a seat like every other read: the queue and the shelf hold one set of
-    // rows per account, so "what is on this device" is only ever answerable for somebody.
     private func queueOnDisk(of seat: String? = "u1") -> SetQueue {
         let held = SetQueue(url: queueURL, deviceHolds: nil)
         held.open(under: seat)
@@ -88,8 +73,6 @@ final class TrainingStoreTests: XCTestCase {
         )
     }
 
-    // A store standing where the room stands mid-workout: a session open on the log, a movement in
-    // hand, nothing owed yet.
     private func liveStore(_ server: FakeTraining,
                            movement: String = "bench-press",
                            plan: PlanSnapshot? = nil,
@@ -102,8 +85,6 @@ final class TrainingStoreTests: XCTestCase {
         return store
     }
 
-    // The set is the lifter's the instant they tap and the network's problem afterwards — so a
-    // basement gym costs nothing, a relaunch costs nothing, and the words say exactly that.
     func testASetLoggedOfflineSurvivesARelaunchAndFlushesOnReconnect() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -125,8 +106,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // 409 `set-id-taken` means that id names a row outside this session. A new id lands the same set;
-    // treating it as terminal would drop a lift over a collision the device can repair by itself.
     func testASetIdAlreadySpentIsMintedAgainAndLands() async {
         let server = FakeTraining()
         var ids = ["set_first", "set_second"]
@@ -147,8 +126,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(store.refusals.isEmpty, "a repaired collision is not a loss and must not be said")
     }
 
-    // 409 `session-finished` is the one refusal that costs a set: it never landed and never will. It
-    // is removed and SAID — the banner is the last copy of it, so it carries the movement too.
     func testASetRefusedByAClosedSessionIsDroppedAndSaidOutLoud() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -164,9 +141,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty)
     }
 
-    // The queue's whole premise: send in any order, any number of times, and converge on one row per
-    // minted id. A reply that never arrived leaves the set owed, and the replay answers with the row
-    // the log already stored rather than filing it a second time.
     func testAReplyThatNeverArrivedIsReplayedAndTheLogStillHoldsOneRow() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -184,8 +158,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.saveState, .onTheLog)
     }
 
-    // A session that closed before a set reached it refuses that set forever, so finishing drains
-    // first and closes second. The order is the whole rule.
     func testFinishingSendsWhatIsOwedBeforeItClosesTheSession() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -209,8 +181,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(landed! < finished!, "every set of this session is on the log before it closes")
     }
 
-    // ...and when they cannot be drained, Finish does not fire at all. Closing over an undelivered
-    // set is the one loss the device can see coming.
     func testFinishingIsRefusedWhileASetOfThisSessionIsStillOwed() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -224,9 +194,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNotNil(store.session, "the session stays open — a closed one could not take that set")
     }
 
-    // The close is a round trip, and a set logged into a session that closes under it is refused
-    // forever. The pad is shut for exactly that window — and `isFinishing` is published so the room
-    // can say where that set can still go rather than swallowing the tap.
     func testASetTappedWhileTheSessionIsClosingIsNotFiledIntoIt() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -239,8 +206,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(queueOnDisk(of: "u1").pending.isEmpty, "and nothing was left owed against it")
     }
 
-    // A 500 is the STORE failing, not the set being refused. Keeping it queued is the difference
-    // between a five-second lock wait and a lift thrown away.
     func testAStorageFailureKeepsTheSetQueuedRatherThanRefusingIt() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -250,28 +215,22 @@ final class TrainingStoreTests: XCTestCase {
 
         XCTAssertEqual(queueOnDisk(of: "u1").pending.count, 1)
         XCTAssertTrue(store.refusals.isEmpty, "the server failing is not the set being refused")
-        // R10: a log that ANSWERED is not a phone with no signal — the note and the strip are read
-        // off the failure KIND, and "offline" is kept for the transport. Never the server's own
-        // sentence in the strip.
         XCTAssertEqual(store.saveState, .blocked(.logFailed))
         XCTAssertEqual(store.saveState.line, "the log didn’t answer · saved here")
         XCTAssertEqual(store.strandedBy, .logFailed)
         XCTAssertEqual(store.sets.count, 1, "the row stays on screen — the device is holding it")
 
-        // A malformed reply is the log's trouble too — not a basement.
         server.refuse = { _ in .malformed }
         await store.flushPendingSets()
         XCTAssertEqual(store.saveState, .blocked(.logFailed))
         XCTAssertEqual(store.strandedBy, .logFailed)
 
-        // A `set-not-found` on an append is a blocked lane and it says so; still not "no signal".
         server.refuse = { _ in refusal(404, code: "set-not-found", message: "no such set") }
         await store.flushPendingSets()
         XCTAssertEqual(store.saveState, .blocked(.logFailed))
         XCTAssertEqual(store.strandedBy, .logFailed)
         XCTAssertEqual(store.strandedCount, 1)
 
-        // A lapsed sign-in is its own fact.
         server.refuse = { _ in refusal(401, message: "sign in to open your training log") }
         await store.flushPendingSets()
         XCTAssertEqual(store.saveState, .blocked(.signInLapsed))
@@ -286,8 +245,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.strandedBy, .offline)
     }
 
-    // Order is per (session, movement), because that is the only order the server keeps. A jam that
-    // stopped the whole queue would stop a whole workout, silently.
     func testASetThatCannotLandHoldsUpItsOwnMovementAndNoOther() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -303,19 +260,10 @@ final class TrainingStoreTests: XCTestCase {
                        "both are on screen — one is on the log and one is on the device")
     }
 
-    // Pressing Start cannot re-plan a workout that is already running: the session that comes back is
-    // the live one, with ITS snapshot, and its sets come with it rather than being drawn over.
-    // A START IS NEVER A SILENT JOIN (the 13 Aug start contract). Every user-tapped start says
-    // `joinOpenSession: false`: the join default ignored the tapped routine, so "Start workout" on
-    // routine B landed the lifter in yesterday's workout under the wrong plan. The refusal re-reads
-    // the log, so the open workout is adopted for the room to stand in — resumed or finished
-    // deliberately, never joined by surprise.
     func testAStartWhileASessionIsOpenIsRefusedAndTheOpenWorkoutIsAdopted() async {
         let server = FakeTraining()
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
-        // Opened on the account AFTER this device connected — another phone, or a workout this
-        // device forgot: the exact case a silent join used to swallow.
         server.open(Session(id: "ses_live", startedAtMs: 500,
                             plan: PlanSnapshot(routine: "Push A",
                                                entries: [PlanEntry(exerciseId: "bench-press", sets: 5,
@@ -334,8 +282,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.sets.map(\.id), ["set_old"], "with the sets already logged into it")
     }
 
-    // The number in front of the lifter before they touch anything: the plan's target while the
-    // movement is untouched, then their own last set the moment there is one.
     func testThePrefillTakesThePlanUntilTheLifterHasLiftedSomething() async {
         let server = FakeTraining()
         server.open(Session(id: "ses_1", startedAtMs: 1_000,
@@ -352,13 +298,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.prefill, Prefill(weightKg: 85, reps: 4), "the sticky carry-forward follows the thumb")
     }
 
-    // Signed out is a supported state, not a degraded one: the room is anonymous-first, and the
-    // whole signed-out life of a session — start, log, finish, claim — has its own suite
-    // (AnonymousGymTests). What this file keeps is the signed-in walk.
-
-    // A WARMUP IS A KIND THE LOGGER CAN WRITE, and it counts toward nothing. Before the toggle
-    // existed every set this surface could produce was `working`, so a 60 kg ramp-up was fed to the
-    // record rules as the mark to beat — and the finish screen minted a gold personal record for it.
     func testAWarmupIsWrittenAsAWarmupAndCarriesNothingForward() async {
         let server = FakeTraining()
         let plan = PlanSnapshot(routine: "Legs", entries: [
@@ -384,9 +323,6 @@ final class TrainingStoreTests: XCTestCase {
                        "and a working set does carry, past the warmup that came before it")
     }
 
-    // A set refused in one lane must not take the retry away from a set merely jammed in another.
-    // Nothing else carries the jammed one: the walk cancelled the task it arrived with, so returning
-    // at the refusal left it on the device with no retry and no strip saying it was there.
     func testARefusalInOneLaneStillLeavesTheOtherLaneCarriedAndCounted() async {
         let server = FakeTraining()
         let store = await liveStore(server, retryAfter: .milliseconds(100))
@@ -412,9 +348,6 @@ final class TrainingStoreTests: XCTestCase {
                              "and the retry fired on its own, with nobody tapping anything")
     }
 
-    // A log that answered with a reason is not a log that went quiet. The routine was deleted from
-    // the web; saying "the log didn't answer" points the lifter at their signal instead of at the
-    // program that is gone.
     func testAStartRefusedForANamedReasonSaysTheReason() async {
         let server = FakeTraining()
         server.refuseStart = refusal(404, message: "no such routine")
@@ -429,11 +362,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNil(store.session)
     }
 
-    // R3. NO SIGNAL IS NOT A REASON TO STAND STILL. Signed in with the log unreachable, fallen over,
-    // or refusing the device's clock, Start composes the workout ON THE DEVICE from the routine the
-    // store holds — the account's own, off the copy this seat last read — holds it unclaimed, and the
-    // claim lands it on the retry cadence. "the log didn't answer — a session starts there" is retired:
-    // a lifter in a basement can begin.
     func testAStartWithNoSignalComposesOnTheDeviceFromTheAccountsRoutineAndTheClaimLandsIt() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
@@ -496,10 +424,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNil(store.session)
     }
 
-    // R5. AN APPEND 404 FOR A SESSION THIS DEVICE HOLDS AS CLAIMED is the workout being gone —
-    // discarded from another surface. Terminal and SAID, the session forgotten, the log re-read:
-    // nothing retries every four seconds, nothing reads "offline · saved here" under a healthy
-    // connection, and no later workout's strip counts it.
     func testASetIntoAWorkoutDiscardedElsewhereIsSaidAndTheWorkoutIsForgotten() async {
         let server = FakeTraining()
         let store = await liveStore(server, retryAfter: .milliseconds(40))
@@ -525,9 +449,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.appended.filter { $0.weightKg == 85 }.count, 1, "no cadence ever re-sent it")
     }
 
-    // R6. FINISH RETURNS THE LOG'S ANSWER like every other write: the refusal in its own words, and
-    // "didn't answer" only for the transport. A 404 is the workout being gone — forgotten, and the
-    // log re-read.
     func testFinishSaysWhatTheLogSaidAndAGoneWorkoutIsForgotten() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -552,10 +473,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.recent, [], "the log was re-read")
     }
 
-    // R7. A SIGNED-IN CONNECT WITH NO SIGNAL draws the account from the DEVICE COPY it last read —
-    // routines, the picker's last lines, the catalog's names, the settings — and never lets go of the
-    // account's preferences document. The seat is the same, so nothing this device holds is
-    // somebody else's.
     func testASignedInConnectWithNoSignalDrawsTheAccountFromTheDeviceCopy() async {
         let server = FakeTraining()
         server.catalog = [Exercise(id: "bench-press", name: "Bench (renamed)", pattern: "press",
@@ -585,7 +502,6 @@ final class TrainingStoreTests: XCTestCase {
                        "and the account's document was not let go of")
         XCTAssertEqual(basement.logFoot, .failed, "the log page is the one thing that honestly failed")
 
-        // Another seat draws none of it.
         let stranger = makeStore(sync: server)
         await stranger.connect(to: account(signedIn: true, id: "u2"))
         XCTAssertEqual(stranger.routines, [])
@@ -594,8 +510,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(stranger.preferences, .defaults)
     }
 
-    // The write that moves next week's target. It answered with a bool nobody read, so the sheet
-    // closed identically whether or not the routine changed — and the lifter believed it had.
     func testAWriteBackThatDidNotLandSaysWhatDidNotHappen() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
@@ -621,10 +535,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.written["rt_push_a"]?.entries.first?.targetWeightKg, 87.5)
     }
 
-    // The routine changed under the session — the offer's position names another movement now, or
-    // is gone. REFUSED out loud, and no PUT: a PUT of the unchanged document would still move the
-    // revision and set every pending proposal on that routine aside, for a change that never
-    // happened.
     func testAWriteBackAgainstALineTheRoutineNoLongerHoldsIsRefusedWithoutAPut() async {
         let server = FakeTraining()
         server.written["rt_push_a"] = Routine(id: "rt_push_a", name: "Push A", position: 0, entries: [
@@ -645,7 +555,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.written["rt_push_a"]?.entries.map(\.targetWeightKg), [45])
     }
 
-    // The picker closed on a movement that was never minted, and absolutely nothing was said.
     func testAMovementThatWasNotCreatedSaysSoInTheLogsOwnWords() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -665,15 +574,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.catalog.map(\.name), ["Zercher Squat"])
     }
 
-    // A movement is a stable id everywhere except on screen. Held only in memory, a cold launch in a
-    // basement drew `bench-press` at 28pt where `Bench Press` belongs — for the whole session.
-    //
-    // AND THE HELD NAMES BELONG TO A SEAT. What an account CALLS a movement is its own: renaming one
-    // of the 64 global seeds writes a per-account display override (§H), so the file is one
-    // account's names and not everybody's. A relaunch under the same account draws them back before
-    // any read; every other seat — the anonymous room included, where no catalog read ever comes to
-    // replace them — falls back to the SEEDS this app ships with rather than to somebody else's
-    // private name for a movement they share.
     func testTheMovementNamesAreHeldPerSeatAndAreThereBeforeTheFirstFrame() async {
         let server = FakeTraining()
         server.catalog = [Exercise(id: "bench-press", name: "Bench Press"),
@@ -681,16 +581,12 @@ final class TrainingStoreTests: XCTestCase {
         let store = await liveStore(server)
         XCTAssertEqual(store.catalog.map(\.name), ["Bench Press", "Back Squat"])
 
-        // A cold launch with no signal under the same account: no read answers, and the names are
-        // there anyway — set in the same synchronous breath as the live session below them.
         server.online = false
         let relaunched = makeStore(sync: server, retryAfter: .seconds(600))
         await relaunched.connect(to: account(signedIn: true))
         XCTAssertEqual(relaunched.catalog.map(\.id), ["bench-press", "back-squat"])
         XCTAssertEqual(Readout.movement("bench-press", in: relaunched.catalog), "Bench Press")
 
-        // Nobody's seat is a seat: the anonymous room lets go of the names an account read and opens
-        // on the sixty-four the app ships with, which is the whole of the catalog it ever has.
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.catalog, DeviceCatalog.seeded)
@@ -698,13 +594,6 @@ final class TrainingStoreTests: XCTestCase {
                        "the seeds are global — the name only becomes an account's when it is changed")
     }
 
-    // ── the assembly list (§A screen 2) ────────────────────────────────────────────────────────
-
-    // THE WORST DEFECT THIS GESTURE COULD HAVE, asked directly: a reorder that lost a logged set.
-    // It cannot, and the reason is structural rather than careful — the walk order is a list of ids
-    // and the sets are keyed by session and movement, so nothing a drag does can reach one. The
-    // order it leaves behind also has to SURVIVE the next redraw, or the list would spring back
-    // under the thumb that just moved it.
     func testAReorderMovesTheWalkAndNotOneSet() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -729,9 +618,6 @@ final class TrainingStoreTests: XCTestCase {
                        "the redraw keeps what the device holds at the head — nothing re-sorts it")
     }
 
-    // A SWIPE ONLY REACHES WHAT NOTHING IS HOLDING ON TO. A movement that was lifted is a fact, and
-    // a movement the frozen plan names is what the routine asked for — both would be put straight
-    // back by the next redraw, so the store refuses them rather than flickering.
     func testASwipeCanOnlyTakeAMovementNothingIsHoldingOnTo() async {
         let server = FakeTraining()
         let plan = PlanSnapshot(routine: "Push A",
@@ -754,9 +640,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(queueOnDisk(of: "u1").order, ["bench-press", "cable-fly"])
     }
 
-    // Dropping the movement IN HAND moves the hand — standing on a movement the lifter just took off
-    // the list would be the screen disagreeing with the edit. It resumes where the sets are; with
-    // nothing left it is the picker again, which is the same screen the session opened on.
     func testDroppingTheMovementInHandMovesTheHand() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -776,11 +659,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(empty.order, [])
     }
 
-    // ── the picker's meta ──────────────────────────────────────────────────────────────────────
-
-    // The read is SPARSE, so what is absent from it is an assertion — "never logged" — and the store
-    // may only let a screen make it once an answer has landed. A read that failed leaves the map nil,
-    // and the picker says nothing rather than telling a lifter their history is gone.
     func testThePickerMetaIsNilUntilAReadLandsAndSparseAfterward() async {
         let server = FakeTraining()
         server.lastSets = [LastSet(exerciseId: "bench-press", weightKg: 82.5, reps: 5, atMs: 900)]
@@ -797,10 +675,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNil(store.lastSets?["cable-fly"], "a movement with no line has never been trained")
     }
 
-    // Signed in, this device's own unclaimed sessions are folded over the account's answer: those
-    // workouts happened, the log has simply never heard of them, and the newer line is the true one.
-    // The claim is offline here because that is the only way a session stays unclaimed — a shelf the
-    // claim can reach is a shelf it empties, which is the case that needs no fold at all.
     func testThePickerMetaFoldsThisDevicesOwnSessionsOverTheAccounts() async {
         let shelf = shelfOnDisk(of: "u1")
         shelf.keep(Session(id: "ses_local", startedAtMs: 5_000, finishedAtMs: 6_000),
@@ -821,10 +695,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.lastSets?["deadlift"]?.weightKg, 140, "and the account's stands alone")
     }
 
-    // A LAST-TIME READ THAT WAS ASKED AND DID NOT LAND IS A DIFFERENT FACT from one nobody has asked
-    // yet, and the logger has one line left for it (§K deleted the card, not this). Without the flag
-    // the dial falls silently back to the empty bar: a lifter with a year of 105 kg benches, phone in
-    // a basement, reads 20 kg under the thumb with nothing anywhere saying the log was never reached.
     func testAPrefillReadThatDidNotLandIsSaidRatherThanDialledOverInSilence() async {
         let server = FakeTraining()
         server.lastTimes["back-squat"] = LastTime(
@@ -841,7 +711,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(store.lastTimeFailed, "and the room may not pretend otherwise")
         XCTAssertEqual(store.prefill, Prefill.emptyBar)
 
-        // It is about ONE read and not about the connection: the answer landing takes the line off.
         server.online = true
         await store.choose("back-squat")
 
@@ -850,8 +719,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.prefill, Prefill(weightKg: 105, reps: 5))
     }
 
-    // ...and a reply for a movement the lifter has already walked away from claims nothing about the
-    // one in hand — neither an answer nor a failure, since the dial in front of them is not its dial.
     func testAFailedReadForAMovementAlreadyLeftDoesNotMarkTheOneInHand() async {
         let server = FakeTraining()
         let store = await liveStore(server)
@@ -865,11 +732,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(store.lastTimeFailed, "the walk moved on, and the failure went with it")
     }
 
-    // ── the foot of the log ────────────────────────────────────────────────────────────────────
-
-    // The server's page is 50 (`TrainingStore.logPage`), so a full one means there may be more and a
-    // short one is the bottom. Nothing here counts sessions to decide that — the page length is the
-    // only thing that knows.
     private func finished(_ count: Int, from: Int64 = 100_000) -> [Session] {
         (0..<count).map { Session(id: "ses_\($0)", startedAtMs: from + Int64($0) * 1_000,
                                   finishedAtMs: from + Int64($0) * 1_000 + 500) }
@@ -881,8 +743,6 @@ final class TrainingStoreTests: XCTestCase {
         return server
     }
 
-    // A short first page IS the bottom, and the bottom is the one state that may name somebody's
-    // first session — so nothing reaches it on a guess.
     func testAShortFirstPageIsTheBottomOfTheLog() async {
         let store = makeStore(sync: log(finished(3)))
         await store.connect(to: account(signedIn: true))
@@ -891,8 +751,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.recent.count, 3)
     }
 
-    // A full page is not an answer about the log's length — it is the reason `Load older` is there.
-    // The tap is the lifter's: twelve weeks back is a destination and infinite scroll has no arrival.
     func testAFullPageOffersOlderAndTheNextTapAppendsRatherThanReplaces() async {
         let store = makeStore(sync: log(finished(58)))
         await store.connect(to: account(signedIn: true))
@@ -909,8 +767,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(Set(store.recent.map(\.id)).count, 58, "no row is read twice across the edge")
     }
 
-    // A read that failed says so and offers the one move. The rows already loaded STAY — they are
-    // real sessions and worth reading — and the foot never claims the log ends where a failure did.
     func testAFailedFirstReadIsSaidAndTheRetryAsksForTheHeadOfTheLogAgain() async {
         let server = log(finished(3))
         server.online = false
@@ -939,18 +795,13 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.recent.count, 50)
     }
 
-    // HOW FAR THE READING GOT IS THE SERVER'S ANSWER AND NOT THE SCREEN'S BOTTOM ROW. This device's
-    // unclaimed sessions are merged into the log at ANY age, so one whose claim cannot land sits
-    // BELOW the served page — and the log's fold takes its floor from here. Taking it from `recent`
-    // instead would call the half-loaded week above that row whole and caption it with a total that
-    // grows on the next tap of `Load older`.
     func testTheServedFloorIsTheOldestRowTheSERVERAnsweredWith() async {
         let shelf = shelfOnDisk(of: "u1")
         shelf.keep(Session(id: "ses_local", startedAtMs: 1_000, finishedAtMs: 2_000), sets: [])
         shelf.flush()
 
         let server = log(finished(58))
-        server.refuseStart = storageFailure          // the claim is retryable, so it never lands
+        server.refuseStart = storageFailure
         let store = makeStore(sync: server, retryAfter: .seconds(600))
         await store.connect(to: account(signedIn: true))
 
@@ -967,11 +818,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.servedOldestMs, 100_000, "the second page moved the floor to ses_0")
     }
 
-    // MARK: - a movement's record, and the name it is read under
-
-    // A movement the log no longer holds and a log that went quiet are two different facts, and the
-    // record page draws a different sentence for each: collapsing them points a lifter at their
-    // signal when the answer was on the server.
     func testTheRecordReadTellsAMissingMovementApartFromASilentLog() async {
         let server = FakeTraining()
         server.records["back-squat"] = MovementRecord(exercise: Exercise(id: "back-squat",
@@ -998,8 +844,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(quiet, .noAnswer)
     }
 
-    // DELETE, SIGNED IN (R3 — the editor's foot). The log takes the routine and this device forgets
-    // it; asking again meets the 404 that IS the outcome asked for, so it settles rather than fails.
     func testDeletingARoutineForgetsItAndA404IsTheOutcomeAskedFor() async {
         let server = FakeTraining()
         let store = makeStore(sync: server)
@@ -1017,8 +861,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertNil(again, "already gone is gone, not a failure")
     }
 
-    // A delete the log never answered is SAID, and the routine stays on screen — a program drawn
-    // as deleted on the strength of silence would be the screen lying about the log.
     func testADeleteTheLogDidNotAnswerLeavesTheRoutineStanding() async {
         let server = FakeTraining()
         let store = makeStore(sync: server)
@@ -1033,9 +875,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(store.routines.map(\.id), [made.id])
     }
 
-    // THE ID NEVER MOVES. That is the whole promise the record page exists to make visible: rename
-    // the movement and every set, routine entry and frozen plan snapshot still points at it — so
-    // what changes here is the catalog's name and nothing else, on the log and on the device.
     func testARenameMovesTheNameAndNeverTheId() async {
         let server = FakeTraining()
         server.catalog = [Exercise(id: "back-squat", name: "Back Squat", pattern: "squat",
@@ -1050,10 +889,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u1").map(\.name), ["Low-bar Squat"],
                        "and the next cold launch draws the new name rather than the seeded one")
 
-        // AND ONLY FOR THIS SEAT. A rename over a seeded row is a per-account display override, so
-        // the held names are held under the account that read them: another lifter's launch, and the
-        // anonymous room — where no catalog read ever comes to replace them — fall back to the
-        // SHIPPED names rather than spelling somebody's private one for a movement everybody shares.
         XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: "u2"), DeviceCatalog.seeded)
         XCTAssertEqual(DeviceCatalog(url: catalogURL).open(under: nil), DeviceCatalog.seeded)
 
@@ -1062,9 +897,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(quiet, .noAnswer, "a rename that did not land says so rather than pretending")
     }
 
-    // A movement this device minted and has not claimed yet is renamed ON THE SHELF: the shelf entry
-    // IS the pending create, so the new name is simply the name the log first hears — and a PATCH
-    // against a movement the log has never held would 404.
     func testRenamingAnUnclaimedMovementRewritesTheCreateTheClaimWillReplay() async {
         let store = makeStore(sync: nil)
         await store.connect(to: account(signedIn: false))
@@ -1079,21 +911,10 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(shelfOnDisk(of: nil).exercises.map(\.id), [minted.id],
                        "the id the sets already name does not move")
 
-        // Signed out, a movement the ACCOUNT owns is the account's to name: the catalog is global
-        // and this device cannot hold a per-account name for a row it does not own.
         let refused = await store.rename("back-squat", to: "Low-bar Squat")
         XCTAssertEqual(refused, .refused("renaming this movement needs your account — sign in first"))
     }
 
-    // A MOVEMENT WHOSE CREATE IS STILL OWED IS THE DEVICE'S TO ANSWER FOR, whoever is signed in —
-    // signed in on a phone with no signal is the ordinary way to be here. The log has never heard of
-    // the id, so a served read would 404 over a movement that is on screen with a finished session
-    // under it; and no set naming it can have landed either, because the claim replays a create
-    // BEFORE any session that names it. The device's answer is therefore the whole of it.
-    //
-    // So the rename rewrites the pending create and the re-read the sheet triggers comes back with
-    // the NEW NAME — rather than the sheet closing as a success over a page that then says the
-    // movement is no longer in a catalog it is visibly in.
     func testAnUnclaimedMovementReadsAndRenamesOnTheDeviceEvenSignedIn() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1106,7 +927,7 @@ final class TrainingStoreTests: XCTestCase {
         guard case .closed = await anonymous.finish() else { return XCTFail("no close") }
 
         let server = FakeTraining()
-        server.online = false                   // the claim cannot land, so the shelf keeps both
+        server.online = false
         let store = makeStore(sync: server, retryAfter: .seconds(600))
         await store.connect(to: account(signedIn: true))
 
@@ -1130,15 +951,11 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(server.calls.contains("renameExercise"),
                        "a PATCH against a movement the log has never held would 404")
 
-        // And the caveat the record page prints is asked PER MOVEMENT: this one has a session the
-        // log has not been told about, and every other movement on the phone does not.
         XCTAssertTrue(store.unclaimed(minted.id))
         XCTAssertFalse(store.unclaimed("back-squat"),
                        "an unclaimed session of one movement is not a caveat on another's page")
     }
 
-    // §I's settings are the room's, and the room opens signed out: a lifter who sets their rest in a
-    // gym before they have an account keeps it, on this device, across a relaunch.
     func testSettingsSetBeforeThereIsAnAccountSurviveARelaunch() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1152,9 +969,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.preferences.restSeconds, 120)
     }
 
-    // THE CLAIM CARRIES THEM, and the device's copy WINS: those are the values the lifter just
-    // touched, the write is last-write-wins, so replaying theirs after sign-in is what settles it.
-    // No new verb — one ordinary whole-document PUT, walked behind every lift on the shelf.
     func testSigningInClaimsTheDevicesSettingsOverTheAccountsOwn() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1178,9 +992,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.preferences.units, .lb)
     }
 
-    // Nothing owed, so the account's document is what the room draws — and it is held on the device
-    // too, which is what puts the rest dial and the reading unit on the first frame of the next
-    // launch.
     func testTheAccountsSettingsAreReadAndKeptOnTheDevice() async {
         let server = FakeTraining()
         server.settings = GymPreferences.defaults.resting(90).with(units: .lb)
@@ -1193,8 +1004,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(LocalLog(url: localURL, deviceHolds: nil).preferences?.units, .lb)
     }
 
-    // A setting the log did not take is still the lifter's: it is on the device, it is what the room
-    // draws, the sentence says where it is, and the claim's own cadence sends it again.
     func testASettingTheLogCannotTakeStaysOnTheDeviceAndIsSaid() async {
         let server = FakeTraining()
         let store = makeStore(sync: server, retryAfter: .seconds(600))
@@ -1216,10 +1025,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
-    // TWO ROWS TOUCHED IN A SECOND ARE TWO WHOLE DOCUMENTS, and two in flight at once could reach the
-    // log in either order — last-write-wins would then leave it holding the older one, and a dial
-    // would move back by itself. One at a time, and the send that is in flight picks up the newest
-    // thing owed before it ends: the log's last word is the lifter's last tap.
     func testTwoTapsInFlightLeaveTheLogHoldingTheSecond() async {
         let server = FakeTraining()
         let store = makeStore(sync: server)
@@ -1238,8 +1043,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
-    // A document the log refuses outright can never land as written, so it is LET GO of rather than
-    // replayed against every future connect — and the lifter keeps looking at what they chose.
     func testADocumentTheLogRefusesIsNotReplayedForever() async {
         let server = FakeTraining()
         server.refusePreferences = refusal(400, code: "rest-target", message: "a rest target runs from 15 to 900 seconds")
@@ -1255,10 +1058,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(server.settingsWrites.count, 1, "refused once is refused")
     }
 
-    // SETTINGS BELONG TO AN ACCOUNT, AND A PHONE IS LENT. One lifter's document may not be drawn in
-    // anybody else's room — a rest timer beeping at somebody who never set one — and it may not be
-    // SENT from there either, because every write here is the whole document: the next tap would put
-    // the first lifter's whole room onto the second one's row.
     func testOneLiftersSettingsAreNeitherDrawnNorSentInAnothersRoom() async {
         let hers = FakeTraining()
         hers.settings = GymPreferences.defaults.resting(180).with(units: .lb)
@@ -1266,14 +1065,11 @@ final class TrainingStoreTests: XCTestCase {
         await herRoom.connect(to: account(signedIn: true))
         XCTAssertEqual(herRoom.preferences.restSeconds, 180, "her own document, on her own seat")
 
-        // Signed out on the same phone: the anonymous room is nobody's and opens on the defaults.
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
         XCTAssertEqual(anonymous.preferences, .defaults)
         XCTAssertNil(LocalLog(url: localURL, deviceHolds: nil).preferences, "and the shelf let go of it on disk too")
 
-        // And the next account in, with the log unreachable, draws its own nothing rather than hers —
-        // then sends the defaults it drew, never the pounds and the 180 s rest she set.
         let his = FakeTraining()
         his.online = false
         his.settings = GymPreferences.defaults.with(units: .lb)
@@ -1288,9 +1084,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertTrue(his.settings?.confirmSound == true)
     }
 
-    // The anonymous document is the ONE crossing, and it crosses once: it is what the lifter set
-    // before they had an account, so signing in carries it — and signing out again does not carry it
-    // back, because by then it is the account's.
     func testTheAnonymousDocumentCrossesIntoTheAccountAndNotBackOut() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1307,9 +1100,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertEqual(again.preferences, .defaults, "it is the account's now, not this handset's")
     }
 
-    // A TAP THAT LANDS WHILE THE CLAIM IS ON THE WIRE is not left owed until the next launch: the
-    // claim's own send picks up the newest document before it ends, the same single-file rule the
-    // settings screen's own taps run under.
     func testATapDuringTheClaimIsSentByTheClaimItself() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1329,9 +1119,6 @@ final class TrainingStoreTests: XCTestCase {
         XCTAssertFalse(LocalLog(url: localURL, deviceHolds: nil).preferencesOwed)
     }
 
-    // Settings walk LAST, behind every lift, and the order is load-bearing in one direction: nothing
-    // in the log reads this row, so a settings route an older server has never heard of must not be
-    // able to keep a set off the log.
     func testAFailingSettingsWriteDoesNotHoldASetOffTheLog() async {
         let anonymous = makeStore(sync: nil)
         await anonymous.connect(to: account(signedIn: false))
@@ -1353,10 +1140,6 @@ final class TrainingStoreTests: XCTestCase {
     }
 }
 
-// The four verdicts, derived from the status and the machine word and NEVER from the sentence. The
-// wording is copy and may be edited any day; a queue that string-compared it would degrade to
-// "terminal, reason unknown" the first time one was reworded — and drop a set it should have minted
-// a fresh id for.
 final class VerdictTests: XCTestCase {
     func testTheTwoSpentIdRefusalsAskForAFreshIdWhateverTheySay() {
         XCTAssertEqual(Verdict(refusing: refusal(409, code: "set-id-taken", message: "anything at all")),
@@ -1379,9 +1162,6 @@ final class VerdictTests: XCTestCase {
         XCTAssertNil(Verdict(refusing: WindmillApiError.offline).terminalReason(afterRemints: 0))
     }
 
-    // 401 waits for a sign-in and 404 for a session to exist. Terminal and retryable never both hold,
-    // and neither follows from the other's absence — reading "not retryable" as "lost" throws away a
-    // set that was only waiting for the Keychain to come back.
     func testASetWaitingForASignInIsNeitherLostNorRefused() {
         XCTAssertEqual(Verdict(refusing: refusal(401, message: "sign in to open your training log")), .retry)
         XCTAssertEqual(Verdict(refusing: refusal(404, message: "no such session")), .retry)
@@ -1394,8 +1174,6 @@ final class VerdictTests: XCTestCase {
                        .refused("could not read that set"))
     }
 
-    // The repair budget is its own counter, and it is bounded: a collision that keeps happening is
-    // not a coincidence, and re-minting forever would hammer the log instead of telling the lifter.
     func testTheIdRepairBudgetRunsOutAndThenTheSetIsSaid() {
         let verdict = Verdict(refusing: refusal(409, code: "set-id-taken", message: "that set id is already used"))
         XCTAssertNil(verdict.terminalReason(afterRemints: SetQueue.maxRemints - 1))
@@ -1451,7 +1229,6 @@ final class SetQueueTests: XCTestCase {
                        "the server numbers sets max+1 per movement, so the queue sends in that order")
     }
 
-    // A jammed lane is skipped, not the queue. Every other movement keeps moving.
     func testABlockedLaneIsSteppedOverAndTheNextMovementIsOffered() {
         let (queue, url) = makeQueue()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1464,8 +1241,6 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.nextOwed(skipping: [first!.lane], readyAt: nil)?.set.id, "set_b")
     }
 
-    // The log holding the row IS delivery, however the news arrived — a reply to our own write, or a
-    // read that found it there.
     func testAServerRowArrivingForAnOwedSetSettlesIt() {
         let (queue, url) = makeQueue()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1490,8 +1265,6 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.pending.map(\.set.weightKg), [82.5], "a remint moves the key and nothing else")
     }
 
-    // Closing keeps what is owed and lets go of what is on the log. An owed set is dropped by nobody
-    // quietly — it waits for the log to answer for it, and that answer is what tells the lifter.
     func testClosingASessionLetsGoOfTheDeliveredRowsAndKeepsTheOwedOne() {
         let (queue, url) = makeQueue()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1506,9 +1279,6 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.sets(in: "ses_1").map(\.id), ["set_owed"])
     }
 
-    // The claim reminted a movement the live session's frozen plan names: the repair reaches the
-    // sets, the walk order AND the plan's own lines — a plan row left on the dead id would miss the
-    // planEntry lookup and draw an id the remapped catalog no longer knows.
     func testRemappingAMovementRewritesTheSetsTheWalkOrderAndTheFrozenPlan() {
         let (queue, url) = makeQueue()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1534,8 +1304,6 @@ final class SetQueueTests: XCTestCase {
         XCTAssertEqual(queue.session?.routineId, "rt_1")
     }
 
-    // The banner keys its rows off RefusedWrite.id. A claim row keyed on the NAME folded two
-    // same-named losses into one — ForEach drew one row for both, and one loss went unsaid.
     func testTwoSameNamedClaimLossesAreTwoRowsNotOne() {
         let movement = RefusedWrite.claim(RefusedClaim(id: "ex_press", name: "Press", reason: "refused"))
         let routine = RefusedWrite.claim(RefusedClaim(id: "rt_press", name: "Press", reason: "refused"))
@@ -1546,8 +1314,6 @@ final class SetQueueTests: XCTestCase {
                           "a name collision must not fold two losses into one banner row")
     }
 
-    // Discard is the one case where an owed set has nowhere left to go: the session id no longer
-    // names anything, so keeping it would re-send it against nothing, forever.
     func testForgettingADiscardedSessionTakesTheOwedSetsWithIt() {
         let (queue, url) = makeQueue()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1561,8 +1327,6 @@ final class SetQueueTests: XCTestCase {
     }
 }
 
-// The two shapes a said loss takes, unwrapped for assertions — the same cast Android's tests make
-// on RefusedWrite.
 extension RefusedWrite {
     var set: RefusedSet? {
         guard case .set(let set) = self else { return nil }
@@ -1575,19 +1339,6 @@ extension RefusedWrite {
     }
 }
 
-// A log entirely under the test's control: it can be unreachable, it can already hold a session and
-// its sets, it can refuse a named movement, and it can store a set and then lose the reply. Its
-// start walks the server's own resolution order — the caller's OWN row first (a replay answers the
-// stored session), then the open session for a joining start, then a refusal for `false` — because
-// the claim replay's whole safety rests on that order and a fake that joined anyway would prove
-// nothing.
-//
-// It models the three server rules the 2026-08-16 phone hunt had to add before it could show the
-// loss class at all: a SETTLING read (the log page, a start, a movement's record) auto-closes an
-// open session whose last activity is four hours behind `nowMs` — at that activity, never at now;
-// an append into a finished session is 409 `session-finished`; and an append or a finish into a
-// session the log does not hold is a plain 404. `nowMs` is the log's own clock, and it starts at
-// zero so nothing settles unless a test moves it.
 final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var online = true
     var nowMs: Int64 = 0
@@ -1595,9 +1346,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var stored: [String: Session] = [:]
     var sets: [String: [TrainingSet]] = [:]
     var written: [String: Routine] = [:]
-    // What a routine's PUT moves and what a proposal's base is checked against. It is a column on
-    // the routine on the wire and read-only there, so it is held beside the routines rather than on
-    // them: no client ever sends it and nothing this app draws reads it.
     var revisions: [String: Int] = [:]
     var ledger: [Proposal] = []
     var lastTimes: [String: LastTime] = [:]
@@ -1620,19 +1368,15 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseRecord: WindmillApiError?
     var refuseRename: WindmillApiError?
     var refusePreferences: WindmillApiError?
-    // Nil is an account that has never answered, which the read serves as the defaults.
+    // Nil is an account that has never answered; the read serves the defaults.
     var settings: GymPreferences?
-    // Ids some OTHER account already spent — the 409s whose code asks for a remint.
+    // Ids another account already spent — 409, asking for a remint.
     var takenSessionIds: Set<String> = []
     var takenRoutineIds: Set<String> = []
     var takenExerciseIds: Set<String> = []
     var swallowReplies = 0
-    // A start whose reply is lost on the way back: the row is stored — the log holds that session
-    // open — and the phone hears nothing.
+    // A start whose reply is lost: the row is stored, the caller hears nothing.
     var swallowStartReplies = 0
-    // The close is a round trip, and this is the only way a test can stand inside it. The settings
-    // write is the other one — a second tap while the first is on the wire is the case that decides
-    // which document the log ends up holding.
     var onFinish: () async -> Void = {}
     var onSavePreferences: () async -> Void = {}
 
@@ -1650,8 +1394,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         stored[session.id] = session
     }
 
-    // The backend's settleOpen (TrainingService.cpp), to the rule: the one open session ends at its
-    // last set — or at its start, with no sets — once four hours have passed without one.
     func settleOpen() {
         for (id, session) in stored where session.isOpen {
             guard let closeAt = session.autoCloseAt(lastSetAtMs: sets[id]?.last?.completedAtMs,
@@ -1695,8 +1437,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         if takenSessionIds.contains(start.id) {
             throw refusal(409, code: "session-id-taken", "that session id is taken")
         }
-        // The server's heldFor: a replayed start answers the caller's own stored row, open or
-        // closed, before any join or refusal is considered.
         if let mine = stored[start.id] { return mine }
         if let live = stored.values.first(where: \.isOpen) {
             guard start.joinOpenSession != false else {
@@ -1730,11 +1470,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         appended.append(write)
         guard online else { throw WindmillApiError.offline }
         if let refusal = refuse(write) { throw refusal }
-        // The id IS the idempotency key: a replay answers with the stored row, even after the
-        // session closed, and never files a second one.
         if let already = sets[sessionId]?.first(where: { $0.id == write.id }) { return already }
-        // Absent and another's are the same plain 404; a session that is over is 409, by code, and
-        // terminal for every queue.
         guard let held = stored[sessionId] else { throw WindmillApiError.refused(404, Refusal(Data())) }
         if !held.isOpen { throw refusal(409, code: "session-finished", "that session is finished") }
 
@@ -1750,9 +1486,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return row
     }
 
-    // The correction, and the log's whole vocabulary for it: a set this account does not hold in this
-    // session is `set-not-found`, and everything else answers the STORED row — so the same body sent
-    // twice comes back byte-identical and the set number never moves.
     func fixSet(_ setId: String, in sessionId: String, _ fix: SetFix) async throws -> TrainingSet {
         calls.append("fixSet")
         corrected.append(setId)
@@ -1766,9 +1499,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return held[index]
     }
 
-    // 204 however the truth is spelled — already gone, never there, another account's — so absent
-    // stays byte-identical to forbidden and a lost reply is safe to send again. No 400, no 404, no
-    // 409 on this route at all.
     func deleteSet(_ setId: String, in sessionId: String) async throws {
         calls.append("deleteSet")
         deleted.append(setId)
@@ -1797,9 +1527,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         sets[sessionId] = nil
     }
 
-    // A page of the log, and it honours the CURSOR and the LIMIT, because the client's paging is what
-    // half these tests are about: the cursor is both halves of the sort key, so a fake that ignored
-    // the id would hide the one bug a shared instant can cause.
     func sessions(before: Int64?, beforeId: String?, limit: Int) async throws -> [SessionSummary] {
         calls.append("sessions")
         guard online else { throw WindmillApiError.offline }
@@ -1842,8 +1569,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return lastTimes[exerciseId] ?? LastTime(exerciseId: exerciseId)
     }
 
-    // Sparse, as the route is: only what the test put here comes back, and a movement with no row
-    // is one this account has never trained.
     func lastSets() async throws -> [LastSet] {
         calls.append("lastSets")
         guard online else { throw WindmillApiError.offline }
@@ -1883,10 +1608,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return made
     }
 
-    // THE HUMAN'S HAND, and it does what the server does in one transaction: the routine's revision
-    // moves, and every proposal still pending on it is set aside. A fake that only replaced the
-    // document would let a diff apply over a base that no longer stands — which is the exact defect
-    // the revision exists to stop.
     func replaceRoutine(_ id: String, with write: RoutineWrite) async throws -> Routine {
         calls.append("replaceRoutine")
         guard online else { throw WindmillApiError.offline }
@@ -1905,10 +1626,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         written[id] = nil
     }
 
-    // THE PROPOSAL LEDGER, and it enforces the two rules the room's whole safety rests on: apply is
-    // refused when the routine has moved under the diff, and a decision already taken is not taken
-    // again. `revisions` is what a routine's PUT moves — the fake bumps it exactly where the server
-    // does, so a test can put a human's hand on a routine and watch the card come back set aside.
     func proposals() async throws -> [ProposalHead] {
         calls.append("proposals")
         guard online else { throw WindmillApiError.offline }
@@ -1930,7 +1647,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
             throw WindmillApiError.refused(404, Refusal(Data(#"{"error":"no such proposal"}"#.utf8)))
         }
         let held = ledger[index]
-        // Replay, not an error: asking again for the decision already taken answers the stored row.
         if held.state == .applied { return AppliedProposal(proposal: held, routine: written[held.routineId]) }
         if held.state == .dismissed {
             throw refusal(409, code: "proposal-settled", "that proposal was already dismissed")
@@ -1941,8 +1657,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         }
         settle(index, as: .applied)
         guard held.intent == .revise else {
-            // A removal takes its whole ledger with it, exactly as the server's cascade does — so
-            // the applied row is answered once and then no longer exists to be read again.
             let done = ledger[index]
             written[held.routineId] = nil
             ledger.removeAll { $0.routineId == held.routineId }
@@ -1960,10 +1674,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
                               })
         written[changed.id] = changed
         revisions[changed.id] = (revisions[changed.id] ?? 1) + 1
-        // AN APPLY IS A WRITE LIKE ANY OTHER: the routine just moved, so every other proposal
-        // waiting on it is against a base that is gone and the server sets them aside in the same
-        // transaction (`supersedeOnRoutine`). A fake that skipped this would leave a card on the
-        // phone the log had already settled — and no test could see it.
         for other in ledger.indices
         where ledger[other].routineId == changed.id && ledger[other].state == .pending {
             settle(other, as: .superseded)
@@ -1999,8 +1709,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
                         name: proposal.name, changes: proposal.changes)
     }
 
-    // One movement's record, and it is a stored answer rather than a computed one: Epley is the
-    // server's, so a fake that derived an estimate would be the second copy this product refuses.
     func record(of exerciseId: String) async throws -> MovementRecord? {
         calls.append("record")
         guard online else { throw WindmillApiError.offline }
@@ -2009,8 +1717,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return records[exerciseId]
     }
 
-    // The rename the log holds: the id never moves, which is the whole thing the record page is
-    // there to prove, so this rewrites the catalog row in place and hands back the same id.
     func renameExercise(_ exerciseId: String, to name: String) async throws -> Exercise? {
         calls.append("renameExercise")
         guard online else { throw WindmillApiError.offline }
@@ -2022,8 +1728,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         return catalog[index]
     }
 
-    // Idempotent on the session, exactly as the log is: a second mint for a session that already has
-    // a live share hands back the same token rather than a second capability.
     func share(_ sessionId: String) async throws -> SessionShare {
         calls.append("share")
         guard online else { throw WindmillApiError.offline }
@@ -2044,10 +1748,6 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         }
     }
 
-    // The settings row, and the read NEVER 404s: an account with nothing stored is served the
-    // defaults, which is what lets every client draw a rest dial and a unit on its first frame.
-    // The write replaces the whole document and answers the stored one — last write wins, which is
-    // the ordering the claim replay rests on.
     func preferences() async throws -> GymPreferences {
         calls.append("preferences")
         guard online else { throw WindmillApiError.offline }

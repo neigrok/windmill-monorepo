@@ -1,8 +1,4 @@
-// The rubber-band select rect (Shift-drag): a DOM overlay parallel to EdgeChrome and
-// AffordanceLayer, editor-only. The NavigateTool drives it in screen space while a marquee
-// drag is in flight — show on press, update on drag, hide on commit/cancel — and the scene
-// turns the committed screen rect into enclosed node ids via the spatial grid. Purely visual:
-// it never picks or selects, so it stays a thin sibling of the other scene overlays.
+// Rubber-band select rect (Shift-drag): a screen-space DOM overlay, editor-only; it never picks.
 
 export class MarqueeOverlay {
   constructor(canvas) {

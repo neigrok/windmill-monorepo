@@ -1,10 +1,5 @@
-// The nudge panel: a quiet place to say "knock, so I don't drift" — never a settings sprawl. One
-// switch to be nudged, the hour the device learned you write ("around 9pm"), a channel, and a way to
-// pause for a week. The line under it tells the truth the engine keeps: the rhythm is worked out on
-// this device and never leaves; only the single next moment is sent. The whole panel only exists when
-// the engine is armed for this writer (JournalApp gates it), so it never promises a knock it can't send —
-// and when the provider has called the mailbox dead, the switch gives way to saying so, plus the one
-// door back: the owner turning nudges on again.
+// One switch, the hour the device learned you write, a channel, and a week's pause. Rendered only when
+// the engine is armed (JournalApp gates it); a dead mailbox gets the notice below instead of the switch.
 
 import React from 'react';
 
@@ -43,15 +38,9 @@ export function NudgePanel({ nudge, onClose }) {
   );
 }
 
-// The face a dead mailbox gets, mirrored from roadmap's ReminderSection: the switch is REMOVED, not
-// disabled — flipping it would change a stored preference and nothing a reader could observe. The
-// copy says "can't reach", never "stopped nudging": the webhook creates the row when it is missing
-// and the bounce may have been a magic link, so "stopped" would be a lie told to someone who never
-// received a nudge. Sign-in mail is unaffected (nothing in the auth path reads suppressed). What
-// clears the flag is the owner turning nudges back on — the button runs the ordinary `enable`, which
-// the server reads over a suppressed row as "this address works now" and answers with the fresh
-// settings, so the controls return on their own. We never retry by ourselves; being wrong costs one
-// more bounce, which suppresses again.
+// The switch is removed rather than disabled: flipping it would change a stored preference and nothing a
+// reader could observe. The flag is cleared only by the owner turning nudges back on, which the server
+// reads over a suppressed row as "this address works now"; nothing retries on its own.
 function SuppressedNotice({ enable }) {
   return (
     <div className="journal-nudge-suppressed">

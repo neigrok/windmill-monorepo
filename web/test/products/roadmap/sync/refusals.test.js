@@ -3,9 +3,7 @@ import assert from 'node:assert/strict';
 
 import { isOwnershipRefusal, isSessionRefusal, isCapacityRefusal, strandsTheBank } from '../../../../src/products/roadmap/sync/refusals.js';
 
-// The codes are the wire contract (backend/products/roadmap/adapters/ws/Collab.cpp mints them,
-// platform/domain/Access.h owns the ownership pair); the sentences beside them are prose the
-// client never reads, so a reworded reason changes nothing here.
+// The codes are the wire contract; the sentences beside them are prose the client never reads.
 test('the editor demotes on exactly the two ownership codes, whatever the sentence says', () => {
   assert.equal(isOwnershipRefusal({ code: 'not-yours', reason: 'this tree belongs to another account' }), true);
   assert.equal(isOwnershipRefusal({ code: 'nobodys-tree', reason: 'reworded tomorrow' }), true);
@@ -33,9 +31,6 @@ test('a frame with no code is neither, and the sentence alone earns nothing', ()
   assert.equal(isSessionRefusal(undefined), false);
 });
 
-// The third kind. A full tree refuses the frame with the writer and the seat both intact, so the
-// editor neither demotes nor re-checks the session — but the edits behind that frame are banked
-// with nowhere to go, and the person must be told rather than left editing into a void.
 test('a capacity refusal is its own kind — neither an ownership verdict nor a session doubt', () => {
   assert.equal(isCapacityRefusal({ code: 'tree-too-large', reason: 'this roadmap is at its limit' }), true);
   assert.equal(isOwnershipRefusal({ code: 'tree-too-large' }), false);
@@ -44,8 +39,6 @@ test('a capacity refusal is its own kind — neither an ownership verdict nor a 
   assert.equal(isCapacityRefusal({}), false);
 });
 
-// The shape, not the word: whether the bank is stranded is decided by the frame the reject names,
-// so a refusal code minted after this build still surfaces instead of dying in a console.warn.
 test('any reject naming a frame strands the bank; a reject naming none strands nothing', () => {
   assert.equal(strandsTheBank({ code: 'tree-too-large', frameId: 'f1' }), true);
   assert.equal(strandsTheBank({ code: 'a-code-shipped-after-this-build', frameId: 'f2' }), true);

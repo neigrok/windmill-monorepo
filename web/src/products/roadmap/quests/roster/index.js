@@ -1,6 +1,4 @@
-// The nine authored starter quests (F5 §03) — the client-shipped catalog. Order is
-// canon: the dev wedge leads, the second row proves breadth. Each module is one quest
-// (schema in the roster brief); the roster gate test refuses the build on violation.
+// The order is fixed. The roster gate test refuses the build on a schema violation.
 
 import frontendPath from './frontendPath.js';
 import rustFromZero from './rustFromZero.js';

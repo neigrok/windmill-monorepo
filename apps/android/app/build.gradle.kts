@@ -8,8 +8,7 @@ plugins {
 val windmillVersionName = providers.gradleProperty("windmill.versionName").orNull ?: "0.1.0"
 val windmillVersionCode = providers.gradleProperty("windmill.versionCode").orNull?.toInt() ?: 1
 
-// Where the backend lives — the native VITE_API_BASE_URL / iOS WMApiBaseURL. Empty means the
-// production host; point it at http://10.0.2.2:8088 to run an emulator against the local stack.
+// Empty means the production host; http://10.0.2.2:8088 reaches the local stack from an emulator.
 val windmillApiBase = providers.gradleProperty("windmill.apiBase").orNull ?: ""
 
 android {
@@ -25,9 +24,6 @@ android {
         buildConfigField("String", "WM_API_BASE_URL", "\"$windmillApiBase\"")
     }
 
-    // Release signing comes from the environment so no key material ever sits in the repo. When the
-    // four variables are absent (a local build, a fork's CI) the release APK falls back to the debug
-    // key — installable, clearly not a store identity.
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("WINDMILL_ANDROID_KEYSTORE")

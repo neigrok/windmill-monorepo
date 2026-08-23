@@ -1,10 +1,3 @@
-// The roadmap's landing at /roadmap. The live moat — a self-playing demo tree, three
-// how-it-works beats, developer quest thumbnails — comes from treeScenes.js; the rest reuses the
-// app's Button/Badge. The family chrome (nav, auth cluster, legal shelf, Feedback door) comes from
-// the shell's LandingPage, so what lives here is the roadmap's own sections plus the verbs its nav
-// wears. CTAs point at the app (Start → #/app/start, the quest shelf — never bare #/app, which
-// RESUMES the newest tree; Try the demo → the read-only hosted demo tree).
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Badge } from '../../../design-system';
 import { LandingPage, useScene } from '../../../shell/marketing/LandingChrome.jsx';
@@ -14,8 +7,6 @@ import { track } from '../../../telemetry/beacon.js';
 import { mountHero, mountBeat, mountThumb } from './treeScenes.js';
 import './roadmapLanding.css';
 
-// This page's own anchors, which the chrome hangs left of the nav divider. The family cross-nav
-// right of it is built from the product registry and is none of the roadmap's business.
 const SECTION_LINKS = [
   { href: '#how', label: 'How it works' },
   { href: '#paths', label: 'Paths' },
@@ -25,7 +16,6 @@ const SECTION_LINKS = [
 
 const START_CTA = { href: '#/app/start', label: 'Start your tree' };
 
-// The six kind hues roadmapLanding.css bridges to :root — the fact line's dot reads them.
 const KIND_DOT = {
   terracotta: 'var(--kind-terracotta)',
   olive: 'var(--kind-olive)',
@@ -50,8 +40,6 @@ function tendedAgo(updatedAt) {
   return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
 }
 
-// The story-trio glyphs aren't in the app's Icon registry, so they ride as small
-// inline lucide-style SVGs (git-fork, monitor-smartphone).
 const ICONS = {
   'git-fork': <><circle cx="12" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" /><path d="M12 12v3" /></>,
   'monitor-smartphone': <><path d="M18 8V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h8" /><path d="M10 19v-3.96 3.15M7 19h5" /><rect width="6" height="10" x="16" y="12" rx="2" /></>,
@@ -64,9 +52,6 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-// useScene keeps the family's moat rule: the scene is built off the critical path and taken down
-// again on the way out. Whether it may *play* is treeScenes' business — an IntersectionObserver
-// and document.hidden gate the loop there.
 function HeroBand() {
   const ref = useScene((el) => {
     const hero = mountHero(el);
@@ -78,7 +63,7 @@ function HeroBand() {
 
 function Hero({ resume }) {
   const name = resume ? (resume.title?.trim() || 'Untitled roadmap') : null;
-  // Cut by code points, not code units — a surrogate pair (emoji) must never split.
+  // Cut by code points so an emoji never splits.
   const chars = name ? Array.from(name) : [];
   const shortName = chars.length > 18 ? `${chars.slice(0, 17).join('').trimEnd()}…` : name;
   const tended = resume ? tendedAgo(resume.updatedAt) : null;
@@ -202,9 +187,6 @@ function Paths() {
   );
 }
 
-// The MCP surface as a first-class landing beat (F17). Client names — never invented logos —
-// carry the identity; the five verbs each wear their node hue; the promise replaces any key,
-// and the can't-line draws the trust boundary. Calm copy+layout, no WebGL. CTA → the workbench.
 function AiTools() {
   const clients = ['Claude Desktop', 'Claude Code', 'Cursor', 'Codex', 'any MCP client'];
   const verbs = [
@@ -283,10 +265,7 @@ function CtaBand({ planted }) {
   );
 }
 
-// The last tree list this account saw, kept per-email so a returning signed-in tab paints its
-// real hero and nav on the first frame instead of the signed-out ones — the registry still
-// answers on boot and replaces this. Keyed by email so one device never shows another account's
-// trees; a ghost (no email) reads nothing. Pure optimization: never trusted, always refreshed.
+// Cached per email so one device never shows another account's trees; never trusted, always refreshed.
 const TREES_CACHE_PREFIX = 'windmill:trees:';
 
 function readTreesCache(email) {
@@ -300,12 +279,12 @@ function readTreesCache(email) {
 function writeTreesCache(email, rows) {
   if (!email) return;
   try { localStorage.setItem(TREES_CACHE_PREFIX + email, JSON.stringify(rows)); }
-  catch { /* storage unavailable — the cache is never load-bearing */ }
+  catch { /* the cache is never load-bearing */ }
 }
 
 export function RoadmapLanding() {
   const { user, status } = useAuth();
-  const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, then the registry corrects it
+  const [trees, setTrees] = useState(() => readTreesCache(user?.email)); // seeded from cache, corrected by the registry
   const landed = useRef(false);
 
   useEffect(() => {
@@ -314,8 +293,6 @@ export function RoadmapLanding() {
     track('land', { signedIn: status === 'signed-in' });
   }, [status]);
 
-  // A fresh signed-in status is the one moment the registry gets asked who owns what; every other
-  // flip — sign-out included — drops the page back to the verbs a stranger sees.
   useEffect(() => {
     if (status !== 'signed-in') { setTrees(null); return undefined; }
     let cancelled = false;
@@ -323,17 +300,11 @@ export function RoadmapLanding() {
     return () => { cancelled = true; };
   }, [status]);
 
-  // Role 9, the roadmap's reading of it: the newest tree is what the nav resumes and what the hero
-  // greets you with. No tree yet — signed in or not — and both fall back to Start your tree.
   const newest = status === 'signed-in' && trees?.length ? trees[0] : null;
 
-  // Signed in with the registry still out: we do not yet know whether this account has trees, and
-  // "Start your tree" would be claiming zero. The chrome keeps the cluster's box and waits.
+  // Signed in with the registry still out: the tree count is unknown, so the chrome waits.
   const resolving = status === 'signed-in' && trees === null;
 
-  // The seat's noun, its count and its parting line are roadmap sentences — the chrome makes no
-  // claim about anybody's trees — so this page says all three, or a landing that has nothing true
-  // to say says none.
   const seat = { label: 'My trees', count: trees?.length ?? null, note: 'Signing out keeps your trees on this device.' };
 
   return (

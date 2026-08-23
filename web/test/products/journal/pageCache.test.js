@@ -1,19 +1,9 @@
-// The device tier, pinned. Every rule here is a way prose has actually been lost, on this surface
-// or on the phone:
-//   · a store that cannot be read opens EMPTY — a corrupted blob costs the window, never the room;
-//   · convergence is decided here exactly as the server decides it, so a page arriving twice by two
-//     routes (a range read and a PUT reply) can never flap;
-//   · a reply is a receipt for ONE write — clearing the debt outright drops the last thing someone
-//     typed (commit 474956c's lesson, and it is not being re-learned here);
-//   · a day this browser is HOLDING unread words for is never settled by a read;
-//   · a browser that refused the bytes is not "saved on this device", and the cache says so.
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PageCache, blankPage, isWritten, normalizePage, winnerOf } from '../../../src/products/journal/pageCache.js';
 
-const KEY = 'wm.journal.pages.anon';   // the scope a store with nobody signed in opens
+const KEY = 'wm.journal.pages.anon';
 
 function memoryStorage(seed = null) {
   const map = new Map();
@@ -49,8 +39,6 @@ test('an unreadable store opens EMPTY rather than throwing', () => {
   assert.deepEqual(new PageCache(null, null).pages(), []);
 });
 
-// A blob from an older build or another tab is a foreign shape. Inside this module an unset scale
-// is null and nothing else, so "did the writer set a mood" is one comparison everywhere.
 test('a stored blob is normalised on the way in — the wire’s 0 is this module’s null', () => {
   const cache = new PageCache(null, memoryStorage({
     '2026-08-01': { page: { day: '2026-08-01', body: 'a', mood: 0, energy: 2, source: 'spoken', stamp: '9:0:x' }, needsPush: true, read: true },
@@ -77,8 +65,6 @@ test('store — last writer wins by stamp, and a tie goes to the page already he
   assert.equal(cache.page('2026-08-01').body, 'newer');
 });
 
-// An arriving remote page settles the debt only by beating what we were holding — if our unsent
-// page is still the winner, it is still unsent.
 test('store — a remote page that loses leaves the local write still owed', () => {
   const cache = new PageCache(null, memoryStorage());
   cache.store(pageOn('2026-08-01', 'mine', '200:0:a'), { needsPush: true, read: true });
@@ -91,8 +77,6 @@ test('store — a remote page that loses leaves the local write still owed', () 
   assert.equal(cache.page('2026-08-01').body, 'theirs, newer');
 });
 
-// A held draft is not a page: it carries no stamp, it races nothing, and a second draft for the
-// same unread day is the same writer typing rather than two devices disagreeing.
 test('hold — an unstamped draft replaces what was held, stays owed, stays unread', () => {
   const cache = new PageCache(null, memoryStorage());
   cache.hold({ day: '2026-08-07', body: 'first words', mood: null, energy: null, source: 'typed' });
@@ -116,8 +100,6 @@ test('markRead — a day the browser holds unread words for is left entirely alo
   assert.equal(cache.owed().length, 1);
 });
 
-// A window read answers for every day in it — the ones it named, and the ones it did not, which is
-// the account saying it holds nothing there. Both are days that may be written over.
 test('markRead — a named day and an unnamed one both become read', () => {
   const cache = new PageCache(null, memoryStorage());
   cache.markRead('2026-08-01', pageOn('2026-08-01', 'wrote', '100:0:a'));
@@ -129,8 +111,6 @@ test('markRead — a named day and an unnamed one both become read', () => {
   assert.deepEqual(cache.owed(), []);
 });
 
-// THE 474956c RULE. By the time a reply lands the writer may already have typed something newer,
-// and THAT page is still owed — clearing the debt here would drop it if the tab closed next.
 test('markPushed — a reply is a receipt for ONE write, and a newer draft stays owed', () => {
   const cache = new PageCache(null, memoryStorage());
   const first = pageOn('2026-08-07', 'one sentence', '100:0:web');
@@ -144,8 +124,6 @@ test('markPushed — a reply is a receipt for ONE write, and a newer draft stays
   assert.equal(cache.page('2026-08-07').body, 'one sentence, and another');
 });
 
-// Strictly newer, not "at least as new": an acknowledged write comes back with the very stamp we
-// sent, and treating that as unsettled would leave every successful write owed forever.
 test('markPushed — the write that was acknowledged stops being owed, and the day is read', () => {
   const cache = new PageCache(null, memoryStorage());
   const sent = pageOn('2026-08-07', 'today', '100:0:web');
@@ -167,14 +145,11 @@ test('owed — oldest first, so a backlog replays in the order it was lived', ()
   assert.deepEqual(cache.owed().map((entry) => entry.page.day), ['2026-08-04', '2026-08-06', '2026-08-07']);
 });
 
-// A second tab of the same journal holds its own copy of this map. A blind write would drop a day
-// it never touched.
 test('flush — union by day with what is already on disk, so a second tab’s day survives', () => {
   const storage = memoryStorage();
-  const cache = new PageCache(null, storage);           // opened while the disk was still empty
+  const cache = new PageCache(null, storage);
   cache.store(pageOn('2026-08-02', 'this tab', '9:0:a'), { needsPush: true, read: true });
 
-  // …and only then does the other tab write its own day.
   storage.setItem(KEY, JSON.stringify({
     '2026-08-01': { page: { day: '2026-08-01', body: 'the other tab', mood: 0, energy: 0, source: 'typed', stamp: '5:0:b' }, needsPush: true, read: false },
   }));
@@ -186,10 +161,6 @@ test('flush — union by day with what is already on disk, so a second tab’s d
   assert.equal(written['2026-08-02'].page.body, 'this tab');
 });
 
-// Reaching back past the canvas's window (pageStore.js) pulls months, sometimes years, into memory,
-// and every one of those days belongs on screen. None of them belongs in the durable store:
-// localStorage is the WRITING tier here — the place a page lives when there is no network and no
-// account — and letting history crowd it out would eventually cost somebody a write.
 test('flush — the disk keeps the newest days plus everything owed, and history never crowds it', () => {
   const dayAt = (index) => new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
   const storage = memoryStorage();
@@ -205,7 +176,7 @@ test('flush — the disk keeps the newest days plus everything owed, and history
   const days = reopened.pages().map((page) => page.day);
   assert.equal(days.length, 121);                  // the newest 120, plus the one page still owed
   assert.equal(days[0], dayAt(3), 'an owed page survives whatever its age — it is somebody’s prose');
-  assert.equal(days[1], dayAt(80));                // 200 read days, 120 kept
+  assert.equal(days[1], dayAt(80));
   assert.equal(days[120], dayAt(199));
   assert.deepEqual(reopened.owed().map((entry) => entry.page.day), [dayAt(3)]);
 });

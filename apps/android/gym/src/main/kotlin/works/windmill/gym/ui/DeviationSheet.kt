@@ -22,14 +22,6 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// CHANGE TODAY, OR CHANGE THE PROGRAM — the one moment gym asks a question it did not have to ask.
-// The plan snapshot is frozen, so last Tuesday keeps reading correctly whichever way this is
-// answered; what is at stake is only whether next week's target moves with the lifter. The offer
-// itself is the domain's (DeviationOffer.leaving) and is raised by LoggerScreen at the exercise
-// boundary — this sheet only says it and takes the answer.
-//
-// It is asked once per movement per session and never again, which is a fact about the sheet rather
-// than a line ON it: the rule lives in `asked` and the lifter finds it out by not being asked twice.
 @Composable
 fun DeviationSheet(
     deviation: DeviationOffer,

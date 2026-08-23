@@ -1,16 +1,7 @@
 name: Tools CI
 
-# Monorepo: tools/ holds one-shot scripts kept for the record, never a product surface
-# (STRUCTURE.md). Nothing here builds an image or deploys anywhere — but lift-import writes a real
-# training history through the public API, and its suite was passing where no run could see it.
-#
-# Separate from embedder.yml on purpose: path filters are per-workflow, so folding the two together
-# would download 34MB of model weights and load onnxruntime to run a suite that has no dependencies
-# at all — and would put "Embedder CI" red on the checks list when a gym importer broke.
-#
-# The filter is the whole directory so a new tool fires this workflow, but a new tool with tests
-# needs its own job below. Today lift-import is the only one that ships a suite; resend-webhook-probe
-# is a manual probe with none.
+# The filter is all of tools/, so a new tool fires this workflow, but a new tool with tests needs its
+# own job below. lift-import is the only one that ships a suite.
 
 on:
   push:
@@ -41,6 +32,4 @@ jobs:
         with:
           node-version: "20"
 
-      # No dependencies on purpose, so there is no lockfile to cache and nothing to install:
-      # `npm test` is `node --test test/` and the runner's node is the whole toolchain.
       - run: npm test

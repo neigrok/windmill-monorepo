@@ -9,9 +9,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Exercise
 
-// The movement names, held on the device so a cold launch never draws the slug where the name
-// belongs — for the seat they were read for, because a rename is a per-account override — and
-// written only when they actually changed, because a name nobody edited is not news.
 class DeviceCopyTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -28,7 +25,6 @@ class DeviceCopyTests {
         assertEquals(names, DeviceCopy(file).movements("alice"))
     }
 
-    // The anonymous seat is a seat, and its own names are not the next account's to read.
     @Test
     fun testACopyBelongsToTheSeatItWasReadForAndToNoOther() {
         val file = File(tmp.root, "catalog-${System.nanoTime()}.json")

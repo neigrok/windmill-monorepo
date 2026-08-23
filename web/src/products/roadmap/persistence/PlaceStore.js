@@ -1,7 +1,4 @@
-// Where you left off (anon-first-tree F6): one localStorage slot remembering the last
-// place the editor stood — tree, camera, selection. The magic-link landing's fresh tab
-// reads it to become the old place, and a bare #/app after sign-in lands there too.
-// Best-effort like ProgressStore — storage errors are never fatal.
+// The last place the editor stood — tree, camera, selection. Storage errors are never fatal.
 
 const KEY = 'windmill:last-place';
 
@@ -23,7 +20,6 @@ export class PlaceStore {
     try {
       this.storage.setItem(KEY, JSON.stringify({ treeId, camera, selectedId, at: Date.now() }));
     } catch {
-      // storage full or unavailable
     }
   }
 
@@ -32,7 +28,6 @@ export class PlaceStore {
     try {
       this.storage.removeItem(KEY);
     } catch {
-      // storage unavailable
     }
   }
 }

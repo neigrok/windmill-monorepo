@@ -8,13 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.platform.User
 
-// What has to be true of the file the 90-day bearer sleeps in: nothing in it is the secret, a
-// phone whose Keystore refuses writes NOTHING rather than falling back to plaintext, and an install
-// upgrading off a build that wrote cleartext carries its seat across and leaves no cleartext behind.
-//
-// The file is a seam (`KeptValues`) because SharedPreferences needs a device and `:platform` carries
-// no Robolectric. What is NOT proven here is that the Android side of that seam commits what it is
-// given — six lines of `edit()` in `SharedPrefsValues` — and that the Keystore hands back a key.
 class PrefsSessionsTest {
     private class FakeValues(vararg seeded: Pair<String, String>) : KeptValues {
         val held = seeded.toMap().toMutableMap()
@@ -49,8 +42,6 @@ class PrefsSessionsTest {
         assertEquals("and a relaunch reads the same file", secret, PrefsSessions(values, vault).read())
     }
 
-    // The upgrade off a build that wrote cleartext: the seat survives it — signing every lifter out
-    // to change how a secret is kept would be a worse product — and the cleartext does not.
     @Test
     fun testAnOlderBuildsPlaintextIsCarriedAcrossAndRemoved() {
         val values = FakeValues(
@@ -70,8 +61,6 @@ class PrefsSessionsTest {
             PrefsSessions(values, vault).read())
     }
 
-    // A phone whose Keystore refuses keeps NOTHING. The fallback — writing it in the clear — is the
-    // defect, and it would land on exactly the devices least able to afford it.
     @Test
     fun testWithNoKeyNothingIsWrittenRatherThanPlaintext() {
         val values = FakeValues()
@@ -85,7 +74,6 @@ class PrefsSessionsTest {
         assertNull(keyless.user())
     }
 
-    // A spent secret leaves no seat behind it — and no half of one under an older build's key.
     @Test
     fun testClearTakesBothHalvesAndTheOlderBuildsKeysWithThem() {
         val values = FakeValues("wm_session" to secret, "wm_user" to """{"id":"u_1","email":"s@e.c"}""")
@@ -101,8 +89,6 @@ class PrefsSessionsTest {
     }
 
     private companion object {
-        // One key for the whole class: a vault that minted a fresh key per call could never open
-        // what it had just sealed, and every assertion above would pass for the wrong reason.
         val keyOnce = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().let { { it } }
     }
 }

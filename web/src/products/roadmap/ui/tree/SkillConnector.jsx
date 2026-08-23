@@ -6,10 +6,7 @@ function hashStr(str) {
   return Math.abs(h);
 }
 
-// Simple stroked bezier curve between two nodes — a gentle, even-width connector.
-// `active` means the branch STARTS in a done node: it lights up in `glowColor`
-// (default the ember bark) as a solid stroke — no glow. Dormant branches are a
-// thin muted line.
+// `active` means the branch STARTS in a done node.
 export function SkillConnector({ from, to, active = false, animate = true, seedKey = '', glowColor = 'var(--connector-active)' }) {
   const seed = hashStr(`${from.x},${from.y}-${to.x},${to.y}-${seedKey}`);
   // A small, stable perpendicular bend so the curve reads as a curve, not a straight line.

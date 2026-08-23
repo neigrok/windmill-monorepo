@@ -1,11 +1,5 @@
-// The multi-select bulk bar (M5): long-press enters multi-select and this bar replaces the
-// sheet — an "N selected" count with Done, the recolor swatch row, and a full-width Delete.
-// Bottom-docked on the phone (a finger acts here, not a floating chip); `inPanel` drops the
-// fixed positioning so the tablet seats it in-flow in the detail panel column. Bark/cream
-// chrome — tools stay neutral, and the swatches are the one place category hue shows. Every
-// control clears the 44px touch floor. One surface at a time: SkillTreeView mounts this only in
-// multiMode, never beside the sheet or an aim bar. Purely presentational — every verb dispatches
-// through the bulk* handlers SkillTreeView passes, which reuse the desktop editor's undoable gestures.
+// SkillTreeView mounts this only in multiMode, never beside the sheet or an aim bar.
+// `inPanel` drops the fixed positioning so the tablet seats it in the detail panel column.
 
 import React from 'react';
 import { Icon } from '../../../../design-system';

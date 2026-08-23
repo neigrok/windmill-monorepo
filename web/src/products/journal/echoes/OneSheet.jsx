@@ -1,13 +1,5 @@
-// The One sheet — the only surface in Journal that asks for money, and it asks only when there is
-// something to buy. Windmill One is not on sale today, so the verb is a line saying so.
-//
-// A sheet, not a page: the canvas stays behind it and the cursor is never lost. It opens with THEIR
-// cut sentence, because that is what they are buying the end of. The canvas itself carries no price,
-// plan name, button or badge — the cut is the whole invitation, and an ask the reader opened is not
-// an interruption. Lamp is memory and terracotta is money; this is the one screen terracotta is on.
-//
-// Not your words, either. What is sold is the pass across them — which is why the free path is
-// stated one surface earlier, and why nothing written is ever withdrawn if One lapses.
+// The one surface in journal that asks for money, and the one screen terracotta is on. It opens with the
+// reader's own cut sentence; what is sold is the pass across the words, never the words.
 
 import React, { useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
@@ -15,16 +7,12 @@ import { useEntitlements } from '../../../shell/billing/EntitlementsProvider.jsx
 import { beginUpgrade, paidPlansOpen } from '../../../shell/billing/checkout.js';
 import { distanceStamp, reachInWords, stampStacked } from './echoDates.js';
 
-// A real A/B switch, not a preference: the price on the verb, or the plan's name. Both are honest;
-// only one can be measured at a time. Nothing is being measured today — the verb only renders when
-// there is something to buy, and there is not.
+// The price on the verb, or the plan's name.
 const PRICE_ON_CTA = true;
 
 const BUY_VERB = PRICE_ON_CTA ? 'Get One — $12/mo' : 'Get Windmill One';
 
-// Journal's copy of the rule gym's CoachPanel keeps: the verb appears only when there is a door
-// behind it. Windmill One is not on sale (shell/billing/checkout.js — paidPlansOpen), so a buy
-// button here could only open a checkout nobody can complete. This line stands where it will be.
+// While `paidPlansOpen()` is false this line stands where the buy verb will be.
 const ONE_NOT_FOR_SALE = 'Windmill One isn’t on sale yet — nothing here is billable, and the passage stays cut until it is.';
 
 export function OneSheet({ page, onClose, onNeedSignIn, onNotNow }) {

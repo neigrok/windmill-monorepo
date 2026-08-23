@@ -1,8 +1,3 @@
-// The honesty chrome (share-hardening): StatusChip is the neutral pill that outlives
-// any toast — a truth that doesn't expire; VisitorNotice is the bottom-center card for
-// a tree that isn't yours. A card, never a modal: the canvas stays live behind it,
-// Esc or "Maybe later" dismisses, and focus is never stolen.
-
 import React, { useEffect } from 'react';
 import { Button } from '../../../design-system';
 
@@ -41,8 +36,7 @@ export function StatusChip({ children }) {
 }
 
 export function VisitorNotice({ edits = 0, author = null, onFork, onDismiss, onSignIn }) {
-  // Capture + stopPropagation: Esc dismisses this card and nothing else — the same
-  // press must not also deselect a node or close a dialog underneath.
+  // Capture + stopPropagation: Esc dismisses this card only, never a node or dialog underneath.
   useEffect(() => {
     const onKey = (event) => {
       if (event.key !== 'Escape') return;

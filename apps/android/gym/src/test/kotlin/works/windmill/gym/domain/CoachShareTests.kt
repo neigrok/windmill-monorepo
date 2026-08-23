@@ -7,19 +7,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-// A link that leaves your phone is a thing you are owed the truth about, so what is pinned here is
-// the COPY in every state the card can be in and the one transition that can lie: a revoke that did
-// not happen. Three sentences have to survive every rewrite of this screen — anyone who has the link
-// can read this one workout, it expires, it can be revoked.
-
 class CoachShareTests {
     private val base = "https://windmill.works"
     private val share = SessionShare(token = "abc123", expiresAtMs = 1_756_992_000_000)
     private val json = Json { ignoreUnknownKeys = true }
 
-    // A share becomes a PAGE a coach opens, not a call into the JSON API — and those are two routes
-    // on one host, which is how the wrong one shipped on iOS. A base URL with a trailing slash is
-    // the same address; a debug build reading its API base override can carry one.
     @Test
     fun testTheLinkIsTheReaderPageAndNotTheApiRoute() {
         assertEquals("https://windmill.works/#/gym/shared/abc123",
@@ -28,8 +20,6 @@ class CoachShareTests {
                      Coach.link(SessionShare(token = "abc123", expiresAtMs = 0), "http://127.0.0.1:8080/"))
     }
 
-    // Before anything is minted the offer names no expiry DATE, because there is no share yet and
-    // therefore no day to name — but it does say that one expires, which is the promise being made.
     @Test
     fun testTheClosedCardOffersTheLinkAndNamesTheThreeThingsThatAreTrueOfIt() {
         val card = Coach.card(Coach.State.Closed(), base)
@@ -46,8 +36,6 @@ class CoachShareTests {
         assertTrue(Coach.offer.contains("nothing else about your account"))
     }
 
-    // A mint that failed says why, in the log's own words, and offers the door again — a card that
-    // fell silent would leave a lifter unsure whether a link is out there.
     @Test
     fun testAMintThatFailedKeepsTheOfferAndRepeatsWhatTheLogSaid() {
         val card = Coach.card(Coach.State.Closed(note = "no such session"), base)
@@ -59,10 +47,6 @@ class CoachShareTests {
         assertNull(card.link)
     }
 
-    // The link is the SERVER's. iOS shipped composing `/#/gym/shared/…` from the API base, so a
-    // coach tapping a share sent from a phone was handed a page of JSON — the one thing a share is
-    // for, broken. The fallback exists for a backend older than the field and is the READER's route,
-    // never the API's, so the worst case is a wrong host rather than the wrong kind of page.
     @Test
     fun testTheLinkIsTheOneTheServerSentAndTheFallbackIsNeverTheJsonRoute() {
         val sent = SessionShare(token = "abc123", expiresAtMs = 0,
@@ -76,8 +60,6 @@ class CoachShareTests {
         assertTrue(fallback.endsWith("/#/gym/shared/abc123"))
     }
 
-    // The live card prints the ADDRESS in full and the expiry the server decided — never a day
-    // counted off this device's clock, which can support an omission but never an assertion.
     @Test
     fun testTheLiveCardShowsTheAddressAndTheServersOwnExpiry() {
         val card = Coach.card(Coach.State.Live(share = share), base)
@@ -124,9 +106,6 @@ class CoachShareTests {
         assertNull(card.revoke)
     }
 
-    // THE ONE THAT MATTERS. A revoke that did not happen leaves the capability live, and the card has
-    // to keep saying so: drawing it as dead would tell a lifter their coach can no longer read the
-    // session on the strength of a request that failed.
     @Test
     fun testARevokeThatFailedLeavesTheLinkLiveAndSaysWhy() {
         val live = Coach.State.Live(share = share, copied = true)
@@ -143,7 +122,6 @@ class CoachShareTests {
         assertEquals("the note is the news, so the clipboard claim goes", "Copy link", card.action)
     }
 
-    // The rest of the machine, in one pass: nothing claims a link exists until the log has said so.
     @Test
     fun testTheStateMachineOnlyGoesLiveOnTheLogsOwnAnswer() {
         assertEquals(Coach.State.Working, Coach.State.Closed().after(Coach.Event.Asked))
@@ -158,8 +136,6 @@ class CoachShareTests {
                      Coach.State.Revoked, Coach.State.Revoked.after(Coach.Event.RevokeFailed("gone")))
     }
 
-    // `expiresAt` is the server's field and the token is opaque — decoded exactly as the wire spells
-    // them, with no key strategy anywhere in this app to guess at.
     @Test
     fun testTheMintedShareDecodesOffTheWire() {
         val decoded = json.decodeFromString(

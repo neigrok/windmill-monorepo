@@ -1,20 +1,7 @@
 import SwiftUI
 import UIKit
 
-// The brand's scales for native, plus the one treatment where two of them must be chosen together.
-// The values are the ones web/src/styles/tokens/colors.css holds, mirrored BY HAND: nothing checks
-// the two files against each other (packages/design-tokens, which would, is still only a README),
-// so a hue that moves on one surface has to be carried to the other. Product-neutral by
-// construction: a product that needs its own surface (journal's night, gym's palette) overrides
-// these inside its own scope, exactly as the web products override role tokens inside their class.
-
-// The ramp is ADAPTIVE and the roles below are aliases onto it — the same structure
-// web/src/styles/tokens/colors.css uses, where `[data-theme="dark"]` re-authors the ramp and every
-// role token that references it follows for free. That is why turning the shell dark needed no
-// change at a single call site: `surfaceCanvas` IS `neutral50`, in both skins.
-//
-// The dark ramp is re-authored, never a linear inversion: low indices stay deep warm surfaces and
-// high indices become warm off-whites for text, so a role that meant "canvas" still means canvas.
+// Mirrors web/src/styles/tokens/colors.css by hand; nothing checks the two files against each other.
 public enum WindmillColor {
     public static let neutral0 = Color(light: 0xFFFFFF, dark: 0x17120B)
     public static let neutral25 = Color(light: 0xFDFBF6, dark: 0x14100A)
@@ -33,9 +20,7 @@ public enum WindmillColor {
     public static let olive400 = Color(hex: 0x9AA859)
     public static let olive500 = Color(hex: 0x7D8C43)
 
-    // Ink for text that sits ON a bright accent fill. Fixed in both skins: the fill is the same
-    // gold either way, so the ink on it must be too — 8.92:1 on gold400, where the adaptive ramp
-    // reaches for its dark end and reads 1.77:1.
+    // Ink for text on a bright accent fill; fixed in both skins.
     public static let onAccent = Color(hex: 0x1B1408)
 
     public static let surfaceCanvas = neutral50
@@ -47,10 +32,6 @@ public enum WindmillColor {
     public static let borderDefault = neutral300
 }
 
-// tokens/fonts.css names the brand faces and then names the native fallback for each in the same
-// declaration: ui-rounded for display and body, ui-monospace for numerals. On this platform those
-// ARE SF Pro Rounded and SF Mono, so the system designs below are not an approximation of the
-// tokens — they are the branch of the token the token itself points at. No woff2 to bundle.
 public enum WindmillFont {
     public static func display(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
         .system(size: size, weight: weight, design: .rounded)
@@ -86,10 +67,6 @@ public enum WindmillRadius {
     public static let full: CGFloat = 999
 }
 
-// The weight of an action, and with it BOTH of the colours that say so. Fill and ink were two
-// separate decisions at every call site, and every gold capsule in the app picked the adaptive ramp
-// for its label — warm near-white on gold, 1.77:1, in a dark mode reachable from You. Pairing them
-// here is what stops that being writable again, rather than merely fixed once.
 public enum ActionWeight {
     case primary
     case quiet
@@ -108,8 +85,6 @@ public extension View {
 }
 
 public extension Color {
-    // One token, two skins, resolved by the trait environment rather than by a branch at the call
-    // site — so a view never has to ask which appearance it is in.
     init(light: UInt32, dark: UInt32) {
         self.init(UIColor { traits in
             UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))

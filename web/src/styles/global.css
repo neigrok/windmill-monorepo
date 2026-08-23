@@ -1,5 +1,5 @@
-/* Root stylesheet — imports every design token layer, then sets page defaults.
-   Mirrors the Windmill design-system styles.css. @import rules must lead the file. */
+/* Root stylesheet — imports every design token layer, then sets page defaults. @import rules must
+   lead the file. */
 @import './tokens/fonts.css';
 @import './tokens/colors.css';
 @import './tokens/typography.css';
@@ -38,15 +38,11 @@ a:hover {
 }
 
 /* The two posts a full-bleed product floats the shell's furniture on: the product switcher,
-   centred, and the account seat opposite it. Both are quiet until they are reached for, and both
-   sit at the same coordinates in every room, so stepping between rooms feels like one building —
-   which used to be a promise a comment made and two stylesheets restated byte for byte.
+   centred, and the account seat opposite it, at the same coordinates in every room.
 
-   Global rather than shell chrome on purpose: a product may render inside the /app shell (journal)
-   or outside it entirely (gym at #/gym, pre-open), and shell/chrome/ is a wall products may not
-   import from. The /app chrome itself carries the same two components in its rail and top bar and
-   wants none of this. A product keeps its own wrapper class only for what that one room does —
-   journal's desktop margin slides the seat left. */
+   Global rather than shell chrome: a product may render inside the /app shell or outside it
+   entirely, and shell/chrome/ is a wall products may not import from. A product keeps its own
+   wrapper class only for what that one room does. */
 .wm-post {
   position: fixed;
   top: 12px;
@@ -68,7 +64,7 @@ a:hover {
   opacity: 0.72;
 }
 
-/* Respect users who prefer less motion — pause the tree's breathing glow. */
+/* Respect users who prefer less motion. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
