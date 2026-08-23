@@ -29,6 +29,7 @@ public:
   std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
                                  std::uint64_t corpusStamp) override;
 
+  std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override;
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& spans,

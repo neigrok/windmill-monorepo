@@ -62,6 +62,7 @@ public:
   std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp) override;
   std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
                                  std::uint64_t corpusStamp) override;
+  std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override;
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
   std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) override;
   void dismissPair(const UserId& user, const LocalDate& triggerDay,

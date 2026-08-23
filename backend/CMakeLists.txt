@@ -294,6 +294,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/journal/adapters/http/VoiceApi.cpp
     products/journal/adapters/llm/OpenAiTranscriber.cpp
     products/journal/adapters/llm/AnthropicCurator.cpp
+    products/journal/adapters/llm/AnthropicSegmenter.cpp
     products/journal/adapters/llm/HttpEmbedder.cpp
     products/journal/routes.cpp)
 
@@ -393,6 +394,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/journal/adapters/http/EchoApiTest.cpp
     test/products/journal/adapters/http/VoiceApiTest.cpp
     test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
+  test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
     test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
     test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
     test/products/gym/adapters/http/TrainingApiTest.cpp

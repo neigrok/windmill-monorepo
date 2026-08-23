@@ -15,9 +15,9 @@
 
 namespace wm {
 
-EchoExplainer::EchoExplainer(EchoRepository& echoes, Embedder& embedder, Curator& curator,
-                             PageService& pages)
-    : echoes_(echoes), embedder_(embedder), curator_(curator), pages_(pages),
+EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
+                             Curator& curator, PageService& pages)
+    : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), pages_(pages),
       heartbeat_("journal-echo-explain") {}
 
 void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& request,
@@ -46,6 +46,8 @@ void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& reque
 // mints only positives, so a negative id can never be mistaken for a passage that exists.
 EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest& request) {
   EchoExplanation explained;
+  explained.segmenterConfigured = segmenter_.configured();
+  explained.segmentVersion = segmenter_.version();
   explained.embedderConfigured = embedder_.configured();
   explained.curatorConfigured = curator_.configured();
   explained.embedVersion = embedder_.version();
@@ -61,8 +63,23 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
   explained.due = echoes_.duePage(user, request.day, corpusStamp).has_value();
 
-  // 1 — segment.
-  explained.passages = segment(page->body);
+  // 1 — the idea units. Read back from storage by default, because what the page reaches today was
+  // decided by the units it actually carries; `recut=true` buys a fresh cut, which is how a prompt
+  // change is tried against a real night.
+  const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
+  explained.storedSpans = static_cast<int>(stored.size());
+  if (!request.recut && !stored.empty()) {
+    std::vector<std::string> texts;
+    texts.reserve(stored.size());
+    for (const KnownSpan& span : stored) texts.push_back(span.text);
+    explained.passages = locateUnits(page->body, texts);
+    explained.unitsFromStorage = true;
+  } else if (explained.segmenterConfigured) {
+    const Segmentation cut = segmenter_.unitsOf(user, page->body);
+    explained.passages = cut.passages;
+    explained.unitsDiscarded = cut.discarded;
+    if (!cut.ok) explained.error = "segmenter: " + cut.failure;
+  }
   if (!explained.embedderConfigured || explained.passages.empty()) return explained;
 
   // 2 — embed. The vendor call this door always pays for: tonight's vectors exist nowhere else
@@ -79,8 +96,6 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   }
 
   // 3 — reconcile, without storing.
-  const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
-  explained.storedSpans = static_cast<int>(stored.size());
   const std::vector<IdentifiedPassage> carried = reconcile(stored, explained.passages);
   std::vector<Vectored> tonight;
   std::int64_t provisional = 0;

@@ -64,6 +64,7 @@
 #include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "platform/adapters/llm/AnthropicClient.h"
 #include "products/journal/adapters/llm/AnthropicCurator.h"
+#include "products/journal/adapters/llm/AnthropicSegmenter.h"
 #include "products/journal/adapters/llm/HttpEmbedder.h"
 #include "products/journal/adapters/llm/NullCurator.h"
 #include "products/journal/adapters/llm/NullEmbedder.h"
@@ -998,6 +999,16 @@ int main() {
         aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
+  // Step 1, bought rather than ruled since 2026-08-23: the page is cut into idea units by the same
+  // Anthropic key the curator uses. Without that key it falls back to the line-and-sentence rule,
+  // which is honest for a deploy where the curator is dark anyway and no echo can arrive.
+  std::shared_ptr<Segmenter> journalSegmenter;
+  if (anthropicKeyEnv && *anthropicKeyEnv)
+    journalSegmenter = std::make_shared<AnthropicSegmenter>(
+        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-sonnet-5", "low", aiFuse,
+        aiSpendSink);
+  else
+    journalSegmenter = std::make_shared<RuleSegmenter>();
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
   // One warm corpus in front of storage, shared by every door: the live path, the repair pass and
   // the read layer all hold this one object, so none of them has to know the corpus is cached and
@@ -1006,8 +1017,9 @@ int main() {
   // six-hourly ticker did.
   auto journalEchoes = std::make_shared<WarmEchoRepository>(*journalSpans, *systemClock);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
-  auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalEmbedder,
-                                                      *journalCurator, *systemClock, *entitlements,
+  auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter,
+                                                      *journalEmbedder, *journalCurator,
+                                                      *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
   // And the delivery path: a page saved is a page derived, seconds later, on this object's own
@@ -1020,8 +1032,8 @@ int main() {
   // The tuning door's engine: one page's derivation run for its REASONS, writing nothing. It holds
   // the same corpus, embedder and curator the live path does, so what it explains is what a save
   // would decide — and it has its own thread for the same reason the sweep does.
-  auto journalEchoExplainer = std::make_shared<EchoExplainer>(*journalEchoes, *journalEmbedder,
-                                                              *journalCurator, *pageService);
+  auto journalEchoExplainer = std::make_shared<EchoExplainer>(
+      *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
   // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
   // way it gates through the same Windmill One entitlement seam as echoes and tending.

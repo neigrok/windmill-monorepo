@@ -84,7 +84,7 @@ backend/products/journal/
   domain/        Page (+ Mood · Energy · Source · LocalDate) · NudgePlan
                  Passage · SpanReconcile · EchoSelection          (pure, no I/O)
   ports/         JournalRepository · NudgeRepository · NudgeMailSender
-                 EchoRepository · Embedder · Curator · Transcriber
+                 EchoRepository · Segmenter (+ RuleSegmenter) · Embedder · Curator · Transcriber
   application/   PageService (+ PageWatcher, the seam a save announces on) · NudgeSweep
                  EchoSweep (derivePage · run) · EchoDerivations (saves → derivations)
                  WarmEchoRepository (the corpus held warm, per user, behind the port)
@@ -95,7 +95,8 @@ backend/products/journal/
                  useful · opened · admin sweep · explain) · VoiceApi (transcribe)
     json/        PageJson — the page wire shape, both directions, spoken by all three surfaces
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
-    llm/         HttpEmbedder (the self-hosted sidecar) · AnthropicCurator · OpenAiTranscriber,
+    llm/         HttpEmbedder (the self-hosted sidecar) · AnthropicSegmenter · AnthropicCurator ·
+                 OpenAiTranscriber,
                  each beside a Null… that reports unconfigured so its feature is simply dark
     email/       ResendNudgeSender
   routes.{h,cpp} journal::registerRoutes(app, JournalDeps&)

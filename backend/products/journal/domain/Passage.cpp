@@ -1,5 +1,6 @@
 #include "products/journal/domain/Passage.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -207,6 +208,68 @@ std::string normalizedForIdentity(const std::string& text) {
     identity.push_back(c);
   }
   return identity;
+}
+
+namespace {
+
+// Does `unit` sit in `body` starting exactly at `at`, treating any run of whitespace on either side
+// as one? Returns the end offset in the body, or -1. The unit is already trimmed by the caller.
+int matchAt(const std::string& body, const std::string& unit, int at) {
+  const int bodySize = static_cast<int>(body.size());
+  const int unitSize = static_cast<int>(unit.size());
+  int b = at;
+  int u = 0;
+  while (u < unitSize) {
+    if (isBlank(unit[u])) {
+      // A whitespace run must be answered by at least one whitespace byte, however either side
+      // spells it — this is the newline a "one unit per line" answer flattened into a space.
+      if (b >= bodySize || !isBlank(body[b])) return -1;
+      while (b < bodySize && isBlank(body[b])) ++b;
+      while (u < unitSize && isBlank(unit[u])) ++u;
+      continue;
+    }
+    if (b >= bodySize || body[b] != unit[u]) return -1;
+    ++b;
+    ++u;
+  }
+  return b;
+}
+
+// The first place at or after `from` where `unit` sits, or -1. Only positions whose byte equals the
+// unit's first byte are tried, which is what keeps a long page and a long unit from costing their
+// product on every call.
+int findFrom(const std::string& body, const std::string& unit, int from) {
+  if (unit.empty()) return -1;
+  const int bodySize = static_cast<int>(body.size());
+  for (int at = std::max(0, from); at < bodySize; ++at) {
+    if (body[at] != unit[0]) continue;
+    if (matchAt(body, unit, at) >= 0) return at;
+  }
+  return -1;
+}
+
+}
+
+std::vector<Passage> locateUnits(const std::string& body, const std::vector<std::string>& units) {
+  std::vector<Passage> passages;
+  int after = 0;
+  for (const std::string& raw : units) {
+    const Span trimmedUnit = trimmed(raw, {0, static_cast<int>(raw.size())});
+    const std::string unit = raw.substr(trimmedUnit.lo, trimmedUnit.hi - trimmedUnit.lo);
+    if (unit.empty()) continue;
+
+    int lo = findFrom(body, unit, after);
+    // Out of order, or overlapping something already taken: look once from the top before giving
+    // up, because a segmenter that reordered its answer still named real text.
+    if (lo < 0) lo = findFrom(body, unit, 0);
+    if (lo < 0) continue;
+
+    const int hi = matchAt(body, unit, lo);
+    passages.push_back(Passage{static_cast<int>(passages.size()), lo, hi,
+                               body.substr(lo, hi - lo)});
+    after = hi;
+  }
+  return passages;
 }
 
 }

@@ -13,9 +13,11 @@ namespace wm {
 // passage. A per-passage call would put an HTTP round trip on the sweep thread for every sentence
 // in the journal.
 //
-// The implementation must produce vectors interchangeable with the on-device index — same model,
-// same quantization, same pooling, same normalisation — because the same vectors seed the browser's
-// search index. Divergence here raises no error; it just makes retrieval quietly worse forever.
+// CORRECTED 2026-08-23: this used to claim the browser's search index is seeded from these vectors.
+// It is not. Nothing serves a vector to any client — the search worker embeds page bodies on the
+// device — so the two spaces are independent and either may move without breaking the other.
+// Matching the browser's model, quantization, pooling and normalisation is still worth doing,
+// because it makes one measurement describe both surfaces; it is a preference, not a contract.
 struct Embedder {
   virtual ~Embedder() = default;
   virtual bool configured() const = 0;

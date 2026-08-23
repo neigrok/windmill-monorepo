@@ -20,10 +20,10 @@ struct EchoUser {
 };
 
 // A page owed a derivation — its body moved past what was last derived from it, or the corpus
-// around it did. It carries no `source`: segmentation is one deterministic function of the body
-// (products/journal/domain/Passage.h), and a spoken page is segmented exactly like a typed one.
-// ECHOES.md designs a separate spoken path and marks it as not built; when it is built, this is
-// where the discriminator comes back. `attempts` is how many passes in a row have failed on this
+// around it did. It carries no `source`: a spoken page is cut into units exactly like a typed one,
+// because what a page says does not depend on how it was entered. ECHOES.md designs a separate
+// spoken path and marks it as not built; when it is built, this is where the discriminator comes
+// back. `attempts` is how many passes in a row have failed on this
 // page WITHOUT settling it — a transport blip, a rate limit, the failures that clear on their own.
 // A refusal is not one of them: it settles the page (`isSettled` below), so it never counts up
 // here. Nothing backs off on this number yet.
@@ -32,6 +32,12 @@ struct DuePage {
   std::string body;
   std::uint64_t bodyStampMs = 0;
   int attempts = 0;
+  // WHICH of the three ways this page is owed a pass, because since 2026-08-23 they cost different
+  // money. A body that moved has to be cut into idea units again, which is a vendor call; a corpus
+  // that moved under an unchanged body changes what the page REACHES and never what it SAYS, so
+  // its units are read back from storage and no segmenter is asked. A page never derived counts as
+  // moved: it has no stored units to read.
+  bool bodyMoved = true;
 };
 
 // A passage on its way to storage. `spanId` of 0 means reconcile found no survivor for this text
@@ -215,6 +221,14 @@ struct EchoRepository {
 
   // Ordered by ord — reconcile matches duplicated text within a page in document order, so the
   // order this returns in is part of the contract, not a convenience.
+  // One page as it stands, owed anything or not. The reverse edge needs it: a page holding an echo
+  // into a page that just moved is NOT due by any of duePages' three questions — its own body did
+  // not move and its corpus stamp may be current — yet it has to be re-derived against text that
+  // still exists. The walk used to enqueue such a page carrying an empty body, and an empty body is
+  // a page with nothing on it, so the repair deleted the passages and echoes it was walking to
+  // save. Nullopt is a day the writer has no page on.
+  virtual std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) = 0;
+
   virtual std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
 
   // Records the caller's identity decisions and hands back exactly what it stored, minted ids and

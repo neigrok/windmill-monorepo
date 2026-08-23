@@ -173,7 +173,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
+      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid "
@@ -188,7 +189,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
     pages.push_back(DuePage{LocalDate{row["day"].as<std::string>()},
                             row["body"].as<std::string>(),
                             row["stamp_ms"].as<std::uint64_t>(),
-                            row["attempts"].as<int>()});
+                            row["attempts"].as<int>(),
+                            row["body_moved"].as<bool>()});
   return pages;
 }
 
@@ -201,7 +203,8 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
+      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid AND p.day = $2::date "
@@ -211,7 +214,27 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
 
   if (rows.empty()) return std::nullopt;
   return DuePage{LocalDate{rows[0]["day"].as<std::string>()}, rows[0]["body"].as<std::string>(),
-                 rows[0]["stamp_ms"].as<std::uint64_t>(), rows[0]["attempts"].as<int>()};
+                 rows[0]["stamp_ms"].as<std::uint64_t>(), rows[0]["attempts"].as<int>(),
+                 rows[0]["body_moved"].as<bool>()};
+}
+
+std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalDate& day) {
+  // No due-ness clause at all, which is the whole difference from duePage above: the reverse edge
+  // walks to pages that are owed nothing by their own body or corpus, and needs their text anyway.
+  // `bodyMoved` false is stated rather than computed — this page is being re-derived because
+  // ANOTHER page moved, so its own units still stand and must not be bought a second time.
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "FROM journal_page p "
+      "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
+      "WHERE p.user_id = $1::uuid AND p.day = $2::date",
+      user.str(), day.iso());
+
+  if (rows.empty()) return std::nullopt;
+  return DuePage{day, rows[0]["body"].as<std::string>(), rows[0]["stamp_ms"].as<std::uint64_t>(),
+                 rows[0]["attempts"].as<int>(), false};
 }
 
 std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {

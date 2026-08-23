@@ -174,6 +174,8 @@ Json::Value toJson(const EchoExplanation& explained) {
   body["page"] = page;
 
   Json::Value wiring(Json::objectValue);
+  wiring["segmenter"] = explained.segmenterConfigured;
+  wiring["segmentVersion"] = explained.segmentVersion;
   wiring["embedder"] = explained.embedderConfigured;
   wiring["embedVersion"] = explained.embedVersion;
   wiring["curator"] = explained.curatorConfigured;
@@ -195,6 +197,10 @@ Json::Value toJson(const EchoExplanation& explained) {
     passages.append(one);
   }
   body["passages"] = passages;
+  // Where those units came from, because it changes what the answer means: the stored cut is what
+  // the page reaches on today, a fresh one is what it WOULD reach if it were re-derived now.
+  body["unitsFromStorage"] = explained.unitsFromStorage;
+  body["unitsDiscarded"] = explained.unitsDiscarded;
 
   Json::Value triggers(Json::arrayValue);
   for (const TriggerTrace& trace : explained.selection.traces) triggers.append(toJson(trace));
@@ -538,6 +544,7 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   request.echoesPerPage = knob(req, "echoesPerPage", request.echoesPerPage);
   request.nearest = knob(req, "nearest", request.nearest);
   request.curate = req->getParameter("curate") == "1" || req->getParameter("curate") == "true";
+  request.recut = req->getParameter("recut") == "1" || req->getParameter("recut") == "true";
 
   // Off this thread: an embed round trip and, when asked, a curator call — seconds, on one of the
   // handful of IO threads serving every other route in the product.

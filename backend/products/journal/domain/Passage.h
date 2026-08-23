@@ -39,4 +39,22 @@ std::vector<Passage> segment(const std::string& body, const SegmentRules& rules 
 // content, so that inserting a sentence at the top of a page cannot resurrect a dismissed echo).
 std::string normalizedForIdentity(const std::string& text);
 
+// THE VERBATIM CHECK, and the reason a model may be trusted with step 1 at all.
+//
+// `units` are lines a segmenter proposes — from a vendor since 2026-08-23. Each one is located in
+// `body` and kept only if it is genuinely there: the returned Passage carries the BODY's bytes, not
+// the model's, so a unit that was silently corrected, translated, de-swore or re-punctuated is
+// discarded rather than shown to the writer as their own sentence. Nothing here can invent text.
+//
+// The scan runs FORWARD: each unit is looked for at or after the end of the last one, so a page
+// that says the same sentence twice gives its two units two different places. A unit that is not
+// found from there is looked for from the start of the body once, which recovers a segmenter that
+// returned its units out of order, and is discarded if that fails too.
+//
+// Whitespace is the one difference tolerated. "One unit per line" means a unit spanning a soft line
+// break comes back with that newline flattened to a space, so a run of whitespace in the unit
+// matches a run of whitespace in the body. Every other byte must match exactly — case included,
+// because forgiving normalisation is how deleted text keeps matching text that is still there.
+std::vector<Passage> locateUnits(const std::string& body, const std::vector<std::string>& units);
+
 }

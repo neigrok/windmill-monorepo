@@ -80,7 +80,7 @@ selection rules below stop the cruel case arriving ten times on the worst night 
 For each page whose body changed since its last derivation, or whose corpus moved under it:
 
 ```
-1  segment    page body                    → passages                  [pure]
+1  segment    page body                    → idea units                [Segmenter]
 2  embed      each passage                 → vector                    [Embedder]
 3  reconcile  new passages vs. old         → carry span_id forward      [pure]
 4  retrieve   stratified by age band       → ~40 candidates             [repo]
@@ -103,7 +103,13 @@ writer's. Model: `claude-sonnet-5` at effort `low`, **swapped from `claude-opus-
 2026-08-09 for latency, not because anything was measured.** See *Cost and scale* for what that
 buys and what it costs; the pre-ship precision gate below has still never been run against either.
 
-If either boundary is unconfigured, the pass is a quiet no-op and no echo is written.
+**Segmenter** cuts the page into idea units, one call per page whose body moved. It is the seam that
+hands back the writer's own words, so it is the one whose answer is checked against them — see
+*Segmentation*. Model: `claude-sonnet-5` at effort `low`, the same key the curator uses.
+
+If any of the three boundaries is unconfigured, the pass is a quiet no-op and no echo is written —
+except that a deploy with no Anthropic key falls back to the old rule for step 1, which changes
+nothing, because the curator is dark in that deploy too.
 
 ## Delivery — the pipeline runs on the writer's save
 
@@ -223,35 +229,67 @@ multi-megabyte loads to do four 14 ms scans.
   few hundred megabytes; the lever, if that ever stops being affordable, is the TTL and after that a
   bound on entries.
 
-### Segmentation
+### Segmentation — a model since 2026-08-23, a rule before it
 
-Deterministic and pure. **Line breaks are hard passage boundaries** (`journal_page.body` keeps soft
-line breaks), then split within a line to land at roughly one to three sentences. This matters: a
-large fraction of nightly journalers write bare lists with no terminal punctuation, and sentence
-splitting alone turns three unrelated items into one mush passage.
+**Step 1 is a vendor call.** The page is cut into **idea units**: one thought as its writer would
+count it, so a claim and the objection they immediately raise against it stay together, and two
+unrelated remarks on one line do not.
 
-Merge any passage under ~6 words into its neighbour. Measured: passages of ≤5 words have a mean hub
-score of 18.4 versus 7.4 for ≥10 words — fragments are universal attractors.
+**Why it changed, measured on a real page.** The rule it replaced cut on line breaks, then on
+sentences, up to three of them to a passage. On this night —
 
-Everything above is built (`domain/Passage.h` — `segment` is one pure function of the body, with
-`SegmentRules{minWords = 6, maxSentences = 3}`). The next two paragraphs are **designed, not
-built**, and are kept because both are still the right answer, not because either is running.
+> блять че то я рандомно заебался, просто нет сил продолжать что-либо. еще и заболел вчера. честно
+> говоря хочется в сербию пить вино и курить дудку днями напролет.
 
-**Designed, not built — a spoken page segments exactly like a typed one.** The intent: pages with
-`source = 'spoken'` have no reliable sentence boundaries, so segment those on ASR pause boundaries
-where available and otherwise on fixed overlapping windows. Neither half can be built as it stands.
-There are no pause boundaries to read — `ports/Transcriber.h` hands back a finished `Transcript`
-and nothing else, so "where available" is never — and overlapping windows change what a *quote* is,
-from a sentence to a slice, which the surface and the dismissal hashes both key on. It needs a
-decision before it needs code. `DuePage` deliberately carries no `source` field: it was plumbed
-from the page row through the port and read by nothing, which is a claim that this rule ships.
+— three unrelated thoughts (being exhausted, having got sick, wanting to go and drink wine
+somewhere) became ONE passage, and mean pooling averaged them into a vector that matched the
+writer's own «нет сил продолжать что либо» twelve days later at **0.354**, where the clause alone
+matched at **0.950**. Retrieval never saw the thought. No threshold downstream could have rescued
+it, because nothing downstream ever received it.
 
-**Designed, not built — a passage is embedded as itself.** The intent: embed each passage with one
-sentence of surrounding context and store the span separately for quoting. Measured: bare "tired."
-matches every other "tired."; with its neighbouring sentence it matches the right kind of tired.
-Today `EchoSweep` embeds `passage.text` and stores that same text. Building it is not a small
-change — what is embedded stops being what is quoted, so it is an `embed_version` bump and a
-re-embed of every corpus, and retrieval reads one version only by design.
+**The verbatim contract, and it is the whole reason a model is allowed in front of this pipeline.**
+A unit's text must be a contiguous slice of the body, byte for byte. `locateUnits`
+(`domain/Passage.h`) finds every proposed unit in the page and **discards what is not there**: what
+is stored is the BODY's bytes, never the model's. A model that tidies the swearing, fixes the case,
+or translates has written something the reader never wrote, and the check is what stops that
+becoming a passage attributed to them. The scan runs forward, so a page saying the same sentence
+twice gives its two units two places; a unit returned out of order is looked for once from the top
+before it is dropped; a run of whitespace matches a run of whitespace, because "one unit per line"
+flattens a soft line break the writer typed.
+
+A page whose every unit failed to locate is a **failed call**, not an empty page — stored as empty
+it would settle the page and lose the night to one bad answer. `EchoSweepReport::unitsDiscarded`
+counts the drops, and above zero on an ordinary night it means the model is rewriting rather than
+cutting.
+
+**It is asked only when the BODY moved.** A corpus that moved under unchanged text changes what a
+page REACHES, never what it SAYS, so those passes read the units back out of storage
+(`DuePage::bodyMoved`, computed in SQL). Re-cutting them would buy the same answer twice — at a
+price, and with the risk of a different cut churning every span id on the page.
+
+**Without an Anthropic key it falls back to `RuleSegmenter`**, which is the old line-and-sentence
+rule (`segment`, `SegmentRules{minWords = 6, maxSentences = 3}`, still pure and still tested). That
+deploy has no curator either, so no echo can arrive from it in any case.
+
+**Known gap: nothing stamps the segmenter version on a row.** A page is due on its body or its
+corpus moving, never on the segmenter changing, so a new prompt reaches old pages only when they
+are next edited. The operator's lever until that is fixed is clearing `journal_page_curation`,
+which makes every page never-derived and re-cuts the archive over the following passes. The same
+gap exists for `embed_version` and bites harder there — a model swap silently freezes every
+already-derived page — and both want the same fix: a version column the due-ness queries read.
+
+**Designed, not built — a spoken page is cut exactly like a typed one.** The intent was to segment
+`source = 'spoken'` pages on ASR pause boundaries. There are no pause boundaries to read
+(`ports/Transcriber.h` hands back a finished `Transcript`), and an idea-unit cut does not need
+them: the model reads the prose it is given whether a mouth or a keyboard produced it. `DuePage`
+deliberately carries no `source` field.
+
+**Designed, not built — a passage is embedded as itself.** Measured: bare "tired." matches every
+other "tired."; with its neighbouring sentence it matches the right kind of tired. Today the sweep
+embeds `passage.text` and stores that same text. Building it is not a small change — what is
+embedded stops being what is quoted, so it is an `embed_version` bump and a re-embed of every
+corpus. Idea units make it less urgent than it was under the old rule, because a unit is already a
+whole thought rather than a fragment.
 
 ### Passage identity
 
@@ -681,6 +719,15 @@ this family and thinking bills as output, so `effort` is the only real cost leve
 call it a tenth, and note $3/$15 per MTok is itself introductory pricing through 2026-08-31, so the
 figure rises when it lapses. **None of the quality side of that trade is measured.** The effort sweep this
 file has asked for since it was written is still not run: the level was chosen, not found.
+
+**Segmenter, since 2026-08-23: a second call on the same key, and a hotter one.** It runs once per
+page whose BODY moved — which is every save that carried new text, where the curator runs on the
+same pages but the segmenter also runs on pages that end up proposing nothing. Its input is the
+page and its output is the page again, so it bills roughly two page-lengths per call and is the one
+seam here whose cost scales with how much somebody writes rather than with how much they reach
+back. Its system prompt is ~500 tokens, so it sits under Sonnet 5's 1024-token cache floor exactly
+as the curator's does. Not measured against a real corpus yet: no bill has been read back for it,
+and the estimate above is arithmetic, not an invoice.
 
 Four traps, each of which produces a silent failure:
 

@@ -4,6 +4,7 @@
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
 #include "products/journal/ports/JournalRepository.h"
+#include "products/journal/ports/Segmenter.h"
 #include "products/journal/ports/NudgeMailSender.h"
 #include "products/journal/ports/NudgeRepository.h"
 #include "products/journal/ports/Transcriber.h"
@@ -246,6 +247,40 @@ struct FakeNudgeMail : NudgeMailSender {
 // normalised, so two passages sharing letters sit close and a test can reason about cosine without
 // a model. `isConfigured` flips so a test can exercise the "unwired — the whole pass is a no-op"
 // path, and `failNext` returns short so a test can prove a failed embed never marks a page done.
+// Cuts a page the way the shipped RULE did — lines, then sentences — so a test that is not about
+// segmentation reads exactly as it did before step 1 became a vendor call. `units` overrides that
+// for the tests that ARE about it, including the ones that hand back text the page does not
+// contain, which is the answer the verbatim check exists for.
+struct FakeSegmenter : Segmenter {
+  bool isConfigured = true;
+  bool callSucceeds = true;
+  std::string failure = "transport";
+  std::vector<std::string> units;   // empty: fall back to the rule
+  int calls = 0;
+
+  bool configured() const override { return isConfigured; }
+  std::string version() const override { return "fake-segmenter-v1"; }
+
+  Segmentation unitsOf(const UserId&, const std::string& body) override {
+    ++calls;
+    Segmentation cut;
+    if (!callSucceeds) {
+      cut.failure = failure;
+      return cut;
+    }
+    if (units.empty()) {
+      cut.ok = true;
+      cut.passages = segment(body);
+      return cut;
+    }
+    cut.passages = locateUnits(body, units);
+    cut.discarded = static_cast<int>(units.size()) - static_cast<int>(cut.passages.size());
+    cut.ok = !cut.passages.empty();
+    if (!cut.ok) cut.failure = "schema_invalid";
+    return cut;
+  }
+};
+
 struct FakeEmbedder : Embedder {
   bool isConfigured = true;
   bool failNext = false;
@@ -395,6 +430,15 @@ public:
     pages.erase(std::remove_if(pages.begin(), pages.end(),
                                [&](const DuePage& page) { return page.day == day; }),
                 pages.end());
+  }
+
+  // The page as it stands, whether or not anything is owed on it — what the reverse edge reads to
+  // re-derive a page whose own body never moved. `bodyMoved` false is the whole point: that page's
+  // text is unchanged, so its units are read back rather than bought again.
+  std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override {
+    auto it = bodies.find(pageKey(user, day));
+    if (it == bodies.end()) return std::nullopt;
+    return DuePage{day, it->second, stamp, 0, false};
   }
 
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override {

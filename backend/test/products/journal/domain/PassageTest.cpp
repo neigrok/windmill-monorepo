@@ -264,3 +264,74 @@ TEST(normalized_identity_makes_a_passage_survive_a_reflow) {
   CHECK(normalizedForIdentity("i finally called mum about the house today.") !=
         normalizedForIdentity("i finally called mum about the house."));
 }
+
+// THE VERBATIM CHECK. Step 1 is a vendor call since 2026-08-23, so the one thing standing between a
+// model and the writer's own page is `locateUnits`: a unit is kept only if it is genuinely in the
+// body, and what is stored is the BODY's bytes rather than the model's.
+
+TEST(units_are_kept_only_where_they_are_genuinely_in_the_body) {
+  const std::string body = "заебался, нет сил продолжать\nзато завтра выходной";
+  const std::vector<Passage> located =
+      locateUnits(body, {"заебался, нет сил продолжать", "зато завтра выходной"});
+
+  REQUIRE_EQ(located.size(), std::size_t{2});
+  CHECK_EQ(located[0].text, std::string{"заебался, нет сил продолжать"});
+  CHECK_EQ(located[1].text, std::string{"зато завтра выходной"});
+  // The offsets index the body exactly, which is what the client re-locates against.
+  CHECK_EQ(body.substr(located[0].lo, located[0].hi - located[0].lo), located[0].text);
+  CHECK_EQ(body.substr(located[1].lo, located[1].hi - located[1].lo), located[1].text);
+  CHECK_EQ(located[0].ord, 0);
+  CHECK_EQ(located[1].ord, 1);
+}
+
+TEST(a_unit_the_model_rewrote_is_discarded_rather_than_shown_to_the_writer) {
+  const std::string body = "заебался, нет сил продолжать. пиздец как тяжело";
+  // Three ways a model helpfully ruins a quote: it tidies the swearing, it corrects the case, and
+  // it translates. None of the three is in the page, so none of the three is a passage.
+  const std::vector<Passage> located = locateUnits(body, {
+      "устал, нет сил продолжать",
+      "Заебался, нет сил продолжать",
+      "i am exhausted",
+      "пиздец как тяжело",
+  });
+
+  REQUIRE_EQ(located.size(), std::size_t{1});
+  CHECK_EQ(located[0].text, std::string{"пиздец как тяжело"});
+}
+
+TEST(a_unit_spanning_a_soft_line_break_still_locates) {
+  // "One unit per line" flattens the newline the writer typed into a space. That is the one
+  // difference tolerated, because the alternative is discarding every unit that crosses a wrap.
+  const std::string body = "хочу переехать в лиссабон,\nно тогда я всех оставлю здесь";
+  const std::vector<Passage> located =
+      locateUnits(body, {"хочу переехать в лиссабон, но тогда я всех оставлю здесь"});
+
+  REQUIRE_EQ(located.size(), std::size_t{1});
+  // The stored text is the BODY's — newline and all — never the flattened copy the model sent back.
+  CHECK_EQ(located[0].text, body);
+  CHECK_EQ(located[0].lo, 0);
+  CHECK_EQ(located[0].hi, static_cast<int>(body.size()));
+}
+
+TEST(the_same_sentence_twice_takes_two_different_places) {
+  const std::string body = "не знаю. надо подумать. не знаю.";
+  const std::vector<Passage> located = locateUnits(body, {"не знаю.", "надо подумать.", "не знаю."});
+
+  REQUIRE_EQ(located.size(), std::size_t{3});
+  // The scan runs forward, so the second "не знаю." anchors to the SECOND occurrence — the thing
+  // that keeps two identical lines two stable, distinct passages.
+  CHECK_EQ(located[0].lo, 0);
+  CHECK_EQ(located[2].lo, static_cast<int>(body.rfind("не знаю.")));
+  CHECK(located[1].lo > located[0].lo);
+}
+
+TEST(units_returned_out_of_order_are_still_found) {
+  const std::string body = "первое. второе. третье.";
+  const std::vector<Passage> located = locateUnits(body, {"третье.", "первое."});
+
+  // Found from the top on the second pass rather than dropped: a segmenter that reordered its
+  // answer still named real text, and discarding it would silently lose half the page.
+  REQUIRE_EQ(located.size(), std::size_t{2});
+  CHECK_EQ(located[0].text, std::string{"третье."});
+  CHECK_EQ(located[1].text, std::string{"первое."});
+}

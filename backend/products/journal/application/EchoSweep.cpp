@@ -47,9 +47,10 @@ void countPage(EchoSweepReport& report, CurationStatus status) {
 }
 }
 
-EchoSweep::EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
-                     Entitlements& entitlements, SelectionRules rules, SweepBudget budget)
-    : echoes_(echoes), embedder_(embedder), curator_(curator), clock_(clock),
+EchoSweep::EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
+                     Curator& curator, Clock& clock, Entitlements& entitlements,
+                     SelectionRules rules, SweepBudget budget)
+    : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), clock_(clock),
       entitlements_(entitlements), rules_(std::move(rules)), budget_(budget),
       heartbeat_("journal-echo") {}
 
@@ -61,12 +62,15 @@ void EchoSweep::start() {
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
                << " echoes, " << report.pagesFailed << " failed, " << report.pagesRefused
-               << " refused, " << report.pagesOverBudget
+               << " refused, " << report.unitsDiscarded << " units discarded, "
+               << report.pagesOverBudget
                << " over budget, " << report.usersOverAiBudget << " users out of AI budget";
   });
-  const bool armed = embedder_.configured() && curator_.configured();
+  const bool armed =
+      segmenter_.configured() && embedder_.configured() && curator_.configured();
   LOG_INFO << "journal echo: repair heartbeat armed, first sweep in " << kEchoFirstTickSeconds
-           << "s (" << (armed ? "embedder + curator configured" : "unwired — dark") << ")";
+           << "s (" << (armed ? "segmenter + embedder + curator configured" : "unwired — dark")
+           << ")";
 }
 
 void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done) {
@@ -87,9 +91,9 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
   EchoSweepReport report;
-  // Either boundary missing is the same quiet no-op it is on the repair path: no row is written and
+  // Any boundary missing is the same quiet no-op it is on the repair path: no row is written and
   // the page stays due, so wiring the vendors later derives it rather than skipping it forever.
-  if (!embedder_.configured() || !curator_.configured()) return report;
+  if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
   ++report.usersScanned;
 
   if (!entitlements_.sweepAllowanceFor(user).allows()) {
@@ -111,9 +115,9 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
   EchoSweepReport report;
-  // Either boundary missing makes the whole pass a quiet no-op rather than an error — the same
+  // Any boundary missing makes the whole pass a quiet no-op rather than an error — the same
   // discipline PlanComposer uses behind paste-import. No user is scanned and no row is written.
-  if (!embedder_.configured() || !curator_.configured()) return report;
+  if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
 
   for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
     ++report.usersScanned;
@@ -158,9 +162,14 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
       for (const LocalDate& inbound : echoes_.inboundPages(user, page.day)) {
         if (enqueued >= budget_.inboundPerPage) break;
         if (!queued.insert(inbound.iso()).second) continue;
-        // Re-derive it from the current body; duePages did not name it because its own body never
-        // moved, only the page it points at.
-        pages.push_back(DuePage{inbound, {}, 0, 0});
+        // Re-derive it FROM ITS CURRENT BODY, read here because duePages did not name it — its own
+        // body never moved, only the page it points at. Enqueuing it with an empty body is what
+        // this walk did until 2026-08-23, and an empty body is a page with nothing on it: step 1
+        // replaced its passages with none and its echoes with none, so the repair deleted exactly
+        // what it had come to save. A day the writer has no page on is simply skipped.
+        const std::optional<DuePage> body = echoes_.pageAt(user, inbound);
+        if (!body) continue;
+        pages.push_back(*body);
         ++enqueued;
         ++report.inboundEnqueued;
       }
@@ -175,8 +184,41 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
 
-  // 1 — segment. An empty page is finished, not owed a retry: there is nothing to reach back with.
-  const std::vector<Passage> fresh = segment(page.body);
+  // 1 — cut the page into idea units. A vendor call, so it is made only when the BODY moved: a
+  // corpus that moved under unchanged text changes what this page REACHES, never what it SAYS, and
+  // re-cutting it would buy the same units twice — at a price, and with the risk of a different
+  // answer churning every span id on the page.
+  const std::vector<KnownSpan> stored = echoes_.spansOf(user, page.day);
+  std::vector<Passage> fresh;
+  if (!page.bodyMoved && !stored.empty()) {
+    // Located rather than trusted, exactly as a model's units are: the stored text is re-found in
+    // the live body, so a page whose stamp lied cannot produce a passage that is not there.
+    std::vector<std::string> texts;
+    texts.reserve(stored.size());
+    for (const KnownSpan& span : stored) texts.push_back(span.text);
+    fresh = locateUnits(page.body, texts);
+  } else {
+    const Segmentation cut = segmenter_.unitsOf(user, page.body);
+    report.unitsDiscarded += cut.discarded;
+    // A failed CUT is a failed call, never a page with nothing on it — the same rule the curator's
+    // failures follow, and for the same reason: stored as empty it would settle the page and lose
+    // the night to one bad answer.
+    if (!cut.ok) {
+      outcome.status = statusFor(cut.failure);
+      outcome.error = "segmenter: " + cut.failure;
+      // A refusal settles the page here exactly as it does at the curator (*A refusal is final*):
+      // a vendor declining to touch this body declines it again in six hours, and the bodies that
+      // draw one are the heaviest a journal holds. So the page ends carrying NOTHING rather than
+      // whatever an earlier body's pass left standing — the spans are deliberately left alone,
+      // because they still describe the text that produced them and nothing has replaced it.
+      if (outcome.status == CurationStatus::refused)
+        echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
+      return outcome;
+    }
+    fresh = cut.passages;
+  }
+
+  // An empty page is finished, not owed a retry: there is nothing to reach back with.
   if (fresh.empty()) {
     echoes_.replaceSpans(user, page.day, {}, embedder_.version(), page.bodyStampMs);
     echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
@@ -200,7 +242,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
 
   // 3 — reconcile, so a passage whose text is unchanged keeps its identity however far down the
   // page it moved. This is what stops an inserted sentence re-pointing every inbound echo.
-  const std::vector<IdentifiedPassage> carried = reconcile(echoes_.spansOf(user, page.day), fresh);
+  const std::vector<IdentifiedPassage> carried = reconcile(stored, fresh);
   std::vector<SpanWrite> writes;
   writes.reserve(carried.size());
   for (std::size_t i = 0; i < carried.size(); ++i)

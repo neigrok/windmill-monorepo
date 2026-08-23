@@ -6,6 +6,7 @@
 #include "products/journal/ports/Curator.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
+#include "products/journal/ports/Segmenter.h"
 
 #include <cstdint>
 #include <functional>
@@ -32,8 +33,10 @@ struct EchoExplanation {
   std::string body;
   std::uint64_t bodyStampMs = 0;
   bool due = false;                     // would a save right now derive this page at all
+  bool segmenterConfigured = false;
   bool embedderConfigured = false;
   bool curatorConfigured = false;
+  std::string segmentVersion;
   std::string embedVersion;
   std::string curatorVersion;
   std::string error;                    // the embedder call failed; every field below is empty
@@ -41,7 +44,9 @@ struct EchoExplanation {
   int corpus = 0;                       // passages stored under THIS embedding version
   int storedSpans = 0;                  // this page's own stored passages
   int history = 0;                      // corpus minus this page
-  std::vector<Passage> passages;        // what the segmenter made of the body tonight
+  std::vector<Passage> passages;        // the idea units the segmenter cut the body into
+  int unitsDiscarded = 0;               // units it proposed that are not in the body, so dropped
+  bool unitsFromStorage = false;        // true: the stored units were reused, no vendor call made
   PageSelection selection;              // the traces — the same call a save runs
   std::vector<Verdict> verdicts;        // the curator's, when it was asked
   std::string curationFailure;          // and how the call failed, when it did
@@ -56,11 +61,15 @@ struct ExplainRequest {
   int echoesPerPage = 10;
   int nearest = 20;      // how many near misses to report per trigger; 0 buys none
   bool curate = false;   // ask the vendor too — the one part of this that costs money
+  // Cut the page again rather than reading back the units storage already holds. Off by default:
+  // an explanation of what a page reaches TODAY should be read against the units it actually
+  // carries, and a fresh cut is a second vendor call whose answer may differ from the stored one.
+  bool recut = false;
 };
 
 class EchoExplainer {
 public:
-  EchoExplainer(EchoRepository& echoes, Embedder& embedder, Curator& curator,
+  EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
                 PageService& pages);
 
   EchoExplanation explain(const UserId& user, const ExplainRequest& request);
@@ -72,6 +81,7 @@ public:
 
 private:
   EchoRepository& echoes_;
+  Segmenter& segmenter_;
   Embedder& embedder_;
   Curator& curator_;
   PageService& pages_;

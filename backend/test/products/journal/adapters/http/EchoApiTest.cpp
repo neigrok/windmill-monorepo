@@ -31,6 +31,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, *tokens, *clock, oauth, footprint, "https://windmill.works");
   std::shared_ptr<FakeEchoRepository> echoes = std::make_shared<FakeEchoRepository>();
+  FakeSegmenter segmenter;
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeSubscriptionRepository subscriptions;
@@ -43,9 +44,10 @@ struct Harness {
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, embedder, curator, *clock, entitlements,
-                                          SelectionRules{}, SweepBudget{})),
-        explainer(std::make_shared<EchoExplainer>(*echoes, embedder, curator, pageService)),
+      : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock,
+                                          entitlements, SelectionRules{}, SweepBudget{})),
+        explainer(std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator,
+                                                  pageService)),
         api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,
                                       std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
                                       std::move(adminToken))) {}

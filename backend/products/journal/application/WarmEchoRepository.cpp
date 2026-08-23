@@ -107,6 +107,10 @@ std::optional<DuePage> WarmEchoRepository::duePage(const UserId& user, const Loc
                                                    std::uint64_t corpusStamp) {
   return storage_.duePage(user, day, corpusStamp);
 }
+std::optional<DuePage> WarmEchoRepository::pageAt(const UserId& user, const LocalDate& day) {
+  return storage_.pageAt(user, day);
+}
+
 std::vector<KnownSpan> WarmEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   return storage_.spansOf(user, day);
 }

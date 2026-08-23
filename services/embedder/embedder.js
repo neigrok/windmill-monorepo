@@ -1,11 +1,16 @@
-// The model, configured once. Every value in this file must equal the browser's
-// (web/src/products/journal/search/neural/embedder.worker.js), because the vectors this process
-// computes and the vectors that worker computes are compared to each other: the server embeds a
-// journal passage for echoes, the browser embeds the same prose for on-device search, and one index
-// is seeded from the other. A divergence here raises no error anywhere — it just makes retrieval
-// quietly worse forever. That is the whole reason this sidecar exists instead of an ONNX call from
-// C++: identity with the browser is held by running the same library over the same files, not by
-// reimplementing mean pooling and L2 normalisation in another language and hoping.
+// The model, configured once.
+//
+// CORRECTED 2026-08-23. This file used to say the vectors here and the browser's are compared to
+// each other, one index seeded from the other. They are not, and never have been: no endpoint
+// serves a vector, the search worker embeds the writer's prose on the device from the page bodies
+// it already has, and the two indexes never meet. Checked before this line was rewritten —
+// journalApi.js has no vector route and web/src/products/journal/search/ never imports it.
+//
+// What is true, and is the reason this sidecar exists rather than an ONNX call from C++: running
+// the same library over the same files is how you get vectors you can reason about at all, rather
+// than reimplementing mean pooling and L2 normalisation in another language and hoping. Keeping
+// the two surfaces on the same weights stays DESIRABLE — it makes one measurement describe both —
+// but it is a preference, not a constraint, and either side can move without breaking the other.
 //
 // The browser prefixes QUERIES ("Represent this sentence for searching relevant passages: ") and
 // leaves PASSAGES bare. This sidecar embeds passages only, so nothing is prefixed here — adding a

@@ -6,6 +6,7 @@
 #include "products/journal/ports/Curator.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
+#include "products/journal/ports/Segmenter.h"
 
 #include "platform/application/Heartbeat.h"
 
@@ -21,6 +22,10 @@ struct EchoSweepReport {
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
+  // Units a segmenter proposed that are NOT in the page's body, and were therefore discarded rather
+  // than stored. It is the honesty counter for the one seam that could put words in the writer's
+  // mouth: a number above zero on a normal night means the model is rewriting rather than cutting.
+  int unitsDiscarded = 0;
   // Pages the vendor declined to judge. Its own counter rather than a share of `pagesFailed`,
   // because it is the opposite kind of number: a failure is work still owed and this is work that
   // will never be done and is no longer owed. It is also the only signal anyone gets that a body is
@@ -51,6 +56,12 @@ struct SweepBudget {
 //
 //   segment → embed → reconcile → retrieve → select → curate → persist
 //
+// Step 1 is a VENDOR call since 2026-08-23 (ports/Segmenter.h): a page is cut into idea units by a
+// model rather than into lines and sentences by a rule, because the rule put three unrelated
+// thoughts in one vector and retrieval never saw any of them. It is asked only when the page's
+// BODY moved — a corpus that moved under unchanged text changes what the page reaches, never what
+// it says, so those passes read the units back out of storage and cost nothing.
+//
 // `derivePage` is the DELIVERY path — one page, the one a writer just saved, run the moment they
 // stop typing (EchoDerivations owns the when). `run` is the REPAIR path: inbound reverse edges,
 // corpus-stamp backfill, pages a vendor blip failed, and the per-user budget drain. Both share
@@ -80,8 +91,8 @@ struct SweepBudget {
 // a background spend, and the ceiling does not care which trigger reached it.
 class EchoSweep {
 public:
-  EchoSweep(EchoRepository& echoes, Embedder& embedder, Curator& curator, Clock& clock,
-            Entitlements& entitlements, SelectionRules rules, SweepBudget budget);
+  EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
+            Clock& clock, Entitlements& entitlements, SelectionRules rules, SweepBudget budget);
 
   void start();
 
@@ -113,6 +124,7 @@ private:
                          EchoSweepReport& report);
 
   EchoRepository& echoes_;
+  Segmenter& segmenter_;
   Embedder& embedder_;
   Curator& curator_;
   Clock& clock_;

@@ -189,7 +189,9 @@ TEST(two_derivations_for_one_user_cost_one_corpus_load) {
   storage.addDuePage(uid("u1"), ld("2026-06-01"), kMayLine);
 
   WarmEchoRepository warm{storage, clock, kTtlMs};
-  EchoSweep sweep{warm, embedder, curator, clock, entitlements, SelectionRules{}, SweepBudget{}};
+  FakeSegmenter segmenter;
+  EchoSweep sweep{warm,    segmenter,    embedder,         curator,
+                  clock,   entitlements, SelectionRules{}, SweepBudget{}};
 
   CHECK_EQ(sweep.derivePage(uid("u1"), ld(kMay)).pagesDerived, 1);
   CHECK_EQ(sweep.derivePage(uid("u1"), ld("2026-06-01")).pagesDerived, 1);

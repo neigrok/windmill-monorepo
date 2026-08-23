@@ -36,7 +36,9 @@ struct LiveStack {
   FakeSubscriptionRepository subscriptions;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subscriptions, usage};
-  EchoSweep sweep{echoes, embedder, curator, clock, entitlements, SelectionRules{}, SweepBudget{}};
+  FakeSegmenter segmenter;
+  EchoSweep sweep{echoes,  segmenter,    embedder,         curator,
+                  clock,   entitlements, SelectionRules{}, SweepBudget{}};
 
   void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
 };

@@ -40,10 +40,20 @@ struct SweepLedger {
   void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
 };
 
+// The rule segmenter by default, so a test that is not about step 1 cuts pages exactly as the
+// shipped rule used to and reads unchanged. `sweepCutBy` is the overload for the tests that hand
+// the sweep a segmenter of their own.
 EchoSweep sweepOver(FakeEchoRepository& echoes, FakeEmbedder& embedder, FakeCurator& curator,
                     FakeClock& clock, SweepLedger& ledger) {
-  return EchoSweep{echoes,             embedder,          curator, clock,
-                   ledger.entitlements, SelectionRules{}, SweepBudget{}};
+  static FakeSegmenter rule;
+  return EchoSweep{echoes,  rule,                embedder,         curator,
+                   clock,   ledger.entitlements, SelectionRules{}, SweepBudget{}};
+}
+
+EchoSweep sweepOver(FakeEchoRepository& echoes, FakeSegmenter& segmenter, FakeEmbedder& embedder,
+                    FakeCurator& curator, FakeClock& clock, SweepLedger& ledger) {
+  return EchoSweep{echoes,  segmenter,           embedder,         curator,
+                   clock,   ledger.entitlements, SelectionRules{}, SweepBudget{}};
 }
 
 }
@@ -315,8 +325,9 @@ TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
   }
 
   SweepLedger ledger;
-  EchoSweep sweep{echoes,              embedder,         curator, clock,
-                  ledger.entitlements, SelectionRules{}, SweepBudget{5, 20}};
+  FakeSegmenter segmenter;
+  EchoSweep sweep{echoes,  segmenter,           embedder,         curator,
+                  clock,   ledger.entitlements, SelectionRules{}, SweepBudget{5, 20}};
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 5);
@@ -374,4 +385,91 @@ TEST(a_user_with_room_in_the_background_bucket_sweeps_and_is_billed_by_name) {
   REQUIRE_EQ(ledger.usage.asked.size(), std::size_t{1});
   CHECK_EQ(ledger.usage.asked[0].product, std::string("journal"));
   CHECK(ledger.usage.asked[0].user == uid("u1"));
+}
+
+// THE REVERSE EDGE, which until 2026-08-23 had no test at all — and did the opposite of its job.
+// A page whose passages moved has to be chased back through every page holding an echo INTO it, so
+// those pages re-derive against text that still exists. The walk enqueued each of them carrying an
+// EMPTY body, and an empty body is a page with nothing on it: step 1 replaced its spans with none
+// and its echoes with none. Walking the edge deleted exactly what the edge exists to repair.
+TEST(the_reverse_edge_re_derives_the_page_pointing_at_the_one_that_moved) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  FakeSegmenter segmenter;
+
+  // January is the page everything points at, and it is the one being re-derived this pass.
+  // February already holds an echo into it, and its own body has not moved.
+  const std::string february = "2026-02-01";
+  const std::string februaryLine = "kotlin again today, and it still feels like the right call.";
+  echoes.addUser(uid("u1"));
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, embedder.embed({kOldLine})[0]);
+  echoes.addDuePage(uid("u1"), ld(kOldDay), kOldLine);
+  echoes.plantPage(uid("u1"), ld(february), februaryLine);
+  echoes.plantSpan(uid("u1"), ld(february), 21, februaryLine, embedder.embed({februaryLine})[0]);
+  CuratedEchoes standing;
+  standing.curatorVersion = "fake-curator-v1";
+  standing.rows.push_back(EchoRow{21, ld(kOldDay), 11, 0.8f, 0.9f, true});
+  echoes.replaceEchoes(uid("u1"), ld(february), standing);
+  echoes.inbound[FakeEchoRepository::pageKey(uid("u1"), ld(kOldDay))] = {ld(february)};
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.inboundEnqueued, 1);
+  // February still has its passage. Before the fix this was 0: the walk wrote an empty set over it.
+  // REQUIRE, not CHECK — the pre-fix behaviour leaves nothing to index, and a crash here takes
+  // every later case in this binary down with it.
+  REQUIRE_EQ(echoes.spansOf(uid("u1"), ld(february)).size(), std::size_t{1});
+  CHECK_EQ(echoes.spansOf(uid("u1"), ld(february))[0].text, februaryLine);
+  // And it kept the identity it already had, which is what every echo aimed at it points to.
+  CHECK_EQ(echoes.spansOf(uid("u1"), ld(february))[0].spanId, std::int64_t{21});
+  // Its body never moved, so the segmenter is not asked about it a second time — the units come
+  // back off storage and the page costs the pass nothing at the vendor.
+  CHECK_EQ(segmenter.calls, 1);
+}
+
+TEST(a_segmenter_that_fails_leaves_the_page_owed_and_its_passages_alone) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  segmenter.callSucceeds = false;
+  segmenter.failure = "rate_limited";
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  // A failed CUT is a failed call: nothing is written, so the page's stamps never move and the next
+  // pass owes it. Stored as a page with nothing on it, one blip would have cost it its echoes.
+  CHECK_EQ(report.pagesFailed, 1);
+  CHECK_EQ(report.pagesDerived, 0);
+  CHECK_EQ(echoes.spansOf(uid("u1"), ld(kNewDay)).empty(), true);
+  CHECK_EQ(curator.calls, 0);
+  REQUIRE_EQ(echoes.outcomes.size(), std::size_t{1});
+  CHECK_EQ(echoes.outcomes[0].error, std::string{"segmenter: rate_limited"});
+}
+
+TEST(a_unit_the_model_invented_never_becomes_a_passage_of_the_writers) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  // One real unit and one the model wrote itself. Only the writer's own words may be stored.
+  segmenter.units = {kNewLine, "and i have never been happier about it"};
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.unitsDiscarded, 1);
+  REQUIRE_EQ(echoes.spansOf(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
+  CHECK_EQ(echoes.spansOf(uid("u1"), ld(kNewDay))[0].text, kNewLine);
 }
