@@ -43,7 +43,9 @@ struct EchoExplanation {
 
   int corpus = 0;                       // passages stored under THIS embedding version
   int storedSpans = 0;                  // this page's own stored passages
-  int history = 0;                      // corpus minus this page
+  // The corpus minus this page — what retrieval is actually judged against. Read at the top of the
+  // run, before any early return, so the count is never the answer to a question nobody asked.
+  std::vector<Vectored> history;
   std::vector<Passage> passages;        // the idea units the segmenter cut the body into
   int unitsDiscarded = 0;               // units it proposed that are not in the body, so dropped
   bool unitsFromStorage = false;        // true: the stored units were reused, no vendor call made

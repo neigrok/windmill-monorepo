@@ -67,6 +67,17 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
                    PipelineVersions{segmenter_.version(), embedder_.version()})
           .has_value();
 
+  // The corpus, read BEFORE anything can return early. It used to be read at step 4, so an empty
+  // page — or an unwired embedder — answered `corpus: 0`, which reads as "this account has no
+  // passages" when it means "nobody looked". A debug door that says something false about the
+  // corpus is worse than one that says nothing.
+  if (explained.embedderConfigured) {
+    const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
+    explained.corpus = static_cast<int>(corpus.size());
+    for (const Vectored& span : corpus)
+      if (!(span.day == request.day)) explained.history.push_back(span);
+  }
+
   // 1 — the idea units. Read back from storage by default, because what the page reaches today was
   // decided by the units it actually carries; `recut=true` buys a fresh cut, which is how a prompt
   // change is tried against a real night.
@@ -107,14 +118,9 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
     tonight.push_back(Vectored{carried[i].spanId != 0 ? carried[i].spanId : --provisional,
                                request.day, carried[i].passage.text, vectors[i]});
 
-  // 4 — retrieve. The corpus as retrieval sees it: ONE embedding version, and the page's own
-  // stored passages held out, because tonight's are the freshly embedded ones above.
-  const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
-  explained.corpus = static_cast<int>(corpus.size());
-  std::vector<Vectored> history;
-  for (const Vectored& span : corpus)
-    if (!(span.day == request.day)) history.push_back(span);
-  explained.history = static_cast<int>(history.size());
+  // 4 — retrieve, from the corpus read at the top. The page's own stored passages are held out,
+  // because tonight's are the freshly embedded ones above.
+  const std::vector<Vectored>& history = explained.history;
 
   std::set<std::pair<std::int64_t, std::int64_t>> waved;
   for (const SpanPair& pair : echoes_.dismissalsOn(user, request.day))

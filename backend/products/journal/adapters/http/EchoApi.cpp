@@ -186,7 +186,7 @@ Json::Value toJson(const EchoExplanation& explained) {
   // Under THIS embedding version only: a version bump leaves the old vectors unreachable, which
   // reads to a user as echoes simply stopping, so the number has to be visible here.
   corpus["spans"] = explained.corpus;
-  corpus["history"] = explained.history;
+  corpus["history"] = static_cast<int>(explained.history.size());
   body["corpus"] = corpus;
 
   Json::Value passages(Json::arrayValue);
