@@ -1,17 +1,16 @@
 # Windmill Roadmap — product design
 
-*Since 2026-07-31 this is the `roadmap/` folder of the one merged **Windmill Design
-System** project — shared foundations sit one level up; drift ledger: `../consistency.md`.*
+*Roadmap's written canon. Brand-wide foundations are in `../guidelines/` and
+`../brand-foundations.md`; drift ledger: `../consistency.md`.*
 
 The RPG skill-tree app: steps are nodes, dependencies are branching paths, finishing one
 step unlocks whatever comes next. This project holds everything whose subject is **the
 tree** — the product's own components, its feature canon, and the explorations behind it.
 
-**The design system is inherited, not copied.** Tokens, themes, and the product-neutral
-component kit (core · forms · feedback · navigation) live in the *Windmill Design System*
-project — which is now the root of this very project, one level up from this folder
-(`../tokens/`, `../themes/`, `../components/`). Never fork a token into this folder —
-change it at the source.
+**The design system is inherited, not copied.** Tokens and the product-neutral component kit
+(core · forms · feedback · navigation) are shipped code — `web/src/styles/tokens/` and
+`web/src/design-system/` — and drawn in the Windmill · Design System Figma file. Never fork a
+token into this folder; change it at the source.
 
 ## What lives here
 
@@ -99,13 +98,13 @@ match.
 
 Also pending repo-side: the repo's `src/components/` and `src/styles/tokens/colors.css` are
 stale forks of pre-kind×tier versions (old olive/gold state=colour SkillNode, the retired
-`--node-active-*` gold ramp) and need a re-copy — tokens from the Design System project, the
+`--node-active-*` gold ramp) and need a re-copy — tokens from `web/src/styles/tokens/`, the
 tree components from here.
 
 ## What is deliberately *not* here
 
 - **Foundations** — colour, type, spacing, radius, shadow, motion beats, the brand theming
-  recipe. Design System project.
+  recipe. `../brand-foundations.md` and `../guidelines/system-architecture.md`.
 - **X1 motion language** — brand-wide, so it stays in the design system
   (`guidelines/motion-language.md`); ceremonies here cite it rather than inventing motion.
 - **The marketing site, pricing, and transactional email** — Windmill Common marketing

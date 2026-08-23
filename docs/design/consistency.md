@@ -1,7 +1,7 @@
-# Consistency ledger — one project, four products
+# Consistency ledger — one brand, four products
 
-The satellites were merged in (2026-07-31) precisely so cross-product drift becomes
-visible and fixable in one place. Each entry states what diverged, the exact values, and
+One ledger, so cross-product drift is visible and fixable in one place rather than
+rediscovered per surface. Each entry states what diverged, the exact values, and
 the direction the fix flows. Delete an entry when its fix lands (it moves to **Closed**
 below, with what landed); add one whenever a product copy and the root disagree.
 
@@ -1124,5 +1124,5 @@ deliberately did not decide on its own authority.
 - **Merge-time reference fixes** (old §6, done at merge): gym/journal boards
   `_ds/…/` → `../`; roadmap boards gained one `../`; marketing's dangling roadmap links
   resolve via `../../../roadmap/explorations/…`. `_ds_manifest.json` is regenerated from
-  the merged layout (the hand-patched interim copy is gone); `_adherence.oxlintrc.json`
+  the current layout (the hand-patched interim copy is gone); `_adherence.oxlintrc.json`
   stays generated and untouched.

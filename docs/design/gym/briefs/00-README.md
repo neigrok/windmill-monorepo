@@ -39,10 +39,11 @@ on screen* rather than into a blank.
 
 ## Where the canon lives
 
-The Windmill Design System is the root of this merged project, one level up (`../`) — tokens,
-type, motion, the component library. Gym borrows all of it. Journal's product canon (the
-sibling `../journal/` folder) is the closest worked example of a *second* product's identity: it owns a scoped
-palette, not the global theme.
+The brand-wide canon sits beside this folder — `../../guidelines/`, `../../brand-foundations.md`
+— and the shipped tokens, type and component library are `web/src/styles/tokens/` and
+`web/src/design-system/`. Gym borrows all of it. Journal's product canon (`../../journal/`) is the
+closest worked example of a *second* product's identity: it owns a scoped palette, not the global
+theme.
 
 ## The one rule that shapes every brief
 

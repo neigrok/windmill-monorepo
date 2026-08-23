@@ -1,8 +1,7 @@
-# Windmill — Design briefs · grounded against the Windmill Design System
+# Windmill — Design briefs · grounded against the design canon
 
-> **Gym's briefs are at `docs/design/gym/briefs/`.** Written 2026-07-29 into
-> their own "Gym workout plan" project (`7f9591c1…`), which the 2026-07-31 merge tombstoned —
-> everything now lives in `docs/design/` beside roadmap's, journal's and marketing's. The set is
+> **Gym's briefs are at `docs/design/gym/briefs/`.** Written 2026-07-29, and they now sit
+> beside roadmap's, journal's and marketing's. The set is
 > `00-README` plus context and G1–G8: the set logger (G1), the scoped palette (G2), the log (G3),
 > routines and the plan snapshot (G4), the PR moment (G5), the connected log / MCP wedge (G6),
 > the strength tree (G7), and the web as mirror (G8, added after the 2026-08-02 two-surface

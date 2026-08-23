@@ -17,16 +17,12 @@ rather than from a mockup:
 A screen is drawn in Figma. A decision, a constraint, an open question, or the reason behind
 either is written here. Neither is the other's backup.
 
-## Where this came from
+## Two things are deliberately not here
 
-Until 2026-08-23 both halves lived in a claude.ai Design project (`a8e8995c…`). The drawings
-moved to Figma; the writing moved here; the project is **retired** — do not go back to it, and
-do not stand up a third home.
-
-Two things did not come with it, by owner decision on the day: the ~36 **explorations** (the
-alternatives considered and rejected) and the `uploads/` folder (photos and sketches behind
-some decisions). They were **dropped deliberately, not lost** — worth knowing if you go looking
-for the reasoning behind a call and find only the call.
+The **explorations** — the alternatives that were considered and rejected — and the sketches and
+photographs behind some decisions. Both were **dropped on purpose, not lost**, when this canon
+landed here on 2026-08-23. Worth knowing if you go looking for the reasoning behind a call and
+find only the call.
 
 ## What is here
 
@@ -40,14 +36,14 @@ for the reasoning behind a call and find only the call.
 | `marketing/` | The landing-family briefs (00–03), the pricing story, the transactional-email spec. |
 | `AUTHORING.md` | Two rules that bind anyone drawing a Windmill screen: phone reach, and entering a product room by scope rather than by value. |
 | `brand-identity-brief.html` | The logo brief. **No logo has ever been drawn** — every mark is still the Baloo wordmark. |
-| `design-system-readme.md` | The Design System project's own readme, carried whole. Its brand foundations (voice, colour behaviour, type, iconography, the no-invented-logo policy) are canon; its *layout* sections describe the retired project and are history. |
+| `brand-foundations.md` | The brand canon: direction, voice, visual foundations, iconography, and the standing policies on fonts and the logo. |
 
-## Reading a citation — these files point at a project that is gone
+## Reading a citation
 
-**These 54 files were carried verbatim, so their internal citations were not rewritten.** There
-are ~174 of them and they name paths that exist nowhere in this repo. That is deliberate —
-editing canon while moving it is how you lose it — but it means you have to know how to resolve
-a reference. Use this table.
+**These files were carried verbatim, so their internal citations were not rewritten.** There are
+~174 of them and they name paths that exist nowhere in this repo — they were written against an
+older layout. That is deliberate: editing canon while moving it is how you lose it. But it means
+you have to know how to resolve a reference. Use this table.
 
 | A doc says | It means | Resolves to |
 |---|---|---|
@@ -60,8 +56,8 @@ a reference. Use this table.
 | `roadmap/components/tree/…` | the tree components | `web/src/products/roadmap/ui/tree/` |
 | `ui_kits/marketing/*.html` | the shipped static pages | `web/public/` |
 | `ui_kits/email/*` | the mail templates | `web/emails/` |
-| `_ds_kit.js` · `_ds_bundle.js` · `MOVED.md` | project plumbing | **gone**, and nothing replaces them |
-| `19f67675…` `99259a8c…` `7f9591c1…` `5b6ff5b3…` | the four pre-2026-07-31 satellite projects | dead, and dead before this move |
+| `_ds_kit.js` · `_ds_bundle.js` | old build plumbing | **gone**, and nothing replaces them |
+| a bare hex id in a citation | an older canon store | dead — ignore it |
 
 **In every case the repo is the truth and Figma is the picture.** A citation is a pointer to
 intent, not evidence that something exists.
@@ -86,6 +82,7 @@ asserted that ranking handled abandoned trees while the column it ranked on igno
 marks entirely. Requirement phrasing is what tells the build side a line is load-bearing.
 
 The same rule carries the standing one from the root `CLAUDE.md`: **a line that stops being true
-is fixed in the wave that made it false.** That is why moving these files also meant correcting
-fourteen pointers across eleven other files in the repo — including two the first sweep missed,
-because it only searched `.md` and `.txt` and the stragglers were in a `.css` and a `.swift`.
+is fixed in the wave that made it false.** That is why landing these files here also meant
+correcting fourteen pointers across eleven other files in the repo — including two the first
+sweep missed, because it only searched `.md` and `.txt` and the stragglers were in a `.css` and
+a `.swift`.

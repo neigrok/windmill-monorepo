@@ -1,14 +1,14 @@
 # Windmill Common — marketing & transactional surfaces
 
-*Since 2026-07-31 this is the `marketing/` folder of the one merged **Windmill Design
-System** project — the mirror's source sits one level up; drift ledger: `../consistency.md`.*
+*The written canon for the brand-level surfaces. Brand-wide foundations are in
+`../guidelines/` and `../brand-foundations.md`; drift ledger: `../consistency.md`.*
 
 The brand-level surfaces that sit *around* the products rather than inside one: the
 windmill.works site, the legal shelf, the commercial story, and every piece of mail the
 platform sends.
 
 **The design system is inherited, not copied.** Tokens, themes, and the product-neutral
-component kit live at the root of this merged project (one level up) and are mirrored here
+component kit are shipped code (`web/src/styles/tokens/`, `web/src/design-system/`) and were mirrored here
 read-only as `styles.css`, `tokens/`, `themes/` and `_ds_kit.js` in this folder (they were
 missing, so every page's token references resolved to nothing — mirrored in on 29 Jul 2026).
 Never fork a token into this mirror — change it at the source, then re-mirror
@@ -61,6 +61,6 @@ product's mail; the family and its spec live here.
 
 ## What is deliberately *not* here
 
-- **Foundations and the brand identity brief** — Design System project.
+- **Foundations and the brand identity brief** — `../brand-foundations.md` and `../brand-identity-brief.html`.
 - **Anything whose subject is the tree** — Roadmap project. The landing page embeds the demo
   tree, but the tree's own canon (layout contract, node states, share cards) lives there.
