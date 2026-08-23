@@ -64,12 +64,31 @@ a:hover {
   opacity: 0.72;
 }
 
-/* Respect users who prefer less motion. */
+/* Respect users who prefer less motion — by taking the theatre, not the event.
+
+   What this kills, everywhere and unconditionally: looping motion (every animation runs exactly
+   once, so no breath, shimmer or pulse is left running under a reader who asked for stillness) and
+   transitions (0.001ms rather than 0s so `transitionend` still fires and JS waiting on it never
+   hangs).
+
+   What this deliberately does NOT kill: the duration of a finite animation. The old rule clamped
+   `animation-duration` to 0.001ms on `*` with `!important`, which no author could out-rank — a
+   class-level, non-important declaration loses to an important one at any specificity. That
+   collapsed the still forms products author *for* this preference (journal's flare-still, the
+   numeral fade, the bed dip, both scale blooms), and because those blooms remove themselves on
+   `animationend` they were gone before a frame rendered: the reader lost the completion moment
+   the design owes them. It also forced two products to re-assert their own animations with
+   `!important` just to survive it (roadmap's list flash, the phone view cross-fade).
+
+   The author contract that replaces it: an animation that must not play under reduced motion is
+   turned off where it is authored — `animation: none` inside the owning stylesheet's own
+   `@media (prefers-reduced-motion: reduce)` block, which is the house pattern already — or its
+   keyframes are redefined motionless there, as tokens/motion.css does for the shared waveforms.
+   Looping never needs that treatment: this rule already bounds it. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }

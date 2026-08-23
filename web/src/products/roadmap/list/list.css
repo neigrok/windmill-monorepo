@@ -1396,19 +1396,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Colour ramps stay under reduced motion; only the smooth scroll (handled in JS) and the movement transitions below are dropped. */
-  .st-list-row--flash {
-    animation: st-list-flash 1200ms var(--ease-standard) !important;
-  }
-  .st-list-row--flash .st-list-row-line--swipe {
-    animation: st-list-flash 1200ms var(--ease-standard) !important;
-  }
-  .st-list-card {
-    animation: st-list-card-in 150ms var(--ease-soft) !important;
-  }
-  /* The way back arrives as a fade, never a drop. */
+  /* The row flash and the card fade are colour and opacity only, so they stand as authored and need
+     no rule here. Only movement is dropped: the smooth scroll (handled in JS), the way back's drop,
+     and the transitions below. */
   .st-list-back {
-    animation: st-list-card-in 150ms var(--ease-soft) !important;
+    animation: st-list-card-in 150ms var(--ease-soft);
   }
   /* Movement, dropped: the chevron rotate applies instantly, and the progress fills snap to width. */
   .st-list-chevron {

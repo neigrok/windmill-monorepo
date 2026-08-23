@@ -64,3 +64,19 @@
   66%      { box-shadow: 0 0 0 4.5px var(--nd-glow), 0 0 28px var(--nd-glow); }
   88%      { box-shadow: 0 0 0 3px var(--nd-glow), 0 0 16px var(--nd-glow); }
 }
+
+/* Reduced motion: the shared waveforms lose their movement and keep their event. Same treatment as
+   wm-ember above — redefine the keyframes rather than cancel the animation, so every consumer of a
+   token waveform (the shell, the design system, all three products) is covered at once and none of
+   them has to know about the preference. An arrival still arrives; it just no longer travels.
+   global.css bounds iteration count; movement is bounded here. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes wm-fade-in-up {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes wm-pop-in {
+    0% { opacity: 0; }
+    60%, 100% { opacity: 1; }
+  }
+}

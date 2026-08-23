@@ -553,6 +553,22 @@ button.gym-set:focus-visible .gym-set-fix,
   from { transform: translateY(100%); }
   to { transform: none; }
 }
+/* Reduced motion: the sheet, the toast and the picker keep their arrival and lose the travel.
+   Redefined rather than cancelled, the way tokens/motion.css treats the shared waveforms — every
+   consumer of these two waveforms is covered at once, and a sheet that fades in still reads as
+   something that arrived, where `animation: none` would have it blink into place. Dropping the
+   `transform` keys also hands .gym-toast back its own `translateX(-50%)`, which gym-rise's
+   `transform` had been overriding for the length of the run. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes gym-rise {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes gym-sheet {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
 
 /* The mark of a session running somewhere else, never beside a control that could drive it. */
 .gym-live-dot {
