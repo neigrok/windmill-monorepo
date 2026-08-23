@@ -67,7 +67,7 @@ jobs:
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # The commit that passed, not the branch head — see the header. Empty on workflow_dispatch,
           # where checkout's default (the branch this run was dispatched from) is what is wanted.

@@ -44,7 +44,7 @@ jobs:
   build-and-test:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Printed so a red build can be read against the exact toolchain that produced it.
       - run: xcodebuild -version
