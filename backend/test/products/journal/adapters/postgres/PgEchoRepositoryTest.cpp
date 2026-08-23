@@ -755,3 +755,55 @@ TEST(pg_echo_clearing_a_page_leaves_it_carrying_nothing) {
   repo.clearEchoes(UserId{kMine}, LocalDate{day});
   CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{day}).empty(), true);
 }
+
+// WHAT HAPPENS TO AN ECHO WHEN THE WRITER TAKES THE WORDS BACK. ECHOES.md promises deletion
+// propagates, and nothing tested it. Two independent layers have to hold: a row whose passage is
+// gone can never be SERVED (both spans join INNER), and it stops being STORED the next time the
+// page that carries it is derived. The first is what the reader experiences; the second is what
+// keeps the table from filling with echoes into text nobody wrote any more.
+TEST(pg_echo_a_passage_the_writer_deletes_takes_its_echo_with_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string tonight = "2026-05-01";
+  const std::string older = "2026-01-01";
+  writePage(kMine, tonight, "i like c++ now.");
+  writePage(kMine, older, "i want to learn c++.");
+  PgEchoRepository repo{pgTestPool()};
+
+  const std::vector<Vectored> trigger = repo.replaceSpans(
+      UserId{kMine}, LocalDate{tonight},
+      {SpanWrite{0, Passage{0, 0, 15, "i like c++ now."}, {1.0f, 0.0f}}}, "e1", 1);
+  const std::vector<Vectored> match = repo.replaceSpans(
+      UserId{kMine}, LocalDate{older},
+      {SpanWrite{0, Passage{0, 0, 20, "i want to learn c++."}, {0.9f, 0.1f}}}, "e1", 1);
+  REQUIRE_EQ(trigger.size(), std::size_t{1});
+  REQUIRE_EQ(match.size(), std::size_t{1});
+
+  CuratedEchoes stored;
+  stored.curatorVersion = "c1";
+  stored.rows.push_back(
+      EchoRow{trigger[0].spanId, LocalDate{older}, match[0].spanId, 0.8f, 0.9f, true});
+  repo.replaceEchoes(UserId{kMine}, LocalDate{tonight}, stored);
+  REQUIRE_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{tonight}).size(),
+             std::size_t{1});
+
+  // The writer empties the older page. Its derivation replaces that day's passages with none —
+  // which is what a save does, seconds later, through the same call.
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, "e1", 2);
+
+  // SERVED: gone at once, with nothing else having run. This is the layer the reader feels.
+  CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{tonight}).empty(), true);
+
+  // And the corpus moved, so the page holding the echo is owed a pass rather than left alone —
+  // the fingerprint is what makes a SHRINKING corpus say so.
+  const PipelineVersions same{"segmenter-v1", "embedder-v1", "judge-v1"};
+  repo.recordCuration(UserId{kMine}, LocalDate{tonight},
+                      CurationOutcome{CurationStatus::ok, 0, 0, "", same});
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{tonight}, repo.corpusStamp(UserId{kMine}), same)
+            .has_value());
+
+  // STORED: that pass drops the row, because its match passage no longer exists.
+  repo.replaceEchoes(UserId{kMine}, LocalDate{tonight}, CuratedEchoes{"c2", {}, {}});
+  CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{tonight}).empty(), true);
+  CHECK_EQ(repo.inboundPages(UserId{kMine}, LocalDate{older}).empty(), true);
+}
