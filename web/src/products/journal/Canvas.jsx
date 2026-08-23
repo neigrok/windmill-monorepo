@@ -17,7 +17,7 @@ function wordCount(body) {
 }
 
 const WHY_KEY = 'windmill:journal-scales-why';
-const WHY_LINE = 'Mood is what you see when you zoom out to the year.';
+const WHY_LINE = 'Mood is what you see when you zoom out to the year. Zero is a real answer; leaving it blank is too.';
 const WHY_READ_MS = 2500;   // on screen this long before the one showing counts as spent
 
 function whySaid() {
@@ -247,7 +247,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             />
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
-          <ScaleStrip mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
+          <ScaleStrip day={today} mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
           {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
         </article>
       </div>

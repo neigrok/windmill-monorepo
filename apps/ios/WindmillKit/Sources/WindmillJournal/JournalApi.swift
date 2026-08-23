@@ -42,20 +42,32 @@ public struct JournalApi: PageSyncing {
 
     struct Pages: Decodable { let pages: [Page] }
 
-    // `updatedAt` is server time; a client must not send one.
+    // `updatedAt` is server time; a client must not send one. A cleared scale travels as an
+    // explicit null rather than an absent key, so a PUT says "unanswered" instead of saying nothing.
     struct Write: Encodable {
         let body: String
-        let mood: Int
-        let energy: Int
+        let mood: Int?
+        let energy: Int?
         let source: String
         let stamp: String
 
         init(_ page: Page) {
             body = page.body
-            mood = page.mood.rawValue
-            energy = page.energy.rawValue
+            mood = page.mood
+            energy = page.energy
             source = page.source.rawValue
             stamp = page.stamp.description
+        }
+
+        enum CodingKeys: String, CodingKey { case body, mood, energy, source, stamp }
+
+        func encode(to encoder: Encoder) throws {
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(body, forKey: .body)
+            try fields.encode(mood, forKey: .mood)
+            try fields.encode(energy, forKey: .energy)
+            try fields.encode(source, forKey: .source)
+            try fields.encode(stamp, forKey: .stamp)
         }
     }
 }

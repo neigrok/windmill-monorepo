@@ -1,4 +1,5 @@
-// One continuous Markdown file, oldest first. Scales are written as fractions ("mood 4/5"), never words.
+// One continuous Markdown file, oldest first. Scales are written as fractions ("mood 4/10"), never words,
+// and at full precision — a zero is an answer and prints; unset omits the line.
 
 import { journalApi } from '../journalApi.js';
 import { isWritten, normalizePage } from '../pageCache.js';
@@ -7,8 +8,8 @@ export function journalMarkdown(pages) {
   const written = pages.map(normalizePage).filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));
   const blocks = written.map((page) => {
     const scales = [];
-    if (page.mood != null) scales.push(`mood ${page.mood}/5`);
-    if (page.energy != null) scales.push(`energy ${page.energy}/3`);
+    if (page.mood != null) scales.push(`mood ${page.mood}/10`);
+    if (page.energy != null) scales.push(`energy ${page.energy}/10`);
     const lines = [`## ${page.day}`];
     if (scales.length) lines.push(`_${scales.join(' · ')}_`);
     if (page.body.trim()) lines.push(page.body.trim());

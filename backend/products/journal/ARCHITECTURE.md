@@ -27,7 +27,7 @@ Semantic search, threads, the writing rhythm and sharing stay on the device.
 
 ```
 backend/products/journal/
-  domain/        Page (+ Mood · Energy · Source · LocalDate) · NudgePlan
+  domain/        Page (+ Score · Source · LocalDate) · NudgePlan
                  Passage · SpanReconcile · EchoSelection          (pure, no I/O)
   ports/         JournalRepository · NudgeRepository · NudgeMailSender
                  EchoRepository · Segmenter (+ RuleSegmenter) · Embedder · Curator · Transcriber
@@ -64,9 +64,10 @@ DDL lives once, in `db/schema.sql` under `-- ── Journal ──`. Tables:
 | `journal_nudge` | per-user settings: enabled, channel, device-materialised `next_due_at` + `slot_day`, `paused_until`, `suppressed`, pause digest |
 | `journal_nudge_day` | the daily decision ledger, PK `(user_id, slot_day)` |
 
-Domain types (`domain/Page.h`): `LocalDate` (validated ISO day), `Mood` (none + five steps),
-`Energy` (none + three), `Source` (typed | spoken), `Page`, `kMaxPageBytes` = 128 KB. There are no
-titles, folders or tags in the model.
+Domain types (`domain/Page.h`): `LocalDate` (validated ISO day), `Score` (a validated 0…10 that
+both scales share — `Page::mood` and `Page::energy` are `std::optional<Score>`, where no value is
+"never answered" and `Score{0}` is the answer zero), `Source` (typed | spoken), `Page`,
+`kMaxPageBytes` = 128 KB. There are no titles, folders or tags in the model.
 
 ## Pages
 

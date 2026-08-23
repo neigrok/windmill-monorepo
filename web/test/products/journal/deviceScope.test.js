@@ -239,7 +239,156 @@ test('the legacy unscoped store is quarantined: unsent work waits, cached pages 
   const waiting = unclaimedPages(storage);
   assert.deepEqual(waiting.map((page) => page.day), [TODAY], 'only the unsent day survived');
   assert.equal(waiting[0].body, 'A UNSENT DIARY, WRITTEN ON A PLANE');
+  assert.equal(waiting[0].mood, 5, 'and it arrives on the new ramp — v1’s middle mood step is 5, not 3');
   assert.equal(waiting[0].stamp, '', 'and it waits unstamped, so it can only ever JOIN a page');
+});
+
+// v1 wrote 0 for "unanswered". v2 reads 0 as a recorded zero, so every store the bump carries forward
+// has to be migrated on the way over or the device invents an answer nobody gave.
+test('a v1 zero is unanswered, not a recorded zero, in the store the version bump retires', () => {
+  const storage = memoryStorage();
+  const legacyEntry = (day, mood, energy) => ({
+    page: { day, body: `written on ${day}`, mood, energy, source: 'typed', stamp: '100:0:a' },
+    needsPush: true,
+    read: false,
+  });
+  storage.setItem('wm.journal.pages', JSON.stringify({
+    '2026-08-04': legacyEntry('2026-08-04', 0, 0),
+    '2026-08-05': legacyEntry('2026-08-05', 3, 2),
+    [YESTERDAY]: legacyEntry(YESTERDAY, 5, 3),
+  }));
+
+  new PageCache(null, storage);
+
+  assert.deepEqual(unclaimedPages(storage).map((page) => [page.day, page.mood, page.energy]), [
+    ['2026-08-04', null, null],
+    ['2026-08-05', 5, 5],
+    [YESTERDAY, 9, 8],
+  ], 'mood is 2·old−1, energy is 1/2/3 → 2/5/8, and both zeroes are unanswered');
+});
+
+test('the v1 quarantine is carried into the v2 quarantine, migrated — nothing waiting there is orphaned', () => {
+  const storage = memoryStorage();
+  storage.setItem('wm.journal.pages.unclaimed', JSON.stringify({
+    [YESTERDAY]: {
+      page: { day: YESTERDAY, body: 'the page nobody has claimed yet', mood: 4, energy: 0, source: 'typed', stamp: '' },
+      needsPush: true,
+      read: false,
+    },
+  }));
+
+  new PageCache(null, storage);
+
+  const waiting = unclaimedPages(storage);
+  assert.deepEqual(waiting.map((page) => [page.day, page.body, page.mood, page.energy]),
+    [[YESTERDAY, 'the page nobody has claimed yet', 7, null]]);
+  assert.equal(storage.getItem('wm.journal.pages.unclaimed'), null, 'and the v1 name is retired');
+  assert.equal(storage.getItem('wm.journal.v2.pages.unclaimed') !== null, true);
+});
+
+// §8.5 called a cache "a convenience over a server of record". It is not: the scoped key is also the
+// only home of writes that never reached the server, so the bump migrates it instead of dropping it.
+test('a v1 scoped draft survives the version bump, still owed and on the new scales', () => {
+  const storage = memoryStorage();
+  storage.setItem('wm.journal.pages.u.user-a', JSON.stringify({
+    [YESTERDAY]: {
+      page: { day: YESTERDAY, body: 'never sent from A’s laptop', mood: 4, energy: 1, source: 'typed', stamp: '' },
+      needsPush: true,
+      read: false,
+    },
+    '2026-08-05': {
+      page: { day: '2026-08-05', body: 'read back from A’s account', mood: 2, energy: 3, source: 'typed', stamp: '100:0:a' },
+      needsPush: false,
+      read: true,
+    },
+  }));
+
+  const cache = new PageCache(A, storage);
+
+  assert.deepEqual(cache.pages().map((page) => [page.day, page.mood, page.energy]),
+    [['2026-08-05', 3, 8], [YESTERDAY, 7, 2]]);
+  assert.deepEqual(cache.owed().map((entry) => entry.page.body), ['never sent from A’s laptop'],
+    'the unsent draft is still owed to the account');
+  assert.equal(cache.hasRead('2026-08-05'), true, 'and the read mark comes over with it');
+  assert.equal(storage.getItem('wm.journal.pages.u.user-a'), null, 'the v1 key is retired once v2 took it');
+  assert.deepEqual(new PageCache(A, storage).pages().map((page) => page.mood), [3, 7],
+    'and the next open reads it back out of the v2 key');
+});
+
+test('the v1 anonymous scope survives the bump too, and its drafts still claim onto a sign-in', async () => {
+  const storage = memoryStorage();
+  storage.setItem('wm.journal.pages.anon', JSON.stringify({
+    [YESTERDAY]: {
+      page: { day: YESTERDAY, body: 'written before anyone signed in', mood: 3, energy: 2, source: 'typed', stamp: '' },
+      needsPush: true,
+      read: false,
+    },
+  }));
+
+  const backend = fakeBackend();
+  const store = openStore(storage, backend);
+  await store.connect(null);
+  await signInAs(store, backend, A);
+
+  assert.equal(backend.bodyOn(A, YESTERDAY), 'written before anyone signed in');
+  assert.deepEqual(new PageCache(A, storage).page(YESTERDAY).mood, 5);
+  assert.equal(storage.getItem('wm.journal.pages.anon'), null);
+});
+
+// The failure the version bump existed to prevent: a v1 device left a day unanswered, the account has a
+// real answer for it, and the claim joins the two. A `0` read as an answer would beat the account's 8.
+test('a v1 unanswered day cannot overwrite the account’s real mood on the claim', async () => {
+  const storage = memoryStorage();
+  storage.setItem('wm.journal.pages.anon', JSON.stringify({
+    [YESTERDAY]: {
+      page: { day: YESTERDAY, body: 'a line typed signed out', mood: 0, energy: 0, source: 'typed', stamp: '' },
+      needsPush: true,
+      read: false,
+    },
+  }));
+
+  const backend = fakeBackend();
+  backend.signIn(A);
+  await backend.api.putPage(YESTERDAY, {
+    body: 'what A already had', mood: 8, energy: 7, source: 'typed', stamp: '100:0:phone',
+  });
+  backend.signOut();
+
+  const store = openStore(storage, backend);
+  await store.connect(null);
+  await signInAs(store, backend, A);
+
+  const held = await new PageCache(A, storage).page(YESTERDAY);
+  assert.equal(held.mood, 8, 'the account’s answer stands — a v1 sentinel is not an answer');
+  assert.equal(held.energy, 7);
+  assert.equal(backend.bodyOn(A, YESTERDAY), 'what A already had\n\na line typed signed out');
+});
+
+// The other half of the same rule: under v2 a real 0 IS an answer, and the writer's own answer wins.
+test('a device’s recorded zero beats the account’s older answer on the claim', async () => {
+  const storage = memoryStorage();
+  storage.setItem(keyForScope(null), JSON.stringify({
+    [YESTERDAY]: {
+      page: { day: YESTERDAY, body: 'the worst day of the year', mood: 0, energy: 0, source: 'typed', stamp: '' },
+      needsPush: true,
+      read: false,
+    },
+  }));
+
+  const backend = fakeBackend();
+  backend.signIn(A);
+  await backend.api.putPage(YESTERDAY, {
+    body: 'what A already had', mood: 8, energy: 7, source: 'typed', stamp: '100:0:phone',
+  });
+  backend.signOut();
+
+  const store = openStore(storage, backend);
+  await store.connect(null);
+  await signInAs(store, backend, A);
+
+  const held = new PageCache(A, storage).page(YESTERDAY);
+  assert.equal(held.mood, 0, 'zero is a mood');
+  assert.equal(held.energy, 0);
 });
 
 test('B signs in through the migration and the quarantined page reaches neither B\u2019s canvas nor B\u2019s account', async () => {

@@ -32,25 +32,49 @@ j(){ curl -s -b "$JAR" -H "Origin: $ORIGIN" "$@"; }
 put(){ j -X PUT "$BASE/v1/journal/page/$DAY" -H 'content-type: application/json' -d "$1"; }
 
 # ── the canvas ───────────────────────────────────────────────────────────────────────────────
-R="$(put '{"body":"first light","mood":4,"energy":2,"source":"typed","stamp":"100:0:devA"}')"
+R="$(put '{"body":"first light","mood":7,"energy":5,"source":"typed","stamp":"100:0:devA"}')"
 check "$(echo "$R" | field "['body']")" "first light" "PUT stores the page"
-check "$(echo "$R" | field "['mood']")" "4" "PUT stores mood"
+check "$(echo "$R" | field "['mood']")" "7" "PUT stores mood"
+check "$(echo "$R" | field "['energy']")" "5" "PUT stores energy"
 
 R="$(j "$BASE/v1/journal/page/$DAY")"
 check "$(echo "$R" | field "['body']")" "first light" "GET returns the page"
 
 # LWW: an older stamp from another device loses, and the response is the WINNER, not the stale write
-R="$(put '{"body":"STALE","mood":1,"energy":1,"source":"typed","stamp":"50:0:devB"}')"
+R="$(put '{"body":"STALE","mood":1,"energy":2,"source":"typed","stamp":"50:0:devB"}')"
 check "$(echo "$R" | field "['body']")" "first light" "older stamp loses (winner returned)"
 
 # LWW: a newer stamp wins
-R="$(put '{"body":"clearer now","mood":5,"energy":3,"source":"spoken","stamp":"200:0:devB"}')"
+R="$(put '{"body":"clearer now","mood":9,"energy":8,"source":"spoken","stamp":"200:0:devB"}')"
 check "$(echo "$R" | field "['body']")" "clearer now" "newer stamp wins"
 check "$(echo "$R" | field "['source']")" "spoken" "source=spoken persists"
 
+# The 0..10 contract: 0 is an answer, null is silence, and the two never collapse into each other.
+R="$(put '{"body":"the floor","mood":0,"energy":0,"source":"typed","stamp":"300:0:devB"}')"
+check "$(echo "$R" | field "['mood']")" "0" "mood 0 stores as zero, not as unset"
+check "$(echo "$R" | field "['energy']")" "0" "energy 0 stores as zero, not as unset"
+check "$(psql "$DB" -tAc "select mood is null from journal_page where user_id='$USER_ID'")" "f" \
+      "a stored 0 is not a SQL null"
+
+R="$(put '{"body":"unanswered","mood":null,"energy":null,"source":"typed","stamp":"400:0:devB"}')"
+check "$(echo "$R" | field "['mood']")" "None" "null mood comes back null"
+check "$(echo "$R" | field "['energy']")" "None" "null energy comes back null"
+check "$(psql "$DB" -tAc "select mood is null and energy is null from journal_page where user_id='$USER_ID'")" "t" \
+      "an unanswered scale is a SQL null"
+
+# Out of range narrows to unset; a bad scale never costs the writer their page.
+R="$(put '{"body":"eleven","mood":11,"energy":-1,"source":"typed","stamp":"500:0:devB"}')"
+check "$(echo "$R" | field "['body']")" "eleven" "an out-of-range scale still stores the body"
+check "$(echo "$R" | field "['mood']")" "None" "mood 11 narrows to null"
+check "$(echo "$R" | field "['energy']")" "None" "energy -1 narrows to null"
+
+# Back to a real page for the reads below.
+R="$(put '{"body":"clearer now","mood":9,"energy":8,"source":"spoken","stamp":"600:0:devB"}')"
+check "$(echo "$R" | field "['mood']")" "9" "the whole range round trips"
+
 # the invisible safety net: exactly the one superseded body ('first light'); the ignored STALE wrote nothing
 REV="$(psql "$DB" -tAc "select count(*) from journal_page_revision where user_id='$USER_ID'")"
-check "$REV" "1" "superseded body kept as one revision"
+check "$REV" "5" "every superseded body kept as its own revision; the ignored STALE wrote none"
 
 # delta feed (sync / search index): everything past the unset cursor
 R="$(j "$BASE/v1/journal/pages?since=0:0:")"

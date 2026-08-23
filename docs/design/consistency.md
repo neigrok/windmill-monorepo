@@ -259,11 +259,241 @@ Each line below was ruled for the build and is owed a redraw:
 - The "ladder · N steps" target type is drawn with no authoring UI on either board and no shape in
   `RoutineWrite` — design ahead of the wire, not built.
 
-**0w · journal's mood and energy scales are canon but unbuilt** → build them.
-`journal/scales.md` is the canon home for the control, the 0–10 ramp, the zero-is-a-value rule and
-the motion ladder; `journal.md` §4 and §10 point at it. The implementation spec is
-`.claude/scratch/journal-scale-spec.md`. Build gate, from `scales.md` §6: never build the surge
-(energy 10) without the ground (energy 0) and the hold (mood 0).
+**0w · journal's scales are built; building them corrected five things in the spec** → spec and
+canon patched 2026-08-23, nothing owed.
+Backend, web and iOS landed. `journal/scales.md` remains the canon home for the control, the 0–10
+ramp, the zero-is-a-value rule and the motion ladder; `journal.md` §4/§10 point at it; the
+implementation spec is `.claude/scratch/journal-scale-spec.md`. The build gate held: the surge did
+not ship without the ground and the hold.
+
+Two were design calls and are ruled:
+
+- **Night's `--journal-head-ring` raised `ink 55%` → `ink 78%`.** §10 claimed a 4.1:1 floor "on both
+  sides" in both themes, but §2.4's 4.22/4.32 figures were the **Day** cell; night was never
+  measured. The build measured composited pixels and found the next step up (`ink 68%`) at 3.31:1
+  against a `mood-0` fill — matching an independent recompute of 3.30, so the method agrees and the
+  token was simply too low. `78%` gives **4.25:1 vs fill, 7.75 vs bed, 10.17 vs canvas**. The build
+  followed the spec as written and correctly did not move the token on its own. The ring merges with
+  a bright fill at the top of the ramp in both themes and that stays intended — the fill separates
+  itself at the ceiling, so the ring is optimised for the floor, the only place it is load-bearing.
+  **Third occurrence of the one-theme-asserted-across-both error**; `scales.md` §8 now counts it.
+- **The flare's phone rings clamped `head + 56px` → `head + 28px`.** At +56 the outer ring reaches
+  37pt on a 48pt row pitch and crosses into the ENERGY row, over its track and its surge arcs —
+  measured on device; the build reported rather than clamping, which was right. Ruled with a general
+  rule rather than a number: **no transient in the strip may paint into the other scale's row**
+  (outer radius ≤ `rowPitch/2 − 1px`), because two scales visually merging is the precise failure
+  this redesign exists to fix — it attacks ask #1 directly. Transients *may* overflow **upward** into
+  the writing field; the motes already do, by design, and that is not a bug. **Desktop's +44px is
+  deliberately left alone**: it fails the same arithmetic but has been drawn across eleven boards
+  with no reported collision, and correcting it from a calculation would be the same error wearing
+  the opposite face. Render desktop, then apply the rule if it crosses.
+
+Three were straight corrections:
+
+- **§6.13's surge node counts were per-beat, not per-fire** — night is 30 nodes (`(5+5+3) × 2
+  passes` = 26 polylines) and day 13 (9 polylines), against the stated 14/7. All three beats are
+  built up front and torn down together, so the live count is the sum. §6.13 is the defect list a
+  build is held to, which makes a 3× undercount the one place in this spec where a wrong number does
+  real damage.
+- **The glow pair cannot be declared at the root.** Night's value references the head's own fill, so
+  on `.journal-root` the reference resolves against an element that has no such property and the
+  declaration is dead. They are declared in **head-scoped rules under each theme** as `--glow-rest`
+  / `--glow-end` — the build's names, which the spec has adopted so code and spec agree.
+- **`--journal-focus` must be a solid hex, never a mix with transparent.** At `ink 88%` the missing
+  12% let the head's glow through and the focus ring's contrast started tracking the value — the
+  exact independence the two-tone construction exists to guarantee. The spec's own hexes land on
+  12.78 / 10.24, invariant at 0/5/10 in both themes. **And paint order is now part of the
+  contract**: the glow is the head's `box-shadow` and the focus ring the `::after`, never the
+  reverse, or the glow paints over the ring and reintroduces the dependence by another route. A
+  build that swaps them passes a colour audit and fails the behaviour.
+
+Also corrected: **§10's §2.5 sweep listed two dead rules.** `.journal-mood-dot.is-on` and
+`.journal-energy-bar.is-on` lost their last consumer with the old strip and were deleted, not
+converted; only `journal-talk-pulse` was live. And **confirmed, so it stops being re-checked**:
+nothing in echoes reads mood or energy — `fixtures.js` needed value migration only.
+
+An **executing review** of the built web strip (composited pixels, CDP input, radial scans at 10×)
+then falsified three more sentences, all now patched:
+
+- **"The ring carries legibility at every value"** is false as built. Sampled across the ramp,
+  night's ring runs 3.31:1 against the fill at v=0 but **1.21:1 at v=10** (day 4.81 → 1.83), while
+  ring-vs-bed climbs 6.04 → 13.65. The *ruling* stands untouched — that trade is the one §2.4 was
+  written to make — but the sentence was a universal asserted from one cell. It now reads **the ring
+  carries the boundary at the floor, the fill carries it at the ceiling**, and §10's check samples
+  the floor instead of asserting across the ramp.
+- **The focus ring was specified as additive and built as a replacement, faithfully.** `inset: 0` on
+  the pseudo-element resolves to the **padding** box, so both spreads started 1.5px inside the
+  head's outer edge — the ink band measured edge +1.00 → +2.88 against a specified +2 → +4, and the
+  canvas spacer painted over the head's own ring, erasing it from the composite. Not cosmetic: with
+  the ring gone, **§2.4's four monotone axes collapse to fill + size whenever the head is focused**
+  — always, for a keyboard user — and at day mood-0 the fill is 1.02:1 against the bed, so the
+  inversion §2.4 exists to close comes back under focus. §2.6 now names the box (`border box`) and
+  gives the declaration. *"Additive, never a replacement" is not a geometry anyone can implement.*
+- **The token contract is tidied to three names.** `--glow-rest` / `--glow-end` are head-scoped per
+  theme (the resolution fix); the day surge's `drop-shadow` reads a new root token **`--surge-shadow`
+  declared in the day block only**, because night's arc has a halo pass and needs no shadow.
+  `--journal-head-glow` / `--journal-head-glow-end` are retired — the second had survived at `:root`
+  with one consumer and an unreachable night half, and a token with an unreachable half will be
+  miscopied.
+
+Also from the review: the **4ms/frame budget and the sanctioned degradation were both sized against
+10 strokes** and have never been re-derived at the corrected 26 — the node counts are measured and
+right, the 4ms is not measured and is now marked unverified. And one design call, refused by the
+review and ruled here: **dragging through an extreme must not flash its permanent mark.** The state
+classes apply on commit and clear only — a mark mid-drag is false about state, and a mark that
+blinks on every crossing is a reward per scrub, which is the farming §6.9 device 6 forbids arriving
+through another door.
+
+**Confirmed by the same review, so these stop being re-checked:** all 22 ramp hexes byte-exact;
+geometry exact at all three measures, pitch 52.2 / 23.0 / 16.3; `--k` measuring 1 / 0.4 / 0 / 0.4 / 1
+across the scale; the five-band rule resolving to exactly five hues on pip, week square and year cell
+in both themes with the set-zero mark surviving on each; focus ink invariant across values; trigger
+discipline unbreakable (no spurious fire from dragging through, re-tapping, theme-flipping,
+remounting, resizing or scrolling); and zero leaks under 80 interleaved events with a third
+interrupted mid-animation. **Reduced motion — the part flagged as least verified — passed outright**:
+the reviewer defeated Chrome's clamp by injecting the media block as a plain stylesheet and stubbing
+`matchMedia`, and all six forms play as §6.7 specifies.
+
+**The phone clamp is built and measured, and cost the flare a ring** — outer radius 22.83pt,
+clearing the energy row by 3.3pt, so the rule holds exactly. But two rings 120ms apart at 2.5
+head-radii fail as a pair — and the *reason* recorded first was wrong, which matters more than the
+verdict. Frozen against the desktop pair on the same strip: at 180 and 300ms they are not a merged
+halo but **a bullseye** — two crisp concentric edges plus the head's own, three rings of decreasing
+radius around a filled dot, a target rather than an opening; only by 450ms do they become the mush
+originally described, and there they are *dimmer* than the single ring because each is separately
+fading. At rest the two builds are the same pixel to within a few units. So: **at a small radius,
+concentric rings read as a bullseye, not as an opening** — a sharper and more transferable reason
+than merging, now in `scales.md` §5, with its boundary stated so nobody applies it to the held ring
+(it governs gestures that must read as *opening*; a static mark is allowed to look like a target).
+Ruled: **the phone drops to a single ring** (`+28px`, 800ms, peak 0.62) — *when the ground shrinks, reduce the count; never crowd
+the same count into less room*, which is the identical ruling the Day arc got for the identical
+reason. **An upward-biased expansion was proposed and rejected** despite the carve-out permitting
+it: opening is radially symmetric, and biasing it upward turns the gesture into *rising*, which is
+what the motes already say — the flare would say one thing twice and lose the contrast between its
+own parts; and every way of drawing it imports vocabulary the product forbids (ellipse = squash and
+stretch, offset circle = detaching). On the phone the motes now lead and the ring supports,
+deliberately. Recorded so the second ring is not "restored" later.
+
+**Two more corrections the clamp pass found:**
+
+- **The marks must be absent for the whole duration of a drag, not merely un-triggered by one.**
+  Gating on the committed value handles a drag that *crosses* an extreme but not one that **starts
+  at** it — iOS shipped a ceiling-sized glow burning under a mid-value fill all the way down from
+  10. Every mark now takes `dragging == nil` as a precondition. The ordinary rest glow is *not* a
+  mark and correctly does the opposite: it follows the shown value.
+- **`strokeBorder` tucked the held ring's band inside the path**, giving 5pt of clearance where 6
+  was specified — and `strokeBorder(…).scaleEffect(k)` additionally scales the stroke *width*, so a
+  ring that lands by scaling arrives thinner than authored, an offset error that moves during the
+  animation rather than sitting still. Four defects on two platforms now, all found by rendering and
+  none by reading, so the spec gained **§2.0**: *an offset names the stroke's centreline, measured
+  from the border-box outer edge — and you must know which face your number names before choosing an
+  API.* Stated as a requirement rather than a prohibition, because `strokeBorder` is wrong for the
+  held ring (a centreline clearance) and **right for the flare's rings**, whose clamp is on the
+  outer face. It is `scales.md` §8's third rule.
+
+**The drag suppression is now photographed** and comes off the unverified list. A temporary seam
+rendered the exact mid-drag state without a touch (added, used, reverted): dragging *into* both ends
+shows no ceiling bloom, no held ring, no ground rule, no sheen, and heads keeping their ordinary 6px
+glow; dragging *out of* both ends — the case the amended rule was written for — produces a frame
+**byte-identical** to the same strip with those values committed, same SHA-256. That is the
+strongest available statement of the rule, and it closes the one item flagged as reasoned-but-unseen.
+
+**The web fix pass then produced one decision and one product-wide bug.**
+
+- **The head's ring is pinned to a whole pixel (`--head-ring-w: 1px`).** Blink floors a `1.5px`
+  border to a used `1px` while honouring a `1.5px` inset, so the focus band drifted **outward** to
+  edge +3→+5 at DSF1 and DSF2 alike. The builder correctly refused to hand-tune the inset to cancel
+  one engine's rounding. Ruled: pin the width, because a fractional border makes the focus geometry
+  *engine-dependent*, which is worse than being a pixel off in one engine, and the declared and used
+  values then agree everywhere — the band lands at exactly +2→+4 (phone +2→+5) with no adjustment.
+  Contrast is a property of colour, not width, and the built 1px ring measures 4.95:1 against the
+  fill at night. **This is §2.0's family with the sign flipped**: the first four defects tucked the
+  band inward, this one honoured one of two numbers that had to agree and rounded the other. §2.0
+  gained a fifth row and a second clause — *when two declarations must agree geometrically, express
+  both in units the platform cannot round differently.*
+- **The held ring goes back to head + 12px, and canon's line is true again.** It had moved to +14 to
+  chase the drifted band; pinning the width put the band back where it was specified, so the 1.5px
+  clearance holds, `--hold-scale` reverts, and **web and iOS agree once more**. Recorded as its own
+  small rule, because the near-miss was permanent divergence between two surfaces over one engine's
+  rounding: **fix the cause, not the number that moved because of it.**
+- **Both ring contrast figures are correct and neither should be "reconciled".** Canon quotes the
+  token flattened over the **canvas** (4.25 night); the build measures the alpha ink composited over
+  the **fill** it sits on (4.95). Different questions, both over the 4.1 floor. Noted in §2.4 —
+  quote the ground.
+
+**A product-wide reduced-motion bug this feature exposed** (fix owned elsewhere, in `global.css`):
+`src/styles/global.css:68` forces `animation-duration: 0.001ms !important` on `*` under
+`prefers-reduced-motion`, which collapses every *still* form §6.7 specifies and removes both blooms
+on an instant `animationend`. Measured: **completing the pair with reduced motion on spends the
+once-a-day key while the layer stays empty from t+20ms to t+1.5s** — a reduced-motion reader loses
+the completion moment permanently, which is the same HIGH defect §6.6a just closed arriving by
+another door. §6.7 now states that its premise requires a site-wide clamp permitting *finite*
+durations rather than nuking them, because the next surface to author a still form will hit the
+identical wall. And journal's own half is added as defence in depth: **never spend a once-a-day key
+on an animation that did not play** — write it on `animationstart`, treat a computed duration under
+50ms as not played.
+
+Everything else ruled here is applied and measured: the press compresses on first touch, the pair
+bloom survives a mood-10 completion, marks stay off through a whole drag, night's ring is at 78%,
+the retired token names are gone, and the leak attack still returns byte-identical. A commit now
+costs 1 layout rather than 15, and the remaining one is the numeral's digit swap — content, not an
+animated layout property, so §6.13 holds.
+
+**The pinning wave then measured a sixth offset defect, and it is the held ring being eaten again.**
+A CSS `border` draws **inside** its box, so a `head + 12px` box put the 1px stroke at +5.0…+6.0 —
+centreline +5.5, not the +6 the chain specifies. Desktop cleared the ink band by 1px instead of 1.5;
+on the **phone** the band ended at +5 and the stroke started at +5.0, so they **abutted with no
+canvas between them** and the held ring merged into the focus ring at mood 0, focused. Not a
+regression from the pinning — the old band sat 1.5px further in and hid it — but it is the second
+time that mark has been eaten by that ring, which is the exact failure the +12 ruling was made to
+fix. **Both exits taken:**
+
+- **Web declares the held ring as a `head + 13px` box**, which is what "centreline at +6" costs in a
+  box model that draws borders inward. **iOS stays at `head + 12px`** with its centred `.stroke`,
+  which already sits where the chain expects. The two numbers are one geometry in two stroke models
+  and must not be reconciled.
+- **The phone's focus band drops from 3px to 2px** (`0 0 0 4px`), matching desktop. The wider band
+  was decided before the held ring's geometry existed; at +5 it left 0.5px of canvas, which is not
+  separation. One band width is one fact instead of two, and the 1.5px clearance canon promises now
+  holds on both breakpoints.
+
+**This produced §2.0's third clause, and it is the one that has cost the most churn:** *canon states
+GEOMETRY; a platform states a DECLARATION derived from it; two platforms carrying different numbers
+for the same geometry is not drift, and reconciling them breaks one of them.* Last round the
+surfaces were nearly left permanently divergent by chasing a declaration that had moved for an
+unrelated reason; this round the same pair of numbers *looks* like drift and is not. Write the
+geometry first and let every platform number be visibly derived from it, or the next reader cannot
+tell a correct difference from a bug — and both mistakes are one edit away.
+
+**Confirmed, not overruled:** the builder extended the ring-width ruling to the hover ghost, which
+now reads `--head-ring-w` too. Right call — a preview heavier than the thing it previews is a
+preview of something else.
+
+**And `global.css` is fixed**, so §6.7's premise is buildable again: the duration nuke is gone,
+iterations and transitions stay bounded, the shared waveforms lost their movement at the token layer
+instead, and the pair bloom was verified against the counterfactual (old rule re-injected → empty
+layer at every sample; new rule → a 1.02s bloom on screen). The once-a-day key rule works as
+specified — clamped, the moment stays **owed** across repeated completions; at full duration it is
+spent exactly once, on `animationstart`. The requirement stays written down in §6.7 even though the
+bug is closed, because the next surface to author a still form will hit the identical wall.
+
+Still open by construction, not oversight: the pair bloom was never drawn (desktop-only boards);
+iOS's Core Haptics ladder cannot be validated without a Taptic Engine; and the one-ring flare is
+verified **frozen, not at speed** — its frames are exact for radius and alpha but computed from the
+easing curve rather than captured from a live 800ms run on a device.
+
+**1j · journal's calm-ceiling line is surface-blind, and the surfaces really do disagree** → an
+owner or journal call, not the scales spec's.
+`journal.md` §10 and `scales.md` said "exactly one infinite loop on screen — today's breathing
+ember." **There is no ember on web:** `DayMarker.jsx` draws no glyphs at all for today
+(`{!isToday && …}`), by its own canon, because today's values live in the strip; the only two
+`infinite` rules in `journal.css` are `journal-sharpen` (1047) and `journal-talk-pulse` (1728), both
+conditional, and `wm-ember` is the shell's, never journal's. **On iOS the ember is real** —
+`DayGlyphs.swift` breathes today's `MoodPip` under a `reduceMotion` gate. Both canon lines are
+restated as a *budget* ("at most one infinite loop, and the scale ladder adds none"), which is true
+on both surfaces. What is left is the actual divergence underneath: **web draws no day-marker glyphs
+for today and iOS draws them, breathing.** That predates this work and is a journal-canvas decision,
+so it is filed rather than settled.
 
 **1d · `tree-layout-contract.md` specifies a layout engine that does not exist** → an owner call.
 §5.1 pins `RING_GAP = 190` and §5.2 specifies a whole dagre mode with a ~48-node hysteresis
@@ -299,3 +529,19 @@ gesture and `mobile.md` §1 restates P4, or the Touch section goes.
 already unfolded. `web/src` has no `/trees` route on either the hash or the path router; the built
 button (`RoadmapLanding.jsx:84`) goes to `#/app/{id}` and nothing unfolds the switcher. Either §2
 takes the built destination, or the route and the unfolded-switcher arrival are owed a build.
+
+**1i · journal's month pill and month rail are canon with nothing built** → build them, or take
+the divider. `journal.md` §4 gives the month a pill that "floats top-right, confirms month + year
+when you're deep in the past", and §11 lists a "month rail" among the desktop-web affordances.
+`Canvas.jsx:284` renders `MonthDivider` — an in-flow `.journal-month` heading inside the reading
+column — and no floating pill or rail exists anywhere in `web/src/products/journal`. Either both
+canon lines take the in-flow divider, or the pill and the rail are owed a build (and the rail must
+be specified against the reserved echo gutter, since it would share that side).
+
+**1j · the scales spec §8.5 calls a journal cache "a convenience over a server of record"** → fix
+toward the code. It is not one on either client: the scoped device store (`wm.journal.v2.pages.u.*`
+on web, `windmill-journal-pages-v2-u.*.json` on iOS) is also the only home of `needsPush` writes
+that never reached the server, so "bump the version key so every device drops its local copy"
+would delete unsent diary pages. Both clients now migrate every v1 store forward onto the 0..10
+scales — the unscoped blob, the quarantine and the scoped cache — rather than dropping any of
+them. §8.5's sentence and its instruction both need to take that.

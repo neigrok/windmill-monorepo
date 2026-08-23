@@ -43,8 +43,8 @@ export function usePages() {
   return {
     ...snapshot,
     setBody: useCallback((body) => store.type(body), [store]),
-    toggleMood: useCallback((step) => store.tap('mood', step), [store]),
-    toggleEnergy: useCallback((step) => store.tap('energy', step), [store]),
+    setMood: useCallback((value) => store.set('mood', value), [store]),
+    setEnergy: useCallback((value) => store.set('energy', value), [store]),
     extendTo: useCallback((date) => store.extendTo(date), [store]),
     reachBack: useCallback(() => store.reachBack(), [store]),
   };

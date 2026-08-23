@@ -130,7 +130,7 @@ final class PageStoreTests: XCTestCase {
 
     func testADayWithOnlyAMoodIsStillDrawn() async {
         let server = FakeSync()
-        server.seed(day: "2026-07-18", body: "", mood: .m3)
+        server.seed(day: "2026-07-18", body: "", mood: 3)
 
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
@@ -140,13 +140,13 @@ final class PageStoreTests: XCTestCase {
 
     func testTodaysPageFromTheAccountBecomesTheDraft() async {
         let server = FakeSync()
-        server.seed(day: "2026-07-20", body: "started on my other phone", mood: .m4)
+        server.seed(day: "2026-07-20", body: "started on my other phone", mood: 4)
 
         let store = makeStore(sync: server)
         await store.connect(to: account(signedIn: true))
 
         XCTAssertEqual(store.body, "started on my other phone")
-        XCTAssertEqual(store.mood, .m4)
+        XCTAssertEqual(store.mood, 4)
     }
 
     func testAServerReplyDoesNotOverwriteWhatIsStillBeingTyped() async {
@@ -165,18 +165,35 @@ final class PageStoreTests: XCTestCase {
         XCTAssertEqual(store.body, "stale reply", "the write it answers is the one just sent")
     }
 
-    func testTappingTheStepYouAreOnClearsIt() async {
+    func testSettingTheValueYouAreOnIsNotAWayToClearIt() async {
         let store = makeStore()
         await store.connect(to: account(signedIn: false))
 
-        store.tap(mood: .m3)
-        XCTAssertEqual(store.mood, .m3)
-        store.tap(mood: .m3)
-        XCTAssertEqual(store.mood, .none, "a scale must always have a way back to unset")
+        store.set(mood: 3)
+        XCTAssertEqual(store.mood, 3)
+        store.set(mood: 3)
+        XCTAssertEqual(store.mood, 3, "on a scrubber, landing where the head already is is how a drag ends")
 
-        store.tap(energy: .e2)
-        store.tap(energy: .e2)
-        XCTAssertEqual(store.energy, .none)
+        store.set(mood: 0)
+        XCTAssertEqual(store.mood, 0, "zero is an answer, not an erasure")
+
+        store.set(mood: nil)
+        XCTAssertEqual(store.mood, nil, "clearing is explicit, from the numeral")
+
+        store.set(energy: 0)
+        XCTAssertEqual(store.energy, 0)
+        store.set(energy: nil)
+        XCTAssertEqual(store.energy, nil)
+    }
+
+    func testAScaleOutOfRangeNarrowsRatherThanLanding() async {
+        let store = makeStore()
+        await store.connect(to: account(signedIn: false))
+
+        store.set(mood: 11)
+        XCTAssertEqual(store.mood, nil)
+        store.set(energy: -1)
+        XCTAssertEqual(store.energy, nil)
     }
 
     func testTheNextAccountSeesNoneOfThePreviousOnesPagesAndSendsNoneOfThem() async {
@@ -431,12 +448,88 @@ final class PageCacheTests: XCTestCase {
     }
 
     func testASeatNameCannotReachOutOfItsOwnDirectoryOrIntoAReservedFile() {
-        XCTAssertEqual(PageCache.fileName(forSeat: nil), "windmill-journal-pages-anon.json")
-        XCTAssertEqual(PageCache.fileName(forSeat: "0f8e-4b2a"), "windmill-journal-pages-u.0f8e-4b2a.json")
+        XCTAssertEqual(PageCache.fileName(forSeat: nil), "windmill-journal-pages-v2-anon.json")
+        XCTAssertEqual(PageCache.fileName(forSeat: "0f8e-4b2a"), "windmill-journal-pages-v2-u.0f8e-4b2a.json")
         XCTAssertEqual(PageCache.fileName(forSeat: "../../windmill-journal-pages"),
-                       "windmill-journal-pages-u.windmill-journal-pages.json")
-        XCTAssertEqual(PageCache.fileName(forSeat: "anon"), "windmill-journal-pages-u.anon.json")
-        XCTAssertEqual(PageCache.fileName(forSeat: "unclaimed"), "windmill-journal-pages-u.unclaimed.json")
+                       "windmill-journal-pages-v2-u.windmill-journal-pages.json")
+        XCTAssertEqual(PageCache.fileName(forSeat: "anon"), "windmill-journal-pages-v2-u.anon.json")
+        XCTAssertEqual(PageCache.fileName(forSeat: "unclaimed"), "windmill-journal-pages-v2-u.unclaimed.json")
+    }
+
+    // A v1 file read as v2 would report every unanswered scale as a recorded zero.
+    func testAVersion1SeatFileIsMigratedOntoTheElevenStepScalesAndRemoved() {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("journal-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let held = [
+            "2026-07-18": PageCache.Entry(page: Page(day: LocalDay(iso: "2026-07-18")!, body: "unanswered",
+                                                     mood: 0, energy: 0, stamp: Hlc("100:0:d-a")),
+                                          needsPush: true),
+            "2026-07-19": PageCache.Entry(page: Page(day: LocalDay(iso: "2026-07-19")!, body: "hard, low",
+                                                     mood: 1, energy: 1, stamp: Hlc("100:0:d-a")),
+                                          needsPush: true),
+            "2026-07-20": PageCache.Entry(page: Page(day: LocalDay(iso: "2026-07-20")!, body: "clear, high",
+                                                     mood: 5, energy: 3, stamp: Hlc("100:0:d-a")),
+                                          needsPush: true),
+        ]
+        let version1 = directory.appendingPathComponent("windmill-journal-pages-u.u1.json")
+        try? JSONEncoder().encode(held).write(to: version1)
+
+        let opened = PageCache(seat: "u1", in: directory, deviceHolds: nil)
+
+        XCTAssertEqual(opened.pages.map(\.mood), [nil, 1, 9],
+                       "v1's five steps land on the odd positions, and its 0 sentinel on unset")
+        XCTAssertEqual(opened.pages.map(\.energy), [nil, 2, 8])
+        XCTAssertEqual(opened.pending.count, 3, "and nothing unsent is dropped on the way")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: version1.path))
+    }
+
+    // Quarantine is the one store designed never to lose a page, so the version bump has to carry it —
+    // an orphaned v1 quarantine is a diary in a file nothing reads.
+    func testTheVersion1QuarantineIsCarriedOntoTheNewScalesAndRetired() {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("journal-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let waiting = [
+            "2026-07-19": PageCache.Entry(page: Page(day: LocalDay(iso: "2026-07-19")!, body: "unanswered",
+                                                     mood: 0, energy: 0), needsPush: true),
+            "2026-07-20": PageCache.Entry(page: Page(day: LocalDay(iso: "2026-07-20")!, body: "clear, high",
+                                                     mood: 5, energy: 3), needsPush: true),
+        ]
+        let version1 = directory.appendingPathComponent("windmill-journal-pages-unclaimed.json")
+        try? JSONEncoder().encode(waiting).write(to: version1)
+
+        _ = PageCache(seat: nil, in: directory, deviceHolds: nil)
+
+        let carried = PageCache.quarantinedPages(in: directory)
+        XCTAssertEqual(carried.map(\.body), ["unanswered", "clear, high"], "nothing waiting was orphaned")
+        XCTAssertEqual(carried.map(\.mood), [nil, 9], "and a v1 zero is unanswered, not a recorded zero")
+        XCTAssertEqual(carried.map(\.energy), [nil, 8])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: version1.path), "the v1 name is retired")
+    }
+
+    // A throw inside one entry fails the whole `[String: Entry]` document, so the cache would open empty
+    // and the owed page beside the bad one would be gone with no trace.
+    func testOneBadScaleInACacheFileCostsThatScaleAndNothingElse() {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("journal-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try? Data("""
+        {"2026-07-19":{"page":{"day":"2026-07-19","body":"owed","mood":3.5,"energy":2,
+                               "source":"typed","stamp":"0:0:","updatedAt":0},"needsPush":true},
+         "2026-07-20":{"page":{"day":"2026-07-20","body":"read back","mood":7,"energy":4,
+                               "source":"typed","stamp":"100:0:d-a","updatedAt":0},"needsPush":false}}
+        """.utf8).write(to: url)
+
+        let opened = PageCache(url: url)
+
+        XCTAssertEqual(opened.pages.map(\.body), ["owed", "read back"], "the owed page is not silently lost")
+        XCTAssertEqual(opened.pages.map(\.mood), [nil, 7])
+        XCTAssertEqual(opened.pending.map(\.body), ["owed"])
     }
 
     func testTheUnprefixedPerSeatFileIsCarriedOver() {
@@ -478,8 +571,8 @@ extension PageStoreTests {
 
         XCTAssertEqual(store.today, LocalDay(iso: "2026-07-21")!)
         XCTAssertEqual(store.body, "")
-        XCTAssertEqual(store.mood, .none)
-        XCTAssertEqual(store.energy, .none)
+        XCTAssertEqual(store.mood, nil)
+        XCTAssertEqual(store.energy, nil)
         XCTAssertEqual(store.days.map(\.day.iso), ["2026-07-20"])
         XCTAssertEqual(store.days.map(\.body), ["written before midnight"])
     }
@@ -539,7 +632,7 @@ final class FakeSync: PageSyncing, @unchecked Sendable {
     var rewriteBodyOnPut: String?
     private(set) var puts: [Page] = []
 
-    func seed(day: String, body: String, mood: Mood = .none, stamp: String = "1:0:d-server") {
+    func seed(day: String, body: String, mood: Int? = nil, stamp: String = "1:0:d-server") {
         let page = Page(day: LocalDay(iso: day)!, body: body, mood: mood, stamp: Hlc(stamp))
         stored[day] = page
     }

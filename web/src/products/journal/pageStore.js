@@ -399,11 +399,11 @@ export class PageStore {
     this.scheduleSave(SAVE_DEBOUNCE);
   }
 
-  // Tapping the step you are on clears it; a tap writes immediately.
-  tap(field, step) {
+  // A scale writes immediately. `null` is the explicit clear the numeral sends; 0 is a real value.
+  set(field, value) {
     this.touched = true;
     this.savePending = true;
-    this.draft = { ...this.draft, [field]: this.draft[field] === step ? null : step };
+    this.draft = { ...this.draft, [field]: value };
     this.emit();
     return this.scheduleSave(0);
   }

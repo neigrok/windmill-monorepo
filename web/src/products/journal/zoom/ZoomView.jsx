@@ -7,13 +7,16 @@ import { corpus } from '../pageStore.js';
 import { useToday } from '../usePages.js';
 import { buildYear } from './yearGrid.js';
 import { weekReadout } from './weekReadout.js';
+import { energyBars, moodBand } from '../scaleBands.js';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+// Eleven hues in a 15px cell is not a design, it is a hope: the grid reads the five bands.
 function cellColor(day) {
   if (!day.written) return 'transparent';
-  return day.mood ? `var(--mood-${day.mood})` : 'color-mix(in srgb, var(--lamp-400) 55%, transparent)';
+  if (day.mood == null) return 'color-mix(in srgb, var(--lamp-400) 55%, transparent)';
+  return `var(--mood-${moodBand(day.mood)})`;
 }
 
 function dow(iso) {
@@ -57,9 +60,9 @@ export function ZoomView({ onClose, onPick, account = null }) {
             {week.days.map((day) => (
               <div key={day.date} className="journal-week-day">
                 <span className="journal-week-mood" style={{ background: cellColor(day) }} />
-                <span className="journal-week-energy">
+                <span className={'journal-week-energy' + (day.energy != null ? ' is-set' : '')}>
                   {[1, 2, 3].map((step) => (
-                    <span key={step} className={'journal-week-bar' + (day.energy && step <= day.energy ? ' is-on' : '')} />
+                    <span key={step} className={'journal-week-bar' + (step <= energyBars(day.energy) ? ' is-on' : '')} />
                   ))}
                 </span>
                 <span className="journal-week-dow">{dow(day.date)}</span>

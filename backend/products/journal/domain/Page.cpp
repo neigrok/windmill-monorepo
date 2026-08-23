@@ -4,13 +4,23 @@
 
 namespace wm {
 
-Page::Page(UserId user, LocalDate day, std::string body, Mood mood, Energy energy, Source source,
-           Hlc stamp, std::uint64_t updatedAtMs)
+Score::Score(int value) : value_(value) {
+  if (value < 0 || value > 10)
+    throw InvalidPage("a score runs 0..10: " + std::to_string(value));
+}
+
+std::optional<Score> Score::from(int value) {
+  if (value < 0 || value > 10) return std::nullopt;
+  return Score{value};
+}
+
+Page::Page(UserId user, LocalDate day, std::string body, std::optional<Score> mood,
+           std::optional<Score> energy, Source source, Hlc stamp, std::uint64_t updatedAtMs)
     : user(std::move(user)), day(std::move(day)), body(std::move(body)), mood(mood), energy(energy),
       source(source), stamp(std::move(stamp)), updatedAtMs(updatedAtMs) {}
 
 Page::Page(UserId user, LocalDate day)
-    : user(std::move(user)), day(std::move(day)), body(), mood(Mood::none), energy(Energy::none),
+    : user(std::move(user)), day(std::move(day)), body(), mood(std::nullopt), energy(std::nullopt),
       source(Source::typed), stamp(), updatedAtMs(0) {}
 
 LocalDate::LocalDate(std::string iso) {
@@ -34,26 +44,6 @@ LocalDate::LocalDate(std::string iso) {
   if (day < 1 || day > daysInMonth) throw InvalidPage("day out of range: " + iso);
 
   iso_ = std::move(iso);
-}
-
-Mood moodFromInt(int value) {
-  switch (value) {
-    case 1: return Mood::m1;
-    case 2: return Mood::m2;
-    case 3: return Mood::m3;
-    case 4: return Mood::m4;
-    case 5: return Mood::m5;
-  }
-  return Mood::none;
-}
-
-Energy energyFromInt(int value) {
-  switch (value) {
-    case 1: return Energy::e1;
-    case 2: return Energy::e2;
-    case 3: return Energy::e3;
-  }
-  return Energy::none;
 }
 
 Source parseSource(std::string_view text) {

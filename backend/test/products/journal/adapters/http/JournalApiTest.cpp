@@ -94,8 +94,8 @@ TEST(page_write_parses_every_field) {
   CHECK(page.user == uid("u1"));
   CHECK(page.day == ld("2026-07-27"));
   CHECK_EQ(page.body, std::string("wrote by hand"));
-  CHECK(page.mood == Mood::m4);
-  CHECK(page.energy == Energy::e2);
+  CHECK_EQ(page.mood, std::optional<Score>{Score{4}});
+  CHECK_EQ(page.energy, std::optional<Score>{Score{2}});
   CHECK(page.source == Source::spoken);
   CHECK(page.stamp == hlc(1'700'000'000'000, 3, "dev-a"));
   CHECK_EQ(page.updatedAtMs, 0u);  // server time, stamped on store — never taken from the client
@@ -110,24 +110,84 @@ TEST(page_write_without_a_stamp_parses_to_the_unset_hlc) {
   CHECK(page.stamp == Hlc{});
   CHECK_FALSE(page.stamp.isSet());
   CHECK_EQ(page.body, std::string("quiet day"));
-  CHECK(page.mood == Mood::none);
-  CHECK(page.energy == Energy::none);
+  CHECK_EQ(page.mood, std::optional<Score>{});
+  CHECK_EQ(page.energy, std::optional<Score>{});
   CHECK(page.source == Source::typed);
   CHECK_EQ(page.updatedAtMs, 0u);
 }
 
-TEST(page_write_clamps_out_of_range_scales_and_reads_an_odd_source_as_typed) {
+TEST(page_write_narrows_out_of_range_scales_and_reads_an_odd_source_as_typed) {
   Json::Value body(Json::objectValue);
   body["body"] = "loud day";
-  body["mood"] = 9;
-  body["energy"] = 7;
+  body["mood"] = 11;
+  body["energy"] = -1;
   body["source"] = "sung";
 
   Page page = parsePageWrite(body, uid(), ld("2026-01-02"));
 
-  CHECK(page.mood == Mood::none);
-  CHECK(page.energy == Energy::none);
+  CHECK_EQ(page.mood, std::optional<Score>{});
+  CHECK_EQ(page.energy, std::optional<Score>{});
   CHECK(page.source == Source::typed);
+}
+
+// The whole point of the 0..10 wave: a stored 0 is an answer and survives the wire as one.
+TEST(page_write_keeps_zero_as_an_answer_and_null_as_unset) {
+  Json::Value zeros(Json::objectValue);
+  zeros["body"] = "the floor";
+  zeros["mood"] = 0;
+  zeros["energy"] = 0;
+
+  Page floored = parsePageWrite(zeros, uid(), ld("2026-01-02"));
+
+  CHECK_EQ(floored.mood, std::optional<Score>{Score{0}});
+  CHECK_EQ(floored.energy, std::optional<Score>{Score{0}});
+  CHECK_EQ(dump(toJson(floored)),
+           std::string(R"({"body":"the floor","day":"2026-01-02","energy":0,"mood":0,)"
+                       R"("source":"typed","stamp":"0:0:","updatedAt":0})"));
+
+  Json::Value nulls(Json::objectValue);
+  nulls["body"] = "unanswered";
+  nulls["mood"] = Json::Value(Json::nullValue);
+  nulls["energy"] = Json::Value(Json::nullValue);
+
+  Page unanswered = parsePageWrite(nulls, uid(), ld("2026-01-02"));
+
+  CHECK_EQ(unanswered.mood, std::optional<Score>{});
+  CHECK_EQ(unanswered.energy, std::optional<Score>{});
+  CHECK_EQ(dump(toJson(unanswered)),
+           std::string(R"({"body":"unanswered","day":"2026-01-02","energy":null,"mood":null,)"
+                       R"("source":"typed","stamp":"0:0:","updatedAt":0})"));
+}
+
+// Every step of the new range survives the round trip, ends included.
+TEST(page_write_carries_the_whole_scale) {
+  for (int step = 0; step <= 10; ++step) {
+    Json::Value body(Json::objectValue);
+    body["body"] = "step";
+    body["mood"] = step;
+    body["energy"] = 10 - step;
+
+    Page page = parsePageWrite(body, uid(), ld("2026-01-02"));
+
+    CHECK_EQ(page.mood, std::optional<Score>{Score{step}});
+    CHECK_EQ(page.energy, std::optional<Score>{Score{10 - step}});
+    CHECK_EQ(toJson(page)["mood"].asInt(), step);
+    CHECK_EQ(toJson(page)["energy"].asInt(), 10 - step);
+  }
+}
+
+// A scale that is not a number is a client bug, not a rejected page: narrow it and store the words.
+TEST(page_write_narrows_a_non_numeric_scale_rather_than_rejecting_the_page) {
+  Json::Value body(Json::objectValue);
+  body["body"] = "words are the page";
+  body["mood"] = "seven";
+  body["energy"] = true;
+
+  Page page = parsePageWrite(body, uid(), ld("2026-01-02"));
+
+  CHECK_EQ(page.mood, std::optional<Score>{});
+  CHECK_EQ(page.energy, std::optional<Score>{});
+  CHECK_EQ(page.body, std::string("words are the page"));
 }
 
 TEST(page_write_that_is_not_an_object_is_invalid) {
@@ -143,8 +203,8 @@ TEST(page_write_that_is_not_an_object_is_invalid) {
 TEST(page_to_json_spells_every_field) {
   Page page{uid("u1"), ld("2026-07-27")};
   page.body = "wrote by hand";
-  page.mood = Mood::m4;
-  page.energy = Energy::e2;
+  page.mood = Score{4};
+  page.energy = Score{2};
   page.source = Source::spoken;
   page.stamp = hlc(1'700'000'000'000, 3, "dev-a");
   page.updatedAtMs = 1'700'000'001'234;
@@ -157,6 +217,7 @@ TEST(page_to_json_spells_every_field) {
 TEST(pages_to_json_is_an_array_in_the_given_order) {
   Page first{uid("u1"), ld("2026-07-26")};
   first.body = "yesterday";
+  first.mood = Score{0};
   first.stamp = hlc(1, 0, "dev-a");
   Page second{uid("u1"), ld("2026-07-27")};
   second.body = "today";

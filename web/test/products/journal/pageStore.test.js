@@ -6,7 +6,7 @@ import { BEGINNING, PageStore, corpus, joinBodies, joinCorpus, span } from '../.
 
 const TODAY = '2026-08-07';
 const A = 'user-a';
-const KEY = 'wm.journal.pages.anon';
+const KEY = 'wm.journal.v2.pages.anon';
 
 function memoryStorage() {
   const map = new Map();
@@ -238,21 +238,25 @@ test('a signed-out write reaches no network, and survives a reload', async (t) =
   assert.equal(reopened.store.snapshot.saveState, 'device');
 });
 
-test('a mood tap signed out is held too — the offline story covers both write paths', async (t) => {
+test('a mood set signed out is held too — the offline story covers both write paths', async (t) => {
   const storage = memoryStorage();
   const api = fakeApi();
   const { store, timers } = storeOn(storage, api);
   t.after(() => store.dispose());
 
   await store.connect(null);
-  await store.tap('mood', 4);
+  await store.set('mood', 4);
 
   assert.deepEqual(api.calls.put, []);
   assert.equal(store.cache.page(TODAY).mood, 4);
   assert.equal(store.snapshot.mood, 4);
   assert.equal(timers.pending.size, 0, 'signed out there is nothing to retry — the device IS the record');
 
-  await store.tap('mood', 4);
+  await store.set('mood', 0);
+  assert.equal(store.snapshot.mood, 0, 'zero is an answer, not a clear');
+  assert.equal(store.cache.page(TODAY).mood, 0);
+
+  await store.set('mood', null);
   assert.equal(store.snapshot.mood, null);
   assert.equal(store.cache.page(TODAY).mood, null);
 });

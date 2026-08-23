@@ -2,19 +2,27 @@
 // store opens empty. Two marks per entry: `needsPush` — this device owes the account this page; `read` —
 // this device has seen the account's answer for that day. Owed and not read carries no stamp, because a
 // stamp claims to have written last: `store` takes stamped pages, `hold` the unstamped one.
-// The scope is the key — `wm.journal.pages.u.<userId>`, or `wm.journal.pages.anon` signed out — and a
+// The scope is the key — `wm.journal.v2.pages.u.<userId>`, or `wm.journal.v2.pages.anon` signed out — and a
 // cache opened for one account never reads another account's bytes.
 
 import { compareStamps, ZERO_STAMP } from './hlc.js';
 
-// The unscoped store: read once on open, retired into quarantine, never written again.
+// v2: the scales became 0..10 with null for unanswered, so every v1 entry holds a `0` that used to mean
+// "unset" and would now be read as a real zero. The version lives in the key, and every v1 key is read
+// once on open, migrated onto the new scales, folded into its v2 successor and removed. The bump is not
+// a licence to drop the bytes: a scoped store is the only home of writes that never reached the server.
 const LEGACY_KEY = 'wm.journal.pages';
-const ANON_KEY = 'wm.journal.pages.anon';
+const V1_UNCLAIMED_KEY = 'wm.journal.pages.unclaimed';
+const ANON_KEY = 'wm.journal.v2.pages.anon';
 // No scope opens this key: nothing here is drawn, indexed or sent until a signed-in person restores it.
-const UNCLAIMED_KEY = 'wm.journal.pages.unclaimed';
+const UNCLAIMED_KEY = 'wm.journal.v2.pages.unclaimed';
 
 export function keyForScope(account) {
-  return account ? `wm.journal.pages.u.${account}` : ANON_KEY;
+  return account ? `wm.journal.v2.pages.u.${account}` : ANON_KEY;
+}
+
+function version1KeyForScope(account) {
+  return account ? `wm.journal.pages.u.${account}` : 'wm.journal.pages.anon';
 }
 
 // A flush keeps everything owed whatever its age, plus the newest RETAIN_DAYS entries.
@@ -40,13 +48,18 @@ export function blankPage(day) {
   return { day, body: '', mood: null, energy: null, source: 'typed', stamp: ZERO_STAMP };
 }
 
-// On the wire an unset scale is 0; inside this module an unset scale is null and nothing else.
+// A scale is 0..10 or null, on the wire and in here. 0 means zero; anything outside the range, and
+// anything that is not a whole number, narrows to unanswered rather than being believed.
+function score(raw) {
+  return Number.isInteger(raw) && raw >= 0 && raw <= 10 ? raw : null;
+}
+
 export function normalizePage(raw) {
   return {
     day: String(raw?.day ?? ''),
     body: typeof raw?.body === 'string' ? raw.body : '',
-    mood: raw?.mood || null,
-    energy: raw?.energy || null,
+    mood: score(raw?.mood),
+    energy: score(raw?.energy),
     source: raw?.source === 'spoken' ? 'spoken' : 'typed',
     stamp: typeof raw?.stamp === 'string' ? raw.stamp : ZERO_STAMP,
   };
@@ -75,21 +88,42 @@ function readEntries(storage, key) {
   }
 }
 
-// Owed entries go to quarantine: "unsent" says nothing about who wrote them. Everything else is an
-// unattributable cached copy and is dropped. A storage that refuses the write keeps the legacy key.
-function retireLegacyStore(storage) {
+// The same mapping the server migration runs (spec §8.4): v1's five mood steps land on the odd positions
+// of the new ramp, v1's three energy steps on the centre of each third, and both zeroes on unanswered —
+// a v1 zero meant "unset" and must never survive as a recorded zero.
+const V1_ENERGY = { 1: 2, 2: 5, 3: 8 };
+
+function readVersion1Entries(storage, key) {
+  return readEntries(storage, key).map(([day, entry]) => [day, {
+    ...entry,
+    page: {
+      ...entry.page,
+      mood: entry.page.mood >= 1 && entry.page.mood <= 5 ? 2 * entry.page.mood - 1 : null,
+      energy: V1_ENERGY[entry.page.energy] ?? null,
+    },
+  }]);
+}
+
+// Owed entries from the pre-scoping store go to quarantine: "unsent" says nothing about who wrote them,
+// and everything else there is an unattributable cached copy and is dropped. The v1 quarantine comes over
+// whole — it is the one store designed never to lose a page. A storage that refuses the write keeps both
+// v1 keys and the next open retries.
+function retireVersion1Stores(storage) {
   try {
-    if (storage.getItem(LEGACY_KEY) === null) return;
+    const sources = [LEGACY_KEY, V1_UNCLAIMED_KEY].filter((key) => storage.getItem(key) !== null);
+    if (sources.length === 0) return;
     const quarantined = {};
     for (const [day, entry] of readEntries(storage, UNCLAIMED_KEY)) quarantined[day] = entry;
-    for (const [day, entry] of readEntries(storage, LEGACY_KEY)) {
-      if (!entry.needsPush || quarantined[day]) continue;
-      quarantined[day] = { page: { ...entry.page, stamp: ZERO_STAMP }, needsPush: true, read: false };
+    for (const source of sources) {
+      for (const [day, entry] of readVersion1Entries(storage, source)) {
+        if (quarantined[day] || (!entry.needsPush && source !== V1_UNCLAIMED_KEY)) continue;
+        quarantined[day] = { page: { ...entry.page, stamp: ZERO_STAMP }, needsPush: true, read: false };
+      }
     }
     storage.setItem(UNCLAIMED_KEY, JSON.stringify(quarantined));
-    storage.removeItem(LEGACY_KEY);
+    for (const source of sources) storage.removeItem(source);
   } catch {
-    // Refused: the legacy key stays as it is and the next open retries.
+    // Refused: the v1 keys stay as they are and the next open retries.
   }
 }
 
@@ -124,8 +158,25 @@ export class PageCache {
   constructor(account, storage = deviceStorage()) {
     this.storage = storage;
     this.key = keyForScope(account ?? null);
-    if (storage) retireLegacyStore(storage);
+    if (storage) retireVersion1Stores(storage);
     this.entries = new Map(readEntries(storage, this.key));
+    if (storage) this.adoptVersion1Scope(account ?? null);
+  }
+
+  // This scope's own bytes under the unversioned key: migrated onto the new scales and folded in, never
+  // dropped, because a scoped store is also the sole home of writes that never reached the server. The
+  // key is removed only once the v2 key has taken them, so a refused write is retried on the next open.
+  adoptVersion1Scope(account) {
+    const source = version1KeyForScope(account);
+    try {
+      if (this.storage.getItem(source) === null) return;
+      for (const [, entry] of readVersion1Entries(this.storage, source)) {
+        this.store(entry.page, { needsPush: entry.needsPush, read: entry.read });
+      }
+      if (this.flush()) this.storage.removeItem(source);
+    } catch {
+      // Refused: the v1 key stays as it is and the next open retries.
+    }
   }
 
   page(day) {

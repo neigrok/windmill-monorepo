@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <future>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -741,7 +742,7 @@ const std::string kExplainTonight = "i want to learn the rust compiler properly"
 const std::string kExplainJanuary = "i want to learn the rust compiler properly this year";
 
 void plantForExplain(Harness& h, const UserId& user) {
-  h.pageService.write(Page{user, ld(kExplainToday), kExplainTonight, Mood::none, Energy::none,
+  h.pageService.write(Page{user, ld(kExplainToday), kExplainTonight, std::nullopt, std::nullopt,
                            Source::typed, Hlc{h.clock->now, 0, "device"}, h.clock->now});
   h.echoes->plantPage(user, ld("2026-01-05"), kExplainJanuary);
   h.echoes->plantSpan(user, ld("2026-01-05"), 11, kExplainJanuary,

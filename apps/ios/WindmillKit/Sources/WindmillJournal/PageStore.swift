@@ -8,8 +8,8 @@ import WindmillPlatform
 public final class PageStore: ObservableObject {
     @Published public private(set) var days: [CanvasDay] = []      // history, oldest→newest
     @Published public private(set) var body: String = ""           // today, the live draft
-    @Published public private(set) var mood: Mood = .none
-    @Published public private(set) var energy: Energy = .none
+    @Published public private(set) var mood: Int?
+    @Published public private(set) var energy: Int?
     @Published public private(set) var saveState: SaveState = .idle
     @Published public private(set) var saveTick = 0                // bumps once per write, so the note re-fades
     @Published public private(set) var isLoading = true
@@ -68,8 +68,8 @@ public final class PageStore: ObservableObject {
     public struct CanvasDay: Identifiable, Equatable {
         public let day: LocalDay
         public let body: String
-        public let mood: Mood
-        public let energy: Energy
+        public let mood: Int?
+        public let energy: Int?
         public var id: String { day.iso }
         public var wordCount: Int { body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count }
     }
@@ -92,7 +92,7 @@ public final class PageStore: ObservableObject {
     }
 
     public var isFirstRun: Bool {
-        !isLoading && days.isEmpty && body.isEmpty && !mood.isSet && !energy.isSet
+        !isLoading && days.isEmpty && body.isEmpty && mood == nil && energy == nil
     }
 
     // Called on launch and on every change of who is signed in.
@@ -133,8 +133,8 @@ public final class PageStore: ObservableObject {
         keepDraftOnDevice()
         today = day
         body = ""
-        mood = .none
-        energy = .none
+        mood = nil
+        energy = nil
         touched = false
         drawFromCache()
         guard journal != nil else {
@@ -153,8 +153,8 @@ public final class PageStore: ObservableObject {
         cache = open(arriving.userId)
         days = []
         body = ""
-        mood = .none
-        energy = .none
+        mood = nil
+        energy = nil
         touched = false
         saveState = .idle
         saveTick = 0
@@ -191,16 +191,16 @@ public final class PageStore: ObservableObject {
         scheduleSave(after: Self.saveDebounce)
     }
 
-    // Tapping the step you are on clears it.
-    public func tap(mood step: Mood) {
+    // A scale is set to a value or explicitly cleared; there is no toggle. 0 is a value.
+    public func set(mood value: Int?) {
         touched = true
-        mood = (mood == step) ? .none : step
+        mood = Scale.narrow(value)
         scheduleSave(after: .zero)
     }
 
-    public func tap(energy step: Energy) {
+    public func set(energy value: Int?) {
         touched = true
-        energy = (energy == step) ? .none : step
+        energy = Scale.narrow(value)
         scheduleSave(after: .zero)
     }
 

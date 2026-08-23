@@ -1,10 +1,15 @@
+import CoreHaptics
 import SwiftUI
+import UIKit
 import WindmillPlatform
 
 public struct JournalRoom: View {
     private let account: Account
 
     @StateObject private var store = PageStore()
+    // Exactly one haptic engine, owned by the room: never one per fire.
+    @State private var haptics = ScaleHaptics()
+    @State private var pairBloom = 0
     @AppStorage("windmill:journal-scales-taught") private var scalesTaught = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
@@ -53,7 +58,10 @@ public struct JournalRoom: View {
         // Coming back asks what day it is: the store's midnight timer sleeps with the phone.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await store.rollOver(to: .today()) } }
-            else { Task { await store.flushPendingWrite() } }
+            else {
+                haptics.stop()
+                Task { await store.flushPendingWrite() }
+            }
         }
     }
 
@@ -74,11 +82,7 @@ public struct JournalRoom: View {
             .textFieldStyle(.plain)
             .focused($writing)
 
-            HStack(alignment: .bottom) {
-                MoodDots(value: store.mood) { store.tap(mood: $0) }
-                Spacer()
-                EnergyBars(value: store.energy) { store.tap(energy: $0) }
-            }
+            scales
 
             if store.isFirstRun {
                 Text("Nobody sees this but you.")
@@ -91,20 +95,48 @@ public struct JournalRoom: View {
         .padding(.bottom, WindmillSpace.x8)
     }
 
+    // Two labelled rows, because a scale that has to be learned is a scale that gets skipped.
+    private var scales: some View {
+        VStack(spacing: ScaleMetrics.rowGap) {
+            ScaleRow(kind: .mood, value: store.mood, haptics: haptics) { value in
+                store.set(mood: value)
+                considerThePair()
+            }
+            ScaleRow(kind: .energy, value: store.energy, haptics: haptics) { value in
+                store.set(energy: value)
+                considerThePair()
+            }
+        }
+        // Outside the two 44pt hit bands, so a scroll can still start beside the tracks.
+        .padding(.vertical, WindmillSpace.x2)
+        .background(alignment: .center) {
+            if pairBloom > 0 { PairBloom(colour: skin.lamp).id(pairBloom) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("How the day felt")
+    }
+
+    // Completion happens once, so the pair bloom is capped; the four extreme events never are.
+    private func considerThePair() {
+        guard store.mood != nil, store.energy != nil else { return }
+        let key = "journal.pair.\(store.today.iso)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        pairBloom += 1
+    }
+
     private var showScalesCard: Bool {
         !scalesTaught && !store.isFirstRun && !store.body.isEmpty
     }
 
     private var scalesCard: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-            Text("Two taps, if you ever want them: how the day felt, and how much you had in the tank. Skipping costs nothing.")
+            Text("Two scales, if you ever want them: how the day felt, and how much you had in the tank. Zero is a real answer. Skipping costs nothing.")
                 .font(WindmillFont.body(14))
                 .foregroundStyle(skin.ink.opacity(0.82))
                 .lineSpacing(3)
 
             HStack(spacing: WindmillSpace.x2) {
-                Text("mood").modifier(ScaleChip(skin: skin))
-                Text("energy").modifier(ScaleChip(skin: skin))
                 Spacer(minLength: 0)
                 Button("Not now") { scalesTaught = true }
                     .font(WindmillFont.body(12.5, .bold))
@@ -202,5 +234,152 @@ private struct SavedNote: View {
                 try? await Task.sleep(for: .seconds(2.2))
                 visible = false
             }
+    }
+}
+
+// The two rows breathe once when a day's pair completes; opacity only under reduced motion.
+private struct PairBloom: View {
+    let colour: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lit = false
+
+    var body: some View {
+        RadialGradient(colors: [colour.opacity(0.08), .clear], center: .center,
+                       startRadius: 0, endRadius: 130)
+            .frame(height: 180)
+            .allowsHitTesting(false)
+            .opacity(lit ? 1 : 0)
+            .task {
+                withAnimation(.timingCurve(0.34, 1.4, 0.64, 1, duration: 0.26)) { lit = true }
+                try? await Task.sleep(for: .milliseconds(380))
+                withAnimation(.timingCurve(0.22, 0.61, 0.36, 1, duration: 0.64)) { lit = false }
+            }
+    }
+}
+
+// Where a phone beats a browser. Not gated by Reduce Motion — a haptic is not motion — and gated by
+// the system haptics setting, which UIKit already honours.
+@MainActor
+final class ScaleHaptics {
+    private var engine: CHHapticEngine?
+    private let selection = UISelectionFeedbackGenerator()
+
+    func stopCrossing() {
+        selection.selectionChanged()
+        selection.prepare()
+    }
+
+    func commit(_ event: ScaleEvent?, curve: Double) {
+        guard let event else {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.4 + 0.4 * curve)
+            return
+        }
+        switch event {
+        case .surge: surge()
+        case .flare: flare()
+        case .ground: ground()
+        case .hold: hold()
+        }
+    }
+
+    func clear() {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.4)
+    }
+
+    func stop() {
+        engine?.stop()
+        engine = nil
+    }
+
+    // Crackle on the arcs' own three beats, then the discharge.
+    private func surge() {
+        let beats = [(0.0, 1.0, 1.0), (0.09, 0.75, 0.9), (0.16, 0.55, 0.8)]
+        let crackle = beats.map { beat in
+            CHHapticEvent(eventType: .hapticTransient,
+                          parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: Float(beat.1)),
+                                       CHHapticEventParameter(parameterID: .hapticSharpness, value: Float(beat.2))],
+                          relativeTime: beat.0)
+        }
+        let discharge = CHHapticEvent(eventType: .hapticContinuous,
+                                      parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.5),
+                                                   CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.3)],
+                                      relativeTime: 0.16, duration: 0.26)
+        let ramp = CHHapticParameterCurve(parameterID: .hapticIntensityControl,
+                                          controlPoints: [.init(relativeTime: 0, value: 1),
+                                                          .init(relativeTime: 0.26, value: 0)],
+                                          relativeTime: 0.16)
+        play(crackle + [discharge], curves: [ramp]) {
+            let ladder: [(Double, UIImpactFeedbackGenerator.FeedbackStyle)] =
+                [(0, .heavy), (0.09, .medium), (0.16, .light)]
+            for beat in ladder { after(beat.0) { UIImpactFeedbackGenerator(style: beat.1).impactOccurred() } }
+        }
+    }
+
+    // A swell, not a hit — and never a success chime: the canvas grades nothing.
+    private func flare() {
+        let swell = CHHapticEvent(eventType: .hapticContinuous,
+                                  parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.55),
+                                               CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.15)],
+                                  relativeTime: 0, duration: 0.62)
+        let envelope = CHHapticParameterCurve(parameterID: .hapticIntensityControl,
+                                              controlPoints: [.init(relativeTime: 0, value: 0),
+                                                              .init(relativeTime: 0.31, value: 1),
+                                                              .init(relativeTime: 0.62, value: 0)],
+                                              relativeTime: 0)
+        play([swell], curves: [envelope]) {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6)
+        }
+    }
+
+    // A set-down and its echo.
+    private func ground() {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.5)
+        after(0.18) { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.25) }
+    }
+
+    // The dim and the return, felt.
+    private func hold() {
+        let dip = CHHapticEvent(eventType: .hapticContinuous,
+                                parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.3),
+                                             CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.1)],
+                                relativeTime: 0, duration: 0.78)
+        let envelope = CHHapticParameterCurve(parameterID: .hapticIntensityControl,
+                                              controlPoints: [.init(relativeTime: 0, value: 1),
+                                                              .init(relativeTime: 0.39, value: 0),
+                                                              .init(relativeTime: 0.78, value: 1)],
+                                              relativeTime: 0)
+        play([dip], curves: [envelope]) {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.3)
+        }
+    }
+
+    private func play(_ events: [CHHapticEvent], curves: [CHHapticParameterCurve], fallback: () -> Void) {
+        guard let engine = running(),
+              let pattern = try? CHHapticPattern(events: events, parameterCurves: curves),
+              let player = try? engine.makePlayer(with: pattern),
+              (try? player.start(atTime: CHHapticTimeImmediate)) != nil else {
+            fallback()
+            return
+        }
+    }
+
+    private func running() -> CHHapticEngine? {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return nil }
+        if let engine { return engine }
+        guard let made = try? CHHapticEngine() else { return nil }
+        made.stoppedHandler = { _ in }
+        made.resetHandler = { try? made.start() }
+        guard (try? made.start()) != nil else { return nil }
+        engine = made
+        return made
+    }
+}
+
+@MainActor
+private func after(_ seconds: Double, _ work: @escaping () -> Void) {
+    Task { @MainActor in
+        try? await Task.sleep(for: .seconds(seconds))
+        work()
     }
 }

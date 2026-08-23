@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { PageCache, blankPage, isWritten, normalizePage, winnerOf } from '../../../src/products/journal/pageCache.js';
 
-const KEY = 'wm.journal.pages.anon';
+const KEY = 'wm.journal.v2.pages.anon';
 
 function memoryStorage(seed = null) {
   const map = new Map();
@@ -39,14 +39,14 @@ test('an unreadable store opens EMPTY rather than throwing', () => {
   assert.deepEqual(new PageCache(null, null).pages(), []);
 });
 
-test('a stored blob is normalised on the way in — the wire’s 0 is this module’s null', () => {
+test('a stored blob is normalised on the way in — 0 is a value, out of range is not', () => {
   const cache = new PageCache(null, memoryStorage({
-    '2026-08-01': { page: { day: '2026-08-01', body: 'a', mood: 0, energy: 2, source: 'spoken', stamp: '9:0:x' }, needsPush: true, read: true },
+    '2026-08-01': { page: { day: '2026-08-01', body: 'a', mood: 0, energy: 11, source: 'spoken', stamp: '9:0:x' }, needsPush: true, read: true },
     'junk': { needsPush: true },
   }));
 
   assert.deepEqual(cache.pages(), [
-    { day: '2026-08-01', body: 'a', mood: null, energy: 2, source: 'spoken', stamp: '9:0:x' },
+    { day: '2026-08-01', body: 'a', mood: 0, energy: null, source: 'spoken', stamp: '9:0:x' },
   ]);
   assert.equal(cache.hasRead('2026-08-01'), true);
   assert.equal(cache.owed().length, 1);
@@ -203,11 +203,12 @@ test('a flushed cache round-trips through a reload, marks and all', () => {
   assert.deepEqual(reopened.owed().map((entry) => entry.page.day), ['2026-08-07']);
 });
 
-test('isWritten — a mood with no words was still a day someone showed up for', () => {
+test('isWritten — a mood with no words was still a day someone showed up for, zero included', () => {
   assert.equal(isWritten(blankPage('2026-08-07')), false);
   assert.equal(isWritten({ ...blankPage('2026-08-07'), mood: 1 }), true);
   assert.equal(isWritten({ ...blankPage('2026-08-07'), body: 'x' }), true);
-  assert.equal(isWritten(normalizePage({ day: '2026-08-07', mood: 0, energy: 0 })), false);
+  assert.equal(isWritten(normalizePage({ day: '2026-08-07', mood: 0, energy: 0 })), true);
+  assert.equal(isWritten(normalizePage({ day: '2026-08-07' })), false);
 });
 
 test('winnerOf — an absent incumbent means the arriving page, whatever its stamp', () => {

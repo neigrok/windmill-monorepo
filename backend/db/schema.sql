@@ -574,8 +574,8 @@ create table if not exists journal_page (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,                    -- the writer's local ISO day, the key
   body          text not null default '',
-  mood          smallint not null default 0 check (mood between 0 and 5),      -- 0 = not set
-  energy        smallint not null default 0 check (energy between 0 and 3),    -- 0 = not set
+  mood          smallint check (mood between 0 and 10),     -- null = not answered; 0 IS an answer
+  energy        smallint check (energy between 0 and 10),   -- null = not answered; 0 IS an answer
   source        text not null default 'typed',    -- typed | spoken
   stamp_ms      bigint not null default 0,         -- HLC physical ms  ┐ the LWW guard; a write
   stamp_counter bigint not null default 0,         -- HLC counter      ┘ never goes backwards
@@ -583,6 +583,34 @@ create table if not exists journal_page (
   updated_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
+-- Both scales became 0..10 with null for unanswered (docs/design/journal/scales.md). Before that
+-- mood was 1..5, energy 1..3, and 0 was the unset sentinel. The old rows are remapped once: mood
+-- onto the odd positions (new = 2*old - 1), which is where the five shipped colour anchors sit, so
+-- no migrated page changes colour on any glyph; energy onto the centre of each old third. The
+-- remap is guarded on the column still being NOT NULL, which is true exactly once — a second run
+-- would double the values it already moved. Constraint names verified against a live journal_page.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'journal_page'
+               and column_name = 'mood' and is_nullable = 'NO') then
+    alter table journal_page alter column mood   drop default;
+    alter table journal_page alter column energy drop default;
+    alter table journal_page alter column mood   drop not null;
+    alter table journal_page alter column energy drop not null;
+    alter table journal_page drop constraint if exists journal_page_mood_check;
+    alter table journal_page drop constraint if exists journal_page_energy_check;
+    update journal_page set mood   = case mood   when 0 then null else 2 * mood - 1 end,
+                            energy = case energy when 0 then null
+                                                 when 1 then 2 when 2 then 5 when 3 then 8 end;
+  end if;
+end $$;
+
+alter table journal_page drop constraint if exists journal_page_mood_check;
+alter table journal_page drop constraint if exists journal_page_energy_check;
+alter table journal_page add constraint journal_page_mood_check   check (mood   between 0 and 10);
+alter table journal_page add constraint journal_page_energy_check check (energy between 0 and 10);
+
 create index if not exists journal_page_user_day on journal_page (user_id, day);
 create index if not exists journal_page_user_stamp on journal_page (user_id, stamp_ms, stamp_counter);
 

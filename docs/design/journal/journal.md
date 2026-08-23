@@ -53,6 +53,7 @@ to have something true to say when they look back.
 | Day marker | Mono date + mood pip + energy tick, both quantised (`scales.md` §4); the tick carries a 1px baseline whenever energy is set at all, including 0. **Sticky**: pinned to the top edge on phone, held in a 74px gutter on desktop, while its day is under you |
 | Month pill | Floats top-right, confirms month + year when you're deep in the past |
 | Measure | 640px desktop, full width − 44px phone. Capped *before* the margin appears |
+| Stillness | **The reading column never moves.** Above 1240px the echo margin's 300px is reserved space, held whether or not the panel has anything in it, and the measure centres in what is left. An echo arriving, leaving, or being scrolled past changes the panel's *content*; nothing may change the canvas's geometry, at any scroll speed |
 | Zoom | Read → Skim → Year is one continuous compression of the same canvas, never three screens. Mood is the only thing that survives to Year — **quantised to five bands** (`scales.md` §4) |
 | Gaps | **An unwritten day is not drawn at all** — the canvas is what you wrote, not a calendar with holes in it, and each marker's date shows the jump |
 | Today | The last block; writing happens inline at the bottom, not in a composer |
@@ -85,6 +86,7 @@ both read `Entitlements::hasWindmillOne` server-side.
   character the cut shows is a character the reader wrote.
 - If One lapses, existing echoes stay visible; new ones stop being computed. Nothing written
   is ever withdrawn.
+- **The margin is a place, not a pop-up.** On desktop it is always there once the account has any echo at all, and when no page under the reading waterline has one it rests — the hairline and one true line, *No echo on this page.* It never fills with substitute content, never shows a spinner, and swapping from one page's ink to the next is a fade with a settle delay, so scrolling fast crosses pages without a strobe.
 - Echoes are computed on write, not nightly. The nightly pass is the repair job
   (re-derivation after an edit, inbound edges, retries). The journal never speaks first — the
   trigger is always a page you wrote.
@@ -152,9 +154,14 @@ game metaphor entirely** — nothing is unlocked, earned, or planted here.
 - Mood is one hue — a scale, not competing colours; energy is olive, one colour at every
   value. A day you didn't write is `--neutral-300`. Brick appears nowhere. The ramp, its bands
   and its motion ladder are `scales.md`.
-- **Calm ceiling:** exactly one infinite loop on screen — today's dot (`wm-ember`). While
-  recording, the waveform takes that slot and the dot goes static. Every scale event
-  terminates; nothing in that ladder loops.
+- **Calm ceiling:** at most one infinite loop on screen at a time, and the scale ladder adds
+  none — every scale event terminates. On **iOS** that one loop is today's breathing pip
+  (`DayGlyphs.swift`); while recording, the waveform takes the slot and the pip goes static.
+  On **web** there is currently none: the canvas draws no glyphs at all for today
+  (`DayMarker.jsx`), so there is no dot to breathe, and `wm-ember` belongs to the shell rather
+  than to journal. This line named the iOS ember as though it were both surfaces' until
+  2026-08-23; the divergence underneath — today's marker drawing glyphs on one surface and not
+  the other — is filed in `consistency.md` 1j and is not settled here.
 - Entrances are `wm-fade-in-up` / `--ease-soft`; state changes are 180–240ms `--ease-standard`.
 - **Nothing bounces.** The one overshoot the product owns, `--journal-ease-catch`, is a single
   soft overshoot with no oscillation; no springs, no elastic, anywhere.

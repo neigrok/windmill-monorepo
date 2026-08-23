@@ -50,13 +50,13 @@ final class LiveBackendTests: XCTestCase {
     func testAPageSurvivesTheRoundTrip() async throws {
         let day = try uniqueDay()
         let stamp = Hlc(milliseconds: 1_785_600_000_000, counter: 0, actor: "d-livetest")
-        let sent = Page(day: day, body: "written by the swift client", mood: .m4, energy: .e2,
+        let sent = Page(day: day, body: "written by the swift client", mood: 4, energy: 2,
                         source: .typed, stamp: stamp)
 
         let winner = try await journal.put(sent)
         XCTAssertEqual(winner.body, sent.body)
-        XCTAssertEqual(winner.mood, .m4)
-        XCTAssertEqual(winner.energy, .e2)
+        XCTAssertEqual(winner.mood, 4)
+        XCTAssertEqual(winner.energy, 2)
         XCTAssertEqual(winner.stamp, stamp, "the stamp must survive the wire verbatim — it is the convergence key")
         XCTAssertGreaterThan(winner.updatedAtMs, 0, "the server stamps its own time")
 

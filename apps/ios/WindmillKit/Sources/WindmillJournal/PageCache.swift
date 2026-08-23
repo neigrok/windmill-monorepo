@@ -13,10 +13,16 @@ public final class PageCache {
     private let url: URL
     private var entries: [String: Entry]
 
+    // Bumped when the shape of a stored page changes. v1 held mood 1...5 / energy 1...3 with 0
+    // meaning unset; v2 holds 0...10 with null meaning unset, so a v1 file read as v2 would report
+    // every unanswered scale as a recorded zero. Old files are read once, migrated, and removed.
+    private static let version = "v2"
     // Read once on open and retired, never written again.
     private static let legacyFile = "windmill-journal-pages.json"
     // Where its unsent pages wait; no seat opens this name.
-    private static let quarantineFile = "windmill-journal-pages-unclaimed.json"
+    private static let quarantineFile = "windmill-journal-pages-\(version)-unclaimed.json"
+    // The same store under its v1 name. Nothing reads it after the bump, so it is carried over whole.
+    private static let version1QuarantineFile = "windmill-journal-pages-unclaimed.json"
 
     public init(url: URL) {
         self.url = url
@@ -28,8 +34,9 @@ public final class PageCache {
     // holds a SESSION for — the Keychain's answer, not this seat's.
     public convenience init(seat: String?, in directory: URL = PageCache.deviceDirectory(),
                             deviceHolds: @escaping @autoclosure () -> String? = KeychainSessions().readUser()?.id) {
+        PageCache.carryQuarantineForward(in: directory)
         PageCache.retireLegacyStore(in: directory, heldBy: deviceHolds)
-        if let seat { PageCache.carryOverTheUnprefixedFile(for: seat, in: directory) }
+        PageCache.carryVersion1Forward(for: seat, in: directory)
         self.init(url: directory.appendingPathComponent(PageCache.fileName(forSeat: seat)))
     }
 
@@ -43,20 +50,50 @@ public final class PageCache {
     // The seat id is a path component: anything not plainly an id is dropped, or a separator or `..`
     // opens another seat's file. The `u.` prefix keeps a seat named `anon` or `unclaimed` off those files.
     static func fileName(forSeat seat: String?) -> String {
-        guard let seat else { return "windmill-journal-pages-anon.json" }
-        let safe = seat.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
-        return "windmill-journal-pages-u.\(safe).json"
+        guard let seat else { return "windmill-journal-pages-\(version)-anon.json" }
+        return "windmill-journal-pages-\(version)-u.\(safe(seat)).json"
     }
 
-    // Delete once no build writing the un-prefixed name is in anybody's hands.
-    private static func carryOverTheUnprefixedFile(for seat: String, in directory: URL) {
-        let safe = seat.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
-        let unprefixed = directory.appendingPathComponent("windmill-journal-pages-\(safe).json")
-        guard FileManager.default.fileExists(atPath: unprefixed.path) else { return }
+    private static func safe(_ seat: String) -> String {
+        seat.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
+    // The names this seat wore before the version bump, newest first. Both are read once, migrated
+    // onto the 0...10 scales, folded into the v2 file, and removed.
+    private static func version1Files(forSeat seat: String?) -> [String] {
+        guard let seat else { return ["windmill-journal-pages-anon.json"] }
+        return ["windmill-journal-pages-u.\(safe(seat)).json", "windmill-journal-pages-\(safe(seat)).json"]
+    }
+
+    // Quarantine is the one store designed never to lose a page, so the version bump migrates it rather
+    // than orphaning it. Days already waiting in v2 keep their bytes; the v1 file goes only once it landed.
+    static func carryQuarantineForward(in directory: URL) {
+        let source = directory.appendingPathComponent(version1QuarantineFile)
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+        let quarantine = directory.appendingPathComponent(quarantineFile)
+        var waiting = decode(quarantine)
+        for (day, entry) in decodeVersion1(source) where waiting[day] == nil { waiting[day] = entry }
+        guard let encoded = try? JSONEncoder().encode(waiting) else { return }
+        do {
+            try encoded.write(to: quarantine, options: .atomic)
+        } catch {
+            return
+        }
+        try? FileManager.default.removeItem(at: source)
+    }
+
+    private static func carryVersion1Forward(for seat: String?, in directory: URL) {
+        let sources = version1Files(forSeat: seat)
+            .map(directory.appendingPathComponent)
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !sources.isEmpty else { return }
+
         let theirs = PageCache(url: directory.appendingPathComponent(fileName(forSeat: seat)))
-        for (_, entry) in decode(unprefixed) { theirs.store(entry.page, needsPush: entry.needsPush) }
+        for source in sources {
+            for (_, entry) in decodeVersion1(source) { theirs.store(entry.page, needsPush: entry.needsPush) }
+        }
         guard theirs.flush() else { return }
-        try? FileManager.default.removeItem(at: unprefixed)
+        for source in sources { try? FileManager.default.removeItem(at: source) }
     }
 
     // Unsent pages go to the seat whose SESSION this device holds, or to quarantine if it holds none.
@@ -64,7 +101,7 @@ public final class PageCache {
     static func retireLegacyStore(in directory: URL, heldBy deviceHolds: () -> String?) {
         let legacy = directory.appendingPathComponent(legacyFile)
         guard let data = try? Data(contentsOf: legacy) else { return }
-        let held = (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
+        let held = migrated((try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:])
         let owed = held.filter { $0.value.needsPush }
 
         guard keep(owed, in: directory, heldBy: deviceHolds()) else { return }
@@ -98,6 +135,21 @@ public final class PageCache {
     private static func decode(_ url: URL) -> [String: Entry] {
         let data = (try? Data(contentsOf: url)) ?? Data()
         return (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
+    }
+
+    private static func decodeVersion1(_ url: URL) -> [String: Entry] {
+        migrated(decode(url))
+    }
+
+    // The same mapping the server migration runs: v1's five mood steps land on the odd positions of
+    // the new ramp, v1's three energy steps on the centre of each third, and both zeroes on unset.
+    private static func migrated(_ entries: [String: Entry]) -> [String: Entry] {
+        entries.mapValues { entry in
+            var page = entry.page
+            page.mood = page.mood.flatMap { (1...5).contains($0) ? 2 * $0 - 1 : nil }
+            page.energy = page.energy.flatMap { [1: 2, 2: 5, 3: 8][$0] }
+            return Entry(page: page, needsPush: entry.needsPush)
+        }
     }
 
     public var pages: [Page] {

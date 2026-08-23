@@ -11,11 +11,23 @@
   --journal-gap: var(--neutral-300, #3C3223);
   --journal-energy: var(--accent-olive-400, #9AA859);
 
+  --mood-0: #5E4D2E;
   --mood-1: #6E5A34;
-  --mood-2: #8F7440;
-  --mood-3: #B08F4E;
-  --mood-4: #C9A75F;
-  --mood-5: #E0B972;
+  --mood-2: #7F673A;
+  --mood-3: #8F7440;
+  --mood-4: #A08247;
+  --mood-5: #B08F4E;
+  --mood-6: #BD9B57;
+  --mood-7: #C9A75F;
+  --mood-8: #D5B069;
+  --mood-9: #E0B972;
+  --mood-10: #ECC27C;
+
+  /* The scale control's four static edges (scales.md §2.4–§2.6) and the arc's hot core. */
+  --journal-swatch-edge: color-mix(in srgb, var(--journal-ink) 34%, transparent);
+  --journal-head-ring: color-mix(in srgb, var(--journal-ink) 78%, transparent);
+  --journal-focus: #D5D1C6;   /* ink 88% over the night canvas, flattened: an alpha would let the head's glow through */
+  --surge-core: #F4F7E2;
 
   --journal-scrim: color-mix(in srgb, #000 46%, transparent);
   --journal-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
@@ -36,7 +48,8 @@
 }
 
 /* Day. The sheet comes from the room palette through data-brand; the candle, ink, mood scale and echo
-   weights are re-pointed here at day strength. */
+   weights are re-pointed here at day strength. The ground is --neutral-50 #F7F7F5, handed down by the
+   room palette — journal's light block deliberately pins no ground of its own. */
 .journal-root[data-theme='light'] {
   color-scheme: light;
   --lamp-400: #986B1E;
@@ -46,11 +59,24 @@
   --journal-gap: var(--neutral-300, #D3C2A0);
   --journal-energy: var(--accent-olive-500, #7D8C43);
 
+  --mood-0: #EDDFB7;
   --mood-1: #E4CF9C;
-  --mood-2: #D3AF66;
-  --mood-3: #BE8F3D;
-  --mood-4: #A5741F;
-  --mood-5: #8A5E12;
+  --mood-2: #DCBF81;
+  --mood-3: #D3AF66;
+  --mood-4: #C99F52;
+  --mood-5: #BE8F3D;
+  --mood-6: #B2822E;
+  --mood-7: #A5741F;
+  --mood-8: #986919;
+  --mood-9: #8A5E12;
+  --mood-10: #7D530B;
+
+  /* Paper has no light: every day edge is ink, and the "glow" is an ink shadow (scales.md §2.5). */
+  --journal-swatch-edge: color-mix(in srgb, var(--journal-ink) 46%, transparent);
+  --journal-head-ring: color-mix(in srgb, var(--journal-ink) 68%, transparent);
+  --journal-focus: #433B33;   /* ink 88% over paper, flattened, for the same reason */
+  --surge-shadow: color-mix(in srgb, var(--journal-ink) 26%, transparent);   /* day only: night's arc has a halo pass */
+  --surge-core: #3F4A16;
 
   --journal-scrim: color-mix(in srgb, #2A2118 26%, transparent);
   --journal-panel-shadow: 0 20px 50px rgba(74, 58, 36, 0.18);
@@ -82,6 +108,11 @@
 }
 
 .journal-root {
+  /* Three eases the scale control owns; theme-independent, so they sit outside the palette blocks. */
+  --journal-ease-catch: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --journal-ease-settle: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --journal-ease-rise: cubic-bezier(0.16, 0.72, 0.30, 1);
+
   /* The echo margin's reserved space. Held open for the whole mount, never per-scroll. */
   --je-gutter: 0px;
 
@@ -174,14 +205,27 @@
   border-radius: 999px;
   box-sizing: border-box;
   background: color-mix(in srgb, var(--journal-ink) 26%, transparent);
+  border: 1px solid var(--journal-swatch-edge);
   flex: 0 0 auto;
 }
 
 .journal-tick {
+  position: relative;
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
   height: 10px;
+}
+/* The baseline is the only thing telling "energy 0-3, recorded" from "energy never answered". */
+.journal-tick.is-set::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  border-radius: 0.5px;
+  background: color-mix(in srgb, var(--journal-energy) 45%, transparent);
 }
 .journal-tick-bar {
   width: 2.5px;
@@ -302,37 +346,284 @@
   margin: 14px 0 0;
 }
 
-/* The two taps — one strip: five mood steps, three energy steps, one word. */
+/* ─── the two scales ──────────────────────────────────────────────────────────────────────────────
+   Two labelled rows, [label][track][numeral]. Identity is carried three times: the mono word, the hue,
+   and the head shape (mood a circle, energy a capsule — the same two shapes the day glyphs draw).
+   The track is a snapping scrubber with eleven stops; the 44px thumb rule is honoured by the ROW.
+   Geometry, colour and motion are docs/design/journal/scales.md §§2, 4, 6. */
+
 .journal-controls {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 54px 1fr 30px;
+  column-gap: 10px;
+  row-gap: 10px;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 18px;
+
+  --journal-inset: 7px;
+  --journal-bed-h: 6px;
+  --journal-tick-d: 2px;
+  --head-ring-w: 1px;     /* the head's ring AND the focus ring's inset: one number, unroundable */
+  --journal-focus-band: 4px;   /* a 2px ink band at +2 -> +4, at both head sizes: one band, one fact */
+  --flare-scale: 4.143;   /* (14 + 44) / 14 */
+  --hold-scale: 0.5;      /* (14 + 13) / (14 + 40) */
 }
 
-.journal-mood,
-.journal-energy {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.journal-energy { gap: 3px; }
-
-.journal-scale-rule {
-  width: 1px;
-  height: 14px;
-  margin: 0 10px;
-  background: color-mix(in srgb, var(--journal-ink) 16%, transparent);
-  flex: 0 0 auto;
+.journal-scale-label {
+  position: relative;
+  z-index: 1;
+  font: 400 10px/24px var(--font-mono), ui-monospace, monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--journal-ink-dim);
 }
 
-.journal-scale-word {
-  margin-left: auto;
-  font: 400 10px/1 var(--font-mono), ui-monospace, monospace;
-  letter-spacing: 0.08em;
-  color: var(--journal-ink-dim, #8A98AC);
-  transition: color 180ms var(--ease-standard);
+.journal-track {
+  position: relative;
+  height: 24px;
+  touch-action: none;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.journal-scale-word.is-set { color: var(--lamp-400); }
+.journal-track-mood { --head-w: 14px; --head-h: 14px; --head-r: 999px; --unset-w: 12px; --unset-h: 12px; }
+.journal-track-energy { --head-w: 6px; --head-h: 16px; --head-r: 3px; --unset-w: 5px; --unset-h: 14px; }
+
+/* The head centre runs between the insets, so every stop is spaced across the travel, not the bed. */
+.journal-track-bed,
+.journal-track-fill,
+.journal-track-ticks,
+.journal-track-fx { pointer-events: none; }
+
+.journal-track-bed {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--journal-bed-h);
+  transform: translateY(-50%);
+  border-radius: calc(var(--journal-bed-h) / 2);
+  background: color-mix(in srgb, var(--journal-ink) 12%, transparent);
+  overflow: hidden;
+}
+.journal-track-energy .journal-track-bed { --sweep-c: color-mix(in srgb, var(--journal-energy) 22%, transparent); }
+.journal-track-mood .journal-track-bed { --sweep-c: color-mix(in srgb, var(--mood-0) 40%, transparent); }
+.journal-track-bed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background-image: linear-gradient(90deg, transparent, var(--sweep-c), transparent);
+  background-size: 30% 100%;
+  background-repeat: no-repeat;
+  background-position: -30% 0;
+}
+
+.journal-track-ticks { position: absolute; inset: 0; }
+.journal-tick-dot {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--journal-inset) + (100% - 2 * var(--journal-inset)) * var(--i) / 10);
+  width: var(--journal-tick-d);
+  height: var(--journal-tick-d);
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--journal-ink) 20%, transparent);
+  transition: background 120ms var(--ease-standard);
+}
+.journal-tick-dot.is-lit { background: color-mix(in srgb, var(--journal-ink) 40%, transparent); }
+
+/* Painted after the ticks, so the ticks under the fill are simply not seen. Nothing to draw at 0.
+   The lit length is the bed's own rounded window; inside it a bar of the FULL lit length slides so
+   that its right end sits on the head at every stop. A width would reflow on every commit and every
+   frame of a drag (§6.13); a scaleX would squash the bar's rounded cap and its gradients. */
+.journal-track-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--journal-bed-h);
+  transform: translateY(-50%);
+  border-radius: calc(var(--journal-bed-h) / 2);
+  overflow: hidden;
+}
+.journal-track.is-empty .journal-track-fill { visibility: hidden; }
+.journal-track-fill-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(100% - var(--journal-inset));   /* the fill at 10: the left edge to the head's centre */
+  border-radius: inherit;
+  background-color: var(--head-fill);
+  transform: translateX(calc((var(--pos) - 10) * (100% - var(--journal-inset)) / 10));
+  transition: transform 110ms var(--ease-standard);
+}
+/* The surge's structural mark: a static charged sheen, a state and not a moment. */
+.journal-track-energy.is-ceiling .journal-track-fill-bar {
+  background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surge-core) 10%, transparent) 55%, transparent);
+}
+.journal-track-fill-bar::after,
+.journal-track-fill-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  background-repeat: no-repeat;
+}
+.journal-track-fill-bar::after {
+  background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--lamp-400) calc(14% + var(--k, 0) * 14%), transparent), transparent);
+  background-size: 40% 100%;
+  background-position: -40% 0;
+}
+.journal-track-fill-bar::before {
+  background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mood-10) 34%, transparent), transparent);
+  background-size: 55% 100%;
+  background-position: 140% 0;
+}
+
+/* A stop rail spans the travel, so its own width IS the travel and one percentage transform lands on
+   any stop — the head and the ghost both ride one, and neither moves a layout property. */
+.journal-stop-rail {
+  position: absolute;
+  left: var(--journal-inset);
+  right: var(--journal-inset);
+  top: 50%;
+  height: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--at) * 10%));
+}
+.journal-head-rail {
+  --at: var(--pos);
+  transition: transform 110ms var(--ease-standard);
+}
+.journal-ghost-rail { --at: var(--ghost, 0); }
+
+/* The head. Its legibility is carried by its RING, never by its fill: set is stronger than unset on
+   all four monotone axes (ring, fill, glow, size), which is the only way an answered 0 stays louder
+   than an unanswered scale. */
+.journal-head {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--head-w);
+  height: var(--head-h);
+  box-sizing: border-box;
+  border-radius: var(--head-r);
+  border: var(--head-ring-w) solid var(--journal-head-ring);
+  background: var(--head-fill);
+  transform: translate(-50%, -50%);
+  --glow-r: 6px;
+  --glow-c: var(--glow-rest);
+  box-shadow: 0 0 var(--glow-r) 0 var(--glow-c);
+  transition: background-color 180ms var(--ease-standard),
+    border-color 180ms var(--ease-standard), box-shadow 220ms var(--ease-standard);
+}
+.journal-root[data-theme='dark'] .journal-head {
+  --glow-rest: color-mix(in srgb, var(--head-fill) 45%, transparent);
+  --glow-end: color-mix(in srgb, var(--head-fill) 78%, transparent);
+}
+.journal-root[data-theme='light'] .journal-head {
+  --glow-rest: color-mix(in srgb, var(--journal-ink) 14%, transparent);
+  --glow-end: color-mix(in srgb, var(--journal-ink) 26%, transparent);
+}
+.journal-track.is-unset .journal-head {
+  width: var(--unset-w);
+  height: var(--unset-h);
+  background: transparent;
+  border-color: var(--journal-swatch-edge);
+  --glow-r: 0px;
+  --glow-c: transparent;
+}
+/* The two luminous marks. Only a ceiling gets one: a mark is luminous only where the value's own
+   colour is bright enough to carry light. The floors get structural marks instead. */
+.journal-track-mood.is-ceiling .journal-head { --glow-r: 12px; --glow-c: var(--glow-end); }
+.journal-track-energy.is-ceiling .journal-head { --glow-r: 10px; --glow-c: var(--glow-end); }
+
+/* The focus ring rides ABOVE the glow, so the ink band is judged against the canvas alone and does
+   not brighten with the value — which is the whole point of the ground-coloured spacer. Its box is
+   the head's BORDER box (§2.6: `inset: calc(-1 * <ring width>)`) — at `inset: 0` an absolutely
+   positioned ::after takes the PADDING box, and the spacer then paints the head's own ring out. */
+.journal-head::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--head-ring-w));
+  border-radius: calc(var(--head-r) + var(--head-ring-w));
+}
+/* The hold's structural mark: a static 1px ring whose CENTRELINE sits 6px clear of the head's edge —
+   stroke +5.5 -> +6.5, clearing the 2 -> 4px focus band by 1.5px. That centreline is the canonical
+   fact; the box below is what it costs in a model that draws a border INWARD, hence head + 13px.
+   iOS declares head + 12px for the same geometry because a centred .stroke straddles its path.
+   The two numbers are one geometry in two stroke models: do not reconcile them. */
+.journal-head::before { content: ''; position: absolute; left: 50%; top: 50%; }
+.journal-track-mood.is-floor .journal-head::before {
+  width: calc(var(--head-w) + 13px);
+  height: calc(var(--head-h) + 13px);
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1px solid var(--journal-head-ring);
+  transform: translate(-50%, -50%);
+}
+/* The ground's structural mark: a full-width rule 2px under the bed, for as long as the value is 0. */
+.journal-track-energy.is-floor::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + var(--journal-bed-h) / 2 + 2px);
+  height: 1px;
+  background: color-mix(in srgb, var(--journal-energy) 55%, transparent);
+  transform-origin: 50% 50%;
+}
+
+/* The ring never touches the head: a ground-coloured spacer first, so the ink band (2 → 4px of
+   spread) is only ever judged against the canvas and holds at every value in both themes. */
+.journal-track:focus-visible .journal-head::after {
+  box-shadow: 0 0 0 2px var(--surface-canvas), 0 0 0 var(--journal-focus-band) var(--journal-focus);
+}
+
+.journal-track.is-pressed .journal-head {
+  transform: translate(-50%, -50%) scale(0.94);
+  transition: transform 90ms var(--ease-standard);
+}
+
+.journal-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--unset-w);
+  height: var(--unset-h);
+  box-sizing: border-box;
+  border-radius: var(--head-r);
+  border: var(--head-ring-w) solid var(--journal-swatch-edge);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease-standard);
+}
+@media (hover: hover) {
+  .journal-track.is-previewing .journal-ghost { opacity: 0.4; }
+}
+
+.journal-numeral {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: right;
+  font: 400 11px/1 var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--lamp-400);
+  cursor: pointer;
+}
+.journal-numeral.is-unset {
+  color: color-mix(in srgb, var(--journal-ink-dim) 55%, transparent);
+  cursor: default;
+}
 
 .journal-scale-why {
   margin: 8px 0 0;
@@ -341,81 +632,323 @@
   opacity: 0.55;
 }
 
-.journal-mood-dot {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* ── the overlay layers. None of them exists at rest. ── */
+
+.journal-strip-fx {
+  position: absolute;
+  inset: -30px 0;
+  z-index: 0;
+  pointer-events: none;
+  contain: layout style;
 }
-.journal-mood-dot::before {
-  content: '';
-  width: 13px;
-  height: 13px;
+.journal-track-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.journal-flare-layer,
+.journal-hold-layer,
+.journal-ground-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  contain: layout style;
+}
+.journal-fx-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.journal-bloom {
+  position: absolute;
+  left: var(--bloom-x, 50%);
+  top: 50%;
+  width: var(--bloom-w, 220px);
+  height: 180px;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
-  box-sizing: border-box;
-  border: 1.5px solid color-mix(in srgb, var(--journal-ink) 34%, transparent);
-  background: transparent;
-  transition: background 180ms var(--ease-standard), border-color 180ms var(--ease-standard),
-    box-shadow 180ms var(--ease-standard), transform 180ms var(--ease-standard);
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, var(--bloom-c), transparent 70%);
 }
-.journal-mood-dot.is-on::before {
-  background: var(--dot-color);
-  border-color: var(--dot-color);
-  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--dot-color) 55%, transparent);
+.journal-bloom.is-pair {
+  --bloom-w: 100%;
+  --bloom-c: color-mix(in srgb, var(--lamp-400) 8%, transparent);
+  animation: journal-bloom-pair 1020ms 1 both;
 }
-.journal-mood-dot:focus-visible::before {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
+.journal-bloom.is-flare {
+  --bloom-c: color-mix(in srgb, var(--mood-10) 11%, transparent);
+  animation: journal-bloom-flare 1200ms 1 both;
 }
 
-.journal-energy-bar {
-  width: 14px;
-  height: 26px;
-  padding: 0 0 6px;
+.journal-flare-ring,
+.journal-hold-ring,
+.journal-mote {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--journal-inset) + (100% - 2 * var(--journal-inset)) * var(--pos) / 10);
   box-sizing: border-box;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
+  transform: translate(-50%, -50%);
 }
-.journal-energy-bar::before {
-  content: '';
-  width: 5px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--journal-ink) 22%, transparent);
-  transition: background 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+.journal-flare-ring {
+  width: var(--head-w);
+  height: var(--head-h);
+  border-radius: 999px;
+  border: 1px solid var(--mood-10);
+  opacity: 0;
+  animation: journal-flare-ring var(--dur) var(--journal-ease-settle) var(--d) 1 both;
 }
-.journal-energy-bar.level-1::before { height: 6px; }
-.journal-energy-bar.level-2::before { height: 10px; }
-.journal-energy-bar.level-3::before { height: 14px; }
-.journal-energy-bar.is-on::before {
+.journal-hold-ring {
+  width: calc(var(--head-w) + 40px);
+  height: calc(var(--head-h) + 40px);
+  border-radius: 999px;
+  border: 1px solid var(--mood-0);
+  opacity: 0;
+  animation: journal-hold-ring 1020ms var(--journal-ease-settle) 1 both;
+}
+.journal-mote {
+  width: 1.5px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: var(--mood-10);
+  animation: journal-mote var(--mdur, 1000ms) var(--journal-ease-rise) 1 both;
+}
+.journal-mote.is-falling {
+  width: 2px;
+  height: 2px;
   background: var(--journal-energy);
-  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--journal-energy) 45%, transparent);
-}
-.journal-energy-bar:focus-visible::before {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lamp-400) 40%, transparent);
+  --mx: 0px;
+  --my: 9px;
+  --mo: 0.9;
+  --mdur: 700ms;
 }
 
-/* Phone: 44px tall targets, still one row; the hit boxes overlap the space around the drawing. */
+.journal-surge {
+  position: absolute;
+  left: -12px;
+  top: -24px;
+  pointer-events: none;
+  contain: layout paint style;
+}
+.journal-arc { fill: none; stroke-linecap: round; stroke-linejoin: miter; }
+.journal-surge .is-night .is-halo { stroke: var(--journal-energy); opacity: 0.55; }
+.journal-surge .is-night .is-halo.is-main { stroke-width: 3.5; }
+.journal-surge .is-night .is-halo.is-branch { stroke-width: 2; }
+.journal-surge .is-night .is-core { stroke: var(--surge-core); }
+.journal-surge .is-night .is-core.is-main { stroke-width: 1.25; }
+.journal-surge .is-night .is-core.is-branch { stroke-width: 0.75; }
+/* Day is one struck pass over a sparser composition: density adds light on dark and ink on paper. */
+.journal-surge .is-day { filter: drop-shadow(0 0 2.6px var(--surge-shadow)); }
+.journal-surge .is-day .is-core { stroke: var(--surge-core); }
+.journal-surge .is-day .is-core.is-main { stroke-width: 2.2; }
+.journal-surge .is-day .is-core.is-branch { stroke-width: 1.6; }
+
+.journal-surge-beat {
+  opacity: 0;
+  animation-duration: 260ms;
+  animation-timing-function: steps(1);
+  animation-fill-mode: both;
+}
+.journal-surge-beat.beat-a { animation-name: journal-beat-a; }
+.journal-surge-beat.beat-b { animation-name: journal-beat-b; }
+.journal-surge-beat.beat-c { animation-name: journal-beat-c; }
+.journal-surge-still { opacity: 0; animation: journal-surge-still 500ms linear 1 both; }
+
+/* ── the timelines ── */
+
+.journal-head.is-blooming {
+  animation: journal-head-bloom 320ms var(--journal-ease-catch) 1 both,
+    journal-head-glow-bloom 320ms var(--journal-ease-catch) 1 both;
+}
+.journal-head.is-ticking { animation: journal-head-tick 90ms var(--ease-standard) 1 both; }
+.journal-head.is-surging {
+  animation: journal-head-surge 420ms var(--journal-ease-catch) 1 both,
+    journal-surge-decay 1320ms var(--journal-ease-settle) 1 both;
+}
+.journal-head.is-setting-down { animation: journal-head-setdown 380ms var(--journal-ease-catch) 1 both; }
+.journal-head.is-holding { animation: journal-hold-dim 900ms ease-in-out 1 both; }
+.journal-track-fill.is-washing .journal-track-fill-bar::after { animation: journal-track-wash calc(420ms + var(--k, 0) * 120ms) var(--journal-ease-settle) 60ms 1 both; }
+.journal-track-fill.is-wicking .journal-track-fill-bar::before { animation: journal-wick 620ms var(--journal-ease-settle) 1 both; }
+.journal-track-fill.is-hot { animation: journal-fill-hot 260ms var(--journal-ease-catch) 1 both; }
+.journal-track-fill.is-breathing { animation: journal-fill-breathe 900ms ease-in-out 1 both; }
+.journal-track-bed.is-sweeping::after { animation: journal-bed-sweep 540ms var(--journal-ease-settle) 1 both; }
+.journal-track-bed.is-dipping::after { animation: journal-bed-dip 360ms var(--ease-standard) 1 both; }
+.journal-track-energy.is-grounding::after { animation: journal-ground-strike 480ms var(--journal-ease-settle) 1 both; }
+.journal-numeral.is-rising { animation: journal-numeral-rise 280ms var(--ease-standard) 1 both; }
+.journal-scale-label.is-answering {
+  --label-peak: color-mix(in srgb, var(--lamp-400) calc(55% + var(--k, 0) * 45%), var(--journal-ink-dim));
+  animation: journal-label-answer 700ms ease-in-out 1 both;
+}
+
+@keyframes journal-head-bloom {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  42% { transform: translate(-50%, -50%) scale(calc(1.16 + 0.16 * var(--k, 0))); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes journal-head-glow-bloom {
+  0% { box-shadow: 0 0 0 0 var(--glow-c); }
+  42% { box-shadow: 0 0 calc(8px + 10px * var(--k, 0)) 0 var(--glow-c); }
+  100% { box-shadow: 0 0 var(--glow-r) 0 var(--glow-c); }
+}
+@keyframes journal-head-tick {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.12); }
+}
+@keyframes journal-head-surge {
+  0% { transform: translate(-50%, -50%) scale(1); }
+  40% { transform: translate(-50%, -50%) scale(1.42); }
+  70% { transform: translate(-50%, -50%) scale(1.06); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes journal-surge-decay {
+  0% { box-shadow: 0 0 6px 0 var(--glow-rest); }
+  12.7% { box-shadow: 0 0 26px 0 var(--glow-end); }
+  31.8% { box-shadow: 0 0 26px 0 var(--glow-end); }
+  100% { box-shadow: 0 0 10px 0 var(--glow-end); }
+}
+@keyframes journal-head-setdown {
+  0% { transform: translate(-50%, -50%) scale(1, 1); }
+  45% { transform: translate(-50%, -50%) scale(1.12, 0.72); }
+  100% { transform: translate(-50%, -50%) scale(1, 1); }
+}
+@keyframes journal-hold-dim {
+  0%, 100% { box-shadow: 0 0 6px 0 var(--glow-rest); }
+  50% { box-shadow: 0 0 6px 0 transparent; }
+}
+@keyframes journal-track-wash {
+  0% { opacity: 1; background-position: -40% 0; }
+  100% { opacity: 1; background-position: 140% 0; }
+}
+@keyframes journal-wick {
+  0% { opacity: 1; background-position: 140% 0; }
+  100% { opacity: 1; background-position: -55% 0; }
+}
+@keyframes journal-fill-hot {
+  0%, 100% { filter: none; }
+  45% { filter: brightness(1.35) saturate(1.15); }
+}
+@keyframes journal-fill-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.82; }
+}
+@keyframes journal-bed-sweep {
+  0% { opacity: 1; background-position: -30% 0; }
+  90% { opacity: 1; background-position: 100% 0; }
+  100% { opacity: 0; background-position: 100% 0; }
+}
+@keyframes journal-bed-dip {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; background-position: 35% 0; background-size: 100% 100%; }
+}
+@keyframes journal-ground-strike {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+@keyframes journal-numeral-rise {
+  0% { opacity: 1; transform: translateY(0); color: var(--journal-ink-dim); }
+  49.9% { opacity: 0; transform: translateY(-3px); }
+  50% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: translateY(0); color: var(--lamp-400); }
+}
+@keyframes journal-label-answer {
+  0%, 100% { color: var(--journal-ink-dim); }
+  30% { color: var(--label-peak); }
+}
+@keyframes journal-flare-ring {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(var(--flare-scale)); opacity: 0; }
+}
+/* The contraction does not evaporate: it lands on the held ring and cross-fades into it. */
+@keyframes journal-hold-ring {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  30% { opacity: 0.5; }
+  76.5% { transform: translate(-50%, -50%) scale(var(--hold-scale)); opacity: 0.5; }
+  100% { transform: translate(-50%, -50%) scale(var(--hold-scale)); opacity: 0; }
+}
+@keyframes journal-mote {
+  0% { transform: translate(-50%, -50%); opacity: var(--mo, 0.8); }
+  100% { transform: translate(calc(-50% + var(--mx, 0px)), calc(-50% + var(--my, -24px))); opacity: 0; }
+}
+@keyframes journal-bloom-pair {
+  0% { opacity: 0; animation-timing-function: var(--journal-ease-catch); }
+  25.5% { opacity: 1; }
+  37.3% { opacity: 1; animation-timing-function: var(--journal-ease-settle); }
+  100% { opacity: 0; }
+}
+@keyframes journal-bloom-flare {
+  0% { opacity: 0; animation-timing-function: var(--ease-standard, ease-out); }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes journal-beat-a {
+  0% { opacity: 1; }
+  34.62% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes journal-beat-b {
+  0% { opacity: 0; }
+  34.62% { opacity: 1; }
+  61.54% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes journal-beat-c {
+  0% { opacity: 0; }
+  61.54% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+@keyframes journal-surge-still {
+  0% { opacity: 0; }
+  36% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Phone: the row carries the 44px thumb rule, and the numeral's tap target is the whole 34 × 44 cell. */
 @media (max-width: 684px) {
-  .journal-controls { margin-top: 8px; }
-  .journal-mood { gap: 0; }
-  .journal-energy { gap: 0; }
-  .journal-mood-dot { width: 31px; height: 44px; }
-  .journal-mood-dot::before { width: 16px; height: 16px; }
-  .journal-energy-bar { width: 22px; height: 44px; padding-bottom: 14px; }
-  .journal-energy-bar::before { width: 6px; border-radius: 2px; }
-  .journal-energy-bar.level-1::before { height: 6px; }
-  .journal-energy-bar.level-2::before { height: 10px; }
-  .journal-energy-bar.level-3::before { height: 15px; }
-  .journal-scale-rule { margin: 0 8px; }
-  .journal-scale-word { font-size: 10.5px; }
+  .journal-controls {
+    grid-template-columns: 58px 1fr 34px;
+    column-gap: 8px;
+    row-gap: 4px;
+    margin-top: 10px;
+    --journal-inset: 9px;
+    --journal-bed-h: 8px;
+    --journal-tick-d: 2.5px;
+    --flare-scale: 4.111;   /* (18 + 56) / 18 */
+    --hold-scale: 0.534;    /* (18 + 13) / (18 + 40) */
+  }
+  .journal-scale-label { font-size: 10.5px; line-height: 44px; }
+  .journal-track { height: 44px; }
+  .journal-track-mood { --head-w: 18px; --head-h: 18px; --unset-w: 16px; --unset-h: 16px; }
+  .journal-track-energy { --head-w: 7px; --head-h: 20px; --unset-w: 6px; --unset-h: 18px; }
+  .journal-numeral { width: 34px; height: 44px; font-size: 13px; }
+}
+
+/* Reduced motion keeps the event and the state, and loses only the theatre. Every permanent mark —
+   the two glows, the charged sheen, the ground rule, the held ring — is a static style, so someone
+   with vestibular sensitivity reads exactly the same interface. */
+@media (prefers-reduced-motion: reduce) {
+  .journal-head,
+  .journal-head-rail,
+  .journal-track-fill-bar,
+  .journal-tick-dot { transition: none; }
+  .journal-track.is-pressed .journal-head {
+    transform: translate(-50%, -50%);
+    --glow-r: 0px;
+  }
+  .journal-flare-ring {
+    animation: journal-flare-still 400ms linear 1 both;
+    transform: translate(-50%, -50%) scale(var(--flare-scale));
+  }
+  .journal-mote { display: none; }
+  .journal-hold-ring { display: none; }
+  .journal-head.is-holding { animation-duration: 500ms; }
+  .journal-numeral.is-rising { animation: journal-numeral-fade 150ms var(--ease-standard) 1 both; }
+  .journal-track-energy.is-grounding::after { animation: none; }
+  .journal-bloom.is-pair { animation-timing-function: linear; }
+}
+@keyframes journal-flare-still {
+  0% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+@keyframes journal-numeral-fade {
+  0% { opacity: 1; color: var(--journal-ink-dim); }
+  50% { opacity: 0; }
+  100% { opacity: 1; color: var(--lamp-400); }
 }
 
 .journal-saved {
@@ -1168,9 +1701,19 @@
   max-width: 44px;
   aspect-ratio: 1;
   border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 22%, transparent);
+  border: 1px solid var(--journal-swatch-edge);
 }
-.journal-week-energy { display: flex; gap: 2px; align-items: flex-end; height: 10px; }
+.journal-week-energy { position: relative; display: flex; gap: 2px; align-items: flex-end; height: 10px; }
+.journal-week-energy.is-set::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  border-radius: 0.5px;
+  background: color-mix(in srgb, var(--journal-energy) 45%, transparent);
+}
 .journal-week-bar { width: 3px; height: 100%; border-radius: 1px; background: color-mix(in srgb, var(--journal-ink-dim, #8A98AC) 26%, transparent); }
 .journal-week-bar.is-on { background: var(--journal-energy, #9AA859); }
 .journal-week-dow { color: var(--journal-ink-dim, #8A98AC); font: 400 10px/1 var(--font-mono), ui-monospace, monospace; }
@@ -1201,7 +1744,8 @@
   cursor: pointer;
   transition: transform 120ms var(--ease-standard), box-shadow 120ms var(--ease-standard);
 }
-.journal-zoom-cell.is-written { border-color: transparent; }
+/* Every mood swatch carries a permanent edge — mood-0 on paper is a 1.24:1 wash without one. */
+.journal-zoom-cell.is-written { border-color: var(--journal-swatch-edge); }
 .journal-zoom-cell.is-today { box-shadow: 0 0 0 2px var(--lamp-400); }
 .journal-zoom-cell:hover { transform: scale(1.25); box-shadow: 0 0 0 2px color-mix(in srgb, var(--lamp-400) 60%, transparent); }
 
@@ -1262,9 +1806,12 @@
   color: var(--journal-ink-dim, #8A98AC);
   font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
 }
+/* Journal has no glows by day: a bloom by night, an ink shadow by day, at the same radius. */
+.journal-root[data-theme='dark'] .journal-talk-tool { --talk-pulse: color-mix(in srgb, var(--lamp-400) 70%, transparent); }
+.journal-root[data-theme='light'] .journal-talk-tool { --talk-pulse: color-mix(in srgb, var(--journal-ink) 26%, transparent); }
 @keyframes journal-talk-pulse {
-  0%, 100% { filter: drop-shadow(0 0 0 color-mix(in srgb, var(--lamp-400) 40%, transparent)); }
-  50% { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--lamp-400) 70%, transparent)); }
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  50% { filter: drop-shadow(0 0 5px var(--talk-pulse)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .journal-talk-tool.is-recording svg { animation: none; }

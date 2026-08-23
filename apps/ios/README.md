@@ -69,7 +69,8 @@ Rules that hold across the rooms:
   owed; signing in *claims* what is there (additive, per page, by HLC stamp). Offline says `offline
   · saved here`; signed out says `saved on this device`.
 - **Device storage is per seat.** Journal's page cache is one file per seat
-  (`windmill-journal-pages-<userId>.json`, `-anon.json` signed out); gym's shelf and queue are one
+  (`windmill-journal-pages-v2-u.<userId>.json`, `-v2-anon.json` signed out — the `v2` is the scale
+  version, bumped when the shape of a stored page changes); gym's shelf and queue are one
   set of rows per seat. A store opened for one seat cannot read another's. The one carry is
   anonymous work, which follows the person who signs in.
 - **Nothing starts by itself.** A gym session begins only on *Start workout* or *Just start
@@ -202,7 +203,7 @@ be tested without the file on the domain and a signed build.
   regardless). No synthetic touch is available here.
 - **Quarantined pages and workouts have no door.** A device file written before per-seat storage is
   attributed to the session the device was holding; a phone holding none quarantines them (journal:
-  `windmill-journal-pages-unclaimed.json`; gym: a shelf and queue key no seat can name). Releasing
+  `windmill-journal-pages-v2-unclaimed.json`; gym: a shelf and queue key no seat can name). Releasing
   them takes a human with an account, and this app has no journal settings surface to ask from.
 - **The device's files are not excluded from backup.** They carry the default data protection class
   (complete-until-first-user-authentication, the same accessibility as the Keychain session), so at

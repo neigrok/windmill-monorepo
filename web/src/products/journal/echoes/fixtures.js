@@ -126,10 +126,10 @@ const YESTERDAY_BODY = 'Worked late. Bought bread on the way home and ate half o
 // The pages the canvas draws, newest last — today, yesterday, and every page an echo points at.
 function corpusPages() {
   return [
-    { day: localDay(), body: TONIGHT_BODY, mood: 3, energy: 2 },
-    { day: daysBack(1), body: YESTERDAY_BODY, mood: 4, energy: 2 },
-    { day: daysBack(3), body: 'Nothing much. Long meeting about the migration, then nothing.', mood: 2, energy: 1 },
-    ...CORPUS.map((entry) => ({ day: dayOf(entry.back), body: bodyOf(entry), mood: 3, energy: 2 })),
+    { day: localDay(), body: TONIGHT_BODY, mood: 5, energy: 5 },
+    { day: daysBack(1), body: YESTERDAY_BODY, mood: 7, energy: 5 },
+    { day: daysBack(3), body: 'Nothing much. Long meeting about the migration, then nothing.', mood: 3, energy: 2 },
+    ...CORPUS.map((entry) => ({ day: dayOf(entry.back), body: bodyOf(entry), mood: 5, energy: 5 })),
   ];
 }
 

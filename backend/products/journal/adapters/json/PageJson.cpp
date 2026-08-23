@@ -1,5 +1,6 @@
 #include "products/journal/adapters/json/PageJson.h"
 
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -11,8 +12,14 @@ Page parsePageWrite(const Json::Value& body, const UserId& user, const LocalDate
   // Every surface parses a page write here, so the length rule is stated here and nowhere else.
   if (page.body.size() > kMaxPageBytes)
     throw PageTooLarge{"a page may carry " + std::to_string(kMaxPageBytes) + " bytes"};
-  page.mood = moodFromInt(body.get("mood", 0).asInt());
-  page.energy = energyFromInt(body.get("energy", 0).asInt());
+  // Absent, null, non-int or out of 0..10 all read as unanswered — narrow, never reject.
+  auto score = [&body](const char* field) -> std::optional<Score> {
+    const Json::Value& value = body[field];
+    if (!value.isInt()) return std::nullopt;
+    return Score::from(value.asInt());
+  };
+  page.mood = score("mood");
+  page.energy = score("energy");
   page.source = parseSource(body.get("source", "typed").asString());
   page.stamp = parseHlc(body.get("stamp", "0:0:").asString());
   // updatedAtMs stays 0: it is server time, stamped on store.
@@ -23,8 +30,8 @@ Json::Value toJson(const Page& page) {
   Json::Value body(Json::objectValue);
   body["day"] = page.day.iso();
   body["body"] = page.body;
-  body["mood"] = toInt(page.mood);
-  body["energy"] = toInt(page.energy);
+  body["mood"] = page.mood ? Json::Value(page.mood->value()) : Json::Value(Json::nullValue);
+  body["energy"] = page.energy ? Json::Value(page.energy->value()) : Json::Value(Json::nullValue);
   body["source"] = toString(page.source);
   body["stamp"] = toString(page.stamp);
   body["updatedAt"] = Json::Value::UInt64(page.updatedAtMs);

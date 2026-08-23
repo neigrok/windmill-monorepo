@@ -2,12 +2,14 @@
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 
+#include <optional>
+
 using namespace wm;
 using namespace wm::fake;
 
 namespace {
 Page pageOn(std::string iso, std::string body, Hlc stamp) {
-  return Page{uid(), ld(std::move(iso)), std::move(body), Mood::none, Energy::none, Source::typed,
+  return Page{uid(), ld(std::move(iso)), std::move(body), std::nullopt, std::nullopt, Source::typed,
               std::move(stamp), 0};
 }
 }

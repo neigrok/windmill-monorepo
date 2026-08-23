@@ -4,6 +4,7 @@
 
 #include <pqxx/pqxx>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -17,6 +18,21 @@ constexpr std::string_view kPageColumns =
     "stamp_ms, stamp_counter, stamp_actor, "
     "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms";
 
+// A stored scale: SQL null is the unanswered state, and a value outside 0..10 that predates the
+// check constraint narrows to unanswered rather than failing the read. Templated on the field type
+// for the same reason the row is: the two toolchains name these differently.
+template <typename Field>
+std::optional<Score> scoreFrom(const Field& field) {
+  if (field.is_null()) return std::nullopt;
+  return Score::from(field.template as<int>());
+}
+
+// What the writer sends back down to Postgres; std::nullopt binds as SQL null.
+std::optional<int> storedScore(const std::optional<Score>& score) {
+  if (!score) return std::nullopt;
+  return score->value();
+}
+
 // Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
 template <typename Row>
 Page pageFrom(const Row& row) {
@@ -24,8 +40,8 @@ Page pageFrom(const Row& row) {
       UserId{row["user_id"].template as<std::string>()},
       LocalDate{row["day"].template as<std::string>()},
       row["body"].template as<std::string>(),
-      moodFromInt(row["mood"].template as<int>()),
-      energyFromInt(row["energy"].template as<int>()),
+      scoreFrom(row["mood"]),
+      scoreFrom(row["energy"]),
       parseSource(row["source"].template as<std::string>()),
       Hlc{row["stamp_ms"].template as<std::uint64_t>(),
           static_cast<std::uint32_t>(row["stamp_counter"].template as<std::uint64_t>()),
@@ -145,7 +161,7 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
         "(user_id, day, body, mood, energy, source, stamp_ms, stamp_counter, stamp_actor, updated_at) "
         "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7, $8, $9, now())",
         incoming.user.str(), incoming.day.iso(), incoming.body,
-        toInt(incoming.mood), toInt(incoming.energy), toString(incoming.source),
+        storedScore(incoming.mood), storedScore(incoming.energy), toString(incoming.source),
         static_cast<long long>(incoming.stamp.physicalMs),
         static_cast<long long>(incoming.stamp.counter), incoming.stamp.actor);
     txn.commit();
@@ -182,7 +198,7 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
       "stamp_ms = $7, stamp_counter = $8, stamp_actor = $9, updated_at = now() "
       "WHERE user_id = $1::uuid AND day = $2::date",
       incoming.user.str(), incoming.day.iso(), incoming.body,
-      toInt(incoming.mood), toInt(incoming.energy), toString(incoming.source),
+      storedScore(incoming.mood), storedScore(incoming.energy), toString(incoming.source),
       static_cast<long long>(incoming.stamp.physicalMs),
       static_cast<long long>(incoming.stamp.counter), incoming.stamp.actor);
   txn.commit();
