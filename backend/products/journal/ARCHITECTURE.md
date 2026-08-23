@@ -88,10 +88,11 @@ backend/products/journal/
   application/   PageService (+ PageWatcher, the seam a save announces on) · NudgeSweep
                  EchoSweep (derivePage · run) · EchoDerivations (saves → derivations)
                  WarmEchoRepository (the corpus held warm, per user, behind the port)
+                 EchoExplainer (one page's derivation run for its REASONS, writing nothing)
   adapters/
     http/        JournalApi (page · pages · export) · NudgeApi (settings · pause ·
                  unsubscribe · admin sweep) · EchoApi (read · three dismissal doors ·
-                 useful · opened · admin sweep) · VoiceApi (transcribe)
+                 useful · opened · admin sweep · explain) · VoiceApi (transcribe)
     json/        PageJson — the page wire shape, both directions, spoken by all three surfaces
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
     llm/         HttpEmbedder (the self-hosted sidecar) · AnthropicCurator · OpenAiTranscriber,

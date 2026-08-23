@@ -1,0 +1,128 @@
+#include "products/journal/application/EchoExplain.h"
+
+#include "products/journal/domain/Passage.h"
+#include "products/journal/domain/SpanReconcile.h"
+
+#include <trantor/utils/Logger.h>
+
+#include <exception>
+#include <map>
+#include <optional>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace wm {
+
+EchoExplainer::EchoExplainer(EchoRepository& echoes, Embedder& embedder, Curator& curator,
+                             PageService& pages)
+    : echoes_(echoes), embedder_(embedder), curator_(curator), pages_(pages),
+      heartbeat_("journal-echo-explain") {}
+
+void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& request,
+                                 std::function<void(EchoExplanation)> done) {
+  heartbeat_.queue([this, user, request, done = std::move(done)] {
+    // `done` fires on every path. An operator waiting on a promise this thread cannot fulfil is
+    // worse than an answer that says the run failed.
+    try {
+      done(explain(user, request));
+    } catch (const std::exception& error) {
+      LOG_ERROR << "journal echo explain failed: " << error.what();
+      EchoExplanation failed;
+      failed.error = error.what();
+      done(failed);
+    } catch (...) {
+      EchoExplanation failed;
+      failed.error = "explain failed";
+      done(failed);
+    }
+  });
+}
+
+// The seven steps of a derivation with the two that write taken out, in the same order and through
+// the same calls. Step 3 does not store, so the identities it carries forward are the real ones for
+// text this page already has and PROVISIONAL NEGATIVE ones for text it does not — the sequence
+// mints only positives, so a negative id can never be mistaken for a passage that exists.
+EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest& request) {
+  EchoExplanation explained;
+  explained.embedderConfigured = embedder_.configured();
+  explained.curatorConfigured = curator_.configured();
+  explained.embedVersion = embedder_.version();
+  explained.curatorVersion = curator_.version();
+  explained.persisted = echoes_.echoesFor(user, request.day, request.day);
+
+  const std::optional<Page> page = pages_.page(user, request.day);
+  if (!page) return explained;
+  explained.pageFound = true;
+  explained.body = page->body;
+  explained.bodyStampMs = page->updatedAtMs;
+
+  const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
+  explained.due = echoes_.duePage(user, request.day, corpusStamp).has_value();
+
+  // 1 — segment.
+  explained.passages = segment(page->body);
+  if (!explained.embedderConfigured || explained.passages.empty()) return explained;
+
+  // 2 — embed. The vendor call this door always pays for: tonight's vectors exist nowhere else
+  // unless the page has already been derived, and reading the stored ones back would explain the
+  // LAST body rather than this one.
+  std::vector<std::string> texts;
+  texts.reserve(explained.passages.size());
+  for (const Passage& passage : explained.passages) texts.push_back(passage.text);
+  const std::vector<std::vector<float>> vectors = embedder_.embed(texts);
+  if (vectors.size() != explained.passages.size()) {
+    explained.error = "embedder returned " + std::to_string(vectors.size()) + " of " +
+                      std::to_string(explained.passages.size());
+    return explained;
+  }
+
+  // 3 — reconcile, without storing.
+  const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
+  explained.storedSpans = static_cast<int>(stored.size());
+  const std::vector<IdentifiedPassage> carried = reconcile(stored, explained.passages);
+  std::vector<Vectored> tonight;
+  std::int64_t provisional = 0;
+  for (std::size_t i = 0; i < carried.size(); ++i)
+    tonight.push_back(Vectored{carried[i].spanId != 0 ? carried[i].spanId : --provisional,
+                               request.day, carried[i].passage.text, vectors[i]});
+
+  // 4 — retrieve. The corpus as retrieval sees it: ONE embedding version, and the page's own
+  // stored passages held out, because tonight's are the freshly embedded ones above.
+  const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
+  explained.corpus = static_cast<int>(corpus.size());
+  std::vector<Vectored> history;
+  for (const Vectored& span : corpus)
+    if (!(span.day == request.day)) history.push_back(span);
+  explained.history = static_cast<int>(history.size());
+
+  std::set<std::pair<std::int64_t, std::int64_t>> waved;
+  for (const SpanPair& pair : echoes_.dismissalsOn(user, request.day))
+    waved.insert({pair.triggerSpanId, pair.matchSpanId});
+
+  // 5 — select. The same domain call the sweep makes, asked for its reasons.
+  explained.selection = selectForPage(tonight, history, waved, request.rules, request.echoesPerPage,
+                                      request.nearest);
+
+  // 6 — curate, only when asked. It is the one step here that bills, and an operator moving
+  // retrieval knobs usually wants to see what retrieval did without paying for a verdict on it.
+  if (!request.curate || !explained.curatorConfigured || explained.selection.pairings.empty())
+    return explained;
+
+  std::map<std::int64_t, Vectored> offered;
+  for (const Vectored& span : history)
+    for (const Pairing& pairing : explained.selection.pairings)
+      if (pairing.matchSpanId == span.spanId) offered.emplace(span.spanId, span);
+  std::vector<Vectored> candidates;
+  candidates.reserve(offered.size());
+  for (const auto& [spanId, span] : offered) candidates.push_back(span);
+
+  const Curation curation = curator_.curate(user, tonight, candidates,
+                                            explained.selection.pairings);
+  if (!curation.ok) explained.curationFailure = curation.failure;
+  explained.verdicts = curation.verdicts;
+  return explained;
+}
+
+}

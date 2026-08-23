@@ -76,6 +76,7 @@ add_library(windmill_journal
   products/journal/application/PageService.cpp
   products/journal/application/NudgeSweep.cpp
   products/journal/application/EchoSweep.cpp
+  products/journal/application/EchoExplain.cpp
   products/journal/application/EchoDerivations.cpp
   products/journal/application/WarmEchoRepository.cpp)
 target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})

@@ -498,3 +498,110 @@ TEST(fourteen_fortnight_old_near_copies_do_not_bury_one_genuine_match_from_two_y
   CHECK_EQ(pairings[1].familySize, 1);
   CHECK(std::abs(pairings[1].cosine - 0.72f) < 1e-3f);
 }
+
+// The trace half. Every rule below already had a test asserting WHAT it selects; these assert that
+// it also says WHY, because the debug door is only worth having if its reasons are the real ones.
+
+namespace {
+
+// What the trace says became of one candidate, as the debug door would print it. "no note" rather
+// than a crash when the span is absent, so a broken expectation reads as a wrong word.
+std::string fateOf(const TriggerTrace& trace, std::int64_t spanId) {
+  for (const CandidateNote& note : trace.notes)
+    if (note.spanId == spanId) return fateText(note.fate);
+  return "no note";
+}
+
+long ageOf(const TriggerTrace& trace, std::int64_t spanId) {
+  for (const CandidateNote& note : trace.notes)
+    if (note.spanId == spanId) return note.ageDays;
+  return -1;
+}
+
+}
+
+TEST(explained_selection_names_the_rule_that_dropped_each_candidate) {
+  const Vectored trigger = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
+  const std::vector<Vectored> candidates{
+      span(10, "2026-01-01", axis(4, 0), kTriggerText),                    // the same sentence again
+      span(11, "2026-01-02", {0.7f, 0.714f, 0.0f, 0.0f}, "i want to get the thing again"),
+      span(12, "2025-06-01", {0.6f, 0.0f, 0.8f, 0.0f}, kAnchoredText)};
+
+  const Selection selection = selectExplained(trigger, candidates, SelectionRules{});
+
+  CHECK_EQ(matchIds(selection.pairings), (std::vector<std::int64_t>{12}));
+  CHECK_EQ(selection.notes.size(), std::size_t{3});
+  CHECK_EQ(std::string{fateText(selection.notes[0].fate)}, std::string{"restatement"});
+  CHECK_EQ(std::string{fateText(selection.notes[1].fate)}, std::string{"no_anchor"});
+  CHECK_EQ(std::string{fateText(selection.notes[2].fate)}, std::string{"selected"});
+  CHECK(std::abs(selection.notes[2].score - selection.pairings[0].score) < 1e-6);
+  // And the reasons are the same list `select` returns, never a second opinion about it.
+  CHECK_EQ(matchIds(select(trigger, candidates, SelectionRules{})),
+           matchIds(selection.pairings));
+}
+
+TEST(a_refrain_emits_nothing_and_the_trace_still_says_how_crowded_it_was) {
+  const Vectored trigger = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
+  std::vector<Vectored> history;
+  for (int i = 0; i < 5; ++i)
+    history.push_back(span(100 + i, "2026-01-0" + std::to_string(i + 1), axis(4, 0)));
+
+  const PageSelection page = selectForPage({trigger}, history, {}, SelectionRules{}, 10);
+
+  CHECK(page.pairings.empty());
+  CHECK_EQ(page.refrains, 1);
+  CHECK_EQ(page.traces.size(), std::size_t{1});
+  CHECK_EQ(page.traces[0].crowd, 5);
+  CHECK_EQ(page.traces[0].refrain, true);
+  CHECK_EQ(page.traces[0].history, 5);
+}
+
+TEST(the_page_ceiling_and_the_readers_dismissal_are_both_written_onto_the_notes) {
+  // Two triggers on one page, each with exactly one candidate it can anchor to: candidate 10
+  // shares "rust" with the first and nothing with the second, candidate 11 the other way round.
+  const Vectored first = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
+  const Vectored second = Vectored{2, LocalDate{kToday}, "the piano scales sound wrong", axis(4, 1)};
+  const std::vector<Vectored> history{
+      span(10, "2025-06-01", {0.9f, 0.0f, 0.436f, 0.0f}, kAnchoredText),
+      span(11, "2025-06-02", {0.0f, 0.6f, 0.0f, 0.8f}, "piano scales, badly")};
+
+  const PageSelection full = selectForPage({first, second}, history, {}, SelectionRules{}, 10);
+  CHECK_EQ(full.pairings.size(), std::size_t{2});
+  CHECK_EQ(full.cappedOut, 0);
+  CHECK_EQ(fateOf(full.traces[0], 10), std::string{"selected"});
+  CHECK_EQ(fateOf(full.traces[0], 11), std::string{"no_anchor"});
+
+  // One slot for the page, so the weaker of the two pairings is cut and says so.
+  const PageSelection capped = selectForPage({first, second}, history, {}, SelectionRules{}, 1);
+  CHECK_EQ(capped.pairings.size(), std::size_t{1});
+  CHECK_EQ(capped.cappedOut, 1);
+  const bool firstKept = capped.pairings[0].triggerSpanId == 1;
+  CHECK_EQ(fateOf(capped.traces[firstKept ? 1 : 0], firstKept ? 11 : 10), std::string{"page_cap"});
+
+  // And a pairing the reader waved away is gone from the proposal and named as dismissed.
+  const PageSelection waved =
+      selectForPage({first, second}, history, {{1, 10}}, SelectionRules{}, 10);
+  CHECK_EQ(waved.pairings.size(), std::size_t{1});
+  CHECK_EQ(waved.pairings[0].triggerSpanId, std::int64_t{2});
+  CHECK_EQ(fateOf(waved.traces[0], 10), std::string{"dismissed"});
+}
+
+TEST(near_misses_are_reported_only_when_asked_for) {
+  const Vectored trigger = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
+  // Two days old — inside minDayGap, so retrieval never hands it over and no rule below ever sees
+  // it. Without the near misses a debug run would show nothing at all about the closest passage
+  // in the corpus.
+  const std::vector<Vectored> history{
+      span(10, "2026-07-18", {0.99f, 0.141f, 0.0f, 0.0f}, kAnchoredText)};
+  CHECK_EQ(daysBetween(LocalDate{"2026-07-18"}, LocalDate{kToday}), 2L);
+
+  const PageSelection silent = selectForPage({trigger}, history, {}, SelectionRules{}, 10, 0);
+  CHECK(silent.traces[0].notes.empty());
+  CHECK_EQ(silent.traces[0].retrieved, 0);
+
+  const PageSelection asked = selectForPage({trigger}, history, {}, SelectionRules{}, 10, 5);
+  CHECK_EQ(asked.traces[0].notes.size(), std::size_t{1});
+  CHECK_EQ(fateOf(asked.traces[0], 10), std::string{"not_retrieved"});
+  CHECK_EQ(ageOf(asked.traces[0], 10), 2L);
+  CHECK(asked.pairings.empty());
+}

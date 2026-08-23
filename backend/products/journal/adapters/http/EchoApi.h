@@ -2,6 +2,7 @@
 
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
+#include "products/journal/application/EchoExplain.h"
 #include "products/journal/application/EchoSweep.h"
 #include "products/journal/ports/EchoRepository.h"
 
@@ -36,8 +37,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class EchoApi {
 public:
   EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
-          std::shared_ptr<AuthService> auth, std::shared_ptr<Entitlements> entitlements,
-          std::string adminToken);
+          std::shared_ptr<EchoExplainer> explainer, std::shared_ptr<AuthService> auth,
+          std::shared_ptr<Entitlements> entitlements, std::string adminToken);
 
   void listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
   void dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -52,9 +53,17 @@ public:
               const std::string& triggerDay, const std::string& matchDay);
   void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
 
+  // The tuning door: what a derivation of one page would decide right now, rule by rule, writing
+  // nothing. Admin token AND a signed-in owner, because it answers about the CALLER's own journal
+  // and hands back their passages in full — the admin secret buys access to the door, never to
+  // somebody else's pages. Every SelectionRules knob is overridable per call, so the way to find a
+  // better threshold is to ask for it against real nights rather than to deploy one and wait.
+  void explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& day);
+
 private:
   std::shared_ptr<EchoRepository> echoes_;
   std::shared_ptr<EchoSweep> sweep_;
+  std::shared_ptr<EchoExplainer> explainer_;
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<Entitlements> entitlements_;
   std::string adminToken_;

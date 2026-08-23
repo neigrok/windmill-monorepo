@@ -36,13 +36,17 @@ struct Harness {
   FakeSubscriptionRepository subscriptions;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subscriptions, usage};
+  FakeJournalRepository pages;
+  PageService pageService{pages};
   std::shared_ptr<EchoSweep> sweep;
+  std::shared_ptr<EchoExplainer> explainer;
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
       : sweep(std::make_shared<EchoSweep>(*echoes, embedder, curator, *clock, entitlements,
                                           SelectionRules{}, SweepBudget{})),
-        api(std::make_shared<EchoApi>(echoes, sweep, auth,
+        explainer(std::make_shared<EchoExplainer>(*echoes, embedder, curator, pageService)),
+        api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,
                                       std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
                                       std::move(adminToken))) {}
 
@@ -772,4 +776,109 @@ TEST(an_admin_sweep_runs_off_the_calling_thread) {
 
   CHECK_EQ(static_cast<int>(answer.response->statusCode()), 200);
   CHECK(answer.answeredOn != std::this_thread::get_id());
+}
+
+// The tuning door. It answers about the CALLER's own page, writes nothing, and its whole value is
+// the reason it gives — so the tests below are about the reason and about who may ask for one.
+
+namespace {
+
+// `query` is written the way it would be typed — "?token=s3cret&restatement=1.01" — and set on the
+// request field by field, because a hand-built drogon request does not parse its own query string.
+drogon::HttpResponsePtr explainOf(Harness& h, const std::string& day, const std::string& query,
+                                  const std::string& session) {
+  const drogon::HttpRequestPtr req =
+      request(drogon::Get, "/v1/admin/journal/echo/explain/" + day, "", session);
+  for (std::size_t at = query.empty() ? std::string::npos : 1; at < query.size();) {
+    const std::size_t end = std::min(query.find('&', at), query.size());
+    const std::size_t equals = query.find('=', at);
+    if (equals < end) req->setParameter(query.substr(at, equals - at),
+                                        query.substr(equals + 1, end - equals - 1));
+    at = end + 1;
+  }
+
+  std::promise<drogon::HttpResponsePtr> settled;
+  std::future<drogon::HttpResponsePtr> answer = settled.get_future();
+  h.api->explainPage(req, [&](const drogon::HttpResponsePtr& r) { settled.set_value(r); }, day);
+  answer.wait();
+  return answer.get();
+}
+
+// Tonight, and a page from January the writer has half-forgotten. The fake embedder counts letters,
+// so a sentence and its near-copy sit close together and two different sentences do not.
+const std::string kExplainToday = "2026-08-23";
+const std::string kExplainTonight = "i want to learn the rust compiler properly";
+const std::string kExplainJanuary = "i want to learn the rust compiler properly this year";
+
+void plantForExplain(Harness& h, const UserId& user) {
+  h.pageService.write(Page{user, ld(kExplainToday), kExplainTonight, Mood::none, Energy::none,
+                           Source::typed, Hlc{h.clock->now, 0, "device"}, h.clock->now});
+  h.echoes->plantPage(user, ld("2026-01-05"), kExplainJanuary);
+  h.echoes->plantSpan(user, ld("2026-01-05"), 11, kExplainJanuary,
+                      h.embedder.embed({kExplainJanuary}).front());
+}
+
+}
+
+TEST(the_tuning_door_needs_the_admin_token_and_an_owner_behind_it) {
+  Harness h("s3cret");
+  const UserId user = h.signIn("sess");
+  plantForExplain(h, user);
+
+  CHECK_EQ(explainOf(h, kExplainToday, "", "sess")->getStatusCode(), drogon::k403Forbidden);
+  CHECK_EQ(explainOf(h, kExplainToday, "?token=wrong", "sess")->getStatusCode(),
+           drogon::k403Forbidden);
+  // The admin secret opens the door. It never names whose journal is behind it.
+  CHECK_EQ(explainOf(h, kExplainToday, "?token=s3cret", "")->getStatusCode(),
+           drogon::k401Unauthorized);
+  CHECK_EQ(explainOf(h, kExplainToday, "?token=s3cret", "sess")->getStatusCode(), drogon::k200OK);
+}
+
+TEST(the_tuning_door_names_the_rule_that_ate_the_reach_back_and_writes_nothing) {
+  Harness h("s3cret");
+  const UserId user = h.signIn("sess");
+  plantForExplain(h, user);
+
+  const Json::Value explained =
+      parse(std::string(explainOf(h, kExplainToday, "?token=s3cret", "sess")->getBody()));
+
+  CHECK_EQ(explained["page"]["found"].asBool(), true);
+  CHECK_EQ(explained["wiring"]["embedVersion"].asString(), std::string{"fake-embedder-v1"});
+  CHECK_EQ(explained["corpus"]["history"].asInt(), 1);
+  CHECK_EQ(explained["passages"].size(), Json::ArrayIndex{1});
+  REQUIRE_EQ(explained["triggers"].size(), Json::ArrayIndex{1});
+  const Json::Value& candidates = explained["triggers"][0]["candidates"];
+  REQUIRE_EQ(candidates.size(), Json::ArrayIndex{1});
+  // The whole point: the page reaches back to nothing, and this says WHY it reaches back to
+  // nothing — near-identical text is read as the same sentence again, not as a memory.
+  CHECK_EQ(candidates[0]["fate"].asString(), std::string{"restatement"});
+  CHECK_EQ(candidates[0]["day"].asString(), std::string{"2026-01-05"});
+  CHECK(candidates[0]["cosine"].asDouble() >= 0.97);
+  CHECK_EQ(explained["proposed"].size(), Json::ArrayIndex{0});
+  // The rules it ran with travel back, so a swept threshold can be told from a typo.
+  CHECK_EQ(explained["rules"]["restatement"].asDouble(), 0.97);
+
+  // And nothing was persisted by asking: no span row for tonight, no echo row, no curator call.
+  CHECK_EQ(h.echoes->spansOf(user, ld(kExplainToday)).size(), std::size_t{0});
+  CHECK_EQ(h.echoes->echoesFor(user, ld(kExplainToday), ld(kExplainToday)).size(), std::size_t{0});
+  CHECK_EQ(h.curator.calls, 0);
+}
+
+TEST(a_raised_restatement_threshold_lets_the_same_night_through) {
+  Harness h("s3cret");
+  const UserId user = h.signIn("sess");
+  plantForExplain(h, user);
+
+  // The knob an operator came here to move, moved for one call and no deploy.
+  const Json::Value explained = parse(std::string(
+      explainOf(h, kExplainToday, "?token=s3cret&restatement=1.01&curate=1", "sess")->getBody()));
+
+  CHECK_EQ(explained["rules"]["restatement"].asDouble(), 1.01);
+  REQUIRE_EQ(explained["proposed"].size(), Json::ArrayIndex{1});
+  CHECK_EQ(explained["proposed"][0]["matchSpanId"].asInt64(), std::int64_t{11});
+  CHECK_EQ(explained["triggers"][0]["candidates"][0]["fate"].asString(), std::string{"selected"});
+  // `curate=1` is the one part of this that bills, so it happens only when it is asked for.
+  CHECK_EQ(h.curator.calls, 1);
+  REQUIRE_EQ(explained["verdicts"].size(), Json::ArrayIndex{1});
+  CHECK_EQ(explained["verdicts"][0]["related"].asBool(), true);
 }

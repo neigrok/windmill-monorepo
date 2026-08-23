@@ -221,31 +221,19 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   for (const SpanPair& pair : echoes_.dismissalsOn(user, page.day))
     waved.insert({pair.triggerSpanId, pair.matchSpanId});
 
-  // 5 — select, per trigger passage. A refrain ("tired again") emits nothing at all: it is the rule
-  // that stops a journal kept nightly through a hard month handing back ten copies of last week.
-  std::vector<Pairing> proposed;
-  std::map<std::int64_t, Vectored> offered;
-  for (const Vectored& trigger : tonight) {
-    if (isRefrain(trigger, history, rules_)) {
-      ++report.pagesSkippedRefrain;
-      continue;
-    }
-    for (const Pairing& pairing : select(trigger, stratify(trigger, history, rules_), rules_)) {
-      if (waved.count({pairing.triggerSpanId, pairing.matchSpanId})) continue;
-      proposed.push_back(pairing);
-    }
-  }
-  // The page-level cap. `select` bounds one trigger's pairings; this bounds the page, which is the
-  // unit the reader actually sees. Highest-scoring first, so a page with eight triggering passages
-  // carries its ten best rather than eighty of everything.
-  std::sort(proposed.begin(), proposed.end(), [](const Pairing& a, const Pairing& b) {
-    if (a.score != b.score) return a.score > b.score;
-    if (a.triggerSpanId != b.triggerSpanId) return a.triggerSpanId < b.triggerSpanId;
-    return a.matchSpanId < b.matchSpanId;
-  });
-  if (static_cast<int>(proposed.size()) > budget_.echoesPerPage)
-    proposed.erase(proposed.begin() + budget_.echoesPerPage, proposed.end());
+  // 5 — select, for the page. The refrain gate, each trigger's ranking, the reader's dismissals
+  // and the page ceiling are one domain call (EchoSelection.h, selectForPage) — the same call the
+  // debug door runs, so what an operator is shown is what a save did and not a second opinion
+  // about it. `nearestReported` 0: the near misses cost another corpus scan and only that door
+  // pays for them.
+  const PageSelection selection =
+      selectForPage(tonight, history, waved, rules_, budget_.echoesPerPage, 0);
+  report.pagesSkippedRefrain += selection.refrains;
+  const std::vector<Pairing>& proposed = selection.pairings;
 
+  // The candidate passages the curator is handed, gathered once by identity so a passage two
+  // triggers both reached back to is sent once.
+  std::map<std::int64_t, Vectored> offered;
   for (const Vectored& span : history)
     for (const Pairing& pairing : proposed)
       if (pairing.matchSpanId == span.spanId) offered.emplace(span.spanId, span);

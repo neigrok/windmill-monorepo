@@ -2,6 +2,7 @@
 
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
+#include "products/journal/application/EchoExplain.h"
 #include "products/journal/application/EchoSweep.h"
 #include "products/journal/application/NudgeSweep.h"
 #include "products/journal/application/PageService.h"
@@ -30,6 +31,7 @@ struct JournalDeps {
   std::string nudgeAdminToken;
   std::shared_ptr<EchoRepository> echoes;
   std::shared_ptr<EchoSweep> echoSweep;
+  std::shared_ptr<EchoExplainer> echoExplainer;
   std::string echoAdminToken;
   std::shared_ptr<Transcriber> transcriber;
   std::shared_ptr<Entitlements> entitlements;

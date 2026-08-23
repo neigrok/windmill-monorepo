@@ -472,6 +472,7 @@ relation between two passages is recomputed from the passages themselves.
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/useful` | "Useful" — the positive signal, one pairing |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the walk back to the older page, recorded |
 | `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one pass, admin token |
+| `GET /v1/admin/journal/echo/explain/{day}` | what a derivation of that page decides right now, rule by rule — admin token AND a signed-in owner |
 
 "Not useful" is on screen twice, and the two are different requests on purpose. **Per match** it is
 the pair door, one request for the one pairing the reader is answering. **Panel-level it is one
@@ -535,6 +536,49 @@ here records delivery — `journal_echo_signal` now tables `opened`, but opening
 reader chose and delivery is not, so a page whose echo was shown and never touched leaves no row —
 so the honest options are a `seen` record the client writes once, or no card. A device-local flag is not one of them: it cannot know an echo
 already arrived on another device.
+
+### The tuning door — added 2026-08-23
+
+`GET /v1/admin/journal/echo/explain/{day}` runs one page's derivation **for its reasons** and writes
+nothing. It exists because the pipeline had exactly one honest thing to say about a page that
+reaches back to nothing — "no echoes" — and nine rules that could each have said it. Improving any
+of them was therefore a guess.
+
+- **Two credentials, and they buy different things.** The admin token opens the door; the session
+  says whose journal it is. It explains the CALLER's own page and hands back their passages in
+  full, so the secret can never be pointed at somebody else's nights.
+- **It writes nothing.** No span row, no echo row, no curation or corpus stamp — so running it
+  never settles a page the live path still owes, and never robs a writer of a derivation. It is
+  therefore not a rehearsal of *persistence*: it can tell you what the rules decided and not that
+  storage would have failed.
+- **It spends.** The embedder is called for the page's passages every time, because tonight's
+  vectors exist nowhere else unless the page was already derived, and reading the stored ones back
+  would explain the *last* body. The curator is called only for `?curate=1` — the one step here
+  that costs dollars rather than milliseconds.
+- **Every `SelectionRules` knob is a query parameter** (`restatement`, `refrainCrowd`, `minDayGap`,
+  `perBand`, `maxRecent`, `familyRadius`, the three weights, …), plus `echoesPerPage` and `nearest`.
+  A threshold can be swept against real nights instead of deployed and waited on. The rules the run
+  actually used travel back in the answer, so a typo cannot read as a result. A malformed value
+  falls back to the shipped default rather than 400ing — the only outcome worth refusing is a typo
+  that silently changes the policy, and a fallback cannot do that.
+- **`nearest=N`** additionally reports the N closest passages retrieval never handed over — younger
+  than `minDayGap`, or beaten inside their own age band — as `not_retrieved`. Without them a run
+  says nothing at all about the passage a reader was expecting to see. It costs one more cosine
+  pass over the corpus per trigger, which is why the live path asks for none.
+
+**The reasons are produced by the selection itself, never by a second pass.** `selectForPage`
+(`domain/EchoSelection.h`) is the whole of step 5 — refrain gate, per-trigger ranking, dismissals,
+page ceiling — and returns its pairings *and* a `TriggerTrace` per trigger carrying every
+candidate's `Fate`: `selected · not_retrieved · restatement · no_anchor · family_member ·
+recency_quota · month_quota · outranked · dismissed · page_cap`. `EchoSweep::derive` calls it and
+so does the door, so what an operator is shown is what a save did rather than a second opinion
+about it. `select` is now `selectExplained(...).pairings` for the same reason.
+
+What the answer also states, because each has been the real cause of a silent page: whether the
+page is **due** at all (a settled page answers "no echoes" without the pipeline running, which is a
+different silence from every rule saying no), the **embedding version** and how many corpus
+passages are stored under *it* (a version bump leaves the old vectors unreachable and reads to a
+user as echoes simply stopping), the segmenter's passages, and what the page carries today.
 
 ### Entitlement — ruled 2026-08-09: locked, and the lock is the funnel
 

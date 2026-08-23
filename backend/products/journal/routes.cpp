@@ -87,8 +87,9 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
   // many, and the real opening words of the nearest one, none of which survives an empty table.
   // The admin sweep is the operator's rehearsal of one nightly pass, closed unless the deploy set
   // a token.
-  auto echoApi = std::make_shared<EchoApi>(deps.echoes, deps.echoSweep, deps.authService,
-                                           deps.entitlements, deps.echoAdminToken);
+  auto echoApi = std::make_shared<EchoApi>(deps.echoes, deps.echoSweep, deps.echoExplainer,
+                                           deps.authService, deps.entitlements,
+                                           deps.echoAdminToken);
   app.registerHandler(
       "/v1/journal/echoes",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -145,6 +146,16 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         echoApi->opened(req, std::move(cb), triggerDay, matchDay);
       },
       {drogon::Post});
+  // The tuning door. Under /v1/admin because it takes the admin token and answers with the
+  // pipeline's own internals — but it asks for a signed-in owner too and explains THAT account's
+  // page, never anybody else's. It writes nothing, so running it never settles a page the live
+  // path still owes.
+  app.registerHandler(
+      "/v1/admin/journal/echo/explain/{day}",
+      [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& day) {
+        echoApi->explainPage(req, std::move(cb), day);
+      },
+      {drogon::Get});
   app.registerHandler(
       "/v1/admin/journal/echo/sweep",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

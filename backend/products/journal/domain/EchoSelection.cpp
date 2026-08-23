@@ -103,6 +103,33 @@ bool olderFirst(const Judged& a, const Judged& b) {
   return a.passage->spanId < b.passage->spanId;
 }
 
+// The N closest passages retrieval did NOT hand over — younger than `minDayGap`, or beaten inside
+// their own age band. Only the debug door asks for these: they cost one more cosine pass over the
+// whole corpus per trigger, which is the dominant cost of a derivation.
+void appendNearMisses(const Vectored& trigger, const std::vector<Vectored>& history,
+                      const std::vector<Vectored>& retrieved, int wanted, TriggerTrace& trace) {
+  std::set<std::int64_t> handedOver;
+  for (const Vectored& candidate : retrieved) handedOver.insert(candidate.spanId);
+
+  std::vector<Judged> missed;
+  for (const Vectored& candidate : history) {
+    if (handedOver.count(candidate.spanId)) continue;
+    missed.push_back(Judged{&candidate, cosine(trigger.vector, candidate.vector),
+                            daysBetween(candidate.day, trigger.day)});
+  }
+  const std::size_t take = std::min<std::size_t>(missed.size(), static_cast<std::size_t>(wanted));
+  std::partial_sort(missed.begin(), missed.begin() + take, missed.end(),
+                    [](const Judged& a, const Judged& b) {
+                      if (a.cosine != b.cosine) return a.cosine > b.cosine;
+                      return olderFirst(a, b);
+                    });
+  for (std::size_t i = 0; i < take; ++i)
+    trace.notes.push_back(CandidateNote{missed[i].passage->spanId, missed[i].passage->day,
+                                        missed[i].passage->text, missed[i].cosine,
+                                        missed[i].ageDays, 0.0, 0.0, 1,
+                                        missed[i].passage->spanId, Fate::notRetrieved});
+}
+
 // A family's representative as the ranking sees it: the oldest member, the count it stands for, its
 // score before diversity, and the score it was actually taken at.
 struct Standing {
@@ -142,14 +169,35 @@ bool sharesAnchor(const std::string& a, const std::string& b) {
   return false;
 }
 
-bool isRefrain(const Vectored& trigger, const std::vector<Vectored>& corpus,
-               const SelectionRules& rules) {
+int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
+            const SelectionRules& rules) {
   int crowd = 0;
   for (const Vectored& neighbour : corpus) {
     if (neighbour.spanId == trigger.spanId) continue;   // a passage is not its own neighbour
     if (cosine(trigger.vector, neighbour.vector) >= rules.refrainRadius) ++crowd;
   }
-  return crowd >= rules.refrainCrowd;
+  return crowd;
+}
+
+bool isRefrain(const Vectored& trigger, const std::vector<Vectored>& corpus,
+               const SelectionRules& rules) {
+  return crowdOf(trigger, corpus, rules) >= rules.refrainCrowd;
+}
+
+const char* fateText(Fate fate) {
+  switch (fate) {
+    case Fate::selected: return "selected";
+    case Fate::notRetrieved: return "not_retrieved";
+    case Fate::restatement: return "restatement";
+    case Fate::noAnchor: return "no_anchor";
+    case Fate::familyMember: return "family_member";
+    case Fate::recencyQuota: return "recency_quota";
+    case Fate::monthQuota: return "month_quota";
+    case Fate::outranked: return "outranked";
+    case Fate::dismissed: return "dismissed";
+    case Fate::pageCap: return "page_cap";
+  }
+  return "outranked";
 }
 
 std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vectored>& corpus,
@@ -188,9 +236,10 @@ std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vector
   return retrieved;
 }
 
-std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>& candidates,
-                            const SelectionRules& rules) {
-  if (candidates.empty() || rules.shown <= 0) return {};
+Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& candidates,
+                          const SelectionRules& rules) {
+  Selection selection;
+  if (candidates.empty() || rules.shown <= 0) return selection;
 
   std::vector<Judged> judged;
   judged.reserve(candidates.size());
@@ -209,16 +258,41 @@ std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>
     variance += (candidate.cosine - mean) * (candidate.cosine - mean);
   variance /= static_cast<double>(judged.size());
   const double stddev = std::sqrt(variance);
+  selection.mean = mean;
+  selection.stddev = stddev;
+
+  // Every candidate gets a note before a single rule runs, and each rule below stamps the ones it
+  // took out. That is why the reasons cannot drift from the behaviour: there is no second pass
+  // deciding them, only this one recording what it did.
+  std::map<std::int64_t, std::size_t> noteOf;
+  selection.notes.reserve(judged.size());
+  for (const Judged& candidate : judged) {
+    noteOf[candidate.passage->spanId] = selection.notes.size();
+    const double z = stddev == 0.0 ? 0.0 : (candidate.cosine - mean) / stddev;
+    selection.notes.push_back(CandidateNote{candidate.passage->spanId, candidate.passage->day,
+                                            candidate.passage->text, candidate.cosine,
+                                            candidate.ageDays, z, 0.0, 1,
+                                            candidate.passage->spanId, Fate::outranked});
+  }
+  auto noted = [&selection, &noteOf](std::int64_t spanId) -> CandidateNote& {
+    return selection.notes[noteOf[spanId]];
+  };
 
   std::vector<Judged> survivors;
   for (const Judged& candidate : judged) {
-    if (candidate.cosine >= rules.restatement) continue;   // a restatement is not a memory
+    if (candidate.cosine >= rules.restatement) {   // a restatement is not a memory
+      noted(candidate.passage->spanId).fate = Fate::restatement;
+      continue;
+    }
     // No shared anchor means no way for the reader to check the pairing from what is on screen,
     // whatever the cosine says. This is the whole enforcement of rule 1.
-    if (!sharesAnchor(trigger.text, candidate.passage->text)) continue;
+    if (!sharesAnchor(trigger.text, candidate.passage->text)) {
+      noted(candidate.passage->spanId).fate = Fate::noAnchor;
+      continue;
+    }
     survivors.push_back(candidate);
   }
-  if (survivors.empty()) return {};
+  if (survivors.empty()) return selection;
 
   // Single-link families at familyRadius, measured BETWEEN candidates — the lower index always wins
   // the union, so the same corpus always builds the same families in the same order.
@@ -259,6 +333,13 @@ std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>
     const double base = z + rules.distanceWeight * std::log(1.0 + representative.ageDays / 30.0) -
                         rules.familyPenalty * std::log(1.0 + static_cast<double>(members.size()));
     standings.push_back(Standing{representative, static_cast<int>(members.size()), base, 0.0});
+
+    for (std::size_t member : members) {
+      CandidateNote& note = noted(survivors[member].passage->spanId);
+      note.familySize = static_cast<int>(members.size());
+      note.representative = representative.passage->spanId;
+      if (member != eldest) note.fate = Fate::familyMember;
+    }
   }
 
   // The diversity term is a function of what is ALREADY chosen, so the ranking is re-measured every
@@ -299,6 +380,19 @@ std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>
     chosen.push_back(standings[best]);
   }
 
+  // Why each representative that did not make it did not: read off the counters the loop exited
+  // with, which are the ones that were standing in its way when it stopped.
+  for (std::size_t i = 0; i < standings.size(); ++i) {
+    if (taken[i]) continue;
+    CandidateNote& note = noted(standings[i].judged.passage->spanId);
+    if (standings[i].judged.ageDays <= 30 && fromLastThirtyDays >= rules.maxRecent)
+      note.fate = Fate::recencyQuota;
+    else if (perCalendarMonth[standings[i].judged.passage->day.iso().substr(0, 7)] >=
+             rules.maxPerMonth)
+      note.fate = Fate::monthQuota;
+    else note.fate = Fate::outranked;
+  }
+
   // The oldest qualifying candidate is guaranteed a slot, over the quotas and over the score.
   // "You may have forgotten you ever planned it" makes the first time the payload, and nothing else
   // in the ranking protects it — a low z or a full month otherwise drops exactly the passage the
@@ -315,6 +409,7 @@ std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>
             (chosen[i].score == chosen[weakest].score &&
              olderFirst(chosen[weakest].judged, chosen[i].judged)))
           weakest = i;
+      noted(chosen[weakest].judged.passage->spanId).fate = Fate::outranked;
       chosen.erase(chosen.begin() + static_cast<std::ptrdiff_t>(weakest));
     }
     standings[eldest].score = penalised(standings[eldest]);
@@ -326,13 +421,95 @@ std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>
     return olderFirst(a.judged, b.judged);
   });
 
-  std::vector<Pairing> pairings;
-  pairings.reserve(chosen.size());
-  for (const Standing& standing : chosen)
-    pairings.push_back(Pairing{trigger.spanId, standing.judged.passage->spanId,
-                               standing.judged.cosine, static_cast<float>(standing.score),
-                               standing.familySize});
-  return pairings;
+  selection.pairings.reserve(chosen.size());
+  for (const Standing& standing : chosen) {
+    CandidateNote& note = noted(standing.judged.passage->spanId);
+    note.fate = Fate::selected;
+    note.score = standing.score;
+    selection.pairings.push_back(Pairing{trigger.spanId, standing.judged.passage->spanId,
+                                         standing.judged.cosine,
+                                         static_cast<float>(standing.score), standing.familySize});
+  }
+  return selection;
+}
+
+std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>& candidates,
+                            const SelectionRules& rules) {
+  return selectExplained(trigger, candidates, rules).pairings;
+}
+
+PageSelection selectForPage(const std::vector<Vectored>& tonight,
+                            const std::vector<Vectored>& history,
+                            const std::set<std::pair<std::int64_t, std::int64_t>>& dismissed,
+                            const SelectionRules& rules, int echoesPerPage, int nearestReported) {
+  PageSelection page;
+  // Where a pairing's note lives, so the two rules that act on WHOLE-PAGE state — the reader's
+  // dismissals and the page ceiling — can stamp the same notes the per-trigger pass filled in.
+  std::map<std::pair<std::int64_t, std::int64_t>, std::pair<std::size_t, std::size_t>> noteAt;
+  std::vector<Pairing> proposed;
+
+  for (const Vectored& trigger : tonight) {
+    TriggerTrace trace;
+    trace.spanId = trigger.spanId;
+    trace.text = trigger.text;
+    trace.history = static_cast<int>(history.size());
+    trace.crowd = crowdOf(trigger, history, rules);
+    trace.refrain = trace.crowd >= rules.refrainCrowd;
+
+    const std::vector<Vectored> retrieved = stratify(trigger, history, rules);
+    trace.retrieved = static_cast<int>(retrieved.size());
+
+    // A refrain ("tired again") emits nothing at all: the rule that stops a journal kept nightly
+    // through a hard month handing back ten copies of last week. It is still traced — what it
+    // retrieved and how crowded it was is exactly what someone tuning the gate needs to see.
+    if (!trace.refrain) {
+      const Selection selection = selectExplained(trigger, retrieved, rules);
+      trace.mean = selection.mean;
+      trace.stddev = selection.stddev;
+      trace.notes = selection.notes;
+      for (const Pairing& pairing : selection.pairings) {
+        const auto key = std::make_pair(pairing.triggerSpanId, pairing.matchSpanId);
+        if (dismissed.count(key)) continue;
+        proposed.push_back(pairing);
+      }
+    }
+
+    if (nearestReported > 0) appendNearMisses(trigger, history, retrieved, nearestReported, trace);
+    if (trace.refrain) ++page.refrains;
+    page.traces.push_back(std::move(trace));
+  }
+
+  for (std::size_t t = 0; t < page.traces.size(); ++t)
+    for (std::size_t n = 0; n < page.traces[t].notes.size(); ++n)
+      noteAt[{page.traces[t].spanId, page.traces[t].notes[n].spanId}] = {t, n};
+
+  auto stamp = [&page, &noteAt](const Pairing& pairing, Fate fate) {
+    const auto at = noteAt.find({pairing.triggerSpanId, pairing.matchSpanId});
+    if (at != noteAt.end()) page.traces[at->second.first].notes[at->second.second].fate = fate;
+  };
+  for (const auto& waved : dismissed) {
+    const auto at = noteAt.find(waved);
+    if (at != noteAt.end() &&
+        page.traces[at->second.first].notes[at->second.second].fate == Fate::selected)
+      page.traces[at->second.first].notes[at->second.second].fate = Fate::dismissed;
+  }
+
+  // The page-level cap. `selectExplained` bounds one trigger's pairings; this bounds the page,
+  // which is the unit the reader actually sees. Highest-scoring first, so a page with eight
+  // triggering passages carries its ten best rather than eighty of everything.
+  std::sort(proposed.begin(), proposed.end(), [](const Pairing& a, const Pairing& b) {
+    if (a.score != b.score) return a.score > b.score;
+    if (a.triggerSpanId != b.triggerSpanId) return a.triggerSpanId < b.triggerSpanId;
+    return a.matchSpanId < b.matchSpanId;
+  });
+  if (echoesPerPage >= 0 && static_cast<int>(proposed.size()) > echoesPerPage) {
+    for (std::size_t i = static_cast<std::size_t>(echoesPerPage); i < proposed.size(); ++i)
+      stamp(proposed[i], Fate::pageCap);
+    page.cappedOut = static_cast<int>(proposed.size()) - echoesPerPage;
+    proposed.erase(proposed.begin() + echoesPerPage, proposed.end());
+  }
+  page.pairings = std::move(proposed);
+  return page;
 }
 
 }

@@ -1017,6 +1017,11 @@ int main() {
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
   auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get());
+  // The tuning door's engine: one page's derivation run for its REASONS, writing nothing. It holds
+  // the same corpus, embedder and curator the live path does, so what it explains is what a save
+  // would decide — and it has its own thread for the same reason the sweep does.
+  auto journalEchoExplainer = std::make_shared<EchoExplainer>(*journalEchoes, *journalEmbedder,
+                                                              *journalCurator, *pageService);
   // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
   // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
   // way it gates through the same Windmill One entitlement seam as echoes and tending.
@@ -1034,6 +1039,7 @@ int main() {
                                    .tokens = tokens, .clock = systemClock,
                                    .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",
                                    .echoes = journalEchoes, .echoSweep = journalEchoSweep,
+                                   .echoExplainer = journalEchoExplainer,
                                    .echoAdminToken = journalEchoAdminEnv ? journalEchoAdminEnv : "",
                                    .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);

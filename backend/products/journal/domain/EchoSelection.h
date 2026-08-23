@@ -3,7 +3,9 @@
 #include "products/journal/domain/Page.h"
 
 #include <cstdint>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wm {
@@ -70,6 +72,12 @@ long daysBetween(const LocalDate& earlier, const LocalDate& later);
 // different-words collisions, which is the real failure and the stronger claim.)
 bool sharesAnchor(const std::string& a, const std::string& b);
 
+// How many passages sit within `refrainRadius` of this trigger, its own row excluded. The count
+// behind `isRefrain`, exposed because the debug door has to show the number the rule read rather
+// than a second count of its own that could disagree with it.
+int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
+            const SelectionRules& rules);
+
 // Is this trigger a refrain ("tired again", "long day, nothing to report") rather than a thought?
 // Measured on a real single-author corpus: a refrain has twenty-plus neighbours above
 // `refrainRadius`; every genuine echo trigger has between zero and six. A refrain emits nothing —
@@ -97,5 +105,85 @@ std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vector
 // Deterministic — the same inputs always yield the same pairings in the same order.
 std::vector<Pairing> select(const Vectored& trigger, const std::vector<Vectored>& candidates,
                             const SelectionRules& rules);
+
+// WHAT BECAME OF ONE CANDIDATE, in the order the rules run. The debug door reads these, and they
+// are produced BY the selection itself rather than by a second pass that re-decides the same
+// questions — a reason that can disagree with the behaviour it describes is worse than no reason.
+enum class Fate {
+  selected,
+  notRetrieved,    // close enough to be worth reporting, but retrieval never handed it over:
+                   // younger than minDayGap, or beaten inside its own age band
+  restatement,     // cosine >= rules.restatement — the same sentence again, not a memory
+  noAnchor,        // no low-frequency word in common, so the reader could not check the pairing
+  familyMember,    // collapsed into a near-identical family; `representative` is the one that stood
+  recencyQuota,    // the last 30 days were already full
+  monthQuota,      // its calendar month was already full
+  outranked,       // qualified, lost the ranking
+  dismissed,       // the reader waved this pairing away
+  pageCap,         // selected for its trigger, then cut by the page's own ceiling
+};
+
+const char* fateText(Fate fate);
+
+// One candidate as the selection saw it. Every number the ranking read, so a knob can be moved
+// against real passages instead of against a guess.
+struct CandidateNote {
+  std::int64_t spanId = 0;
+  LocalDate day;
+  std::string text;
+  float cosine = 0.0f;
+  long ageDays = 0;
+  double z = 0.0;                    // against this trigger's own retrieved background
+  double score = 0.0;                // the ranked score, where the candidate got as far as ranking
+  int familySize = 1;
+  std::int64_t representative = 0;   // the family's oldest member; its own id when it stood itself
+  Fate fate = Fate::outranked;
+};
+
+// One trigger passage's whole pass: the refrain count, what retrieval handed over, the background
+// the z-scores are against, and every candidate's fate.
+struct TriggerTrace {
+  std::int64_t spanId = 0;
+  std::string text;
+  int crowd = 0;
+  bool refrain = false;
+  int history = 0;                        // passages the corpus offered, before any gate
+  int retrieved = 0;                      // what stratify handed to selection
+  double mean = 0.0;
+  double stddev = 0.0;
+  std::vector<CandidateNote> notes;
+};
+
+// One trigger's selection, with the reasons. `select` is this without them.
+struct Selection {
+  std::vector<Pairing> pairings;
+  std::vector<CandidateNote> notes;
+  double mean = 0.0;
+  double stddev = 0.0;
+};
+
+Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& candidates,
+                          const SelectionRules& rules);
+
+// A WHOLE PAGE's pairings — the refrain gate, per-trigger selection, the reader's dismissals and
+// the page ceiling, in that order. It lives here rather than in the sweep because it is the last
+// step that is a pure function of passages and rules, and because the debug door has to be able to
+// run exactly what a save runs.
+//
+// `nearestReported` buys the near misses: the N closest passages retrieval did NOT hand over,
+// noted as `notRetrieved`. It costs one extra cosine pass over the corpus per trigger, which is the
+// dominant cost of a derivation, so the live path asks for none and only the debug door pays.
+struct PageSelection {
+  std::vector<Pairing> pairings;   // after the page cap, best first
+  std::vector<TriggerTrace> traces;
+  int refrains = 0;                // trigger passages that emitted nothing
+  int cappedOut = 0;               // pairings the page ceiling cut
+};
+
+PageSelection selectForPage(const std::vector<Vectored>& tonight,
+                            const std::vector<Vectored>& history,
+                            const std::set<std::pair<std::int64_t, std::int64_t>>& dismissed,
+                            const SelectionRules& rules, int echoesPerPage,
+                            int nearestReported = 0);
 
 }

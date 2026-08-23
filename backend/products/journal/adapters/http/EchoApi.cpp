@@ -87,6 +87,161 @@ Json::Value toJson(const EchoSweepReport& report) {
   return body;
 }
 
+
+// The tuning door's query knobs. A malformed value is IGNORED rather than answered 400: every one
+// of these is an experiment an operator is typing by hand, and a typo that silently changes the
+// policy is the only outcome worth refusing — falling back to the shipped default cannot.
+double knob(const drogon::HttpRequestPtr& req, const char* name, double fallback) {
+  const std::string value = req->getParameter(name);
+  if (value.empty()) return fallback;
+  try {
+    return std::stod(value);
+  } catch (const std::exception&) {
+    return fallback;
+  }
+}
+
+int knob(const drogon::HttpRequestPtr& req, const char* name, int fallback) {
+  const std::string value = req->getParameter(name);
+  if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos) return fallback;
+  try {
+    return std::stoi(value);
+  } catch (const std::exception&) {
+    return fallback;
+  }
+}
+
+Json::Value toJson(const SelectionRules& rules) {
+  Json::Value body(Json::objectValue);
+  body["minDayGap"] = rules.minDayGap;
+  body["shown"] = rules.shown;
+  body["refrainRadius"] = rules.refrainRadius;
+  body["refrainCrowd"] = rules.refrainCrowd;
+  body["familyRadius"] = rules.familyRadius;
+  body["restatement"] = rules.restatement;
+  body["perBand"] = rules.perBand;
+  body["maxRecent"] = rules.maxRecent;
+  body["maxPerMonth"] = rules.maxPerMonth;
+  body["distanceWeight"] = rules.distanceWeight;
+  body["familyPenalty"] = rules.familyPenalty;
+  body["diversityPenalty"] = rules.diversityPenalty;
+  return body;
+}
+
+// One candidate and the whole of what the rules read about it. `fate` is the answer the operator
+// came for; everything beside it is the arithmetic behind that answer.
+Json::Value toJson(const CandidateNote& note) {
+  Json::Value body(Json::objectValue);
+  body["spanId"] = static_cast<Json::Int64>(note.spanId);
+  body["day"] = note.day.iso();
+  body["text"] = note.text;
+  body["cosine"] = note.cosine;
+  body["ageDays"] = static_cast<Json::Int64>(note.ageDays);
+  body["z"] = note.z;
+  body["score"] = note.score;
+  body["familySize"] = note.familySize;
+  body["representative"] = static_cast<Json::Int64>(note.representative);
+  body["fate"] = fateText(note.fate);
+  return body;
+}
+
+Json::Value toJson(const TriggerTrace& trace) {
+  Json::Value body(Json::objectValue);
+  body["spanId"] = static_cast<Json::Int64>(trace.spanId);
+  body["text"] = trace.text;
+  body["crowd"] = trace.crowd;
+  body["refrain"] = trace.refrain;
+  body["history"] = trace.history;
+  body["retrieved"] = trace.retrieved;
+  body["mean"] = trace.mean;
+  body["stddev"] = trace.stddev;
+  Json::Value candidates(Json::arrayValue);
+  for (const CandidateNote& note : trace.notes) candidates.append(toJson(note));
+  body["candidates"] = candidates;
+  return body;
+}
+
+Json::Value toJson(const EchoExplanation& explained) {
+  Json::Value body(Json::objectValue);
+  Json::Value page(Json::objectValue);
+  page["found"] = explained.pageFound;
+  page["bodyBytes"] = static_cast<Json::UInt64>(explained.body.size());
+  page["bodyStampMs"] = static_cast<Json::UInt64>(explained.bodyStampMs);
+  // Whether a save right now would derive at all — a settled page answers "no echoes" without the
+  // pipeline running, and that is a different silence from every rule below saying no.
+  page["due"] = explained.due;
+  page["storedSpans"] = explained.storedSpans;
+  body["page"] = page;
+
+  Json::Value wiring(Json::objectValue);
+  wiring["embedder"] = explained.embedderConfigured;
+  wiring["embedVersion"] = explained.embedVersion;
+  wiring["curator"] = explained.curatorConfigured;
+  wiring["curatorVersion"] = explained.curatorVersion;
+  body["wiring"] = wiring;
+
+  Json::Value corpus(Json::objectValue);
+  // Under THIS embedding version only: a version bump leaves the old vectors unreachable, which
+  // reads to a user as echoes simply stopping, so the number has to be visible here.
+  corpus["spans"] = explained.corpus;
+  corpus["history"] = explained.history;
+  body["corpus"] = corpus;
+
+  Json::Value passages(Json::arrayValue);
+  for (const Passage& passage : explained.passages) {
+    Json::Value one(Json::objectValue);
+    one["ord"] = passage.ord;
+    one["text"] = passage.text;
+    passages.append(one);
+  }
+  body["passages"] = passages;
+
+  Json::Value triggers(Json::arrayValue);
+  for (const TriggerTrace& trace : explained.selection.traces) triggers.append(toJson(trace));
+  body["triggers"] = triggers;
+
+  Json::Value proposed(Json::arrayValue);
+  for (const Pairing& pairing : explained.selection.pairings) {
+    Json::Value one(Json::objectValue);
+    one["triggerSpanId"] = static_cast<Json::Int64>(pairing.triggerSpanId);
+    one["matchSpanId"] = static_cast<Json::Int64>(pairing.matchSpanId);
+    one["cosine"] = pairing.cosine;
+    one["score"] = pairing.score;
+    one["familySize"] = pairing.familySize;
+    proposed.append(one);
+  }
+  body["proposed"] = proposed;
+  body["refrains"] = explained.selection.refrains;
+  body["cappedOut"] = explained.selection.cappedOut;
+
+  Json::Value verdicts(Json::arrayValue);
+  for (const Verdict& verdict : explained.verdicts) {
+    Json::Value one(Json::objectValue);
+    one["triggerSpanId"] = static_cast<Json::Int64>(verdict.triggerSpanId);
+    one["matchSpanId"] = static_cast<Json::Int64>(verdict.matchSpanId);
+    one["related"] = verdict.related;
+    one["relation"] = verdict.relation;
+    one["speakerIsSelf"] = verdict.speakerIsSelf;
+    verdicts.append(one);
+  }
+  body["verdicts"] = verdicts;
+  if (!explained.curationFailure.empty()) body["curationFailure"] = explained.curationFailure;
+
+  // What the page carries TODAY, so a run can be read against the thing the reader actually sees.
+  Json::Value persisted(Json::arrayValue);
+  for (const EchoView& echo : explained.persisted) {
+    Json::Value one(Json::objectValue);
+    one["matchDay"] = echo.matchDay.iso();
+    one["daysEarlier"] = echo.daysEarlier;
+    one["triggerText"] = echo.triggerText;
+    one["matchText"] = echo.matchText;
+    persisted.append(one);
+  }
+  body["persisted"] = persisted;
+  if (!explained.error.empty()) body["error"] = explained.error;
+  return body;
+}
+
 // The one millisecond knob of the admin door, read from the body or the query: nullopt is a
 // malformed value the caller answers 400 to, zero is simply absent. Digits-only before stoull so a
 // "-5" cannot wrap and a 20-digit overflow stays a 400 rather than a 500.
@@ -108,10 +263,11 @@ std::optional<std::uint64_t> msOf(const drogon::HttpRequestPtr& req,
 }
 
 EchoApi::EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
-                 std::shared_ptr<AuthService> auth, std::shared_ptr<Entitlements> entitlements,
-                 std::string adminToken)
-    : echoes_(std::move(echoes)), sweep_(std::move(sweep)), auth_(std::move(auth)),
-      entitlements_(std::move(entitlements)), adminToken_(std::move(adminToken)) {}
+                 std::shared_ptr<EchoExplainer> explainer, std::shared_ptr<AuthService> auth,
+                 std::shared_ptr<Entitlements> entitlements, std::string adminToken)
+    : echoes_(std::move(echoes)), sweep_(std::move(sweep)), explainer_(std::move(explainer)),
+      auth_(std::move(auth)), entitlements_(std::move(entitlements)),
+      adminToken_(std::move(adminToken)) {}
 
 void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<User> caller = callerUserOf(req, *auth_);
@@ -340,6 +496,60 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   sweep_->runAsync(sinceMs, [cb = std::move(cb)](const EchoSweepReport& report) {
     cb(jsonResponse(toJson(report)));
   });
+}
+
+void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                          const std::string& day) {
+  const std::string header = req->getHeader("x-admin-token");
+  const std::string presented = header.empty() ? req->getParameter("token") : header;
+  if (adminToken_.empty() || !secretEqual(presented, adminToken_)) {
+    cb(error(drogon::k403Forbidden, "admin token required"));
+    return;
+  }
+  // And a signed-in owner on top of it: this hands back whole passages, and the only journal it
+  // may ever hand back is the caller's own. The admin secret opens the door; it names nobody.
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    cb(error(drogon::k401Unauthorized, "sign in as the owner of the page"));
+    return;
+  }
+
+  std::optional<LocalDate> date;
+  try {
+    date = LocalDate{day};
+  } catch (const InvalidPage&) {
+    cb(error(drogon::k400BadRequest, "bad date"));
+    return;
+  }
+
+  ExplainRequest request{.day = *date};
+  request.rules.minDayGap = knob(req, "minDayGap", request.rules.minDayGap);
+  request.rules.shown = knob(req, "shown", request.rules.shown);
+  request.rules.refrainRadius = knob(req, "refrainRadius", request.rules.refrainRadius);
+  request.rules.refrainCrowd = knob(req, "refrainCrowd", request.rules.refrainCrowd);
+  request.rules.familyRadius = knob(req, "familyRadius", request.rules.familyRadius);
+  request.rules.restatement = knob(req, "restatement", request.rules.restatement);
+  request.rules.perBand = knob(req, "perBand", request.rules.perBand);
+  request.rules.maxRecent = knob(req, "maxRecent", request.rules.maxRecent);
+  request.rules.maxPerMonth = knob(req, "maxPerMonth", request.rules.maxPerMonth);
+  request.rules.distanceWeight = knob(req, "distanceWeight", request.rules.distanceWeight);
+  request.rules.familyPenalty = knob(req, "familyPenalty", request.rules.familyPenalty);
+  request.rules.diversityPenalty = knob(req, "diversityPenalty", request.rules.diversityPenalty);
+  request.echoesPerPage = knob(req, "echoesPerPage", request.echoesPerPage);
+  request.nearest = knob(req, "nearest", request.nearest);
+  request.curate = req->getParameter("curate") == "1" || req->getParameter("curate") == "true";
+
+  // Off this thread: an embed round trip and, when asked, a curator call — seconds, on one of the
+  // handful of IO threads serving every other route in the product.
+  explainer_->explainAsync(*caller, request,
+                           [cb = std::move(cb), rules = request.rules](
+                               const EchoExplanation& explained) {
+                             Json::Value body = toJson(explained);
+                             // The rules the run actually used, echoed back — an operator sweeping
+                             // a threshold has to be able to tell a typo from a result.
+                             body["rules"] = toJson(rules);
+                             cb(jsonResponse(body));
+                           });
 }
 
 }
