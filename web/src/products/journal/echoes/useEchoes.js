@@ -71,6 +71,15 @@ export function stillStanding(matches, live) {
   });
 }
 
+// The stored latch is written only when it actually moves. `rememberGutter` used to run once per
+// mount; the read it sits in now repeats every LIVE_INTERVAL while the tab is visible, and a
+// localStorage write every fifteen seconds to store the value already there is a cost with no
+// reader. (The latch itself belongs to the reserved-gutter fix — it is never withdrawn mid-mount.)
+function keepGutter(account, open) {
+  if (storedGutter(account) === open) return;
+  rememberGutter(account, open);
+}
+
 function seenFirstEcho() {
   try {
     return localStorage.getItem(FIRST_ECHO_KEY) === 'seen';
@@ -112,12 +121,12 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
             && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
           setFloored(true);
           setPages(new Map());
-          rememberGutter(account, false);
+          keepGutter(account, false);
           return;
         }
         setFloored(false);
         const found = (reply.pages || []).filter((page) => page.matches?.length);
-        rememberGutter(account, found.length > 0);
+        keepGutter(account, found.length > 0);
         if (found.length) setHasGutter(true);
         setPages((current) => new Map(found.map((page) => [page.day, {
           day: page.day,
