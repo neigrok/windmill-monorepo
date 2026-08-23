@@ -8,7 +8,11 @@ import { journalApi } from '../journalApi.js';
 import { localDay } from '../hlc.js';
 
 const PAGE_FLOOR = 20;
+// How often an open, visible canvas asks again. The derivation behind an echo takes 10-17 seconds,
+// so this is the shortest wait that is not simply guessing, and it stops dead when the tab is hidden.
+const LIVE_INTERVAL = 15000;
 const FIRST_ECHO_KEY = 'windmill:journal-first-echo';
+const GUTTER_KEY = 'windmill:journal-gutter';   // scoped per account: one reader's echoes never reserve another's room
 
 // `occurrenceHint` is which occurrence of the text this is, not a character position, and only a hint:
 // the text search decides whether a quote renders. Answers the char range in this body.
@@ -24,6 +28,47 @@ export function locate(body, text, occurrence) {
   }
   if (at < 0) at = body.indexOf(text);      // the hint over-counted — fall back to the first
   return at < 0 ? null : [at, at + text.length];
+}
+
+// The reserved space a returning reader already had, read before the first paint so it never widens
+// under them. A latch: once open for this mount it stays open, whatever the scroll passes over.
+function gutterKey(account) {
+  return account ? `${GUTTER_KEY}:${account}` : GUTTER_KEY;
+}
+
+function storedGutter(account) {
+  try {
+    return localStorage.getItem(gutterKey(account)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberGutter(account, open) {
+  try {
+    if (open) localStorage.setItem(gutterKey(account), '1');
+    else localStorage.removeItem(gutterKey(account));
+  } catch { /* storage unavailable — the space is decided again next mount */ }
+}
+
+// Two match lists are the same pairing set when they name the same passages — used to keep a page's
+// verified flag across a re-read rather than re-fetching bodies that have not moved.
+function sameMatches(before, after) {
+  if (!before || !after || before.length !== after.length) return false;
+  return before.every((match, at) => match.day === after[at].day && match.text === after[at].text);
+}
+
+// Which of a page's matches still stand, given the bodies the canvas is holding right now. A match
+// into a page nobody edited is left alone — silence about a body is not evidence against a quote —
+// and a match into an edited one survives only if its words are still there.
+//
+// Pure and exported because it is the whole of the retraction rule, and the alternative is a
+// judgement that can only be checked by opening a browser.
+export function stillStanding(matches, live) {
+  return (matches || []).filter((match) => {
+    if (!live?.has(match.day)) return true;
+    return Boolean(locate(live.get(match.day), match.text, match.occurrenceHint));
+  });
 }
 
 function seenFirstEcho() {
@@ -43,6 +88,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   const [sheetDay, setSheetDay] = useState(null);
   const [hops, setHops] = useState([]);                // the walk, tonight first
   const [followedDay, setFollowedDay] = useState(null); // which page the desktop margin sits beside
+  const [hasGutter, setHasGutter] = useState(() => storedGutter(account)); // the reserved space, never withdrawn mid-mount
   // Handed over by Canvas.jsx on mount: its scroller and its day lookup. Every echo surface measures
   // through this rather than querying the canvas's own markup.
   const [canvas, setCanvas] = useState(null);
@@ -53,8 +99,42 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   const bodies = useRef(new Map());                    // match day -> live body, fetched once for re-location
   const verifying = useRef(new Set());                 // pages whose bodies are already on the way
 
-  useEffect(() => {
+  // The read, as a function rather than only as a mount effect. Echoes arrive SECONDS after a save —
+  // the segmenter, the embedder and the curator take 10-17 of them — and until this was callable the
+  // only way to see one was to reload the page, which is not a journal behaving like a journal.
+  const load = useCallback(() => {
     let cancelled = false;
+    journalApi.echoes('0001-01-01', today)
+      .then((reply) => {
+        if (cancelled) return;
+        // Below the floor nothing renders; the server waives it for the accounts building this.
+        if (!reply.floorWaived
+            && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
+          setFloored(true);
+          setPages(new Map());
+          rememberGutter(account, false);
+          return;
+        }
+        setFloored(false);
+        const found = (reply.pages || []).filter((page) => page.matches?.length);
+        rememberGutter(account, found.length > 0);
+        if (found.length) setHasGutter(true);
+        setPages((current) => new Map(found.map((page) => [page.day, {
+          day: page.day,
+          entitled: page.entitled !== false,
+          matches: page.matches,
+          // A page already verified against a body that has not moved stays verified, so a re-read
+          // never flickers a standing quote back into an unchecked one.
+          verified: Boolean(current.get(page.day)?.verified)
+            && sameMatches(current.get(page.day)?.matches, page.matches),
+        }])));
+        setFirstEver(Boolean(reply.firstEchoEver) && !seenFirstEcho());
+      })
+      .catch(() => { /* no echoes to show — leave the canvas quiet */ });
+    return () => { cancelled = true; };
+  }, [today, account]);
+
+  useEffect(() => {
     // All of it is the account's own prose, so a change of who is signed in drops it before asking again.
     setPages(new Map());
     setFloored(false);
@@ -63,61 +143,75 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     setSheetDay(null);
     setHops([]);
     setFollowedDay(null);
+    setHasGutter(storedGutter(account));
     bodies.current = new Map();
     verifying.current = new Set();
-    journalApi.echoes('0001-01-01', today)
-      .then((reply) => {
-        if (cancelled) return;
-        // Below the floor nothing renders; the server waives it for the accounts building this.
-        if (!reply.floorWaived
-            && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
-          setFloored(true);
-          return;
-        }
-        const found = (reply.pages || []).filter((page) => page.matches?.length);
-        setPages(new Map(found.map((page) => [page.day, {
-          day: page.day,
-          entitled: page.entitled !== false,
-          matches: page.matches,
-          verified: false,
-        }])));
-        setFirstEver(Boolean(reply.firstEchoEver) && !seenFirstEcho());
-      })
-      .catch(() => { /* no echoes to show — leave the canvas quiet */ });
-    return () => { cancelled = true; };
-  }, [today, account]);
+    return load();
+  }, [today, account, load]);
 
   // Fetch the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
-  const verify = useCallback(async (day) => {
+  // Fetch the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
+  // `fresh` re-reads bodies the client already holds, which is what makes this a RECHECK rather than
+  // a first look: the writer edits the page an echo quotes and the quote has to go without anybody
+  // reloading anything.
+  const check = useCallback(async (day, fresh = false) => {
     const page = pagesRef.current.get(day);
-    if (!page || page.verified || verifying.current.has(day)) return;
+    if (!page || (!fresh && page.verified) || verifying.current.has(day)) return;
     verifying.current.add(day);
-    const wanted = [...new Set(page.matches.map((match) => match.day))].filter((d) => !bodies.current.has(d));
+    const days = [...new Set(page.matches.map((match) => match.day))];
+    const wanted = fresh ? days : days.filter((d) => !bodies.current.has(d));
     const loaded = await Promise.all(wanted.map(async (d) => {
       try {
         const fetched = await journalApi.page(d);
         return [d, fetched?.body || ''];
       } catch {
-        return [d, ''];
+        // A body we could not read decides nothing: leaving the quote alone is the honest failure,
+        // because dropping it would retire an echo on a dropped connection.
+        return [d, bodies.current.get(d) ?? null];
       }
     }));
-    loaded.forEach(([d, body]) => bodies.current.set(d, body));
+    loaded.forEach(([d, body]) => { if (body !== null) bodies.current.set(d, body); });
     verifying.current.delete(day);
     setPages((current) => {
       const held = current.get(day);
       if (!held) return current;
-      const located = held.matches
-        .map((match) => {
-          const span = locate(bodies.current.get(match.day), match.text, match.occurrenceHint);
-          return span ? { ...match, lo: span[0], hi: span[1] } : null;
-        })
-        .filter(Boolean);
+      const standing = stillStanding(held.matches, bodies.current);
+      const located = standing.map((match) => {
+        const span = locate(bodies.current.get(match.day), match.text, match.occurrenceHint);
+        return span ? { ...match, lo: span[0], hi: span[1] } : match;
+      });
       const next = new Map(current);
       if (!located.length) next.delete(day);           // never an empty "no echoes" state
       else next.set(day, { ...held, matches: located, verified: true });
       return next;
     });
   }, []);
+
+  const verify = useCallback((day) => check(day, false), [check]);
+
+  // ECHOES ARRIVE AND LEAVE WITHOUT A RELOAD, which until now they did not: this hook read once on
+  // mount and never again, so a writer saw tonight's echo only by reloading the page and saw a
+  // deleted one linger until they did. The pipeline is a segmenter, an embedder and a curator —
+  // 10-17 seconds after a save — so the only question was who asks again, and the answer was nobody.
+  //
+  // Asking again is cheap (one small read of this account's echoes) and it is paused whenever the
+  // tab is hidden, so a journal left open in a background tab costs nothing at all.
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState !== 'visible') return;
+      load();
+      for (const day of pagesRef.current.keys()) check(day, true);
+    };
+    const wake = () => { if (document.visibilityState === 'visible') again(); };
+    const beat = setInterval(again, LIVE_INTERVAL);
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      clearInterval(beat);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+    };
+  }, [load, check]);
 
   const openInk = useCallback((day) => setOpenDay(day), []);
   const closeInk = useCallback(() => setOpenDay(null), []);
@@ -251,6 +345,9 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     holdCanvas,
     pageOf,
     verify,
+    // Exposed so a surface that KNOWS a page just changed can ask immediately rather than waiting
+    // out the beat above — the canvas holds every body it draws, so it can do better than 15s.
+    reread: load,
     openDay,
     openInk,
     closeInk,
@@ -268,5 +365,6 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     firstEchoDay,
     claimFirstEcho,
     followedDay,
+    hasGutter,
   };
 }

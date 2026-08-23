@@ -32,7 +32,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const {
     today, history, loading, firstRun, readState, reach,
     body, mood, energy, saveState, saveTick,
-    setBody, toggleMood, toggleEnergy, extendTo, reachBack,
+    setBody, setMood, setEnergy, extendTo, reachBack,
   } = usePages();
 
   const scrollRef = useRef(null);
@@ -247,7 +247,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             />
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
-          <ScaleStrip mood={mood} energy={energy} onMood={toggleMood} onEnergy={toggleEnergy} why={why} />
+          <ScaleStrip mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
           {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
         </article>
       </div>
