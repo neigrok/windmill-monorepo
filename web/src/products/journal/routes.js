@@ -1,4 +1,5 @@
-// The journal's route table. A position is a URL: #/journal is today, #/journal/<iso> is that day.
+// The journal's route table. A position is a URL: #/journal is today, #/journal/<iso> is that day —
+// except on an entry an in-canvas hop stamped, which opens on today (openPosition.js).
 
 import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';

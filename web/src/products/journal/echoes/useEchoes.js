@@ -1,11 +1,13 @@
-// Echoes arrive on an ordinary read; nothing here polls. The count is the array, never a total computed
-// from something not in hand. A quote is re-located in the live body at render or it is not shown — the
-// wire carries passage text and an occurrence index, never an offset. Under PAGE_FLOOR pages nothing
-// renders unless the server says `floorWaived`.
+// Echoes arrive on a read this hook repeats every LIVE_INTERVAL while the tab is visible, so one lands
+// and leaves without a reload. The count is the array, never a total computed from something not in
+// hand. A quote is re-located in the live body at render or it is not shown — the wire carries passage
+// text and an occurrence index, never an offset. Under PAGE_FLOOR pages nothing renders unless the
+// server says `floorWaived`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
 import { localDay } from '../hlc.js';
+import { hopToHash } from '../openPosition.js';
 
 const PAGE_FLOOR = 20;
 // How often an open, visible canvas asks again. The derivation behind an echo takes 10-17 seconds,
@@ -290,6 +292,8 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   }, []);
 
   // A position is a URL: the hop is a hash change, and the canvas loads the day and lights the passage.
+  // It goes through `hopToHash` so the entry carries the hop mark — a day walked to is not a day the
+  // writer asked for, and a reload taken mid-walk must open on tonight rather than resurrect it.
   const walkTo = useCallback((triggerDay, match) => {
     journalApi.echoOpened(triggerDay, match.day).catch(() => { /* a lost signal changes nothing here */ });
     setHops((current) => {
@@ -298,7 +302,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
       return seen >= 0 ? trail.slice(0, seen + 1) : [...trail, match.day];
     });
     setOpenDay(match.day);
-    window.location.hash = `#/journal/${match.day}`;
+    hopToHash(`#/journal/${match.day}`);
     onFly({ day: match.day, lo: match.lo, hi: match.hi });
   }, [today, onFly]);
 
@@ -309,14 +313,14 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
       return seen <= 0 ? [] : current.slice(0, seen + 1);
     });
     setOpenDay(null);
-    window.location.hash = day === today ? '#/journal' : `#/journal/${day}`;
+    hopToHash(day === today ? '#/journal' : `#/journal/${day}`);
     onFly({ day });
   }, [today, onFly]);
 
   const backToTonight = useCallback(() => {
     setHops([]);
     setOpenDay(null);
-    window.location.hash = '#/journal';
+    hopToHash('#/journal');
     onFly({ day: today });
   }, [today, onFly]);
 

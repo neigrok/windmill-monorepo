@@ -18,13 +18,8 @@ import { OneSheet } from './echoes/OneSheet.jsx';
 import { useEchoes } from './echoes/useEchoes.js';
 import { useToday } from './usePages.js';
 import { useNudge } from './useNudge.js';
+import { openPosition, documentEntry } from './openPosition.js';
 import './journal.css';
-
-// The date is the only thing the canvas needs from the hash.
-function focusDateOf(hash) {
-  const match = /^#\/journal\/(\d{4}-\d{2}-\d{2})/.exec(hash || '');
-  return match ? match[1] : null;
-}
 
 export function JournalApp({ hash }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -48,7 +43,9 @@ export function JournalApp({ hash }) {
   const writeRef = useRef(null);
   const holdWriter = useCallback((write) => { writeRef.current = write; }, []);
 
-  const focusDate = focusDateOf(hash);
+  // The hop mark decides the OPENING position only: the entry is a fact about the document, so this
+  // answers the same for every render and every remount, and a hop away from it deep-links as usual.
+  const focusDate = openPosition(hash, documentEntry());
   const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
   const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
   // The margin follows the scroll until a tab is opened, and then it holds that page. The follow is
