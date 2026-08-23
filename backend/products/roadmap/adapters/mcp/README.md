@@ -1,9 +1,9 @@
 # MCP adapter (`adapters/mcp/`)
 
-The Model Context Protocol edge: an AI agent reads and authors Windmill roadmaps through the
-same application core an HTTP or WebSocket client drives. Edits route through the tree's
-`TreeRoom`, so they are merged, sequenced, logged to `tree_ops`, and persisted to the per-entry
-lattice tables (`tree_nodes` / `tree_edges` / `tree_kinds`) like any other edit.
+An AI agent reads and authors Windmill roadmaps through the same application core an HTTP or
+WebSocket client drives. Edits route through the tree's `TreeRoom`, so they are merged, sequenced,
+logged to `tree_ops`, and persisted to the per-entry lattice tables (`tree_nodes` / `tree_edges` /
+`tree_kinds`) like any other edit.
 
 ## Layout
 
@@ -42,11 +42,10 @@ platform/infra/
 All three composition roots build the same composite and ask `windmillServerInfo()` for the
 handshake, so the surface an agent connects to cannot differ by transport.
 
-The dependency arrow points inward: `McpServer` knows nothing of rooms, Postgres, or HTTP; the
-transports know nothing of the tools. The edit tools reuse the `commandFromJson` codec — their
-argument names are the command payload keys, save for the node handle, which the tool layer
-normalizes (`nodeId` → the codec's `id`) before the decode. `commandFromJson` is also the op-log
-replay decoder (`PgOpLog`) and answers a bare yes/no, so arguments are validated in the tool layer.
+The edit tools reuse the `commandFromJson` codec: their argument names are the command payload
+keys, save for the node handle, which the tool layer normalizes (`nodeId` → the codec's `id`)
+before the decode. `commandFromJson` answers a bare yes/no, so arguments are validated in the tool
+layer.
 
 ## The error contract
 
@@ -63,23 +62,20 @@ import_subgraph: nodes[0] must be an object, got string. Each item is a JSON obj
 set_progress: status "finished" is not one of {active, complete, none}
 ```
 
-The checks live in `ToolArgs.{h,cpp}` — one home, every tool. `RoadmapTools::callTool` stamps the
-tool name exactly once and catches: a type-confused read throws inside jsoncpp, and a malformed
-argument must fail its own call rather than the whole HTTP request. Every cap a tool enforces is
-published as `maxLength` / `maxItems` in its `inputSchema`.
-`test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp` pins the messages themselves.
+The checks live in `ToolArgs.{h,cpp}`. `RoadmapTools::callTool` stamps the tool name exactly once
+and catches, so a malformed argument fails its own call rather than the whole HTTP request. Every
+cap a tool enforces is published as `maxLength` / `maxItems` in its `inputSchema`.
 
 ## Handles
 
 - `treeId` — the roadmap, on every tree-scoped tool.
 - `nodeId` — a node that **exists**, on every tool that edits or marks one. The `id` spelling is
-  also accepted (declared `deprecated` in the schema, since `additionalProperties: false` would
-  otherwise have a client's own validator reject it), and never published as canonical.
+  also accepted, declared `deprecated` in the schema, and never published as canonical.
 - `id` — the id **proposed** for a NEW thing: `create_node`, `add_kind`, `import_subgraph`'s
   `nodes[].id` and `kinds[].id`. `create_node` refuses `nodeId` outright, `add_kind` refuses
   `kindId`.
 - Legend kinds publish `id` for the kind that exists too, and all six `*_kind` tools spell it
-  alike. `kindId` is the silent alias there (`ToolArgs.h:44`).
+  alike. `kindId` is the silent alias there.
 
 ## Resources
 
@@ -93,8 +89,8 @@ claim it makes against the shipped catalog.
 both speak JSON-RPC 2.0, protocol version `2025-06-18`:
 
 - **stdio** (`windmill_mcp`) — newline-delimited frames on stdin/stdout, what local hosts launch.
-  stdout is the protocol channel; logs go to stderr. No session and no bearer: a process you
-  spawned is already the authorization, and it acts as `WINDMILL_MCP_USER`.
+  stdout is the protocol channel; logs go to stderr. No session and no bearer: it acts as
+  `WINDMILL_MCP_USER`.
 - **Streamable HTTP** (`McpHttpEndpoint`) — the remote transport, one endpoint (`/mcp` by
   default):
   - `POST` — the body is one JSON-RPC message. A *request* gets its JSON-RPC response as
@@ -139,8 +135,7 @@ and the name it was minted under; both empty for the shared token and the unauth
 A request presenting none of them gets `401` with a
 `WWW-Authenticate: Bearer resource_metadata="…"` challenge naming
 `/.well-known/oauth-protected-resource`, served unauthenticated by both HTTP roots. With none of
-the three configured, every request runs as `WINDMILL_MCP_USER` with `McpAuth::fallbackScope` —
-the stdio shape and the test shape; keep such a deployment private yourself.
+the three configured, every request runs as `WINDMILL_MCP_USER` with `McpAuth::fallbackScope`.
 
 ## Scopes
 
@@ -150,12 +145,10 @@ holding it does not see `delete_tree`, `delete_node` or `remove_kind` in `tools/
 Every tool declares its level beside its description (`RoadmapToolCatalog.cpp`),
 `CompositeToolHost` is the one place that enforces it, and
 `/.well-known/oauth-authorization-server` publishes the vocabulary in `scopes_supported`, derived
-from the products actually connected.
+from the products actually connected. **An empty scope is the account-wide grant**
+(`platform/domain/ToolScope.h`).
 
-**An empty scope is the account-wide grant** — the one exception to fail-closed, written down at
-the parse site (`platform/domain/ToolScope.h`).
-
-Tending does NOT go through the composite: `TendingService` holds roadmap's host directly
+Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
 composite pins a credential to its grant.
 
@@ -185,38 +178,30 @@ treated as internal and is not limited.
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Edits return
-`{applied, seq, diagnosticsClean, introducedDiagnostics}` — nothing is ever rejected, so the
-receipt is how an agent learns what its change did. The two keys answer different questions:
-`diagnosticsClean` is the whole tree's state (a `false` may be dirt that was already there), and
-`introducedDiagnostics` names what THIS edit broke — the cycles, dangling and self-edges present
-after it that the tree did not hold before, bracketed under the tree's strand. An innocent edit
-on a dirty tree answers `[]`.
+`{applied, seq, diagnosticsClean, introducedDiagnostics}`; nothing is ever rejected. The two keys
+answer different questions: `diagnosticsClean` is the whole tree's state, and
+`introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
+tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
-Three distinct facts, three words:
-
 - **`status` is the caller's own mark** — `active`, `complete` or `none`, the vocabulary
   `set_progress` writes and `get_progress` returns. Ask `get_tree` or `find_nodes` for it and
-  every node answers, marked or not, so a caller can tell "no mark" from "not served".
+  every node answers, marked or not.
 - **`seedStatus` is the document's authored baseline** — the inert seed a shared or demo tree
   carries, which every reader sees before their own marks. Readable through `fields`, writable as
-  `import_subgraph`'s `nodes[].seedStatus`. An imported node carrying `status` is refused by name
-  rather than publishing a private mark into a shared document.
+  `import_subgraph`'s `nodes[].seedStatus`. An imported node carrying `status` is refused by name.
 - **`state` is what the tree derives** — `locked`, `available`, `active` or `complete`, the
   unlock cascade `domain/UnlockRules` runs over a node's prerequisites and the caller's marks.
   A `fields` value on `get_tree` and `find_nodes`, never in a default, computed once per read
-  over the whole tree (a prerequisite may sit off the page). It answers on an untidy tree —
-  derived over the bare node list, never through `SkillTree`, which throws on dirt: a cycle locks
-  every member, and a dangling edge (which the projected document does not carry — it lives in
-  `get_diagnostics`) locks nothing. An anonymous reader's cascade runs over no marks: roots
-  available, the rest locked. `find_nodes` takes `state` as a filter too, ANDed with the rest and
-  applied after the ranked selection but before the page, so `count` and the cursor speak of the
-  filtered set.
-
-**`summary` is a projection of `description`**, not a fourth fact: its opening 200 characters,
-cut at a word and ellipsized when anything was cut. Ask for `summary` to skim and `description`
-for one node's whole text.
+  over the whole tree, since a prerequisite may sit off the page. It answers on an untidy tree,
+  derived over the bare node list rather than through `SkillTree`, which throws on dirt: a cycle
+  locks every member, and a dangling edge locks nothing. An anonymous reader's cascade runs over
+  no marks: roots available, the rest locked. `find_nodes` takes `state` as a filter too, ANDed
+  with the rest and applied after the ranked selection but before the page, so `count` and the
+  cursor speak of the filtered set.
+- **`summary` is a projection of `description`** — its opening 200 characters, cut at a word and
+  ellipsized when anything was cut.
 
 ## Bulk
 
@@ -228,7 +213,7 @@ for one node's whole text.
   place reads as `edges: 0`. `dryRun: true` previews the collisions and the refusals and changes
   nothing. The graft is held to the per-tree capacity (10000 nodes, 20000 edges), counted on what
   the tree would hold AFTER the upsert, so re-sending nodes already present costs nothing. The
-  graft path does not run the domain's `validate()` — this tool's own item checks are the only
+  graft path does not run the domain's `validate()`, so this tool's own item checks are the only
   admission standing there.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports

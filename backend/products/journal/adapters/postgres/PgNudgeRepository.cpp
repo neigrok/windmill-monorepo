@@ -14,11 +14,10 @@ namespace wm {
 
 namespace {
 
-// One fleet-wide lock for the sweep's WORK, not its correctness — the claimed day row is that.
+// One fleet-wide lock for the sweep's work, not its correctness; the claimed day row is that.
 constexpr std::string_view kSweepLock = "hashtext('journal_nudge_sweep')::bigint";
 
-// The ledger's two free columns: the decision is the coarse verdict, the reason is why. Flat
-// switches over the domain enums the pure decide already produced.
+// The ledger's two free columns: the decision is the coarse verdict, the reason is why.
 const char* decisionText(NudgeOutcome outcome) {
   return outcome == NudgeOutcome::send ? "sent" : "skipped";
 }
@@ -34,9 +33,8 @@ const char* reasonText(NudgeSkipReason reason) {
 }
 
 // Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build. The
-// row carries the slot back in both currencies — the LOCAL day, which is the ledger's dedup key,
-// and the UTC instant the lateness gate measures against — plus the paused instant, so the pure
-// decide needs no second read.
+// row carries the slot in both currencies — the local day, the ledger's dedup key, and the UTC
+// instant the lateness gate measures against — plus the paused instant.
 template <typename Row>
 NudgeDueUser dueUserFrom(const Row& row) {
   return NudgeDueUser{
@@ -57,8 +55,7 @@ bool PgNudgeRepository::underSweepLock(const std::function<void()>& pass) {
 }
 
 std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int limit) {
-  // The sweep's whole question: whose slot has arrived. next_due_at is the DEVICE's materialised
-  // instant — we never derive it, only fire it.
+  // Whose slot has arrived. next_due_at is the device's materialised instant, only ever fired here.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -67,8 +64,7 @@ std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int lim
       "COALESCE((extract(epoch from n.paused_until) * 1000)::bigint, 0) AS paused_ms "
       "FROM journal_nudge n JOIN users u ON u.id = n.user_id "
       "WHERE n.enabled AND NOT n.suppressed AND n.next_due_at IS NOT NULL AND n.slot_day IS NOT NULL "
-      // A row in `users` only ever comes from a consumed magic link or Google sign-in, so existing
-      // here IS the proven-address signal; the soft-close stamp is the only extra gate.
+      // A row in `users` is the proven-address signal; the soft-close stamp is the only extra gate.
       "AND u.deleted_at IS NULL AND n.next_due_at <= to_timestamp($1::bigint / 1000.0) "
       "ORDER BY n.next_due_at ASC LIMIT $2",
       static_cast<long long>(nowMs), limit);
@@ -80,8 +76,7 @@ std::vector<NudgeDueUser> PgNudgeRepository::dueNow(std::uint64_t nowMs, int lim
 }
 
 bool PgNudgeRepository::wroteToday(const UserId& user, const LocalDate& day) {
-  // The "did they already write today?" fact the pure decide gates on. slot_day IS the local day,
-  // so this is a single point lookup on the journal_page primary key.
+  // slot_day is the local day, so this is a point lookup on the journal_page primary key.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -92,10 +87,9 @@ bool PgNudgeRepository::wroteToday(const UserId& user, const LocalDate& day) {
 
 bool PgNudgeRepository::claimDay(const UserId& user, const LocalDate& slotDay,
                                  const NudgeDecision& decision) {
-  // The permission slip, and the whole of the "at most one per day" guarantee: the primary key is
-  // the mutex. Whoever inserts the row owns the day; everyone else gets nothing back and must fall
-  // silent. The EXISTS re-asks, inside the transaction, the question dueNow asked minutes ago, so
-  // someone who paused, bounced or closed their account while this batch ran is not mailed.
+  // The whole "at most one per day" guarantee: the primary key is the mutex, and whoever inserts the
+  // row owns the day. The EXISTS re-asks dueNow's question inside the transaction, so someone who
+  // paused, bounced or closed their account while the batch ran is not mailed.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result claimed = txn.exec_params(
@@ -112,8 +106,8 @@ bool PgNudgeRepository::claimDay(const UserId& user, const LocalDate& slotDay,
     return false;
   }
 
-  // Won the day: clear the served instant in the same breath, so the very same instant can never
-  // fire a second time. The device materialises the next one.
+  // Clear the served instant in the same transaction, so it cannot fire twice; the device
+  // materialises the next one.
   txn.exec_params(
       "UPDATE journal_nudge SET next_due_at = NULL, updated_at = now() WHERE user_id = $1::uuid",
       user.str());
@@ -125,8 +119,8 @@ void PgNudgeRepository::closeDay(const UserId& user, const LocalDate& slotDay, D
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (outcome == DayOutcome::delivered) {
-    // The one stamp that means a person actually received something. Its absence on a claimed row is
-    // ambiguous by construction — the mail may well have landed — so such a row is never retried.
+    // The only stamp meaning a person received something. Its absence on a claimed row is ambiguous,
+    // so such a row is never retried.
     txn.exec_params(
         "UPDATE journal_nudge_day SET sent_at = now() "
         "WHERE user_id = $1::uuid AND slot_day = $2::date",
@@ -135,8 +129,7 @@ void PgNudgeRepository::closeDay(const UserId& user, const LocalDate& slotDay, D
     return;
   }
 
-  // Held by the arming gate, or refused by the provider. Either way the day stays claimed and the
-  // ledger's reason says which; sent_at is left null.
+  // The day stays claimed and the ledger's reason says which; sent_at is left null.
   txn.exec_params(
       "UPDATE journal_nudge_day SET reason = $3 "
       "WHERE user_id = $1::uuid AND slot_day = $2::date",
@@ -156,8 +149,8 @@ std::optional<NudgeSettings> PgNudgeRepository::settingsFor(const UserId& user) 
       user.str());
   if (rows.empty()) return std::nullopt;
 
-  // The device-materialised schedule (next_due_at, slot_day) and the pause are all nullable: a null
-  // column stays an unset optional, so "unset means never send" survives the round trip.
+  // next_due_at, slot_day and the pause are nullable: a null column stays an unset optional, so
+  // "unset means never send" survives the round trip.
   const auto& row = rows[0];
   NudgeSettings settings;
   settings.enabled = row["enabled"].as<bool>();
@@ -170,10 +163,9 @@ std::optional<NudgeSettings> PgNudgeRepository::settingsFor(const UserId& user) 
 }
 
 void PgNudgeRepository::upsertSettings(const UserId& user, const NudgeSettings& settings) {
-  // Written whole (the HTTP layer read-modify-writes a partial PATCH against settingsFor). The three
-  // instants cross as epoch-ms bigints and become timestamptz only inside to_timestamp here; an
-  // unset optional is appended as SQL null and to_timestamp(NULL) is NULL, so the column simply
-  // lands null and the partial index turns it into "never send".
+  // Written whole; the HTTP layer read-modify-writes a partial PATCH against settingsFor. The three
+  // instants cross as epoch-ms bigints and become timestamptz only in to_timestamp here; an unset
+  // optional lands as SQL null, which the partial index turns into "never send".
   pqxx::params params;
   params.append(user.str());
   params.append(settings.enabled);
@@ -201,13 +193,9 @@ void PgNudgeRepository::upsertSettings(const UserId& user, const NudgeSettings& 
 }
 
 bool PgNudgeRepository::stopMailing(const Email& address) {
-  // One statement, and idempotent because the value it writes is a constant: a redelivered webhook
-  // performs the identical write, so no dedup table is needed.
-  //
-  // It INSERTS when there is no row: a journal_nudge row appears the first time a device pushes a
-  // schedule, so most accounts have none, yet a bounce on their sign-in mail still proves the
-  // mailbox is gone. `enabled` is left exactly as its owner set it. users.email is citext, so the
-  // address matches however the provider cased it back to us.
+  // Idempotent: the value written is a constant, so a redelivered webhook performs the identical
+  // write. It inserts when there is no row, since most accounts have none. `enabled` is left exactly
+  // as its owner set it. users.email is citext, so the address matches however the provider cased it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result changed = txn.exec_params(
@@ -220,9 +208,7 @@ bool PgNudgeRepository::stopMailing(const Email& address) {
 }
 
 void PgNudgeRepository::liftSuppression(const UserId& user) {
-  // The owner's own hand, keyed by their id: NudgeApi calls this when a PATCH saying enabled:true
-  // lands on a suppressed row. `enabled` is untouched here too — the enable that prompted it is
-  // written by upsertSettings — and a row that never existed has nothing to lift.
+  // Keyed by user id. `enabled` is untouched here: upsertSettings writes it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(

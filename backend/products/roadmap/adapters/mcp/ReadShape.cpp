@@ -13,10 +13,8 @@ Json::Value idArray(const std::set<NodeId>& ids) {
   return array;
 }
 
-// The description's opening, cut at the last word boundary inside the budget and marked with an
-// ellipsis when anything was cut. The budget is BYTES, and the cut is never mid-character: with
-// no word boundary in the back half the head backs off to the start of the code point straddling
-// the edge (a UTF-8 continuation byte is 10xxxxxx).
+// The budget is BYTES and the cut is never mid-character: with no word boundary in the back
+// half the head backs off to the start of the code point straddling the edge.
 std::string summaryOf(const std::string& description) {
   if (description.size() <= kSummaryChars) return description;
   std::string head = description.substr(0, kSummaryChars);
@@ -30,7 +28,6 @@ std::string summaryOf(const std::string& description) {
   return head + "\u2026";
 }
 
-// The caller's own mark on one node, spelled the way set_progress spells it.
 const char* markOn(const Progress& marks, const NodeId& node) {
   if (marks.completed.count(node)) return progressStatusName(ProgressStatus::complete);
   if (marks.inProgress.count(node)) return progressStatusName(ProgressStatus::active);

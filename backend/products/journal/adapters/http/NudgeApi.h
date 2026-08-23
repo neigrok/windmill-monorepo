@@ -17,12 +17,10 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The nudge control surface. Settings are owner-scoped; pause and unsubscribe are UNCREDENTIALED on
-// purpose — their authority is the secret in the mail the user was sent (looked up by its digest),
-// so a tap from an email client with no session still works. The admin sweep is an operator
-// rehearsal gated by a shared token, able to time-travel (asOfMs) and run dry; a time-travelling
-// sweep is always a rehearsal and is refused outright once the feature is armed, because otherwise
-// one request mails the allowlist early and eats the real slot.
+// Settings are owner-scoped. Pause and unsubscribe are uncredentialed: their authority is the
+// secret in the mail, looked up by its digest. The admin sweep is gated by a shared token and can
+// time-travel (asOfMs) or run dry; a time-travelling sweep is always dry and is refused once the
+// feature is armed.
 class NudgeApi {
 public:
   NudgeApi(std::shared_ptr<NudgeRepository> nudges, std::shared_ptr<NudgeSweep> sweep,

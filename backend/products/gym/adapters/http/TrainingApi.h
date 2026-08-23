@@ -14,26 +14,14 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The training log over REST. Every handler resolves the caller first and 401s before touching
-// storage, and every read and write is scoped to that caller: absent is byte-identical to forbidden.
+// Every handler resolves the caller and 401s before touching storage; every read and write is scoped
+// to that caller, and absent is byte-identical to forbidden. `sharedSession` is the only
+// unauthenticated route: the path token is the whole credential, and revoked, expired and
+// never-existed answer the same 404 byte for byte.
 //
-// `sharedSession` is the only unauthenticated route in gym: the token in the path is the whole
-// credential. It carries nothing about the account, and revoked, expired and never-existed answer
-// the same 404 byte for byte so a token cannot be probed for existence.
-//
-// The status ladder holds for all five gym HTTP adapters: 400 is the client's and terminal (an
-// unreadable body, an instant outside the wire's bounds, a set or routine entry naming no known
-// movement); 404 is a session, routine or movement named IN THE PATH being absent, byte-identical to
-// it being another account's — `/v1/gym/last?exercise=` keeps its 400 `unknown-exercise` because the
-// movement is an argument there; 409 is the family about something already spent or already running;
-// 500 is the server's and retryable — a storage failure rides past the handlers'
-// `catch (InvalidTraining&)` to the house exception handler.
-//
-// The refusals carrying a machine word under `code`: session-id-taken · session-already-open ·
-// session-finished · session-open · set-id-taken · set-deleted · routine-id-taken ·
-// exercise-id-taken · unknown-exercise · set-not-found · fix-unreadable · preferences-unreadable ·
-// unknown-unit · rest-target · proposal-superseded · proposal-settled. Everything else has exactly
-// one cause and the sentence is the whole of it.
+// The status ladder across the gym HTTP adapters: 400 is the client's and terminal; 404 is a session,
+// routine or movement named in the path being absent or another account's; 409 is something already
+// spent or already running; 500 is the server's and retryable.
 //
 // `set-id-taken` is repaired by minting a fresh id and sending the set again; doing that to
 // `set-deleted` would log a deleted set back into the workout under a new number.
@@ -72,7 +60,7 @@ public:
 
 private:
   std::shared_ptr<TrainingService> training_;
-  std::string appBaseUrl_;   // where the browser app is served — a share's link, and nothing else
+  std::string appBaseUrl_;   // where the browser app is served
   std::shared_ptr<AuthService> auth_;
 };
 

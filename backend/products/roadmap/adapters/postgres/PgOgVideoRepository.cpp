@@ -11,8 +11,7 @@ PgOgVideoRepository::PgOgVideoRepository(std::shared_ptr<PgPool> pool) : pool_(s
 void PgOgVideoRepository::put(const std::string& treeId, const std::string& bytes, const std::string& mime) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // The bytes ride as a bound bytea parameter (binary_cast → a byte view over the string) —
-  // never interpolated into SQL, so an mp4 that happens to contain a quote can't break the query.
+  // The bytes ride as a bound bytea parameter, never interpolated into SQL.
   txn.exec_params(
       "INSERT INTO tree_og_videos (tree_id, video, mime, updated_at) VALUES ($1, $2, $3, now()) "
       "ON CONFLICT (tree_id) DO UPDATE SET video = EXCLUDED.video, mime = EXCLUDED.mime, updated_at = now()",

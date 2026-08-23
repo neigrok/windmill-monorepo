@@ -22,9 +22,9 @@ struct EchoSweepReport {
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
-  // Units a segmenter proposed that are NOT in the page's body and were discarded.
+  // Units a segmenter proposed that are not in the page's body and were discarded.
   int unitsDiscarded = 0;
-  // Pages the vendor declined to judge — work that will never be owed again, unlike `pagesFailed`.
+  // Pages the vendor declined to judge; unlike `pagesFailed`, they are never owed again.
   int pagesRefused = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
@@ -36,24 +36,17 @@ struct SweepBudget {
   int pagesPerUser = 40;
   int inboundPerPage = 20;
 
-  // The page-level cap. `SelectionRules::shown` bounds one TRIGGER's pairings, so without this a
-  // page with eight triggering passages carries eighty.
+  // The page-level cap; `SelectionRules::shown` bounds one trigger's pairings.
   int echoesPerPage = 10;
 };
 
 //   segment -> embed -> reconcile -> retrieve -> select -> curate -> persist
 //
-// Runs on its own trantor thread either way, never a request loop: a curator call is seconds long
-// and drogon has one handler thread per core. Step 1 is a VENDOR call (ports/Segmenter.h), asked
-// only when the page's BODY moved; a corpus that moved under unchanged text reads its units back
-// out of storage.
-//
-// Derivation stamps advance ONLY when the pass SETTLED, and a REFUSAL settles the page though it
-// failed (ports/EchoRepository.h, isSettled); only an edit to the body reopens it.
-//
-// Entitlement-blind about WHAT it derives — the read layer cuts the passage — but not about what it
-// SPENDS: the account's BACKGROUND bucket is asked once per user, and over it the user is SKIPPED,
-// not failed, so no stamp advances and the work is deferred.
+// Runs on its own trantor thread, never a request loop. Segmenting is a vendor call, asked only when
+// the page's body moved; a corpus that moved under unchanged text reads its units back out of
+// storage. Derivation stamps advance only when the pass settled, and a refusal settles the page
+// though it failed, so only an edit to the body reopens it. Entitlement decides only spend: the
+// account's background bucket is asked once per user, and over it the user is skipped, not failed.
 class EchoSweep {
 public:
   EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
@@ -61,20 +54,16 @@ public:
 
   void start();
 
-  // `sinceMs` is the only instant a pass has an opinion about: which users to scan. Everything after
-  // that is decided by stamps the corpus carries, so the sweep cannot drift against a clock.
-  // `rejudgeAll` takes EVERY page of every scanned writer rather than the ones the stamps say are
-  // owed. It re-cuts nothing — `allPages` reports every page as body-unmoved — so it costs the
-  // embedder and the curator, never the segmenter.
+  // `sinceMs` decides which users to scan and nothing else; the rest is decided by corpus stamps.
+  // `rejudgeAll` takes every page of every scanned writer rather than the ones the stamps say are
+  // owed, and re-cuts nothing, so it costs the embedder and curator but never the segmenter.
   EchoSweepReport run(std::uint64_t sinceMs, bool rejudgeAll = false);
 
-  // The same pass, queued onto this sweep's own loop, so a repair pass of minutes does not sit on a
-  // drogon IO thread holding a pooled connection.
+  // The same pass, queued onto this sweep's own loop.
   void runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done,
                 bool rejudgeAll = false);
 
-  // One page, because its writer just saved it. It does NOT walk the reverse edge — that walk is
-  // unbounded and belongs to the budgeted pass.
+  // One page, because its writer just saved it. Does not walk the reverse edge.
   EchoSweepReport derivePage(const UserId& user, const LocalDate& day);
 
 private:

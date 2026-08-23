@@ -1,5 +1,5 @@
 -- Analyst views; the app never reads them. Idempotent: `psql windmill -f db/funnel.sql`.
--- Weeks are ISO weeks; `week` is that Monday's date.
+-- Weeks are ISO weeks and `week` is that Monday's date.
 
 create or replace view funnel_weekly_signups as
 select date_trunc('week', created_at)::date as week,
@@ -62,8 +62,7 @@ select date_trunc('week', signed_up_at)::date            as week,
 from funnel_activation
 group by 1;
 
--- *_beacons count client events and undercount (adblock, unflushed tabs); forked_trees
--- is ground truth.
+-- *_beacons count client events and undercount; forked_trees is ground truth.
 create or replace view funnel_shares as
 with beacons as (
   select date_trunc('week', ts)::date as week,
@@ -93,8 +92,8 @@ select week,
 from beacons
 full join forks using (week);
 
--- W1 return = any activity in days 7–14 after signup. The rate divides by eligible
--- (day-14 window closed), so a young cohort reads as no-data rather than churn.
+-- W1 return = any activity in days 7–14 after signup. The rate divides by eligible (day-14 window
+-- closed), so a young cohort reads as no-data rather than churn.
 create or replace view funnel_returns as
 select date_trunc('week', u.created_at)::date              as week,
        count(*)                                            as signups,
@@ -122,7 +121,7 @@ cross join lateral (
 ) r
 group by 1;
 
--- land carries props.signedIn as a json boolean, so the text projection compares 'false'.
+-- props.signedIn is a json boolean, so the text projection compares 'false'.
 create or replace view funnel_landing as
 select date_trunc('week', ts)::date as week,
        count(*) filter (where name = 'land')                                  as lands,

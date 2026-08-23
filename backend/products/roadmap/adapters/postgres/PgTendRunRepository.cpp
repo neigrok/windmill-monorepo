@@ -15,8 +15,8 @@ constexpr std::string_view kTendRunColumns =
     "id, tree_id, coalesce(user_id::text, '') AS user_id, prompt, status, refusal, summary, "
     "detail, edits, seq_from, seq_to, started_at, finished_at, created_node_ids";
 
-// The created-ids column round-trips as a JSON array of strings — jsonb read back as text on the
-// way out, and written as text cast to jsonb on the way in (the save below).
+// The created-ids column round-trips as a JSON array of strings: jsonb read back as text on
+// the way out, written as text cast to jsonb on the way in.
 std::vector<std::string> parseIdArray(const std::string& json) {
   std::vector<std::string> ids;
   Json::Value root;
@@ -36,13 +36,11 @@ std::string writeIdArray(const std::vector<std::string>& ids) {
   return Json::writeString(builder, array);
 }
 
-// The inverse of tendStatusName / tendRefusalName (domain/Tending.h): the name→enum direction,
-// needed only where a row comes back off the wire.
 TendStatus tendStatusFrom(const std::string& name) {
   if (name == "running") return TendStatus::running;
   if (name == "done")    return TendStatus::done;
   if (name == "refused") return TendStatus::refused;
-  return TendStatus::failed;  // an unknown status reads as failed rather than a lie of success
+  return TendStatus::failed;  // an unknown status reads as failed, never as success
 }
 
 TendRefusal tendRefusalFrom(const std::string& name) {
@@ -56,8 +54,8 @@ TendRefusal tendRefusalFrom(const std::string& name) {
   return TendRefusal::none;
 }
 
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
-// binding it concretely compiles on one and fails on the other.
+// pqxx names the row type row_ref on macOS and row on CI's Linux, so binding it concretely
+// compiles on one and fails on the other.
 template <typename Row>
 TendRun tendRunFrom(const Row& row) {
   TendRun run;
@@ -82,8 +80,7 @@ TendRun tendRunFrom(const Row& row) {
 PgTendRunRepository::PgTendRunRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgTendRunRepository::save(const TendRun& run) {
-  // Upsert keyed on the run id: start() writes the `running` row, the worker overwrites it with
-  // the terminal one.
+  // Upsert keyed on the run id: start() writes the `running` row, the worker overwrites it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec("INSERT INTO tend_runs "
@@ -126,14 +123,11 @@ int PgTendRunRepository::failOrphanedRuns() {
 }
 
 int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs) {
-  // The allowance read: runs this user started within the window, counted over started_at, the
-  // indexed column. Read through pqxx::result (never a bare row: pqxx names it row_ref on macOS,
-  // row on CI Linux).
+  // Counted over started_at, the indexed column.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      // Only runs that actually started work count against the day's allowance: a refusal costs
-      // nothing, and counting it would let someone lock themselves out for free.
+      // Only runs that actually started work count against the allowance.
       "SELECT count(*) AS n FROM tend_runs "
       "WHERE user_id = $1::uuid AND started_at >= $2 AND status <> 'refused'",
       user.str(), sinceMs);
@@ -142,8 +136,7 @@ int PgTendRunRepository::countForUser(const UserId& user, std::uint64_t sinceMs)
 
 std::vector<TendRun> PgTendRunRepository::recentForUser(const UserId& user, std::uint64_t sinceMs,
                                                         int limit) {
-  // The ledger read, newest first: the same window and refusal exclusion as the count, so the
-  // receipts match what the meter counted spent.
+  // Newest first, over the same window and refusal exclusion as the count.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(

@@ -89,7 +89,6 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
       "(extract(epoch from s.next_due_at) * 1000)::bigint AS slot_ms "
       "FROM reminder_subscription s JOIN users u ON u.id = s.user_id "
       "WHERE s.enabled AND NOT s.suppressed AND s.iana_tz <> '' AND s.next_due_at IS NOT NULL "
-      // A row in `users` is itself the proven-address signal; the soft-close stamp is the only extra gate.
       "AND u.deleted_at IS NULL AND s.next_due_at <= to_timestamp($1::bigint / 1000.0) "
       "ORDER BY s.next_due_at LIMIT $2",
       static_cast<long long>(nowMs), limit);
@@ -236,7 +235,7 @@ void PgReminderRepository::closeWeek(const UserId& user, const std::string& slot
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (outcome == WeekOutcome::delivered) {
-    // The one stamp meaning a person received something; its absence is ambiguous, so a claimed row is never retried.
+    // The one stamp meaning a person received something; a claimed row is never retried.
     txn.exec_params(
         "UPDATE reminder_week SET sent_at = now() WHERE user_id = $1::uuid AND slot_date = $2::date",
         user.str(), slotDate);

@@ -13,11 +13,9 @@
 namespace wm {
 
 namespace {
-constexpr std::size_t kMaxVideoBytes = 3 * 1024 * 1024;  // 3 MB — a short 1080×1080 loop encodes well under this
+constexpr std::size_t kMaxVideoBytes = 3 * 1024 * 1024;
 
-// The container the upload leads with, by magic bytes: an ISO-BMFF (mp4) box tags bytes 4..8
-// "ftyp"; a Matroska/WebM stream opens with the EBML header 1A 45 DF A3. Anything else is refused,
-// so the store only ever holds a real video the og:video tag can point a scraper at.
+// mp4 leads with an ISO-BMFF box tagging bytes 4..8 "ftyp"; webm opens with the EBML header.
 std::optional<std::string> detectMime(std::string_view body) {
   if (body.size() >= 8 && body.substr(4, 4) == std::string_view{"ftyp"}) return "video/mp4";
   static constexpr char ebml[] = {'\x1a', '\x45', '\xdf', '\xa3'};
@@ -64,9 +62,7 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  // Anyone may request a tree's share video, so this stays a cheap read: the two access columns,
-  // never the whole lattice. There is no generic fallback here — the og:image poster is it — so
-  // absence, an unreadable tree, or a private-denied one is a plain 404.
+  // Anyone may request a share video: read the two access columns, never the whole lattice.
   const std::optional<UserId> caller = callerOf(req, *auth_);
   const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
@@ -80,7 +76,7 @@ void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
   }
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k200OK);
-  response->setContentTypeString(video->mime);  // drogon has no video enum — echo the stored mime verbatim
+  response->setContentTypeString(video->mime);
   response->addHeader("Cache-Control", "public, max-age=300");
   response->setBody(std::move(video->bytes));
   callback(response);

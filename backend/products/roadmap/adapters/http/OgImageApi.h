@@ -15,11 +15,8 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Per-tree share unfurl cards. The client renders its own tree to a 1200×630
-// PNG and PUTs it here — owner-only. GET /og/:id.png then serves that PNG as the link's
-// og:image, behind the same read gate as the share page (canRead): a private tree's card is
-// owner-only. Any miss — no image, an unreadable tree, an absent one — redirects to the generic
-// card rather than 404, so a shared link never unfurls with a broken image.
+// Per-tree share unfurl cards: PUT is owner-only, GET /og/:id.png is gated by canRead. Any miss
+// redirects to the generic card rather than 404.
 class OgImageApi {
 public:
   OgImageApi(std::shared_ptr<OgImageRepository> images, std::shared_ptr<TreeRepository> trees,

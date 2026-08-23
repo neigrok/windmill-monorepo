@@ -13,16 +13,8 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The settings over REST — one document per account, read and written whole. One of five HTTP
-// adapters mirroring the five aggregate ports (TrainingApi holds the status ladder they all share;
-// routes.cpp is the one mount).
-//
-// The read never 404s — a lifter with no row is served the defaults — and the write is the whole
-// document, so the two carry the same shape in both directions.
-//
-// EVERY refusal the write can make carries a code (`preferences-unreadable`, `unknown-unit`,
-// `rest-target`), because five independent values arrive at once and one "could not read that"
-// would leave the screen unable to say WHICH row to fix.
+// One document per account, read and written whole; the read never 404s. Every refusal the write can
+// make carries a code (`preferences-unreadable`, `unknown-unit`, `rest-target`).
 class PreferencesApi {
 public:
   PreferencesApi(std::shared_ptr<PreferencesService> preferences,

@@ -12,15 +12,13 @@
 namespace wm {
 
 namespace {
-// A refused write answers with the shared truth (Access.h) and its code, so a client branches on
-// the code and a reader is never told an unowned tree is somebody else's.
+// A refused write answers with the shared sentence and its code, so a client branches on the
+// code and a reader is never told an unowned tree is somebody else's.
 drogon::HttpResponsePtr forbidden(WriteRefusal refusal) {
   return error(drogon::k403Forbidden, sentenceOf(refusal), codeOf(refusal));
 }
 }
 
-// No billing gate here: setting a tree private is free, so the registry needs only the tree
-// store and the auth boundary.
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
     : registry_(std::move(registry)), auth_(std::move(auth)) {}
 
@@ -31,28 +29,25 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  // A root that parsed but is not an object — `[]`, `"hello"`, `5` — is refused before anything
-  // reads a key off it: jsoncpp throws on a keyed read of an array or a scalar.
+  // jsoncpp throws on a keyed read of an array or a scalar, so a non-object root is refused first.
   if (json && !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
-  // An optional client-minted id (the anon-first claim seam) rides the body; it must match
-  // the server's own mint shape exactly, or the claim is refused before any work happens.
+  // An optional client-minted id rides the body; it must match the server's own mint shape.
   const std::string requestedId = json ? json->get("id", "").asString() : "";
   if (!requestedId.empty() && !wellFormedTreeId(requestedId)) {
     callback(error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id"));
     return;
   }
-  // The body carries the starting document — title, and any initial nodes + legend kinds (the same
-  // TreeData wire shape a PUT takes). A bare `{title}`/`{blank:true}` has no nodes, so it's empty.
+  // The body carries the starting document: title, and any initial nodes + legend kinds.
   std::optional<TreeData> parsed = json ? treeFromJson(*json, TreeId{}) : TreeData{};
   if (!parsed) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
   TreeData initial = *std::move(parsed);
-  // The same caps the command path enforces (domain/Command.h), before a byte is persisted.
+  // The same caps the command path enforces, before a byte is persisted.
   if (std::optional<Admission> refusal = admit(initial)) {
     const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
     callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
@@ -72,9 +67,8 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k409Conflict, "that id already names another tree", "id-taken"));
     return;
   }
-  // The caller's own retired id, told apart from `id-taken` so the claim path drops the device's
-  // leftovers instead of re-planting under a fresh id. Only ever sent to the account that owned
-  // it.
+  // The caller's own retired id, told apart from `id-taken`. Only ever sent to the account that
+  // owned it.
   if (outcome == TreeRegistry::Creation::retired) {
     callback(error(drogon::k409Conflict, "that id names a roadmap you deleted", "id-retired"));
     return;
@@ -106,13 +100,12 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (json && !json->isObject()) {  // same reason as createTree: a keyed read of an array throws
+  if (json && !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
 
-  // The share seam rides the same PATCH as rename: a {visibility} body reshares the tree,
-  // a {title} body renames it. One authenticated, owner-gated edit either way.
+  // A {visibility} body reshares the tree, a {title} body renames it.
   if (json && json->isMember("visibility")) {
     const std::string requested = (*json)["visibility"].asString();
     if (requested != "private" && requested != "unlisted" && requested != "public") {

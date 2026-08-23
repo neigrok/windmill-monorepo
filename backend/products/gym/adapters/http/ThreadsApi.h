@@ -14,10 +14,7 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Ask's threads over REST, here and NOT on AskApi: a deployment with no vendor key registers no
-// `POST /v1/gym/ask` at all, and the conversations a lifter already had stay theirs to read, export
-// and delete. One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the
-// status ladder they all share; routes.cpp is the one mount).
+// Ask's threads, mounted on a deployment with no vendor key too, where `POST /v1/gym/ask` is absent.
 class ThreadsApi {
 public:
   ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<AuthService> auth);

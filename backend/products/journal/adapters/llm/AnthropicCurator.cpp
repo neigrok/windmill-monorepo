@@ -11,11 +11,8 @@ namespace wm {
 
 namespace {
 
-// The load-bearing artifact. It is the cached block, so it is a literal and never gains a byte from
-// any page — and it is hashed into version(), so changing it moves every stored echo's stamp.
-//
-// Its only job is the two things a cosine cannot settle. It writes no copy, asserts nothing about
-// the writer, and never sees the retriever's scores.
+// The cached block: a literal that never gains a byte from any page, hashed into version(), so
+// changing it moves every stored echo's stamp.
 constexpr const char* kSystemPrompt =
     "You judge whether two passages from one person's private journal are about the same thing.\n"
     "\n"
@@ -84,8 +81,8 @@ constexpr const char* kSystemPrompt =
     "{\"pairing\":2,\"related\":false,\"relation\":0,\"speaker_is_self\":true},"
     "{\"pairing\":3,\"related\":false,\"relation\":0,\"speaker_is_self\":true}]}\n";
 
-// The prompt's identity in eight characters: FNV-1a over the bytes above. A change detector, not a
-// security hash — the one thing stamped on a row that says which wording judged it.
+// FNV-1a over the bytes above: a change detector, and what a row carries to say which wording
+// judged it.
 std::string promptTag() {
   std::uint32_t hash = 2166136261u;
   for (const char* byte = kSystemPrompt; *byte != '\0'; ++byte) {
@@ -97,9 +94,8 @@ std::string promptTag() {
   return tag;
 }
 
-// A passage as it goes on the wire: one line, whatever the page did. Journal text arrives verbatim,
-// so a passage carrying a newline could otherwise write its own PAIRINGS block into the layout.
-// The stored span is untouched; only this copy is flattened.
+// One line on the wire, whatever the page did, or a passage carrying a newline could write its own
+// PAIRINGS block into the layout. Only this copy is flattened; the stored span is untouched.
 std::string oneLine(const std::string& text) {
   std::string flat = text;
   for (char& c : flat) {
@@ -108,8 +104,7 @@ std::string oneLine(const std::string& text) {
   return flat;
 }
 
-// Every knob of the answer's shape in one object. `additionalProperties: false` plus a `required`
-// naming every field is what makes structured outputs strict rather than advisory.
+// `additionalProperties: false` plus a `required` naming every field makes the output strict.
 Json::Value verdictSchema() {
   const auto typed = [](const char* type) {
     Json::Value field(Json::objectValue);
@@ -157,7 +152,7 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
   std::unordered_map<std::int64_t, std::size_t> triggerLabel;
   for (std::size_t i = 0; i < tonight.size(); ++i) triggerLabel[tonight[i].spanId] = i + 1;
 
-  // Only the candidates some pairing actually names: a candidate nobody proposed cannot be judged.
+  // Only the candidates some pairing names: a candidate nobody proposed cannot be judged.
   std::set<std::int64_t> wanted;
   for (const Pairing& pairing : proposed) {
     if (triggerLabel.count(pairing.triggerSpanId) != 0) wanted.insert(pairing.matchSpanId);
@@ -170,8 +165,7 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
     if (!taken.insert(candidate.spanId).second) continue;
     earlier.push_back(&candidate);
   }
-  // Oldest first, ties broken on span id: the order the card itself reads in, and the only order
-  // that says nothing about which of these retrieval liked.
+  // Oldest first, ties broken on span id, so the order says nothing about what retrieval liked.
   std::sort(earlier.begin(), earlier.end(), [](const Vectored* a, const Vectored* b) {
     if (a->day == b->day) return a->spanId < b->spanId;
     return a->day < b->day;
@@ -180,8 +174,7 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
   std::unordered_map<std::int64_t, std::size_t> matchLabel;
   for (std::size_t i = 0; i < earlier.size(); ++i) matchLabel[earlier[i]->spanId] = i + 1;
 
-  // Numbered by where the two passages sit on the page and in the archive, never by score, or the
-  // model is handed the prior in a second form after the numbers were taken away.
+  // Numbered by where the two passages sit, never by score.
   std::vector<std::pair<std::pair<std::size_t, std::size_t>, Pairing>> lines;
   for (const Pairing& pairing : proposed) {
     const auto trigger = triggerLabel.find(pairing.triggerSpanId);
@@ -235,23 +228,21 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
                                   const std::vector<Pairing>& proposed) {
   Curation curation;
 
-  // Unconfigured is the sweep's mistake, not the page's, and it is still work the page is owed, so
-  // it fails rather than reporting a night with nothing in it.
+  // Unconfigured fails rather than reporting a night with nothing in it: the work is still owed.
   if (!configured()) {
     curation.failure = MessagesFailure::transport;
     return curation;
   }
 
   const CurationPrompt prompt = curationPrompt(tonight, candidates, proposed);
-  // Nothing to ask. Not a failure and not a blank answer either: retrieval offered no pairing, so
-  // the page is genuinely done and does not come back tomorrow.
+  // Retrieval offered no pairing, so the page is done and does not come back tomorrow.
   if (prompt.numbered.empty()) {
     curation.ok = true;
     return curation;
   }
 
-  // Over the process fuse, the page is not judged and not lost either: the same failed-call shape as
-  // an unreachable vendor, so tomorrow's pass picks the page up unchanged.
+  // Over the process fuse: the same failed-call shape as an unreachable vendor, so tomorrow's pass
+  // picks the page up unchanged.
   if (fuse_ && !fuse_->allows(nowMs())) {
     curation.failure = MessagesFailure::transport;
     return curation;
@@ -265,8 +256,8 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
   request.effort = effort_;
 
   const MessagesReply reply = transport_->send(request);
-  // Recorded from HERE, not from the transport, because this frame knows the model, the operation
-  // and whose night it was. Every outcome lands, refusals and truncations included.
+  // Recorded here rather than in the transport, which knows neither the operation nor the account.
+  // Every outcome lands, refusals and truncations included.
   AiSpend spend;
   spend.user = user;
   spend.product = "journal";
@@ -291,8 +282,7 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
   std::set<int> answered;
   for (const Json::Value& item : verdicts) {
     if (!item.isObject()) continue;
-    // A verdict is taken whole or not at all: one naming a pairing nobody proposed is about nothing,
-    // one missing a field is a judgement half of which would have to be invented.
+    // A verdict is taken whole or not at all.
     if (!item["pairing"].isIntegral() || !item["related"].isBool() ||
         !item["relation"].isNumeric() || !item["speaker_is_self"].isBool())
       continue;
@@ -305,9 +295,7 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
     verdict.triggerSpanId = pairing.triggerSpanId;
     verdict.matchSpanId = pairing.matchSpanId;
     verdict.relation = std::clamp(item["relation"].asFloat(), 0.0f, 1.0f);
-    // The floor, applied here because this file defines the scale it reads. The prompt above defines
-    // 0.3-0.5 as "same theme, not same subject", which must not be shown, so the floor sits above
-    // that band.
+    // The floor sits above the prompt's 0.3-0.5 "same theme, not same subject" band.
     verdict.related = item["related"].asBool() && verdict.relation >= floor_;
     verdict.speakerIsSelf = item["speaker_is_self"].asBool();
     curation.verdicts.push_back(verdict);

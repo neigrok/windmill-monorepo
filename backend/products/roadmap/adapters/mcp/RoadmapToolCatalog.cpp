@@ -12,8 +12,6 @@ namespace wm {
 
 namespace {
 
-// --- Tool schema builders (JSON Schema for each tool's `inputSchema`). ---------------
-
 Json::Value str(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "string";
@@ -21,33 +19,27 @@ Json::Value str(const char* description) {
   return property;
 }
 
-// A string with a published cap: a client can only pre-validate what the schema states.
 Json::Value cappedStr(const char* description, std::size_t limit) {
   Json::Value property = str(description);
   property["maxLength"] = static_cast<Json::UInt64>(limit);
   return property;
 }
 
-// The roadmap's handle, on every tree-scoped tool.
 Json::Value treeHandle() {
   return cappedStr("The roadmap (tree) id — list_trees discovers it.", kMaxIdLength);
 }
 
-// The handle of a node that already exists, canonical on every tool that takes one.
 Json::Value nodeHandle() {
   return cappedStr("The node id (legacy `id` is still accepted).", kMaxIdLength);
 }
 
-// The alias spelling. It stays in the schema because every tool declares
-// `additionalProperties: false`: a client's own validator would otherwise reject it.
+// The alias stays in the schema because every tool declares `additionalProperties: false`.
 Json::Value legacyNodeHandle() {
   Json::Value property = cappedStr("Deprecated alias for `nodeId`.", kMaxIdLength);
   property["deprecated"] = true;
   return property;
 }
 
-// A legend kind's handle: `id` is the published property on all six *_kind tools, and `kindId`
-// is accepted too.
 Json::Value kindHandle() {
   return cappedStr("The kind id (`kindId` is accepted too).", kMaxIdLength);
 }
@@ -88,8 +80,6 @@ Json::Value strArray(const char* description, std::size_t itemLimit) {
   return property;
 }
 
-// An array of objects, publishing the shape of one: a schema is the only thing an agent has, so
-// it states what each item requires, which is exactly what the tool enforces.
 Json::Value objArray(const char* description, Json::Value properties, std::vector<const char*> required) {
   Json::Value item(Json::objectValue);
   item["type"] = "object";
@@ -105,7 +95,6 @@ Json::Value objArray(const char* description, Json::Value properties, std::vecto
   return property;
 }
 
-// A read's `fields` argument, carrying its shape's whole vocabulary as the item `enum`.
 Json::Value fieldArray(const char* description, const std::vector<std::string>& legal) {
   Json::Value allowed(Json::arrayValue);
   for (const std::string& name : legal) allowed.append(name);
@@ -130,7 +119,6 @@ Json::Value boundedInt(const char* description, int smallest, int largest, int f
   return property;
 }
 
-// A canvas position, as get_tree returns it and as an import may carry it.
 Json::Value position(const char* description) {
   Json::Value fields(Json::objectValue);
   fields["x"] = num("Canvas x.");
@@ -161,11 +149,9 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
-// Each tool names the grant level that reaches it beside its description, so a client cannot be
-// told one thing and gated on another. `read` answers questions, `write` changes the document,
-// and `delete` destroys something a person AUTHORED — a roadmap, a step, or a legend kind. Edges
-// are relationships, so disconnect/reconnect/tidy/prune stay writes. `delete` is never implied by
-// `write`: a connection without that level does not see these three in tools/list.
+// `read` answers questions, `write` changes the document, and `delete` destroys something a
+// person authored. `delete` is never implied by `write`: a connection without that level does
+// not see those tools in tools/list.
 ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
                      std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);

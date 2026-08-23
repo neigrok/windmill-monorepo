@@ -73,7 +73,7 @@ std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::connections() const {
 
 void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) {
   Json::Value frame = toJson(subgraph);
-  frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order, stamped on the verbatim frame
+  frame["seq"] = static_cast<Json::Int64>(seq);  // the room's broadcast order
   // A broadcast is a live delta whatever intent the frame arrived with: echoing a client's
   // 'flush' intent would make every subscriber treat it as a re-baselining graft.
   frame["intent"] = "live";
@@ -93,8 +93,8 @@ void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, co
   frame["treeId"] = tree.str();
   const std::string text = dump(frame);
 
-  // The same gate as an op broadcast: a mark echoed to this account's other tabs must not reach a
-  // tab whose read was revoked while it sat open.
+  // The same gate as an op broadcast: a mark echoed to this account's other tabs must not reach
+  // a tab whose read was revoked while it sat open.
   std::vector<drogon::WebSocketConnectionPtr> targets;
   {
     const std::vector<drogon::WebSocketConnectionPtr> readers = admitted(tree);

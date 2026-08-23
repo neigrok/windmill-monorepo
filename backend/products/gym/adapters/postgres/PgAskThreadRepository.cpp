@@ -19,11 +19,9 @@ constexpr std::string_view kThreadColumns =
     "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms, "
     "(extract(epoch from t.asked_at) * 1000)::bigint AS asked_ms";
 
-// The proposals a set of conversations minted, each paired with the thread it came from. It joins
-// the routine as it stands TODAY rather than the base name frozen at the mint.
-// The ids travel as one comma-joined string through `string_to_array` rather than as an array
-// parameter: pqxx's array binding differs between the macOS and CI Linux builds, and the id-shape
-// rule allows no comma.
+// Joins the routine as it stands today, not the base name frozen at the mint. The ids travel as one
+// comma-joined string through `string_to_array` rather than an array parameter: pqxx's array binding
+// differs between the macOS and CI Linux builds, and the id-shape rule allows no comma.
 std::vector<std::pair<std::string, ThreadProposal>> mintedIn(pqxx::work& txn, const UserId& user,
                                                              const std::string& threads) {
   std::vector<std::pair<std::string, ThreadProposal>> minted;
@@ -69,8 +67,7 @@ AskThread threadFrom(const Row& row) {
                    {}};
 }
 
-// Read inside a caller's transaction and scoped to the owner: absent and another account's are one
-// answer.
+// Scoped to the owner: absent and another account's are one answer.
 std::optional<AskThread> loadThread(pqxx::work& txn, const UserId& user, const ThreadId& id) {
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kThreadColumns) +
@@ -84,10 +81,8 @@ std::optional<AskThread> loadThread(pqxx::work& txn, const UserId& user, const T
   return thread;
 }
 
-// Two statements and not one per row. The turns stay behind in both readings — the list draws
-// titles, and the export loads its turns separately.
-// `order` and `limit` are the whole of what the two callers differ by: the list is newest first and
-// stops at kThreadList; the export is oldest first and stops nowhere.
+// The turns stay behind in both readings. `order` and `limit` are all the two callers differ by: the
+// list is newest first and stops at kThreadList; the export is oldest first and stops nowhere.
 std::vector<AskThread> threadsUnder(pqxx::work& txn, const UserId& user, std::string_view order,
                                     std::optional<int> limit) {
   pqxx::result rows =
@@ -124,8 +119,7 @@ std::vector<AskThread> PgAskThreadRepository::threads(const UserId& user) {
 }
 
 std::vector<AskThread> PgAskThreadRepository::allThreads(const UserId& user) {
-  // No ceiling: the export's outcomes are stamped from this. Ordered like the turns beside it, so
-  // the two halves of one file are read in one order.
+  // No ceiling, and ordered like the turns beside it so the two halves of one file share an order.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   return threadsUnder(txn, user, "t.created_at, t.id", std::nullopt);
@@ -143,10 +137,9 @@ std::optional<AskThread> PgAskThreadRepository::thread(const UserId& user, const
 
 ThreadOpenOutcome PgAskThreadRepository::openThread(const UserId& user, const ThreadId& id,
                                                    const std::string& title, std::uint64_t nowMs) {
-  // The id is asked GLOBALLY and the conversation is read under the OWNER: the primary key spans
-  // every account, so an id somebody else holds must be refused rather than appended to. Asked
-  // before the model runs, so a refusal costs no vendor token.
-  // The insert lands BEFORE the answer because a proposal minted mid-conversation references this
+  // The id is asked globally and the conversation read under the owner: the primary key spans every
+  // account, so an id somebody else holds is refused rather than appended to.
+  // The insert lands before the answer because a proposal minted mid-conversation references this
   // row; a run that never answers is undone by `discardEmptyThread`.
   std::optional<AskThread> opened;
   {
@@ -157,8 +150,7 @@ ThreadOpenOutcome PgAskThreadRepository::openThread(const UserId& user, const Th
         user.str());
     if (!held.empty() && !held[0]["mine"].as<bool>())
       return {std::nullopt, ThreadOpenError::idTaken};
-    // The title is written ONCE, on the row that opens the thread: a later ask into the same
-    // conversation cannot rewrite it.
+    // The title is written once, on the row that opens the thread.
     txn.exec_params("INSERT INTO gym_ask_threads (id, user_id, title, created_at, asked_at) "
                     "VALUES ($1, $2::uuid, $3, to_timestamp($4::bigint / 1000.0), "
                     "        to_timestamp($4::bigint / 1000.0)) ON CONFLICT (id) DO NOTHING",
@@ -172,7 +164,7 @@ ThreadOpenOutcome PgAskThreadRepository::openThread(const UserId& user, const Th
 void PgAskThreadRepository::appendTurns(const UserId& user, const ThreadId& id,
                                        const std::vector<ThreadTurn>& turns) {
   // The position is assigned under the thread's own lock, so two asks into one conversation queue
-  // instead of racing for the same number. Parent-first: the thread row before its turns.
+  // instead of racing for the same number. Parent first: the thread row before its turns.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result locked = txn.exec_params(
@@ -194,8 +186,7 @@ void PgAskThreadRepository::appendTurns(const UserId& user, const ThreadId& id,
 }
 
 void PgAskThreadRepository::discardEmptyThread(const UserId& user, const ThreadId& id) {
-  // Only while it holds no turns: a failed follow-up ask must not take a conversation that already
-  // happened with it.
+  // Only while it holds no turns.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM gym_ask_threads WHERE id = $1 AND user_id = $2::uuid "
@@ -205,8 +196,7 @@ void PgAskThreadRepository::discardEmptyThread(const UserId& user, const ThreadI
 }
 
 bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id) {
-  // The turns cascade with the row; the proposals do NOT — the schema sets their thread_id null —
-  // so an applied change stays in the routine's history and simply no longer opens a conversation.
+  // The turns cascade with the row; the proposals do not — the schema sets their thread_id null.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
@@ -217,12 +207,10 @@ bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id)
 }
 
 std::vector<ExportedThreadTurn> PgAskThreadRepository::exportedThreadTurns(const UserId& user) {
-  // Every value TEXT and every rendering Postgres's, like the sets export: instants ISO-8601 UTC,
-  // numbers at their own scale, the turn byte for byte. The outcome columns come back EMPTY —
-  // ThreadService stamps that ladder on (domain/Thread.h).
-  // Ordered by the thread's own (created_at, id) and then by the turns inside it.
-  // A LEFT JOIN with the three columns coalesced, because a thread with no turns is real: the row
-  // is committed before the model runs. Such a thread exports as itself with the turn columns empty.
+  // Every value is text rendered by Postgres: instants ISO-8601 UTC, numbers at their own scale, the
+  // turn byte for byte. The outcome columns come back empty; ThreadService stamps that ladder on.
+  // Ordered by the thread's own (created_at, id), then by the turns inside it. A LEFT JOIN with the
+  // three turn columns coalesced, because a thread with no turns is real.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -230,8 +218,8 @@ std::vector<ExportedThreadTurn> PgAskThreadRepository::exportedThreadTurns(const
       "       to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
       "         AS created_at, "
       "       coalesce(n.position::text, '') AS turn_number, "
-      // `n.from_lifter IS NULL` is asked FIRST: a plain CASE sends a NULL down the ELSE branch, so
-      // an absent turn would export as one Ask had said.
+      // `n.from_lifter IS NULL` is asked first: a plain CASE sends a NULL down the ELSE branch, so an
+      // absent turn would export as one Ask had said.
       "       CASE WHEN n.from_lifter IS NULL THEN '' "
       "            WHEN n.from_lifter THEN 'lifter' ELSE 'ask' END AS turn_from, "
       "       coalesce(n.text, '') AS text, "

@@ -15,8 +15,6 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
     std::lock_guard<std::mutex> guard{lock_};
     writesBefore = writes_[user.str()];
     auto held = warm_.find(user.str());
-    // The version check matters most: cosine across two embedding spaces is meaningless, and
-    // nothing about it looks like an error.
     if (held != warm_.end() && held->second.embedVersion == embedVersion &&
         nowMs - held->second.loadedAtMs < ttlMs_) {
       std::vector<Vectored> corpus;
@@ -26,8 +24,7 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
     }
   }
 
-  // Loaded outside the lock: holding a mutex across the multi-megabyte call would hand every other
-  // user the cost this class exists to spare.
+  // Loaded outside the lock.
   std::vector<Vectored> corpus = storage_.corpusOf(user, embedVersion);
 
   Warm fresh;
@@ -38,17 +35,13 @@ std::vector<Vectored> WarmEchoRepository::corpusOf(const UserId& user,
   std::lock_guard<std::mutex> guard{lock_};
   ++loads_;
 
-  // Expired entries are DROPPED here, not merely ignored: the TTL check on the read path decides
-  // only whether a copy may be USED, so without this loop every user who ever derived in this
-  // process holds their corpus until it exits.
+  // Expired entries are dropped here; the read path's TTL check only decides whether a copy is used.
   for (auto it = warm_.begin(); it != warm_.end();) {
     if (it->first != user.str() && nowMs - it->second.loadedAtMs >= ttlMs_) it = warm_.erase(it);
     else ++it;
   }
 
-  // A write that landed while the load was in flight makes what came back already old, and storing
-  // it would keep it old for the whole TTL. The answer still goes to this caller, which asked
-  // before the write; it is simply not kept.
+  // A write landed while the load was in flight: answer this caller, but do not keep it.
   if (writes_[user.str()] != writesBefore) return corpus;
   warm_[user.str()] = std::move(fresh);
   return corpus;
@@ -65,14 +58,12 @@ std::vector<Vectored> WarmEchoRepository::replaceSpans(const UserId& user, const
   ++writes_[user.str()];
   auto held = warm_.find(user.str());
   if (held == warm_.end()) return stored;
-  // A write in another embedding space says nothing about the one being held, so the held one goes
-  // rather than being patched into a corpus that mixes the two.
+  // A write in another embedding space drops the held one rather than mixing the two.
   if (held->second.embedVersion != embedVersion) {
     warm_.erase(held);
     return stored;
   }
-  // The page IS its passages: an empty write is a page with nothing left on it, and the day leaves
-  // the corpus entirely.
+  // An empty write is a page with nothing on it, so the day leaves the corpus.
   if (stored.empty()) held->second.byDay.erase(day.iso());
   else held->second.byDay[day.iso()] = stored;
   return stored;

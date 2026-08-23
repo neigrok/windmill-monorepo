@@ -13,8 +13,6 @@ Json::Value edgeJson(const Edge& edge) {
   return value;
 }
 
-// The stamp codec is shared with the op log and the subgraph wire (domain/Ids.h): the
-// document and the wire speak one stamp format.
 std::string hlcText(const Hlc& at) { return toString(at); }
 Hlc hlcFromText(const std::string& text) { return parseHlc(text); }
 }
@@ -105,8 +103,6 @@ Json::Value toJson(const TreeSummary& summary) {
 
 Json::Value toJson(const GalleryEntry& entry) {
   Json::Value row(Json::objectValue);
-  // A gallery card is a registry row plus what the wall knows, spelled the same as GET /v1/trees
-  // so one card component paints both surfaces.
   row["id"] = entry.id.str();
   row["title"] = entry.title;
   row["total"] = entry.stats.total;
@@ -117,15 +113,13 @@ Json::Value toJson(const GalleryEntry& entry) {
   // Always spelled, never inferred: an absent key would leave the card guessing.
   row["mine"] = entry.mine;
   row["forked"] = entry.forked;
-  // Present only when this tree is a fork whose source may still be named; an unlisted, private
-  // or deleted source leaves the key off entirely.
+  // Present only when this tree is a fork whose source may still be named.
   if (!entry.sourceTitle.empty()) row["sourceTitle"] = entry.sourceTitle;
   return row;
 }
 
-// The overlay as a lattice frame: one stamped register per node, everything a replica needs to
-// join it. The three id sets are NOT sent — a reader derives them from the statuses. `none` rides
-// along like any other value: it is a cleared register the client needs to converge.
+// The three id sets are NOT sent — a reader derives them from the statuses. `none` rides along
+// like any other value: a cleared register the client needs to converge.
 Json::Value toJson(const Progress& progress) {
   Json::Value marks(Json::arrayValue);
   for (const auto& [id, mark] : progress.marks) {
@@ -177,8 +171,7 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
 }
 
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) {
-  // Every read below goes through these: a field that is absent or null takes its default, a
-  // field of the wrong type refuses the whole document.
+  // An absent or null field takes its default; a field of the wrong type refuses the document.
   auto text = [](const Json::Value& value, std::string& out) {
     if (value.isNull()) return true;
     if (!value.isString()) return false;
@@ -192,8 +185,7 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
     return true;
   };
   auto list = [](const Json::Value& value) { return value.isNull() || value.isArray(); };
-  // linksFromJson is lenient — it is shared with the command decoder and must never throw — so
-  // the document path states the strictness itself.
+  // linksFromJson is lenient and must never throw, so the document path states the strictness.
   auto links = [](const Json::Value& value) {
     if (!value.isArray()) return false;
     for (const Json::Value& link : value) {

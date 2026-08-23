@@ -20,8 +20,6 @@ namespace wm {
 
 namespace {
 
-// What the agent is, and the rules it edits under. The person's sentence is the only authority:
-// trees are public and forkable, so node text is untrusted.
 constexpr const char* kSystemPrompt =
     "You are the tending agent for Windmill, an app for building roadmaps as RPG-style skill "
     "trees. A tree is a directed acyclic graph of steps; an edge from A to B means A is a "
@@ -62,14 +60,12 @@ constexpr const char* kSystemPrompt =
     "\"Assumed about 3 evenings a week, starting from scratch\", so the person can correct it with "
     "another sentence.";
 
-// Sonnet, not the composer's Haiku: tool-use quality outranks latency here.
 constexpr const char* kModel = "claude-sonnet-5";
 constexpr int kMaxTokens = 8000;
 
-// The cap. Hitting it is a failure, not a success (see driveAgent).
+// Hitting this cap is a failure, not a success.
 constexpr int kMaxIterations = 12;
 
-// The call holds a worker thread, not a request loop, so it gets room, not a web deadline.
 constexpr double kRequestTimeoutSeconds = 120.0;
 
 std::string trim(const std::string& text) {
@@ -79,7 +75,6 @@ std::string trim(const std::string& text) {
   return text.substr(begin, end - begin + 1);
 }
 
-// The text a ToolResult carries for the model, concatenated over however many blocks it has.
 std::string toolText(const ToolResult& result) {
   std::string out;
   for (const Json::Value& block : result.content) {
@@ -118,14 +113,13 @@ Json::Value ephemeral() {
   return mark;
 }
 
-// The loop re-sends its whole context on every iteration, dominated by three static things: the
-// tool catalog, the system prompt, and the tree. The system breakpoint caches tools+system (they
-// render before it); markCachePoint extends the cached prefix through the tree and prior turns.
+// The system breakpoint caches the tool catalog and the system prompt together; markCachePoint
+// extends the cached prefix through the tree and prior turns.
 Json::Value messagesRequest(const Json::Value& tools, const Json::Value& messages) {
   Json::Value systemBlock(Json::objectValue);
   systemBlock["type"] = "text";
   systemBlock["text"] = kSystemPrompt;
-  systemBlock["cache_control"] = ephemeral();  // caches the tool catalog + system together
+  systemBlock["cache_control"] = ephemeral();
   Json::Value system(Json::arrayValue);
   system.append(systemBlock);
 
@@ -138,11 +132,9 @@ Json::Value messagesRequest(const Json::Value& tools, const Json::Value& message
   return body;
 }
 
-// Move the single conversation cache breakpoint to the last block of the newest turn and clear
-// the prior one, so exactly two breakpoints ride each request (system + here), under the
-// four-per-request cap however long the loop runs. A turn whose content is a bare string is
-// promoted to one text block so the marker has somewhere to sit; the promotion is stable across
-// iterations, so the cached bytes never shift.
+// Exactly two cache breakpoints ride each request (system + the newest turn's last block),
+// under the four-per-request cap however long the loop runs. A turn whose content is a bare
+// string is promoted to one text block so the marker has somewhere to sit.
 void markCachePoint(Json::Value& messages) {
   for (Json::Value& message : messages) {
     Json::Value& content = message["content"];
@@ -188,8 +180,7 @@ std::string finalText(const Json::Value& content) {
   return out;
 }
 
-// One human-readable line for the ledger. The tool name says what happened on success; a
-// failure carries the first line of the reason so the person can see why.
+// One human-readable line for the ledger; a failure carries the first line of the reason.
 std::string stepNote(const std::string& name, const ToolResult& result) {
   if (!result.isError) return name;
   const std::string reason = trim(toolText(result));
@@ -207,7 +198,7 @@ Json::Value agentTools(const Json::Value& mcpTools) {
     Json::Value tool(Json::objectValue);
     tool["name"] = mcp["name"];
     tool["description"] = mcp["description"];
-    tool["input_schema"] = mcp["inputSchema"];  // the whole job: MCP's name → Anthropic's name
+    tool["input_schema"] = mcp["inputSchema"];
     out.append(tool);
   }
   return out;
@@ -218,7 +209,7 @@ Json::Value toolResultBlock(const std::string& toolUseId, const ToolResult& resu
   block["type"] = "tool_result";
   block["tool_use_id"] = toolUseId;
   block["content"] = toolText(result);
-  if (result.isError) block["is_error"] = true;  // the model must see the tool failed, not us
+  if (result.isError) block["is_error"] = true;
   return block;
 }
 
@@ -237,12 +228,11 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
                         const std::function<void(const AgentStep&)>& onStep,
                         const AgentReporter& report) {
   AgentOutcome outcome;
-  // A tend is the account acting on itself, so the run carries the full grant; the narrowing is
-  // the one tree ScopedToolHost pins it to.
+  // A tend is the account acting on itself, so the run carries the full grant; ScopedToolHost
+  // pins it to the one tree.
   const ToolCaller actor{caller, ToolScope::everything()};
 
-  // Read the tree first, so the model plans against real ids; unreadable tree, no run. A tend
-  // asks for the whole document rather than get_tree's lean default.
+  // Read the tree first, so the model plans against real ids; unreadable tree, no run.
   Json::Value treeArgs(Json::objectValue);
   treeArgs["treeId"] = tree.str();
   Json::Value everyNodeField(Json::arrayValue);
@@ -271,7 +261,7 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
 
   int edits = 0;
   for (int iteration = 0; iteration < kMaxIterations; ++iteration) {
-    markCachePoint(messages);  // the growing prefix — tree + prior turns — is written once, read after
+    markCachePoint(messages);
     const std::optional<Json::Value> reply = call(messagesRequest(catalog, messages));
     if (!reply) {
       outcome.error = "the model call failed or returned an unreadable reply";
@@ -322,7 +312,7 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       step.changedTree = mutatesTree(name) && !result.isError;
       step.note = stepNote(name, result);
       if (step.changedTree) ++edits;
-      onStep(step);  // fire AS IT HAPPENS — the caller stamps it somewhere a disconnect can't take
+      onStep(step);
     }
 
     if (results.empty()) {
@@ -334,7 +324,6 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
     messages.append(userToolResults(results));
   }
 
-  // Cap hit: the loop would not settle, so this is a failure, never a success.
   outcome.error = "hit the 12-iteration cap without the model finishing";
   outcome.edits = edits;
   report("agent.run", outcome.error);
@@ -370,17 +359,15 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     return out;
   }
 
-  // One blocking HTTPS round-trip on the private loop thread; run() is on the worker thread and
-  // blocks on the future.
+  // One blocking HTTPS round-trip on the private loop thread; run() blocks on the future.
   const std::string apiKey = apiKey_;
   trantor::EventLoop* loop = loop_.getLoop();
   const MessagesCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
     // Trantor forbids driving a loop from any thread but its own, and creating the client or
-    // sending the request from this worker thread FATALs the process. Marshal EVERY client + loop
-    // touch onto the loop thread; the worker only queues and blocks on the future, which the
-    // timeout-guaranteed callback always fulfils.
+    // sending the request from this worker thread FATALs the process: marshal EVERY client + loop
+    // touch onto the loop thread.
     loop->queueInLoop([apiKey, loop, request, promise]() {
       auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
@@ -391,7 +378,6 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
       req->setBody(Json::writeString(builder, request));
-      // One line per model turn; the prompt and the tree are in the body and reach no log.
       VendorCall call("anthropic", "tend");
       client->sendRequest(
           req,
@@ -414,9 +400,8 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     return future.get();
   };
 
-  // The frame the loop cannot supply: driveAgent never sees a model name, a product or a clock.
-  // Metering wraps the call rather than reaching into the loop — one row per turn, one run id
-  // across all of them, so a conversation sums as the single act it was.
+  // Metering wraps the call rather than reaching into the loop: one row per turn, one run id
+  // across all of them.
   AiSpend frame;
   frame.user = caller;
   frame.product = "roadmap";

@@ -8,12 +8,8 @@
 
 namespace wm {
 
-// Journal storage over Postgres: one guarded upsert per write, every query scoped to the owner.
-// Stateless but for the connection string — each method opens a pqxx::work on the thread-local
-// connection (platform/adapters/postgres/PgConnection.h). The LWW guard lives in the upsert's
-// trailing WHERE (EXCLUDED.stamp > stored.stamp); a superseded non-empty body is copied into
-// journal_page_revision in the same transaction, and that trail is bounded in the same transaction
-// too (kRevisionsPerDay / kRevisionsPerUser / kRevisionBytesPerUser / kRevisionRetentionDays).
+// One guarded upsert per write, every query scoped to the owner. A superseded non-empty body is
+// copied into journal_page_revision in the same transaction, and that trail is bounded there too.
 class PgJournalRepository : public JournalRepository {
 public:
   explicit PgJournalRepository(std::shared_ptr<PgPool> pool);

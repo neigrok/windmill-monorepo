@@ -8,10 +8,7 @@
 namespace wm {
 
 namespace {
-// A quarter hour.
 constexpr double kTickSeconds = 900.0;
-// The first tick's window past boot: a fixed offset rather than drawn jitter, so a crash-looping
-// process cannot hammer the sweep and the heartbeat keeps no entropy.
 constexpr double kFirstTickSeconds = 45.0;
 // The ceiling on one sweep, and so also the fleet's per-tick send rate.
 constexpr int kNudgeSweepBatch = 200;
@@ -38,7 +35,7 @@ void NudgeSweep::start() {
 void NudgeSweep::runAsync(std::uint64_t nowMs, bool dryRun,
                           std::function<void(MailSweepReport)> done) {
   heartbeat_.queue([this, nowMs, dryRun, done = std::move(done)] {
-    // The caller is waiting on a promise it cannot fulfil itself, so `done` fires on every path.
+    // `done` fires on every path.
     try {
       done(run(nowMs, dryRun));
     } catch (const std::exception& error) {
@@ -80,8 +77,7 @@ void NudgeSweep::close(const NudgeDueUser& due, ClosedAs outcome) {
 void NudgeSweep::send(const NudgeDueUser& due, const NudgeDecision&, const std::string& pauseSecret,
                       std::function<void(bool)> done) {
   JournalNudgeMail mail;
-  // The hash-routed nudge panel; the pause page a human GETs; and the RFC 8058 one-click endpoint a
-  // mail client POSTs — a bare endpoint, so its secret rides the query, not a fragment.
+  // The RFC 8058 one-click endpoint is POSTed by a mail client, so its secret rides the query.
   mail.settingsUrl = appBaseUrl_ + "/#/settings/nudges";
   mail.pauseUrl = appBaseUrl_ + "/journal/nudge/pause?t=" + pauseSecret;
   mail.unsubscribeUrl = appBaseUrl_ + "/v1/journal/nudge/unsubscribe?t=" + pauseSecret;

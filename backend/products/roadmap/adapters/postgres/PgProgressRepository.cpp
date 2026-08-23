@@ -26,9 +26,9 @@ Progress PgProgressRepository::load(const TreeId& tree, const UserId& user) {
   for (const auto& row : rows) {
     ProgressMark mark;
     mark.status = parseProgressStatus(row["status"].as<std::string>()).value_or(ProgressStatus::none);
-    mark.at = parseHlc(row["hlc"].as<std::string>());  // the stamp that won this register
-    // The server's own clock, not the marking device's: the HLC beside it orders writes but
-    // cannot be asserted back to a reader as a time.
+    mark.at = parseHlc(row["hlc"].as<std::string>());
+    // The server's own clock, not the marking device's: the HLC beside it orders writes but cannot
+    // be asserted back to a reader as a time.
     mark.markedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     progress.record(NodeId{row["node_id"].as<std::string>()}, mark);
   }

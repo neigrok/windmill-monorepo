@@ -30,7 +30,7 @@ std::string sseEvent(const char* name, const std::string& data) {
 }
 
 // drogon has no disconnect callback on a streaming response, so the first failed send cancels
-// the upstream call. Every write goes through the mutex.
+// the upstream call.
 class SseReply {
 public:
   explicit SseReply(drogon::ResponseStreamPtr stream) : stream_(std::move(stream)) {}
@@ -133,7 +133,7 @@ void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     return;
   }
 
-// The 200 + SSE headers go out immediately, so from here every outcome is an SSE event.
+  // The 200 + SSE headers go out immediately, so from here every outcome is an SSE event.
   auto composer = composer_;
   auto response = drogon::HttpResponse::newAsyncStreamResponse(
       [composer, text](drogon::ResponseStreamPtr stream) {

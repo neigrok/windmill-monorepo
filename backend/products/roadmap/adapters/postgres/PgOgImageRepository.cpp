@@ -11,8 +11,7 @@ PgOgImageRepository::PgOgImageRepository(std::shared_ptr<PgPool> pool) : pool_(s
 void PgOgImageRepository::put(const std::string& treeId, const std::string& pngBytes) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // The bytes ride as a bound bytea parameter (binary_cast → a byte view over the string) —
-  // never interpolated into SQL, so a PNG that happens to contain a quote can't break the query.
+  // The bytes ride as a bound bytea parameter, never interpolated into SQL.
   txn.exec_params(
       "INSERT INTO tree_og_images (tree_id, png, updated_at) VALUES ($1, $2, now()) "
       "ON CONFLICT (tree_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()",

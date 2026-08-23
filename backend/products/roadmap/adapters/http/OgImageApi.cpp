@@ -12,10 +12,8 @@
 namespace wm {
 
 namespace {
-constexpr std::size_t kMaxImageBytes = 3 * 1024 * 1024;  // 3 MB — a rendered 1200×630 card is far smaller
+constexpr std::size_t kMaxImageBytes = 3 * 1024 * 1024;
 
-// The honest fallback: a missing image, an unreadable tree, or an absent one all bounce to the
-// generic card rather than 404, so the og:image tag always resolves to something (never broken).
 drogon::HttpResponsePtr genericCard() {
   return drogon::HttpResponse::newRedirectionResponse("/og-image.png", drogon::k302Found);
 }
@@ -60,12 +58,11 @@ void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgImageApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  // Anyone may request an unfurl card, so this stays a cheap read: the two access columns, never
-  // the tree's whole lattice.
+  // Anyone may request an unfurl card: read the two access columns, never the whole lattice.
   const std::optional<UserId> caller = callerOf(req, *auth_);
   const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
-    callback(genericCard());  // absent or private-denied — indistinguishable from having no card
+    callback(genericCard());  // absent and private-denied are indistinguishable from having no card
     return;
   }
   const std::optional<std::string> png = images_->get(id);

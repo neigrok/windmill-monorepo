@@ -18,8 +18,7 @@ namespace wm {
 namespace {
 constexpr std::uint64_t kDayMs = 24ULL * 60 * 60 * 1000;
 
-// How much of a passage an unentitled reader is shown: enough to recognise their own sentence, not
-// enough to be the feature. The withheld count travels with it so the cut is stated.
+// How much of a passage an unentitled reader is shown; the withheld count travels with it.
 constexpr std::size_t kFreeWords = 8;
 
 drogon::HttpResponsePtr noContent() {
@@ -35,23 +34,20 @@ std::vector<std::string> wordsOf(const std::string& text) {
   return words;
 }
 
-// The honest cut. An entitled reader gets the passage; everyone else gets its real opening words
-// and the number withheld.
+// An entitled reader gets the passage; everyone else gets its opening words and the number withheld.
 void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
   Json::Value match(Json::objectValue);
   match["day"] = echo.matchDay.iso();
   match["isSelf"] = echo.matchIsSelf;
   match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
-  // The reader's own answer, on both sides of the cut, and served rather than left to the device so
-  // a mark made on a laptop is not asked for again on a phone.
+  // Served rather than left to the device, so a mark made on a laptop is not asked for again.
   match["useful"] = echo.markedUseful;
 
   if (entitled) {
     match["text"] = echo.matchText;
     match["withheldWords"] = 0;
-    // Which occurrence of that text the passage is, 0 for the first. Absent when the server has
-    // nothing honest to say — the body moved under the passage — and absent for the honest cut
-    // below, where the text served is a prefix.
+    // Which occurrence of that text the passage is, 0 for the first. Absent when the body moved
+    // under the passage, and absent for the cut below, where the text served is a prefix.
     if (echo.matchOccurrenceHint >= 0) match["occurrenceHint"] = echo.matchOccurrenceHint;
     into.append(match);
     return;
@@ -83,8 +79,7 @@ Json::Value toJson(const EchoSweepReport& report) {
 }
 
 
-// The tuning door's query knobs. A malformed value is IGNORED rather than answered 400: these are
-// experiments an operator types by hand, and the fallback is the shipped default.
+// The tuning door's query knobs; a malformed value is ignored and the shipped default applies.
 double knob(const drogon::HttpRequestPtr& req, const char* name, double fallback) {
   const std::string value = req->getParameter(name);
   if (value.empty()) return fallback;
@@ -122,7 +117,6 @@ Json::Value toJson(const SelectionRules& rules) {
   return body;
 }
 
-// One candidate and the whole of what the rules read about it.
 Json::Value toJson(const CandidateNote& note) {
   Json::Value body(Json::objectValue);
   body["spanId"] = static_cast<Json::Int64>(note.spanId);
@@ -160,8 +154,8 @@ Json::Value toJson(const EchoExplanation& explained) {
   page["found"] = explained.pageFound;
   page["bodyBytes"] = static_cast<Json::UInt64>(explained.body.size());
   page["bodyStampMs"] = static_cast<Json::UInt64>(explained.bodyStampMs);
-  // Whether a save right now would derive at all — a settled page answers "no echoes" without the
-  // pipeline running, which is a different silence from every rule below saying no.
+  // Whether a save right now would derive at all: a settled page answers without the pipeline
+  // running, a different silence from every rule below saying no.
   page["due"] = explained.due;
   page["storedSpans"] = explained.storedSpans;
   body["page"] = page;
@@ -176,8 +170,7 @@ Json::Value toJson(const EchoExplanation& explained) {
   body["wiring"] = wiring;
 
   Json::Value corpus(Json::objectValue);
-  // Under THIS embedding version only: a version bump leaves the old vectors unreachable, which
-  // reads to a user as echoes simply stopping.
+  // Under this embedding version only; a version bump leaves the old vectors unreachable.
   corpus["spans"] = explained.corpus;
   corpus["history"] = static_cast<int>(explained.history.size());
   body["corpus"] = corpus;
@@ -190,8 +183,7 @@ Json::Value toJson(const EchoExplanation& explained) {
     passages.append(one);
   }
   body["passages"] = passages;
-  // Where those units came from: the stored cut is what the page reaches on today, a fresh one is
-  // what it WOULD reach if it were re-derived now.
+  // Where those units came from: the stored cut is what the page reaches on today.
   body["unitsFromStorage"] = explained.unitsFromStorage;
   body["unitsDiscarded"] = explained.unitsDiscarded;
 
@@ -226,7 +218,7 @@ Json::Value toJson(const EchoExplanation& explained) {
   body["verdicts"] = verdicts;
   if (!explained.curationFailure.empty()) body["curationFailure"] = explained.curationFailure;
 
-  // What the page carries TODAY, so a run can be read against the thing the reader actually sees.
+  // What the page carries today, so a run can be read against what the reader sees.
   Json::Value persisted(Json::arrayValue);
   for (const EchoView& echo : explained.persisted) {
     Json::Value one(Json::objectValue);
@@ -241,9 +233,8 @@ Json::Value toJson(const EchoExplanation& explained) {
   return body;
 }
 
-// The one millisecond knob of the admin door, read from the body or the query: nullopt is a
-// malformed value the caller answers 400 to, zero is simply absent. Digits-only before stoull so a
-// "-5" cannot wrap and a 20-digit overflow stays a 400 rather than a 500.
+// Read from the body or the query: nullopt is malformed and the caller answers 400, zero is absent.
+// Digits-only before stoull, so a "-5" cannot wrap and a 20-digit overflow stays a 400.
 std::optional<std::uint64_t> msOf(const drogon::HttpRequestPtr& req,
                                   const std::shared_ptr<Json::Value>& json, const char* name) {
   if (json && json->isMember(name)) {
@@ -289,14 +280,13 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
   const bool entitled = entitlements_->hasWindmillOne(caller->id, caller->email.value);
 
-  // Which pages the reader has already answered "not now" on. Served rather than remembered by the
-  // device, so the next device does not ask again.
+  // Which pages the reader has already answered "not now" on, so the next device does not ask again.
   std::set<std::string> offersRetired;
   for (const LocalDate& day : echoes_->retiredOffers(caller->id, *first, *last))
     offersRetired.insert(day.iso());
 
-  // Grouped by the page that carries them, in the order the repository returns: newest trigger
-  // first, then each page's matches newest first.
+  // Grouped by the page that carries them: newest trigger first, then each page's matches newest
+  // first.
   Json::Value pages(Json::arrayValue);
   std::string openDay;
   Json::Value page(Json::objectValue);
@@ -321,14 +311,12 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     pages.append(page);
   }
 
-  // The browser cannot count pages it has not synced, so the ~20-page floor is unenforceable unless
-  // this is served.
+  // The browser cannot count pages it has not synced, so the page floor needs this served.
   Json::Value body(Json::objectValue);
   body["pages"] = pages;
   body["pagesWritten"] = echoes_->pagesWritten(caller->id);
-  // The ~20-page corpus floor is right for a stranger's first fortnight and wrong for the people
-  // building it: below the floor the client draws NOTHING, so a working echo is indistinguishable
-  // from a broken pipeline. The floor still applies to everybody else.
+  // Below the corpus floor the client draws nothing; owners are exempt so a working echo is not
+  // indistinguishable from a broken pipeline.
   body["floorWaived"] = entitlements_->isOwner(caller->email.value);
   cb(jsonResponse(body));
 }
@@ -350,10 +338,8 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // Waving away a pairing between two DAYS says two things: it retires the pair — keyed on the two
-  // passages' content down in storage, because an ordinal shifts the moment a sentence is inserted —
-  // and it is a JUDGEMENT. Two calls, in this order: the dismissal leaves journal_echo standing, so
-  // the signal still finds the row it copies the score and version off.
+  // Two calls, in this order: the dismissal leaves journal_echo standing, so the signal still finds
+  // the row it copies the score and version off.
   echoes_->dismissPair(*caller, *trigger, *match);
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a pairing that is already gone dismisses nothing, and says 204
@@ -374,9 +360,7 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // "Not useful" is one tap on a panel, so it is one request: nine matches must not cost nine round
-  // trips, each able to fail on its own and leave the page half faded. The judgement is recorded for
-  // all of them too.
+  // One request for the whole page, so a partial failure cannot leave it half faded.
   echoes_->dismissPage(*caller, *trigger);
   echoes_->recordPageSignal(*caller, *trigger, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a page with nothing left to retire dismisses nothing, and says 204
@@ -397,8 +381,8 @@ void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // "Not now" — the echoes on this page stay, the honest cut stays, and only the asking stops.
-  // Recorded server-side so the same person is not asked again.
+  // The echoes on this page stay and only the asking stops; recorded server-side so the same person
+  // is not asked again.
   echoes_->dismissOffer(*caller, *day);
   cb(noContent());   // idempotent: declining twice is declining once
 }
@@ -420,8 +404,7 @@ void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The reader saying outright that a pairing was worth showing them: no echo is retired and nothing
-  // is re-ranked. It answers 204 however many times it is pressed.
+  // No echo is retired and nothing is re-ranked; answers 204 however many times it is pressed.
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::useful);
   cb(noContent());
 }
@@ -443,14 +426,13 @@ void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The reader walked back to the older page. Weaker than a "useful", so it is its own kind.
+  // The reader walked back to the older page: weaker than a "useful", so it is its own kind.
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::opened);
   cb(noContent());
 }
 
 void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // The operator's rehearsal door, closed unless the deploy set an admin token. The compare is
-  // constant-time so a wrong token cannot be guessed a byte at a time.
+  // Closed unless the deploy set an admin token; the compare is constant-time.
   const std::string header = req->getHeader("x-admin-token");
   const std::string presented = header.empty() ? req->getParameter("token") : header;
   if (adminToken_.empty() || !secretEqual(presented, adminToken_)) {
@@ -465,9 +447,8 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
 
-  // `sinceMs` is the whole rehearsal: which users to look at. There is no "as of" instant, because a
-  // pass judges every page against stamps the corpus carries. An unstated window is the last day,
-  // read off the wall here — this edge owns no Clock.
+  // `sinceMs` picks which users to look at; there is no "as of" instant. An unstated window is the
+  // last day, read off the wall here.
   std::uint64_t sinceMs = *since;
   if (sinceMs == 0) {
     const std::uint64_t nowMs =
@@ -477,10 +458,8 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     sinceMs = nowMs > kDayMs ? nowMs - kDayMs : 0;
   }
 
-  // Off this thread: a repair pass is minutes of embedder and curator calls, and the IO thread that
-  // took this request also serves every other route.
-  // `rejudge=1` takes every page rather than the ones the stamps owe. The lever for a change to the
-  // selection algorithm itself, which moves no version string and therefore reopens nothing.
+  // Off this thread: a repair pass is minutes of embedder and curator calls.
+  // `rejudge=1` takes every page rather than the ones the stamps owe.
   const bool rejudgeAll =
       req->getParameter("rejudge") == "1" || req->getParameter("rejudge") == "true";
   sweep_->runAsync(
@@ -498,7 +477,6 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
   // And a signed-in owner on top of it: this hands back whole passages, and only the caller's own.
-  // The admin secret opens the door; it names nobody.
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in as the owner of the page"));
@@ -531,8 +509,7 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   request.curate = req->getParameter("curate") == "1" || req->getParameter("curate") == "true";
   request.recut = req->getParameter("recut") == "1" || req->getParameter("recut") == "true";
 
-  // Off this thread: an embed round trip and, when asked, a curator call — seconds, on one of the
-  // handful of IO threads serving every other route.
+  // Off this thread: an embed round trip and, when asked, a curator call.
   explainer_->explainAsync(*caller, request,
                            [cb = std::move(cb), rules = request.rules](
                                const EchoExplanation& explained) {

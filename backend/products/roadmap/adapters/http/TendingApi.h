@@ -14,10 +14,8 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Tending over REST: tell a tree a sentence, and read the run it becomes. The POST answers at
-// once — 202 with a run id while the agent loop carries on server-side. The GET is the catch-up
-// door: it works long after the request that started the run, and never surfaces a run that is
-// not the caller's.
+// Tending over REST. POST answers 202 with a run id while the agent loop carries on server-side;
+// GET reads the outcome, and never surfaces a run that is not the caller's.
 class TendingApi {
 public:
   TendingApi(std::shared_ptr<TendingService> tending, std::shared_ptr<AuthService> auth);

@@ -7,8 +7,7 @@
 namespace wm::gym {
 
 namespace {
-// One rule for all three instants. Zero is an unset device clock, not a moment; past the ceiling is
-// a value the store cannot hold, refused here rather than left to overflow a timestamptz.
+// Zero is an unset device clock, not a moment; past the ceiling would overflow a timestamptz.
 std::uint64_t instantOf(const Json::Value& body, const char* field) {
   if (!body[field].isUInt64())
     throw InvalidTraining(std::string(field) + " must be an epoch-ms number");
@@ -35,7 +34,7 @@ Json::Value bestJson(const Best& best) {
   return body;
 }
 
-// `e1rm` is never optional here — a point with no honest estimate is not in either list at all.
+// `e1rm` is never optional here: a point with no honest estimate is in neither list.
 Json::Value pointJson(const RecordPoint& point) {
   Json::Value body(Json::objectValue);
   body["at"] = Json::Value::UInt64(point.atMs);
@@ -50,7 +49,7 @@ SessionStart parseSessionStart(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a session start must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
   SessionStart start{SessionId{body["id"].asString()}, instantOf(body, "startedAt")};
-  // Omitted or null means join; a PRESENT value parses strictly.
+  // Omitted or null means join; a present value parses strictly.
   if (body.isMember("joinOpenSession") && !body["joinOpenSession"].isNull()) {
     if (!body["joinOpenSession"].isBool())
       throw InvalidTraining("joinOpenSession must be a boolean");
@@ -74,7 +73,7 @@ SetWrite parseSetWrite(const Json::Value& body) {
   SetWrite write{SetId{body["id"].asString()}, ExerciseId{body["exerciseId"].asString()},
                  body["weightKg"].asDouble(), body["reps"].asInt(), SetKind::working,
                  std::nullopt, "", instantOf(body, "completedAt")};
-  // Omitted or null means the default; a PRESENT kind parses strictly.
+  // Omitted or null means the default; a present kind parses strictly.
   if (body.isMember("kind") && !body["kind"].isNull()) {
     if (!body["kind"].isString()) throw InvalidTraining("kind must be a string");
     write.kind = parseSetKind(body["kind"].asString());
@@ -90,8 +89,8 @@ SetWrite parseSetWrite(const Json::Value& body) {
   return write;
 }
 
-// Every field is optional and checked for PRESENCE alone, so a `null` weight is a type error.
-// `rpe` is the exception — `"rpe": null` removes one.
+// Every field is optional and checked for presence alone, so a `null` weight is a type error;
+// `"rpe": null` is the exception and removes one.
 SetFix parseSetFix(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a fix must be a json object");
   for (const std::string& field : body.getMemberNames()) {
@@ -135,15 +134,14 @@ std::uint64_t parseFinish(const Json::Value& body) {
 }
 
 namespace {
-// Read once for both writes that carry them: the lifter's routine write and an agent's proposal.
+// Shared by the lifter's routine write and an agent's proposal.
 std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
   if (!body["entries"].isArray()) throw InvalidTraining("entries must be an array");
   std::vector<RoutineEntry> entries;
   for (const Json::Value& entry : body["entries"]) {
     if (!entry.isObject()) throw InvalidTraining("a routine entry must be a json object");
-    // `additionalProperties: false` one level down into the line: an unknown name is refused
-    // rather than ignored. `position` is ACCEPTED AND IGNORED — the run is renumbered 1..n from
-    // the order these arrive in.
+    // An unknown field name is refused rather than ignored. `position` is accepted and ignored:
+    // lines are renumbered 1..n in arrival order.
     for (const std::string& field : entry.getMemberNames()) {
       if (field == "exerciseId" || field == "targetSets" || field == "targetReps" ||
           field == "targetWeightKg" || field == "restSeconds" || field == "position")
@@ -153,8 +151,7 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
                             "targetWeightKg, restSeconds.");
     }
     if (!entry["exerciseId"].isString()) throw InvalidTraining("exerciseId must be a string");
-    // All four optionals mean something by their absence, so a present value type-checks strictly
-    // and an absent one is never filled in with a zero.
+    // All four optionals mean something by their absence: never fill one in with a zero.
     std::optional<int> targetSets;
     if (entry.isMember("targetSets") && !entry["targetSets"].isNull()) {
       if (!entry["targetSets"].isInt()) throw InvalidTraining("targetSets must be a whole number");
@@ -176,7 +173,7 @@ std::vector<RoutineEntry> entriesFrom(const Json::Value& body) {
       if (!entry["restSeconds"].isInt()) throw InvalidTraining("restSeconds must be a whole number");
       restSeconds = entry["restSeconds"].asInt();
     }
-    // The position is the order the lines arrived in; the entity refuses anything but 1..n.
+    // The entity refuses anything but 1..n.
     entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1,
                                    ExerciseId{entry["exerciseId"].asString()}, targetSets,
                                    targetReps, targetWeightKg, restSeconds});
@@ -190,7 +187,7 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
   if (!body["name"].isString()) throw InvalidTraining("name must be a string");
   if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
-  // A writer that names the revision it read asks not to overwrite a day that moved since; one
+  // A writer that names the revision it read asks not to overwrite a routine that moved since; one
   // that says nothing lands regardless.
   std::optional<int> expectedRevision;
   if (body.isMember("revision") && !body["revision"].isNull()) {
@@ -201,7 +198,7 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
                       body["position"].asInt(), entriesFrom(body), expectedRevision};
 }
 
-// An absent `name` is the routine keeping the one it has; an absent `summary` draws the diff.
+// An absent `name` keeps the routine's own; an absent `summary` draws the diff.
 ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source) {
   if (!body.isObject()) throw InvalidTraining("a proposal must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
@@ -223,8 +220,8 @@ ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& 
 ExerciseWrite parseExerciseWrite(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a movement must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
-  // A created movement's id is client-minted and obeys the one id-shape rule, which the Exercise
-  // constructor cannot carry: the seeded slugs ('dip') are shorter than any minted id may be.
+  // A created movement's id is client-minted and obeys the id-shape rule here, not in the Exercise
+  // constructor: seeded slugs ('dip') are shorter than any minted id may be.
   if (!wellFormedId(body["id"].asString())) throw InvalidTraining("bad exercise id");
   if (!body["name"].isString()) throw InvalidTraining("name must be a string");
   if (!body["pattern"].isString()) throw InvalidTraining("pattern must be a string");
@@ -254,8 +251,8 @@ std::string parseExerciseRename(const Json::Value& body) {
 GymPreferences parsePreferences(const Json::Value& body, const UserId& user) {
   if (!body.isObject())
     throw InvalidPreference("preferences-unreadable", "settings must be a json object");
-  // Strict about names: an omission is a default, so a misspelled `restSecond` read clean would
-  // silently turn the timer off.
+  // Strict about field names: an omission is a default, so a misspelled `restSecond` would silently
+  // turn the timer off.
   for (const std::string& field : body.getMemberNames()) {
     if (field == "units" || field == "restSeconds" || field == "restSound" ||
         field == "confirmHaptic" || field == "confirmSound")
@@ -273,7 +270,7 @@ GymPreferences parsePreferences(const Json::Value& body, const UserId& user) {
       throw InvalidPreference("unknown-unit", "units are \"kg\" or \"lb\"");
     units = parseUnit(body["units"].asString());
   }
-  // The one field where omitted and null say the same thing: no timer.
+  // Omitted and null both mean no timer.
   std::optional<int> restSeconds;
   if (body.isMember("restSeconds") && !body["restSeconds"].isNull()) {
     if (!body["restSeconds"].isInt())
@@ -317,7 +314,6 @@ Json::Value toJson(const Session& session) {
   body["startedAt"] = Json::Value::UInt64(session.startedAtMs);
   if (session.finishedAtMs) body["finishedAt"] = Json::Value::UInt64(*session.finishedAtMs);
   if (session.routine) body["routineId"] = session.routine->str();
-  // Emitted from the typed value rather than re-parsed out of storage.
   if (session.plan) body["plan"] = toJson(*session.plan);
   return body;
 }
@@ -342,9 +338,9 @@ Json::Value toJson(const std::vector<Set>& sets) {
   return array;
 }
 
-// tonnageKg is always present and a zero is a real answer. topSet is omitted for a session holding
-// no working set, and topE1rm with it and also where the heaviest working set was unloaded (Epley
-// is undefined at and below zero).
+// tonnageKg is always present and zero is a real answer. topSet is omitted for a session with no
+// working set; topE1rm with it, and also where the heaviest working set was unloaded (Epley is
+// undefined at and below zero).
 Json::Value toJson(const LogRow& row) {
   Json::Value body = toJson(row.summary.session);
   body["setCount"] = row.summary.setCount;
@@ -387,7 +383,7 @@ Json::Value toJson(const std::vector<Exercise>& exercises) {
   return array;
 }
 
-// `at` is the SESSION's start. No movement name: the caller joins on `exerciseId`.
+// `at` is the session's start. No movement name: the caller joins on `exerciseId`.
 Json::Value toJson(const std::vector<LastSet>& movements) {
   Json::Value array(Json::arrayValue);
   for (const LastSet& movement : movements) {
@@ -433,7 +429,7 @@ Json::Value toJson(const std::vector<Routine>& routines, const std::vector<Propo
   Json::Value array(Json::arrayValue);
   for (const Routine& routine : routines) {
     std::optional<ProposalHead> standing;
-    // The heads arrive newest first, so the FIRST match is the newest.
+    // The heads arrive newest first, so the first match is the newest.
     for (const ProposalHead& head : pending)
       if (!standing && head.routine == routine.id && head.state == ProposalState::pending)
         standing = head;
@@ -457,8 +453,6 @@ Json::Value toJson(const ProposalHead& head) {
   source["door"] = toString(head.source.door);
   if (!head.source.connection.empty()) source["connection"] = head.source.connection;
   if (!head.source.agent.empty()) source["agent"] = head.source.agent;
-  // Absent from every MCP proposal, and absent again once the lifter deleted the thread an Ask
-  // proposal came from.
   if (head.source.thread) source["thread"] = head.source.thread->str();
   body["source"] = source;
   return body;
@@ -467,7 +461,7 @@ Json::Value toJson(const ProposalHead& head) {
 Json::Value toJson(const ThreadOutcome& outcome) {
   Json::Value body(Json::objectValue);
   body["kind"] = toString(outcome.kind);
-  // Always present, and zero is a real answer: a thread that proposed nothing.
+  // Always present; zero means the thread proposed nothing.
   body["changes"] = outcome.changes;
   if (outcome.routine) {
     body["routineId"] = outcome.routine->str();
@@ -523,8 +517,7 @@ Json::Value toJson(const std::vector<ProposalHead>& heads) {
   return array;
 }
 
-// Newest first, its creation row last. `by` is omitted on a created row that was the lifter's own
-// hand.
+// Newest first, the creation row last. `by` is omitted where the lifter created it themselves.
 Json::Value toJson(const std::vector<RoutineEvent>& history) {
   Json::Value array(Json::arrayValue);
   for (const RoutineEvent& event : history) {
@@ -532,7 +525,7 @@ Json::Value toJson(const std::vector<RoutineEvent>& history) {
     line["kind"] = event.kind == RoutineEventKind::created ? "created" : "proposal";
     line["at"] = Json::Value::UInt64(event.atMs);
     if (event.door) line["by"] = toString(*event.door);
-    // The count is the document AS CREATED, absent where the ledger did not record it.
+    // The count is the document as created, absent where the ledger did not record it.
     if (event.movements) line["movements"] = *event.movements;
     if (event.proposal) line["proposal"] = toJson(*event.proposal);
     array.append(line);
@@ -543,8 +536,8 @@ Json::Value toJson(const std::vector<RoutineEvent>& history) {
 namespace {
 Json::Value targetsJson(const EntryTargets& targets) {
   Json::Value body(Json::objectValue);
-  // The four absences a routine line carries, unchanged through the diff: no sets is the open line,
-  // no reps is `max`, no weight is the last one used, no rest falls back to the global target.
+  // Absences carry through the diff: no sets is the open line, no reps is `max`, no weight is the
+  // last one used, no rest falls back to the global target.
   if (targets.sets) body["sets"] = *targets.sets;
   if (targets.reps) body["reps"] = *targets.reps;
   if (targets.weightKg) body["weightKg"] = *targets.weightKg;
@@ -573,7 +566,7 @@ Json::Value toJson(const RoutineProposal& proposal) {
     line["exerciseId"] = change.exercise.str();
     if (change.before) line["before"] = targetsJson(*change.before);
     if (change.after) line["after"] = targetsJson(*change.after);
-    // On a removed row alone. Zero is a real answer — planned and never trained.
+    // On a removed row alone; zero means planned and never trained.
     if (change.kind == ChangeKind::removed) line["loggedSets"] = change.loggedSets;
     changes.append(line);
   }
@@ -588,7 +581,6 @@ Json::Value toJson(const PlanSnapshot& plan) {
   for (const PlanEntry& entry : plan.entries) {
     Json::Value line(Json::objectValue);
     line["exerciseId"] = entry.exercise.str();
-    // The open line, frozen as the absence it is.
     if (entry.sets) line["sets"] = *entry.sets;
     if (entry.reps) line["reps"] = *entry.reps;
     if (entry.weightKg) line["weightKg"] = *entry.weightKg;
@@ -599,8 +591,8 @@ Json::Value toJson(const PlanSnapshot& plan) {
   return body;
 }
 
-// One way. `planned` carries the target only; `routine` is dropped when the session it stands
-// against holds no name.
+// `planned` carries the target only; `routine` is dropped when the session it stands against holds
+// no name.
 Json::Value toJson(const Review& review) {
   Json::Value stats(Json::objectValue);
   stats["durationMs"] = Json::Value::UInt64(review.stats.durationMs);
@@ -646,7 +638,7 @@ Json::Value toJson(const Review& review) {
   return body;
 }
 
-// The server's own tally of the rows it handed over, deduped by id where it counted them.
+// The server's tally of the rows it handed over, deduped by id.
 Json::Value toJson(const ReadTally& tally) {
   Json::Value out(Json::objectValue);
   out["sets"] = tally.sets;
@@ -655,9 +647,8 @@ Json::Value toJson(const ReadTally& tally) {
   return out;
 }
 
-// No `e1rm` on a point or a best means that load has no honest one-rep estimate; an absent
-// `bestE1rm` means no set of that movement ever had one. `weeks` is contiguous — a week with no
-// training is present and zero.
+// No `e1rm` on a point or a best means that load has no one-rep estimate; an absent `bestE1rm` means
+// no set of that movement ever had one. `weeks` is contiguous: a week with no training is zero.
 Json::Value toJson(const Statistics& statistics) {
   Json::Value weeks(Json::arrayValue);
   for (const TrainingWeek& week : statistics.weeks) {
@@ -694,13 +685,12 @@ Json::Value toJson(const Statistics& statistics) {
   return body;
 }
 
-// Every list is OMITTED when empty rather than sent as an empty array; the two counts are always
-// present. A movement whose every set was unloaded carries no `bestE1rm` and no series — Epley is
-// undefined at and below zero — while still carrying its heaviest and its sets.
+// Every list is omitted when empty rather than sent as `[]`; the two counts are always present. A
+// movement whose every set was unloaded carries no `bestE1rm` and no series, since Epley is
+// undefined at and below zero, but still carries its heaviest and its sets.
 Json::Value toJson(const MovementRecord& record) {
   Json::Value body(Json::objectValue);
   body["exercise"] = toJson(record.exercise);
-  // The count is `routines.length`, emitted beside the list rather than instead of it.
   body["routineCount"] = static_cast<int>(record.routines.size());
   if (!record.routines.empty()) {
     Json::Value routines(Json::arrayValue);
@@ -756,17 +746,15 @@ Json::Value toJson(const SharedSession& shared) {
   return body;
 }
 
-// The one function here that clamps instead of throwing: it reads what STORAGE holds, so an
-// unreadable blob must still leave the session readable. A non-object is no plan at all; a name
-// that is not a string is no name, exactly as the prefill's SQL decides it.
+// Clamps instead of throwing: an unreadable stored blob must still leave the session readable. A
+// non-object is no plan; a name that is not a string is no name, as the prefill's SQL decides it.
 std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
   if (!stored.isObject()) return std::nullopt;
   PlanSnapshot plan;
   if (stored["routine"].isString()) plan.routineName = stored["routine"].asString();
   for (const Json::Value& entry : stored["entries"]) {
     if (!entry.isObject() || !entry["exerciseId"].isString()) continue;
-    // sets and reps may both legitimately be ABSENT — the open line and `max`. A value of the
-    // wrong TYPE drops the line rather than guessing at it.
+    // sets and reps may both be absent: the open line and `max`. A wrong-typed value drops the line.
     if (entry.isMember("sets") && !entry["sets"].isInt()) continue;
     std::optional<int> sets;
     if (entry["sets"].isInt()) sets = entry["sets"].asInt();
@@ -787,7 +775,7 @@ std::string shareUrl(const std::string& appBaseUrl, const std::string& token) {
   return appBaseUrl + "/#/gym/shared/" + token;
 }
 
-// Takes the APP's base url — where the browser app is served — not the API's.
+// Takes the app's base url — where the browser app is served — not the API's.
 std::string proposalUrl(const std::string& appBaseUrl, const ProposalId& id) {
   return appBaseUrl + "/#/gym/proposals/" + id.str();
 }

@@ -16,11 +16,9 @@
 
 namespace wm {
 
-// The daily-nudge sweep: MailSweep's DECIDE -> CLAIM -> SEND pipeline over journal's own facts. It
-// owns its OWN heartbeat thread, never a drogon request loop, because a send blocks on a
-// libpqxx/HTTP round trip, and it holds NO schedule state — a sweep is a pure function of
-// (now, database), so a restart loses nothing. run() is public so the admin endpoint can rehearse
-// it at an arbitrary instant, dry or wet.
+// MailSweep's decide -> claim -> send pipeline over journal's facts, on its own heartbeat thread
+// rather than a drogon request loop. It holds no schedule state: a pass is a pure function of
+// (now, database).
 class NudgeSweep : public MailSweep<NudgeDueUser, NudgeDecision> {
 public:
   NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens, Clock& clock,
@@ -28,8 +26,8 @@ public:
 
   void start();                                          // arm the ticker (fixed first tick, then periodic)
 
-  // The pass, queued onto the sweep's OWN loop and answered there, so a drogon IO thread is never
-  // parked for a whole batch. Queuing also serialises an operator's sweep behind the heartbeat's.
+  // Queued onto the sweep's own loop, which also serialises an operator's pass behind the
+  // heartbeat's.
   void runAsync(std::uint64_t nowMs, bool dryRun, std::function<void(MailSweepReport)> done);
 
 private:

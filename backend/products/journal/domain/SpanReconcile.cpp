@@ -9,8 +9,7 @@ namespace wm {
 
 std::vector<IdentifiedPassage> reconcile(const std::vector<KnownSpan>& existing,
                                          const std::vector<Passage>& fresh) {
-  // A queue per key, not a single id: a page with two identical lines must keep two distinct
-  // identities, matched in document order.
+  // A queue per key: two identical lines keep two identities, matched in document order.
   std::map<std::string, std::vector<std::int64_t>> available;
   for (const KnownSpan& known : existing)
     available[normalizedForIdentity(known.text)].push_back(known.spanId);
@@ -24,7 +23,6 @@ std::vector<IdentifiedPassage> reconcile(const std::vector<KnownSpan>& existing,
       carried.push_back(IdentifiedPassage{0, passage});   // genuinely new text; the caller mints
       continue;
     }
-    // The oldest unclaimed id, so re-derivations of an unchanged page keep stable ids.
     const std::int64_t claimed = found->second.front();
     found->second.erase(found->second.begin());
     carried.push_back(IdentifiedPassage{claimed, passage});

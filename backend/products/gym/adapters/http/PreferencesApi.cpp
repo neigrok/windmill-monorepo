@@ -13,9 +13,7 @@ PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesService> preferences,
                                std::shared_ptr<AuthService> auth)
     : preferences_(std::move(preferences)), auth_(std::move(auth)) {}
 
-// The one read in gym that cannot 404: a lifter with no row is answered with the DEFAULTS, because
-// every client needs the rest target and the reading unit before it can draw a first frame. Nothing
-// is written on the way out.
+// A lifter with no row is answered with the defaults; nothing is written on the way out.
 void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -25,10 +23,8 @@ void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback
   cb(jsonResponse(toJson(preferences_->preferences(*caller))));
 }
 
-// Written as the WHOLE document: a field the body does not name takes its default, and there is no
-// partial write to reconcile.
-// UNITS REACH NOTHING. `lb` is stored as the lifter's reading unit and changes no column, no wire
-// number and no rule — every load in this product is kilograms.
+// The whole document: a field the body does not name takes its default. `lb` is a reading unit only —
+// every stored and wire load is kilograms.
 void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -40,9 +36,7 @@ void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCall
     cb(error(drogon::k400BadRequest, "expected json", "preferences-unreadable"));
     return;
   }
-  // The codec builds the entity, so every refusal below is a value the store could not have held,
-  // each carrying the machine word for the row to send the lifter back to. The wider catch keeps a
-  // domain refusal from riding out as the house 500 the phones' queues retry forever.
+  // A domain refusal must not ride out as a 500: the phones' queues retry those forever.
   try {
     cb(jsonResponse(toJson(preferences_->savePreferences(parsePreferences(*json, *caller)))));
   } catch (const InvalidPreference& refused) {

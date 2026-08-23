@@ -13,13 +13,12 @@
 namespace wm::gym {
 
 namespace {
-// The settings row.
 constexpr std::string_view kPreferenceColumns =
     "user_id, units, rest_seconds, rest_sound, confirm_haptic, confirm_sound";
 
 // Every bound the entity refuses is also a column check, so a stored row is a legal document by the
-// time it is read. The unit is the exception and the reason `unitFromStored` CLAMPS: a word a newer
-// deploy added reads as kg rather than failing every read of the account.
+// time it is read. The unit is the exception: `unitFromStored` clamps an unknown word to kg rather
+// than failing every read of the account.
 template <typename Row>
 GymPreferences preferencesFrom(const Row& row) {
   std::optional<int> restSeconds;
@@ -37,8 +36,7 @@ PgPreferencesRepository::PgPreferencesRepository(std::shared_ptr<PgPool> pool)
     : pool_(std::move(pool)) {}
 
 std::optional<GymPreferences> PgPreferencesRepository::preferences(const UserId& user) {
-  // Absent crosses as an absence: a lifter with no row gets the domain's DEFAULTS
-  // (application/PreferencesService.cpp), never a document this store invents.
+  // A lifter with no row gets the domain's defaults, never a document this store invents.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows =
@@ -50,10 +48,9 @@ std::optional<GymPreferences> PgPreferencesRepository::preferences(const UserId&
 }
 
 GymPreferences PgPreferencesRepository::savePreferences(const GymPreferences& incoming) {
-  // One row per account, so the upsert IS the whole write: no client-minted id, nothing to replay
-  // against, last write wins.
-  // RETURNING reads the stored row back inside the same statement, because the two differ the moment
-  // a column rounds a numeric.
+  // One row per account: no client-minted id, nothing to replay against, last write wins. RETURNING
+  // reads the stored row back in the same statement, since a column rounding a numeric makes the two
+  // differ.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::params params;

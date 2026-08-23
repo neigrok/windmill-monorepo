@@ -25,8 +25,8 @@ namespace wm {
 
 namespace {
 
-// The output contract: the paste-import grammar as writing rules, because the client re-parses
-// the reply with that grammar verbatim.
+// The client re-parses the reply with the paste-import grammar verbatim, so the markdown shape
+// is the contract.
 constexpr const char* kSystemPrompt =
     "You convert the user's pasted text into a markdown plan. The plan is parsed by a "
     "strict, deterministic grammar, so the shape of the markdown is the whole job.\n"
@@ -57,15 +57,11 @@ constexpr const char* kSystemPrompt =
 
 constexpr double kStreamDeadlineSeconds = 90.0;
 
-// Haiku: shaping is a latency feature, and it leads with no budget-spending thinking block.
 constexpr const char* kModel = "claude-haiku-4-5-20251001";
 
-// The hard input cap. Above it the unauthenticated door calls no vendor at all, and the caller
-// falls back to the deterministic parser.
+// Above this cap the door calls no vendor at all and the caller falls back to the parser.
 constexpr std::size_t kMaxPasteBytes = 24000;
 
-// One SSE frame's JSON, or nothing: an unreadable delta breaks the plan, an unreadable
-// message_start costs only a token count.
 std::optional<Json::Value> frameJson(const std::string& data) {
   Json::CharReaderBuilder builder;
   const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
@@ -83,7 +79,6 @@ std::string messagesPayload(const std::string& text, bool stream) {
   message["content"] = text;
   Json::Value body(Json::objectValue);
   body["model"] = kModel;
-  // A truncated plan is refused outright, so a tight budget reads as a stream that said nothing.
   body["max_tokens"] = 8000;
   body["system"] = kSystemPrompt;
   body["messages"] = Json::Value(Json::arrayValue);
@@ -95,11 +90,9 @@ std::string messagesPayload(const std::string& text, bool stream) {
   return Json::writeString(builder, body);
 }
 
-// One live streaming call, pinned to the composer's loop thread: resolve → TLS connect → write
-// the request → feed every arriving byte to the parser. `self` is the anchor that keeps the call
-// alive until it settles; every callback holds only a weak reference, so hangUp() is the single
-// place the call ends, releasing the anchor on a fresh loop tick because tearing the TcpClient
-// down inside its own callback is unsafe.
+// `self` is the anchor that keeps the call alive until it settles; every callback holds only a
+// weak reference, so hangUp() is the single place the call ends, releasing the anchor on a fresh
+// loop tick — tearing the TcpClient down inside its own callback is unsafe.
 struct StreamCall : public std::enable_shared_from_this<StreamCall> {
   trantor::EventLoop* loop = nullptr;
   std::string request;
@@ -120,7 +113,7 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
     // A transport failure has already named itself by now and wins.
     vendor.answered(parser->status());
 
-    // Spend is recorded here too: a hung-up or cut-off stream was paid for as far as it got.
+    // A hung-up or cut-off stream was paid for as far as it got.
     const int status = parser->status();
     AiSpend spend;
     spend.product = "roadmap";
@@ -128,7 +121,7 @@ struct StreamCall : public std::enable_shared_from_this<StreamCall> {
     spend.runId = newRunId("compose");
     spend.model = kModel;
     spend.tokens = parser->tokens();
-    // No user, and never an invented one: the birth canvas is anonymous by design.
+    // No user, and never an invented one: the birth canvas is anonymous.
     spend.outcome = status == 429 || status == 529 ? AiOutcome::rateLimited
                     : status != 200               ? AiOutcome::transport
                     : finished                    ? AiOutcome::ok
@@ -220,7 +213,7 @@ void AnthropicStreamParser::feed(const char* data, std::size_t length) {
       chunkLeft_ = std::strtoul(raw_.c_str(), nullptr, 16);
       raw_.erase(0, lineEnd + 2);
       if (chunkLeft_ == 0) {
-        settle(false);  // body over without a message_stop: a broken, not finished, reply
+        settle(false);  // body over without a message_stop is a broken reply
         return;
       }
       phase_ = Phase::ChunkData;
@@ -258,7 +251,7 @@ bool AnthropicStreamParser::consumeHeaders() {
   const std::size_t space = head.find(' ');
   status_ = space == std::string::npos ? 0 : std::atoi(head.c_str() + space + 1);
   if (status_ != 200) {
-    settle(false);  // the status itself is reported by the call, which knows what it cost
+    settle(false);
     return false;
   }
   // RFC 7230 permits whitespace or a list, so look for the token anywhere in that header line.
@@ -333,8 +326,8 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
   const Json::Value& payload = *parsed;
   const Json::Value& delta = payload["delta"];
   if (event == "message_delta") {
-    // The usage on this frame is a SIBLING of `delta`, not a child of it, and its output count is
-    // CUMULATIVE for the whole message — so it is ASSIGNED, never added.
+    // The usage on this frame is a SIBLING of `delta`, and its output count is CUMULATIVE for the
+    // whole message — so it is ASSIGNED, never added.
     const TokenUse running = tokensFrom(payload["usage"]);
     if (running.output > 0) tokens_.output = running.output;
     if (delta["stop_reason"].isString()) stopReason_ = delta["stop_reason"].asString();
@@ -366,8 +359,7 @@ bool AnthropicComposer::configured() const { return !apiKey_.empty(); }
 
 void AnthropicComposer::compose(const std::string& text,
                                 std::function<void(std::optional<std::string>)> done) {
-  // Three ways to answer without calling anybody: no plan, fall back to the parser. The paste
-  // cap and the fuse are checked before a socket is opened.
+  // The paste cap and the fuse are checked before a socket is opened.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     done(std::nullopt);
     return;
@@ -382,13 +374,13 @@ void AnthropicComposer::compose(const std::string& text,
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(messagesPayload(text, false));
 
-  // Only the status and the cost: the body holds the person's plan, and a 400 quotes the paste.
+  // Only the status and the cost are recorded: the body holds the person's plan.
   VendorCall call("anthropic", "compose");
   client->sendRequest(
       req,
       [client, call, report = reporter(), fuse = fuse_, usage = usage_, done = std::move(done)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
-        // `user` stays empty deliberately: the birth canvas has no account behind it yet.
+        // `user` stays empty: the birth canvas has no account behind it yet.
         const auto record = [&fuse, &usage](const char* outcome, const TokenUse& tokens) {
           AiSpend spend;
           spend.product = "roadmap";
@@ -428,7 +420,7 @@ void AnthropicComposer::compose(const std::string& text,
           return;
         }
 
-        // Sonnet-class models lead with a thinking block; the plan is the first TEXT block.
+        // The plan is the first text block.
         std::string raw;
         for (const Json::Value& block : (*reply)["content"]) {
           if (block["text"].isString()) { raw = block["text"].asString(); break; }
@@ -454,14 +446,14 @@ void AnthropicComposer::compose(const std::string& text,
         }
         done(plan);
       },
-      40.0);  // Sonnet thinks before it writes; the call holds no handler thread, so give it room
+      40.0);
 }
 
 std::function<void()> AnthropicComposer::composeStream(
     const std::string& text,
     std::function<void(const std::string&)> onDelta,
     std::function<void(bool)> onDone) {
-  // The same three refusals as the buffered path. Nothing is spent, so nothing is recorded.
+  // Nothing is spent here, so nothing is recorded.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     onDone(false);
     return []() {};
@@ -493,7 +485,6 @@ std::function<void()> AnthropicComposer::composeStream(
   call->parser = std::make_unique<AnthropicStreamParser>(
       std::move(onDelta),
       [weak, onDone = std::move(onDone)](bool ok) {
-        // The verdict reaches the call before it hangs up, so its row says what the reader got.
         if (auto call = weak.lock()) {
           call->finished = ok;
           call->hangUp();
@@ -523,7 +514,7 @@ std::function<void()> AnthropicComposer::composeStream(
     call->loop->runAfter(kStreamDeadlineSeconds, [weak]() {
       auto call = weak.lock();
       if (!call || call->settled) return;
-      call->vendor.lost(VendorFault::timeout);  // the kStreamDeadlineSeconds whole-stream deadline
+      call->vendor.lost(VendorFault::timeout);
       call->parser->finish();
     });
   });

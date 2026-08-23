@@ -5,10 +5,8 @@
 
 namespace wm {
 
-// One segmented passage of a page — the retrieval unit echoes are built from. `lo`/`hi` are BYTE
-// offsets into the page body and never leave the server: the client re-locates by `text`, because
-// C++ counts bytes and JavaScript's slice counts UTF-16 code units. `text`, not the ordinal, is the
-// identity the whole pipeline keys on.
+// `lo`/`hi` are byte offsets into the page body and never leave the server; the client re-locates
+// by `text`, which is the identity the pipeline keys on rather than the ordinal.
 struct Passage {
   int ord = 0;
   int lo = 0;
@@ -21,30 +19,41 @@ struct SegmentRules {
   int maxSentences = 3;
 };
 
-// Line breaks are HARD boundaries, then sentence-split within a line, then merge anything under
-// `minWords` into its neighbour.
-//
-// Pure and total. The same body always yields the same passages, and every returned [lo, hi)
-// indexes back into `body` exactly — `body.substr(lo, hi - lo)` is the passage as written, before
-// normalisation.
+// Line breaks are hard boundaries, then sentence-split within a line, then merge anything under
+// `minWords` into its neighbour. Every returned [lo, hi) indexes back into `body` exactly.
 std::vector<Passage> segment(const std::string& body, const SegmentRules& rules = {});
 
-// The passage text reduced to its identity: outer whitespace trimmed, internal whitespace runs
-// collapsed to one space. Two passages with the same normalised text are the same passage for
-// reconciliation and for dismissal.
+// Outer whitespace trimmed, internal runs collapsed to one space. Two passages with the same
+// normalised text are the same passage for reconciliation and dismissal.
 std::string normalizedForIdentity(const std::string& text);
 
-// The verbatim check. `units` are lines a segmenter proposes; each is located in `body` and kept
-// only if it is genuinely there, and the returned Passage carries the BODY's bytes, not the
-// model's, so a corrected, translated or re-punctuated unit is discarded rather than shown to the
-// writer as their own sentence.
-//
-// The scan runs FORWARD: each unit is looked for at or after the end of the last one, so a page
-// that says the same sentence twice gives its two units two different places. A unit not found
-// from there is looked for from the start once, then discarded.
-//
-// Whitespace is the one difference tolerated: a run of whitespace in the unit matches a run of
-// whitespace in the body. Every other byte must match exactly, case included.
+// The verbatim check: each proposed unit is located in `body`, and the returned Passage carries the
+// body's bytes, not the caller's. The scan runs forward — a unit is looked for at or after the end
+// of the last one, then from the start once, then discarded. A whitespace run in the unit matches a
+// whitespace run in the body; every other byte must match exactly, case included.
 std::vector<Passage> locateUnits(const std::string& body, const std::vector<std::string>& units);
+
+// ATOMS: the page cut as finely as this file goes — line breaks are hard boundaries, then one
+// sentence each, nothing merged into anything. Not the unit of retrieval; the unit of DECISION. A
+// segmenter is shown these numbered and answers with indices, so the model chooses where thoughts
+// begin and never touches a byte of what the writer wrote.
+std::vector<Passage> atomsOf(const std::string& body);
+
+// One page's atoms grouped into idea units. `starts` are 1-based atom numbers at which a new unit
+// begins, as a segmenter named them; units are contiguous runs, so every atom belongs to exactly one
+// and the units tile the page.
+//
+// The answer is REPAIRED rather than refused: out of range, out of order, duplicated, or missing the
+// opening 1 are all fixed deterministically, and `dropped` counts what could not be used. This is
+// safe in a way that trusting returned TEXT never was — any partition of atoms is made of the body's
+// own bytes, so the worst a confused answer can do is group thoughts badly, never misquote the
+// writer. Refusing the page instead would trade a real echo for a cosmetic failure.
+struct Grouping {
+  std::vector<Passage> units;
+  int dropped = 0;
+};
+
+Grouping unitsFrom(const std::string& body, const std::vector<Passage>& atoms,
+                   const std::vector<int>& starts);
 
 }

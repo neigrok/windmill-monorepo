@@ -23,7 +23,7 @@ EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embed
 void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& request,
                                  std::function<void(EchoExplanation)> done) {
   heartbeat_.queue([this, user, request, done = std::move(done)] {
-    // `done` fires on every path: an operator is waiting on a promise this thread cannot fulfil.
+    // `done` fires on every path.
     try {
       done(explain(user, request));
     } catch (const std::exception& error) {
@@ -39,10 +39,8 @@ void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& reque
   });
 }
 
-// The seven steps of a derivation with the two that write taken out, in the same order and through
-// the same calls. Step 3 does not store, so the identities it carries forward are the real ones for
-// text this page already has and PROVISIONAL NEGATIVE ones for text it does not — the sequence
-// mints only positives, so a negative id can never be mistaken for a passage that exists.
+// A derivation with the two steps that write taken out. Step 3 does not store, so text this page
+// does not already have carries a provisional negative id; storage mints only positives.
 EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest& request) {
   EchoExplanation explained;
   explained.segmenterConfigured = segmenter_.configured();
@@ -67,8 +65,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
                                     curator_.version()})
           .has_value();
 
-  // The corpus, read BEFORE anything can return early, so an empty page or an unwired embedder does
-  // not answer `corpus: 0` when it means nobody looked.
+  // Read before anything can return early, so `corpus: 0` never means nobody looked.
   if (explained.embedderConfigured) {
     const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
     explained.corpus = static_cast<int>(corpus.size());
@@ -76,8 +73,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
       if (!(span.day == request.day)) explained.history.push_back(span);
   }
 
-  // 1 — the idea units. Read back from storage by default, because what the page reaches today was
-  // decided by the units it actually carries; `recut=true` buys a fresh cut.
+  // 1 — the idea units, read back from storage unless `recut`.
   const std::vector<KnownSpan> stored = echoes_.spansOf(user, request.day);
   explained.storedSpans = static_cast<int>(stored.size());
   if (!request.recut && !stored.empty()) {
@@ -94,8 +90,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   }
   if (!explained.embedderConfigured || explained.passages.empty()) return explained;
 
-  // 2 — embed. The vendor call this door always pays for: tonight's vectors exist nowhere else
-  // unless the page has already been derived, and the stored ones describe the LAST body.
+  // 2 — embed. The vendor call this door always pays for.
   std::vector<std::string> texts;
   texts.reserve(explained.passages.size());
   for (const Passage& passage : explained.passages) texts.push_back(passage.text);
@@ -114,19 +109,18 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
     tonight.push_back(Vectored{carried[i].spanId != 0 ? carried[i].spanId : --provisional,
                                request.day, carried[i].passage.text, vectors[i]});
 
-  // 4 — retrieve, from the corpus read at the top. The page's own stored passages are held out,
-  // because tonight's are the freshly embedded ones above.
+  // 4 — retrieve, from the corpus read at the top; this page's stored passages are held out.
   const std::vector<Vectored>& history = explained.history;
 
   std::set<std::pair<std::int64_t, std::int64_t>> waved;
   for (const SpanPair& pair : echoes_.dismissalsOn(user, request.day))
     waved.insert({pair.triggerSpanId, pair.matchSpanId});
 
-  // 5 — select. The same domain call the sweep makes, asked for its reasons.
+  // 5 — select, asked for its reasons.
   explained.selection = selectForPage(tonight, history, waved, request.rules, request.echoesPerPage,
                                       request.nearest);
 
-  // 6 — curate, only when asked. It is the one step here that bills.
+  // 6 — curate, only when asked.
   if (!request.curate || !explained.curatorConfigured || explained.selection.pairings.empty())
     return explained;
 

@@ -15,9 +15,8 @@ inline const std::vector<const char*> kHues = {"terracotta", "olive", "gold", "b
 inline const std::vector<const char*> kStatuses = {"active", "complete", "none"};
 inline const std::vector<const char*> kNodeStates = {"locked", "available", "active", "complete"};
 
-// What this product advertises to an agent: every tool, its description, the JSON Schema its
-// arguments are pre-validated against, and the grant level that reaches it. Byte-pinned by the
-// wire corpus test.
+// Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
+// grant level that reaches it. Byte-pinned by the wire corpus test.
 std::vector<ToolDeclaration> roadmapToolCatalog();
 
 }

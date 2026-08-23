@@ -18,9 +18,8 @@ namespace wm::gym {
 
 namespace {
 
-// Byte-stable across every request: the whole of it plus the tool catalog is one cached prefix, and
-// a single interpolated byte here would move that prefix and the cache would silently never read.
-// The word COACH is not in it, and must not be.
+// Must stay byte-stable across requests: this plus the tool catalog is one cached prefix, and a
+// single interpolated byte moves it so the cache never reads.
 constexpr const char* kSystemPrompt =
     "You are Ask, inside Windmill's training log, talking with the lifter whose log it is. You are "
     "not a chat assistant with opinions about their life and you are not there to encourage anybody; "
@@ -69,21 +68,15 @@ constexpr const char* kSystemPrompt =
     "- You are not a doctor or a physiotherapist. If the question is about pain, injury, illness or "
     "medication, say plainly that this is outside what a training log can answer and stop there.";
 
-// `effort: medium` is what makes Opus affordable in a chat somebody is waiting on, alongside a
-// context that is one page of the log and at most eight turns.
 constexpr const char* kModel = "claude-opus-5";
 constexpr const char* kEffort = "medium";
 
-// max_tokens covers thinking AND the answer on this model, so it is sized for the loop rather than
-// for the paragraph the lifter reads.
+// max_tokens covers thinking and the answer on this model.
 constexpr int kMaxTokens = 8000;
 
-// Ask reads the LOG, so an honest answer may cost a page, a movement's history and the statistics
-// before it says anything, and a proposal a routine read on top. Hitting the cap is a failure.
+// Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
 
-// Long enough for a couple of tool calls and a considered answer, short enough that a wedged
-// upstream does not hold the worker.
 constexpr double kRequestTimeoutSeconds = 75.0;
 
 Json::Value textMessage(const char* role, const std::string& text) {
@@ -96,8 +89,7 @@ Json::Value textMessage(const char* role, const std::string& text) {
 }  // namespace
 
 Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::string& logDocument) {
-  // The conversation, oldest first, with the log welded to the FIRST turn: the document never moves,
-  // so the growing prefix stays cacheable.
+  // Oldest first, with the log welded to the first turn so the growing prefix stays cacheable.
   Json::Value messages(Json::arrayValue);
   for (std::size_t index = 0; index < turns.size(); ++index) {
     const AskTurn& turn = turns[index];
@@ -122,9 +114,7 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
     return outcome;
   }
 
-  // Read the newest page of the log before the model is asked anything, so it answers against real
-  // workouts rather than spending an iteration on what every question needs. An unreadable log means
-  // no run.
+  // An unreadable log means no run.
   const ToolResult opening = tools.callTool("list_sessions", Json::Value(Json::objectValue), caller);
   if (opening.isError) {
     outcome.error = "could not read the log before answering";
@@ -145,7 +135,7 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   outcome.ok = ran.ok;
   outcome.answer = ran.text;
   outcome.error = ran.error;
-  outcome.modelTurns = ran.modelTurns;  // what it cost, which `ok` does not say
+  outcome.modelTurns = ran.modelTurns;
   for (const AgentLoopStep& step : ran.steps) outcome.steps.push_back(AskStep{step.tool, step.failed});
   return outcome;
 }
@@ -181,9 +171,8 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   const AskCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
-    // Trantor forbids driving a loop from any thread but its own: creating the client or sending
-    // the request from this worker thread intermittently FATALs the process. Marshal EVERY client +
-    // loop touch onto the loop thread; the worker queues the work and blocks on the future.
+    // Trantor forbids driving a loop from any thread but its own: marshal every client and loop
+    // touch onto the loop thread and block the worker on the future.
     loop->queueInLoop([apiKey, loop, request, promise]() {
       auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
@@ -194,7 +183,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
       req->setBody(Json::writeString(builder, request));
-      // One line per model turn. The lifter's question and their sets reach no log.
+      // The lifter's question and their sets reach no log.
       VendorCall vendor("anthropic", "gym-ask");
       client->sendRequest(
           req,
@@ -217,8 +206,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
     return future.get();
   };
 
-  // The frame the loop cannot supply: it has never seen a model name, a product or a clock. One row
-  // per turn, one run id across the exchange, so a question that took four turns reads as one.
+  // One row per turn, one run id across the exchange.
   AiSpend frame;
   frame.user = caller.user;
   frame.product = "gym";

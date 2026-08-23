@@ -13,8 +13,6 @@ namespace wm::gym {
 
 namespace {
 
-// --- Tool schema builders (JSON Schema for each tool's `inputSchema`). ---------------
-
 Json::Value str(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "string";
@@ -22,8 +20,6 @@ Json::Value str(const char* description) {
   return property;
 }
 
-// A string with a published cap: the domain refuses past it either way, and a client can only
-// pre-validate what the schema states.
 Json::Value cappedStr(const char* description, std::size_t limit) {
   Json::Value property = str(description);
   property["maxLength"] = static_cast<Json::UInt64>(limit);
@@ -37,8 +33,7 @@ Json::Value num(const char* description) {
   return property;
 }
 
-// A field the READS put on an object, declared on a write that takes the same object back so
-// `additionalProperties: false` refuses typos rather than the document we emitted. Ignored on input.
+// Declared so `additionalProperties: false` accepts a document a read emitted. Ignored on input.
 Json::Value ignoredObject(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "object";
@@ -70,8 +65,7 @@ Json::Value boundedInt(const char* description, int smallest, int largest) {
   return property;
 }
 
-// Every instant on this surface is epoch milliseconds inside (0, kMaxInstantMs], the band the
-// domain accepts.
+// Epoch milliseconds inside (0, kMaxInstantMs], the band the domain accepts.
 Json::Value instant(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "integer";
@@ -81,7 +75,6 @@ Json::Value instant(const char* description) {
   return property;
 }
 
-// The three handles, canonical wherever a tool names something that already exists.
 Json::Value sessionHandle() {
   return str("The workout's id — list_sessions answers with it.");
 }
@@ -94,9 +87,8 @@ Json::Value routineHandle() {
   return str("The routine's id — list_routines answers with it.");
 }
 
-// One line of a routine, as the two tools that carry a document take it. Every bound here must be
-// the DOMAIN's own (products/gym/domain/Routine.cpp): a schema advertising a wider band than the
-// entity accepts invites a value it then refuses the whole document over.
+// Every bound here must match the domain's own (products/gym/domain/Routine.cpp): a wider band here
+// invites a value the entity then refuses the whole document over.
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
@@ -112,18 +104,15 @@ Json::Value entryArray() {
       boundedInt("Rest between sets, 15–900. Omit to fall back to the global rest target they set "
                  "in the app, and to no timer at all when they have set none.",
                  15, 900);
-  // list_routines writes a position on every line, so a document read and sent back carries it.
-  // Ignored on the way in; the run is renumbered from the order.
+  // Ignored on the way in; lines are renumbered from their order.
   fields["position"] = boundedInt("Ignored — the order these arrive in IS the order.", 1, 10000);
 
   Json::Value entry(Json::objectValue);
   entry["type"] = "object";
   entry["properties"] = fields;
-  // The movement is the only thing a line cannot do without: a routine is savable while incomplete.
   Json::Value required(Json::arrayValue);
   required.append("exerciseId");
   entry["required"] = required;
-  // The parser refuses a misspelled field inside an entry, so the schema says so.
   entry["additionalProperties"] = false;
 
   Json::Value property(Json::objectValue);
@@ -137,11 +126,8 @@ Json::Value entryArray() {
   return property;
 }
 
-// Each tool names the grant level that reaches it beside its description, so a client cannot be told
-// one thing and gated on another. `read` answers questions; `write` RECORDS what happened, PROPOSES
-// changes to the program and mints a coach link; `delete` takes away something a lifter LIVED and
-// proposes the destruction of a day of their program. `delete` is never implied by `write`: a
-// connection without that level does not so much as see those three.
+// Each tool names the grant level that reaches it beside its description. `delete` is never implied
+// by `write`: a connection without that level does not see those tools at all.
 ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
                      std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);
@@ -161,16 +147,9 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 
 }  // namespace
 
-// Reads, then writes, then deletes, so a narrower grant sees a PREFIX of this list rather than a
-// list with holes in it. tools/list is the biggest fixed cost of a connection, so a tool a parameter
-// on another tool could serve does not get a slot: routines list and read are one, the finish
-// readout rides on the session read, and pending proposals ride on list_routines.
-//
-// Three verbs have no tool at any level: editing a logged set, saying what a gym owns, and APPLYING
-// A PROPOSAL. Apply is a human act, not a capability.
-// A write that RECORDS something that already happened lands immediately, so `create_routine`
-// writes; a write that CHANGES something that already stands mints a proposal and lands nothing, so
-// `propose_routine_change` and `propose_routine_removal` write nothing at all.
+// Reads, then writes, then deletes, so a narrower grant sees a prefix of this list rather than one
+// with holes in it. No tool at any level edits a logged set, says what a gym owns, or applies a
+// proposal.
 std::vector<ToolDeclaration> gymToolCatalog() {
   std::vector<ToolDeclaration> tools;
 
@@ -297,8 +276,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["id"] = str("The id YOU mint for this NEW routine (`rt_` + hex is the house shape).");
     p["name"] = cappedStr("What this day of the program is called.", kMaxNameLength);
     p["position"] = boundedInt("Where it sits in the program, from 0.", 0, 10000);
-    // The three fields list_routines puts on a routine, declared so a document read and sent back
-    // under a fresh id is not refused. All three are the STORE's answer: ignored on the way in.
+    // Declared so a document read from list_routines and sent back is not refused; ignored on input.
     p["lastTrainedAt"] = num("Ignored — the log decides when a routine was last trained.");
     p["revision"] = num("Ignored — the store moves a routine's revision; a client reads it, never "
                         "sends it.");
@@ -412,8 +390,6 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   return tools;
 }
 
-// The paragraph every client reads at connect, before it has called anything. The retirements are
-// named here as well as by GymTools::retiredTools(), so an agent reads them before its first call.
 std::string gymInstructions() {
   return "gym is a training log: workouts of sets, a program of routines, and a catalog of "
          "movements. Every write is idempotent by an id YOU mint — send the same id again, carrying the "

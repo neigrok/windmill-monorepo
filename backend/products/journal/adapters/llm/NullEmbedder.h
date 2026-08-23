@@ -4,8 +4,7 @@
 
 namespace wm {
 
-// The default embedder when no upstream is wired: `configured()` is false, so the EchoSweep is a
-// quiet no-op and echoes simply do not appear.
+// No upstream wired: `configured()` is false, so EchoSweep is a no-op.
 struct NullEmbedder : Embedder {
   bool configured() const override { return false; }
   std::string version() const override { return "none"; }

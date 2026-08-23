@@ -14,9 +14,8 @@ namespace wm {
 
 namespace {
 
-// Howard Hinnant's days-from-civil — pure integer math, so the gap between two pages is identical
-// on a developer's mac and on CI's linux. Days count from 1970-01-01, but only DIFFERENCES are
-// ever read, so the epoch is arbitrary.
+// Howard Hinnant's days-from-civil. Integer math only, so mac and CI linux agree. Only differences
+// are ever read, so the epoch is arbitrary.
 long dayNumber(const LocalDate& date) {
   const std::string& iso = date.iso();
   long y = std::stol(iso.substr(0, 4));          // LocalDate's ctor already guaranteed the shape
@@ -30,9 +29,8 @@ long dayNumber(const LocalDate& date) {
   return era * 146097 + doe - 719468;
 }
 
-// The words a nightly journal writes every night. What survives this list is what "low-frequency
-// lexical anchor" means here: a name, a place, a number, a rare content word — something the reader
-// can see in both passages and check for themselves.
+// What survives this list is a low-frequency lexical anchor: a name, a place, a number, a rare
+// content word.
 const std::unordered_set<std::string>& commonWords() {
   static const std::unordered_set<std::string> words{
       // pronouns, articles, determiners
@@ -63,9 +61,9 @@ const std::unordered_set<std::string>& commonWords() {
   return words;
 }
 
-// Split on anything that is not a letter, a digit, or a byte of a multi-byte character — a UTF-8
-// word stays one token, so a journal kept in a non-Latin script still has anchors — then fold ASCII
-// case by hand. Never std::tolower, whose locale belongs to the machine rather than to us.
+// Split on anything that is not a letter, a digit, or a byte of a multi-byte character, so a UTF-8
+// word stays one token, then fold ASCII case by hand. Never std::tolower: its locale is the
+// machine's.
 std::set<std::string> anchorsOf(const std::string& text) {
   std::set<std::string> found;
   std::string token;
@@ -85,24 +83,22 @@ std::set<std::string> anchorsOf(const std::string& text) {
   return found;
 }
 
-// A candidate carrying the two numbers every rule below reads. Cosine over 384 dimensions is the
-// expensive half of the pass, so it is measured once here and never recomputed.
+// Cosine is measured once here and never recomputed.
 struct Judged {
   const Vectored* passage = nullptr;
   float cosine = 0.0f;
   long ageDays = 0;
 };
 
-// The tail every ranking in this file breaks ties on: the OLDER day, then the span id. Without a
-// total order two runs over one corpus could disagree and the echo set would reshuffle nightly.
+// The tie-break every ranking here ends on: the older day, then the span id. A total order keeps
+// two runs over one corpus identical.
 bool olderFirst(const Judged& a, const Judged& b) {
   if (!(a.passage->day == b.passage->day)) return a.passage->day < b.passage->day;
   return a.passage->spanId < b.passage->spanId;
 }
 
-// The N closest passages retrieval did NOT hand over — younger than `minDayGap`, or beaten inside
-// their own age band. Only the debug door asks for these: they cost one more cosine pass over the
-// whole corpus per trigger.
+// The N closest passages retrieval did not hand over: younger than `minDayGap`, or beaten inside
+// their own age band. Costs one more cosine pass over the whole corpus per trigger.
 void appendNearMisses(const Vectored& trigger, const std::vector<Vectored>& history,
                       const std::vector<Vectored>& retrieved, int wanted, TriggerTrace& trace) {
   std::set<std::int64_t> handedOver;
@@ -127,8 +123,6 @@ void appendNearMisses(const Vectored& trigger, const std::vector<Vectored>& hist
                                         missed[i].passage->spanId, Fate::notRetrieved});
 }
 
-// A family's representative as the ranking sees it: the oldest member, the count it stands for, its
-// score before diversity, and the score it was actually taken at.
 struct Standing {
   Judged judged;
   int familySize = 1;
@@ -223,8 +217,7 @@ const char* fateText(Fate fate) {
 
 std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vectored>& corpus,
                                const SelectionRules& rules) {
-  // The bands as day counts — 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+ — so nothing downstream parses a
-  // label, and a raised minDayGap simply empties the first band.
+  // The bands as day counts: 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+.
   static constexpr long bandEnds[] = {30, 91, 365, 1095};
   static constexpr std::size_t bandCount = 5;
 
@@ -241,8 +234,7 @@ std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vector
     bands[band].push_back(Judged{&candidate, cosine(trigger.vector, candidate.vector), age});
   }
 
-  // Top-perBand out of EACH band, youngest band first, so an old passage competes against its own
-  // era rather than losing to last month's prose on a flat top-N.
+  // Top-perBand out of each band, youngest band first.
   std::vector<Vectored> retrieved;
   for (std::vector<Judged>& band : bands) {
     std::sort(band.begin(), band.end(), [](const Judged& a, const Judged& b) {
@@ -267,8 +259,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     judged.push_back(Judged{&candidate, cosine(trigger.vector, candidate.vector),
                             std::max(0L, daysBetween(candidate.day, trigger.day))});
 
-  // z against this trigger's OWN retrieved background, taken before any rule narrows it: a single
-  // global threshold would mean a different thing on every page of the same journal.
+  // z against this trigger's own retrieved background, taken before any rule narrows it.
   double mean = 0.0;
   for (const Judged& candidate : judged) mean += candidate.cosine;
   mean /= static_cast<double>(judged.size());
@@ -280,8 +271,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   selection.mean = mean;
   selection.stddev = stddev;
 
-  // Every candidate gets a note before a single rule runs, and each rule below stamps the ones it
-  // took out, so the reasons cannot drift from the behaviour.
+  // Every candidate gets a note before any rule runs; each rule stamps the ones it took out.
   std::map<std::int64_t, std::size_t> noteOf;
   selection.notes.reserve(judged.size());
   for (const Judged& candidate : judged) {
@@ -302,8 +292,6 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
       noted(candidate.passage->spanId).fate = Fate::restatement;
       continue;
     }
-    // No shared anchor means no way for the reader to check the pairing from what is on screen,
-    // whatever the cosine says.
     if (!sharesAnchor(trigger.text, candidate.passage->text, vocabulary)) {
       noted(candidate.passage->spanId).fate = Fate::noAnchor;
       continue;
@@ -312,8 +300,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   }
   if (survivors.empty()) return selection;
 
-  // Single-link families at familyRadius, measured BETWEEN candidates — the lower index always wins
-  // the union, so the same corpus always builds the same families in the same order.
+  // Single-link families at familyRadius, measured between candidates; the lower index wins the
+  // union, so families build in the same order every run.
   std::vector<std::size_t> root(survivors.size());
   std::iota(root.begin(), root.end(), std::size_t{0});
   auto rootOf = [&root](std::size_t index) {
@@ -335,8 +323,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   std::map<std::size_t, std::vector<std::size_t>> families;
   for (std::size_t i = 0; i < survivors.size(); ++i) families[rootOf(i)].push_back(i);
 
-  // The representative is the OLDEST member, and it carries the family size so the ranking can
-  // discount a candidate that is really standing for thirty near-copies.
+  // The representative is the oldest member and carries the family size.
   std::vector<Standing> standings;
   standings.reserve(families.size());
   for (const auto& family : families) {
@@ -359,8 +346,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     }
   }
 
-  // The diversity term is a function of what is ALREADY chosen, so the ranking is re-measured every
-  // slot rather than sorted once — take the best, then ask again.
+  // The diversity term reads what is already chosen, so the ranking is re-measured every slot.
   std::vector<Standing> chosen;
   std::vector<bool> taken(standings.size(), false);
   int fromLastThirtyDays = 0;
@@ -397,8 +383,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     chosen.push_back(standings[best]);
   }
 
-  // Why each representative that did not make it did not: read off the counters the loop exited
-  // with, which are the ones standing in its way when it stopped.
+  // Why each representative missed: read off the counters the loop exited with.
   for (std::size_t i = 0; i < standings.size(); ++i) {
     if (taken[i]) continue;
     CandidateNote& note = noted(standings[i].judged.passage->spanId);
@@ -410,8 +395,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     else note.fate = Fate::outranked;
   }
 
-  // The oldest qualifying candidate is guaranteed a slot, over the quotas and over the score:
-  // nothing else in the ranking protects the first time someone wrote a thing.
+  // The oldest qualifying candidate is guaranteed a slot, over the quotas and over the score.
   std::size_t eldest = 0;
   for (std::size_t i = 1; i < standings.size(); ++i)
     if (olderFirst(standings[i].judged, standings[eldest].judged)) eldest = i;
@@ -458,13 +442,12 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
                             const std::set<std::pair<std::int64_t, std::int64_t>>& dismissed,
                             const SelectionRules& rules, int echoesPerPage, int nearestReported) {
   PageSelection page;
-  // Counted once for the page, over the WHOLE corpus this writer has — tonight included, because a
-  // word they use every night is theirs whether they used it tonight or last March.
+  // Counted once for the page, over the whole corpus this writer has, tonight included.
   std::vector<Vectored> everything = history;
   everything.insert(everything.end(), tonight.begin(), tonight.end());
   const AnchorVocabulary vocabulary = AnchorVocabulary::of(everything, rules);
-  // Where a pairing's note lives, so the two rules that act on WHOLE-PAGE state — the reader's
-  // dismissals and the page ceiling — can stamp the same notes the per-trigger pass filled in.
+  // Where a pairing's note lives, so the whole-page rules stamp the notes the per-trigger pass
+  // filled in.
   std::map<std::pair<std::int64_t, std::int64_t>, std::pair<std::size_t, std::size_t>> noteAt;
   std::vector<Pairing> proposed;
 
@@ -479,8 +462,7 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
     const std::vector<Vectored> retrieved = stratify(trigger, history, rules);
     trace.retrieved = static_cast<int>(retrieved.size());
 
-    // A refrain ("tired again") emits nothing at all. It is still traced — what it retrieved and how
-    // crowded it was is what someone tuning the gate needs to see.
+    // A refrain emits nothing, and is still traced.
     if (!trace.refrain) {
       const Selection selection = selectExplained(trigger, retrieved, rules, vocabulary);
       trace.mean = selection.mean;
@@ -513,8 +495,7 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
       page.traces[at->second.first].notes[at->second.second].fate = Fate::dismissed;
   }
 
-  // The page-level cap. `selectExplained` bounds one trigger's pairings; this bounds the page, which
-  // is the unit the reader sees. Highest-scoring first.
+  // The page-level cap; `selectExplained` bounds one trigger's. Highest-scoring first.
   std::sort(proposed.begin(), proposed.end(), [](const Pairing& a, const Pairing& b) {
     if (a.score != b.score) return a.score > b.score;
     if (a.triggerSpanId != b.triggerSpanId) return a.triggerSpanId < b.triggerSpanId;

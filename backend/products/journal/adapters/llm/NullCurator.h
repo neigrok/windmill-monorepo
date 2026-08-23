@@ -4,8 +4,7 @@
 
 namespace wm {
 
-// The default curator when no upstream is wired: `configured()` is false, so the sweep is a quiet
-// no-op and no echo is ever written.
+// No upstream wired: `configured()` is false, so the sweep is a no-op and no echo is written.
 struct NullCurator : Curator {
   bool configured() const override { return false; }
   std::string version() const override { return "none"; }

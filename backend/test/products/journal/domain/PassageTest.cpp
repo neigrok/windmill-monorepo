@@ -310,3 +310,51 @@ TEST(units_returned_out_of_order_are_still_found) {
   CHECK_EQ(located[0].text, std::string{"третье."});
   CHECK_EQ(located[1].text, std::string{"первое."});
 }
+
+// ATOMS AND GROUPING. A segmenter answers in NUMBERS: which sentence each idea unit starts at. The
+// model never receives a place to put text, so a misquote stops being a thing to detect and becomes
+// a thing that cannot happen.
+
+TEST(atoms_cut_to_the_floor_and_units_are_runs_of_them) {
+  const std::string body = "заебался. еще и заболел.\nхочется в сербию. но это ничего не решит.";
+  const std::vector<Passage> atoms = atomsOf(body);
+  REQUIRE_EQ(atoms.size(), std::size_t{4});
+  CHECK_EQ(atoms[0].text, std::string{"заебался."});
+  CHECK_EQ(atoms[3].text, std::string{"но это ничего не решит."});
+
+  // Three thoughts: the wish and its objection are one unit, which is the product requirement.
+  const Grouping grouped = unitsFrom(body, atoms, {1, 2, 3});
+  CHECK_EQ(grouped.dropped, 0);
+  REQUIRE_EQ(grouped.units.size(), std::size_t{3});
+  CHECK_EQ(grouped.units[2].text, std::string{"хочется в сербию. но это ничего не решит."});
+  for (const Passage& unit : grouped.units)
+    CHECK_EQ(body.substr(unit.lo, unit.hi - unit.lo), unit.text);
+}
+
+TEST(a_broken_answer_is_repaired_and_the_units_still_tile_the_page) {
+  const std::string body = "one. two. three.";
+  const std::vector<Passage> atoms = atomsOf(body);
+  REQUIRE_EQ(atoms.size(), std::size_t{3});
+
+  // Out of range, out of order, duplicated, and missing the opening 1.
+  const Grouping grouped = unitsFrom(body, atoms, {9, 3, 3, 0});
+  CHECK_EQ(grouped.dropped, 3);
+  REQUIRE_EQ(grouped.units.size(), std::size_t{2});
+  CHECK_EQ(grouped.units[0].text, std::string{"one. two."});
+  CHECK_EQ(grouped.units[1].text, std::string{"three."});
+}
+
+TEST(an_answer_naming_nothing_usable_still_yields_the_whole_page) {
+  const std::string body = "one. two.";
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  const Grouping grouped = unitsFrom(body, atoms, {});
+  REQUIRE_EQ(grouped.units.size(), std::size_t{1});
+  CHECK_EQ(grouped.units[0].text, body);
+  CHECK_EQ(grouped.dropped, 0);
+}
+
+TEST(a_page_with_no_atoms_groups_into_nothing) {
+  CHECK_EQ(atomsOf("   \n\t ").empty(), true);
+  CHECK_EQ(unitsFrom("   \n\t ", {}, {1, 2}).units.empty(), true);
+}

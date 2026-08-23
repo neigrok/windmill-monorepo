@@ -5,12 +5,8 @@ namespace wm {
 PageService::PageService(JournalRepository& repo, PageWatcher* watcher)
     : repo_(repo), watcher_(watcher) {}
 
-// Write, then re-read the day and return whatever won. A row always exists after a save; the
-// nullopt branch only guards against a repository that lies.
-//
-// A write that LOST the last-writer-wins guard changed nothing, so it announces nothing, and the
-// announcement names the WINNING body rather than the incoming one. It must return immediately;
-// this is a request thread.
+// A write that lost the last-writer-wins guard announces nothing; the announcement names the
+// winning body, not the incoming one.
 WriteOutcome PageService::write(const Page& incoming) {
   PageWrite result = repo_.save(incoming);
   std::optional<Page> winner = repo_.load(incoming.user, incoming.day);

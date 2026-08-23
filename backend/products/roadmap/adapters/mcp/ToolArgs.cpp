@@ -65,8 +65,7 @@ std::string literal(const Json::Value& value) {
   if (value.isArray() || value.isObject()) return "an " + typeName(value);  // never a wall of JSON
   if (value.isString() && value.asString().size() > 64)
     return "a " + std::to_string(value.asString().size()) + "-character string";
-  // jsoncpp writes an infinity as a number no parser will read back (and older builds throw on
-  // it), so a non-finite value is named rather than rendered.
+  // jsoncpp writes an infinity as a number no parser reads back, so a non-finite value is named.
   if (value.isDouble() && !std::isfinite(value.asDouble())) {
     if (std::isnan(value.asDouble())) return "NaN";
     return value.asDouble() > 0 ? "infinity" : "-infinity";

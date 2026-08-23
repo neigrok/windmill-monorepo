@@ -14,8 +14,7 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The per-user tree registry over REST: list the roadmaps you own, rename one, delete one.
-// Credentialed by the wm_session cookie — the read/write halves of the switcher's YOURS list.
+// The per-user tree registry over REST, credentialed by the wm_session cookie.
 class TreeRegistryApi {
 public:
   TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth);

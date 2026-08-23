@@ -8,8 +8,7 @@ ResendNudgeSender::ResendNudgeSender(ResendClient& client) : client_(client) {}
 
 void ResendNudgeSender::sendJournalNudge(const Email& to, const JournalNudgeMail& mail,
                                          std::function<void(bool)> done) {
-  // The one fixed line lives in the provider's template; this binds only the three links, so no
-  // user-authored text can ride into a nudge. The one-click pair goes as message headers.
+  // Only the three links are bound, so no user-authored text can ride into a nudge.
   Json::Value variables(Json::objectValue);
   variables["settings_url"] = mail.settingsUrl;
   variables["pause_url"] = mail.pauseUrl;

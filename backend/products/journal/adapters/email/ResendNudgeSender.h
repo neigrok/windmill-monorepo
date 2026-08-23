@@ -7,9 +7,7 @@
 
 namespace wm {
 
-// The daily journal nudge over Resend: it binds the mail's three links to the 'journal-nudge'
-// template and hands the send to the shared ResendClient, which owns the loop, the api key and the
-// from address.
+// Binds the mail's three links to the 'journal-nudge' template and hands the send to ResendClient.
 class ResendNudgeSender : public NudgeMailSender {
 public:
   explicit ResendNudgeSender(ResendClient& client);

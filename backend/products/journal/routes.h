@@ -17,8 +17,7 @@
 
 namespace wm::journal {
 
-// Everything the journal product's routes need, built once in main.cpp and handed across the seam,
-// in its own namespace so the two registerRoutes overloads never collide.
+// Built once in main.cpp; its own namespace keeps the registerRoutes overloads from colliding.
 struct JournalDeps {
   std::shared_ptr<PageService> pageService;
   std::shared_ptr<AuthService> authService;
@@ -35,8 +34,7 @@ struct JournalDeps {
   std::shared_ptr<Entitlements> entitlements;
 };
 
-// Mounts the journal product on the shared app: every /v1/journal/* route, owner-scoped, no public
-// surface.
+// Mounts every /v1/journal/* route, owner-scoped, with no public surface.
 void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps);
 
 }

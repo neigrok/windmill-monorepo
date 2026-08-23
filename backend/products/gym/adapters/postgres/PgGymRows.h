@@ -11,13 +11,11 @@
 #include <utility>
 #include <vector>
 
-// How an instant and a movement row cross from pqxx, and the one visibility predicate every write
-// that names a movement checks under.
 namespace wm::gym {
 
-// Instants are pushed through epoch casts so no timestamptz or calendar parsing happens in C++: the
-// pqxx date/time readers differ between the macOS and CI Linux builds. weight/rpe/step cross as
-// float8. Read as a signed bigint and CLAMPED into the band the domain accepts.
+// Instants cross through epoch casts so no timestamptz or calendar parsing happens in C++: the pqxx
+// date/time readers differ between the macOS and CI Linux builds. weight/rpe/step cross as float8.
+// Read as a signed bigint and clamped into the band the domain accepts.
 template <typename Field>
 std::uint64_t instantFrom(const Field& field) {
   const long long stored = field.template as<long long>();
@@ -26,11 +24,10 @@ std::uint64_t instantFrom(const Field& field) {
   return static_cast<std::uint64_t>(stored);
 }
 
-// The display name is the CALLER'S: a lifter's own name for a global seed lives in
-// gym_exercise_names and is coalesced over the seed's. EVERY read of a movement row takes
-// kExerciseFrom with the caller's id at $1.
-// The aliases cross as a JSON ARRAY: a display name may hold any character a text column can, so a
-// packed separator would split into a movement nobody named.
+// The display name is the caller's: their own name for a global seed lives in gym_exercise_names and
+// is coalesced over the seed's. Every read of a movement row takes kExerciseFrom with the caller's
+// id at $1. Aliases cross as a JSON array, since a display name may hold any character a text column
+// can.
 constexpr std::string_view kExerciseColumns =
     "e.id, coalesce(n.name, e.name) AS name, e.pattern, e.equipment, "
     "e.step_kg::float8 AS step_kg, e.created_by, al.aliases";
@@ -44,11 +41,11 @@ constexpr std::string_view kExerciseFrom =
     "  FROM gym_exercise_aliases a "
     "  WHERE a.user_id = $1::uuid AND a.exercise_id = e.id) al ON true";
 
-// Every row reader here is templated on the row type: pqxx names it row_ref on macOS and row on the
-// CI's Linux build, so binding it concretely compiles on one and fails on the other.
+// Templated on the row type: pqxx names it row_ref on macOS and row on the CI Linux build, so
+// binding it concretely compiles on one and fails on the other.
 template <typename Row>
 Exercise exerciseFrom(const Row& row) {
-  // Newest first. A row whose array cannot be read is a row with no aliases, not a failed read.
+  // A row whose array cannot be read has no aliases, not a failed read.
   std::vector<std::string> aliases;
   const Json::Value stored = parse(row["aliases"].template as<std::string>());
   for (const Json::Value& alias : stored)
@@ -62,9 +59,9 @@ Exercise exerciseFrom(const Row& row) {
                   std::move(aliases)};
 }
 
-// A movement this account may NAME on a write — a seed, or one this account created. The foreign
-// key only asks whether the row EXISTS, and another lifter's private movement exists. Read inside
-// the caller's own transaction, against the owner of the row being written.
+// A movement this account may name on a write: a seed, or one it created. The foreign key only asks
+// whether the row exists, and another lifter's private movement exists. Read inside the caller's own
+// transaction, against the owner of the row being written.
 inline bool namesVisibleMovement(pqxx::work& txn, const std::string& owner,
                                  const ExerciseId& exercise) {
   return !txn

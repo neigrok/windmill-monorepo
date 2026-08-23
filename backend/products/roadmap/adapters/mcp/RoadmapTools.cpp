@@ -131,7 +131,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   if (namesAnExistingNode(tool)) {
     std::string node;
     if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node)) return bad;
-    payload["id"] = node;  // the one write: both spellings land on the key commandFromJson reads
+    payload["id"] = node;
   }
   if (namesAnExistingKind(tool)) {
     std::string kind;
@@ -270,7 +270,6 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
 
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     return ToolResult::json(toJson(room.diagnose()));
   });
@@ -278,7 +277,6 @@ ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std
 
 ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (!room.diagnose().clean())
       return ToolResult::failure(
@@ -311,7 +309,6 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
 ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
       return ToolResult::failure(*bad);
@@ -356,7 +353,7 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
 
 ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::string& tool,
                      Json::Value payload, Clock& clock, const UserId& actor) {
-  const std::string kind = *commandKindFor(tool);  // the caller reached here by resolving it
+  const std::string kind = *commandKindFor(tool);
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -395,7 +392,6 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   });
 }
 
-// Fills `results` with a row per applied mark; returns a message only when an unknown id is rejected.
 std::optional<std::string> applyProgressBatch(
     RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
     Clock& clock, const UserId& user, const std::vector<std::pair<NodeId, ProgressStatus>>& requested,
@@ -409,7 +405,7 @@ std::optional<std::string> applyProgressBatch(
     TreeRoom* room = registry.open(tree);
     // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
     if (!room || !canRead(user, room->owner(), room->visibility()))
-      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent/denied message
+      return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
     for (const auto& [node, status] : requested) {
       if (!room->hasNode(node)) { skipped.append(node.str()); continue; }
       marks.push_back({node, status, room->prerequisitesOf(node), room->nextStamp(clock.nowMs())});
@@ -442,7 +438,6 @@ std::optional<std::string> applyProgressBatch(
 
 ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
                          const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
-  // A single mark or an `updates` batch; both boundary cases answer before either shape is read.
   const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
   const bool bulk = !args["updates"].isNull();
   if (!single && !bulk)
@@ -479,7 +474,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
   }
 
-  Json::Value results, skipped;  // set_progress rejects unknowns, so on success `skipped` stays empty
+  Json::Value results, skipped;
   if (std::optional<std::string> error =
           applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
     return ToolResult::failure(*error);
@@ -544,8 +539,7 @@ std::optional<std::string> checkImport(const Json::Value& args) {
   return std::nullopt;
 }
 
-// Checked against the legend the import would leave behind: the graft path never runs validate(),
-// and a duplicate hue is unrepairable once it lands.
+// A duplicate hue is unrepairable once it lands.
 std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
                                              const std::vector<Kind>& incoming) {
   std::set<std::string> replaced;
@@ -592,14 +586,13 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   const bool dryRun = args["dryRun"].asBool();
 
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Read gate before the write gate: a dry run's collision list would leak node and kind ids to a non-reader.
+    // Read gate before the write gate: a dry run's collision list would leak ids to a non-reader.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
 
-    // A graft mints no Command, so validate() never sees it: the tree caps (domain/Command.h) are
-    // checked here, before the dry-run branch.
+    // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
     if (std::optional<Admission> refusal = room.admit(incoming))
       return ToolResult::failure(refusal->reason);
 
@@ -616,7 +609,7 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     for (const Kind& k : incoming.kinds)
       if (presentKinds.count(k.id.str())) kindCollisions.append(k.id.str());
 
-    // Counts the edges the batch carried, so a graft whose prerequisites never landed reads as `edges: 0`.
+    // Counts the edges the batch carried, so a graft whose prerequisites never landed reads as 0.
     int edges = 0;
     for (const NodeSpec& n : incoming.nodes) edges += static_cast<int>(n.prerequisites.size());
 
@@ -628,9 +621,9 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
     out["kindCollisions"] = kindCollisions;
     out["newNodes"] = static_cast<int>(incoming.nodes.size()) - nodeCollisions.size();
     out["newKinds"] = static_cast<int>(incoming.kinds.size()) - kindCollisions.size();
-    if (dryRun) {  // report what would collide, change nothing
+    if (dryRun) {
       out["dryRun"] = true;
-      // Carried progress naming no node the graft would leave behind — the set the real run reports as progressSkipped.
+      // Carried progress naming no node the graft would leave behind.
       if (args["progress"].isArray()) {
         std::set<std::string> afterGraft = presentNodes;
         for (const NodeSpec& n : incoming.nodes) afterGraft.insert(n.id.str());
@@ -657,15 +650,14 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
   if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
     return grafted;
 
-  std::vector<std::pair<NodeId, ProgressStatus>> requested;  // carried progress, applied over the imported nodes
-  for (const Json::Value& u : args["progress"]) {  // shape already checked; both handle spellings read
+  std::vector<std::pair<NodeId, ProgressStatus>> requested;
+  for (const Json::Value& u : args["progress"]) {
     const Json::Value& handle =
         u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
     requested.emplace_back(NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()));
   }
   if (!requested.empty()) {
-    // The graft has committed: a throw from the best-effort overlay must not reach callTool's catch,
-    // which would answer "nothing was changed".
+    // The graft has committed: a throw from the best-effort overlay must not reach callTool's catch.
     try {
       Json::Value results, skipped;
       applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
@@ -680,7 +672,6 @@ ToolResult importSubgraph(RoomRegistry& registry, ProgressService& progress, Pre
 ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      Clock& clock, const UserId& actor) {
   ToolResult cleaned = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // The read gate first, byte-identical to absent — then the write gate. See applyEdit.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
@@ -751,7 +742,7 @@ RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Cl
 
 std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmapToolCatalog(); }
 
-// Every failure names the tool it came from, exactly once — here, on whatever `dispatch` refused with.
+// Every failure names the tool it came from, exactly once.
 ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& arguments,
                                   const ToolCaller& caller) {
   try {
@@ -761,7 +752,8 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die rather than answer
   } catch (const std::exception& error) {
-    // Detail goes to the log, never the model's context; stderr because on stdio transport stdout is the protocol channel.
+    // Detail goes to the log, never the model's context; stderr, because on stdio transport stdout
+    // is the protocol channel.
     std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
     return ToolResult::failure(name + ": that call failed inside the server. Nothing was changed; "
                                "the detail is in the server log.");
@@ -777,9 +769,9 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "create_tree") {
     if (std::optional<std::string> bad = optionalString(arguments["title"], "title"))
       return ToolResult::failure(*bad);
-    return createTree(treeRegistry_, caller, arguments.get("title", "").asString());  // no treeId
+    return createTree(treeRegistry_, caller, arguments.get("title", "").asString());
   }
-  if (name == "list_trees") return listRegistry(treeRegistry_, caller);  // registry-wide: no treeId
+  if (name == "list_trees") return listRegistry(treeRegistry_, caller);
 
   if (arguments["treeId"].isNull() ||
       (arguments["treeId"].isString() && arguments["treeId"].asString().empty()))

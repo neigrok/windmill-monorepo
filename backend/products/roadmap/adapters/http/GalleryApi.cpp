@@ -21,10 +21,7 @@ GalleryApi::GalleryApi(std::shared_ptr<TreeRepository> trees, std::shared_ptr<Pr
 std::vector<WallCandidate> GalleryApi::candidates() {
   std::vector<ListedTree> listed = trees_->listPublic();
 
-  // The owner's overlay per listed tree, because a shared tree shows the OWNER's journey
-  // (HttpApi::getProgress rules the same way). One narrow read per card, rebuilt on every hit —
-  // the number to watch; the fix when it bites is to cache the ranked index, not thin the read.
-  // Everything else a card needs rides listPublic's own row.
+  // A shared tree shows the OWNER's journey, so each card carries the owner's overlay.
   std::vector<WallCandidate> candidates;
   candidates.reserve(listed.size());
   for (ListedTree& tree : listed) {
@@ -42,19 +39,15 @@ std::vector<WallCandidate> GalleryApi::candidates() {
 }
 
 std::string GalleryApi::renderWall(const std::string& shell, const std::vector<GalleryEntry>& wall) {
-  if (wall.empty()) return shell;  // the template's own empty state stands
+  if (wall.empty()) return shell;
 
   std::string cards;
   for (const GalleryEntry& entry : wall) {
     const std::string id = htmlEscape(entry.id.str());
     const int percent = entry.stats.total > 0 ? entry.stats.done * 100 / entry.stats.total : 0;
-    // A card wears its tree's dominant kind as a bar across the top of the portrait, the same way
-    // a node wears its kind in the tree.
     const char* hue = nodeColorHex(entry.stats.dominantKind.value_or(NodeColor::terracotta));
 
     cards += "\n        <a class=\"card\" href=\"/t/" + id + "\">\n";
-    // /og/:id.png falls back to the generic card when a tree has no uploaded unfurl, so a card
-    // can never show a broken image.
     cards += "          <span class=\"shot\"><img src=\"/og/" + id
              + ".png\" alt=\"\" loading=\"lazy\" width=\"1200\" height=\"630\" />"
                "<i class=\"hue\" style=\"background:" + hue + "\"></i></span>\n";
@@ -63,13 +56,9 @@ std::string GalleryApi::renderWall(const std::string& shell, const std::vector<G
     cards += "            <span class=\"bar\"><i style=\"width:" + std::to_string(percent) + "%\"></i></span>\n";
     cards += "            <span class=\"meta\"><span class=\"done\">" + std::to_string(entry.stats.done) + "/"
              + std::to_string(entry.stats.total) + " done</span>";
-    // Shown only when it happened, so a brand-new tree reads as new rather than as unwanted.
     if (entry.forks > 0)
       cards += "<i class=\"sep\"></i><span class=\"forks\">forked " + std::to_string(entry.forks)
                + (entry.forks == 1 ? " time" : " times") + "</span>";
-    // A fork names the TREE it came from, never the person who planted it, and only while that
-    // source is still public — the repository resolves that, and an unnamed source leaves this
-    // off entirely.
     if (!entry.sourceTitle.empty())
       cards += "<i class=\"sep\"></i><span class=\"from\">A fork of \xE2\x80\x9C"
                + htmlEscape(entry.sourceTitle) + "\xE2\x80\x9D</span>";
@@ -83,13 +72,9 @@ std::string GalleryApi::renderWall(const std::string& shell, const std::vector<G
 }
 
 void GalleryApi::page(const drogon::HttpRequestPtr&, HttpCallback&& callback) {
-  // The wall knows nobody — a default Viewer — so the page is the same bytes for everyone, and
-  // with no cursor to refuse its first page always resolves.
   const std::vector<GalleryEntry> wall = publicWall(candidates(), Viewer{});
   const std::vector<GalleryEntry> firstPage = wallPage(wall, "", kWallLimit)->entries;
 
-  // A misconfigured web root degrades to a bare document carrying the same markers: the links
-  // still work unstyled.
   std::string shell = readWebFile(webRoot_, "gallery.html");
   if (shell.empty())
     shell =
@@ -116,13 +101,11 @@ void GalleryApi::index(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     limit = static_cast<std::size_t>(value);
   }
 
-  // Anonymous is a first-class caller here: the shelf is the wall with two extra facts per row,
-  // and nothing is gated on the session.
   const std::optional<UserId> caller = callerOf(req, *auth_);
   Viewer viewer;
   if (caller) {
     viewer.user = caller;
-    viewer.forked = trees_->listForkedSources(*caller);  // one read for the whole page, never per card
+    viewer.forked = trees_->listForkedSources(*caller);
   }
 
   const std::vector<GalleryEntry> wall = publicWall(candidates(), viewer);

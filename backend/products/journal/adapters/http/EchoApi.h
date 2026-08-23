@@ -17,20 +17,12 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The echo read surface, owner-scoped. Entitlement is asked HERE rather than in the sweep: the
-// honest-cut state shows a non-subscriber that echoes exist, how many, how far back, and the real
-// opening words of the nearest one, none of which can be served from an empty table. So the sweep
-// derives for everyone and this edge decides how much of a passage a reader is handed.
+// The echo read surface, owner-scoped. The sweep derives for everyone and entitlement is asked
+// here: this edge decides how much of a passage a reader is handed.
 //
-// Passages travel as TEXT and days as ISO strings: the client re-locates the quote in the live page
-// body and renders the distance itself, because no offset would survive the trip (C++ counts bytes,
-// JavaScript slices UTF-16 code units). What does travel is `occurrenceHint` — which occurrence of
-// that text the passage is — for a page that says the same sentence twice. It is a hint: the client
-// still verifies by text, and re-locating decides whether the quote is shown.
-//
-// Three of these doors also write a quality signal — a walk back to the older page, a "useful", a
-// dismissal — because dismissal alone cannot tell "wrong match" from "right match, bad night". The
-// answer travels back on the read as `useful`, as `offerRetired` does.
+// Passages travel as text and days as ISO strings; the client re-locates the quote in the live page
+// body. `occurrenceHint` says which occurrence of that text the passage is, for a page that says the
+// same sentence twice — a hint, since the client still verifies by text.
 class EchoApi {
 public:
   EchoApi(std::shared_ptr<EchoRepository> echoes, std::shared_ptr<EchoSweep> sweep,
@@ -50,10 +42,9 @@ public:
               const std::string& triggerDay, const std::string& matchDay);
   void adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb);
 
-  // The tuning door: what a derivation of one page would decide right now, rule by rule, writing
-  // nothing. Admin token AND a signed-in owner, because it answers about the CALLER's own journal
-  // and hands back their passages in full — the admin secret buys access to the door, never to
-  // somebody else's pages. Every SelectionRules knob is overridable per call.
+  // What a derivation of one page would decide right now, rule by rule, writing nothing. Admin token
+  // and a signed-in owner: it answers about the caller's own journal only. Every SelectionRules knob
+  // is overridable per call.
   void explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& day);
 
 private:

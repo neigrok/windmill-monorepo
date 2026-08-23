@@ -35,7 +35,7 @@ Json::Value toJson(const Subgraph& subgraph) {
   Json::Value graph = toJson(subgraph.graph);  // { nodes, edges } — hoisted to the top level
   root["nodes"] = graph["nodes"];
   root["edges"] = graph["edges"];
-  root["kinds"] = toJson(subgraph.legend);     // an array of kind entries
+  root["kinds"] = toJson(subgraph.legend);
 
   Json::Value gestures(Json::arrayValue);
   for (const Gesture& gesture : subgraph.gestures) {

@@ -12,8 +12,7 @@
 namespace wm {
 
 namespace {
-// One stable colour per actor, so a peer's cursor keeps its hue for the whole session. A guest
-// name is not stable: it steps off a pairing the room already wears.
+// One stable colour per actor, so a peer's cursor keeps its hue for the whole session.
 const std::vector<std::string> kPalette = {
     "#e8743b", "#19a979", "#945ecf", "#13a4b4",
     "#e6c229", "#c43d5c", "#6f9654", "#5b6ee1"};
@@ -59,8 +58,8 @@ void sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& paylo
 }
 }
 
-// A stranger takes the first pairing the room is not already wearing. There are more pairings
-// than the member cap, so the trailing return is a guard, not a reachable outcome.
+// The first pairing the room is not already wearing. There are more pairings than the member
+// cap, so the trailing return is a guard, not a reachable outcome.
 std::string PresenceHub::guestName(const UserId& actor, const std::map<drogon::WebSocketConnectionPtr, Member>& members) const {
   const std::size_t pairings = kQualities.size() * kCreatures.size();
   const std::size_t first = hashOf(actor) % pairings;
@@ -79,10 +78,10 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   auto& members = room.members;
 
   // A resubscribe brings the same connection here more than once; announcing it again would burn
-  // a second name and hand a subscribe flood a whole roster's worth of fan-out per frame.
+  // a second name.
   if (members.count(conn)) return;
 
-  // Past the cap a newcomer is neither tracked nor announced: it adds no fan-out and sees no peers.
+  // Past the cap a newcomer is neither tracked nor announced.
   if (members.size() >= kMaxMembersPerTree) return;
 
   const Principal& principal = conn->getContextRef<Principal>();
@@ -92,8 +91,7 @@ void PresenceHub::join(const drogon::WebSocketConnectionPtr& conn, const TreeId&
   Member self{actor, "p" + std::to_string(++room.seats), std::move(name), colorOf(actor),
               std::nullopt, std::nullopt, false};
 
-  // Tell the newcomer who is already here (roster + any live cursor), and tell everyone else the
-  // newcomer arrived. The arrival frame is one broadcast, so serialize it once and reuse it.
+  // The arrival frame is one broadcast, so serialize it once and reuse it.
   std::string arrival = dump(peerFrame(tree.str(), self, "join"));
   for (const auto& [other, member] : members) {
     sendTo(conn, dump(peerFrame(tree.str(), member, "join")));
@@ -155,7 +153,6 @@ void PresenceHub::flush() {
       for (auto& [conn, member] : room.members) {
         if (!member.moved) continue;
         member.moved = false;
-        // Serialize the moved actor's frame once, then hand the same buffer to every peer.
         auto frame = std::make_shared<std::string>(dump(presenceFrame(tree, member)));
         for (const auto& [other, _] : room.members)
           if (other != conn) outbox.emplace_back(other, frame);

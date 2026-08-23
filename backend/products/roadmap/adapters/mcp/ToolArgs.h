@@ -9,22 +9,19 @@
 
 namespace wm {
 
-// One home for every argument this surface refuses, and for the sentence it refuses with:
+// Every argument this surface refuses, and the sentence it refuses with:
 //
 //     <argument or JSON path> <what was wrong>, <what was given>, <what is legal>
 //
-// A message names the argument by its PUBLISHED spelling, the value that arrived, and the limit
-// or legal set it missed. The TOOL name is stamped once by RoadmapTools::callTool, so no message
-// here repeats it. Every check answers nullopt when the argument is fine and the whole sentence
-// when it is not.
+// A message names the argument by its PUBLISHED spelling. The TOOL name is stamped once by
+// RoadmapTools::callTool, so no message here repeats it. Every check answers nullopt when the
+// argument is fine and the whole sentence when it is not.
 
-// Whether "" is a legal value for a required string: `rename_kind` clears a label with it,
-// `create_node` has no use for a blank one.
+// Whether "" is a legal value for a required string.
 enum class Empty { rejected, allowed };
 
-// The handle of a thing that EXISTS, as opposed to the id you PROPOSE for a new one, which is
-// always the bare `id`. Each handle is read under either spelling: `published` is the one a
-// message names and the schema requires, `alias` the one accepted in silence.
+// Each handle is read under either spelling: `published` is the one a message names and the
+// schema requires, `alias` the one accepted in silence.
 struct Handle {
   const char* published;
   const char* alias;
@@ -59,11 +56,10 @@ std::optional<std::string> optionalStrings(const Json::Value& value, const std::
                                            std::size_t itemLimit = 0);
 std::optional<std::string> optionalObject(const Json::Value& value, const std::string& path);
 
-// A list of {url, label?} objects; a bare url string is accepted too, so both are named legal.
+// A list of {url, label?} objects; a bare url string is accepted too.
 std::optional<std::string> optionalLinks(const Json::Value& value, const std::string& path);
 
-// One handle out of `args`, under either spelling. `path` is blank at the top level and names
-// the row inside a batch ("updates[0]").
+// `path` is blank at the top level and names the row inside a batch ("updates[0]").
 std::optional<std::string> requireHandle(const Json::Value& args, const Handle& handle,
                                          const std::string& path, std::string& out);
 

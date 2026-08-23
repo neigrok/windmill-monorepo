@@ -21,7 +21,7 @@ drogon::HttpResponsePtr noContent() {
   return response;
 }
 
-// `armed` is whether the engine can reach THIS CALLER — the flag AND the allowlist — while
+// `armed` is whether the engine can reach THIS CALLER — the flag and the allowlist — while
 // `enabled` is what they asked for.
 Json::Value toJson(const ReminderSettings& settings, bool armed) {
   Json::Value body(Json::objectValue);
@@ -68,7 +68,6 @@ void RemindersApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&&
     callback(error(drogon::k401Unauthorized, "sign in to read your reminders"));
     return;
   }
-  // No row yet is not an error: the defaults say "off, and we don't know where you are".
   callback(jsonResponse(toJson(reminders_->settingsFor(*caller).value_or(ReminderSettings{}),
                                sweep_->arming().allows(*caller))));
 }
@@ -85,8 +84,7 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
 
-  // An absent field means "leave it alone"; a present one must be the type it claims, since
-  // jsoncpp throws on a conversion it cannot make.
+  // An absent field means "leave it alone"; a present one must be the type it claims.
   ReminderSettings settings = reminders_->settingsFor(*caller).value_or(ReminderSettings{});
   if (json->isMember("enabled")) {
     if (!(*json)["enabled"].isBool()) {
@@ -107,33 +105,28 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;
   }
-  // Without a zone there is no hour to send at, so enabling without one is refused.
   if (settings.enabled && settings.timezone.empty()) {
     callback(error(drogon::k400BadRequest, "reminders need your timezone"));
     return;
   }
-  // Nobody the engine cannot reach may switch themselves on: a row saying "on" for someone
-  // outside the allowlist is a promise the sweep will not keep.
+  // Nobody the engine cannot reach may switch themselves on.
   if (settings.enabled && !sweep_->arming().allows(*caller)) {
     callback(error(drogon::k403Forbidden, "reminders aren't switched on for this account yet"));
     return;
   }
-  // A PATCH that itself says enabled:true, over a row the provider suppressed, is the one act
-  // that lifts that verdict; any other PATCH leaves the flag as the provider left it.
+  // A PATCH saying enabled:true is the one act that lifts a provider suppression.
   const bool turningOn = json->isMember("enabled") && settings.enabled;
   if (!reminders_->upsertSettings(*caller, settings.enabled, settings.timezone)) {
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;
   }
-  // Lifted only once the settings landed: a refused timezone must not discard the provider's
-  // verdict on the way to a 400.
+  // Lifted only once the settings landed: a refused timezone must not discard the suppression.
   if (turningOn && settings.suppressed) reminders_->liftSuppression(*caller);
   callback(noContent());
 }
 
 void RemindersApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Uncredentialed and incapable of saying no: a token matching nothing gets the same 204, so
-  // this door discovers nothing. The token is read only once it is known to BE a string.
+  // Uncredentialed: a token matching nothing gets the same 204, so this door discovers nothing.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   const std::string secret =
       json && (*json)["token"].isString() ? (*json)["token"].asString() : std::string();
@@ -145,10 +138,8 @@ void RemindersApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& callb
 }
 
 void RemindersApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // RFC 8058 one-click: the credential is the same secret pause carries, in the QUERY of the
-  // List-Unsubscribe URL (a fragment would never reach us). Uncredentialed and no oracle, like
-  // pause, and POST-only so a scanner's GET unsubscribes nobody. A one-click client expects a 200
-  // with no body.
+  // RFC 8058 one-click: the secret rides the QUERY of the List-Unsubscribe URL. No oracle, like
+  // pause; a one-click client expects a 200 with no body.
   const std::string secret = req->getParameter("t");
   if (!secret.empty()) {
     if (std::optional<UserId> user = reminders_->userByPauseDigest(tokens_->digestOf(secret)))
@@ -158,8 +149,7 @@ void RemindersApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&&
 }
 
 void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Closed unless REMINDERS_ADMIN_TOKEN says otherwise. An absent token and a wrong one answer
-  // identically, and the compare is constant-time.
+  // An absent admin token and a wrong one answer identically; the compare is constant-time.
   if (adminToken_.empty() || !secretEqual(bearerOf(req), adminToken_)) {
     callback(error(drogon::k404NotFound, "no such endpoint"));
     return;
@@ -169,15 +159,13 @@ void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     callback(error(drogon::k400BadRequest, "dryRun must be true or false"));
     return;
   }
-  // isUInt64 rather than isNumeric: asUInt64() throws on a negative or fractional number just as
-  // readily as on a string.
+  // isUInt64 rather than isNumeric: asUInt64() throws on a negative or fractional number too.
   if (json && json->isMember("asOfMs") && !(*json)["asOfMs"].isUInt64()) {
     callback(error(drogon::k400BadRequest, "asOfMs must be a millisecond timestamp"));
     return;
   }
   const std::uint64_t asOfMs = json ? json->get("asOfMs", Json::Value::UInt64(0)).asUInt64() : 0;
 
-  // With the FEATURE armed, time travel would mail the fleet a week early: refuse it outright.
   if (asOfMs != 0 && sweep_->arming().enabled) {
     callback(error(drogon::k409Conflict, "asOfMs is refused while reminders are enabled"));
     return;
@@ -186,9 +174,7 @@ void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   // SQL now(), so a real run against a future clock would claim the whole fleet's week.
   const bool dryRun = asOfMs != 0 || (json && json->get("dryRun", false).asBool());
 
-  // Never on this thread: a full batch is hundreds of database round trips and provider calls,
-  // and parking it here would hold one of the server's few IO threads and its pooled connection.
-  // The sweep's own loop also serialises this run behind the heartbeat's rather than racing it.
+  // Never on this thread: a full batch is hundreds of round trips and would hold an IO thread.
   sweep_->runAsync(asOfMs != 0 ? asOfMs : clock_->nowMs(), dryRun,
                    [callback = std::move(callback)](MailSweepReport report) {
                      callback(jsonResponse(toJson(report)));

@@ -19,41 +19,30 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// What one take may weigh. An opus stream at the bitrates MediaRecorder picks is roughly half a
-// megabyte a minute, so 6 MB is ten minutes of continuous speech — under both the global 8 MB body
-// cap and OpenAI's own upload limit.
+// What one take may weigh, under both the global body cap and the vendor's upload limit.
 constexpr std::size_t kMaxAudioBytes = 6 * 1024 * 1024;
 
-// What one account may talk in a day, in bytes rather than minutes because bytes are what the
-// server can count without asking the vendor. 30 MB is roughly an hour of speech: a fuse, not a
-// limit anyone is meant to meet.
+// What one account may talk in a day, counted in bytes.
 constexpr std::size_t kVoiceBytesPerDay = 30 * 1024 * 1024;
 
-// How many takes may be with the vendor at once. They bound memory and vendor concurrency: each
-// holds its audio in flight for as long as the vendor takes. Per account first, so one account
-// cannot fill the process's share.
+// How many takes may be with the vendor at once; per account first, then for the process.
 constexpr int kVoiceInFlightPerAccount = 2;
 constexpr int kVoiceInFlightTotal = 8;
 
-// The day's talking, held per account: a byte bucket refilling at `kVoiceBytesPerDay` a day, plus
-// the two in-flight counters. One object because they are one question — may this take start.
-//
-// It is IN MEMORY and therefore best-effort: a deploy refills it. The money is held instead by the
-// ledger-backed account allowance the route reads beside this and by the process fuse the vendor
-// edge reads (platform/domain/AiFuse.h). This is the fairness rung.
+// May this take start: a byte bucket refilling at `kVoiceBytesPerDay` a day, plus the two in-flight
+// counters. In memory and therefore best-effort — a deploy refills it. The money is held by the
+// ledger-backed account allowance the route reads beside this and by the process fuse.
 enum class VoiceTake {
   ok,
-  busy,   // too many takes already with the vendor — a wait, and the route says so
-  spent,  // the day's bytes are gone — not a wait, and saying "busy" would be a lie
+  busy,   // too many takes already with the vendor: a wait
+  spent,  // the day's bytes are gone: not a wait
 };
 
 class VoiceRation {
 public:
-  // Bytes off the day's bucket AND a slot in both in-flight counters, taken together or not at all.
-  // Anything but `ok` means the caller must not have started anything.
+  // Bytes off the day's bucket and a slot in both in-flight counters, taken together or not at all.
   VoiceTake take(const std::string& account, std::size_t bytes);
-  // The slot back when the vendor has answered, however it answered. The bytes are NOT returned: the
-  // upload happened, and a failed transcription is one we were still charged for.
+  // The slot back once the vendor has answered, however it answered. The bytes are not returned.
   void release(const std::string& account);
 
 private:
@@ -68,14 +57,11 @@ private:
   int inFlight_ = 0;
 };
 
-// One door: talk, get text back. A Windmill One feature, so the subscription is checked BEFORE any
-// audio is looked at — a non-subscriber's bytes never reach the vendor. The audio lives only in the
-// request buffer and is never written anywhere; the reply is text only, and no page is created.
-// When no vendor is wired the door answers 503 and the client hides Talk.
-//
-// THE VENDOR CALL DOES NOT HOLD THIS THREAD. The handler hands its callback to the transcriber and
-// returns; the reply is written from the transcriber's own loop. Before that it settles everything
-// refusable — the plan, the size, the day's ration, the account's AI allowance.
+// Talk in, text back. The subscription is checked before any audio is looked at. The audio lives
+// only in the request buffer and is never written anywhere; no page is created. With no vendor
+// wired the door answers 503. The vendor call does not hold this thread: everything refusable —
+// plan, size, the day's ration, the account's AI allowance — is settled first, then the handler
+// hands its callback to the transcriber and returns.
 class VoiceApi {
 public:
   VoiceApi(std::shared_ptr<Transcriber> transcriber, std::shared_ptr<Entitlements> entitlements,

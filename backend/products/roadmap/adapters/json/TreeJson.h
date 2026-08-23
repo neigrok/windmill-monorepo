@@ -8,7 +8,7 @@
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/domain/TreeSummary.h"
 
-#include "platform/adapters/json/JsonText.h"  // dump / parse — the shared compact-JSON boundary
+#include "platform/adapters/json/JsonText.h"
 
 #include <json/json.h>
 
@@ -17,8 +17,7 @@
 
 namespace wm {
 
-// The JSON boundary: the only place the domain meets a serialization format.
-Json::Value nodeToJson(const NodeSpec& node);  // one node's wire shape, shared by get_tree and find_nodes
+Json::Value nodeToJson(const NodeSpec& node);
 Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
@@ -27,15 +26,12 @@ Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/g
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document
 
-// nullopt when the root is not an object, or when a field is present but the wrong type: jsoncpp
-// THROWS on a keyed read of an array or a scalar and on a bad conversion, so the decoder answers
-// the mismatch rather than raising it.
+// nullopt when the root is not an object, or when a field is present but the wrong type.
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id);
 GraphState graphStateFromJson(const Json::Value& root);
 LegendState legendStateFromJson(const Json::Value& kinds);
 
-// A node's links, the one shape shared by the document and the command payloads. A link may
-// arrive as an object {url, label?} or as a bare url string (label defaults to empty).
+// A link may arrive as an object {url, label?} or as a bare url string (label defaults to empty).
 Json::Value linksToJson(const std::vector<Link>& links);
 std::vector<Link> linksFromJson(const Json::Value& array);
 

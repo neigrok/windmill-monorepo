@@ -4,7 +4,6 @@
 
 namespace wm {
 
-// The socket endpoint. Thin glue: forwards every event to the Collab coordinator.
 class TreeSocket : public drogon::WebSocketController<TreeSocket> {
 public:
   void handleNewConnection(const drogon::HttpRequestPtr& req,
@@ -18,8 +17,8 @@ public:
   WS_PATH_LIST_END
 };
 
-// Referenced from main so the static WS registration in the .cpp is not dropped when
-// linking the adapters static library.
+// Referenced from main so the static WS registration in the .cpp is not dropped when linking
+// the adapters static library.
 void linkTreeSocket();
 
 }

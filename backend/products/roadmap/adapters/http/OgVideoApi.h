@@ -15,11 +15,8 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Per-tree share videos. The client renders + encodes a short mp4/webm loop and
-// PUTs it here — owner-only. GET /v1/trees/:id/og-video then serves it as the link's og:video,
-// behind the same read gate as the share page (canRead): a private tree's video is owner-only.
-// Unlike the og:image card there is NO generic fallback — the og:image poster IS the fallback — so
-// a miss (no video, an unreadable tree, an absent one) is a plain 404 here, not a redirect.
+// Per-tree share videos: PUT is owner-only, GET is gated by canRead. There is no generic
+// fallback here — any miss is a plain 404.
 class OgVideoApi {
 public:
   OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_ptr<TreeRepository> trees,

@@ -15,8 +15,7 @@
 namespace wm {
 
 // The file extension OpenAI infers the container/codec from: the mime's subtype, stripped of any
-// parameters ("audio/webm;codecs=opus" -> "webm"). A default keeps a missing header from failing
-// the upload.
+// parameters ("audio/webm;codecs=opus" -> "webm").
 std::string transcriptionExtension(const std::string& mimeType) {
   const std::size_t slash = mimeType.find('/');
   if (slash == std::string::npos) return "webm";
@@ -39,15 +38,14 @@ bool OpenAiTranscriber::configured() const {
 void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
                                    const std::string& mimeType,
                                    std::function<void(std::optional<Transcript>)> done) {
-  // The process-wide hourly ceiling, asked before a byte is sent: a per-account budget is blind to
-  // the machine's own runaway.
+  // The process-wide hourly ceiling, asked before a byte is sent.
   if (fuse_ && !fuse_->allows(nowMs())) {
     LOG_ERROR << "openai transcribe refused: hourly AI fuse";
     done(std::nullopt);
     return;
   }
 
-  const std::string boundary = "----WindmillTalkBoundaryVoZ8kQ1pXsW7"; // fixed, unusual — never appears in opus/mp4 bytes
+  const std::string boundary = "----WindmillTalkBoundaryVoZ8kQ1pXsW7"; // never appears in opus/mp4 bytes
   const std::string filename = "audio." + transcriptionExtension(mimeType);
   const std::string audioType = mimeType.empty() ? "application/octet-stream" : mimeType;
 
@@ -70,8 +68,7 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
   req->setContentTypeString("multipart/form-data; boundary=" + boundary);
   req->setBody(std::move(form));
 
-  // The one vendor call carrying a person's voice: it reports vendor, operation, status and cost,
-  // and never a byte of the audio or the transcript.
+  // Reports vendor, operation, status and cost, never a byte of the audio or the transcript.
   auto call = std::make_shared<VendorCall>("openai", "transcribe");
   const std::string runId = newRunId("voice");
   // `client` rides into the callback because nothing else owns it once this function returns.
@@ -105,9 +102,8 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
           return;
         }
 
-        // What the reply says it cost, never an estimate of ours. A reply carrying no `usage` object
-        // counts as zero tokens and still lands a row: "we could not price this call" and "this call
-        // never happened" are different facts.
+        // What the reply says it cost, never an estimate. A reply carrying no `usage` object counts
+        // as zero tokens and still lands a row.
         spend.tokens = tokensFrom(parsed["usage"]);
         if (!parsed.isMember("usage")) LOG_ERROR << "OpenAI transcribe: reply carried no usage";
         spend.outcome = AiOutcome::ok;

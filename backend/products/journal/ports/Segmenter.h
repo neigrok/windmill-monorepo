@@ -12,17 +12,13 @@ namespace wm {
 // is still owed; an `ok` call with no passages is a page with nothing on it.
 struct Segmentation {
   bool ok = false;
-  std::string failure;              // the MessagesFailure words, so the sweep branches on one set
+  std::string failure;              // the MessagesFailure words
   std::vector<Passage> passages;
   int discarded = 0;                // units the model returned that are NOT in the body — dropped
 };
 
-// A passage is one idea unit — what a person would call one thought.
-//
-// Contract every implementation owes: a passage's text is a VERBATIM, CONTIGUOUS slice of the body
-// and `lo`/`hi` index it exactly — the client re-locates the quote by text, dismissals are keyed on
-// content, and a redaction propagates because the text stops being found. `locateUnits`
-// (domain/Passage.h) checks every unit against the body and discards what does not appear.
+// Contract every implementation owes: a passage's text is a verbatim, contiguous slice of the body
+// and `lo`/`hi` index it exactly. `locateUnits` checks every unit and discards what does not appear.
 struct Segmenter {
   virtual ~Segmenter() = default;
   virtual bool configured() const = 0;
@@ -34,8 +30,8 @@ struct Segmenter {
   virtual Segmentation unitsOf(const UserId& user, const std::string& body) = 0;
 };
 
-// The unwired path — local runs, tests, and any deploy without an Anthropic key. It satisfies the
-// verbatim contract by construction: `segment` only ever returns slices of the body.
+// The unwired path. Satisfies the verbatim contract by construction: `segment` only returns slices
+// of the body.
 class RuleSegmenter : public Segmenter {
 public:
   explicit RuleSegmenter(SegmentRules rules = {}) : rules_(rules) {}

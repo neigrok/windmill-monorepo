@@ -72,13 +72,11 @@ Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
   // Read authorization can be revoked under an open socket, so the bus asks before every fan-out.
   bus_.setReadGate([this](const TreeId& tree, const drogon::WebSocketConnectionPtr& conn) {
     if (mayRead(conn, tree)) return true;
-    // A no is the whole revocation: leave the roster, and answer in a fresh subscribe's words.
     presence_.leave(conn, tree);
     send(conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
     return false;
   });
   registry_.whenAccessChanges([this](const TreeId& tree) { bus_.resweep(tree); });
-  // The sweep covers what no edit or share flip reaches: an idle tree, and presence.
   reprove_.start(kReproveEverySeconds, kReproveEverySeconds, [this] { reproveReaders(); });
 }
 
@@ -232,7 +230,6 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   return true;
 }
 
-// Connection identity and tree visibility both change under an open socket; ask both again.
 bool Collab::mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal) return false;
@@ -266,7 +263,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
   incoming.treeId = TreeId{treeId};
 
-  // Skew clamp: a frame stamped past now + 5min is refused whole, title register included.
+  // The skew clamp covers the title register too.
   std::uint64_t nowMs = clock_.nowMs();
   VersionVector front = frontier(incoming.graph, incoming.legend);
   if (incoming.title) front.observe(incoming.title->stamp);
@@ -292,7 +289,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     std::optional<WriteRefusal> refusal =
         access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
     if (!access || !canRead(principal.user, access->owner, access->visibility)) {
-      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");  // rejected, not a throw that closes the socket
+      reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
     } else if (refusal) {
       reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
     } else if (TreeRoom* room = registry_.open(TreeId{treeId}); !room) {
@@ -320,8 +317,9 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   send(conn, ack);
 }
 
-// The private per-user lane: refused whole or applied whole, joins no op log, and is echoed only to
-// the same account's other sessions. The client mints the stamp; the server records the receipt instant.
+// The private per-user lane: refused whole or applied whole, joins no op log, and is echoed
+// only to the same account's other sessions. The client mints the stamp; the server records the
+// receipt instant.
 void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId,
                       const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
@@ -367,7 +365,6 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      // Absent and private-denied both answer "no such tree", decided off the stored row.
       const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
       if (!access || !canRead(principal.user, access->owner, access->visibility))
         return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");

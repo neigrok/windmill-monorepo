@@ -10,9 +10,8 @@
 
 namespace wm {
 
-// The roadmap surface exposed over MCP. Reads and edits drive the same application core an HTTP
-// or socket client would: an edit routes through the tree's room, and its HLC stamp comes from
-// the room's own clock — the single stamp domain a socket edit also uses.
+// The roadmap surface exposed over MCP. An edit routes through the tree's room, and its HLC
+// stamp comes from the room's own clock — the same stamp domain a socket edit uses.
 class RoadmapTools : public ToolHost {
 public:
   RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
@@ -22,16 +21,16 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
 
 private:
-  // The tool itself, over the account alone: the grant is settled above by CompositeToolHost, so
-  // everything below is an ownership question. callTool wraps it so every failure names its tool.
+  // The grant is settled above by CompositeToolHost, so everything here is an ownership question.
+  // callTool wraps it so every failure names its tool.
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const UserId& caller);
 
 
   RoomRegistry& registry_;
   ProgressService& progress_;
-  Clock& clock_;                // wall time for the room's HLC (the room mints, this feeds it)
-  TreeRegistry& treeRegistry_;  // the caller's roadmap list + delete, repo-direct (no room)
-  PresenceBus& bus_;            // to echo a progress change to the caller's live web sessions
+  Clock& clock_;
+  TreeRegistry& treeRegistry_;
+  PresenceBus& bus_;
 };
 
 }

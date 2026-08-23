@@ -10,16 +10,10 @@
 
 namespace wm {
 
-// Talk, bought from OpenAI's gpt-4o-transcribe. Holds the API key and a private event loop the
-// vendor call runs on: the request is sent, the CALLING THREAD RETURNS, and `done` fires on this
-// loop when the vendor answers, so no drogon handler thread is parked.
-//
-// Honors the port's ephemeral contract: the audio is used for the single request and then it is
-// gone — nothing here keeps a copy, and nothing here logs the audio or the transcript.
-// configured() is true exactly when a key is present.
-//
-// The fuse and the sink arrive last and default to null, which is the no-op: the process fuse is
-// asked before the upload, and what the reply reports is charged to the account's ledger after.
+// OpenAI gpt-4o-transcribe on a private event loop: the calling thread returns and `done` fires on
+// this loop, so no drogon handler thread is parked. The audio is used for one request and dropped;
+// neither it nor the transcript is logged. configured() is true exactly when a key is present.
+// The fuse and the sink default to null, the no-op.
 class OpenAiTranscriber : public Transcriber {
  public:
   explicit OpenAiTranscriber(std::string apiKey, std::string model = "gpt-4o-transcribe",

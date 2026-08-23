@@ -22,8 +22,7 @@ VoiceTake VoiceRation::take(const std::string& account, std::size_t bytes) {
   if (opened) talking.refilledAt = now;
   if (talking.inFlight >= kVoiceInFlightPerAccount) return VoiceTake::busy;
 
-  // Refill first, so a bucket is judged at the instant it is asked about. Clamped at full: a bucket
-  // nobody touched for a week is a fresh day, never a week's worth of credit.
+  // Refill first, clamped at full, so an untouched bucket is a fresh day and not a week of credit.
   const double seconds = std::chrono::duration<double>(now - talking.refilledAt).count();
   talking.bytesLeft = std::min(static_cast<double>(kVoiceBytesPerDay),
                                talking.bytesLeft + seconds * kVoiceBytesPerDay / 86'400.0);
@@ -54,19 +53,17 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k401Unauthorized, "sign in to talk"));
     return;
   }
-  // The entitlement is read BEFORE the audio is touched, so a non-subscriber's bytes never reach the
-  // vendor.
+  // Read before the audio is touched, so a non-subscriber's bytes never reach the vendor.
   if (!entitlements_->hasWindmillOne(caller->id, caller->email.value)) {
     cb(error(drogon::k403Forbidden, "talk is part of Windmill One"));
     return;
   }
   if (!transcriber_->configured()) {
-    // No vendor wired: answer plainly rather than pretend a model exists. The client hides Talk.
     cb(error(drogon::k503ServiceUnavailable, "voice is not available right now"));
     return;
   }
 
-  const std::string audio{req->getBody()};   // ephemeral: a request-scoped copy, never persisted
+  const std::string audio{req->getBody()};   // request-scoped, never persisted
   if (audio.empty()) {
     cb(error(drogon::k400BadRequest, "no audio"));
     return;
@@ -75,8 +72,8 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k413RequestEntityTooLarge, "that take is too long to transcribe"));
     return;
   }
-  // OUR ceiling, not a sales door: an entitled account whose trailing-30-day AI spend is used up is
-  // refused here rather than sent to the vendor. The dollar figure is never shown to anybody.
+  // An entitled account whose trailing-30-day AI spend is used up is refused rather than sent to the
+  // vendor. The dollar figure is never shown to anybody.
   if (!entitlements_->aiAllowanceFor(caller->id, caller->email.value).allows()) {
     cb(error(drogon::k429TooManyRequests, "talk has had its turn for now"));
     return;
@@ -91,16 +88,14 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     return;
   }
 
-  // Text out only — no page is created here. The callback fires on the transcriber's loop, and this
-  // handler thread is already gone by then.
+  // Text out only; the callback fires on the transcriber's loop, after this handler thread is gone.
   const std::string account = caller->id.str();
   transcriber_->transcribe(
       caller->id, audio, req->getHeader("content-type"),
       [this, account, cb = std::move(cb)](std::optional<Transcript> transcript) {
         ration_.release(account);
         if (!transcript) {
-          // A vendor failure is an outage, and it says so: answering 200 {"text":""} would make a
-          // bad night at the vendor indistinguishable from a take that carried no words.
+          // A vendor failure answers as an outage, distinct from a take that carried no words.
           cb(error(drogon::k502BadGateway, "the transcriber could not answer"));
           return;
         }

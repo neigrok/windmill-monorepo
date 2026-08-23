@@ -7,10 +7,8 @@
 
 namespace wm::gym {
 
-// The settings row over Postgres: one row per account at most, absent until written, and a
-// whole-document upsert keyed on the account. Stateless but for the pool — each method borrows a
-// connection for exactly one transaction (platform/adapters/postgres/PgPool.h). Nothing else in
-// gym's storage reads this table.
+// One row per account at most, absent until written; a whole-document upsert keyed on the account.
+// Each method borrows a connection for exactly one transaction.
 class PgPreferencesRepository : public PreferencesRepository {
 public:
   explicit PgPreferencesRepository(std::shared_ptr<PgPool> pool);

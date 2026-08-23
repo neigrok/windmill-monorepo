@@ -19,8 +19,7 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The REST surface. Reads go through the room, so they reflect live socket edits; PUT is the
-// whole-document fallback, which evicts the room so the next open reloads it.
+// Reads go through the room, so they reflect live socket edits; PUT evicts the room.
 class HttpApi {
 public:
   HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
@@ -35,12 +34,10 @@ public:
   void getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
 
 private:
-  // The authenticated caller, resolved from the wm_session cookie or a Bearer token; empty
-  // for an anonymous request (which may read public trees but never write).
   std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;
 
-  // The read gate every room-backed read shares: hold the tree's strand, open the room, and run
-  // `read` against it, answering false and never a reason when the caller may not have it.
+  // The read gate every room-backed read shares: holds the tree's strand, and answers false
+  // without a reason when the caller may not have the tree.
   bool readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                 const std::function<void(TreeRoom&)>& read);
 

@@ -19,11 +19,9 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Serves the SPA shell at the real path GET /t/:id, so a shared tree's link unfurls as itself
-// for social scrapers. For an anon-readable tree it rewrites the fenced unfurl meta in the
-// shell (title, description, canonical, og:*, twitter:*) with the tree's own; a private or
-// absent tree gets the shell byte-for-byte verbatim — indistinguishable, preserving the
-// "private = absent" invariant. Either way the SPA boots and fetches /v1/trees/:id in-page.
+// Serves the SPA shell at GET /t/:id. For an anon-readable tree it rewrites the fenced unfurl
+// meta with the tree's own; a private or absent tree gets the shell byte-for-byte verbatim, so
+// private stays indistinguishable from absent.
 class SharePageApi {
 public:
   SharePageApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
@@ -33,10 +31,7 @@ public:
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
 
   // Splice this tree's unfurl meta between the index.html sentinels, keeping the sentinels;
-  // returns the shell unchanged if the fence is absent. `title` is escaped here; `steps` is the
-  // node count; `visibility` decides robots (public indexes, unlisted is noindex); `id` fills the
-  // canonical + og:url; `lineage` adds fork attribution to the description; `hasVideo` adds the
-  // og:video tags (the og:image stays the poster).
+  // returns the shell unchanged if the fence is absent. `title` is escaped here.
   static std::string renderShell(const std::string& shell, const std::string& title,
                                  std::size_t steps, Visibility visibility, const std::string& id,
                                  const ForkLineage& lineage, bool hasVideo);

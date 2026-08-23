@@ -8,28 +8,22 @@
 
 namespace wm {
 
-// Told after every save that actually changed the stored page — the trigger for computing echoes
-// on write. `bodyBytes` rides along so the listener can tell a typo fix from a paragraph without
-// reading the page back.
-//
-// IMPLEMENTATIONS MUST RETURN IMMEDIATELY: this is called on a drogon handler thread.
+// Told after every save that changed the stored page. Implementations must return immediately:
+// this is called on a drogon handler thread.
 struct PageWatcher {
   virtual ~PageWatcher() = default;
   virtual void pageSaved(const UserId& user, const LocalDate& day, std::size_t bodyBytes) = 0;
 };
 
-// The resolved page after a write, with what the LWW guard decided. `page` is always the WINNING
-// row (re-read after the upsert), so a client that raced and lost is handed the body that won.
+// `page` is always the winning row, re-read after the upsert.
 struct WriteOutcome {
   Page page;
   PageWrite result;
 };
 
-// The application seam over journal storage: the HTTP adapter talks to this, never to the
-// repository. It owns the write-then-resolve rule.
+// The HTTP adapter talks to this, never to the repository.
 class PageService {
 public:
-  // `watcher` is optional: the write path must not acquire a dependency it cannot run without.
   explicit PageService(JournalRepository& repo, PageWatcher* watcher = nullptr);
 
   WriteOutcome write(const Page& incoming);

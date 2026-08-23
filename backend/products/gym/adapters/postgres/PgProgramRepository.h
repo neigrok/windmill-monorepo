@@ -7,19 +7,11 @@
 
 namespace wm::gym {
 
-// The program over Postgres: routines as one document over two tables, and the proposal ledger
-// against them — one adapter because they are written in one transaction (replaceRoutine supersedes
-// every pending proposal on the routine it rewrites; applyRevision rewrites the routine a proposal
-// was frozen against). Idempotent writes by client-minted id, every query scoped to the owner, and
-// ONE lock order for every write here: the routine row first, its lines and its proposals after.
-// Stateless but for the pool — each method borrows a connection for exactly one transaction
-// (platform/adapters/postgres/PgPool.h). Every pqxx error the store has an answer for is translated
-// here into the port's typed facts; the rest ride to the house 500.
-//
-// The port seam is not table ownership: routine and proposal lines are checked against the catalog's
-// visibility predicate (PgGymRows.h), `loadProposal` LEFT JOINs gym_sets to count the sets a removed
-// line keeps, and kRoutineColumns reads lastTrainedAtMs off gym_sessions. The tables this file
-// WRITES are the program's alone.
+// Routines as one document over two tables, plus the proposal ledger against them; they are written
+// in one transaction. Idempotent writes by client-minted id, every query scoped to the owner, and one
+// lock order for every write here: the routine row first, its lines and its proposals after. Each
+// method borrows a connection for exactly one transaction. Every pqxx error the store has an answer
+// for is translated into the port's typed facts; the rest ride to the house 500.
 class PgProgramRepository : public ProgramRepository {
 public:
   explicit PgProgramRepository(std::shared_ptr<PgPool> pool);

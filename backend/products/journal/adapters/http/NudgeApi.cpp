@@ -22,14 +22,8 @@ drogon::HttpResponsePtr noContent() {
 }
 
 // One answer shape for GET and PATCH alike. `adaptive` is not a stored flag but the presence of a
-// device-pushed schedule — a phone that has materialised the next knock has opted in, and clearing
-// it is how a device says "never". `armed` is whether the engine can reach THIS caller (the
-// dark-launch flag and their place on the allowlist), kept apart from `enabled`: the caller's ask
-// and the fleet's switch are different facts.
-//
-// `suppressed` is the third of those facts and the only one the reader did not choose: the provider
-// told us their mailbox is gone (platform/adapters/email/ResendWebhookApi.h). It rides here because
-// someone whose nudges silently stopped is owed the reason.
+// device-pushed schedule. `armed` is whether the engine can reach this caller, kept apart from
+// `enabled`, which is the caller's own ask. `suppressed` is the provider saying the mailbox is gone.
 Json::Value toJson(const NudgeSettings& settings, bool armed) {
   Json::Value body(Json::objectValue);
   body["enabled"] = settings.enabled;
@@ -41,8 +35,7 @@ Json::Value toJson(const NudgeSettings& settings, bool armed) {
   return body;
 }
 
-// The whole MailSweepReport, the same nine fields roadmap's admin door answers with. A dry run
-// reports `wouldSend`; `sent` is what the provider accepted.
+// A dry run reports `wouldSend`; `sent` is what the provider accepted.
 Json::Value toJson(const MailSweepReport& report) {
   Json::Value body(Json::objectValue);
   body["ran"] = report.ran;
@@ -76,7 +69,7 @@ void NudgeApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     cb(error(drogon::k401Unauthorized, "sign in to read your nudge"));
     return;
   }
-  // No row yet is not an error: it is the honest "off, and no device has set a rhythm".
+  // No row yet means off, with no device rhythm set.
   cb(jsonResponse(toJson(nudges_->settingsFor(*caller).value_or(NudgeSettings{}),
                          sweep_->arming().allows(*caller))));
 }
@@ -93,10 +86,9 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
     return;
   }
 
-  // A patch edits what is there: an absent field means "leave it alone", and a present one must be
-  // the type it claims — jsoncpp throws on a conversion it cannot make, and an exception out of a
-  // handler is an anonymous 500. The device PUSHES nextDueAt and slotDay: the server stores the
-  // materialised schedule and fires it, but never derives it.
+  // An absent field means "leave it alone"; a present one must be the type it claims, or jsoncpp
+  // throws out of the handler as a 500. The device pushes nextDueAt and slotDay: the server stores
+  // the materialised schedule and fires it, never derives it.
   NudgeSettings settings = nudges_->settingsFor(*caller).value_or(NudgeSettings{});
   if (json->isMember("enabled")) {
     if (!(*json)["enabled"].isBool()) {
@@ -139,18 +131,14 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
     settings.pausedUntilMs = (*json)["pausedUntil"].asUInt64();
   }
 
-  // Nobody the engine cannot reach may switch themselves on. The web mounts the panel only when
-  // `armed` is true, which gates a person with a browser and nobody with an API key: a row saying
-  // "on" for an account outside the allowlist would sit dark until the day the list grows.
+  // Nobody the engine cannot reach may switch themselves on.
   if (settings.enabled && !sweep_->arming().allows(*caller)) {
     cb(error(drogon::k403Forbidden, "nudges aren't switched on for this account yet"));
     return;
   }
-  // A PATCH that itself says enabled:true, landing on a row the provider suppressed, is the owner
-  // saying "this address works now" — the one deliberate act that lifts that verdict. Only that
-  // PATCH does it: one that says enabled:false, or moves the channel over a row already on, leaves
-  // the flag as the provider left it. The reply is the fresh settings, so it must carry the lift
-  // too — upsertSettings never writes that column.
+  // Only a PATCH that itself says enabled:true lifts a provider suppression; one saying
+  // enabled:false, or moving the channel over a row already on, leaves the flag alone.
+  // upsertSettings never writes that column, so the reply carries the lift itself.
   const bool turningOn = json->isMember("enabled") && settings.enabled;
   if (turningOn && settings.suppressed) {
     nudges_->liftSuppression(*caller);
@@ -161,9 +149,8 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
 }
 
 void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // Deliberately uncredentialed and deliberately incapable of saying no: the only authority is the
-  // per-send secret from the reader's own mail, and a secret that matches nothing gets the same 204
-  // as one that matches, so this door can never be asked whose nudges exist.
+  // Uncredentialed: the only authority is the per-send secret from the reader's own mail, and a
+  // secret matching nothing gets the same 204, so this door cannot be asked whose nudges exist.
   const std::string secret = bearerOf(req);
   if (!secret.empty()) {
     if (std::optional<UserId> user = nudges_->userByPauseDigest(tokens_->digestOf(secret)))
@@ -173,9 +160,8 @@ void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void NudgeApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // RFC 8058 one-click: the mail client POSTs this itself, so the secret rides the query of the
-  // List-Unsubscribe URL (a fragment would never reach us). Registered POST-only, so the scanners
-  // that GET every URL in a mail cannot unsubscribe anyone; like pause, it answers the same whether
+  // RFC 8058 one-click: the mail client POSTs this, so the secret rides the query. POST-only, so a
+  // scanner that GETs every URL in a mail cannot unsubscribe anyone, and it answers the same whether
   // or not the secret matched.
   const std::string secret = req->getParameter("t");
   if (!secret.empty()) {
@@ -186,8 +172,7 @@ void NudgeApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  // The operator's rehearsal door, closed unless the deploy set an admin token. The compare is
-  // constant-time so a wrong token cannot be guessed a byte at a time.
+  // Closed unless the deploy set an admin token; the compare is constant-time.
   const std::string header = req->getHeader("x-admin-token");
   const std::string presented = header.empty() ? req->getParameter("token") : header;
   if (adminToken_.empty() || !secretEqual(presented, adminToken_)) {
@@ -200,8 +185,7 @@ void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k400BadRequest, "dryRun must be true or false"));
     return;
   }
-  // isUInt64 rather than isNumeric: asUInt64() throws on a negative or fractional number just as
-  // readily as on a string, and every one of those throws would be a 500.
+  // isUInt64 rather than isNumeric: asUInt64() throws on a negative or fractional number too.
   if (json && json->isMember("asOfMs") && !(*json)["asOfMs"].isUInt64()) {
     cb(error(drogon::k400BadRequest, "asOfMs must be a millisecond timestamp"));
     return;
@@ -211,8 +195,7 @@ void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   std::uint64_t asOfMs = json ? json->get("asOfMs", Json::Value::UInt64(0)).asUInt64() : 0;
   const std::string asOfParam = req->getParameter("asOfMs");
   if (asOfMs == 0 && !asOfParam.empty()) {
-    // stoull would wrap a "-5" and throw on junk; only plain digits pass, and the try/catch keeps a
-    // 20-digit overflow a 400 rather than a 500.
+    // stoull would wrap a "-5"; only plain digits pass, and the catch keeps an overflow a 400.
     if (asOfParam.find_first_not_of("0123456789") != std::string::npos) {
       cb(error(drogon::k400BadRequest, "asOfMs must be a millisecond timestamp"));
       return;
@@ -225,22 +208,19 @@ void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     }
   }
 
-  // Time travel is a rehearsal tool. With the FEATURE armed it would let one request mail the
-  // allowlist early and consume the genuine knock on the way, so it is refused outright rather than
-  // quietly ignored — the same rule as roadmap's door (RemindersApi::sweep).
+  // Armed, a time-travelling sweep would mail the allowlist early and consume the genuine knock, so
+  // it is refused outright rather than quietly ignored.
   if (asOfMs != 0 && sweep_->arming().enabled) {
     cb(error(drogon::k409Conflict, "asOfMs is refused while nudges are enabled"));
     return;
   }
-  // And a time-travelling sweep is ALWAYS a rehearsal. decide() reads the slot against asOfMs while
-  // the claim clears next_due_at against real time, so a wet run at a future clock burns every
-  // enabled user's next slot — the far ones silently, since decide() calls a slot more than six
-  // hours old too late to mail.
+  // A time-travelling sweep is always dry: decide() reads the slot against asOfMs while the claim
+  // clears next_due_at against real time, so a wet run at a future clock burns every enabled user's
+  // next slot.
   if (asOfMs != 0) dryRun = true;
   if (asOfMs == 0) asOfMs = clock_->nowMs();
 
-  // Off this thread: a batch is up to 200 users of database round trips and Resend calls, and it
-  // would otherwise hold one pooled connection across every one of them.
+  // Off this thread: a batch is up to 200 users of database round trips and Resend calls.
   sweep_->runAsync(asOfMs, dryRun, [cb = std::move(cb)](const MailSweepReport& report) {
     cb(jsonResponse(toJson(report)));
   });

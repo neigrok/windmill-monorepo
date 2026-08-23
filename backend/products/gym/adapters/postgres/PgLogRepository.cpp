@@ -26,8 +26,8 @@ constexpr std::string_view kSetColumns =
     "id, session_id, exercise_id, set_number, weight_kg::float8 AS weight_kg, reps, kind, "
     "rpe::float8 AS rpe, note, (extract(epoch from completed_at) * 1000)::bigint AS completed_ms";
 
-// The two lists are the same columns under the two tables' names, matched by POSITION in the
-// insert; `deleted` is the one value each writer passes itself.
+// The two lists are the same columns under the two tables' names, matched by position in the insert;
+// `deleted` is the one value each writer passes itself.
 constexpr std::string_view kRevisionColumns =
     "set_id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, rpe, note, "
     "completed_at, deleted";
@@ -85,8 +85,8 @@ PgLogRepository::PgLogRepository(std::shared_ptr<PgPool> pool)
     : pool_(std::move(pool)) {}
 
 std::optional<Session> PgLogRepository::open(const UserId& user) {
-  // Release the pqxx handles in their own scope before returning — never materialise the optional
-  // in the expression the transaction is torn down in.
+  // Release the pqxx handles in their own scope before returning: never materialise the optional in
+  // the expression the transaction is torn down in.
   std::optional<Session> found;
   {
     PgLease conn{*pool_};
@@ -144,8 +144,7 @@ std::optional<std::uint64_t> PgLogRepository::lastActivity(const SessionId& id) 
 }
 
 void PgLogRepository::insertSession(const Session& incoming) {
-  // Bare ON CONFLICT DO NOTHING swallows BOTH unique violations: the PK (a replayed start) and the
-  // one-open partial index.
+  // Bare ON CONFLICT DO NOTHING swallows both unique violations: the PK, and the one-open index.
   pqxx::params params;
   params.append(incoming.id.str());
   params.append(incoming.user.str());
@@ -171,9 +170,8 @@ void PgLogRepository::insertSession(const Session& incoming) {
 }
 
 void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) {
-  // An open row takes the instant and the word, first-writer-wins. A stale-closed row upgrades to
-  // 'finish', moving the end forward only within four hours of the close. Nothing lands over a
-  // finish.
+  // An open row takes the instant and the word, first writer wins. A stale-closed row upgrades to
+  // 'finish', moving the end forward only within four hours of the close. Nothing lands over a finish.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -191,10 +189,9 @@ void PgLogRepository::close(const SessionId& id, std::uint64_t finishedAtMs, Clo
 SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
   // Lock in its own statement before the insert: under READ COMMITTED an INSERT that both locks and
   // reads max(set_number) misses the row it waited for.
-  // The number is max+1 per (session, exercise), not count+1 — the gap a deleted set leaves is not
-  // reused. The read-back is scoped to (id, session_id).
-  // The locked row decides both refusals only this statement can make: `finished_at`, and the
-  // `user_id` the movement is resolved in.
+  // The number is max+1 per (session, exercise), not count+1 — a deleted set's gap is not reused.
+  // The read-back is scoped to (id, session_id), and the locked row carries the `finished_at` and
+  // `user_id` the two refusals below turn on.
   std::optional<Set> stored;
   {
     pqxx::params params;
@@ -215,21 +212,20 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
         "SELECT " + std::string(kSessionColumns) + " FROM gym_sessions WHERE id = $1 FOR UPDATE",
         incoming.session.str());
     if (locked.empty()) return {std::nullopt, SetInsertError::idTaken};
-    // A set id is spent once and for good: asked under the session's lock, so a delete of the same
-    // id is either seen or waits behind this transaction. Asked before `finished`, and scoped to
-    // the session's OWNER — a deleted id is refused whichever session replays it.
+    // A set id is spent for good. Asked under the session's lock, so a delete of the same id is
+    // either seen or waits behind this transaction; asked before `finished`, and scoped to the
+    // session's owner, so a deleted id is refused whichever session replays it.
     pqxx::result deleted = txn.exec_params(
         "SELECT 1 FROM gym_set_revisions WHERE set_id = $1 AND user_id = $2::uuid AND deleted "
         "LIMIT 1",
         incoming.id.str(), locked[0]["user_id"].as<std::string>());
     if (!deleted.empty()) return {std::nullopt, SetInsertError::deleted};
-    // A set continuing a workout the four-hour rule closed under it lands, and the finish moves
-    // forward to it below in this transaction, so a reader never sees the set standing past it.
+    // A set continuing a workout the four-hour rule closed lands, and the finish moves forward to it
+    // in this same transaction, so a reader never sees the set standing past it.
     const Session session = sessionFrom(locked[0]);
     const bool continuesStaleClose = session.finishedAtMs && lateSetLands(session, incoming.completedAtMs);
     if (session.finishedAtMs && !continuesStaleClose) return {std::nullopt, SetInsertError::finished};
-    // The catalog's visibility predicate in the owner the locked row names — the fact the foreign
-    // key cannot state.
+    // The catalog's visibility predicate under the owner the locked row names.
     if (!namesVisibleMovement(txn, locked[0]["user_id"].as<std::string>(), incoming.exercise))
       return {std::nullopt, SetInsertError::unknownExercise};
     txn.exec(
@@ -258,11 +254,10 @@ SetInsertOutcome PgLogRepository::insertSet(const Set& incoming) {
   return {stored, SetInsertError::none};
 }
 
-// Lock the SESSION row in its own statement first: one lock order for every write that changes what
-// a workout holds, and gym_set_revisions' foreign key to gym_sessions deadlocks any other order.
-// One statement does both halves, so the row is never rewritten with a racing correction's value
-// unkept. The revision copy is taken only where a value actually changes. Scoped to (id, session,
-// owner).
+// Lock the session row in its own statement first: one lock order for every write that changes what a
+// workout holds, and gym_set_revisions' foreign key to gym_sessions deadlocks any other order. One
+// statement does both halves, so the row is never rewritten with a racing correction's value unkept.
+// The revision copy is taken only where a value actually changes. Scoped to (id, session, owner).
 std::optional<Set> PgLogRepository::updateSet(const UserId& user, const Set& corrected) {
   std::optional<Set> stored;
   {
@@ -300,12 +295,11 @@ std::optional<Set> PgLogRepository::updateSet(const UserId& user, const Set& cor
   return stored;
 }
 
-// The SESSION's lock first, same order as the other writes: insertSet reads gym_set_revisions under
-// this same lock, so a replayed append and the delete it races cannot both find nothing.
-// One statement for the move — the DELETE's RETURNING feeds the INSERT, so the row is never absent
-// from both tables. `deleted` marks the row as not standing, as against a correction's copy.
-// Nothing is refused: a set that was never here lets a lost reply resend the same delete. Set
-// numbers are not closed up behind it.
+// The session's lock first, same order as the other writes: insertSet reads gym_set_revisions under
+// this same lock, so a replayed append and the delete it races cannot both find nothing. One
+// statement for the move — the DELETE's RETURNING feeds the INSERT, so the row is never absent from
+// both tables. `deleted` marks the row as not standing, as against a correction's copy. Nothing is
+// refused, and set numbers are not closed up behind it.
 void PgLogRepository::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -326,14 +320,14 @@ void PgLogRepository::deleteSet(const UserId& user, const SessionId& session, co
 LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   // Four queries over the same keyset window in one transaction, so no row of a page can lose an
   // aggregate to a write landing between them. `tonnage_kg` sums the working rows with the load
-  // CLAMPED at zero: band-assisted work stores a negative kg.
-  // The window compares the PAIR (started_at, id). An absent tiebreaker passes the empty id — the
+  // clamped at zero: band-assisted work stores a negative kg.
+  // The window compares the pair (started_at, id); an absent tiebreaker passes the empty id, the
   // floor of the text order.
   // The marks statements are one row per (movement, load) carrying the best reps at it, dated by the
-  // SESSION the mark was set in, never by the set's own completed_at; loads at or below zero are
-  // kept. The fourth is the marks standing BEFORE the page, and is the only one counting finished
-  // sessions; an empty page skips it.
-  // The top set is a lateral over the session's WORKING sets, heaviest first, ties to more reps.
+  // session the mark was set in, never by the set's own completed_at; loads at or below zero are
+  // kept. The fourth is the marks standing before the page, counts finished sessions only, and is
+  // skipped for an empty page.
+  // The top set is a lateral over the session's working sets, heaviest first, ties to more reps.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -446,7 +440,7 @@ std::vector<Set> PgLogRepository::setsOf(const SessionId& id) {
 }
 
 LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& exercise) {
-  // Walks SESSIONS newest first on (started_at, id) and stops at the first finished one holding a
+  // Walks sessions newest first on (started_at, id) and stops at the first finished one holding a
   // working set: completed_at is the device's wall clock and cannot order sessions. The EXISTS probe
   // carries the block read's predicates, so a located session always has a non-empty block.
   // Owner-scoped on both halves, never through the invariant that a set row inherits its session's
@@ -468,8 +462,8 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
             "  ORDER BY s.started_at DESC, s.id DESC LIMIT 1)",
         user.str(), exercise.str());
     if (sessions.empty()) {
-      // The catalog is consulted only with no history to return, and scoped: another account's
-      // custom movement is unknown here.
+      // Consulted only with no history to return, and scoped: another account's custom movement is
+      // unknown here.
       if (txn.exec_params("SELECT 1 FROM gym_exercises "
                           "WHERE id = $1 AND (created_by IS NULL OR created_by = $2::uuid)",
                           exercise.str(), user.str())
@@ -477,7 +471,7 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
         return {std::nullopt, LastTimeError::unknownExercise};
       return {std::nullopt, LastTimeError::none};
     }
-    // Warmups excluded: the prefill dials the weight off the last row of this block.
+    // Warmups excluded.
     pqxx::result block = txn.exec_params(
         "SELECT " + std::string(kSetColumns) +
             " FROM gym_sets WHERE user_id = $1::uuid AND session_id = $2 AND exercise_id = $3 "
@@ -492,11 +486,10 @@ LastTimeOutcome PgLogRepository::lastTime(const UserId& user, const ExerciseId& 
 }
 
 std::vector<LastSet> PgLogRepository::lastSets(const UserId& user) {
-  // The DISTINCT ON ORDER BY is the locator's rule — newest finished session on (started_at, id),
-  // then the highest set_number in it. Only the movements this account has WORKED come back, and
-  // warmups are out; this must not be driven off the catalog.
-  // Owner-scoped on both halves, never through the invariant that a set row inherits its session's
-  // owner.
+  // The DISTINCT ON ORDER BY is the locator's rule: newest finished session on (started_at, id),
+  // then the highest set_number in it. Only movements this account has worked come back, warmups
+  // excluded; this must not be driven off the catalog. Owner-scoped on both halves, never through
+  // the invariant that a set row inherits its session's owner.
   std::vector<LastSet> out;
   {
     PgLease conn{*pool_};
@@ -519,10 +512,9 @@ std::vector<LastSet> PgLogRepository::lastSets(const UserId& user) {
 
 SessionHistory PgLogRepository::historyFor(const UserId& user, const Session& session) {
   // At most three statements in one transaction; the comparison's two fire only for a session that
-  // named a routine. The marks are one row per (movement, load) carrying the BEST reps ever done at
-  // it, kept from the EARLIEST session to hit them; the Epley formula stays out of SQL.
-  // Both windows compare the PAIR (started_at, id) against this session's own, which excludes the
-  // session from its own history.
+  // named a routine. The marks are one row per (movement, load) carrying the best reps ever done at
+  // it, kept from the earliest session to hit them; the Epley formula stays out of SQL. Both windows
+  // compare the pair (started_at, id) against this session's own, excluding it from its own history.
   SessionHistory history;
   {
     PgLease conn{*pool_};
@@ -564,8 +556,7 @@ SessionHistory PgLogRepository::historyFor(const UserId& user, const Session& se
 }
 
 bool PgLogRepository::deleteSession(const UserId& user, const SessionId& id) {
-  // The sets cascade with the row. Owner-scoped: another account's session is not refused, it is
-  // simply not there to remove.
+  // The sets cascade with the row. Owner-scoped: another account's session is not there to remove.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
@@ -576,12 +567,12 @@ bool PgLogRepository::deleteSession(const UserId& user, const SessionId& id) {
 
 MovementHistory PgLogRepository::movementHistory(const UserId& user,
                                                       const ExerciseId& exercise) {
-  // Four statements in one transaction; the first is the catalog's visibility predicate — no row
-  // and the other three never fire.
-  // The LADDERS are `DISTINCT ON (session, load)` over this movement's working sets in finished
-  // sessions, oldest session first and heaviest load first inside each, over a lifetime — the chart
-  // is windowed by the domain. A ladder row is dated by its session.
-  // The RECENT days are the last ten training days, warmups excluded, set by set.
+  // Four statements in one transaction; the first is the catalog's visibility predicate — no row and
+  // the other three never fire.
+  // The ladders are `DISTINCT ON (session, load)` over this movement's working sets in finished
+  // sessions, oldest session first and heaviest load first inside each, over a lifetime; the domain
+  // windows the chart. A ladder row is dated by its session.
+  // The recent days are the last ten training days, warmups excluded, set by set.
   MovementHistory history;
   {
     PgLease conn{*pool_};
@@ -646,8 +637,8 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
 }
 
 TrainingLog PgLogRepository::trainingLog(const UserId& user) {
-  // The series is `DISTINCT ON (movement, session)` keeping the heaviest set with the most reps —
-  // an ORDERING, not a calculation; the Epley estimate over it stays in the domain. Rows come back
+  // The series is `DISTINCT ON (movement, session)` keeping the heaviest set with the most reps — an
+  // ordering, not a calculation; the Epley estimate over it stays in the domain. Rows come back
   // grouped by movement, oldest first inside each group, which is the port's contract.
   // Weeks are truncated `AT TIME ZONE 'UTC'`: date_trunc on a timestamptz reads the session's
   // TimeZone setting and would bucket the same log differently on a laptop and in CI.
@@ -705,10 +696,10 @@ TrainingLog PgLogRepository::trainingLog(const UserId& user) {
 }
 
 std::vector<ExportedSet> PgLogRepository::exportedSets(const UserId& user) {
-  // Every value comes back as TEXT, rendered by Postgres: instants as ISO-8601 UTC, numerics at
-  // their column's own scale (72.5 kg is "72.50"), an absent rpe as an empty cell and never a zero.
-  // Ordered by the session's (started_at, id) pair and then by the sets inside it. Nothing is
-  // excluded — the open session is in the file too. The routine name is the frozen snapshot.
+  // Every value comes back as text rendered by Postgres: instants ISO-8601 UTC, numerics at their
+  // column's own scale (72.5 kg is "72.50"), an absent rpe as an empty cell and never a zero. Ordered
+  // by the session's (started_at, id) pair, then by the sets inside it. Nothing is excluded, the open
+  // session included. The routine name is the frozen snapshot.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -719,7 +710,7 @@ std::vector<ExportedSet> PgLogRepository::exportedSets(const UserId& user) {
       "                        'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') AS finished_at, "
       "       CASE WHEN jsonb_typeof(s.plan->'routine') = 'string' THEN s.plan->>'routine' "
       "            ELSE '' END AS routine, "
-      // The movement travels under the name the OWNER of this file calls it.
+      // The movement travels under the name this file's owner calls it.
       "       st.id AS set_id, st.exercise_id, coalesce(n.name, e.name) AS exercise, "
       "       st.set_number::text AS set_number, st.weight_kg::text AS weight_kg, "
       "       st.reps::text AS reps, st.kind, coalesce(st.rpe::text, '') AS rpe, st.note, "
@@ -729,8 +720,8 @@ std::vector<ExportedSet> PgLogRepository::exportedSets(const UserId& user) {
       "                 JOIN gym_exercises e ON e.id = st.exercise_id "
       "                 LEFT JOIN gym_exercise_names n "
       "                   ON n.exercise_id = e.id AND n.user_id = $1::uuid "
-      // Scoped on BOTH halves rather than through the invariant that a set row inherits its
-      // session's owner.
+      // Scoped on both halves, never through the invariant that a set row inherits its session's
+      // owner.
       "WHERE st.user_id = $1::uuid AND s.user_id = $1::uuid "
       "ORDER BY s.started_at ASC, s.id ASC, st.completed_at ASC, st.set_number ASC",
       user.str());
@@ -756,11 +747,10 @@ std::vector<ExportedSet> PgLogRepository::exportedSets(const UserId& user) {
 
 std::optional<SessionShare> PgLogRepository::insertShare(const SessionShare& incoming,
                                                               std::uint64_t nowMs) {
-  // The INSERT selects from the caller's OWN session row, so a session that is absent or another
-  // account's inserts nothing — that is the whole owner check.
-  // The conflict is on the session, which makes the mint idempotent. DO UPDATE fires only for a
-  // share that has ALREADY ENDED, judged by the instant the caller passed rather than the database
-  // clock, so one clock decides both halves of this write.
+  // The INSERT selects from the caller's own session row, so a session that is absent or another
+  // account's inserts nothing — that is the whole owner check. The conflict is on the session, which
+  // makes the mint idempotent; DO UPDATE fires only for a share that has already ended, judged by the
+  // instant the caller passed rather than the database clock.
   std::optional<SessionShare> stored;
   {
     PgLease conn{*pool_};
@@ -792,8 +782,8 @@ std::optional<SessionShare> PgLogRepository::insertShare(const SessionShare& inc
 }
 
 bool PgLogRepository::revokeShare(const UserId& user, const SessionId& id) {
-  // The row IS the capability, so deleting it is the whole revocation. Owner-scoped: another
-  // account's share is not refused, it is simply not there to remove.
+  // The row is the capability, so deleting it is the whole revocation. Owner-scoped: another
+  // account's share is not there to remove.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(
@@ -805,11 +795,10 @@ bool PgLogRepository::revokeShare(const UserId& user, const SessionId& id) {
 
 std::optional<SharedSession> PgLogRepository::sharedSession(const std::string& token,
                                                                  std::uint64_t nowMs) {
-  // No owner behind this read: the token is the whole credential. Revoked, expired and never-minted
-  // all return nothing, so none can be told apart.
-  // The second statement fires only when the first found a session.
-  // The sets carry their movement's display NAME and no id at all. The routine name is type-checked
-  // out of the session's frozen snapshot: `->>` would render an object or a number as text.
+  // No owner behind this read: the token is the whole credential, and revoked, expired and
+  // never-minted all return nothing so none can be told apart. The second statement fires only when
+  // the first found a session. The sets carry their movement's display name and no id at all, and the
+  // routine name is type-checked out of the frozen snapshot: `->>` would render an object as text.
   std::optional<SharedSession> found;
   {
     PgLease conn{*pool_};
@@ -825,7 +814,7 @@ std::optional<SharedSession> PgLogRepository::sharedSession(const std::string& t
         token, static_cast<long long>(nowMs));
     if (sessions.empty()) return std::nullopt;
 
-    // The names are the OWNER's, resolved through the owner the session row itself names.
+    // The names are the owner's, resolved through the owner the session row itself names.
     pqxx::result block = txn.exec_params(
         "SELECT coalesce(n.name, e.name) AS exercise, st.set_number, "
         "       st.weight_kg::float8 AS weight_kg, st.reps, "

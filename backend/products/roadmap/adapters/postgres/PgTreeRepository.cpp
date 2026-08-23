@@ -11,8 +11,7 @@ namespace wm {
 
 namespace {
 
-// A row's `present` flag, computed by the writer so reads never compare HLC text in SQL —
-// the same add-biased rule as ElementSet::present().
+// Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
 bool entryPresent(const Hlc& added, const Hlc& removed) {
   return added.isSet() && !(removed > added);
 }
@@ -78,8 +77,8 @@ void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, c
   for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind);
 }
 
-// The row type is libpqxx-version-dependent; these accessors pin the .template dance to one
-// place.
+// pqxx names the row type row_ref on macOS and row on CI's Linux, so these accessors pin the
+// .template dance to one place.
 std::string text(const auto& row, const char* column) { return row[column].template as<std::string>(); }
 Hlc stamp(const auto& row, const char* column) { return parseHlc(text(row, column)); }
 
@@ -172,7 +171,7 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
 }
 
 std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
-  // One column off the rows load() refuses to see: only a deleted row answers.
+  // Only a deleted row answers.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -189,8 +188,7 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
   pqxx::work txn{*conn};
   ForkLineage lineage;
   // The source is named only while it still exists and is PUBLIC; an unlisted, private or
-  // deleted source stays anonymous. (auto row, never a bound pqxx::row: it is named row_ref on
-  // macOS and row on CI's Linux.)
+  // deleted source stays anonymous.
   pqxx::result src = txn.exec_params(
       "SELECT t.forked_from IS NOT NULL AS is_fork, "
       "coalesce(s.title, '') AS source_title, coalesce(s.visibility, '') AS source_visibility "
@@ -223,8 +221,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   GraphState state = graphRows(txn, tree);
   LegendState legend = legendRows(txn, tree);
   if (state.nodes.empty() && state.edges.empty() && legend.kinds.empty()) {
-    // A tree whose lattice lives only in the legacy document blob: parse it and backfill the
-    // rows in this same transaction. The blob is left behind, stale.
+    // A tree whose lattice lives only in the document blob: parse it and backfill the rows in this
+    // same transaction.
     Json::Value document = parse(row["document"].as<std::string>());
     state = graphStateFromJson(document);
     legend = legendStateFromJson(document["kinds"]);
@@ -252,9 +250,8 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
       tree.str(), title.value, toString(title.stamp),
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
       static_cast<long long>(head));
-  // The title register is LWW at the column: it lands only under a dominating stamp, so a stale
-  // room cache in another process cannot revert a newer rename. (ms, counter) order numerically;
-  // a tie falls to byte order (COLLATE "C"), which is exactly the actor tiebreak.
+  // The title register is LWW at the column: it lands only under a dominating stamp. (ms, counter)
+  // order numerically; a tie falls to byte order (COLLATE "C"), which is the actor tiebreak.
   txn.exec_params(
       "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
@@ -273,7 +270,7 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
     txn.exec_params("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ($1, $2, 0, $3::uuid)",
                     tree.str(), title, owner.str());
   } catch (const pqxx::unique_violation&) {
-    throw DuplicateTree{};  // the unique index arbitrates cross-process races (the MCP binary shares this DB)
+    throw DuplicateTree{};  // the unique index arbitrates cross-process races
   }
   upsertSlice(txn, tree, state, legend);
   txn.commit();
@@ -315,7 +312,7 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
     data.nodes.push_back(std::move(spec));
   }
   if (!data.nodes.empty()) return data;
-  // A pre-rows tree not yet opened: fall back to the legacy blob.
+  // A tree with no rows yet: fall back to the document blob.
   GraphState state = graphStateFromJson(parse(documentBlob));
   return LooseGraph(state).toTreeData(tree, title);
 }
@@ -323,13 +320,10 @@ TreeData PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree, 
 std::vector<ListedTree> PgTreeRepository::listPublic() {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Every listed tree, unbounded. Ordering and the wall's cap belong to the domain
-  // (domain/Gallery.h) and must NOT be duplicated here: a LIMIT would quietly change the ranking
-  // rule. The source's title rides the same row as a LEFT JOIN carrying loadForkLineage's privacy
-  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The owner's
-  // latest mark rides it as a lateral: `updated_at` moves only for a structural edit, a rename or
-  // a visibility flip, so it alone cannot see a tree being worked on; the domain folds the two
-  // (lastActiveAt). The lookup lands on node_progress's (tree_id, user_id) primary-key prefix.
+  // Every listed tree, unbounded: ordering and the wall's cap belong to the domain, and a LIMIT
+  // here would quietly change the ranking rule. The LEFT JOIN carries loadForkLineage's privacy
+  // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The lateral
+  // adds the owner's latest mark, which updated_at alone cannot see.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.owner_id::text AS owner_id, t.document::text, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms, "
@@ -395,8 +389,8 @@ void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title)
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Deliberately does NOT touch updated_at: the gallery folds that column into last-active, so a
-  // bump here would let a visibility flip vault a long-dead tree up the wall.
+  // Does NOT touch updated_at: the gallery folds that column into last-active, so a bump here
+  // would let a visibility flip vault a long-dead tree up the wall.
   txn.exec_params("UPDATE trees SET visibility = $2 WHERE id = $1 AND deleted_at IS NULL",
                   tree.str(), toString(visibility));
   txn.commit();

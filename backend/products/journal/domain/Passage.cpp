@@ -10,16 +10,14 @@ namespace wm {
 
 namespace {
 
-// A half-open byte range into the body. Every cut lands on a newline, on ASCII whitespace, or just
-// after an ASCII terminator or a whole closing quote, and no ASCII byte occurs inside a multi-byte
-// UTF-8 sequence, so a span boundary is always a codepoint boundary.
+// A half-open byte range into the body. Every cut lands on ASCII, so a boundary is always a
+// codepoint boundary.
 struct Span {
   int lo = 0;
   int hi = 0;
 };
 
-// A run of sentences that will not be split further. The count travels with the span because the
-// `maxSentences` cap is counted in sentences and a merge puts several inside one unit.
+// A run of sentences that will not be split further; `maxSentences` is counted in `sentences`.
 struct Unit {
   Span span;
   int sentences = 0;
@@ -48,8 +46,6 @@ int wordCount(const std::string& body, Span span) {
   return words;
 }
 
-// The hard boundary. `journal_page.body` keeps the writer's soft line breaks, and a bare list with
-// no terminal punctuation would otherwise become one passage.
 std::vector<Span> linesOf(const std::string& body) {
   std::vector<Span> lines;
   const int size = static_cast<int>(body.size());
@@ -64,8 +60,8 @@ std::vector<Span> linesOf(const std::string& body) {
   return lines;
 }
 
-// A closing quote or bracket sits after the full stop and belongs to the sentence it closes. The
-// curly forms are three bytes each and are stepped over whole, never byte by byte.
+// A closing quote or bracket belongs to the sentence it closes; curly forms are three bytes and are
+// stepped over whole.
 int pastClosers(const std::string& body, Span line, int at) {
   while (at < line.hi) {
     const char c = body[at];
@@ -81,8 +77,7 @@ int pastClosers(const std::string& body, Span line, int at) {
   return at;
 }
 
-// Does the full stop at `dot` end a word that carries one mid-sentence? Deliberately short rather
-// than exhaustive: every entry here is a sentence break the segmenter refuses forever.
+// Does the full stop at `dot` end a word that carries one mid-sentence?
 bool closesAbbreviation(const std::string& body, Span line, int dot) {
   static constexpr std::string_view known[] = {"mr", "mrs", "ms",  "dr",  "prof", "st",
                                                "jr", "sr",  "vs",  "etc", "e.g",  "i.e"};
@@ -98,10 +93,8 @@ bool closesAbbreviation(const std::string& body, Span line, int dot) {
   return false;
 }
 
-// Sentence boundaries within one line. A boundary is a run of `.`, `!` or `?` followed by
-// whitespace — demanding the whitespace is what keeps "3.5" and "c++.net" whole — and a run ending
-// in a full stop is refused when that stop closes an abbreviation. Capitalisation is never
-// consulted.
+// A boundary is a run of `.`, `!` or `?` followed by whitespace, and a run ending in a full stop is
+// refused when that stop closes an abbreviation. Capitalisation is never consulted.
 std::vector<Span> sentencesIn(const std::string& body, Span line) {
   std::vector<Span> sentences;
   int start = line.lo;
@@ -128,13 +121,11 @@ std::vector<Span> sentencesIn(const std::string& body, Span line) {
   return sentences;
 }
 
-// One line's passages: fragments merge first, and the cap applies to what survives. Gluing a
-// passage under `minWords` to its neighbour is worth overrunning `maxSentences` for, never the
-// other way round.
+// Fragments merge first and the `maxSentences` cap applies to what survives, so a merge may
+// overrun it.
 std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRules& rules) {
   std::vector<Unit> units;
   for (const Span& sentence : sentencesIn(body, line)) {
-    // A fragment joins the passage before it — on this line only.
     if (!units.empty() && wordCount(body, sentence) < rules.minWords) {
       units.back().span.hi = sentence.hi;
       ++units.back().sentences;
@@ -142,8 +133,7 @@ std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRu
     }
     units.push_back({sentence, 1});
   }
-  // An opening fragment joins the one after instead. With no "after" either, the line is one short
-  // fragment and stands as its own passage — never nothing.
+  // An opening fragment joins the one after instead; with no "after", it stands as its own passage.
   if (units.size() > 1 && wordCount(body, units.front().span) < rules.minWords) {
     units[1].span.lo = units.front().span.lo;
     units[1].sentences += units.front().sentences;
@@ -167,8 +157,7 @@ std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRu
 
 }
 
-// Lines, then sentences within a line, then fragments merged into their neighbours. Passages are
-// produced one line at a time, so nothing downstream of `linesOf` can see across a line break.
+// Passages are produced one line at a time; nothing downstream of `linesOf` sees across a break.
 std::vector<Passage> segment(const std::string& body, const SegmentRules& rules) {
   std::vector<Passage> passages;
   for (const Span& line : linesOf(body)) {
@@ -180,9 +169,7 @@ std::vector<Passage> segment(const std::string& body, const SegmentRules& rules)
   return passages;
 }
 
-// Whitespace and nothing else. No case folding, no punctuation stripping, no Unicode folding: this
-// decides whether a deleted line is gone everywhere, and every forgiving transformation lets text
-// the user removed keep matching text that is still there.
+// Whitespace and nothing else: no case folding, no punctuation stripping, no Unicode folding.
 std::string normalizedForIdentity(const std::string& text) {
   std::string identity;
   identity.reserve(text.size());
@@ -212,8 +199,7 @@ int matchAt(const std::string& body, const std::string& unit, int at) {
   int u = 0;
   while (u < unitSize) {
     if (isBlank(unit[u])) {
-      // A whitespace run must be answered by at least one whitespace byte, however either side
-      // spells it — this is the newline a "one unit per line" answer flattened into a space.
+      // A whitespace run must be answered by at least one whitespace byte, however spelled.
       if (b >= bodySize || !isBlank(body[b])) return -1;
       while (b < bodySize && isBlank(body[b])) ++b;
       while (u < unitSize && isBlank(unit[u])) ++u;
@@ -248,7 +234,7 @@ std::vector<Passage> locateUnits(const std::string& body, const std::vector<std:
     if (unit.empty()) continue;
 
     int lo = findFrom(body, unit, after);
-    // Out of order, or overlapping something already taken: look once from the top before giving up.
+    // Out of order or overlapping something taken: look once from the top before giving up.
     if (lo < 0) lo = findFrom(body, unit, 0);
     if (lo < 0) continue;
 
@@ -258,6 +244,45 @@ std::vector<Passage> locateUnits(const std::string& body, const std::vector<std:
     after = hi;
   }
   return passages;
+}
+
+std::vector<Passage> atomsOf(const std::string& body) {
+  // minWords 0 merges nothing and maxSentences 1 groups nothing, so `segment` cuts to its floor.
+  return segment(body, SegmentRules{0, 1});
+}
+
+Grouping unitsFrom(const std::string& body, const std::vector<Passage>& atoms,
+                   const std::vector<int>& starts) {
+  Grouping grouped;
+  if (atoms.empty()) return grouped;
+
+  const int count = static_cast<int>(atoms.size());
+  std::vector<int> opens;
+  for (const int start : starts) {
+    if (start < 1 || start > count) {
+      ++grouped.dropped;                       // named an atom that is not on the page
+      continue;
+    }
+    opens.push_back(start);
+  }
+  std::sort(opens.begin(), opens.end());
+  const std::size_t named = opens.size();
+  opens.erase(std::unique(opens.begin(), opens.end()), opens.end());
+  grouped.dropped += static_cast<int>(named - opens.size());   // the same atom opened twice
+
+  // The first atom opens a unit whether or not anyone said so: text before the first named start
+  // belongs to somebody, and dropping it would lose the writer a thought.
+  if (opens.empty() || opens.front() != 1) opens.insert(opens.begin(), 1);
+
+  for (std::size_t i = 0; i < opens.size(); ++i) {
+    const int from = opens[i] - 1;
+    const int to = (i + 1 < opens.size() ? opens[i + 1] - 1 : count) - 1;
+    const int lo = atoms[static_cast<std::size_t>(from)].lo;
+    const int hi = atoms[static_cast<std::size_t>(to)].hi;
+    grouped.units.push_back(Passage{static_cast<int>(grouped.units.size()), lo, hi,
+                                    body.substr(lo, hi - lo)});
+  }
+  return grouped;
 }
 
 }

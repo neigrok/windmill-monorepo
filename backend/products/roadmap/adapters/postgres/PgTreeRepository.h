@@ -10,10 +10,9 @@
 
 namespace wm {
 
-// Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a
-// save upserts only the slice it is given — never the whole tree through MVCC. Legacy
-// document-blob trees are backfilled into rows on first load. Each call borrows a connection
-// from the shared pool for the length of its transaction (PgPool.h).
+// Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a save
+// upserts only the slice it is given. Each call borrows a connection from the shared pool for
+// the length of its transaction.
 class PgTreeRepository : public TreeRepository {
 public:
   explicit PgTreeRepository(std::shared_ptr<PgPool> pool);
@@ -36,9 +35,8 @@ public:
             const LegendState& legend, const std::string& title, const UserId& owner) override;
 
 private:
-  // The projection both list queries need: each present node's id and colour, one narrow indexed
-  // read, with the legacy document blob as the fallback for a tree whose rows were never
-  // backfilled.
+  // The projection both list queries need: each present node's id and colour, with the document
+  // blob as the fallback for a tree whose rows were never backfilled.
   TreeData projectDocument(pqxx::work& txn, const TreeId& tree, const std::string& title,
                            const std::string& documentBlob);
 

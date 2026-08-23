@@ -39,9 +39,8 @@ public:
   void onClose(const drogon::WebSocketConnectionPtr& conn);
 
   // One pass of the periodic reader re-proof: re-prove every open subscription's session, then
-  // re-run the read gate over every tree that has one. It reaches the two revocations no
-  // broadcast can carry — an idle tree, and presence, which never rides the bus. Public so a test
-  // can run exactly one pass instead of waiting for the clock.
+  // re-run the read gate over every tree that has one. It reaches the two revocations no broadcast
+  // can carry — an idle tree, and presence. Public so a test can run exactly one pass.
   void reproveReaders();
 
 private:
@@ -52,29 +51,27 @@ private:
 
   bool stillAuthorized(const drogon::WebSocketConnectionPtr& conn);
   // May this connection still READ this tree? A verdict and never a lookup: a fan-out runs it
-  // under the tree's strand, so it must not touch the database. Re-proving the session is the
-  // separate, slower step — stillAuthorized.
+  // under the tree's strand, so it must not touch the database.
   bool mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);
   void subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   void progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
-  bool overRate(const drogon::WebSocketConnectionPtr& conn);  // per-connection message-rate gate
+  bool overRate(const drogon::WebSocketConnectionPtr& conn);
 
   RoomRegistry& registry_;
   OpLog& ops_;
   WsPresenceBus& bus_;
   ProgressService& progress_;
-  AuthService& auth_;  // resolves the wm_session cookie / bearer at the socket upgrade
+  AuthService& auth_;
   PresenceHub& presence_;
-  Clock& clock_;  // wall time for the room's HLC; the room owns the clock, this feeds it now
-  std::set<std::string> allowedOrigins_;  // who may upgrade a socket from a browser
+  Clock& clock_;
+  std::set<std::string> allowedOrigins_;
 
   static constexpr double kReproveEverySeconds = 15.0;
   // Last, so it destructs first: its destructor joins the sweeper, which must happen while the
-  // bus, the registry and the presence roster a running pass touches are still alive.
+  // bus, the registry and the presence roster are still alive.
   Heartbeat reprove_;
   std::atomic<std::uint64_t> actorSeq_{0};
 
-  // Keyed by the connection pointer; created on open, erased on close.
   struct WsRate { double tokens; std::chrono::steady_clock::time_point seen; };
   std::mutex wsMutex_;
   std::unordered_map<const void*, WsRate> wsRate_;

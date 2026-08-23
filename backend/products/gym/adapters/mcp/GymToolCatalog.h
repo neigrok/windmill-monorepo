@@ -7,8 +7,7 @@
 
 namespace wm::gym {
 
-// The three published vocabularies, shared by the schemas that advertise them and the domain that
-// refuses against them.
+// Shared by the schemas that advertise them and the domain that refuses against them.
 inline const std::vector<const char*> kPatterns = {"squat", "hinge", "press",
                                                    "pull",  "carry", "core", "isolation"};
 inline const std::vector<const char*> kEquipment = {"barbell", "dumbbell",   "machine",
@@ -18,9 +17,7 @@ inline const std::vector<const char*> kSetKinds = {"warmup", "working", "drop", 
 constexpr int kDefaultLogLimit = 20;
 constexpr int kMaxLogLimit = 200;
 
-// The tools that change nothing and hand the lifter a typed diff instead; Ask holds every read plus
-// exactly these. The prefix IS the grant: any future `propose_*` tool, at any access level, joins
-// what a model reachable by every account may call.
+// The prefix is the grant: any `propose_*` tool, at any access level, is reachable by Ask.
 inline bool mintsProposal(const std::string& toolName) {
   return toolName.rfind("propose_", 0) == 0;
 }
@@ -29,7 +26,6 @@ inline bool mintsProposal(const std::string& toolName) {
 // level that reaches it.
 std::vector<ToolDeclaration> gymToolCatalog();
 
-// Gym's paragraph in the `initialize` brief, and only the paragraph.
 std::string gymInstructions();
 
 }

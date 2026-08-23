@@ -16,7 +16,7 @@ namespace wm::gym {
 
 namespace {
 // lastTrainedAtMs is an aggregate over the log, not a column: the newest session started under this
-// routine, correlated on the routine's OWN owner.
+// routine, correlated on the routine's own owner.
 constexpr std::string_view kRoutineColumns =
     "r.id, r.user_id, r.name, r.position, r.revision, "
     "(extract(epoch from (SELECT max(s.started_at) FROM gym_sessions s "
@@ -27,8 +27,8 @@ constexpr std::string_view kEntryColumns =
     "routine_id, position, exercise_id, target_sets, target_reps, "
     "target_weight_kg::float8 AS target_weight_kg, rest_seconds";
 
-// `changes` is the stored count of what `Apply all N` counts, not a count of these rows: a `kept`
-// row is not a change and a renamed routine is one.
+// `changes` is a stored count, not a count of these rows: a `kept` row is not a change and a renamed
+// routine is one.
 constexpr std::string_view kProposalColumns =
     "p.id, p.routine_id, p.user_id, p.intent, p.base_revision, p.base_name, p.proposed_name, "
     "p.summary, p.changes, p.state, p.door, p.connection, p.agent, p.thread_id, "
@@ -41,12 +41,11 @@ constexpr std::string_view kProposalChangeColumns =
     "after_sets, after_reps, after_weight_kg::float8 AS after_weight_kg, after_rest_seconds";
 
 
-// The position is taken from the ORDER the rows came back in, not from the column, so a run somehow
-// left with a gap stays legible.
+// The position comes from the order the rows came back in, not from the column, so a run left with a
+// gap stays legible.
 template <typename Row>
 RoutineEntry entryFrom(const Row& row, int position) {
-  // A null target_sets is the OPEN line and a null target_reps is `max`. Neither is a zero and
-  // neither is a missing value to fill in — the read carries the absence through.
+  // A null target_sets is the open line and a null target_reps is `max`; neither is a zero.
   std::optional<int> targetSets;
   if (!row["target_sets"].is_null()) targetSets = row["target_sets"].template as<int>();
   std::optional<int> targetReps;
@@ -77,8 +76,7 @@ template <typename Row>
 ProposalHead headFrom(const Row& row) {
   std::optional<std::uint64_t> settled;
   if (!row["settled_ms"].is_null()) settled = instantFrom(row["settled_ms"]);
-  // A null thread is the MCP door, which had no conversation, or an Ask proposal whose thread the
-  // lifter deleted: nothing here to open, either way.
+  // A null thread means there is no conversation to open.
   std::optional<ThreadId> thread;
   if (!row["thread_id"].is_null()) thread = ThreadId{row["thread_id"].template as<std::string>()};
   return ProposalHead{ProposalId{row["id"].template as<std::string>()},
@@ -95,8 +93,7 @@ ProposalHead headFrom(const Row& row) {
                       settled};
 }
 
-// One row of the diff. A null is an absence that MEANS something, so which SIDE is missing is read
-// off `kind` rather than guessed at from nullness.
+// Which side is missing is read off `kind`, never guessed from nullness.
 template <typename Row>
 RoutineChange changeFrom(const Row& row) {
   const std::string kindText = row["kind"].template as<std::string>();
@@ -126,8 +123,7 @@ RoutineChange changeFrom(const Row& row) {
                        0};
 }
 
-// One routine and its lines, read INSIDE a caller's transaction. A routine holding no lines reads as
-// absent rather than as a plan with nothing in it.
+// Read inside a caller's transaction. A routine holding no lines reads as absent.
 std::optional<Routine> loadRoutine(pqxx::work& txn, const UserId& user, const RoutineId& id) {
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kRoutineColumns) +
@@ -145,8 +141,8 @@ std::optional<Routine> loadRoutine(pqxx::work& txn, const UserId& user, const Ro
   return routineFrom(rows[0], std::move(entries));
 }
 
-// The lines of one whole document, each naming a movement this account may see. `false` says one did
-// not; the caller must return at once so the transaction rolls back every line already laid down.
+// `false` means a line named a movement this account may not see; the caller must return at once so
+// the transaction rolls back every line already laid down.
 bool insertEntries(pqxx::work& txn, const Routine& incoming) {
   for (const RoutineEntry& entry : incoming.entries) {
     if (!namesVisibleMovement(txn, incoming.user.str(), entry.exercise)) return false;
@@ -170,7 +166,7 @@ bool insertEntries(pqxx::work& txn, const Routine& incoming) {
   return true;
 }
 
-// Read INSIDE a caller's transaction. `loggedSets` is counted at read time, LEFT JOIN so a movement
+// Read inside a caller's transaction. `loggedSets` is counted at read time, LEFT JOIN so a movement
 // planned and never trained answers zero rather than dropping off the diff.
 std::optional<RoutineProposal> loadProposal(pqxx::work& txn, const UserId& user,
                                             const ProposalId& id) {
@@ -204,8 +200,7 @@ std::optional<RoutineProposal> loadProposal(pqxx::work& txn, const UserId& user,
                          rows[0]["proposed_name"].as<std::string>(), std::move(changes)};
 }
 
-// The lines of one proposal, each naming a movement this account may see — the same predicate a
-// routine's own lines are written under. `false` says one did not; the caller must return at once so
+// `false` means a line named a movement this account may not see; the caller must return at once so
 // the transaction rolls back every line already laid down.
 bool insertProposalChanges(pqxx::work& txn, const RoutineProposal& incoming) {
   for (const RoutineChange& change : incoming.changes) {
@@ -245,8 +240,7 @@ bool insertProposalChanges(pqxx::work& txn, const RoutineProposal& incoming) {
   return true;
 }
 
-// What every pending proposal on a routine becomes the moment that routine MOVES, whichever door
-// minted it. Not a delete — it drops into the history.
+// Not a delete: a superseded proposal drops into the routine's history.
 void supersedeOnRoutine(pqxx::work& txn, const UserId& user, const RoutineId& routine,
                         const std::string& except, std::uint64_t nowMs) {
   txn.exec_params("UPDATE gym_proposals "
@@ -255,10 +249,9 @@ void supersedeOnRoutine(pqxx::work& txn, const UserId& user, const RoutineId& ro
                   routine.str(), user.str(), static_cast<long long>(nowMs), except);
 }
 
-// The spent id, answered BEFORE anything is written. Asked GLOBALLY rather than under the caller's
-// scope, because the id is a primary key across every account; and asked FIRST, so a refusal cannot
-// settle this caller's own waiting proposal. The caller's own id splits again on the document: the
-// same one is a replay, a different one is refused.
+// Answered before anything is written, and asked globally rather than under the caller's scope
+// because the id is a primary key across every account. The caller's own id splits on the document:
+// the same one replays, a different one is refused.
 std::optional<ProposalMintOutcome> spentId(pqxx::work& txn, const RoutineProposal& incoming) {
   pqxx::result held = txn.exec_params(
       "SELECT (user_id = $2::uuid) AS mine FROM gym_proposals WHERE id = $1",
@@ -288,8 +281,7 @@ PgProgramRepository::PgProgramRepository(std::shared_ptr<PgPool> pool)
     : pool_(std::move(pool)) {}
 
 std::vector<Routine> PgProgramRepository::routines(const UserId& user) {
-  // Most recently trained first, never-trained after them; the tiebreak is stated (position, then
-  // id) rather than left to the planner.
+  // Most recently trained first, never-trained after; the tiebreak is stated, not left to the planner.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -313,7 +305,7 @@ std::vector<Routine> PgProgramRepository::routines(const UserId& user) {
   std::vector<Routine> out;
   for (const auto& row : rows) {
     const auto held = linesByRoutine.find(row["id"].as<std::string>());
-    if (held == linesByRoutine.end()) continue;   // no lines: not a plan, and not writable as one
+    if (held == linesByRoutine.end()) continue;   // no lines: not a plan
     out.push_back(routineFrom(row, std::move(held->second)));
   }
   return out;
@@ -329,8 +321,8 @@ std::optional<Routine> PgProgramRepository::routine(const UserId& user, const Ro
   return found;
 }
 
-// Proposals newest first and bounded; the creation row is always last. The routine is resolved
-// FIRST, under the caller's own scope: absent and another account's both answer an empty list.
+// Proposals newest first and bounded; the creation row is always last. The routine is resolved first
+// under the caller's own scope: absent and another account's both answer an empty list.
 std::vector<RoutineEvent> PgProgramRepository::routineHistory(const UserId& user,
                                                                const RoutineId& id) {
   std::vector<RoutineEvent> history;
@@ -368,10 +360,9 @@ std::vector<RoutineEvent> PgProgramRepository::routineHistory(const UserId& user
 RoutineWriteOutcome PgProgramRepository::insertRoutine(const Routine& incoming,
                                                         std::optional<ProposalDoor> byAgent,
                                                         std::uint64_t nowMs) {
-  // The row and its lines are ONE transaction, so a routine with no lines is not a state this store
-  // can be left in. The lines are written only by the caller that WON the row: a replay writes
-  // nothing and reads the STORED routine back untouched. The read-back is owner-scoped.
-  // The creation row of the history is written HERE and nowhere else, by the winner of the id.
+  // The row and its lines are one transaction, so a routine with no lines is not a reachable state.
+  // Only the caller that won the row writes the lines; a replay writes nothing and reads the stored
+  // routine back untouched, owner-scoped.
   std::optional<Routine> stored;
   {
     PgLease conn{*pool_};
@@ -402,14 +393,11 @@ RoutineWriteOutcome PgProgramRepository::insertRoutine(const Routine& incoming,
 
 RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
                                                        std::optional<int> expectedRevision) {
-  // A whole-document replace: the row owner-scoped, then the lines deleted and laid down again —
-  // entries have no identity, their key IS their position. An update that matches no row is the 404
-  // fact: absent and another account's are the same answer.
-  // The revision moves and every proposal still pending is superseded in the SAME transaction. Both
-  // turn on one question — did the name or the document actually move? A PUT landing the bytes that
-  // already stand moves no revision and settles no card, and position is not part of any proposal.
-  // Lock order, as everywhere in this module: the routine row first (the SELECT takes it), its
-  // proposals after.
+  // A whole-document replace: entries have no identity, their key is their position, so they are
+  // deleted and laid down again. An update matching no row means absent or another account's, one
+  // answer. The revision moves and every pending proposal is superseded in the same transaction, both
+  // only when the name or the document actually moved. Lock order: the routine row first (the SELECT
+  // takes it), its proposals after.
   std::optional<Routine> stored;
   {
     PgLease conn{*pool_};
@@ -418,14 +406,13 @@ RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming,
                         incoming.id.str(), incoming.user.str())
             .empty())
       return {std::nullopt, RoutineWriteError::notFound};
-    // Read under the lock, so what this compares against is the document nobody else is rewriting.
-    // A row holding no lines is no plan at all, and reads as this write moving it.
+    // Read under the lock, so the comparison is against a document nobody else is rewriting. A row
+    // holding no lines reads as this write moving it.
     const std::optional<Routine> standing = loadRoutine(txn, incoming.user, incoming.id);
     const bool moved = !standing || standing->name != incoming.name ||
                        !(standing->entries == incoming.entries);
-    // The editor's own read, checked under the same lock: a day that moved since is refused rather
-    // than overwritten. Only a write that would MOVE the document is refused — a replay whose bytes
-    // already stand reads back what landed, whatever revision it named.
+    // Checked under the same lock. Only a write that would move the document is refused; a replay
+    // whose bytes already stand reads back what landed, whatever revision it named.
     if (moved && expectedRevision && standing && standing->revision != *expectedRevision)
       return {std::nullopt, RoutineWriteError::stale};
     txn.exec_params(
@@ -445,7 +432,7 @@ RoutineWriteOutcome PgProgramRepository::replaceRoutine(const Routine& incoming,
 }
 
 bool PgProgramRepository::deleteRoutine(const UserId& user, const RoutineId& id) {
-  // The lines cascade; every session trained under this routine keeps its frozen snapshot and its
+  // The lines cascade; a session trained under this routine keeps its frozen snapshot and its
   // routine_id nulls (on delete set null).
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -459,10 +446,9 @@ bool PgProgramRepository::deleteRoutine(const UserId& user, const RoutineId& id)
 
 std::vector<ProposalHead> PgProgramRepository::proposalHeads(const UserId& user,
                                                               const ProposalQuery& query) {
-  // Newest first. Both filters are optional, so one statement serves all three questions: every
-  // pending proposal on the account, one routine's whole run, and one routine's pending.
-  // The empty string is the "every routine" sentinel: the id-shape rule refuses anything under
-  // eight characters, so no routine can be named by it.
+  // Newest first; both filters are optional, so one statement serves all three questions. The empty
+  // string is the "every routine" sentinel — the id-shape rule refuses anything under eight
+  // characters, so no routine can be named by it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -490,10 +476,9 @@ std::optional<RoutineProposal> PgProgramRepository::proposal(const UserId& user,
 }
 
 ProposalMintOutcome PgProgramRepository::insertProposal(const RoutineProposal& incoming) {
-  // One transaction. The ROUTINE row is locked first — the lock order every write here keeps — then
-  // the id is resolved, and only then is anything written.
-  // Every refusal must return BEFORE the commit: the supersede below settles a card the lifter can
-  // see, so a refused mint that reached it would spend their pending proposal.
+  // The routine row is locked first — the lock order every write here keeps — then the id is
+  // resolved, and only then is anything written. Every refusal must return before the commit: the
+  // supersede below settles a proposal the lifter can see.
   std::optional<RoutineProposal> stored;
   {
     PgLease conn{*pool_};
@@ -504,9 +489,9 @@ ProposalMintOutcome PgProgramRepository::insertProposal(const RoutineProposal& i
       return {std::nullopt, ProposalMintError::unknownRoutine};
     if (std::optional<ProposalMintOutcome> answered = spentId(txn, incoming)) return *answered;
 
-    // One pending proposal per (routine, door, connection): the older one from THIS door and
+    // One pending proposal per (routine, door, connection): the older one from this door and
     // connection is superseded before the new row lands, which the partial unique index would
-    // otherwise refuse. Another door's stands, and so does another connection's.
+    // otherwise refuse.
     supersedeFromDoor(txn, incoming);
     pqxx::result inserted = txn.exec_params(
         "INSERT INTO gym_proposals (id, routine_id, user_id, intent, base_revision, base_name, "
@@ -518,17 +503,14 @@ ProposalMintOutcome PgProgramRepository::insertProposal(const RoutineProposal& i
         incoming.proposedName, incoming.head.summary, incoming.head.changes,
         toString(incoming.head.source.door), incoming.head.source.connection,
         incoming.head.source.agent, static_cast<long long>(incoming.head.createdAtMs),
-        // The conversation this was minted in, NULL from the MCP door. It travels as the empty
-        // string and is nulled in SQL: the id-shape rule refuses anything under eight characters,
-        // so no thread can be named by it.
+        // Travels as the empty string and is nulled in SQL: the id-shape rule refuses anything under
+        // eight characters, so no thread can be named by it.
         incoming.head.source.thread ? incoming.head.source.thread->str() : std::string());
-    // Nothing inserted with the id free when this transaction looked: another connection minted
-    // under it between the two statements.
+    // Nothing inserted though the id was free: another connection minted under it between the two
+    // statements.
     if (inserted.affected_rows() == 0) return {std::nullopt, ProposalMintError::idTaken};
     if (!insertProposalChanges(txn, incoming))
       return {std::nullopt, ProposalMintError::unknownExercise};
-    // Read back through the reader the diff screen uses, so the receipt carries the same
-    // `loggedSets` a lifter will read.
     stored = loadProposal(txn, incoming.head.user, incoming.head.id);
     txn.commit();
   }
@@ -538,9 +520,9 @@ ProposalMintOutcome PgProgramRepository::insertProposal(const RoutineProposal& i
 ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, const ProposalId& id,
                                                           const Routine& becomes,
                                                           std::uint64_t nowMs) {
-  // Three statements rather than one joined lock, for the lock ORDER: a joined `FOR UPDATE OF r, p`
-  // takes its two rows in whatever order the planner produces them, and every other write here takes
-  // the routine first. Everything that decides this apply is read after both locks are held.
+  // Three statements rather than one joined lock, for the lock order: a joined `FOR UPDATE OF r, p`
+  // takes its two rows in whatever order the planner produces them, and every write here takes the
+  // routine first. Everything deciding this apply is read after both locks are held.
   std::optional<RoutineProposal> settled;
   std::optional<Routine> stored;
   {
@@ -561,7 +543,7 @@ ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, con
         id.str(), user.str());
     if (locked.empty()) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     const ProposalState state = proposalStateFromStored(locked[0]["state"].as<std::string>());
-    // A replayed tap reads back what it already did; the other two settled states are refused.
+    // A replayed tap reads back what it already did; the other settled states are refused.
     if (state == ProposalState::applied) {
       settled = loadProposal(txn, user, id);
       stored = settled ? loadRoutine(txn, user, settled->head.routine) : std::nullopt;
@@ -589,7 +571,7 @@ ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, con
     txn.exec_params("UPDATE gym_proposals SET state = 'applied', "
                     "  settled_at = to_timestamp($2::bigint / 1000.0) WHERE id = $1",
                     id.str(), static_cast<long long>(nowMs));
-    // The routine just moved, so every OTHER proposal waiting on it is against a base that is gone.
+    // The routine just moved, so every other proposal waiting on it is against a base that is gone.
     supersedeOnRoutine(txn, user, becomes.id, id.str(), nowMs);
     settled = loadProposal(txn, user, id);
     stored = loadRoutine(txn, user, becomes.id);
@@ -600,7 +582,7 @@ ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, con
 
 ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, const ProposalId& id,
                                                          std::uint64_t nowMs) {
-  // The answer is composed BEFORE the delete: the delete takes the routine and — through
+  // The answer is composed before the delete, which takes the routine and — through
   // `on delete cascade` — its entries, its proposals and this very row with it.
   std::optional<RoutineProposal> settled;
   {
@@ -622,8 +604,7 @@ ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, cons
         id.str(), user.str());
     if (locked.empty()) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     const ProposalState state = proposalStateFromStored(locked[0]["state"].as<std::string>());
-    // A removal that landed took its own row with it, so a replay finds nothing and answers
-    // `notFound` above.
+    // A removal that landed took its own row with it, so a replay answers `notFound` above.
     if (state == ProposalState::dismissed || state == ProposalState::applied)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (state == ProposalState::superseded)
@@ -650,8 +631,7 @@ ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, cons
 ProposalSettleOutcome PgProgramRepository::dismissProposal(const UserId& user,
                                                             const ProposalId& id,
                                                             std::uint64_t nowMs) {
-  // Touches one table, so it takes one lock and joins no order. A dismissed proposal stays in the
-  // routine's history.
+  // Touches one table, so it takes one lock and joins no order.
   std::optional<RoutineProposal> settled;
   {
     PgLease conn{*pool_};

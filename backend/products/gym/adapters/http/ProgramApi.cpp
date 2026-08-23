@@ -13,8 +13,7 @@ namespace wm::gym {
 ProgramApi::ProgramApi(std::shared_ptr<ProgramService> program, std::shared_ptr<AuthService> auth)
     : program_(std::move(program)), auth_(std::move(auth)) {}
 
-// A routine is written as its WHOLE document — create and replace send the same body — so nothing
-// here edits a line, reorders one, or reconciles a partial update.
+// A routine is written as its whole document: create and replace take the same body.
 void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -22,7 +21,6 @@ void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& 
     return;
   }
   Json::Value body(Json::objectValue);
-  // The pending proposals ride on the list rather than on a second call per routine.
   body["routines"] = toJson(program_->routines(*caller),
                             program_->proposals(*caller, ProposalQuery{std::nullopt, true}));
   cb(jsonResponse(body));
@@ -41,22 +39,17 @@ void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
   }
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
-    // No door: this route is the lifter's own hand, which the routine's history says by saying
-    // nothing about who made it.
     outcome = program_->createRoutine(*caller, parseRoutineWrite(*json), std::nullopt);
   } catch (const InvalidTraining&) {
-    // One sentence for every way a routine can be unstorable as written.
     cb(error(drogon::k400BadRequest, "could not read that routine"));
     return;
   }
   if (outcome.error == RoutineWriteError::idTaken) {
-    // A fact about an id and never about an owner. Its own replay is not this refusal — it answers
-    // with the routine already stored.
+    // About the id and never the owner; the caller's own id replays with the stored routine instead.
     cb(error(drogon::k409Conflict, "that routine id is taken", "routine-id-taken"));
     return;
   }
   if (outcome.error == RoutineWriteError::unknownExercise) {
-    // The same fact a set naming no known movement gets, under the same machine word.
     cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
     return;
   }
@@ -75,14 +68,10 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
-  // Newest first, so the first is the one a card draws when two doors each have one waiting. Its
-  // OWN read and not the pending row of the bounded history below, which a still-waiting proposal
-  // from a quiet door can fall outside of.
+  // Newest first, so the first pending head is the one a card draws.
   std::optional<ProposalHead> pending;
   for (const ProposalHead& head : program_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
     if (!pending) pending = head;
-  // The History section rides on this read and not on a route of its own. The LIST read carries
-  // none of it.
   Json::Value body = toJson(*routine, pending);
   body["history"] = toJson(program_->routineHistory(*caller, RoutineId{id}));
   cb(jsonResponse(body));
@@ -100,8 +89,7 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k400BadRequest, "expected json"));
     return;
   }
-  // The PATH names the routine being replaced; where the body's id could disagree, the URL is what
-  // the store is asked for.
+  // The path names the routine replaced; a body id that disagrees is ignored.
   RoutineWriteOutcome outcome{std::nullopt, RoutineWriteError::none};
   try {
     outcome = program_->replaceRoutine(*caller, RoutineId{id}, parseRoutineWrite(*json));
@@ -118,8 +106,7 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   if (outcome.error == RoutineWriteError::stale) {
-    // Only a PUT that named the revision it read can earn this: the day moved under the editor.
-    // The remedy is a re-read, so the code says so.
+    // Only a PUT that named the revision it read can reach this.
     cb(error(drogon::k409Conflict, "that routine changed since you read it — reload it and save again",
              "routine-stale"));
     return;
@@ -138,18 +125,13 @@ void ProgramApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
     cb(error(drogon::k404NotFound, "no such routine"));
     return;
   }
-  // Every session trained under this routine keeps its frozen snapshot, so deleting the plan never
-  // edits what the log says about the past.
+  // Sessions trained under this routine keep their frozen snapshot.
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
 }
 
-// The proposal ledger, over four handlers. They are HTTP and nothing else: Apply stays in the hand,
-// so no MCP tool reaches these at any grant level and `GymToolsTest` pins the absence by name.
-// One list read serves the three questions the surfaces ask — every pending proposal on the account,
-// one routine's whole run including its settled history, and one routine's pending. A settled
-// proposal stays in that list.
+// One read serves all three questions; a settled proposal stays in the list.
 void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
@@ -165,8 +147,7 @@ void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&&
   cb(jsonResponse(body));
 }
 
-// The diff screen's whole read, and the one a deep link from an agent's receipt lands on. Absent,
-// another account's and never-existed are the one answer.
+// Absent, another account's and never-existed are one answer.
 void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -182,10 +163,8 @@ void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& c
   cb(jsonResponse(toJson(*held)));
 }
 
-// The tap. All of it or none: the domain computes the routine the proposal makes true and the store
-// writes it in one transaction against the frozen base revision.
-// The answer carries BOTH the settled proposal and the routine as it now stands. The routine is
-// absent for a removal, because there is no longer one.
+// All of it or none: one transaction against the frozen base revision. The reply carries the settled
+// proposal and the routine as it now stands; the routine is absent for a removal.
 void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                            const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
@@ -220,8 +199,7 @@ void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&&
   cb(jsonResponse(body));
 }
 
-// Nothing changes: it stays in the routine's history, which is why this is a settle and not a
-// delete.
+// A settle, not a delete: the proposal stays in the routine's history.
 void ProgramApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                              const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
