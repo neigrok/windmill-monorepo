@@ -1,23 +1,10 @@
-// Browser parity: the claim this whole sidecar exists to make, measured instead of asserted.
-//
-// The same five sentences go through the *shipped* worker — web/src/products/journal/search/neural/
-// embedder.worker.js, served verbatim, its own env configuration, real onnxruntime-web on wasm, in
-// real headless Chrome — and the vectors are compared against what this machine's sidecar produces
-// for the same batch. If those two agree, a passage embedded on the server and the same passage
-// embedded on the phone are the same point in the same space, and echoes retrieved server-side mean
-// what on-device search means.
-//
-// Compared against this machine's own vectors, not against check/fixture.json: the fixture is bound
-// to the platform that generated it (onnxruntime-node's macOS and Linux builds differ), while this
-// check is asking a question about two runtimes here and now.
-//
-// Two deliberate differences from the page a reader loads, neither numeric:
-//   · the worker module is imported into the page realm rather than started as a Worker (a module
-//     worker gets no import map, and rewriting the import would stop this being the shipped file);
-//   · onnxruntime's wasm is served from node_modules rather than fetched from jsdelivr, which is
-//     where transformers.js points by default. Same version, same bytes, no third party in the loop.
-//
-// Run: node check/browser.mjs   (needs Chrome installed; nothing else)
+// Runtime parity for the shipped worker (web/src/products/journal/search/neural/embedder.worker.js):
+// onnxruntime-web in real headless Chrome against onnxruntime-node here, one model, same batch.
+// It is the BROWSER's model on both sides — the sidecar runs a different one on purpose
+// (../embedder.js), so these two halves no longer share a space and check/fixture.json, which is
+// the sidecar's, is no longer this check's corpus either. Compared against this machine's own
+// vectors rather than anything committed, which would be bound to its build platform.
+// Needs Chrome installed; nothing else.
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -27,11 +14,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { embedPassages, loadExtractor } from '../embedder.js';
+import { env, pipeline } from '@huggingface/transformers';
+
+import { embedPassages } from '../embedder.js';
 
 const PORT = 8198;
 const web = fileURLToPath(new URL('../../../web/', import.meta.url));
-const fixture = JSON.parse(fs.readFileSync(new URL('./fixture.json', import.meta.url), 'utf8'));
+
+// Whatever the worker names, byte for byte, or this check proves nothing about the worker.
+const BROWSER_MODEL = 'Xenova/bge-small-en-v1.5';
+
+// English on purpose: this is the model the browser ships, and the index it builds is English. A
+// Cyrillic line in this batch drops the two runtimes to 0.9974 cosine — bge spends 0.88 pieces per
+// Russian character, and q8 scales the whole padded batch off activations that long row dominates.
+// Harmless where it lands (the browser embeds its queries and its passages in the same runtime) but
+// it would make this check about ORT builds instead of about the worker.
+const PASSAGES = [
+  'i want to learn c++.',
+  'i like c++.',
+  'tired again today',
+  'Told Marta I’d stop drinking — meant it this time.',
+  'The rain didn’t stop. I walked to the river anyway and sat on the cold bench until my hands went numb.',
+];
 
 const CHROME = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -41,9 +45,7 @@ const CHROME = [
 ].find((candidate) => fs.existsSync(candidate));
 assert.ok(CHROME, 'no Chrome found — this check needs a real browser, which is the entire point of it');
 
-// The page mounts the shipped worker as a module and speaks its protocol: { id, kind, texts } in,
-// { id, ok, vectors } out. Nothing here configures the model — the worker does, exactly as it does
-// for a reader — beyond pointing the wasm at this origin.
+// The worker's protocol: { id, kind, texts } in, { id, ok, vectors } out.
 const HARNESS = `<!doctype html>
 <meta charset="utf-8">
 <title>windmill embedder parity</title>
@@ -59,12 +61,10 @@ const report = (payload) => fetch('/result', { method: 'POST', body: JSON.string
 window.addEventListener('error', (e) => report({ error: String(e.message) }));
 window.addEventListener('unhandledrejection', (e) => report({ error: String(e.reason) }));
 
-const passages = ${JSON.stringify(fixture.passages)};
+const passages = ${JSON.stringify(PASSAGES)};
 
-// The worker speaks through self.postMessage / self.onmessage. In a document both belong to the
-// window, so a message posted out arrives straight back at the same handler and the worker answers
-// its own replies forever. Standing in for the Worker port with a direct call in each direction
-// breaks that loop and leaves the worker file itself untouched, which is the whole point.
+// The worker speaks through self.postMessage / self.onmessage; in a document both belong to the
+// window, so an unstubbed postMessage loops the worker's replies back into its own handler.
 window.postMessage = (data) => {
   if (data.ready) return window.onmessage({ data: { id: 1, kind: 'passages', texts: passages } });
   if (data.failed) return report({ error: 'worker failed: ' + data.error });
@@ -126,7 +126,7 @@ const server = http.createServer((req, res) => {
 });
 
 await new Promise((resolve) => server.listen(PORT, resolve));
-console.log(`serving the shipped worker and the committed model files on ${PORT}`);
+console.log(`serving the shipped worker and the fetched model files on ${PORT}`);
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'windmill-parity-'));
 const chrome = spawn(CHROME, [
@@ -150,31 +150,32 @@ if (answer.error) {
   process.exitCode = 1;
 } else {
   const cosine = (a, b) => a.reduce((total, value, i) => total + value * b[i], 0);
-  const sidecar = await embedPassages(await loadExtractor(), fixture.passages);
+  env.allowLocalModels = true;
+  env.allowRemoteModels = false;
+  env.localModelPath = path.join(web, 'public/models');
+  const extractor = await pipeline('feature-extraction', BROWSER_MODEL, { dtype: 'q8' });
+  const here = await embedPassages(extractor, PASSAGES);
 
   let worstCos = 1;
   let worstDelta = 0;
   answer.vectors.forEach((vector, row) => {
-    const expected = sidecar[row];
+    const expected = here[row];
     assert.equal(vector.length, expected.length, `row ${row} came back with the wrong dimension`);
     worstCos = Math.min(worstCos, cosine(vector, expected));
     vector.forEach((value, i) => (worstDelta = Math.max(worstDelta, Math.abs(value - expected[i]))));
   });
 
-  // Two float32 unit vectors dot to about 0.9999995 against themselves, not 1 — that is the ceiling
-  // these numbers are read against, not a suspiciously imperfect score.
-  console.log(`\nbrowser (onnxruntime-web, wasm) vs sidecar (onnxruntime-node, ${process.platform}/${process.arch}), same batch of ${answer.vectors.length}:`);
-  console.log(`  worst cosine        ${worstCos.toFixed(9)}   (self-dot ceiling ${cosine(sidecar[0], sidecar[0]).toFixed(9)})`);
+  // A float32 unit vector dots to about 0.9999995 against itself, not 1: that is the ceiling here.
+  console.log(`\n${BROWSER_MODEL}: browser (onnxruntime-web, wasm) vs node (onnxruntime-node, ${process.platform}/${process.arch}), same batch of ${answer.vectors.length}:`);
+  console.log(`  worst cosine        ${worstCos.toFixed(9)}   (self-dot ceiling ${cosine(here[0], here[0]).toFixed(9)})`);
   console.log(`  worst component |Δ| ${worstDelta.toExponential(3)}`);
 
-  // The two runtimes are different builds of ONNX Runtime on different instruction sets, so bit
-  // equality is not the bar and never was. The bar is that the difference is invisible next to the
-  // signal: an echo corpus's genuine pair similarities run 0.3–0.9, and retrieval thresholds sit at
-  // 0.80 / 0.85 / 0.97. Anything at 0.9999 is three orders of magnitude below the nearest decision.
+  // Different ONNX Runtime builds, so the bar is a cosine floor far below the nearest retrieval
+  // threshold (0.80 / 0.85 / 0.97), not bit equality.
   if (worstCos < 0.9999) {
-    console.error('FAIL: the sidecar and the browser are not embedding into the same space');
+    console.error('FAIL: the shipped worker does not reproduce this model in a real browser');
     process.exitCode = 1;
   } else {
-    console.log('\nOK — the server and the browser agree');
+    console.log('\nOK — the worker embeds in Chrome what it embeds here');
   }
 }

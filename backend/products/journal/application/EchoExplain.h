@@ -22,7 +22,9 @@ struct EchoExplanation {
   bool pageFound = false;
   std::string body;
   std::uint64_t bodyStampMs = 0;
-  bool due = false;                     // would a save right now derive this page at all
+  // Would a save right now derive this page at all — asked with the pipeline identity the sweep
+  // records, this request's selection rules folded into the judging half like the sweep folds its own.
+  bool due = false;
   bool segmenterConfigured = false;
   bool embedderConfigured = false;
   bool curatorConfigured = false;

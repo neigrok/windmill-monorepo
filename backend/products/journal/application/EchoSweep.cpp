@@ -23,31 +23,6 @@ constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 
-// FNV-1a over every SelectionRules knob, in a fixed order, so a threshold change reopens the pages
-// it would judge differently. Add a knob to SelectionRules and add it here.
-std::string rulesTag(const SelectionRules& rules) {
-  const double values[] = {
-      static_cast<double>(rules.minDayGap),  static_cast<double>(rules.shown),
-      rules.refrainRadius,                   static_cast<double>(rules.refrainCrowd),
-      rules.familyRadius,                    rules.restatement,
-      rules.commonShare,                     static_cast<double>(rules.vocabularyFloor),
-      static_cast<double>(rules.perBand),    static_cast<double>(rules.maxRecent),
-      static_cast<double>(rules.maxPerMonth), rules.distanceWeight,
-      rules.familyPenalty,                   rules.diversityPenalty,
-  };
-  std::uint32_t hash = 2166136261u;
-  for (const double value : values) {
-    const auto* bytes = reinterpret_cast<const unsigned char*>(&value);
-    for (std::size_t i = 0; i < sizeof(double); ++i) {
-      hash ^= bytes[i];
-      hash *= 16777619u;
-    }
-  }
-  char tag[9];
-  std::snprintf(tag, sizeof(tag), "%08x", hash);
-  return tag;
-}
-
 CurationStatus statusFor(const std::string& failure) {
   if (failure == "rate_limited") return CurationStatus::rateLimited;
   if (failure == "truncated") return CurationStatus::truncated;
@@ -75,13 +50,18 @@ void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
     const EchoSweepReport report = run(now - kEchoLookbackMs);
-    if (report.pagesDerived > 0 || report.pagesFailed > 0 || report.pagesRefused > 0)
+    // Logged whenever anybody was SCANNED, not only when a page was derived. The old gate was the
+    // three outcome counters, so the passes worth reading were exactly the silent ones: every writer
+    // out of AI budget, or every trigger a refrain, printed nothing at all and looked identical to a
+    // quiet night. `usersOverAiBudget` was in the line and unreachable in the one case it names.
+    if (report.usersScanned > 0)
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
-               << " echoes, " << report.pagesFailed << " failed, " << report.pagesRefused
-               << " refused, " << report.unitsDiscarded << " units discarded, "
-               << report.pagesOverBudget
-               << " over budget, " << report.usersOverAiBudget << " users out of AI budget";
+               << " echoes, " << report.triggersSkippedRefrain << " refrains, "
+               << report.inboundEnqueued << " inbound, " << report.pagesFailed << " failed, "
+               << report.pagesRefused << " refused, " << report.unitsDiscarded
+               << " units discarded, " << report.pagesOverBudget << " over budget, "
+               << report.usersOverAiBudget << " users out of AI budget";
   });
   const bool armed =
       segmenter_.configured() && embedder_.configured() && curator_.configured();
@@ -109,7 +89,7 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
 PipelineVersions EchoSweep::versions() const {
   // The judging half is the curator's identity plus the selection knobs.
   return PipelineVersions{segmenter_.version(), embedder_.version(),
-                          curator_.version() + "/" + rulesTag(rules_)};
+                          judgeVersion(curator_.version(), rules_)};
 }
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
@@ -127,7 +107,12 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
   const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
   if (!page) return report;
 
-  const CurationOutcome outcome = derive(user, *page, corpusStamp, report);
+  CurationOutcome outcome = derive(user, *page, corpusStamp, report);
+  // A SETTLED page was handled end to end by this build, so it records the whole pipeline. An
+  // unsettled one keeps only the versions the steps it actually completed wrote, so the work
+  // already paid for is not bought again — and so a refused page, which is settled, is never
+  // reopened by a version it does not carry.
+  if (isSettled(outcome.status)) outcome.versions = versions();
   echoes_.recordCuration(user, page->day, outcome);
   countPage(report, outcome.status);
   return report;
@@ -166,7 +151,8 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
 
     for (std::size_t i = 0; i < pages.size(); ++i) {
       const DuePage page = pages[i];
-      const CurationOutcome outcome = derive(user, page, corpusStamp, report);
+      CurationOutcome outcome = derive(user, page, corpusStamp, report);
+      if (isSettled(outcome.status)) outcome.versions = versions();   // see derivePage
       echoes_.recordCuration(user, page.day, outcome);
       countPage(report, outcome.status);
       // Walked on settled, not on success: a refused page still replaced its own spans at step 3.
@@ -194,7 +180,12 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   CurationOutcome outcome;
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
-  outcome.versions = versions();
+  // WHAT THIS PASS ACHIEVED, filled in as each step succeeds — not what the build would produce.
+  // The difference is money: a dead embedder fails every page at step 2, and a pass that claimed a
+  // segment version anyway would look cut when it is not, while a pass that claims none buys the
+  // cut it already paid a vendor for again in six hours, and again, forever, producing no echoes.
+  // Each string is written by the step that earned it, and storage keeps the ones a failed pass
+  // leaves empty rather than clearing them.
 
   // 1 — cut the page into idea units. A vendor call, made only when the body moved.
   const std::vector<KnownSpan> stored = echoes_.spansOf(user, page.day);
@@ -240,6 +231,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   }
   report.passagesEmbedded += static_cast<int>(fresh.size());
 
+
   // 3 — reconcile, so unchanged text keeps its identity however far down the page it moved.
   const std::vector<IdentifiedPassage> carried = reconcile(stored, fresh);
   std::vector<SpanWrite> writes;
@@ -247,6 +239,14 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   for (std::size_t i = 0; i < carried.size(); ++i)
     writes.push_back(SpanWrite{carried[i].spanId, carried[i].passage, vectors[i]});
   echoes_.replaceSpans(user, page.day, writes, embedder_.version(), page.bodyStampMs);
+  // Recorded HERE and not a line earlier, because these strings are a claim about what is IN
+  // STORAGE, not about what this pass attempted. A pass that cut the page and then died at the
+  // embedder stored nothing, and a segment_version recorded there is not merely useless: the next
+  // pass would read body_moved false and judge the OLD units under a claim of the new grammar,
+  // forever. Past this line both are true, so a curate that dies afterwards reads its units back
+  // instead of re-buying the cut — which is the whole saving.
+  outcome.versions.segment = segmenter_.version();
+  outcome.versions.embed = embedder_.version();
 
   // 4 — retrieve. Reading the corpus back is also how tonight's passages acquire their minted ids.
   const std::vector<Vectored> corpus = echoes_.corpusOf(user, embedder_.version());
@@ -264,7 +264,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   // 5 — select, for the page. `nearestReported` 0: near misses cost another corpus scan.
   const PageSelection selection =
       selectForPage(tonight, history, waved, rules_, budget_.echoesPerPage, 0);
-  report.pagesSkippedRefrain += selection.refrains;
+  report.triggersSkippedRefrain += selection.refrains;
   const std::vector<Pairing>& proposed = selection.pairings;
 
   // What this pass actively refused, before the curator is asked. A stored pairing is retracted
@@ -305,6 +305,19 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   CuratedEchoes curated;
   curated.curatorVersion = curator_.version();
   curated.refused = structural;
+
+  // The day collapse is forward-only, and persistence is additive — so a page that stored two echoes
+  // into ONE past day before `maxPerMatchDay` existed would keep both rows forever, and the reader
+  // would go on seeing two cards where the write side (a dismissal, a signal) has always addressed
+  // one. The loser of a collapse is retracted, but ONLY once its day is actually represented: it is
+  // a duplicate of a card that exists, not a pairing anybody refused, so retracting it while the
+  // winner was itself rejected would quietly delete the day instead of deduplicating it.
+  std::set<std::string> represented;
+  for (const EchoRow& row : curated.rows) represented.insert(row.matchDay.iso());
+  for (const TriggerTrace& trace : selection.traces)
+    for (const CandidateNote& note : trace.notes)
+      if (note.fate == Fate::sameDay && represented.count(note.day.iso()))
+        curated.refused.push_back(SpanPair{trace.spanId, note.spanId});
   std::map<std::pair<std::int64_t, std::int64_t>, float> cosines;
   for (const Pairing& pairing : proposed)
     cosines[{pairing.triggerSpanId, pairing.matchSpanId}] = pairing.cosine;

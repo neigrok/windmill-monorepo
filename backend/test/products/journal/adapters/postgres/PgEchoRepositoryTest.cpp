@@ -213,6 +213,10 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   const std::string day = "2026-05-01";
   writePage(kMine, day, "wrote a little.");
   PgEchoRepository repo{pgTestPool()};
+  // The units this body was cut into. `bodyMoved` asks storage whether they are there, so a page
+  // with none of them reports as moved however settled its ledger row looks.
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, "wrote a little.")},
+                    kPipeline.embed, 0);
   repo.recordCuration(UserId{kMine}, LocalDate{day},
                       CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
 
@@ -237,6 +241,86 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, false);
   CHECK_EQ(repo.duePages(UserId{kMine}, 9, rejudge).size(), std::size_t{1});
+}
+
+// A stamp of max(body_stamp_ms) could not answer this: the passages that went were not the newest,
+// so the max over the ones that survived did not move and no page read as stale.
+TEST(pg_echo_emptying_a_page_moves_the_corpus_under_every_page_that_reads_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string older = "2024-01-01";
+  const std::string day = "2026-05-01";
+  writePage(kMine, older, kLine);
+  writePage(kMine, day, kTrigger);
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed, 0);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(21, 0, 0, kTrigger)}, kPipeline.embed, 0);
+  CHECK_EQ(repo.corpusStamp(UserId{kTheirs}), std::uint64_t{0});   // an empty corpus, not mine
+
+  const std::uint64_t before = repo.corpusStamp(UserId{kMine});
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 0, before, "", kPipeline});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, before, kPipeline).has_value());
+
+  // Re-derived into the same passages: nothing moved, so nobody is owed a curator call.
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {span(11, 0, 0, kLine)}, kPipeline.embed, 0);
+  CHECK_EQ(repo.corpusStamp(UserId{kMine}), before);
+
+  // The page the writer emptied tonight: its passages go, and not one of them was the newest.
+  repo.replaceSpans(UserId{kMine}, LocalDate{older}, {}, kPipeline.embed, 9);
+  const std::uint64_t after = repo.corpusStamp(UserId{kMine});
+  CHECK(after != before);
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, after, kPipeline).has_value());
+  CHECK_EQ(repo.duePages(UserId{kMine}, after, kPipeline).size(), std::size_t{2});
+}
+
+// The archive was re-cut forever: a pass that died after the cut recorded no segment version, so the
+// page reported as body-moved next time and bought the same vendor cut again, every six hours.
+TEST(pg_echo_a_failed_pass_keeps_the_cut_it_paid_for_and_is_still_owed) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository repo{pgTestPool()};
+  const std::string day = "2026-05-01";
+  const std::string body = "wrote a little.";
+  writePage(kMine, day, body);
+  repo.replaceSpans(UserId{kMine}, LocalDate{day}, {span(0, 0, 0, body)}, kPipeline.embed, 0);
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
+  REQUIRE(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+
+  // The curator died on a pass that had already stored its cut and its vectors.
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::rateLimited, 0, 9, "rate_limited",
+                                      PipelineVersions{kPipeline.segment, kPipeline.embed, ""}});
+
+  // Owed on its status alone — every version matches now and neither stamp moved.
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->attempts, 1);
+  CHECK_EQ(owed->bodyMoved, false);   // and not one vendor cut is bought again
+  CHECK_EQ(repo.duePages(UserId{kMine}, 9, kPipeline).size(), std::size_t{1});
+
+  // A pass that got nowhere hands back no version, and must not clear the one already earned.
+  repo.recordCuration(
+      UserId{kMine}, LocalDate{day},
+      CurationOutcome{CurationStatus::transport, 0, 9, "transport", PipelineVersions{}});
+  owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->attempts, 2);
+  CHECK_EQ(owed->bodyMoved, false);
+
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  pqxx::result rows = w.exec_params(
+      "SELECT segment_version, embed_version, judge_version, body_stamp_ms, corpus_stamp "
+      "FROM journal_page_curation WHERE user_id = $1::uuid AND day = $2::date",
+      kMine, day);
+  REQUIRE_EQ(rows.size(), std::size_t{1});
+  CHECK_EQ(rows[0]["segment_version"].as<std::string>(), kPipeline.segment);
+  CHECK_EQ(rows[0]["embed_version"].as<std::string>(), kPipeline.embed);
+  CHECK_EQ(rows[0]["judge_version"].as<std::string>(), kPipeline.judge);   // it judged nothing
+  CHECK_EQ(rows[0]["body_stamp_ms"].as<std::int64_t>(), std::int64_t{0});
+  CHECK_EQ(rows[0]["corpus_stamp"].as<std::int64_t>(), std::int64_t{9});
 }
 
 TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {

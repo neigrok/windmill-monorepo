@@ -69,12 +69,15 @@ Json::Value toJson(const EchoSweepReport& report) {
   Json::Value body(Json::objectValue);
   body["usersScanned"] = report.usersScanned;
   body["pagesDerived"] = report.pagesDerived;
-  body["pagesSkippedRefrain"] = report.pagesSkippedRefrain;
+  body["triggersSkippedRefrain"] = report.triggersSkippedRefrain;
   body["passagesEmbedded"] = report.passagesEmbedded;
   body["echoesWritten"] = report.echoesWritten;
   body["pagesFailed"] = report.pagesFailed;
   body["inboundEnqueued"] = report.inboundEnqueued;
   body["pagesOverBudget"] = report.pagesOverBudget;
+  body["pagesRefused"] = report.pagesRefused;
+  body["unitsDiscarded"] = report.unitsDiscarded;
+  body["usersOverAiBudget"] = report.usersOverAiBudget;
   return body;
 }
 
@@ -106,11 +109,13 @@ Json::Value toJson(const SelectionRules& rules) {
   body["shown"] = rules.shown;
   body["refrainRadius"] = rules.refrainRadius;
   body["refrainCrowd"] = rules.refrainCrowd;
+  body["refrainShare"] = rules.refrainShare;
   body["familyRadius"] = rules.familyRadius;
   body["restatement"] = rules.restatement;
   body["perBand"] = rules.perBand;
   body["maxRecent"] = rules.maxRecent;
   body["maxPerMonth"] = rules.maxPerMonth;
+  body["maxPerMatchDay"] = rules.maxPerMatchDay;
   body["distanceWeight"] = rules.distanceWeight;
   body["familyPenalty"] = rules.familyPenalty;
   body["diversityPenalty"] = rules.diversityPenalty;
@@ -496,11 +501,13 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   request.rules.shown = knob(req, "shown", request.rules.shown);
   request.rules.refrainRadius = knob(req, "refrainRadius", request.rules.refrainRadius);
   request.rules.refrainCrowd = knob(req, "refrainCrowd", request.rules.refrainCrowd);
+  request.rules.refrainShare = knob(req, "refrainShare", request.rules.refrainShare);
   request.rules.familyRadius = knob(req, "familyRadius", request.rules.familyRadius);
   request.rules.restatement = knob(req, "restatement", request.rules.restatement);
   request.rules.perBand = knob(req, "perBand", request.rules.perBand);
   request.rules.maxRecent = knob(req, "maxRecent", request.rules.maxRecent);
   request.rules.maxPerMonth = knob(req, "maxPerMonth", request.rules.maxPerMonth);
+  request.rules.maxPerMatchDay = knob(req, "maxPerMatchDay", request.rules.maxPerMatchDay);
   request.rules.distanceWeight = knob(req, "distanceWeight", request.rules.distanceWeight);
   request.rules.familyPenalty = knob(req, "familyPenalty", request.rules.familyPenalty);
   request.rules.diversityPenalty = knob(req, "diversityPenalty", request.rules.diversityPenalty);

@@ -58,7 +58,7 @@ TEST(a_bare_list_with_no_terminal_punctuation_is_one_passage_per_line) {
   checkContract(body, passages);
 }
 
-TEST(a_line_break_ends_a_passage_even_when_the_sentence_cap_has_room) {
+TEST(a_line_break_ends_a_passage_even_when_the_atom_cap_has_room) {
   const std::string body =
       "i finally called mum about the house today.\nhe texted me again about the weekend.";
 
@@ -69,7 +69,7 @@ TEST(a_line_break_ends_a_passage_even_when_the_sentence_cap_has_room) {
   checkContract(body, passages);
 }
 
-TEST(prose_on_one_line_splits_at_the_sentence_cap) {
+TEST(prose_on_one_line_splits_at_the_atom_cap) {
   const std::string body =
       "i finally called mum about the house today. she sounded better than she did last week. "
       "i skipped the run again this evening. he texted me again about the weekend.";
@@ -179,7 +179,7 @@ TEST(a_closing_quote_stays_with_the_sentence_it_closes) {
   checkContract(body, passages);
 }
 
-TEST(fragments_merge_even_where_that_overruns_the_sentence_cap) {
+TEST(fragments_merge_even_where_that_overruns_the_atom_cap) {
   const std::string body = "hi. ok. no. yes.";
 
   const std::vector<Passage> passages = segment(body);
@@ -311,7 +311,7 @@ TEST(units_returned_out_of_order_are_still_found) {
   CHECK_EQ(located[1].text, std::string{"первое."});
 }
 
-// ATOMS AND GROUPING. A segmenter answers in NUMBERS: which sentence each idea unit starts at. The
+// ATOMS AND GROUPING. A segmenter answers in NUMBERS: which ATOM each idea unit starts at. The
 // model never receives a place to put text, so a misquote stops being a thing to detect and becomes
 // a thing that cannot happen.
 
@@ -357,4 +357,200 @@ TEST(an_answer_naming_nothing_usable_still_yields_the_whole_page) {
 TEST(a_page_with_no_atoms_groups_into_nothing) {
   CHECK_EQ(atomsOf("   \n\t ").empty(), true);
   CHECK_EQ(unitsFrom("   \n\t ", {}, {1, 2}).units.empty(), true);
+}
+
+// THE ATOM GRAMMAR. Every case below was ONE atom under the sentence-only grid that shipped first,
+// which made it one embedding carrying every thought on the line — and, at one atom, a page the
+// segmenter was never even shown.
+
+TEST(a_comma_spliced_line_of_three_topics_is_not_left_as_one_atom) {
+  const std::string body =
+      "сегодня опять заебался на работе и ничего не успел, потом еще с мамой поругался "
+      "из-за квартиры, а вечером снова не пошел на тренировку и просто лежал и смотрел в потолок";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  CHECK_EQ(textsOf(atoms),
+           (Texts{"сегодня опять заебался на работе и ничего не успел,",
+                  "потом еще с мамой поругался из-за квартиры,",
+                  "а вечером снова не пошел на тренировку и просто лежал и смотрел в потолок"}));
+  checkContract(body, atoms);
+}
+
+TEST(a_dash_between_clauses_opens_an_atom) {
+  const std::string body = "хочется все бросить и уехать в сербию — но это ничего не решит";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  CHECK_EQ(textsOf(atoms),
+           (Texts{"хочется все бросить и уехать в сербию", "— но это ничего не решит"}));
+  checkContract(body, atoms);
+}
+
+TEST(an_ellipsis_and_a_semicolon_end_an_atom) {
+  const std::string body = "не знаю что делать дальше… надо просто поспать; завтра будет видно";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  CHECK_EQ(textsOf(atoms), (Texts{"не знаю что делать дальше…", "надо просто поспать;",
+                                  "завтра будет видно"}));
+  checkContract(body, atoms);
+
+  // The typed-out ellipsis is the same boundary, and the three dots are one of them, not three.
+  CHECK_EQ(textsOf(atomsOf("не знаю... надо поспать")), (Texts{"не знаю...", "надо поспать"}));
+  CHECK_EQ(textsOf(atomsOf("план на завтра: встать в семь")),
+           (Texts{"план на завтра:", "встать в семь"}));
+}
+
+TEST(a_mid_line_list_marker_opens_an_atom) {
+  const std::string body = "+я буду делать зарядку каждое утро + машу рукой всем кто не верит";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  CHECK_EQ(textsOf(atoms),
+           (Texts{"+я буду делать зарядку каждое утро", "+ машу рукой всем кто не верит"}));
+  checkContract(body, atoms);
+}
+
+TEST(a_diary_is_not_a_calculator_and_pays_for_it_in_the_cheap_direction) {
+  const std::string body = "было 3 - 2 в нашу пользу\nна улице -5 градусов и какой-то мокрый снег";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  // The arithmetic is cut, because the rule that finds a list cannot tell one from the other. A
+  // digit right after the marker is left alone, and a hyphen inside a word is never a marker.
+  CHECK_EQ(textsOf(atoms), (Texts{"было 3", "- 2 в нашу пользу",
+                                  "на улице -5 градусов и какой-то мокрый снег"}));
+  checkContract(body, atoms);
+}
+
+TEST(a_long_line_splits_at_commas_that_leave_three_words_on_each_side) {
+  const std::string body =
+      "нет, я правда не понимаю зачем я каждый раз соглашаюсь на это, "
+      "когда мне совсем не хочется, и потом лежу и жалею об этом весь вечер, да";
+
+  const std::vector<Passage> atoms = atomsOf(body);
+
+  // The opening "нет," and the trailing "да" have fewer than three words on their side, so those
+  // two commas are not boundaries; the two in the middle are.
+  CHECK_EQ(textsOf(atoms),
+           (Texts{"нет, я правда не понимаю зачем я каждый раз соглашаюсь на это,",
+                  "когда мне совсем не хочется,", "и потом лежу и жалею об этом весь вечер, да"}));
+  checkContract(body, atoms);
+}
+
+TEST(a_short_line_is_never_cut_at_its_commas) {
+  // The same shape under `kLongAtomWords`: a comma is the last resort, not a boundary.
+  const std::string body = "заебался, нет сил продолжать";
+
+  CHECK_EQ(textsOf(atomsOf(body)), (Texts{"заебался, нет сил продолжать"}));
+  CHECK_EQ(wordsIn(body), 4);
+}
+
+TEST(a_short_one_sentence_page_is_exactly_one_atom) {
+  CHECK_EQ(textsOf(atomsOf("хочется уже в сербию")), (Texts{"хочется уже в сербию"}));
+  CHECK_EQ(textsOf(atomsOf("tired")), (Texts{"tired"}));
+  CHECK_EQ(textsOf(atomsOf("i finally called mum about the house today.")),
+           (Texts{"i finally called mum about the house today."}));
+}
+
+TEST(a_finer_grid_costs_the_rule_path_nothing_because_merging_is_free) {
+  const std::string body =
+      "заебался; надо поспать\n"
+      "+я буду вставать в семь + машу рукой тем кто не верит\n"
+      "хочется уехать — но это ничего не решит… наверное";
+
+  // Seven atoms, and the merge rules put every one of them back on the line it came from.
+  REQUIRE_EQ(atomsOf(body).size(), std::size_t{7});
+  CHECK_EQ(textsOf(segment(body)),
+           (Texts{"заебался; надо поспать", "+я буду вставать в семь + машу рукой тем кто не верит",
+                  "хочется уехать — но это ничего не решит… наверное"}));
+  checkContract(body, segment(body));
+}
+
+TEST(units_still_tile_the_page_when_the_grid_is_this_fine) {
+  const std::string body =
+      "заебался; надо поспать\n"
+      "+я буду вставать в семь + машу рукой тем кто не верит\n"
+      "хочется уехать — но это ничего не решит… наверное";
+  const std::vector<Passage> atoms = atomsOf(body);
+  REQUIRE_EQ(atoms.size(), std::size_t{7});
+
+  const Grouping grouped = unitsFrom(body, atoms, {1, 3, 6});
+
+  CHECK_EQ(grouped.dropped, 0);
+  CHECK_EQ(textsOf(grouped.units),
+           (Texts{"заебался; надо поспать",
+                  "+я буду вставать в семь + машу рукой тем кто не верит\nхочется уехать",
+                  "— но это ничего не решит… наверное"}));
+  checkContract(body, grouped.units);
+  // Tiling: the first unit opens on the first atom, the last closes on the last, and no unit
+  // overlaps its neighbour.
+  CHECK_EQ(grouped.units.front().lo, atoms.front().lo);
+  CHECK_EQ(grouped.units.back().hi, atoms.back().hi);
+  for (std::size_t i = 1; i < grouped.units.size(); ++i)
+    CHECK(grouped.units[i - 1].hi < grouped.units[i].lo);
+}
+
+TEST(words_are_counted_in_whitespace_separated_runs) {
+  CHECK_EQ(wordsIn("- called mum"), 3);
+  CHECK_EQ(wordsIn("  tired  "), 1);
+  CHECK_EQ(wordsIn(""), 0);
+  CHECK_EQ(wordsIn("   \n\t "), 0);
+  CHECK_EQ(wordsIn("хочется все бросить и уехать в сербию"), 7);
+}
+
+// A unit is a run of atoms, so nothing in the grouping bounds its LENGTH — the model can answer
+// starts=[1] on a page of any size. Past the embedder's window the sidecar REFUSES the batch (it
+// will not silently truncate), the page fails, stays owed, and is cut by a vendor and refused again
+// every six hours forever. So the bound is here, where it is free.
+TEST(a_unit_too_heavy_for_the_embedder_is_split_on_its_own_atom_boundaries) {
+  std::string body = "мысль номер 0 про то как я сегодня опять сидел и делал бэкенд.";
+  for (int i = 1; i < 12; ++i)
+    body += " мысль номер " + std::to_string(i) + " про то как я сегодня опять сидел и делал бэкенд.";
+  const std::vector<Passage> atoms = atomsOf(body);
+  REQUIRE(atoms.size() >= std::size_t{12});
+  CHECK(wordsIn(body) > kMaxUnitWords);
+
+  // The model asks for ONE unit covering the whole page, which is exactly the answer that would
+  // produce a passage the sidecar cannot read.
+  const Grouping grouped = unitsFrom(body, atoms, {1});
+
+  CHECK(grouped.units.size() > std::size_t{1});
+  for (const Passage& unit : grouped.units) {
+    CHECK(wordsIn(unit.text) <= kMaxUnitWords);
+    CHECK_EQ(body.substr(unit.lo, unit.hi - unit.lo), unit.text);
+  }
+  // Still a tiling: the first starts at the top and the last ends at the bottom, in order.
+  CHECK_EQ(grouped.units.front().lo, 0);
+  CHECK_EQ(grouped.units.back().hi, static_cast<int>(body.size()));
+  for (std::size_t i = 1; i < grouped.units.size(); ++i)
+    CHECK_EQ(grouped.units[i].lo, grouped.units[i - 1].hi + 1);
+}
+
+TEST(a_page_that_fits_is_not_split_by_the_weight_bound) {
+  const std::string body = "коротко. и еще одна мысль. и третья.";
+  const Grouping grouped = unitsFrom(body, atomsOf(body), {1});
+  REQUIRE_EQ(grouped.units.size(), std::size_t{1});
+  CHECK_EQ(grouped.units[0].text, body);
+}
+
+// The grammar's last resort. Every other cut is a seam somebody wrote; a line with no terminator, no
+// dash, no marker and no comma offers none, and `unitsFrom` will not cut inside an atom — so without
+// this the page would carry a unit of any length, and past the embedder's window the sidecar refuses
+// the batch and the page can never be stored at all.
+TEST(a_run_on_with_no_seam_at_all_is_still_cut_into_embeddable_atoms) {
+  std::string body = "мысль";
+  for (int i = 0; i < 200; ++i) body += " и еще одна мысль про то же самое";
+  REQUIRE(body.find_first_of(".,!?;:") == std::string::npos);
+
+  const std::vector<Passage> atoms = atomsOf(body);
+  CHECK(atoms.size() > std::size_t{1});
+  for (const Passage& atom : atoms) CHECK(wordsIn(atom.text) <= kMaxUnitWords);
+
+  // And the units built from them stay inside the window whatever the model answers.
+  const Grouping grouped = unitsFrom(body, atoms, {1});
+  for (const Passage& unit : grouped.units) CHECK(wordsIn(unit.text) <= kMaxUnitWords);
+  CHECK_EQ(grouped.units.front().lo, 0);
+  CHECK_EQ(grouped.units.back().hi, static_cast<int>(body.size()));
 }

@@ -772,9 +772,11 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
-  // Either boundary unwired makes any echo pass a no-op: NullEmbedder and NullCurator both answer
-  // configured() false. The sidecar must run the same bge-small weights the browser downloads, or a
-  // server vector and an on-device one stop being interchangeable.
+  // Any boundary unwired makes an echo pass a no-op: NullEmbedder and NullCurator answer
+  // configured() false. This used to add that the sidecar must run the same weights the browser
+  // downloads "or the vectors stop being interchangeable" — deleted rather than softened, because
+  // it was never true and would be read as a constraint on the model: nothing serves a vector to
+  // any client, the browser embeds page bodies on the device, and the two indexes never meet.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
   if (embedderUrlEnv && *embedderUrlEnv)

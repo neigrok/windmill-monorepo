@@ -1,10 +1,4 @@
-// The sidecar as the C++ backend sees it: a process, a port, and two doors. Spawns server.js on a
-// scratch port and drives it — warmup, dimensions, determinism, batch independence, and every way a
-// caller can hand it something absurd.
-//
-// The batch-independence case is the one that protects the feature. The server embeds a page's
-// passages together and the browser embeds a query alone; if a vector depended on what it was
-// batched with, the two would live in slightly different spaces and nothing would ever say so.
+// Spawns server.js on a scratch port and drives it as the C++ backend does.
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -30,9 +24,8 @@ const server = spawn('node', ['server.js'], {
 });
 
 try {
-  // The port opens in the same tick the model starts loading, so the first answer this door ever
-  // gives is a warming one — provided we ask the instant it opens. Retry with no delay; a sleep here
-  // is how this assertion turns flaky.
+  // The port opens in the same tick the model starts loading, so retry with no delay: a sleep here
+  // makes this assertion flaky.
   let warming = null;
   for (let attempt = 0; attempt < 4000 && !warming; attempt++) {
     warming = await fetch(`${BASE}/health`).catch(() => null);
@@ -44,8 +37,6 @@ try {
   assert.equal(warmingBody.version, fixture.version, 'the version is knowable before the model is');
   console.log('health during warmup: 503 loading — honest');
 
-  // A request that arrives mid-warmup waits for the model rather than failing; the backend's timeout
-  // is sized for exactly this.
   const first = await embed(fixture.passages);
   const firstBody = await first.json();
   assert.equal(first.status, 200);
@@ -59,10 +50,8 @@ try {
   assert.equal((await ready.json()).status, 'ready');
   console.log('health after the model is up: 200 ready');
 
-  // JSON must carry float32 back unchanged, or every vector in the database is a rounded copy of the
-  // one the browser holds. Compared against this machine's own embedder rather than the committed
-  // fixture, so the assertion is about the wire and nothing else — the fixture is bound to the
-  // platform that generated it, the wire is not.
+  // Compared against this machine's own embedder, not the committed fixture, so the assertion is
+  // about the wire alone.
   const local = await embedPassages(await loadExtractor(), fixture.passages);
   assert.deepEqual(firstBody.vectors, local, 'HTTP must not perturb a single component');
   console.log('wire response is bit-equal to this machine’s own vectors');
@@ -71,21 +60,18 @@ try {
   assert.deepEqual((await again.json()).vectors, firstBody.vectors, 'identical input must give identical vectors');
   console.log('two identical requests: identical vectors');
 
-  // A passage's vector is NOT independent of what it was batched with, and no configuration makes it
-  // so: the q8 model quantizes activations dynamically, computing one scale from the whole padded
-  // batch tensor, so every co-batched sentence nudges every other. Measured at cos 0.995–0.998 —
-  // small next to a corpus whose genuine pair similarities run 0.3–0.9, and a property the browser's
-  // own index already has (it embeds passages 32 at a time and queries alone). So this asserts the
-  // bound rather than an identity that was never true; a regression past it means something changed
-  // about the model, not about the batch.
+  // A passage's vector is not independent of what it was batched with, so this asserts a bound
+  // rather than an identity.
   let closest = 1;
   for (const [row, passage] of fixture.passages.entries()) {
     const alone = (await (await embed([passage])).json()).vectors[0];
     const batched = firstBody.vectors[row];
     closest = Math.min(closest, alone.reduce((total, value, i) => total + value * batched[i], 0));
   }
-  assert.ok(closest > 0.99, `batching moved a passage too far: cos ${closest}`);
-  console.log(`batch of five vs five batches of one: worst cosine ${closest.toFixed(6)}`);
+  // 0.9918 here on darwin/arm64: the floor sits below that with room for another ORT build, and far
+  // below the nearest retrieval threshold (0.80).
+  assert.ok(closest > 0.98, `batching moved a passage too far: cos ${closest}`);
+  console.log(`one batch of ${fixture.passages.length} vs ${fixture.passages.length} batches of one: worst cosine ${closest.toFixed(6)}`);
 
   const refusals = [
     ['empty batch', { passages: [] }, 400],
@@ -107,8 +93,19 @@ try {
   assert.equal((await fetch(`${BASE}/nope`)).status, 404);
   console.log('refusals: empty, non-array, non-string, oversized batch, malformed JSON, unknown path');
 
-  // 3MB of passages against a 2MB cap. Either answer is correct — a 413 or a hang-up — as long as
-  // the process is still standing afterwards, which is the property that actually matters.
+  // The one refusal no character or passage count can stand in for: a passage the model would read
+  // only the first 512 pieces of. It must take the whole batch down — a truncated vector comes back
+  // unit-length and 384-dimensional, and nothing downstream could ever tell. The complaint names an
+  // index and a count and never a byte of the passage.
+  const overLength = Array(60).fill('Сегодня опять весь день ушёл на рефактор, который никому не нужен.').join(' ');
+  assert.ok(overLength.length < 20_000, 'this passage must be refused for its pieces, not its characters');
+  const truncating = await embed(['tired again today', overLength]);
+  assert.equal(truncating.status, 400, 'an over-length passage must be refused, never silently truncated');
+  const complaint = (await truncating.json()).error;
+  assert.match(complaint, /^passage 1 is \d+ tokenizer pieces, over the 512 this model reads$/, complaint);
+  console.log(`over-length passage: 400 — ${complaint}`);
+
+  // 3MB against a 2MB cap: either a 413 or a hang-up is correct, as long as the process survives.
   const flood = await embed([Array(3_000_000).fill('a').join('')]).catch((error) => ({ status: `hung up (${error.cause?.code || error.message})` }));
   console.log(`3MB body: ${flood.status}`);
   const alive = await fetch(`${BASE}/health`);
@@ -117,7 +114,6 @@ try {
 
   console.log('\nOK');
 } finally {
-  // SIGKILL: onnxruntime-node aborts noisily in its own teardown, and a red herring in the last line
-  // of a passing check is worth avoiding.
+  // SIGKILL: onnxruntime-node aborts noisily in its own teardown.
   server.kill('SIGKILL');
 }

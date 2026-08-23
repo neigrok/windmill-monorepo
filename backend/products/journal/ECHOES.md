@@ -42,10 +42,37 @@ For each page whose body changed, whose corpus moved under it, or whose pipeline
 
 **Segmenter** (`ports/Segmenter.h`) cuts the page into idea units, one vendor call per page whose
 body moved. `AnthropicSegmenter` runs `claude-sonnet-5` at effort `low`. Without an Anthropic key the
-composition root wires `RuleSegmenter` (`segment`, `SegmentRules{minWords = 6, maxSentences = 3}`,
+composition root wires `RuleSegmenter` (`segment`, `SegmentRules{minWords = 6, maxAtoms = 3}`,
 pure); that deploy has no curator either, so no echo can arrive from it.
 
-**Embedder** turns a passage into a vector; a self-hosted bge-small-class model.
+**Embedder** turns a passage into a vector: the self-hosted sidecar running
+`Xenova/paraphrase-multilingual-MiniLM-L12-v2`, q8, mean-pooled, L2-normalised, 384 dims, no query
+prefix (the model is symmetric). It ran `bge-small-en-v1.5` until 2026-08-23. That model is ENGLISH,
+and the one person writing in this journal writes Russian; measured on their own 40 passages:
+
+| | paraphrase vs word-sharing impostor | the writer's true reach-back, ranked over the real corpus | median pair-cos |
+|---|---|---|---|
+| `bge-small-en-v1.5` | **9%** separation — worse than a coin | **5th**, behind three unrelated lines (z 1.18) | 0.728 |
+| `multilingual-e5-small` | 48% — chance | 1st, by 0.003 over a line about nothing | 0.850 |
+| `paraphrase-multilingual-MiniLM-L12-v2` | **76%** | **1st**, 0.610 against 0.394 (z 3.82) | 0.311 |
+
+Quantisation is not the cause (fp32 moves those to 49% and 78%). The mechanism is tokenisation: the
+same Russian passage is 135 pieces under an English WordPiece vocab and 50 under XLM-R, so bge was
+matching CHARACTER OVERLAP and scored word-sharing impostors ABOVE true paraphrases. It ranked the
+one echo this journal is known to contain first only while passages were coarse enough to share
+strings; the idea-unit grid removed that crutch and dropped it to fifth.
+
+This also settles what the absolute radii mean. Under bge, 0.80 was the ordinary distance between
+two unrelated Russian lines — the top 7.2% of all pairs — so `refrainRadius` fired on noise and
+`restatement` 0.97 had never once fired on this corpus (nothing in it reaches 0.97). Under a model
+whose median pair sits at 0.311, 0.80 is what a genuine near-duplicate scores, which is what those
+numbers always meant. `multilingual-e5-small` is disqualified twice over: chance separation, and a
+crowd@0.80 of 28 in 30, which would make every trigger a refrain and emit nothing.
+
+The browser's ⌘K search is a SEPARATE index on `bge-small-en-v1.5`, embedded on the device from page
+bodies. Nothing serves a vector across that line, so the two may differ — but the search box has the
+identical defect for the same reason, and moving it costs a ~118MB phone download. That is an open
+product call, not a technical one.
 
 **Curator** (`AnthropicCurator`, `claude-sonnet-5` at effort `low`) is one call per changed page. It
 sees tonight's passages and the selected candidates and returns, per pair, whether they genuinely
@@ -120,42 +147,57 @@ warm, per (user, embedding version), for 15 minutes.
 
 The page is cut into **idea units**: one thought as its writer would count it.
 
-**The model answers in NUMBERS, never in text.** The page is cut deterministically into **atoms** —
-line breaks are hard boundaries, then one sentence each, nothing merged (`atomsOf`) — and the atoms
-are numbered and shown to the model, which replies only with the atom each idea unit STARTS at
-(`{"starts":[1,3,4]}`). Units are runs of consecutive atoms, so they tile the page, and a unit's
-bytes come from the atom offsets. **The model is never given a place to put text**, so misquoting the
-writer stops being a thing to detect and becomes a thing that cannot happen.
+**The model answers in NUMBERS, never in text.** The page is cut deterministically into **atoms**
+(`atomsOf`), the atoms are numbered and shown to the model, and it replies only with the atom each
+idea unit STARTS at (`{"starts":[1,3,4]}`). Units are runs of consecutive atoms, so they tile the
+page, and a unit's bytes come from the atom offsets. **The model is never given a place to put
+text**, so misquoting the writer stops being a thing to detect and becomes a thing that cannot
+happen. (It returned unit strings for a few hours on 2026-08-23, checked against the body by
+`locateUnits` — sound, and the wrong shape: that made a misquote *detectable*.)
 
-It shipped the other way round for a few hours — the model returned unit strings and `locateUnits`
-searched the body for each, discarding what was not there byte for byte. That check was sound and is
-still what the storage-reuse path uses to re-find stored units in a live body, but it makes a
-violation *detectable* where the numbers make it *impossible*.
+**The atom grid is what the model gets to choose among, so it is cut fine** (`kAtomGrammarVersion`,
+bumped by hand whenever a cut moves — a grammar nobody stamps is a grammar that reaches only pages
+written after it). Line breaks are hard boundaries; then terminator runs including `…`; then `;` and
+`:`; then a whitespace-wrapped dash, which in Russian is the clause joiner a comma is in English;
+then a mid-line list marker (`+ - – — •`), because a diary writes "+this +that" on one line; and as a
+last resort an atom still over `kLongAtomWords` is cut at commas leaving three words each side.
+Merging is FREE — the model can always answer `starts=[1]` — so a finer grid strictly dominates a
+coarse one and costs only input tokens, the cheap half of the bill. The grammar cut only at `.!?`
+until 2026-08-23, which collapsed four of seven realistic Russian diary bodies to a SINGLE atom.
+
+**The vendor is asked unless there is provably nothing to decide**: an empty page, or one atom of at
+most `kLongAtomWords` words. It used to skip on one atom of any length, which meant the most diluted
+page in the corpus — a long unpunctuated line carrying three thoughts — was the one page guaranteed
+never to be looked at. Measured cost of that dilution: 0.354 for the whole line against 0.950 for the
+clause inside it.
 
 **A wrong answer is repaired, not refused** (`unitsFrom`). Out of range, out of order, duplicated,
-missing the opening 1 — all fixed deterministically, and `dropped` counts what could not be used.
-This is only safe because the answer is numbers: any partition of a page's own sentences is made of
-that page's own bytes, so the worst a confused reply can do is group thoughts badly. Refusing the
-page instead would trade a real echo for a cosmetic failure. A reply that is not a list of integers
-at all is still a failed call, and the page stays owed.
+missing the opening 1 — all fixed deterministically, and `unitsDiscarded` counts what could not be
+used. This is only safe because the answer is numbers: any partition of a page's own atoms is made of
+that page's own bytes, so the worst a confused reply can do is group thoughts badly. **One reply is
+not repairable and must not be: an empty `starts` on a page with more than one atom.** `unitsFrom`
+opens at atom 1 regardless, so a page that got NO decision would settle byte-identical to one the
+model read and judged whole. It is a failed call and the page stays owed.
 
-**The known limit of atoms:** a unit boundary can only fall where the deterministic splitter found
-one. A line with no sentence punctuation is one atom and cannot be cut, where the free-text scheme
-could have split it. Diaries do write like that; this is the trade the numbers bought.
-
-**The vendor is not asked when there is nothing to decide.** No atoms is an empty page; ONE atom has
-no boundary to choose, so it is stored whole without a call. Measured on a real diary: one page in
-six is a single line.
+**The known limit of atoms:** a unit boundary can only fall where the grammar found one, so a line
+with no punctuation and under `kLongAtomWords` words is one atom and cannot be cut, where the
+free-text scheme could have split it anywhere. That is the trade the numbers bought, and the grammar
+above is how far it has been bought back.
 
 `EchoSweepReport::unitsDiscarded` counts repaired indices; above zero on an ordinary night it means
 the model is answering about a page it did not read properly.
 
-**The segmenter is asked only when the body moved** (`DuePage::bodyMoved`, computed in SQL). Those
-other passes read the units back out of storage.
+**The segmenter is asked only when the body moved** — and `DuePage::bodyMoved` asks STORAGE, not a
+clock: it is true when no passage is held for this page under this body stamp AND this segmenter
+version. Every other pass reads the units back out of storage and costs the vendor nothing.
 
-`journal_page_curation` records three version strings on every settled pass, and both due-ness
-queries compare them against what the running build would produce (`PipelineVersions`). Three
-strings rather than one, because they go stale differently:
+`journal_page_curation` records three version strings, and both due-ness queries compare them against
+what the running build would produce (`PipelineVersions`). A SETTLED pass records all three; an
+unsettled one records only what it EARNED — and it records them after `replaceSpans`, never before,
+because these strings are a claim about what is in storage rather than about what a pass attempted.
+A pass that cut a page and then died at the embedder stored nothing, and claiming the cut there would
+make the next pass judge the old units under the new grammar's name, forever. Three strings rather
+than one, because they go stale differently:
 
 | column | what moved | what it costs |
 |---|---|---|
@@ -199,11 +241,27 @@ Pure and deterministic, no model (`domain/EchoSelection.h`). `SelectionRules` ho
 nothing else may hardcode these numbers.
 
 1. **Trigger gate.** `crowd(t) = |{c : cos(t,c) >= refrainRadius}|`, excluding the trigger's own row.
-   At `crowd(t) >= refrainCrowd` the passage is a refrain and emits nothing.
-2. **Drop restatements.** `cos >= restatement` to the trigger is not a memory.
-3. **Anchor.** No shared low-frequency word, no echo. `AnchorVocabulary::of` counts document
-   frequency over the corpus's passages; a word carried by at least `commonShare` of them is the
-   writer's own, not an anchor, and under `vocabularyFloor` passages only the built-in English list
+   A refrain emits nothing. The threshold is `max(refrainCrowd, ceil(refrainShare * |history|))` —
+   a SHARE of the corpus, with the absolute count as a floor for a small one. It was an absolute 5,
+   which is a gate whose behaviour is a function of how much somebody has written: measured on the
+   owner's corpus, 7.2% of it sits within 0.80 of any given passage, so the expected crowd crosses 5
+   at ~71 passages and the feature switches itself off, silently and permanently, for the writer who
+   journals most. A distributional RADIUS does not fix that — a quantile radius holds the tail
+   fraction roughly constant, so the count still grows with the corpus. Only a share does.
+2. **Drop restatements.** The same sentence again is not a memory: identical `normalizedForIdentity`
+   at any cosine, or `cos >= restatement`. The exact test is free, deterministic and
+   model-independent; the cosine stays because the curator's prompt has no restatement rule of its
+   own and would keep what an exact test lets through.
+3. **Anchor.** No shared low-frequency word, no echo — the deterministic enforcement of rule 1 in
+   *What an echo is*. `anchorsOf` decodes UTF-8 and classifies by CODEPOINT: letters and digits are
+   words, punctuation is not, and Cyrillic and Latin-1 fold case like ASCII. It classified BYTES
+   until 2026-08-23, treating everything >= 0x80 as wordly and folding ASCII only, so on a Russian
+   journal «Устал» never matched «устал» (the first word of every sentence was dead as an anchor),
+   guillemets glued into tokens, and two passages could "share" an em dash. A hard veto that fails
+   on spelling both blocks true echoes and admits false ones.
+   `AnchorVocabulary::of` then counts document frequency over the writer's own passages: a word
+   carried by at least `commonShare` of them is theirs, not an anchor. Under `vocabularyFloor`
+   passages a corpus cannot tell a habit from a coincidence, so only the built-in English list
    applies.
 4. **Family collapse.** Cluster candidates at `cos >= familyRadius` (single-link); keep the **oldest**
    member as representative, carrying family size. The cap is on families, not passages.
@@ -211,24 +269,25 @@ nothing else may hardcode these numbers.
 6. **Spread.** At most `maxPerMonth` from any single calendar month.
 7. **Guarantee the earliest.** The oldest qualifying candidate takes a slot over the quotas and over
    the score.
-8. **Dismissals and the page cap.** `selectForPage` drops pairings the reader retired, then takes the
-   page's `SweepBudget::echoesPerPage` best by score — every rule above bounds one trigger only.
+8. **One card per past day.** On what survived the reader's dismissals, at most `maxPerMatchDay`
+   pairings survive per match day, best score first. The write side has always been day-grained — a dismissal and a quality signal are both
+   keyed `(trigger_day, match_day)` — while the read surface drew one card per SPAN pair, so two
+   units retrieved from one past page became two cards and waving one away silently retired the
+   other. A pairing dropped here is CONTINGENT (it lost to a sibling), so unlike `no_anchor` and
+   `restatement` it retracts nothing.
+9. **The page cap.** `selectForPage` takes the page's `SweepBudget::echoesPerPage` best by score —
+   every rule above bounds one trigger only, and the cap counts CARDS, because the day collapse runs
+   before it. The order is load-bearing: dismissals first (a retired pairing must not win a day and
+   silence its sibling), then the collapse, then the cap.
 
-Survivors are scored:
-
-```
-score = z(t, c) + α·log(1 + age_days/30) − β·log(1 + family_size) − γ·max cos(c, selected)
-        α = distanceWeight 0.15   β = familyPenalty 0.25   γ = diversityPenalty 0.50
-z(t, c) = (cos(t,c) − μ_t) / σ_t   over this trigger's own candidate background
-```
-
-Defaults: `minDayGap` 7, `shown` 10, `refrainRadius` 0.80, `refrainCrowd` 5, `familyRadius` 0.85,
+Defaults: `minDayGap` 7, `shown` 10, `refrainRadius` 0.80, `refrainCrowd` 5, `refrainShare` 0.05,
+`maxPerMatchDay` 1, `familyRadius` 0.85,
 `restatement` 0.97, `perBand` 8, `maxRecent` 2, `maxPerMonth` 2, `commonShare` 0.25,
 `vocabularyFloor` 8. `SweepBudget`: `pagesPerUser` 40, `inboundPerPage` 20, `echoesPerPage` 10.
 
 `selectForPage` returns its pairings *and* a `TriggerTrace` per trigger carrying every candidate's
 `Fate`: `selected · not_retrieved · restatement · no_anchor · family_member · recency_quota ·
-month_quota · outranked · dismissed · page_cap`. `EchoSweep::derive` and the tuning door call the
+month_quota · outranked · dismissed · same_day · page_cap`. `EchoSweep::derive` and the tuning door call the
 same function.
 
 ### Re-derivation, deletion, the reverse edge
@@ -249,9 +308,16 @@ about a row must never read as a refusal of it.
 is enqueued for re-derivation. This is the repair pass's work and not the live path's: the walk is
 unbounded, and `SweepBudget::inboundPerPage` bounds it per page.
 
-**Backfill.** A user-level corpus stamp is bumped whenever any page's passages change. A page whose
-echoes were computed against an older stamp is stale: it re-runs retrieval and only calls the curator
-when the candidate set actually changed.
+**Backfill.** A user-level corpus stamp — a fingerprint of every passage the writer holds — changes
+whenever any page's passages change, INCLUDING when they are deleted. It is a
+FINGERPRINT of the writer's spans, not a clock, and it is compared for sameness rather than for
+order: it used to be `max(body_stamp_ms)`, which is monotone only while a corpus GROWS, so emptying a
+page could LOWER it and `corpus_stamp < stored` then reopened nothing at all — a corpus that shrank
+under every page made none of them due. The owner's page went from fifty bytes to empty on the day
+that was found. A page whose
+echoes were computed against an older stamp is stale and is re-derived. `derive()` compares no
+candidate sets, so a corpus bump costs one curator call per stale page; the skip that would avoid it
+is unbuilt.
 
 **Deletion** propagates at both layers: stored passage text is re-located in the live body at render
 (not found → not rendered), and a day's passage rows are replaced wholesale at the next derivation.

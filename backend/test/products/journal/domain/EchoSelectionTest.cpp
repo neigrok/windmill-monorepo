@@ -120,6 +120,37 @@ TEST(the_owners_own_c_plus_plus_example_anchors) {
   CHECK(sharesAnchor("i want to learn c++.", "i like c++."));
 }
 
+TEST(a_capitalised_first_word_is_the_same_anchor_as_its_own_lower_case_form) {
+  // Folding only 'A'-'Z' left sentence-initial Cyrillic a token no lower-case form could match, so
+  // the first word of every Russian sentence was dead as an anchor.
+  CHECK(sharesAnchor("Устал от всего", "устал опять"));
+  CHECK(sharesAnchor("устал от всего", "Устал опять"));
+  CHECK(sharesAnchor("ЁЛКА стоит", "ёлка упала"));         // Ё folds outside the А-Я block
+  CHECK(sharesAnchor("Ünnepel", "ünnepel"));               // and Latin-1 folds too
+  CHECK_FALSE(sharesAnchor("Устал от всего", "выспался наконец"));
+}
+
+TEST(non_ascii_punctuation_is_a_boundary_and_never_part_of_the_word_beside_it) {
+  // Every mark here is >= 0x80, so a byte-wise rule glued it into the token beside it: «Работа» was
+  // one word and never matched работа.
+  CHECK(sharesAnchor("«Работа» съела вечер", "работа опять до ночи"));
+  CHECK(sharesAnchor("сербия… наконец", "сербия рядом"));
+  CHECK(sharesAnchor("марта" "\xC2\xA0" "пришла", "пришла марта"));   // no-break space
+  CHECK(sharesAnchor("это" "\xE2\x80\x99" "марта", "марта"));         // curly apostrophe
+
+  // And an em dash is not a word two passages can have in common.
+  CHECK_FALSE(sharesAnchor("тишина — и всё", "молчание — снова"));
+  CHECK_FALSE(sharesAnchor("…", "…"));
+  CHECK_FALSE(sharesAnchor("— — —", "«»"));
+}
+
+TEST(a_script_the_classifier_does_not_know_yields_no_anchors_rather_than_punctuation) {
+  CHECK_FALSE(sharesAnchor("今日はつかれた", "今日はつかれた"));
+  CHECK_FALSE(sharesAnchor("🙂🙂", "🙂"));
+  CHECK_FALSE(sharesAnchor("\xFF\xFE marta", "\xFF\xFE anna"));   // and a malformed byte ends a token
+  CHECK(sharesAnchor("\xFF\xFE marta", "marta again"));
+}
+
 // ---- isRefrain --------------------------------------------------------------------------------
 
 TEST(a_trigger_is_a_refrain_at_exactly_the_crowd_threshold_and_not_one_below_it) {
@@ -147,6 +178,48 @@ TEST(a_passage_is_not_its_own_neighbour_in_the_crowd) {
   for (int i = 0; i < 4; ++i) corpus.push_back(span(100 + i, "2026-01-01", at(10.0)));
 
   CHECK_FALSE(isRefrain(trigger, corpus, rules));
+}
+
+namespace {
+
+// `near` passages inside refrainRadius of a trigger at at(0.0) — cosine 0.985 — and the rest far
+// outside it, at 0.174.
+std::vector<Vectored> crowdedCorpus(int total, int near) {
+  std::vector<Vectored> corpus;
+  for (int i = 0; i < total; ++i)
+    corpus.push_back(span(100 + i, "2026-01-01", i < near ? at(10.0) : at(80.0)));
+  return corpus;
+}
+
+}
+
+TEST(the_refrain_gate_is_a_share_of_the_history_over_an_absolute_floor) {
+  const SelectionRules rules;   // refrainCrowd 5, refrainShare 0.05
+  CHECK_EQ(refrainThreshold(0, rules), 5);
+  CHECK_EQ(refrainThreshold(20, rules), 5);     // the floor, not one
+  CHECK_EQ(refrainThreshold(100, rules), 5);    // where the share catches the floor up
+  CHECK_EQ(refrainThreshold(200, rules), 10);
+  CHECK_EQ(refrainThreshold(600, rules), 30);
+
+  const Vectored trigger = span(1, kToday, at(0.0), kTriggerText);
+
+  // 6% of a 200-passage history is a refrain...
+  CHECK(isRefrain(trigger, crowdedCorpus(200, 12), rules));
+  CHECK_FALSE(isRefrain(trigger, crowdedCorpus(200, 9), rules));
+  // ...and the same 6% of a 20-passage history is not: under the floor the absolute count rules.
+  CHECK_FALSE(isRefrain(trigger, crowdedCorpus(20, 1), rules));
+  CHECK(isRefrain(trigger, crowdedCorpus(20, 5), rules));
+}
+
+TEST(a_constant_handful_of_neighbours_never_turns_into_a_refrain_as_the_history_grows) {
+  // The time bomb, asserted directly: with a fixed count for a gate, the crowd a tail fraction puts
+  // around a trigger grows with the corpus and silences whoever journals most. A trigger whose own
+  // neighbourhood does not grow must read the same at 20 passages and at 200.
+  const Vectored trigger = span(1, kToday, at(0.0), kTriggerText);
+  for (const int total : {20, 50, 100, 200, 600}) {
+    CHECK_EQ(crowdOf(trigger, crowdedCorpus(total, 4), SelectionRules{}), 4);
+    CHECK_FALSE(isRefrain(trigger, crowdedCorpus(total, 4), SelectionRules{}));
+  }
 }
 
 // ---- stratify ---------------------------------------------------------------------------------
@@ -259,6 +332,24 @@ TEST(a_restatement_is_dropped_and_the_memory_beside_it_is_kept) {
   CHECK_EQ(pairings[0].matchSpanId, std::int64_t{12});
   CHECK_EQ(pairings[0].familySize, 1);
   CHECK(std::abs(pairings[0].cosine - 0.9063f) < 1e-3f);
+}
+
+TEST(the_same_sentence_typed_twice_is_a_restatement_wherever_the_embedder_put_it) {
+  // Orthogonal vectors: cosine 0 to the trigger, so only the exact identity test can catch it. The
+  // whitespace differs, which normalizedForIdentity is exactly what collapses.
+  const Vectored trigger =
+      Vectored{1, LocalDate{kToday}, "  i want to learn rust\n with marta ", axis(4, 0)};
+  const std::vector<Vectored> candidates{
+      span(10, "2026-01-01", axis(4, 1), "i want to learn rust with marta"),
+      span(11, "2025-06-01", {0.6f, 0.0f, 0.8f, 0.0f}, kAnchoredText)};
+  CHECK_EQ(cosine(trigger.vector, candidates[0].vector), 0.0f);
+
+  const Selection selection = selectExplained(trigger, candidates, SelectionRules{});
+
+  CHECK_EQ(matchIds(selection.pairings), (std::vector<std::int64_t>{11}));
+  REQUIRE_EQ(selection.notes.size(), std::size_t{2});
+  CHECK_EQ(std::string{fateText(selection.notes[0].fate)}, std::string{"restatement"});
+  CHECK_EQ(std::string{fateText(selection.notes[1].fate)}, std::string{"selected"});
 }
 
 TEST(a_candidate_sharing_no_anchor_with_the_trigger_is_dropped_however_close_it_sits) {
@@ -537,6 +628,40 @@ TEST(the_page_ceiling_and_the_readers_dismissal_are_both_written_onto_the_notes)
   CHECK_EQ(fateOf(waved.traces[0], 10), std::string{"dismissed"});
 }
 
+TEST(two_pairings_into_one_past_day_collapse_to_the_best_scoring_card) {
+  // The reader's surface and the write side are both day-grained, so two pairings reaching into one
+  // past page would be two cards sharing one dismissal row.
+  const Vectored trigger = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
+  const std::vector<Vectored> history{
+      span(10, "2025-06-01", {0.9f, 0.436f, 0.0f, 0.0f}, kAnchoredText),
+      span(11, "2025-06-01", {0.7f, 0.0f, 0.714f, 0.0f}, "rust, and the compiler again"),
+      span(12, "2025-03-05", {0.6f, 0.0f, 0.0f, 0.8f}, kAnchoredText)};
+  // Not one family, and none of them a restatement: the collapse is the day, not the distance.
+  CHECK(cosine(history[0].vector, history[1].vector) < SelectionRules{}.familyRadius);
+  CHECK(cosine(trigger.vector, history[0].vector) < SelectionRules{}.restatement);
+
+  const PageSelection page = selectForPage({trigger}, history, {}, SelectionRules{}, 10);
+
+  CHECK_EQ(matchIds(page.pairings), (std::vector<std::int64_t>{10, 12}));
+  CHECK_EQ(fateOf(page.traces[0], 10), std::string{"selected"});
+  CHECK_EQ(fateOf(page.traces[0], 11), std::string{"same_day"});
+  CHECK_EQ(fateOf(page.traces[0], 12), std::string{"selected"});
+  CHECK_EQ(page.cappedOut, 0);
+
+  // The cap counts CARDS: it is applied after the collapse, so the loser of a day never spends a
+  // slot the reader would have seen used by another day.
+  const PageSelection capped = selectForPage({trigger}, history, {}, SelectionRules{}, 2);
+  CHECK_EQ(matchIds(capped.pairings), (std::vector<std::int64_t>{10, 12}));
+  CHECK_EQ(capped.cappedOut, 0);
+
+  // And the knob is a knob: two cards from one day when the surface is told it can hold two.
+  SelectionRules twoPerDay;
+  twoPerDay.maxPerMatchDay = 2;
+  const PageSelection both = selectForPage({trigger}, history, {}, twoPerDay, 10);
+  CHECK_EQ(matchIds(both.pairings), (std::vector<std::int64_t>{10, 11, 12}));
+  CHECK_EQ(fateOf(both.traces[0], 11), std::string{"selected"});
+}
+
 TEST(near_misses_are_reported_only_when_asked_for) {
   const Vectored trigger = Vectored{1, LocalDate{kToday}, kTriggerText, axis(4, 0)};
   // Two days old — inside minDayGap, so retrieval never hands it over.
@@ -585,7 +710,7 @@ std::vector<Vectored> russianCorpus() {
 TEST(a_word_the_writer_uses_constantly_is_not_an_anchor_in_any_language) {
   const AnchorVocabulary vocabulary = AnchorVocabulary::of(russianCorpus(), SelectionRules{});
 
-  // "не" is in 8 of 12 passages.
+  // "не" is in 7 of 12 passages.
   CHECK_EQ(vocabulary.common.count("не") > 0, true);
   // "сербию" is in 2 of 12.
   CHECK_EQ(vocabulary.common.count("сербию") > 0, false);
@@ -597,6 +722,41 @@ TEST(a_word_the_writer_uses_constantly_is_not_an_anchor_in_any_language) {
   CHECK_EQ(sharesAnchor("хочется уже в сербию",
                         "честно говоря хочется в сербию пить вино днями напролет", vocabulary),
            true);
+}
+
+TEST(the_writers_own_common_word_is_stoplisted_however_the_sentence_capitalised_it) {
+  // The document-frequency rule counts folded words, so a word the writer opens sentences with is
+  // ONE word: four passages of "кайф", not two of "Кайф" and two of "кайф", neither of which would
+  // have reached the threshold of three.
+  const std::string lines[] = {
+      "Кайф полный, выспался наконец",
+      "кайф от того что не надо никуда идти",
+      "Кайф, прогулка помогла",
+      "вечером все кайф, эмбиент",
+      "хочется в сербию пить вино днями напролет",
+      "Хочется уже в сербию",
+      "на работе запара, не успеваю ничего",
+      "Работа не отпускает даже вечером",
+      "клод не делает красиво, надо много итераций",
+      "не могу контролить юай, не умею",
+      "сегодня мигрень, болит голова",
+      "сходил к челу спинному, спина в порядке",
+  };
+  std::vector<Vectored> corpus;
+  for (std::size_t i = 0; i < std::size(lines); ++i)
+    corpus.push_back(span(static_cast<std::int64_t>(300 + i),
+                          "2026-06-0" + std::to_string(i % 9 + 1), axis(4, i % 4), lines[i]));
+
+  const AnchorVocabulary vocabulary = AnchorVocabulary::of(corpus, SelectionRules{});
+
+  CHECK_EQ(vocabulary.common.count("кайф") > 0, true);      // 4 of 12, capital and lower one word
+  CHECK_EQ(vocabulary.common.count("Кайф") > 0, false);     // the vocabulary holds folded words only
+  CHECK_EQ(vocabulary.common.count("хочется") > 0, false);  // 2 of 12
+  CHECK_EQ(vocabulary.common.count("работа") > 0, false);   // 1 of 12: no stemmer joins it to работе
+
+  CHECK_EQ(sharesAnchor("Кайф какой-то", "кайф весь вечер", vocabulary), false);
+  CHECK_EQ(sharesAnchor("Кайф какой-то", "кайф весь вечер"), true);   // the English list alone lets it through
+  CHECK_EQ(sharesAnchor("Хочется уже в сербию", "хочется в сербию снова", vocabulary), true);
 }
 
 TEST(a_corpus_too_small_to_know_what_is_common_says_nothing_is) {

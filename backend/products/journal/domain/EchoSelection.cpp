@@ -1,8 +1,12 @@
 #include "products/journal/domain/EchoSelection.h"
 
+#include "products/journal/domain/Passage.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <set>
@@ -61,23 +65,88 @@ const std::unordered_set<std::string>& commonWords() {
   return words;
 }
 
-// Split on anything that is not a letter, a digit, or a byte of a multi-byte character, so a UTF-8
-// word stays one token, then fold ASCII case by hand. Never std::tolower: its locale is the
-// machine's.
+// One codepoint and the bytes it cost. A truncated or impossible sequence answers U+FFFD over a
+// single byte, which is unclassified below — so a bad byte can only end a token, never swallow the
+// rest of the line.
+struct Decoded {
+  char32_t code = 0;
+  std::size_t width = 1;
+};
+
+Decoded decodeUtf8(const std::string& text, std::size_t at) {
+  const unsigned char lead = static_cast<unsigned char>(text[at]);
+  if (lead < 0x80) return Decoded{lead, 1};
+  if (lead < 0xC0 || lead > 0xF4) return Decoded{0xFFFD, 1};   // a continuation byte, or no lead at all
+  const std::size_t width = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : 2;
+  if (at + width > text.size()) return Decoded{0xFFFD, 1};
+
+  char32_t code = lead & (0xFF >> (width + 1));
+  for (std::size_t i = 1; i < width; ++i) {
+    const unsigned char next = static_cast<unsigned char>(text[at + i]);
+    if ((next & 0xC0) != 0x80) return Decoded{0xFFFD, 1};
+    code = (code << 6) | (next & 0x3F);
+  }
+  return Decoded{code, width};
+}
+
+// The token-forming, lower-case form of one codepoint — 0 when it forms no token, which is every
+// punctuation mark, sign and emoji, and every script not named here. Classifying by codepoint is
+// what makes the anchor rule work outside ASCII: a byte-wise "0x80 and up is wordly" glues «» ' ' …
+// and nbsp into their neighbours (so «Работа» never matched работа) and makes an em dash a word two
+// passages can "share", while folding only 'A'-'Z' leaves every Russian sentence's first word a
+// different token from its own lower-case form. Never std::tolower: its locale is the machine's.
+//
+// An unlisted codepoint falls out as no token rather than as a word, so an unknown script degrades
+// to "this passage has no anchors" instead of to "its punctuation is an anchor".
+char32_t wordlyLower(char32_t code) {
+  if (code >= U'a' && code <= U'z') return code;
+  if (code >= U'A' && code <= U'Z') return code + 0x20;
+  if (code >= U'0' && code <= U'9') return code;
+  if (code < 0x00C0) return 0;                    // every ASCII mark, nbsp, the guillemets
+  if (code <= 0x00FF) {                           // Latin-1 letters, the × and ÷ signs apart
+    if (code == 0x00D7 || code == 0x00F7) return 0;
+    return code <= 0x00DE ? code + 0x20 : code;
+  }
+  if (code == 0x0386) return 0x03AC;              // Greek: the accented capitals fold out of block
+  if (code >= 0x0388 && code <= 0x038A) return code + 0x25;
+  if (code == 0x038C) return 0x03CC;
+  if (code == 0x038E || code == 0x038F) return code + 0x3F;
+  if (code >= 0x0391 && code <= 0x03AB) return code == 0x03A2 ? 0 : code + 0x20;
+  if (code >= 0x03AC && code <= 0x03CE) return code;
+  if (code >= 0x0400 && code <= 0x040F) return code + 0x50;   // Cyrillic: Ё Є І Ї Ў and their kin
+  if (code >= 0x0410 && code <= 0x042F) return code + 0x20;
+  if (code >= 0x0430 && code <= 0x045F) return code;
+  // The historic and minority-language half of Cyrillic is laid out in upper/lower PAIRS, so the
+  // fold is the pairing rather than a table. U+0482-U+0489 are signs and combining marks, never
+  // letters, and the palochka is the one letter whose pair sits across the block.
+  if (code >= 0x0460 && code <= 0x0481) return code % 2 == 0 ? code + 1 : code;
+  if (code == 0x04C0) return 0x04CF;
+  if (code >= 0x04C1 && code <= 0x04CE) return code % 2 == 1 ? code + 1 : code;
+  if ((code >= 0x048A && code <= 0x04BF) || (code >= 0x04CF && code <= 0x04FF))
+    return code % 2 == 0 ? code + 1 : code;
+  return 0;
+}
+
+// Words are runs of codepoints `wordlyLower` keeps, folded as they are read. No stemmer and no
+// prefix match: билеты and билетов stay two words until a measurement says otherwise.
 std::set<std::string> anchorsOf(const std::string& text) {
   std::set<std::string> found;
   std::string token;
-  for (char byte : text) {
-    const unsigned char raw = static_cast<unsigned char>(byte);   // char's sign is the platform's
-    const bool wordly = (raw >= 'a' && raw <= 'z') || (raw >= 'A' && raw <= 'Z') ||
-                        (raw >= '0' && raw <= '9') || raw >= 0x80;
-    if (wordly) {
-      token.push_back(raw >= 'A' && raw <= 'Z' ? static_cast<char>(raw + 32)
-                                               : static_cast<char>(raw));
+  for (std::size_t at = 0; at < text.size();) {
+    const Decoded decoded = decodeUtf8(text, at);
+    at += decoded.width;
+    const char32_t folded = wordlyLower(decoded.code);
+    if (folded == 0) {
+      if (!token.empty() && !commonWords().count(token)) found.insert(token);
+      token.clear();
       continue;
     }
-    if (!token.empty() && !commonWords().count(token)) found.insert(token);
-    token.clear();
+    if (folded >= 0x80) {   // nothing this classifier keeps reaches U+0800, so two bytes carry it
+      token.push_back(static_cast<char>(0xC0 | (folded >> 6)));
+      token.push_back(static_cast<char>(0x80 | (folded & 0x3F)));
+      continue;
+    }
+    token.push_back(static_cast<char>(folded));
   }
   if (!token.empty() && !commonWords().count(token)) found.insert(token);
   return found;
@@ -130,6 +199,40 @@ struct Standing {
   double score = 0.0;
 };
 
+}
+
+namespace {
+
+// FNV-1a over every SelectionRules knob, in a fixed order, so a threshold change reopens the pages
+// it would judge differently. Add a knob to SelectionRules and add it here.
+std::string rulesTag(const SelectionRules& rules) {
+  const double values[] = {
+      static_cast<double>(rules.minDayGap),  static_cast<double>(rules.shown),
+      rules.refrainRadius,                   static_cast<double>(rules.refrainCrowd),
+      rules.familyRadius,                    rules.restatement,
+      rules.commonShare,                     static_cast<double>(rules.vocabularyFloor),
+      rules.refrainShare,                    static_cast<double>(rules.maxPerMatchDay),
+      static_cast<double>(rules.perBand),    static_cast<double>(rules.maxRecent),
+      static_cast<double>(rules.maxPerMonth), rules.distanceWeight,
+      rules.familyPenalty,                   rules.diversityPenalty,
+  };
+  std::uint32_t hash = 2166136261u;
+  for (const double value : values) {
+    const auto* bytes = reinterpret_cast<const unsigned char*>(&value);
+    for (std::size_t i = 0; i < sizeof(double); ++i) {
+      hash ^= bytes[i];
+      hash *= 16777619u;
+    }
+  }
+  char tag[9];
+  std::snprintf(tag, sizeof(tag), "%08x", hash);
+  return tag;
+}
+
+}
+
+std::string judgeVersion(const std::string& curatorVersion, const SelectionRules& rules) {
+  return curatorVersion + "/" + rulesTag(rules);
 }
 
 float cosine(const std::vector<float>& a, const std::vector<float>& b) {
@@ -194,9 +297,23 @@ int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
   return crowd;
 }
 
+int refrainThreshold(std::size_t history, const SelectionRules& rules) {
+  // Written in the double domain and clamped before the cast, because `refrainShare` is a live query
+  // knob on the tuning door and `std::stod` accepts "nan" and "1e300". A NaN fails every comparison,
+  // including `<= 0.0`, so a guard written the obvious way lets it through to a cast that is
+  // undefined behaviour; `share > floor` is false for NaN and lands on the floor, which is the
+  // answer an unreadable knob deserves.
+  const double share = std::ceil(rules.refrainShare * static_cast<double>(history));
+  const double floor = static_cast<double>(rules.refrainCrowd);
+  if (!(share > floor)) return rules.refrainCrowd;
+  return share >= static_cast<double>(std::numeric_limits<int>::max())
+             ? std::numeric_limits<int>::max()
+             : static_cast<int>(share);
+}
+
 bool isRefrain(const Vectored& trigger, const std::vector<Vectored>& corpus,
                const SelectionRules& rules) {
-  return crowdOf(trigger, corpus, rules) >= rules.refrainCrowd;
+  return crowdOf(trigger, corpus, rules) >= refrainThreshold(corpus.size(), rules);
 }
 
 const char* fateText(Fate fate) {
@@ -210,6 +327,7 @@ const char* fateText(Fate fate) {
     case Fate::monthQuota: return "month_quota";
     case Fate::outranked: return "outranked";
     case Fate::dismissed: return "dismissed";
+    case Fate::sameDay: return "same_day";
     case Fate::pageCap: return "page_cap";
   }
   return "outranked";
@@ -286,9 +404,17 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     return selection.notes[noteOf[spanId]];
   };
 
+  // The same sentence typed twice is not a memory at any cosine, and identity is free to prove:
+  // deterministic, model-independent, and true where an embedder happens to place the pair. The
+  // cosine test stays beside it because the curator has no restatement rule of its own — its scale
+  // calls the same specific thing named on both sides related at 0.9-1.0 — so anything an exact
+  // test lets through reaches a judge that would keep it.
+  const std::string identity = normalizedForIdentity(trigger.text);
+
   std::vector<Judged> survivors;
   for (const Judged& candidate : judged) {
-    if (candidate.cosine >= rules.restatement) {   // a restatement is not a memory
+    if (candidate.cosine >= rules.restatement ||
+        normalizedForIdentity(candidate.passage->text) == identity) {
       noted(candidate.passage->spanId).fate = Fate::restatement;
       continue;
     }
@@ -457,7 +583,7 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
     trace.text = trigger.text;
     trace.history = static_cast<int>(history.size());
     trace.crowd = crowdOf(trigger, history, rules);
-    trace.refrain = trace.crowd >= rules.refrainCrowd;
+    trace.refrain = trace.crowd >= refrainThreshold(history.size(), rules);
 
     const std::vector<Vectored> retrieved = stratify(trigger, history, rules);
     trace.retrieved = static_cast<int>(retrieved.size());
@@ -495,12 +621,37 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
       page.traces[at->second.first].notes[at->second.second].fate = Fate::dismissed;
   }
 
-  // The page-level cap; `selectExplained` bounds one trigger's. Highest-scoring first.
+  // Highest-scoring first, and the order both whole-page rules below read.
   std::sort(proposed.begin(), proposed.end(), [](const Pairing& a, const Pairing& b) {
     if (a.score != b.score) return a.score > b.score;
     if (a.triggerSpanId != b.triggerSpanId) return a.triggerSpanId < b.triggerSpanId;
     return a.matchSpanId < b.matchSpanId;
   });
+
+  // One card per past day. The write side is day-grained — a dismissal and a signal are both keyed
+  // (trigger day, match day) — so two pairings reaching into one past page render as two cards
+  // sharing one dismissal row, and waving one away would silently retire the other. Collapsed
+  // BEFORE the page cap, so the cap counts cards. A pairing dropped here lost to a sibling and is
+  // contingent on it, never a refusal of the pair itself.
+  if (rules.maxPerMatchDay > 0) {
+    std::map<std::int64_t, std::string> dayOf;
+    for (const Vectored& span : history) dayOf.emplace(span.spanId, span.day.iso());
+
+    std::map<std::string, int> perMatchDay;
+    std::vector<Pairing> carded;
+    for (const Pairing& pairing : proposed) {
+      const auto at = dayOf.find(pairing.matchSpanId);
+      const std::string day = at == dayOf.end() ? std::string{} : at->second;
+      if (++perMatchDay[day] > rules.maxPerMatchDay) {
+        stamp(pairing, Fate::sameDay);
+        continue;
+      }
+      carded.push_back(pairing);
+    }
+    proposed = std::move(carded);
+  }
+
+  // The page-level cap; `selectExplained` bounds one trigger's.
   if (echoesPerPage >= 0 && static_cast<int>(proposed.size()) > echoesPerPage) {
     for (std::size_t i = static_cast<std::size_t>(echoesPerPage); i < proposed.size(); ++i)
       stamp(proposed[i], Fate::pageCap);

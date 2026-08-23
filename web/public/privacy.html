@@ -4,17 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Privacy — Windmill</title>
-    <meta name="description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
+    <meta name="description" content="How Windmill handles your data: signed out, your trees and journal pages stay on your device; signed in, we store what you sync — and we name the outside companies that process it." />
     <link rel="canonical" href="https://windmill.works/privacy.html" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
 
-    <!-- Unfurl: this page's own title and description, and the family share card. A shelf page is
-         pasted into a chat as often as it is found in a search — without these it arrived as a bare
-         URL. staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
+    <!-- staticPageAssets.js asserts og/twitter keep saying what the head above says. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Windmill" />
     <meta property="og:title" content="Privacy — Windmill" />
-    <meta property="og:description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
+    <meta property="og:description" content="How Windmill handles your data: signed out, your trees and journal pages stay on your device; signed in, we store what you sync — and we name the outside companies that process it." />
     <meta property="og:url" content="https://windmill.works/privacy.html" />
     <meta property="og:image" content="https://windmill.works/og-image.png" />
     <meta property="og:image:type" content="image/png" />
@@ -24,7 +22,7 @@
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Privacy — Windmill" />
-    <meta name="twitter:description" content="How Windmill handles your data: signed out we hold nothing; signed in we store your email, the trees you sync, and your sessions — that's the list." />
+    <meta name="twitter:description" content="How Windmill handles your data: signed out, your trees and journal pages stay on your device; signed in, we store what you sync — and we name the outside companies that process it." />
     <meta name="twitter:image" content="https://windmill.works/og-image.png" />
     <meta name="twitter:image:alt" content="The Windmill share card — a hand-drawn skill tree on a cream background with terracotta, gold, and sky nodes, and the Windmill wordmark." />
 
@@ -36,10 +34,9 @@
     <link rel="stylesheet" href="/fonts.css" />
     <link rel="stylesheet" href="/chrome.css" />
     <style>
-      /* This page's own type only. The family chrome — frame, header, buttons, footer — and the
-         faces both arrive on the two sheets linked above, served by scripts/staticPageAssets.js so
-         every static page wears one geometry. Colours are light-theme token values resolved
-         from src/styles/tokens/*.css; these pages are light-only. */
+      /* This page's own type only — the family chrome and the faces arrive on the two sheets
+         linked above, served by scripts/staticPageAssets.js. Light-theme token values from
+         src/styles/tokens/*.css; these pages are light-only. */
       .doc { max-width: 640px; padding: 40px 0 24px; }
       .doc h1 { font-family: 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; font-weight: 700; font-size: 38px; letter-spacing: -0.02em; margin: 0; }
       .upd { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace; font-size: 12px; color: #92805F; margin-top: 8px; }
@@ -77,13 +74,13 @@
     <main class="wrap" id="content">
       <article class="doc">
         <h1>Privacy</h1>
-        <div class="upd">Updated July 2026</div>
-        <p class="lede">The short version: signed out, your trees live on your device — we never see them. Signing in syncs them to your account so they follow you — and that’s the main reason we store anything.</p>
+        <div class="upd">Updated August 2026</div>
+        <p class="lede">The short version: signed out, your trees and journal pages live on your device — the one exception is text you paste into the birth canvas and ask us to shape. Signing in syncs them to your account so they follow you — and that’s the main reason we store anything.</p>
 
         <h2>What we store</h2>
         <ul>
-          <li><strong>Signed out:</strong> your trees and your journal pages stay in this browser, on this device — we never see them. What we do keep is anonymous usage events under a random per-browser key, so we can tell what’s working. No names, no content.</li>
-          <li><strong>Signed in:</strong> your email address; the trees you sync; the journal pages you sync, and the search vectors we compute from them; your training log — every set, session, routine and movement you add, plus any coach link you’ve minted; your active sessions; and any AI-tool connections you’ve granted — plus those same usage events, now tied to your account. That’s the list.</li>
+          <li><strong>Signed out:</strong> your trees and your journal pages stay in this browser, on this device. The one thing that leaves is text you paste into the birth canvas and ask us to shape into a tree: that goes to us and on to Anthropic, because shaping it is the thing you asked for. What we do keep is anonymous usage events under a random per-browser key, so we can tell what’s working. No names, no content.</li>
+          <li><strong>Signed in:</strong> your email address; the trees you sync; the journal pages you sync, the passages they’re cut into and the vectors we compute from those to find echoes; your training log — every set, session, routine and movement you add, plus any coach link you’ve minted; your active sessions; and any AI-tool connections you’ve granted — plus those same usage events, now tied to your account. That’s the list we hold. Some of it also travels: your journal pages go to an outside company as you write them, and <a href="#processors">who processes it with us</a> says exactly what goes where.</li>
         </ul>
 
         <h2>Signing in</h2>
@@ -98,14 +95,15 @@
         <h2>Measurement</h2>
         <p>We look at product usage in aggregate to understand what’s working. No ad trackers, no selling data, no third-party profiles.</p>
 
-        <h2>Who processes it with us</h2>
-        <p>A few outside companies each handle one specific job, and only ever see the data that job needs:</p>
+        <h2 id="processors">Who processes it with us</h2>
+        <p>A few outside companies each handle a specific job, and only ever see the data that job needs:</p>
         <ul>
           <li><strong>Paddle</strong> — our seller of record for Windmill One. If you subscribe, Paddle takes the payment and handles tax; your billing details go to them, and we never see your card.</li>
           <li><strong>Resend</strong> — delivers the sign-in emails you ask for. It receives your email address to send the link or code, and nothing else.</li>
-          <li><strong>Anthropic</strong> — powers <a href="/pricing.html">tending</a>, the AI that plants and reshapes a tree. When you tend a tree, that tree and your instruction are sent to Anthropic to generate the edit — only when you ask for one, and they don’t use it to train their models.</li>
+          <li><strong>Anthropic</strong> — the AI in all three rooms, and they do not work alike. In the roadmap it powers <a href="/pricing.html">tending</a>, which plants and reshapes a tree: when you tend, that tree and your instruction are sent to Anthropic to generate the edit — only when you ask for one. In the journal it is how echoes are found, and there you don’t ask. Saving a page whose text changed sends that text to Anthropic to be cut into passages; then passages from that page and from your earlier pages, each with the day it was written, are sent to judge which pairs are about the same thing. That happens on its own, usually a few seconds after you save — and again later if we change how the pipeline works, which re-reads pages you have not touched. In the gym, asking the coach a question sends that question and your training log — again only when you ask.</li>
+          <li><strong>OpenAI</strong> — turns a journal Talk recording into text. When you use Talk, the audio of that take is sent to OpenAI to be transcribed; nothing else in the journal goes there, and we do not keep the recording. Talk is part of Windmill One, so it only happens on an account that has it.</li>
         </ul>
-        <p>None of them profile you, and none of them receive your data to sell it on.</p>
+        <p>The matching itself stays with us: the vectors behind echoes are computed on our own server and never leave it, and the search you run in the journal builds its own vectors — the model, the index and your query — on your device. None of them profile you, and none of them receive your data to sell it on.</p>
 
         <h2>Your data is portable</h2>
         <p>Export every tree as a zip of Markdown from <a href="/#/settings">account settings</a> — the same format you can paste back to replant. Closing your account there signs out every device and cuts off every connected tool immediately, and it closes the whole account rather than one room. What it does not do is erase: the copies you’ve synced stay on our servers, and signing in again is the undo — at any time, bringing the account back whole. Trees on your devices always stay yours.</p>

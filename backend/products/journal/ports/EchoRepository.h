@@ -78,7 +78,9 @@ inline bool isSettled(CurationStatus status) {
   return isSuccess(status) || status == CurationStatus::refused;
 }
 
-// Storage advances the two stamps only on a settled pass.
+// Storage advances the two stamps only on a settled pass. An UNSETTLED pass still records the
+// version strings it earned — a page whose cut and embed landed and whose curate then died has that
+// work in storage, and forgetting it means buying the same vendor call again every six hours.
 struct CurationOutcome {
   CurationStatus status = CurationStatus::ok;
   std::uint64_t bodyStampMs = 0;
@@ -131,6 +133,13 @@ inline int occurrenceAt(const std::string& body, const std::string& text, int lo
 }
 
 // Ceiling on the comparison set held warm for one account; no page is refused for it.
+// HOW MANY TIMES A PAGE MAY FAIL BEFORE IT IS LEFT ALONE. An unsettled pass leaves the page due, so
+// without a bound a page that fails for a reason nothing will fix — a body the embedder cannot read,
+// a vendor that dislikes it — is re-derived on every pass forever, buying a segmenter call each time
+// and producing nothing. `attempts` counts consecutive unsettled passes and existed for exactly this
+// and was read by nobody. Editing the body resets it, because that is a different page.
+constexpr int kCurationRetries = 6;
+
 constexpr int kCorpusSpans = 20'000;
 
 // Owner-scoped throughout. Entitlement is decided by the read layer, not here and not by the sweep.
@@ -139,7 +148,12 @@ struct EchoRepository {
 
   virtual std::vector<EchoUser> activeSince(std::uint64_t sinceMs) = 0;
 
-  // Read once at the top of a pass and carried through it.
+  // A FINGERPRINT of this writer's passages, not a clock — compare it for SAMENESS and never for
+  // order. It was max(body_stamp_ms), which is monotone only while a corpus GROWS: emptying a page
+  // removes its spans and can LOWER the max, so `corpus_stamp < stored` never fired and a corpus
+  // that shrank under every page reopened none of them. (Not hypothetical — the owner's page went
+  // from fifty bytes to empty on the day this was found.) Read once at the top of a pass and
+  // carried through it, so a page derived halfway cannot record a stamp covering spans it never saw.
   virtual std::uint64_t corpusStamp(const UserId& user) = 0;
   virtual std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp,
                                         const PipelineVersions& versions) = 0;

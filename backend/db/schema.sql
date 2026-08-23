@@ -740,12 +740,18 @@ create table if not exists journal_echo_offer_dismissal (
   primary key (user_id, day)
 );
 
--- body_stamp_ms is the page HLC ms the derivation read; corpus_stamp is the newest body_stamp_ms
--- across all the user's spans, so a page is stale when the corpus moved and its own body did not.
--- These two stamps are the "am I done" record: never advance them on a failed curate. status is
+-- body_stamp_ms is the page HLC ms the derivation read; corpus_stamp is a FINGERPRINT (md5, 60 bits)
+-- of every span the writer holds, compared for SAMENESS and never for order. It was the newest
+-- body_stamp_ms across those spans, which is monotone only while a corpus grows: emptying a page
+-- could LOWER it, and `corpus_stamp < stored` then reopened nothing at all.
+-- These stamps are the "am I done" record: never advance them on a failed curate. status is
 -- ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused; ok, empty_ok and
 -- refused advance them, the rest do not. The due queries skip a refused row on corpus movement, so
--- only an edit to that body makes it due again. attempts counts consecutive unsettled failures.
+-- only an edit to that body makes it due again. attempts counts consecutive unsettled failures, and
+-- the due queries stop reopening a page past kCurationRetries of them — an unsettled page is due on
+-- its status, and without the bound a body nothing can fix is re-derived, and re-bought, forever.
+-- An unsettled pass still records the version columns for the steps that DID land, so work already
+-- paid for is not paid for twice.
 create table if not exists journal_page_curation (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,

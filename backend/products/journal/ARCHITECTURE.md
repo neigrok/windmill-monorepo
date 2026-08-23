@@ -124,8 +124,8 @@ has no port.
   failed pages, deferred derivations.
 - The entitlement is asked in the read, not in the sweep: the sweep derives for everyone and
   `EchoApi` decides how much of a passage a reader is handed.
-- `HttpEmbedder` talks to the self-hosted `services/embedder` sidecar, running the same bge-small
-  weights the browser downloads for on-device search. Page text does not leave for an embedding. It
+- `HttpEmbedder` talks to the self-hosted `services/embedder` sidecar, running
+  `Xenova/paraphrase-multilingual-MiniLM-L12-v2`. Page text does not leave for an embedding. It
   does leave for the curator, which is Anthropic's — that call needs the zero-retention, no-training
   agreement and the privacy copy that names it.
 - The curator records every call to `ai_usage`, and `EchoSweep` asks a per-user cost ceiling before

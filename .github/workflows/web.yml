@@ -1,13 +1,8 @@
 name: Web Deploy
 
-# Monorepo: the web superapp lives under web/. Static Vite build → rsync to the VPS,
-# where the same Caddy that fronts the backend serves ~/windmill/web at $DOMAIN_APP.
-# Path-filtered so a backend-only change never redeploys the web assets.
-
-# `npm run build` runs `node --test test/` before Vite, so this workflow is also where the web half
-# of the ladder drift gate fires (packages/api-contract/gym-ladder.json — see ios.yml). It therefore
-# runs on pull_request too, where it builds and tests but does not ship: the rsync step is gated on
-# the event, so a PR proves the build without touching the VPS.
+# Static Vite build → rsync to the VPS, where the same Caddy that fronts the backend serves
+# ~/windmill/web at $DOMAIN_APP. `npm run build` runs `node --test test/` first, so the web half of
+# the ladder drift gate fires here. The rsync is gated on the event, so a PR never touches the VPS.
 on:
   push:
     branches: [main]
@@ -48,30 +43,18 @@ jobs:
         uses: actions/cache@v5
         with:
           path: web/public/models
-          key: bge-small-en-v1.5-q8
+          key: models-bge-small-en-v1.5-q8-plus-paraphrase-multilingual-MiniLM-L12-v2-q8
 
-      # Single origin: the SPA and its API share one host (Caddy path-routes /v1, /mcp, /oauth to
-      # the server), so a production build resolves the backend as same-origin — no API host is
-      # baked in. apiBase.js derives it: empty base → relative fetch, socket → ws(s):// of the page.
-      # (Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.)
+      # Single origin: no API host is baked in — apiBase.js resolves the backend as same-origin.
+      # Set VITE_API_BASE_URL only for a preview build that must reach a remote backend.
       - name: Build
         env:
-          # The frontend Sentry DSN is public — it ships inside the client bundle either way — so it
-          # lives here as plain build config, not a secret. Rotate here if the Sentry project changes.
+          # It ships inside the client bundle: build config, not a secret.
           VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
-          # Stamp the build so Sentry groups + tracks errors by release (frames stay minified until
-          # source-map upload is added — a follow-up that needs a Sentry org auth token).
+          # Stamps the build so Sentry groups errors by release.
           VITE_RELEASE: ${{ github.sha }}
-          # Paddle's client-side token is public by design (it ships in the bundle and only opens
-          # checkouts). The secret-bearing API key lives on the server, never here.
-          #
-          # It is a REPO VARIABLE and not a literal, because this one job both builds pull requests
-          # and ships main. A sandbox token written here is correct for a PR and a lie in
-          # production: it puts a test checkout in front of a real customer. Set the live pair once
-          # with `gh variable set PADDLE_TOKEN` / `gh variable set PADDLE_ENV`, and until then the
-          # build ships an EMPTY token — which is the honest state, because paidPlansOpen() is false
-          # and nothing is for sale. An empty token makes paddleReady() false, so no surface offers a
-          # checkout it cannot honour (shell/billing/checkout.js).
+          # Paddle's client-side token is public (it only opens checkouts); the API key stays on the
+          # server. Unset ⇒ empty token ⇒ paddleReady() is false and no surface offers a checkout.
           VITE_PADDLE_TOKEN: ${{ vars.PADDLE_TOKEN }}
           VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
         run: npm run build

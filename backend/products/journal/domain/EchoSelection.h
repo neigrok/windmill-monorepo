@@ -2,6 +2,7 @@
 
 #include "products/journal/domain/Page.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <string>
@@ -24,7 +25,17 @@ struct SelectionRules {
                                   // SweepBudget::echoesPerPage instead
 
   double refrainRadius = 0.80;    // a candidate this close counts toward the crowd
-  int refrainCrowd = 5;           // this many neighbours and the trigger is a refrain
+  int refrainCrowd = 5;           // the floor: this many neighbours is a refrain on any corpus
+  // ...and above the floor the gate is a SHARE of the history, so being a refrain is a property of
+  // the passage and not of how much the writer has written. Measured on the owner's corpus under
+  // the shipped embedder, 7.2% of it sits within 0.80 of any given passage: against a crowd of f·N
+  // a constant 5 makes the average trigger a permanent refrain at ~71 passages, and by 600 a
+  // passage needs under 0.8% of the corpus around it to keep its voice — the feature switches
+  // itself off, silently, for whoever journals most. A distributional RADIUS does not fix this: a
+  // quantile radius holds the tail fraction roughly constant, so the crowd still grows linearly
+  // with N. The LEVEL is unmeasured: 0.05 sits under that 7.2% mean, and only the shape of the
+  // distribution — skewed by near-duplicate clusters — decides how much it silences.
+  double refrainShare = 0.05;
 
   double familyRadius = 0.85;     // candidates this close to EACH OTHER collapse into one family
   double restatement = 0.97;      // a candidate this close to the trigger is a restatement
@@ -32,6 +43,10 @@ struct SelectionRules {
   int perBand = 8;                // top-k retrieved from each age band
   int maxRecent = 2;              // at most this many shown from the last 30 days
   int maxPerMonth = 2;            // at most this many shown from any one calendar month
+  // The reader's surface is day-grained — one card per (trigger day, match day), and one dismissal
+  // row behind it — so two pairings into one past page would render as two cards sharing one
+  // dismissal. 0 or less turns the collapse off.
+  int maxPerMatchDay = 1;
 
   // A word this many of the writer's own passages carry is theirs, not an anchor. AnchorVocabulary's
   // built-in common-word list is English, so without this every word in another language looks rare.
@@ -52,6 +67,14 @@ struct Pairing {
   int familySize = 1;         // how many near-identical candidates this one stands for
 };
 
+// WHAT JUDGED A PAGE, in one string: the curator's identity plus a digest of every knob above.
+//
+// It lives beside the knobs it digests, and it is ONE function because it was briefly two: the sweep
+// composed the string and the debug door forgot the digest half, so the door answered "this page is
+// due" for every page, forever. Add a field to SelectionRules and add it to the digest, or the knob
+// ships silently — a page is re-judged only when this string moves.
+std::string judgeVersion(const std::string& curatorVersion, const SelectionRules& rules);
+
 // Cosine in [0, 1]. Mismatched or zero-norm vectors give 0, never a divide.
 float cosine(const std::vector<float>& a, const std::vector<float>& b);
 
@@ -68,7 +91,9 @@ struct AnchorVocabulary {
 };
 
 // Do these two passages share at least one word uncommon for this writer? No anchor, no echo,
-// whatever the cosine says. The two-argument form asks against the English list alone.
+// whatever the cosine says. Words are read as Unicode codepoints and case-folded, so «Устал» and
+// устал are one word and a guillemet is not part of either. The two-argument form asks against the
+// English list alone.
 bool sharesAnchor(const std::string& a, const std::string& b);
 bool sharesAnchor(const std::string& a, const std::string& b, const AnchorVocabulary& vocabulary);
 
@@ -76,7 +101,11 @@ bool sharesAnchor(const std::string& a, const std::string& b, const AnchorVocabu
 int crowdOf(const Vectored& trigger, const std::vector<Vectored>& corpus,
             const SelectionRules& rules);
 
-// A refrain emits nothing.
+// The crowd a trigger must draw to be a refrain against a history of this size: `refrainCrowd`
+// while the history is small, `refrainShare` of it once that is the larger of the two.
+int refrainThreshold(std::size_t history, const SelectionRules& rules);
+
+// A refrain emits nothing. The threshold is read off the corpus handed in here.
 bool isRefrain(const Vectored& trigger, const std::vector<Vectored>& corpus,
                const SelectionRules& rules);
 
@@ -96,13 +125,14 @@ enum class Fate {
   selected,
   notRetrieved,    // close enough to be worth reporting, but retrieval never handed it over:
                    // younger than minDayGap, or beaten inside its own age band
-  restatement,     // cosine >= rules.restatement
+  restatement,     // the same sentence again: identical normalised text, or cosine >= rules.restatement
   noAnchor,        // no low-frequency word in common
   familyMember,    // collapsed into a near-identical family; `representative` is the one that stood
   recencyQuota,    // the last 30 days were already full
   monthQuota,      // its calendar month was already full
   outranked,       // qualified, lost the ranking
   dismissed,       // the reader waved this pairing away
+  sameDay,         // another pairing into the same past day scored higher; one card per match day
   pageCap,         // selected for its trigger, then cut by the page's own ceiling
 };
 
@@ -145,7 +175,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
                           const SelectionRules& rules,
                           const AnchorVocabulary& vocabulary = {});
 
-// A whole page's pairings: refrain gate, per-trigger selection, dismissals, then the page ceiling.
+// A whole page's pairings: refrain gate, per-trigger selection, dismissals, `maxPerMatchDay` per
+// past day, then the page ceiling — in that order, so the ceiling counts cards rather than pairings.
 // `nearestReported` also notes the N closest passages retrieval did not hand over, as
 // `notRetrieved`, at the cost of one extra cosine pass over the corpus per trigger.
 struct PageSelection {

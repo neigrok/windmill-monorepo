@@ -132,37 +132,55 @@ std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
 }
 
 std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
-  // A user with no spans reads 0, which makes every page of theirs stale.
+  // A FINGERPRINT of the comparison set, compared for sameness and never for order. It used to be
+  // max(body_stamp_ms), which cannot answer the question: emptying a page takes its passages away,
+  // and the max over what survives only ever falls, so a corpus that SHRANK moved under every page
+  // without one of them reading as stale. No aggregate over the surviving rows can rise on both an
+  // insert and a delete, so the ordering went rather than the truth: the due queries ask
+  // `IS DISTINCT FROM`, and any change in identity, body stamp, embedding space or text moves this.
+  // Sixty bits, so it is never negative. A user with no spans reads 0, which makes every page of
+  // theirs stale. Re-deriving a page into the same passages leaves it alone — that is what keeps a
+  // pass from reopening every other page of the account.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT coalesce(max(body_stamp_ms), 0)::bigint AS stamp FROM journal_span "
-      "WHERE user_id = $1::uuid",
+      "SELECT coalesce(('x' || substr(md5(string_agg("
+      "  span_id::text || ':' || body_stamp_ms::text || ':' || embed_version || ':' || "
+      "  encode(text_sha256, 'hex'), ',' ORDER BY span_id)), 1, 15))::bit(60)::bigint, 0) AS stamp "
+      "FROM journal_span WHERE user_id = $1::uuid",
       user.str());
   return rows.empty() ? 0 : rows[0]["stamp"].as<std::uint64_t>();
 }
 
 std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp,
                                                 const PipelineVersions& versions) {
-  // Four ways to be owed a pass: never derived, a moved body, a moved corpus, a moved pipeline. A
-  // page the vendor refused is not reopened by a moved corpus alone. The 'refused' literal must stay
-  // in step with the one `statusText` writes.
+  // Five ways to be owed a pass: never derived, a moved body, a moved corpus, a moved pipeline, and
+  // a last pass that did not settle. That last one is load-bearing rather than belt and braces: an
+  // unsettled pass now records the versions of the steps it did finish, so every version clause can
+  // match a page the curator never judged. A page the vendor refused is not reopened by a moved
+  // corpus alone. The status literals must stay in step with the ones `statusText` writes.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      // A moved segmenter reports the body as moved; a moved embedder does not.
-      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      // The page is cut again unless storage already holds passages cut from THIS body by THIS
+      // segmenter; a moved embedder alone does not buy the segmenter again. The curation row cannot
+      // answer it, because a pass that stored the cut and then failed at the curator leaves that
+      // row's body stamp behind — and reading it would buy the same cut again every six hours.
+      "(NOT EXISTS (SELECT 1 FROM journal_span s WHERE s.user_id = p.user_id AND s.day = p.day "
+      "                                          AND s.body_stamp_ms = p.stamp_ms) "
       "     OR c.segment_version IS DISTINCT FROM $3) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid "
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
-      "     OR (c.corpus_stamp < $2 AND c.status <> 'refused') "
+      "     OR (c.corpus_stamp IS DISTINCT FROM $2 AND c.status <> 'refused') "
       // A pipeline change reopens even a refused page.
       "     OR c.segment_version IS DISTINCT FROM $3 "
       "     OR c.embed_version IS DISTINCT FROM $4 "
-      "     OR c.judge_version IS DISTINCT FROM $5) "
+      "     OR c.judge_version IS DISTINCT FROM $5 "
+      "     OR (c.status NOT IN ('ok', 'empty_ok', 'refused') AND coalesce(c.attempts, 0) < " +
+          std::to_string(kCurationRetries) + ")) "
       "ORDER BY p.day",
       user.str(), static_cast<long long>(corpusStamp), versions.segment, versions.embed,
       versions.judge);
@@ -181,21 +199,24 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
 std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const LocalDate& day,
                                                  std::uint64_t corpusStamp,
                                                  const PipelineVersions& versions) {
-  // The same conditions duePages asks, of one named row, refusal clause included.
+  // The same conditions duePages asks, of one named row, refusal and unsettled clauses included.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      "(NOT EXISTS (SELECT 1 FROM journal_span s WHERE s.user_id = p.user_id AND s.day = p.day "
+      "                                          AND s.body_stamp_ms = p.stamp_ms) "
       "     OR c.segment_version IS DISTINCT FROM $4) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid AND p.day = $2::date "
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
-      "     OR (c.corpus_stamp < $3 AND c.status <> 'refused') "
+      "     OR (c.corpus_stamp IS DISTINCT FROM $3 AND c.status <> 'refused') "
       "     OR c.segment_version IS DISTINCT FROM $4 "
       "     OR c.embed_version IS DISTINCT FROM $5 "
-      "     OR c.judge_version IS DISTINCT FROM $6)",
+      "     OR c.judge_version IS DISTINCT FROM $6 "
+      "     OR (c.status NOT IN ('ok', 'empty_ok', 'refused') AND coalesce(c.attempts, 0) < " +
+          std::to_string(kCurationRetries) + "))",
       user.str(), day.iso(), static_cast<long long>(corpusStamp), versions.segment,
       versions.embed, versions.judge);
 
@@ -470,16 +491,28 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
-  // An unsettled pass records what failed and leaves both stamps where they were, so the page comes
-  // back as due. A refusal settles instead, in the branch below.
+  // An unsettled pass leaves both stamps where they were, and the due queries bring the page back on
+  // its status — not on its stamps alone, because this branch does advance the version columns. It
+  // records what the finished steps earned: a cut that reached storage was paid for, and a pass that
+  // claimed none bought it again from the vendor every six hours forever. A step that did not run
+  // hands back an empty string, which keeps what an earlier pass earned rather than clearing it.
+  // `judge_version` is never written here: this pass judged nothing, and the stored echoes are still
+  // the older judgement's. A refusal settles instead, in the branch below.
   if (!isSettled(outcome.status)) {
     txn.exec_params(
-        "INSERT INTO journal_page_curation (user_id, day, status, attempts, last_error, updated_at) "
-        "VALUES ($1::uuid, $2::date, $3, 1, $4, now()) "
+        "INSERT INTO journal_page_curation "
+        "(user_id, day, status, attempts, last_error, segment_version, embed_version, updated_at) "
+        "VALUES ($1::uuid, $2::date, $3, 1, $4, $5, $6, now()) "
         "ON CONFLICT (user_id, day) DO UPDATE "
         "SET status = EXCLUDED.status, attempts = journal_page_curation.attempts + 1, "
-        "last_error = EXCLUDED.last_error, updated_at = now()",
-        user.str(), day.iso(), statusText(outcome.status), outcome.error);
+        "last_error = EXCLUDED.last_error, "
+        "segment_version = coalesce(nullif(EXCLUDED.segment_version, ''), "
+        "                           journal_page_curation.segment_version), "
+        "embed_version = coalesce(nullif(EXCLUDED.embed_version, ''), "
+        "                         journal_page_curation.embed_version), "
+        "updated_at = now()",
+        user.str(), day.iso(), statusText(outcome.status), outcome.error, outcome.versions.segment,
+        outcome.versions.embed);
     txn.commit();
     return;
   }

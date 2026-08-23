@@ -316,6 +316,19 @@ public:
     LocalDate day;
     SpanWrite write;
     std::string embedVersion;
+    std::uint64_t bodyStampMs = 0;   // the page stamp this passage was cut from, as the column holds
+  };
+
+  // The curation ledger row, written exactly as the upsert writes it: a settled pass records the
+  // whole row, an unsettled one bumps the attempt, keeps both stamps where they were, and keeps a
+  // version it was handed an empty string for rather than clearing what an earlier pass earned.
+  struct StoredCuration {
+    CurationStatus status = CurationStatus::ok;
+    std::uint64_t bodyStampMs = 0;
+    std::uint64_t corpusStamp = 0;
+    int attempts = 0;
+    std::string lastError;
+    PipelineVersions versions;
   };
 
   // What the reader said about a pairing, with the score and the curator version it was judged under.
@@ -339,6 +352,7 @@ public:
   std::set<std::string> offersRetired;   // "user|day" -> the reader answered "not now" here
   std::map<std::string, std::vector<StoredSignal>> signals;
   std::map<std::string, CuratedEchoes> echoesByPage;   // "user|day" -> what the pass wrote
+  std::map<std::string, StoredCuration> curations;     // "user|day" -> the ledger row that survives
   std::vector<CurationOutcome> outcomes;
   std::map<std::string, std::vector<LocalDate>> inbound;
   std::uint64_t stamp = 1;
@@ -364,13 +378,34 @@ public:
         StoredSpan{day,
                    SpanWrite{spanId, Passage{0, lo, lo + static_cast<int>(text.size()), text},
                              vector},
-                   "fake-embedder-v1"});
+                   "fake-embedder-v1", stamp});
   }
 
   std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
-  std::uint64_t corpusStamp(const UserId&) override { return stamp; }
 
-  // `staleVersions` is the switch a test flips to say the page was derived by a pipeline that has since moved — the SQL's IS DISTINCT FROM.
+  // A fingerprint of the comparison set, ordered by span id like the SQL's aggregate, so deleting a
+  // page's passages moves it exactly as adding one does and re-storing the same ones does not.
+  std::uint64_t corpusStamp(const UserId& user) override {
+    auto it = spans.find(user.str());
+    if (it == spans.end()) return 0;
+    std::map<std::int64_t, std::string> byId;
+    for (const StoredSpan& stored : it->second)
+      // NORMALISED, because the SQL digests text_sha256 and PgEchoRepository hashes that over
+      // normalizedForIdentity — so a re-derivation that changes only whitespace must move neither
+      // stamp. A fake that moved on whitespace where production does not is the exact divergence
+      // that hid the retraction defect for months.
+      byId[stored.write.spanId] = std::to_string(stored.bodyStampMs) + ":" + stored.embedVersion +
+                                  ":" + normalizedForIdentity(stored.write.passage.text);
+    std::string canonical;
+    for (const auto& [spanId, row] : byId) canonical += std::to_string(spanId) + ":" + row + ",";
+    if (canonical.empty()) return 0;
+    return static_cast<std::uint64_t>(std::hash<std::string>{}(canonical));
+  }
+
+  // Hands back exactly what a test planted. This fake models neither the corpus stamp nor the
+  // version columns nor the status clause, so anything that needs those goes through
+  // PgEchoRepositoryTest against real Postgres — there has never been a `staleVersions` switch here,
+  // whatever the comment that stood here said.
   std::vector<DuePage> duePages(const UserId& user, std::uint64_t,
                                 const PipelineVersions&) override {
     auto it = due.find(user.str());
@@ -423,7 +458,8 @@ public:
 
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& writes,
-                                     const std::string& embedVersion, std::uint64_t) override {
+                                     const std::string& embedVersion,
+                                     std::uint64_t bodyStampMs) override {
     // The ORDER pages were worked in, whether or not a page proposed anything.
     derived.push_back(pageKey(user, day));
     std::vector<StoredSpan>& all = spans[user.str()];
@@ -434,7 +470,7 @@ public:
     stored.reserve(writes.size());
     for (SpanWrite write : writes) {
       if (write.spanId == 0) write.spanId = nextSpanId++;
-      all.push_back(StoredSpan{day, write, embedVersion});
+      all.push_back(StoredSpan{day, write, embedVersion, bodyStampMs});
       stored.push_back(Vectored{write.spanId, day, write.passage.text, write.vector});
     }
     return stored;
@@ -582,11 +618,24 @@ public:
     echoesByPage.erase(pageKey(user, day));
   }
 
-  // A SETTLED pass advances the page's stamps; a failure that will clear on its own writes the error and leaves both stamps, so the page stays owed.
+  // A SETTLED pass advances the page's stamps and records the whole pipeline; a failure that will clear on its own writes the error, bumps the attempt, and leaves both stamps, so the page stays owed. It still keeps the versions of the steps that finished, and an empty one keeps what an earlier pass earned instead of clearing it — the same upsert the SQL does, so a test cannot prove here what production would not do.
   void recordCuration(const UserId& user, const LocalDate& day,
                       const CurationOutcome& outcome) override {
     outcomes.push_back(outcome);
-    if (isSettled(outcome.status)) settle(user, day);
+    StoredCuration& row = curations[pageKey(user, day)];
+    row.status = outcome.status;
+    row.lastError = outcome.error;
+    if (!isSettled(outcome.status)) {
+      ++row.attempts;
+      if (!outcome.versions.segment.empty()) row.versions.segment = outcome.versions.segment;
+      if (!outcome.versions.embed.empty()) row.versions.embed = outcome.versions.embed;
+      return;
+    }
+    row.attempts = 0;
+    row.bodyStampMs = outcome.bodyStampMs;
+    row.corpusStamp = outcome.corpusStamp;
+    row.versions = outcome.versions;
+    settle(user, day);
   }
 
   std::vector<LocalDate> inboundPages(const UserId& user, const LocalDate& day) override {

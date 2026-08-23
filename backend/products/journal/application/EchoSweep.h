@@ -18,11 +18,16 @@ namespace wm {
 struct EchoSweepReport {
   int usersScanned = 0;
   int pagesDerived = 0;
-  int pagesSkippedRefrain = 0;
+  // TRIGGERS, not pages: one page can carry several, and the old name said the wrong noun in the
+  // one place an operator reads to find out why a night was quiet.
+  int triggersSkippedRefrain = 0;
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
-  // Units a segmenter proposed that are not in the page's body and were discarded.
+  // Boundary indices a segmenter named that could not be used — out of range, out of order, or the
+  // same atom opened twice. It counts confusion rather than invention: since the model answers with
+  // atom numbers instead of text, it cannot misquote anyone. Above zero on an ordinary night means
+  // it is answering about a page it did not read properly.
   int unitsDiscarded = 0;
   // Pages the vendor declined to judge; unlike `pagesFailed`, they are never owed again.
   int pagesRefused = 0;

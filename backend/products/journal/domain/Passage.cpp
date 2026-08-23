@@ -10,17 +10,17 @@ namespace wm {
 
 namespace {
 
-// A half-open byte range into the body. Every cut lands on ASCII, so a boundary is always a
-// codepoint boundary.
+// A half-open byte range into the body. A cut lands either on ASCII or on a multi-byte dash or
+// ellipsis stepped over whole, so a boundary is never inside a character.
 struct Span {
   int lo = 0;
   int hi = 0;
 };
 
-// A run of sentences that will not be split further; `maxSentences` is counted in `sentences`.
+// A run of atoms that will not be split further; `maxAtoms` is counted in `atoms`.
 struct Unit {
   Span span;
-  int sentences = 0;
+  int atoms = 0;
 };
 
 bool isBlank(char c) {
@@ -93,61 +93,195 @@ bool closesAbbreviation(const std::string& body, Span line, int dot) {
   return false;
 }
 
-// A boundary is a run of `.`, `!` or `?` followed by whitespace, and a run ending in a full stop is
-// refused when that stop closes an abbreviation. Capitalisation is never consulted.
-std::vector<Span> sentencesIn(const std::string& body, Span line) {
-  std::vector<Span> sentences;
-  int start = line.lo;
-  for (int at = line.lo; at < line.hi; ++at) {
-    const char c = body[at];
-    if (c != '.' && c != '!' && c != '?') continue;
-
-    int end = at;   // "..." and "?!" end one sentence, not three
-    while (end + 1 < line.hi &&
-           (body[end + 1] == '.' || body[end + 1] == '!' || body[end + 1] == '?')) ++end;
-    const int after = pastClosers(body, line, end + 1);
-    at = end;
-
-    if (after >= line.hi) break;                                        // the line ends the sentence
-    if (!isBlank(body[after])) continue;                                // inside a number or a url
-    if (body[end] == '.' && closesAbbreviation(body, line, end)) continue;
-
-    sentences.push_back(trimmed(body, {start, after}));
-    start = after;
-    at = after - 1;
-  }
-  const Span tail = trimmed(body, {start, line.hi});
-  if (tail.lo < tail.hi) sentences.push_back(tail);
-  return sentences;
+// A sentence terminator at `at`: `.`, `!`, `?`, or the three-byte `…` the writer actually types.
+// Returns its byte width, or 0.
+int terminatorAt(const std::string& body, Span line, int at) {
+  const char c = body[at];
+  if (c == '.' || c == '!' || c == '?') return 1;
+  if (line.hi - at >= 3 && body.compare(at, 3, "\xe2\x80\xa6") == 0) return 3;   // …
+  return 0;
 }
 
-// Fragments merge first and the `maxSentences` cap applies to what survives, so a merge may
-// overrun it.
-std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRules& rules) {
-  std::vector<Unit> units;
-  for (const Span& sentence : sentencesIn(body, line)) {
-    if (!units.empty() && wordCount(body, sentence) < rules.minWords) {
-      units.back().span.hi = sentence.hi;
-      ++units.back().sentences;
+// A marker that OPENS an atom: whitespace, then one of `+ - – — •`, then whitespace or a word.
+// Returns the marker's byte width, or 0.
+//
+// Two habits, one rule. A mid-line `+` or `-` is a list the writer did not put on its own line, and
+// four lines in twenty-six of the one real corpus are written that way — "+я буду… + машу…" — so
+// without this they are a single atom carrying every item at once. A dash with whitespace around it
+// is the joiner Russian uses where English uses a comma.
+//
+// A diary is not a calculator: "3 - 2" is cut too. That costs a boundary nobody wanted in a place
+// nobody writes about, and merging is free, so it is the cheap side of the trade. A digit right
+// after the marker is left alone, which keeps "-5 градусов" whole.
+int markerAt(const std::string& body, Span line, int at) {
+  if (at <= line.lo || !isBlank(body[at - 1])) return 0;
+
+  const char c = body[at];
+  int width = (c == '+' || c == '-') ? 1 : 0;
+  if (width == 0 && line.hi - at >= 3 &&
+      (body.compare(at, 3, "\xe2\x80\x93") == 0 ||     // –
+       body.compare(at, 3, "\xe2\x80\x94") == 0 ||     // —
+       body.compare(at, 3, "\xe2\x80\xa2") == 0)) {    // •
+    width = 3;
+  }
+  if (width == 0) return 0;
+
+  const int next = at + width;
+  if (next >= line.hi) return 0;                                   // a marker with nothing after it
+  if (isBlank(body[next])) return width;
+  return (body[next] >= '0' && body[next] <= '9') ? 0 : width;
+}
+
+// The last resort, and only inside an atom that already ran past `kLongAtomWords`: cut after a
+// comma, but only where three words stand on each side of it. A comma-spliced breath carries three
+// topics into one embedding and then matches none of them: measured on the owner's own corpus, one
+// such line scored 0.354 against the sentence he wrote about one of those topics, where that
+// sentence alone scored 0.950. The three-word margin is what keeps "нет," from becoming an atom.
+std::vector<Span> commaCuts(const std::string& body, Span atom) {
+  static constexpr int kMarginWords = 3;
+
+  std::vector<Span> pieces;
+  int start = atom.lo;
+  for (int at = atom.lo; at < atom.hi; ++at) {
+    if (body[at] != ',') continue;
+    const int next = at + 1;
+    if (next >= atom.hi || !isBlank(body[next])) continue;         // "1,5" is one number
+
+    const Span left = trimmed(body, {start, next});
+    const Span right = trimmed(body, {next, atom.hi});
+    if (wordCount(body, left) < kMarginWords) continue;
+    if (wordCount(body, right) < kMarginWords) continue;
+
+    pieces.push_back(left);
+    start = next;
+  }
+  const Span tail = trimmed(body, {start, atom.hi});
+  if (tail.lo < tail.hi) pieces.push_back(tail);
+  return pieces;
+}
+
+// One line cut to the floor. At each byte, in this order: a list marker opens an atom BEFORE
+// itself; a run of terminators closes one after itself, carrying whatever closes the clause with
+// it; and `;` or `:` before whitespace closes one too. Capitalisation is never consulted — this
+// writer does not use any. Whatever survives longer than `kLongAtomWords` is cut again at commas.
+// A run with no seam anybody wrote: cut it on whitespace every `kMaxUnitWords` words. The pieces are
+// not thoughts and do not pretend to be — they are what keeps a page embeddable at all.
+std::vector<Span> wordCuts(const std::string& body, Span piece) {
+  std::vector<Span> cuts;
+  int start = piece.lo;
+  int words = 0;
+  int at = piece.lo;
+  while (at < piece.hi) {
+    while (at < piece.hi && isBlank(body[at])) ++at;
+    if (at >= piece.hi) break;
+    while (at < piece.hi && !isBlank(body[at])) ++at;
+    if (++words < kMaxUnitWords) continue;
+    cuts.push_back(trimmed(body, {start, at}));
+    start = at;
+    words = 0;
+  }
+  const Span tail = trimmed(body, {start, piece.hi});
+  if (tail.lo < tail.hi) cuts.push_back(tail);
+  return cuts;
+}
+
+std::vector<Span> atomsIn(const std::string& body, Span line) {
+  std::vector<Span> cuts;
+  int start = line.lo;
+  int at = line.lo;
+  while (at < line.hi) {
+    const int marker = markerAt(body, line, at);
+    if (marker > 0) {
+      const Span before = trimmed(body, {start, at});
+      if (before.lo < before.hi) {
+        cuts.push_back(before);
+        start = at;
+      }
+      at += marker;
       continue;
     }
-    units.push_back({sentence, 1});
+
+    const int terminator = terminatorAt(body, line, at);
+    if (terminator > 0) {
+      int end = at + terminator;   // "..." and "?!" end one atom, not three
+      while (end < line.hi) {
+        const int more = terminatorAt(body, line, end);
+        if (more == 0) break;
+        end += more;
+      }
+      const int after = pastClosers(body, line, end);
+      at = end;
+
+      if (after >= line.hi) break;                                       // the line ends the atom
+      if (!isBlank(body[after])) continue;                               // inside a number or a url
+      if (body[end - 1] == '.' && closesAbbreviation(body, line, end - 1)) continue;
+
+      cuts.push_back(trimmed(body, {start, after}));
+      start = after;
+      at = after;
+      continue;
+    }
+
+    if ((body[at] == ';' || body[at] == ':') && at + 1 < line.hi && isBlank(body[at + 1])) {
+      cuts.push_back(trimmed(body, {start, at + 1}));
+      start = at + 1;
+      at = at + 1;
+      continue;
+    }
+    ++at;
+  }
+  const Span tail = trimmed(body, {start, line.hi});
+  if (tail.lo < tail.hi) cuts.push_back(tail);
+
+  std::vector<Span> atoms;
+  for (const Span& cut : cuts) {
+    if (wordCount(body, cut) <= kLongAtomWords) {
+      atoms.push_back(cut);
+      continue;
+    }
+    for (const Span& piece : commaCuts(body, cut)) {
+      // The hard ceiling, and the reason it exists is downstream: `unitsFrom` never splits INSIDE an
+      // atom (a boundary the model was never offered has no business in the writer's sentence), so
+      // an atom with no punctuation and no commas would be an unsplittable unit of any length — and
+      // past the embedder's window the sidecar refuses the batch and the page can never be stored
+      // at all. Every other cut here is a seam somebody wrote; this one is arbitrary, which is why
+      // it is last and why it only ever runs on a line that offered nothing better.
+      if (wordCount(body, piece) <= kMaxUnitWords) {
+        atoms.push_back(piece);
+        continue;
+      }
+      for (const Span& word : wordCuts(body, piece)) atoms.push_back(word);
+    }
+  }
+  return atoms;
+}
+
+// Fragments merge first and the `maxAtoms` cap applies to what survives, so a merge may overrun it.
+std::vector<Span> passagesIn(const std::string& body, Span line, const SegmentRules& rules) {
+  std::vector<Unit> units;
+  for (const Span& atom : atomsIn(body, line)) {
+    if (!units.empty() && wordCount(body, atom) < rules.minWords) {
+      units.back().span.hi = atom.hi;
+      ++units.back().atoms;
+      continue;
+    }
+    units.push_back({atom, 1});
   }
   // An opening fragment joins the one after instead; with no "after", it stands as its own passage.
   if (units.size() > 1 && wordCount(body, units.front().span) < rules.minWords) {
     units[1].span.lo = units.front().span.lo;
-    units[1].sentences += units.front().sentences;
+    units[1].atoms += units.front().atoms;
     units.erase(units.begin());
   }
 
   std::vector<Span> passages;
   for (std::size_t i = 0; i < units.size();) {
     Span span = units[i].span;
-    int sentences = units[i].sentences;
+    int joined = units[i].atoms;
     ++i;
-    while (i < units.size() && sentences + units[i].sentences <= rules.maxSentences) {
+    while (i < units.size() && joined + units[i].atoms <= rules.maxAtoms) {
       span.hi = units[i].span.hi;
-      sentences += units[i].sentences;
+      joined += units[i].atoms;
       ++i;
     }
     passages.push_back(span);
@@ -167,6 +301,10 @@ std::vector<Passage> segment(const std::string& body, const SegmentRules& rules)
     }
   }
   return passages;
+}
+
+int wordsIn(const std::string& text) {
+  return wordCount(text, Span{0, static_cast<int>(text.size())});
 }
 
 // Whitespace and nothing else: no case folding, no punctuation stripping, no Unicode folding.
@@ -247,7 +385,7 @@ std::vector<Passage> locateUnits(const std::string& body, const std::vector<std:
 }
 
 std::vector<Passage> atomsOf(const std::string& body) {
-  // minWords 0 merges nothing and maxSentences 1 groups nothing, so `segment` cuts to its floor.
+  // minWords 0 merges nothing and maxAtoms 1 joins nothing, so `segment` cuts to its floor.
   return segment(body, SegmentRules{0, 1});
 }
 
@@ -274,10 +412,32 @@ Grouping unitsFrom(const std::string& body, const std::vector<Passage>& atoms,
   // belongs to somebody, and dropping it would lose the writer a thought.
   if (opens.empty() || opens.front() != 1) opens.insert(opens.begin(), 1);
 
+  // A unit is a run of atoms, so nothing above bounds its LENGTH — the model can answer starts=[1]
+  // on a page of any size. `kMaxUnitWords` is where that stops being free: past the embedder's
+  // window the sidecar refuses the batch and the page can never be stored at all.
+  const auto tooHeavy = [&](int from, int to) {
+    return wordsIn(body.substr(atoms[static_cast<std::size_t>(from)].lo,
+                               atoms[static_cast<std::size_t>(to)].hi -
+                                   atoms[static_cast<std::size_t>(from)].lo)) > kMaxUnitWords;
+  };
+
   for (std::size_t i = 0; i < opens.size(); ++i) {
     const int from = opens[i] - 1;
     const int to = (i + 1 < opens.size() ? opens[i + 1] - 1 : count) - 1;
-    const int lo = atoms[static_cast<std::size_t>(from)].lo;
+    // Split at atom boundaries until every piece fits. One atom is never split here: the grammar
+    // already bounds an atom, and cutting inside one would put a boundary the model never saw —
+    // and never offered — into the writer's own sentence.
+    int start = from;
+    for (int at = from; at <= to; ++at) {
+      if (at > start && tooHeavy(start, at)) {
+        const int lo = atoms[static_cast<std::size_t>(start)].lo;
+        const int hi = atoms[static_cast<std::size_t>(at - 1)].hi;
+        grouped.units.push_back(Passage{static_cast<int>(grouped.units.size()), lo, hi,
+                                        body.substr(lo, hi - lo)});
+        start = at;
+      }
+    }
+    const int lo = atoms[static_cast<std::size_t>(start)].lo;
     const int hi = atoms[static_cast<std::size_t>(to)].hi;
     grouped.units.push_back(Passage{static_cast<int>(grouped.units.size()), lo, hi,
                                     body.substr(lo, hi - lo)});

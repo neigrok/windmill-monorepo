@@ -57,12 +57,14 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.body = page->body;
   explained.bodyStampMs = page->updatedAtMs;
 
+  // The judging half is the curator plus the selection knobs, spelled by the one function the sweep
+  // records with: asked with the curator alone, this answer was `true` for every page ever.
   const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
   explained.due =
       echoes_
           .duePage(user, request.day, corpusStamp,
                    PipelineVersions{segmenter_.version(), embedder_.version(),
-                                    curator_.version()})
+                                    judgeVersion(curator_.version(), request.rules)})
           .has_value();
 
   // Read before anything can return early, so `corpus: 0` never means nobody looked.

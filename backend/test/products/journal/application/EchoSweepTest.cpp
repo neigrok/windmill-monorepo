@@ -558,3 +558,33 @@ TEST(a_pairing_selection_itself_now_refuses_is_taken_off_the_page) {
   CHECK_EQ(curator.calls, judged);   // nothing was proposed, so nothing was sent
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }
+
+// The day collapse is forward-only and persistence is additive, so a page that stored two echoes into
+// ONE past day before `maxPerMatchDay` existed would keep both rows forever — two cards where the
+// write side has always addressed one. The loser is retracted, but only once its day is represented.
+TEST(a_second_echo_into_the_same_past_day_is_taken_off_the_page) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+
+  // One past day carrying two passages tonight can reach, and both of them stored as echoes by an
+  // older build that had no per-day rule.
+  const std::string first = "i want to learn kotlin properly this time, not just skimming it.";
+  const std::string second = "kotlin keeps coming up and i keep putting it off, which is the problem.";
+  echoes.addUser(uid("u1"));
+  echoes.plantPage(uid("u1"), ld(kOldDay), first + "\n" + second);
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 11, first, embedder.embed({first})[0]);
+  echoes.plantSpan(uid("u1"), ld(kOldDay), 12, second, embedder.embed({second})[0],
+                   static_cast<int>(first.size()) + 1);
+  echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+
+  const std::vector<EchoRow> rows = echoes.rowsOn(uid("u1"), ld(kNewDay));
+  REQUIRE_EQ(rows.size(), std::size_t{1});
+  CHECK_EQ(rows[0].matchDay, ld(kOldDay));
+}

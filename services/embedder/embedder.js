@@ -1,20 +1,9 @@
-// The model, configured once.
-//
-// CORRECTED 2026-08-23. This file used to say the vectors here and the browser's are compared to
-// each other, one index seeded from the other. They are not, and never have been: no endpoint
-// serves a vector, the search worker embeds the writer's prose on the device from the page bodies
-// it already has, and the two indexes never meet. Checked before this line was rewritten —
-// journalApi.js has no vector route and web/src/products/journal/search/ never imports it.
-//
-// What is true, and is the reason this sidecar exists rather than an ONNX call from C++: running
-// the same library over the same files is how you get vectors you can reason about at all, rather
-// than reimplementing mean pooling and L2 normalisation in another language and hoping. Keeping
-// the two surfaces on the same weights stays DESIRABLE — it makes one measurement describe both —
-// but it is a preference, not a constraint, and either side can move without breaking the other.
-//
-// The browser prefixes QUERIES ("Represent this sentence for searching relevant passages: ") and
-// leaves PASSAGES bare. This sidecar embeds passages only, so nothing is prefixed here — adding a
-// prefix would put the server's vectors in a different corner of the space than the browser's.
+// This sidecar and the browser deliberately run different models. Nothing serves a vector across
+// that line — the browser embeds page bodies on-device into an index of its own, and these vectors
+// never leave the server — so each side owes only its own consistency. Here that buys Russian, which
+// bge-small-en-v1.5 tokenizes near character level and then ranks by word-sharing; there it spares a
+// phone a 135MB download of multilingual weights it would gain nothing from.
+// This model is symmetric: passages and queries are embedded the same way, neither with a prefix.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,28 +11,26 @@ import { fileURLToPath } from 'node:url';
 
 import { env, pipeline } from '@huggingface/transformers';
 
-export const MODEL = 'Xenova/bge-small-en-v1.5';
+export const MODEL = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 export const DTYPE = 'q8';
 export const DIM = 384;
 
-// Stamped on every span row the sweep writes, so retrieval can refuse to compare across versions:
-// cosine between two embedding spaces is not degraded, it is meaningless, and nothing about it looks
-// like an error. Change any of the four facts it names and this string changes with them.
-export const VERSION = 'bge-small-en-v1.5.q8.mean.l2';
+// Stamped on every span row the sweep writes so retrieval refuses to compare across versions;
+// change any of the four facts it names and this string changes with them.
+export const VERSION = 'paraphrase-multilingual-MiniLM-L12-v2.q8.mean.l2';
 
-// The default is the model the web app serves. In the container this is a read-only mount of the
-// built site's own models/ directory — same bytes the browser downloads, not a copy of them.
+// The positions this model reads: config.json max_position_embeddings, which the tokenizer's own
+// model_max_length agrees with. (The 128 in sentence_bert_config.json is not a file transformers.js
+// reads.) Everything past it is dropped, not condensed.
+export const MAX_PIECES = 512;
+
 export const modelRoot = () =>
   process.env.MODEL_DIR || fileURLToPath(new URL('../../web/public/models', import.meta.url));
 
-// Where dtype q8 resolves to on disk — the one file whose absence must be a loud startup failure
-// rather than a fallback to something else.
 export const weightsPath = () => path.join(modelRoot(), MODEL, 'onnx', 'model_quantized.onnx');
 
 export async function loadExtractor() {
-  // allowLocalModels defaults differently per runtime (false in the browser build, true in node), so
-  // both flags are set explicitly: read from disk, and never reach the Hugging Face hub — a silent
-  // remote fetch would serve a model nobody in this repo has ever seen.
+  // allowLocalModels defaults differently per runtime, so both flags are set explicitly.
   env.allowLocalModels = true;
   env.allowRemoteModels = false;
   env.localModelPath = modelRoot();
@@ -52,15 +39,21 @@ export async function loadExtractor() {
   return pipeline('feature-extraction', MODEL, { dtype: DTYPE });
 }
 
-// One forward pass for the whole batch. Note what that costs: a passage's vector is NOT independent
-// of what it was batched with. The q8 model quantizes activations dynamically, deriving one scale
-// from the whole padded batch tensor, so co-batched sentences nudge each other — measured at cos
-// 0.995–0.998 against the same passage embedded alone (check/server.mjs pins that bound).
-//
-// Batching anyway, deliberately. The browser does the same thing (32 passages per round trip), so
-// its index carries the identical wobble; it is small next to a corpus whose real pair similarities
-// run 0.3–0.9; and the alternative costs 2–3× for vectors that are no closer to the browser's.
+// A passage's vector is not independent of what it was batched with: q8 derives one activation
+// scale from the whole padded batch tensor.
 export async function embedPassages(extractor, passages) {
+  // The pipeline truncates past MAX_PIECES without a word: a 962-piece passage comes back a unit
+  // vector of the right width sitting 0.985 from its own first-512-piece prefix, which is to say it
+  // stands for the opening and drops the rest. No error, no short row, nothing any caller can see.
+  // So the batch dies here instead — EchoSweep reads a failed call as transport and leaves the page
+  // for the next sweep, and has no way at all to read a vector that quietly means less than it says.
+  const pieces = passages.map((passage) => extractor.tokenizer.encode(passage).length);
+  const over = pieces.findIndex((count) => count > MAX_PIECES);
+  if (over !== -1) {
+    const detail = `passage ${over} is ${pieces[over]} tokenizer pieces, over the ${MAX_PIECES} this model reads`;
+    throw Object.assign(new Error(detail), { status: 400 });
+  }
+
   const output = await extractor(passages, { pooling: 'mean', normalize: true });
   const [rows, dim] = output.dims;
   if (rows !== passages.length) throw new Error(`expected ${passages.length} rows, got ${rows}`);
