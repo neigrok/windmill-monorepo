@@ -31,6 +31,7 @@ export function JournalApp({ hash }) {
   const [flyTo, setFlyTo] = useState(null);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [settledDay, setSettledDay] = useState(null);
   const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
@@ -50,8 +51,15 @@ export function JournalApp({ hash }) {
   const focusDate = focusDateOf(hash);
   const openPage = echoes.openDay ? echoes.pageOf(echoes.openDay) : null;
   const sheetPage = echoes.sheetDay ? echoes.pageOf(echoes.sheetDay) : null;
-  // The margin follows the scroll until a tab is opened, and then it holds that page.
-  const marginPage = openPage || (echoes.followedDay ? echoes.pageOf(echoes.followedDay) : null);
+  // The margin follows the scroll until a tab is opened, and then it holds that page. The follow is
+  // committed only once the scroll has rested, so a fast pass does not strobe the panel.
+  const marginPage = openPage || (settledDay ? echoes.pageOf(settledDay) : null);
+
+  useEffect(() => {
+    const day = echoes.followedDay;
+    const settle = setTimeout(() => setSettledDay(day), 160);
+    return () => clearTimeout(settle);
+  }, [echoes.followedDay]);
 
   // ⌘K / Ctrl-K opens search.
   useEffect(() => {
@@ -67,7 +75,7 @@ export function JournalApp({ hash }) {
 
   return (
     <div
-      className={'journal-root' + (marginPage ? ' has-margin' : '') + (sheetPage ? ' is-sheeted' : '')}
+      className={'journal-root' + (echoes.hasGutter ? ' has-gutter' : '') + (sheetPage ? ' is-sheeted' : '')}
       ref={lendDoorSkin}
       data-theme={theme}
     >
@@ -77,7 +85,7 @@ export function JournalApp({ hash }) {
         echoes={echoes}
         holdWriter={holdWriter}
       />
-      {marginPage && <EchoMargin echoes={echoes} page={marginPage} />}
+      <EchoMargin echoes={echoes} page={marginPage} />
       {openPage && <InkFooter echoes={echoes} page={openPage} />}
       <EchoTrail echoes={echoes} current={focusDate || echoes.today} />
       <BackToTonight echoes={echoes} />

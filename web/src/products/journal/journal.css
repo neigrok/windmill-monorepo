@@ -82,6 +82,9 @@
 }
 
 .journal-root {
+  /* The echo margin's reserved space. Held open for the whole mount, never per-scroll. */
+  --je-gutter: 0px;
+
   position: fixed;
   inset: 0;
   overflow: hidden;
@@ -92,7 +95,7 @@
 
 .journal-lamp {
   position: absolute;
-  left: 50%;
+  left: calc(50% - var(--je-gutter) / 2);
   bottom: -6%;
   width: min(820px, 130%);
   height: 46%;
@@ -107,6 +110,7 @@
   position: relative;
   z-index: 1;
   height: 100%;
+  width: calc(100% - var(--je-gutter));
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -437,7 +441,7 @@
 
 .journal-tools {
   position: fixed;
-  right: 20px;
+  right: calc(20px + var(--je-gutter));
   bottom: 84px;
   display: flex;
   flex-direction: column;
@@ -740,7 +744,9 @@
   cursor: pointer;
   pointer-events: auto;
 }
-.journal-root:has(.je-ink-foot) .je-home { bottom: 58px; }
+@media (max-width: 1239.98px) {
+  .journal-root:has(.je-ink-foot) .je-home { bottom: 58px; }
+}
 
 .je-first {
   margin-top: 26px;
@@ -770,9 +776,7 @@
   z-index: 3;
   box-sizing: border-box;
   width: 300px;
-  display: flex;
   flex-direction: column;
-  gap: 18px;
   padding: 26px 22px;
   overflow-y: auto;
   border-left: 1px solid var(--border-subtle);
@@ -788,6 +792,24 @@
 .je-ink-desk .je-verdict { gap: 16px; margin-top: 6px; }
 .je-ink-desk .je-verdict-mark { padding: 4px 0; font-size: 11.5px; }
 .je-margin .je-free-path { margin-top: 0; padding-top: 14px; font-size: 12px; line-height: 19px; }
+@keyframes journal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.je-margin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  animation: journal-fade-in 180ms var(--ease-standard) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .je-margin-body { animation: none; }
+}
+.je-margin-rest {
+  margin: 0;
+  font: 400 12px/19px var(--font-body), sans-serif;
+  color: var(--text-tertiary);
+}
 .je-margin-foot {
   margin: auto 0 0;
   padding-top: 16px;
@@ -797,20 +819,18 @@
 
 .je-margin { display: none; }
 @media (min-width: 1240px) {
-  .je-margin { display: flex; }
+  .journal-root.has-gutter { --je-gutter: 300px; }
+  .journal-root.has-gutter .je-margin { display: flex; }
   /* One ink at a time: the margin holds it, so the in-page copy hides. */
-  .je-ink,
-  .je-ink-foot { display: none; }
-  .journal-root.has-margin .journal-scroll { padding-right: 300px; }
-  .journal-root.has-margin .journal-tools { right: 320px; }
-  .journal-root.has-margin .je-trail { right: 300px; }
+  .journal-root.has-gutter .je-ink,
+  .journal-root.has-gutter .je-ink-foot { display: none; }
 }
 
 .je-trail {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
+  right: var(--je-gutter);
   z-index: 4;
   padding: 52px 22px 12px;
   background: var(--surface-canvas);
@@ -864,7 +884,7 @@
 }
 .je-home {
   position: fixed;
-  left: 50%;
+  left: calc(50% - var(--je-gutter) / 2);
   bottom: 24px;
   transform: translateX(-50%);
   z-index: 5;
