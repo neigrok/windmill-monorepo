@@ -6,6 +6,7 @@
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <exception>
 #include <map>
 #include <optional>
@@ -24,6 +25,33 @@ namespace {
 constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
+
+// Every SelectionRules value in eight characters — FNV-1a over the knobs, in a fixed order. Not a
+// security hash, a change detector: it is what makes a threshold change reopen the pages it would
+// judge differently. Add a knob to SelectionRules and add it here, or the knob ships silently.
+std::string rulesTag(const SelectionRules& rules) {
+  const double values[] = {
+      static_cast<double>(rules.minDayGap),  static_cast<double>(rules.shown),
+      rules.refrainRadius,                   static_cast<double>(rules.refrainCrowd),
+      rules.familyRadius,                    rules.restatement,
+      rules.commonShare,                     static_cast<double>(rules.vocabularyFloor),
+      static_cast<double>(rules.perBand),    static_cast<double>(rules.maxRecent),
+      static_cast<double>(rules.maxPerMonth), rules.distanceWeight,
+      rules.familyPenalty,                   rules.diversityPenalty,
+  };
+  std::uint32_t hash = 2166136261u;
+  for (const double value : values) {
+    // Bytes of the value, so 0.25 and 0.40 differ and 0.25 and 0.25 never do.
+    const auto* bytes = reinterpret_cast<const unsigned char*>(&value);
+    for (std::size_t i = 0; i < sizeof(double); ++i) {
+      hash ^= bytes[i];
+      hash *= 16777619u;
+    }
+  }
+  char tag[9];
+  std::snprintf(tag, sizeof(tag), "%08x", hash);
+  return tag;
+}
 
 CurationStatus statusFor(const std::string& failure) {
   if (failure == "rate_limited") return CurationStatus::rateLimited;
@@ -84,7 +112,12 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
 }
 
 PipelineVersions EchoSweep::versions() const {
-  return PipelineVersions{segmenter_.version(), embedder_.version()};
+  // The judging half is the curator's identity AND the selection knobs: both decide which pairings
+  // survive, and neither is visible in a page's own body or corpus. The knobs are folded to eight
+  // characters, so a threshold changed in a deploy re-judges the archive rather than applying only
+  // to pages written afterwards.
+  return PipelineVersions{segmenter_.version(), embedder_.version(),
+                          curator_.version() + "/" + rulesTag(rules_)};
 }
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {

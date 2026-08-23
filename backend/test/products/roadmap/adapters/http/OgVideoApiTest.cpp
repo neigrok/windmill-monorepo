@@ -14,8 +14,7 @@ using namespace wm::fake;
 
 namespace {
 
-// The container magic every real upload leads with, plus a little payload. Both are built with an
-// explicit-length prefix so a hex escape can't greedily swallow the byte that follows it.
+// The container magic every real upload leads with, plus a little payload. Both use an explicit-length prefix so a hex escape cannot swallow the byte after it.
 const std::string MP4 = std::string("\x00\x00\x00\x18", 4) + "ftypisommp42" + "fake-loop-bytes";
 const std::string WEBM = std::string("\x1a\x45\xdf\xa3", 4) + "fake-webm-loop-bytes";
 
@@ -139,7 +138,6 @@ TEST(put_to_an_unclaimed_tree_is_403) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_orphan", MP4);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k403Forbidden);
-  // Nobody's, and said so — "belongs to another account" would name an account that does not exist.
   CHECK_EQ((*resp->getJsonObject())["code"].asString(), std::string("nobodys-tree"));
   CHECK_EQ((*resp->getJsonObject())["error"].asString(),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));

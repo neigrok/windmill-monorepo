@@ -19,22 +19,17 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The reminder engine's five doors.
 //
-// Two are ordinary settings surfaces behind the usual session (get/patch). One is the operator's
-// rehearsal door, closed unless REMINDERS_ADMIN_TOKEN opens it (sweep). The other two — pause and
-// unsubscribe — take no credential at all, because the only thing either can be reached with is the
-// secret in someone's own mail, and each answers the same whether or not that secret matches. A door
-// that reported "no such token" would be an oracle for which secrets exist. The two differ only in
-// who presses them: pause is the human page's button, unsubscribe (RFC 8058 one-click) is the POST a
-// mail client makes for the reader. Both spend the same per-send pause secret, so either path pauses
-// exactly once.
+// get/patch sit behind the usual session; sweep is the operator's rehearsal door, closed unless
+// REMINDERS_ADMIN_TOKEN opens it. pause and unsubscribe take no credential at all — the only
+// thing either can be reached with is the secret in someone's own mail — and each answers the
+// same whether or not that secret matches, so neither is an oracle for which secrets exist. Both
+// spend the same per-send pause secret, so either path pauses exactly once.
 //
-// Neither may act on a GET: corporate link scanners and Outlook prefetch every URL in an email, and
-// a GET door would silently unsubscribe people who never pressed anything. Both are POST-only, so a
-// scanner's GET reaches nothing.
+// Both are POST-only: link scanners and mail clients prefetch every URL in an email, and a GET
+// door would unsubscribe people who never pressed anything.
 //
-// Every one of them answers a caller who may have typed anything at all, so each field is checked
-// for its type before it is read: jsoncpp throws on a conversion it cannot make, and an exception
-// out of a handler is a 500 and a Sentry event that an anonymous caller can mint at will.
+// Every field is type-checked before it is read: jsoncpp throws on a conversion it cannot make,
+// and an exception out of a handler is a 500 an anonymous caller can mint at will.
 class RemindersApi {
 public:
   RemindersApi(std::shared_ptr<ReminderSweep> sweep, std::shared_ptr<ReminderRepository> reminders,

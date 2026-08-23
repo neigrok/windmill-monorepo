@@ -12,15 +12,8 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::apitest;
 
-// PreferencesApi over the fake store: §I's settings document, read and written whole, and the
-// proof that units are a display transform that reaches no write and no read.
+// PreferencesApi over the fake store: the settings document, read and written whole.
 
-// ---- §I · the settings section -----------------------------------------------------------------
-
-// The read that cannot 404. A lifter who has never opened this screen holds no row, and what comes
-// back is the DEFAULTS — kg, no rest target at all, confirmation on — because every client needs
-// those values before it can draw its first frame, and an absence there would put a copy of the
-// defaults in each of them.
 TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
   Harness h;
   h.signIn("s-live");
@@ -36,8 +29,6 @@ TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
   CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
-// The write is the whole document and it answers with the stored one, so the screen redraws from
-// what the store now holds rather than from what it hoped it sent.
 TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
   Harness h;
   h.signIn("s-live");
@@ -61,9 +52,7 @@ TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
   CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{1});
 }
 
-// A whole-document PUT means the document IS the body: a field the sender did not name takes its
-// default rather than quietly keeping a value the sender cannot see and cannot clear. `restSeconds`
-// is the field that proves it — omitting it is how a lifter turns the timer off.
+// A whole-document PUT: a field the sender did not name takes its default, and omitting `restSeconds` turns the timer off.
 TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_timer_off) {
   Harness h;
   h.signIn("s-live");
@@ -81,10 +70,6 @@ TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_ti
                        R"("units":"kg"})"));
 }
 
-// Every refusal this write can make carries a machine word, and they are all different words:
-// several independent values arrive at once, so a screen told only "could not read that" could not
-// say which of its rows to send the lifter back to. The sentences are pinned beside the codes because they are
-// what a lifter reads.
 TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
   Harness h;
   h.signIn("s-live");
@@ -99,9 +84,6 @@ TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
   Json::Value misspelled(Json::objectValue);
   misspelled["restSecond"] = 90;
 
-  // Asserted field by field rather than as one dumped line, because a sentence a lifter reads may
-  // hold an em dash and the writer escapes it — the contract is the code and the words, not the
-  // encoding of a punctuation mark.
   const auto said = [&](const Json::Value& body) {
     return std::pair(body["code"].asString(), body["error"].asString());
   };
@@ -112,8 +94,6 @@ TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
            std::pair(std::string("rest-target"),
                      std::string("a rest target runs from 15 to 900 seconds — send none for no "
                                  "timer")));
-  // A misspelled field is refused rather than ignored, and here that is not pedantry: an ignored
-  // `restSecond` would answer 200 while the timer it was aiming at silently switched off.
   CHECK_EQ(said(bodyOf(refuse(misspelled))),
            std::pair(std::string("preferences-unreadable"),
                      std::string(R"(unknown settings field "restSecond". Settings take: units, )"
@@ -135,10 +115,6 @@ TEST(gym_settings_are_owner_scoped_on_both_doors) {
   CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
-// §I's first row, proved rather than promised: KILOGRAMS ARE THE ONLY THING STORED. The account
-// below switches to `lb` before it logs anything, and every number that comes back afterwards — the
-// set it wrote, the session read, the log row's tonnage and top set, the CSV cell — is the kilogram
-// it sent. Then it switches back, and the log is byte-identical: history does not get rewritten.
 TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
   Harness h;
   h.signIn("s-live");

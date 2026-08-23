@@ -10,8 +10,7 @@ PgPool::PgPool(std::string connString, std::size_t maxConnections,
     : connString_(std::move(connString)),
       maxConnections_(maxConnections > 0 ? maxConnections : 1),
       acquireTimeout_(acquireTimeout) {
-  // The idle list never holds more than the ceiling, so reserving it here means release() never
-  // allocates — which is what lets release() be noexcept and be called from a destructor.
+  // Reserve up front so release() never allocates, which is what lets it be noexcept in a destructor.
   idle_.reserve(maxConnections_);
 }
 
@@ -32,8 +31,7 @@ std::unique_ptr<pqxx::connection> PgPool::acquire() {
                                "should live, which means one was never returned");
   }
 
-  // Claim the slot before letting go of the lock: connecting takes milliseconds, and the ceiling
-  // has to hold across them or every waiter wakes and opens one at the same moment.
+  // Claim the slot before letting go of the lock, or every waiter wakes and opens one at once.
   ++open_;
   lock.unlock();
 
@@ -59,8 +57,7 @@ void PgPool::release(std::unique_ptr<pqxx::connection> conn) noexcept {
     if (conn->is_open()) idle_.push_back(std::move(conn));
     else --open_;
   }
-  // A broken connection is destroyed here, outside the lock, and the slot it freed is what the
-  // waiter this wakes will use to open a healthy one.
+  // A broken connection is destroyed here, outside the lock; the freed slot is what the waiter this wakes uses.
   returned_.notify_one();
 }
 

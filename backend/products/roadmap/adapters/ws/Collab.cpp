@@ -21,8 +21,7 @@ constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
 constexpr unsigned kMaxMarksPerFrame = 2000;
 
-// parseHlc throws on a stamp whose numbers are not numbers; nullopt keeps a malformed stamp a
-// refusable frame instead of an exception unwinding a handler thread.
+// parseHlc throws on a non-numeric stamp; nullopt keeps that a refusable frame, not a throw.
 std::optional<Hlc> readHlc(const std::string& text) {
   try {
     return parseHlc(text);
@@ -70,12 +69,10 @@ Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
     : registry_(registry), ops_(ops), bus_(bus), progress_(progress),
       auth_(auth), presence_(presence), clock_(clock), allowedOrigins_(std::move(allowedOrigins)),
       reprove_("ws-readers") {
-  // Read authorization can be revoked under an open socket (re-privating, session revocation),
-  // so the bus asks this gate before every fan-out.
+  // Read authorization can be revoked under an open socket, so the bus asks before every fan-out.
   bus_.setReadGate([this](const TreeId& tree, const drogon::WebSocketConnectionPtr& conn) {
     if (mayRead(conn, tree)) return true;
-    // A no is the whole revocation: leave the roster, and answer in the same words a fresh
-    // subscribe would hear so a refused reader learns nothing from the difference.
+    // A no is the whole revocation: leave the roster, and answer in a fresh subscribe's words.
     presence_.leave(conn, tree);
     send(conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
     return false;
@@ -86,35 +83,33 @@ Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
 }
 
 void Collab::reproveReaders() {
-  // stillAuthorized can block on a database lookup: run it here, on the sweeper's thread,
-  // holding no strand.
+  // stillAuthorized can block on a database lookup: run it here, holding no strand.
   for (const auto& conn : bus_.connections()) stillAuthorized(conn);
   bus_.resweepAll();
 }
 
 void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
-  // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed. A client
-  // that states none — a script, a device, curl — is untouched.
+  // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed, and a
+  // client that states none is untouched.
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !allowedOrigins_.count(origin)) {
     LOG_WARN << "ws upgrade refused: origin " << origin << " is not allow-listed";
-    // A context first, then the close: drogon may still deliver a frame queued on this connection,
-    // and every handler reads the Principal without checking that one exists.
+    // A context first, then the close: drogon may still deliver a queued frame, and every
+    // handler reads the Principal unchecked.
     conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
     conn->forceClose();
     return;
   }
 
-  // Frames carry no cookie: resolve the session at the upgrade. Anyone unauthenticated joins as
-  // a read-only guest.
+  // Frames carry no cookie: resolve the session at the upgrade; anyone else is a read-only guest.
   std::string secret = req->getCookie("wm_session");
   if (secret.empty()) {
     std::string authorization = req->getHeader("authorization");
     if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
   }
   std::optional<User> user = auth_.authenticate(secret);
-  // Keep the session's digest, never the secret, so each write can re-prove the session.
-  // Built in place: a Principal holds atomics and cannot be copied into the context.
+  // Keep the digest, never the secret, so a write can re-prove the session. Built in place: a
+  // Principal holds atomics and cannot be copied.
   if (user) {
     conn->setContext(std::make_shared<Principal>(user->id, true, sharableName(*user),
                                                  auth_.digestOf(secret), clock_.nowMs()));
@@ -165,13 +160,11 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
   }
 }
 
-// Ship the client only what its version vector says it lacks, carrying the server's frontier as
-// coverage.
+// Ship only what the client's version vector lacks, with the server's frontier as coverage.
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& request) {
   const Principal& principal = principalOf(conn);
 
-  // versionVectorFromJson throws on an HLC counter past 64 bits, and a subscribe that answers
-  // nothing leaves the client waiting forever.
+  // versionVectorFromJson throws past 64 bits, and an unanswered subscribe waits forever.
   VersionVector clientVector;
   try {
     clientVector = versionVectorFromJson(request["vector"]);
@@ -197,8 +190,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
-      // Join the bus and presence under the strand, so no edit broadcast slips between the delta
-      // computed here and the subscription taking effect.
+      // Join under the strand, so no broadcast slips between the delta and the subscription.
       bus_.subscribe(TreeId{treeId}, conn, principal.user);
       presence_.join(conn, TreeId{treeId});
 
@@ -206,8 +198,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       delta.treeId = TreeId{treeId};
       delta.frameId = "delta-" + std::to_string(room->head());
       delta.actor = "srv";
-      // Unset title stamps carry nothing to cover; the stated coverage owns the stamp so the
-      // client never flushes it back.
+      // Unset title stamps carry nothing; the stated coverage owns the stamp, so the client
+      // never flushes it back.
       if (!clientVector.covers(room->title().stamp)) delta.title = room->title();
       if (delta.coverage) delta.coverage->observe(room->title().stamp);
       frame = toJson(delta);
@@ -235,8 +227,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   send(conn, graft);
 }
 
-// A socket authenticates once, at the upgrade, and can then live for hours: every write
-// re-proves its session, throttled to one lookup a minute.
+// A socket authenticates once and can live for hours, so every write re-proves its session,
+// throttled to one lookup a minute.
 bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal || !principal->authenticated) return false;
@@ -253,8 +245,7 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
   return true;
 }
 
-// Both connection identity and tree visibility change under an open socket, so both are asked
-// again here.
+// Connection identity and tree visibility both change under an open socket; ask both again.
 bool Collab::mayRead(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal) return false;
@@ -276,8 +267,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     return;
   }
 
-  // A frame we cannot decode is refused by code: an escaping throw would answer nothing and
-  // strand the client's in-flight entry for this frameId.
+  // A frame we cannot decode is refused by code: a throw answers nothing and strands the
+  // client's in-flight entry for this frameId.
   Subgraph incoming;
   try {
     incoming = subgraphFromJson(frame);
@@ -289,8 +280,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
   incoming.treeId = TreeId{treeId};
 
-  // Skew clamp: a frame stamped past now + 5min is refused whole, title register included — a
-  // runaway stamp must not own the name for years.
+  // Skew clamp: a frame stamped past now + 5min is refused whole, title register included.
   std::uint64_t nowMs = clock_.nowMs();
   VersionVector front = frontier(incoming.graph, incoming.legend);
   if (incoming.title) front.observe(incoming.title->stamp);
@@ -359,14 +349,12 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     send(conn, reject);
   };
 
-  // A lapsed session is told, never silently dropped. Nothing is echoed back to requeue: an
-  // unacked frame stays uncovered in its lattice and re-flushes on its own.
+  // A lapsed session is told, never dropped; an unacked frame re-flushes on its own.
   if (!stillAuthorized(conn)) return refuse(kSignInRequired, "sign in to track progress");
 
   const Json::Value& marks = frame["marks"];
   if (!marks.isArray() || marks.empty()) return refuse(kBadFrame, "this frame carried no marks");
-  // Bound the batch: a caller must not hand a handler thread an arbitrarily long list to parse,
-  // stamp and upsert one row at a time.
+  // Bound the batch: one frame must not hand a handler thread an unbounded list to upsert.
   if (marks.size() > kMaxMarksPerFrame)
     return refuse(kTreeTooLarge, "a progress frame carries at most " + std::to_string(kMaxMarksPerFrame) + " marks");
 
@@ -396,8 +384,8 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
-      // Absent and private-denied both answer "no such tree" — the socket is no existence oracle.
-      // Decided off the stored row, so the mark never materializes a tree the caller cannot read.
+      // Absent and private-denied both answer "no such tree", decided off the stored row so the
+      // mark never materializes a tree the caller cannot read.
       const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
       if (!access || !canRead(principal.user, access->owner, access->visibility))
         return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");

@@ -20,13 +20,11 @@ namespace {
 
 constexpr std::uint64_t kWeekMs = 7ULL * 24 * 60 * 60 * 1000;
 
-// The same harness JournalApiTest runs on, plus the nudge half: the fake repository, a REAL
-// NudgeSweep over the fakes (dark by default — arming off), and the api under test. The first
-// user the auth fake mints is "u1".
+// The first user the auth fake mints is "u1". The NudgeSweep here is real and dark by default.
 struct Harness {
   FakeAuthRepository authRepo;
-  FakeEmail email;           // the platform sign-in mailer AuthService still speaks to
-  FakeNudgeMail nudgeMail;   // the journal nudge mailer the sweep now speaks to
+  FakeEmail email;
+  FakeNudgeMail nudgeMail;
   std::shared_ptr<FakeTokens> tokens = std::make_shared<FakeTokens>();
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeOAuthRepository oauthRepo;
@@ -88,11 +86,7 @@ drogon::HttpResponsePtr unsubscribe(Harness& h, const drogon::HttpRequestPtr& re
   return captured;
 }
 
-// A pass that RUNS answers from the sweep's own loop, never the thread that called it, so the test
-// waits for it exactly as a client would. `answeredOn` is the proof: a batch answered on this thread
-// would have been a drogon IO thread pinned for the length of the whole batch — 200 users of
-// database round trips and Resend calls, with a pooled connection held across every one of them.
-// A refusal (no token, a refused rehearsal) still answers inline, and the wait costs it nothing.
+// A pass that RUNS answers from the sweep's own loop, never the calling thread; `answeredOn` is the proof. A refusal still answers inline.
 struct SweepAnswer {
   drogon::HttpResponsePtr response;
   std::thread::id answeredOn;
@@ -112,8 +106,6 @@ drogon::HttpResponsePtr adminSweep(Harness& h, const drogon::HttpRequestPtr& req
   return sweepOf(h, req).response;
 }
 
-// A user whose nudges are on, with a device-pushed schedule and a live pause secret — the state
-// every mail-borne door (pause, unsubscribe) starts from.
 UserId enrolled(Harness& h, const std::string& pauseSecret) {
   UserId me = h.signIn("s-live");
   NudgeSettings on;
@@ -174,8 +166,6 @@ TEST(nudge_patch_turns_on_and_stores_the_device_schedule) {
   CHECK_FALSE(stored->suppressed);
 }
 
-// The gate the web enforced by not mounting the panel, enforced where an API key can reach: an
-// account the dark-launch allowlist does not name cannot store a row that says "on".
 TEST(nudge_patch_enabling_outside_the_allowlist_is_403_and_stores_nothing) {
   Harness h;
   UserId me = h.signIn("s-live");
@@ -191,7 +181,6 @@ TEST(nudge_patch_enabling_outside_the_allowlist_is_403_and_stores_nothing) {
   CHECK_FALSE(h.nudges->settingsFor(me).has_value());
 }
 
-// Switching OFF is never gated — a refusal there would pin a row on for someone we cannot reach.
 TEST(nudge_patch_disabling_outside_the_allowlist_still_lands) {
   Harness h;
   UserId me = h.signIn("s-live");
@@ -247,7 +236,6 @@ TEST(nudge_pause_with_a_stranger_secret_is_still_204_and_changes_nothing) {
 
   drogon::HttpResponsePtr response = pause(h, req);
 
-  // The same 204 whether or not the secret matched — this door is no oracle for whose nudges exist.
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
   std::optional<NudgeSettings> stored = h.nudges->settingsFor(me);
   REQUIRE(stored.has_value());
@@ -296,9 +284,7 @@ TEST(admin_sweep_with_the_right_token_reports) {
 
   drogon::HttpResponsePtr response = adminSweep(h, req);
 
-  // Nobody is due over an empty repository, so the report is all zeros — the door and the shape
-  // are what this case pins down: the whole MailSweepReport, the same nine fields roadmap's admin
-  // door answers with (`ran` is true: the pass took the lock and looked).
+  // Nobody is due over an empty repository, so the report is all zeros; `ran` is true because the pass took the lock and looked.
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(*response->getJsonObject()),
            std::string(R"({"claimed":0,"due":0,"errors":0,"failed":0,"held":0,"ran":true,)"
@@ -306,9 +292,7 @@ TEST(admin_sweep_with_the_right_token_reports) {
 }
 
 TEST(admin_sweep_refuses_a_time_travelling_pass_while_the_engine_is_armed) {
-  // The rehearsal door is not a live-fire door. Armed, a future asOfMs would mail the allowlist
-  // early AND consume the genuine evening knock it claimed on the way, which no apology walks back.
-  // Roadmap's door has always refused this; until 2026-08-22 journal's ran it wet.
+  // The rehearsal door is not a live-fire door: armed, a future asOfMs would mail the allowlist early AND consume the genuine evening knock it claimed.
   Harness h(MailArming(true, "u1"), "the-secret");
   UserId me = h.signIn("s-live");
   h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
@@ -327,9 +311,7 @@ TEST(admin_sweep_refuses_a_time_travelling_pass_while_the_engine_is_armed) {
 }
 
 TEST(admin_sweep_makes_a_time_travelling_pass_a_rehearsal_even_when_asked_for_a_wet_one) {
-  // Dark, the door still travels — that is what makes a nightly feature iterable in an afternoon —
-  // but never wet: the claim clears next_due_at against real time, so a wet run at a future clock
-  // burns every enabled user's real slot for a mail that goes out at the wrong hour or not at all.
+  // Dark, the door still travels but never wet: the claim clears next_due_at against real time, so a wet run at a future clock burns every enabled user's real slot.
   Harness h(MailArming(), "the-secret");
   UserId me = h.signIn("s-live");
   h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
@@ -347,14 +329,11 @@ TEST(admin_sweep_makes_a_time_travelling_pass_a_rehearsal_even_when_asked_for_a_
   CHECK_EQ(h.nudges->claims.size(), std::size_t{0});
   CHECK_EQ(h.nudges->closes.size(), std::size_t{0});
   CHECK_EQ(h.nudgeMail.sent.size(), std::size_t{0});
-  // And the user's real knock is still on the calendar.
   REQUIRE(h.nudges->settingsFor(me).has_value());
   CHECK_EQ(h.nudges->settingsFor(me)->nextDueAtMs.value_or(0), h.clock->now);
 }
 
 TEST(admin_sweep_runs_off_the_calling_thread) {
-  // It used to run inline on the drogon IO thread that took the request, holding one of the twenty
-  // pooled connections across every outbound Resend call in the batch. Roadmap's door never did.
   Harness h(MailArming(), "the-secret");
   UserId me = h.signIn("s-live");
   h.nudges->armDue(me, Email{"sam@example.com"}, ld("2026-07-28"), h.clock->now);
@@ -374,9 +353,6 @@ TEST(admin_sweep_runs_off_the_calling_thread) {
 }
 
 TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
-  // The one fact on this surface the reader did not choose. Someone whose nudges silently stopped
-  // is owed the reason: a settings page answering `enabled: true` while nothing ever arrives is
-  // lying to them, and the flag is the only thing that can tell them the truth.
   Harness h;
   UserId me = h.signIn("s-live");
   NudgeSettings on;
@@ -395,9 +371,7 @@ TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
   CHECK_EQ(dump(*response->getJsonObject()),
            std::string(R"({"adaptive":true,"armed":false,"channel":"email","enabled":true,)"
                        R"("nextDueAt":1700003600000,"suppressed":true})"));
-  // Switching off does not lift it: the flag is the provider's fact, not a preference, so what
-  // its owner asked for survives beside it rather than instead of it — and only the owner turning
-  // the nudge back ON says the mailbox works again.
+  // Switching off does not lift it: the flag is the provider's fact, not a preference, and only the owner turning the nudge back ON says the mailbox works again.
   Json::Value patch(Json::objectValue);
   patch["enabled"] = false;
   drogon::HttpResponsePtr off =
@@ -408,15 +382,11 @@ TEST(nudge_get_reports_a_mailbox_the_provider_called_dead) {
                        R"("nextDueAt":1700003600000,"suppressed":true})"));
   CHECK(h.nudges->settingsFor(me)->suppressed);
   CHECK_FALSE(h.nudges->settingsFor(me)->enabled);
-  // An address no account owns writes nothing and says so, which is what keeps the webhook from
-  // being an account-existence oracle.
   CHECK_FALSE(h.nudges->stopMailing(Email{"stranger@example.com"}));
 }
 
 TEST(nudge_the_owner_turning_it_on_lifts_a_suppression) {
-  // The one deliberate act that clears the provider's verdict: the owner, signed in, PATCHing
-  // enabled:true — which is them saying the address works now. Being wrong costs one more bounce.
-  // The PATCH answers the fresh settings, so the lift must show in the reply, not only in the row.
+  // The one deliberate act that clears the provider's verdict: the owner PATCHing enabled:true. The PATCH answers the fresh settings, so the lift must show in the reply.
   Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   NudgeSettings on;
@@ -444,8 +414,7 @@ TEST(nudge_the_owner_turning_it_on_lifts_a_suppression) {
 }
 
 TEST(nudge_a_patch_that_does_not_say_enabled_leaves_a_suppression_alone) {
-  // A row already reading "on" is not the owner speaking: moving the channel over it changes a
-  // preference and says nothing about the mailbox, so the provider's fact stands.
+  // A row already reading "on" is not the owner speaking, so moving the channel over it leaves the provider's fact standing.
   Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   NudgeSettings on;

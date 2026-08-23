@@ -6,18 +6,11 @@
 namespace wm::gym {
 
 namespace {
-// A spreadsheet runs a cell that opens with =, + or @ instead of showing it, and the cell's author
-// is not always the person who opens the file: a movement name and a note are both writable by any
-// MCP client the lifter granted gym:write, and an Ask turn is composed by a model reading text the
-// lifter pasted. So the few cells that would EXECUTE carry a leading apostrophe, which every
-// spreadsheet reads as "what follows is text" — the one edit this file makes, named here because
-// the promise below is otherwise absolute.
-//
-// A negative number is deliberately NOT one of those cells. Loads are kg and negative is legal
-// (band-assisted work logs that way), -20 is a number to a spreadsheet and not a formula, and
-// quoting it as text would break the weight column for every lifter who uses a band. So a leading
-// sign is a formula only when what follows it is not a plain number: `-20.00` travels untouched,
-// `-1+1` and `-cmd|' /C calc'!A0` do not.
+// A spreadsheet RUNS a cell that opens with =, + or @ instead of showing it, and the author of a
+// cell is not always the reader of the file. Those cells carry a leading apostrophe — the one edit
+// this file makes.
+// A negative number is NOT one of them: loads are kg and negative is legal, so a leading sign is a
+// formula only when what follows is not a plain number. `-20.00` travels untouched, `-1+1` does not.
 bool runsAsFormula(std::string_view value) {
   if (value.empty()) return false;
   const char first = value.front();
@@ -35,9 +28,8 @@ bool runsAsFormula(std::string_view value) {
   return false;
 }
 
-// Quoted only where the framing needs it, so the common file stays the readable one: a weight, a
-// rep count and a movement name go through untouched and only a note with a comma or a newline in
-// it pays for the quotes.
+// Quoted only where the framing needs it: a weight, a rep count and a movement name go through
+// untouched.
 std::string field(std::string_view value) {
   if (runsAsFormula(value)) return field("'" + std::string(value));
   if (value.find_first_of(",\"\r\n") == std::string_view::npos) return std::string(value);
@@ -50,10 +42,9 @@ std::string field(std::string_view value) {
   return quoted;
 }
 
-// The header goes through this too, so the names and the rows can never be framed by two different
-// rules. The separator rides on a flag rather than on "is the line empty yet", which is the same
-// bug in miniature that the export exists to avoid: an empty first cell would swallow the comma
-// after it and shift every column of that row by one.
+// The header goes through this too, so names and rows are framed by one rule. The separator rides
+// on a flag rather than on "is the line empty yet": an empty first cell would otherwise swallow the
+// comma after it and shift every column of that row by one.
 std::string line(std::initializer_list<std::string_view> values) {
   std::string out;
   bool first = true;

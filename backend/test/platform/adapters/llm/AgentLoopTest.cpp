@@ -12,8 +12,6 @@ using namespace wm;
 
 namespace {
 
-// A ToolHost the test scripts: a fixed catalog, every call answered through a supplied responder,
-// and every call recorded so the loop's traffic is observable.
 struct FakeToolHost : ToolHost {
   std::vector<ToolDeclaration> catalog;
   std::vector<std::pair<std::string, Json::Value>> calls;
@@ -29,8 +27,7 @@ struct FakeToolHost : ToolHost {
   }
 };
 
-// A scripted model: hands out `replies` one per iteration, then falls back to `whenExhausted` (a
-// repeating reply, for the cap) or nullopt (an upstream failure). Every request is recorded.
+// Hands out `replies` one per iteration, then falls back to `whenExhausted` (a repeating reply) or nullopt (an upstream failure).
 struct FakeModel {
   std::vector<Json::Value> replies;
   std::optional<Json::Value> whenExhausted;
@@ -176,8 +173,6 @@ TEST(the_loop_runs_the_tools_and_answers_on_end_turn) {
   CHECK_EQ(outcome.steps[0].tool, std::string("get_stats"));
   CHECK_FALSE(outcome.steps[0].failed);
 
-  // The request carried the catalog this caller's grant can see, the model, the bounds — and the
-  // system prompt as ONE cached block.
   REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-opus-5"));
   CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
@@ -187,8 +182,7 @@ TEST(the_loop_runs_the_tools_and_answers_on_end_turn) {
   CHECK_EQ(model.requests[0]["system"][0]["cache_control"]["type"].asString(),
            std::string("ephemeral"));
 
-  // The second request fed the tool_result back keyed to the tool_use id, and the conversation cache
-  // breakpoint MOVED to the newest turn — one marker, however long the loop runs.
+  // The conversation cache breakpoint MOVES to the newest turn — one marker, however long the loop runs.
   const Json::Value& second = model.requests[1]["messages"];
   const Json::Value& last = second[second.size() - 1];
   CHECK_EQ(last["role"].asString(), std::string("user"));
@@ -201,7 +195,6 @@ TEST(the_loop_runs_the_tools_and_answers_on_end_turn) {
   CHECK_EQ(marks, 1);
 }
 
-// A model without the effort knob is not sent one, rather than being sent a default somebody guessed.
 TEST(an_empty_effort_sends_no_output_config_at_all) {
   FakeToolHost host;
   FakeModel model;
@@ -247,9 +240,7 @@ TEST(the_iteration_cap_is_a_failure_and_names_its_own_number) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.text, std::string(""));
   CHECK_EQ(outcome.error, std::string("hit the 4-iteration cap without the model finishing"));
-  CHECK_EQ(model.requests.size(), 4u);  // stopped at the cap, not one more
-  // …and every one of those four was billed. This is the most expensive way a run can fail, so a
-  // caller rationing questions has to be able to tell it from a run that reached nobody.
+  CHECK_EQ(model.requests.size(), 4u);
   CHECK_EQ(outcome.modelTurns, 4);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0],
@@ -268,19 +259,15 @@ TEST(a_model_that_stopped_early_is_a_failure_and_the_half_answer_is_dropped) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.text, std::string(""));
   CHECK_EQ(outcome.error, std::string("the model stopped early (stop_reason: max_tokens)"));
-  CHECK_EQ(outcome.modelTurns, 1);  // it answered, at length, and then ran out of room: billed
+  CHECK_EQ(outcome.modelTurns, 1);
   REQUIRE_EQ(rec.failures.size(), 1u);
 }
 
-// WHAT A RUN COST, WHICH `ok` DOES NOT SAY. Every failure below reaches a person as the same
-// nothing-came-back, and they are not the same fact to whoever is holding a budget: a reply that
-// arrived was billed however unusable it turned out to be, and a call that never returned one was
-// not. Gym's daily ration reads exactly this to decide whether a failed question is given back.
+// A reply that arrived was billed however unusable it turned out to be; a call that never returned one was not. Gym's daily ration reads exactly this.
 TEST(the_run_counts_the_vendor_turns_it_actually_completed) {
   FakeToolHost host;
   host.catalog.push_back(ToolDeclaration{mcpTool("get_stats", "The long view."), "gym", Access::read});
 
-  // Two paid turns and an answer: the tool round trip, then the sentence.
   FakeModel answered;
   answered.replies.push_back(toolUseReply("get_stats", "toolu_1"));
   answered.replies.push_back(textReply("end_turn", "Bench held at 82.5."));
@@ -289,20 +276,17 @@ TEST(the_run_counts_the_vendor_turns_it_actually_completed) {
                .modelTurns,
            2);
 
-  // A reply came back and was unreadable — the vendor still billed for it.
   FakeModel garbled;
   garbled.replies.push_back(Json::Value(Json::objectValue));
   CHECK_EQ(driveAgentLoop(spec("how is bench?"), host, kCaller, garbled.asCall(), rec.report())
                .modelTurns,
            1);
 
-  // Nothing came back at all — a dead upstream, or the fuse refusing to call. Free.
   FakeModel dead;
   CHECK_EQ(
       driveAgentLoop(spec("how is bench?"), host, kCaller, dead.asCall(), rec.report()).modelTurns,
       0);
 
-  // …and a run that never reached the vendor never counted one.
   AgentLoopSpec bare = spec("unused");
   bare.messages = Json::Value(Json::arrayValue);
   FakeModel untouched;
@@ -322,8 +306,6 @@ TEST(an_answer_that_said_nothing_is_refused_when_one_was_required) {
   CHECK_EQ(outcome.error, std::string("the model finished without saying anything"));
 }
 
-// The other half of that rule: a run whose value is the WORK it did, not the sentence it wrote,
-// finishes fine with nothing to say.
 TEST(an_empty_final_turn_is_fine_when_no_answer_was_required) {
   FakeToolHost host;
   FakeModel model;

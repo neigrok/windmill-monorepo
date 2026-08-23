@@ -18,10 +18,8 @@ struct ServerInfo {
   std::string instructions;
 };
 
-// An MCP resource: a document a client may read on connect, addressed by uri. It costs no tool slot,
-// which is why the things agents reliably get backwards live here rather than in a tool description no
-// one re-reads. The struct is the neutral wire shape; the CONTENT is a product's to supply (a roadmap
-// deployment injects its quickstart, a journal-only one need inject nothing).
+// An MCP resource: a document a client may read on connect, addressed by uri. The struct is the
+// neutral wire shape; the CONTENT is a product's to supply, and may be empty.
 struct McpResource {
   std::string uri;
   std::string name;
@@ -31,15 +29,13 @@ struct McpResource {
   std::string text;
 };
 
-// A transport-agnostic MCP engine (JSON-RPC 2.0). `handle` maps one parsed request to its
-// reply, or to nothing for a notification. It owns no I/O: a transport (stdio today,
-// Streamable HTTP later) parses a frame, hands it here, and ships whatever comes back.
+// A transport-agnostic MCP engine (JSON-RPC 2.0). `handle` maps one parsed request to its reply, or
+// to nothing for a notification. It owns no I/O.
 class McpServer {
 public:
   McpServer(ToolHost& tools, ServerInfo info, std::vector<McpResource> resources = {});
 
-  // `caller` is the transport's resolved credential — the account AND its grant. It has no default:
-  // a request whose caller was never resolved would list the whole surface to nobody in particular.
+  // `caller` is the transport's resolved credential — the account AND its grant. It has no default.
   std::optional<Json::Value> handle(const Json::Value& message, const ToolCaller& caller);
 
 private:

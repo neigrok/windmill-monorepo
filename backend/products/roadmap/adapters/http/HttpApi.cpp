@@ -25,20 +25,15 @@ std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const
   return wm::callerOf(req, *auth_);
 }
 
-// Every room-backed read opens its tree the same way, and refuses in the same breath: an absent
-// tree (a null open), a private one this caller may not read, and an infrastructure failure all
-// answer false, so all three become the one 404 the callers give. That is what the arms are for —
-// a body byte-identical to absent means an id cannot be probed for existence, and a thrown pqxx
-// message (a host, a role, a connection string) never rides out to the client. `read` runs under
-// the strand, so a caller's own work is bracketed by the same lock the open needed.
+// An absent tree, a private one this caller may not read, and an infrastructure failure all
+// answer false, so all three become one 404: an id cannot be probed for existence, and a thrown
+// pqxx message never rides out to the client. `read` runs under the strand.
 bool HttpApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
-    // Authorize on the stored row BEFORE materializing a room: open() drags the whole lattice off
-    // disk and pins it in memory, so a caller who is about to be told the tree does not exist must
-    // never be the reason it is loaded — thirty denied reads used to cost ten megabytes that never
-    // came back.
+    // Authorize on the stored row BEFORE materializing a room: open() pins the whole lattice in
+    // memory, and a caller about to be refused must not be the reason.
     const std::optional<TreeAccess> access = registry_->accessOf(TreeId{treeId});
     if (!access || !canRead(caller, access->owner, access->visibility)) return false;
     TreeRoom* room = registry_->open(TreeId{treeId});
@@ -64,12 +59,10 @@ void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         state.graph = room.exportState();
         state.legend = room.exportLegend();
         body["state"] = toJson(state);
-        // When the tree was planted (epoch ms) — the week-N progress card counts from here,
-        // never the calendar week, so the client can't derive it from the document alone.
+        // When the tree was planted (epoch ms); the week-N card counts from here.
         body["createdAt"] = static_cast<Json::Int64>(room.createdAt());
         // The share flip reads these: the current visibility, and whether this tree is the
-        // caller's to change — which is canWrite exactly, so the client's "mine" and the
-        // server's write gate can never drift apart into a button that refuses itself.
+        // caller's to change — canWrite exactly, so the client's "mine" cannot drift from it.
         body["visibility"] = toString(room.visibility());
         body["mine"] = canWrite(caller, room.owner());
       })) {
@@ -95,9 +88,8 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  // A root that parsed but is not an object — `[]`, `"hello"`, `5` — is refused HERE, before any
-  // reader indexes it: jsoncpp throws on a keyed read of an array or a scalar, and that throw
-  // escaped the handler as a 500, a server_errors row and a Sentry event per request.
+  // A root that parsed but is not an object is refused before any reader indexes it: jsoncpp
+  // throws on a keyed read of an array or a scalar.
   if (!json || !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
@@ -107,9 +99,8 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
   }
-  // What the posted document can be judged on before the tree it lands on is even loaded: the
-  // title, the legend, every per-node field, and the caps for the tree this document would be on
-  // its own. What it would leave BEHIND is judged under the strand below, against the graph.
+  // What the document can be judged on before its tree is loaded; what it would leave BEHIND is
+  // judged under the strand below.
   if (std::optional<Admission> refusal = admit(*data)) {
     const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
     callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
@@ -117,47 +108,36 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   }
   GraphState state = LooseGraph(*data, genesis_).exportState();  // seed full state from the posted tree
 
-  // The whole decision runs under the tree's strand and hands back the reply it earned, so it
-  // reads top to bottom as one fail-fast pipeline — and the callback fires outside the lock.
+  // The whole decision runs under the tree's strand; the callback fires outside the lock.
   drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    // Judge first, on the two authorization columns alone, and touch NOTHING until they say yes.
-    // An eviction placed above this gate would flush and close the live room of whatever id a
-    // stranger cared to name — a refusal that costs its victim a cold reopen, on a tree the
-    // caller may not even be allowed to read.
+    // Judge on the two authorization columns alone and touch NOTHING until they say yes: an
+    // eviction above this gate would close the live room of whatever id a stranger names.
     std::optional<TreeAccess> access = trees_->loadAccess(TreeId{treeId});
-    // A tree the caller cannot read is answered "no such tree", the same sentence every other
-    // read on this surface gives — a refusal must never state that a private id belongs to
-    // someone. A readable tree the caller does not own names the truth, which is not a secret.
+    // Unreadable answers "no such tree": a refusal must never state that a private id belongs to
+    // someone. A readable tree the caller does not own names the truth.
     if (access && !canRead(caller, access->owner, access->visibility))
       return error(drogon::k404NotFound, "no such tree");
-    // Two refusals, because there are two truths (Access.h): naming an unowned tree as somebody
-    // else's is a lie a reader can act on — they go looking for the account that took it, and
-    // there is none. The code rides beside the sentence so a client branches without reading it.
+    // Two refusals, because there are two truths (Access.h). The code rides beside the sentence
+    // so a client branches without reading it.
     if (access) {
       if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
         return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
     }
 
-    // A PUT to an id no row holds CREATES the tree, so it mints an id exactly as fork and create
-    // do and must obey the same shape. An EXISTING tree keeps whatever id it has: slug ids like
-    // `windmill-roadmap` predate the mint and are the documented contract (db/schema.sql), so
-    // gating them here would have locked their owners out of their own roadmaps.
+    // A PUT to an id no row holds CREATES the tree, so it obeys the same id shape fork and
+    // create mint. An EXISTING tree keeps whatever id it has, slug ids included.
     if (!access && !wellFormedTreeId(treeId))
       return error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id");
 
-    // Authorized — so now flush and close any live room, and read the row that flush just wrote.
-    // Reading it any earlier would take a row the room has already run past, and lose twice over:
-    // head_seq rewinds under the op log, whose tail then replays straight back over this PUT, and
-    // the title mints past a stamp the room has already moved beyond, so a rename made over the
-    // socket silently outlives the document this PUT answered 200 for.
+    // Flush and close any live room, THEN read the row that flush just wrote: reading it earlier
+    // takes a row the room has run past, which rewinds head_seq under the op log and mints the
+    // title past a stamp the room has already moved beyond.
     registry_->evict(TreeId{treeId});
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
 
-    // A save GROWS the stored lattice — it upserts the entries the document names and deletes
-    // nothing — so the ceiling has to be read off what the tree would HOLD, not off this one
-    // request's payload. Judged on the document alone, five individually-legal PUTs of 10000
-    // fresh ids each left 45000 nodes standing on a 10000 cap.
+    // A save GROWS the stored lattice — it upserts what the document names and deletes nothing —
+    // so the ceiling is read off what the tree would HOLD, never off this one request's payload.
     if (existing) {
       if (std::optional<Admission> refusal = admit(LooseGraph(existing->state), *data)) {
         const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
@@ -173,19 +153,16 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     else legend = Legend::seededDefaults(genesis_).exportState();
 
     if (!existing) {
-      // Born owned, in one insert. There is no instant at which this row exists without an
-      // owner, so no window in which another account could reach it — the create-then-claim
-      // pair this replaced left exactly that window open on every PUT.
+      // Born owned, in one insert: no instant at which this row exists without an owner.
       try {
         trees_->create(TreeId{treeId}, state, legend, data->title, *caller);
       } catch (const DuplicateTree&) {
-        // Lost an insert race, or the id names a soft-deleted row that still holds it (the
-        // standalone MCP binary shares this DB). Either way the id is taken, and not by this PUT.
+        // Lost an insert race, or the id names a soft-deleted row that still holds it.
         return error(drogon::k409Conflict, "a tree with that id already exists");
       }
     } else {
-      // The posted document is the new baseline, title included, minted past the stored
-      // register so it clears the repository's LWW guard — an overwrite means what it says.
+      // The posted document is the new baseline, minted past the stored register so it clears
+      // the repository's LWW guard.
       HlcClock mint{std::string{TreeRoom::kServerActor}};
       mint.observe(existing->title.stamp);
       trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
@@ -208,8 +185,7 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  // A non-object root is refused before it is indexed — see putTree: a keyed read of an array
-  // throws out of the handler and lands as a 500 with a server_errors row.
+  // A non-object root is refused before it is indexed: a keyed read of an array throws.
   if (json && !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
@@ -239,18 +215,15 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 
 void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
-  // A shared tree is shared to show its OWNER's journey — the whole point of the picture. So the
-  // progress a reader gets follows ownership, not the caller: a visitor (anonymous or a non-owner)
-  // sees the lit tree the share promised instead of an empty one, and the owner viewing their own
-  // tree sees their own progress (they are the owner). Gated by canRead exactly like the structure
-  // read, so a private tree's progress is 404 — byte-identical to absent, never leaked.
+  // Progress follows OWNERSHIP, not the caller, so a visitor sees the lit tree the share
+  // promised. Gated by canRead, so a private tree's progress is 404, byte-identical to absent.
   std::optional<UserId> owner;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) { owner = room.owner(); })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  // The DB load runs OUTSIDE the room strand — never hold a room's lock across a Postgres call. An
-  // unclaimed (ownerless) tree has no server-side progress to show, so it stays empty.
+  // The DB load runs OUTSIDE the room strand: never hold a room's lock across a Postgres call.
+  // An unclaimed tree has no server-side progress, so it stays empty.
   Progress progress = owner ? progress_->load(TreeId{treeId}, *owner) : Progress{};
   callback(jsonResponse(toJson(progress)));
 }

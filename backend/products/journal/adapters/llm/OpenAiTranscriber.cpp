@@ -15,8 +15,8 @@
 namespace wm {
 
 // The file extension OpenAI infers the container/codec from: the mime's subtype, stripped of any
-// parameters ("audio/webm;codecs=opus" -> "webm"). A sane default keeps a missing header from failing
-// the upload rather than guessing wrong.
+// parameters ("audio/webm;codecs=opus" -> "webm"). A default keeps a missing header from failing
+// the upload.
 std::string transcriptionExtension(const std::string& mimeType) {
   const std::size_t slash = mimeType.find('/');
   if (slash == std::string::npos) return "webm";
@@ -39,9 +39,8 @@ bool OpenAiTranscriber::configured() const {
 void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
                                    const std::string& mimeType,
                                    std::function<void(std::optional<Transcript>)> done) {
-  // The process-wide hourly ceiling, asked before a byte is sent. A per-account budget is blind to
-  // the machine's own runaway — a retry storm, a loop, a fan-out deploy — which is the shape that
-  // empties an account overnight.
+  // The process-wide hourly ceiling, asked before a byte is sent: a per-account budget is blind to
+  // the machine's own runaway.
   if (fuse_ && !fuse_->allows(nowMs())) {
     LOG_ERROR << "openai transcribe refused: hourly AI fuse";
     done(std::nullopt);
@@ -71,12 +70,11 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
   req->setContentTypeString("multipart/form-data; boundary=" + boundary);
   req->setBody(std::move(form));
 
-  // The one vendor call carrying a person's voice: it reports its vendor, operation, status and
-  // cost, and never a byte of the audio or the transcript.
+  // The one vendor call carrying a person's voice: it reports vendor, operation, status and cost,
+  // and never a byte of the audio or the transcript.
   auto call = std::make_shared<VendorCall>("openai", "transcribe");
   const std::string runId = newRunId("voice");
-  // `client` rides into the callback because nothing else owns it once this function returns — and
-  // this function returns immediately, which is the entire point of the change.
+  // `client` rides into the callback because nothing else owns it once this function returns.
   client->sendRequest(
       req,
       [this, client, call, runId, user, done = std::move(done)](
@@ -107,10 +105,9 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
           return;
         }
 
-        // What the reply says it cost, never an estimate of ours. A transcription reply that
-        // carries no `usage` object counts as zero tokens and still lands a row: "we could not
-        // price this call" and "this call never happened" are different facts, and the ledger is
-        // the only place that can tell them apart later.
+        // What the reply says it cost, never an estimate of ours. A reply carrying no `usage` object
+        // counts as zero tokens and still lands a row: "we could not price this call" and "this call
+        // never happened" are different facts.
         spend.tokens = tokensFrom(parsed["usage"]);
         if (!parsed.isMember("usage")) LOG_ERROR << "OpenAI transcribe: reply carried no usage";
         spend.outcome = AiOutcome::ok;

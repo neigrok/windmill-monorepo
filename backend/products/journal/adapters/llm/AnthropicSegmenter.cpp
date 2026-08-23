@@ -8,11 +8,9 @@ namespace wm {
 
 namespace {
 
-// The cached block, so it is a literal and never gains a byte from any page. The first two
-// sentences are the instruction as the owner wrote it; everything after them is the contract this
-// pipeline cannot run without — that the units are the writer's own bytes, in order, covering the
-// page. A unit that is not in the body is discarded downstream, so the paragraph about it is not a
-// politeness: it is the difference between a full page of units and half of one.
+// The cached block, so it is a literal and never gains a byte from any page. After the instruction
+// comes the contract this pipeline cannot run without: the units are the writer's own bytes, in
+// order, covering the page. A unit that is not in the body is discarded downstream.
 constexpr const char* kSystemPrompt =
     "Break this into idea units, not sentences — a sentence and its counterargument stay in one "
     "unit. Keep wording verbatim, one unit per line.\n"
@@ -44,8 +42,8 @@ constexpr const char* kSystemPrompt =
     "Answer:\n"
     "{\"units\":[\"устал от всего этого. хотя вчера было норм\",\"надо купить билеты\"]}\n";
 
-// The prompt's identity in eight characters: FNV-1a over the bytes above. Not a security hash, a
-// change detector — the one thing in version() that says which wording cut a page.
+// The prompt's identity in eight characters: FNV-1a over the bytes above. A change detector, not a
+// security hash — the one thing in version() that says which wording cut a page.
 std::string promptTag() {
   std::uint32_t hash = 2166136261u;
   for (const char* byte = kSystemPrompt; *byte != '\0'; ++byte) {
@@ -58,8 +56,7 @@ std::string promptTag() {
 }
 
 // `additionalProperties: false` plus a `required` naming every field is what makes structured
-// outputs strict rather than advisory, which is what keeps schema_invalid a branch that barely
-// happens rather than one this seam lives in.
+// outputs strict rather than advisory.
 Json::Value unitsSchema() {
   Json::Value units(Json::objectValue);
   units["type"] = "array";
@@ -97,22 +94,21 @@ std::string AnthropicSegmenter::version() const {
 Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& body) {
   Segmentation cut;
 
-  // Unconfigured is the sweep's mistake rather than the page's, and the page is still owed the
-  // work — so it fails rather than reporting a page with nothing written on it.
+  // Unconfigured is the sweep's mistake rather than the page's, and the page is still owed the work,
+  // so it fails rather than reporting a page with nothing written on it.
   if (!configured()) {
     cut.failure = MessagesFailure::transport;
     return cut;
   }
 
-  // An empty page has no thoughts on it, and asking about one would be a call whose answer is
-  // known. Settled, not failed: there is nothing here to come back for.
+  // An empty page has no thoughts on it. Settled, not failed: there is nothing to come back for.
   if (body.find_first_not_of(" \t\r\n\v\f") == std::string::npos) {
     cut.ok = true;
     return cut;
   }
 
   // Over the process fuse, the page is not cut and not lost either: the same failed-call shape an
-  // unreachable vendor has, so the next pass picks the page up exactly as it would have.
+  // unreachable vendor has, so the next pass picks the page up unchanged.
   if (fuse_ && !fuse_->allows(nowMs())) {
     cut.failure = MessagesFailure::transport;
     return cut;
@@ -126,8 +122,8 @@ Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& 
   request.effort = effort_;
 
   const MessagesReply reply = transport_->send(request);
-  // Recorded from HERE, not from the transport: this is the frame that knows the model, the
-  // operation and whose page it was. Every outcome lands, refusals and truncations included.
+  // Recorded from HERE, not from the transport: this frame knows the model, the operation and whose
+  // page it was. Every outcome lands, refusals and truncations included.
   AiSpend spend;
   spend.user = user;
   spend.product = "journal";
@@ -154,13 +150,13 @@ Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& 
   for (const Json::Value& unit : units)
     if (unit.isString()) proposed.push_back(unit.asString());
 
-  // The verbatim check, and the whole reason a model is allowed in front of this pipeline. What
-  // comes back is built from the BODY's bytes; anything the model altered simply is not found.
+  // The verbatim check: what comes back is built from the BODY's bytes, so anything the model
+  // altered simply is not found.
   cut.passages = locateUnits(body, proposed);
   cut.discarded = static_cast<int>(proposed.size()) - static_cast<int>(cut.passages.size());
 
   // A page with words on it that yielded no locatable unit is a FAILED call, never a page with
-  // nothing to say: storing the latter would settle the page and lose it to one bad answer.
+  // nothing to say: the latter would settle the page and lose it to one bad answer.
   if (cut.passages.empty()) {
     cut.failure = MessagesFailure::schemaInvalid;
     return cut;

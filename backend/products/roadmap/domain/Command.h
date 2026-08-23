@@ -13,8 +13,8 @@
 
 namespace wm {
 
-// Admission bounds, enforced at the edge — by validate() for a single command, and by admit()
-// for a graph that arrives whole — and published as `maxLength` by the surfaces that take them.
+// Admission bounds, enforced by validate() for a single command and admit() for a graph that
+// arrives whole, and published as `maxLength` by the surfaces that take them.
 constexpr std::size_t kMaxIdLength = 128;               // node / tree id length in bytes
 constexpr std::size_t kMaxNodeLabelLength = 200;        // node display-label length in bytes
 constexpr std::size_t kMaxIconLength = 64;              // node icon token length in bytes
@@ -73,16 +73,15 @@ using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNod
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
-// Server-authoritative validation, checked at the edge before a command is admitted to the log.
-// Graph commands are never rejected (nullopt); legend commands may be, because their invariants —
-// hue uniqueness, ≤6 kinds, no in-use removal, length caps — are locally decidable on the
-// authoritative state. The string is a human-readable reason.
+// Server-authoritative validation, at the edge before a command is admitted to the log. Graph
+// commands are never rejected (nullopt); legend commands may be, because their invariants — hue
+// uniqueness, ≤6 kinds, no in-use removal, length caps — are locally decidable. The string is a
+// human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);
 
-// The same bounds, for the arrivals that mint no Command and so are never seen by validate(): a
-// whole posted document, a graft into a live graph, and a client-authored lattice frame. A refusal
-// names the id, the value and the limit, and says which KIND of refusal it is — an HTTP door owes
-// 413 to a document that is merely too big and 400 to one whose field is malformed.
+// The same bounds for the arrivals that mint no Command and so are never seen by validate(). A
+// refusal names the id, the value and the limit, and says which KIND it is — an HTTP door owes 413
+// to a document merely too big and 400 to one whose field is malformed.
 struct Admission {
   enum class Verdict { tooLarge, malformed };
   Verdict verdict;
@@ -96,10 +95,9 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);
 std::optional<Admission> admitTitle(const std::string& title);
 
-// The single feed-worthy deed a subgraph delta represents — the coarse inverse of merge(), read
-// off which lattice fields the frame sets. Salience order: a node's own life, then legend deeds
-// (which fan out to node fields), then a node's fields, then edges. A position-only or empty frame
-// is a nudge, not a deed — nullopt.
+// The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
+// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A
+// position-only or empty frame is nullopt.
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 
 }

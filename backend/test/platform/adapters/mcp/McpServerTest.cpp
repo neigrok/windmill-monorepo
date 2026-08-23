@@ -38,15 +38,11 @@ Json::Value request(const char* method, Json::Value params, Json::Value id) {
   return message;
 }
 
-// A neutral fixture catalog: the engine test proves the resources protocol without depending on any
-// product's content (the roadmap quickstart is tested against the real tools in ToolErrorContractTest).
 std::vector<McpResource> fixtureCatalog() {
   return {{"test://doc", "doc", "Test document", "a fixture resource for the engine test",
            "text/markdown", "FIXTURE BODY"}};
 }
 
-// The engine is not the gate — CompositeToolHost is — so these cases hand it a caller holding the
-// account-wide grant and prove protocol behaviour, with one case below for the caller passing through.
 const ToolCaller kAnyone{UserId{"u1"}, ToolScope::everything()};
 
 McpServer make(FakeHost& host) {
@@ -68,7 +64,6 @@ TEST(mcp_initialize_reports_capabilities_and_echoes_protocol) {
   CHECK_EQ((*reply)["result"]["protocolVersion"].asString(), std::string("2025-06-18"));
   CHECK_EQ((*reply)["result"]["serverInfo"]["name"].asString(), std::string("windmill"));
   CHECK(( *reply)["result"]["capabilities"].isMember("tools"));
-  // Resources are declared, or a client never asks for the quickstart it could have read.
   CHECK(( *reply)["result"]["capabilities"].isMember("resources"));
   CHECK_FALSE((*reply)["result"]["capabilities"]["resources"]["subscribe"].asBool());
   CHECK_FALSE((*reply)["result"]["capabilities"]["resources"]["listChanged"].asBool());
@@ -93,7 +88,7 @@ TEST(mcp_resources_list_publishes_the_injected_catalog) {
 
 TEST(mcp_resources_list_is_empty_when_no_catalog_is_injected) {
   FakeHost host;
-  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});   // default: a product-neutral empty catalog
+  McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
   std::optional<Json::Value> reply = server.handle(request("resources/list", Json::nullValue, 8), kAnyone);
 
   REQUIRE(reply.has_value());
@@ -158,8 +153,6 @@ TEST(mcp_tools_list_passes_through_the_host_catalog) {
   CHECK_EQ((*reply)["result"]["tools"][0]["name"].asString(), std::string("echo"));
 }
 
-// The catalog is per-request, not per-process: the engine's whole job here is handing the caller to
-// the host, and without it two clients with different grants would see the same surface.
 TEST(mcp_tools_list_answers_the_caller_s_grant_not_the_whole_catalog) {
   FakeHost host;
   McpServer server = make(host);
@@ -186,8 +179,7 @@ TEST(mcp_tools_call_answers_through_content_alone) {
   CHECK(( *reply)["result"]["content"].isArray());
   CHECK_EQ((*reply)["result"]["content"][0]["type"].asString(), std::string("text"));
   CHECK_EQ((*reply)["result"]["content"][0]["text"].asString(), std::string("{\"ok\":true}"));
-  // structuredContent accompanies a declared outputSchema; without one it would be the whole
-  // answer a second time, so a tool that declares none does not pay for it.
+  // structuredContent accompanies a declared outputSchema; without one it would be the whole answer a second time.
   CHECK_FALSE((*reply)["result"].isMember("structuredContent"));
   CHECK_EQ(host.lastName, std::string("echo"));
   CHECK_EQ(host.lastArgs["x"].asInt(), 7);
@@ -195,7 +187,7 @@ TEST(mcp_tools_call_answers_through_content_alone) {
 
 TEST(mcp_tools_call_passes_structured_content_through_when_a_tool_sets_it) {
   FakeHost host;
-  host.declaresOutputSchema = true;  // a future tool that publishes an outputSchema opts back in
+  host.declaresOutputSchema = true;
   McpServer server = make(host);
 
   Json::Value params(Json::objectValue);
@@ -214,7 +206,7 @@ TEST(mcp_tools_call_failure_is_reported_in_result_not_transport) {
   params["name"] = "boom";
   std::optional<Json::Value> reply = server.handle(request("tools/call", params, 5), kAnyone);
   REQUIRE(reply.has_value());
-  CHECK_FALSE((*reply).isMember("error"));  // a tool failure is not a JSON-RPC error
+  CHECK_FALSE((*reply).isMember("error"));
   CHECK(( *reply)["result"]["isError"].asBool());
 }
 
@@ -242,9 +234,7 @@ TEST(mcp_notification_gets_no_response) {
   CHECK_FALSE(reply.has_value());
 }
 
-// jsoncpp throws on asString() of a container, and on the stdio transport a throw out of handle()
-// leaves main and kills the whole session — one malformed frame ending every later call. Each of
-// these was a live process-terminating input.
+// jsoncpp throws on asString() of a container, and on the stdio transport a throw out of handle() kills the whole session.
 TEST(mcp_a_container_where_a_string_belongs_is_answered_not_thrown) {
   FakeHost host;
   McpServer server = make(host);

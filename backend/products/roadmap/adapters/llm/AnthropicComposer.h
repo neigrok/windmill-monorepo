@@ -14,9 +14,9 @@
 
 namespace wm {
 
-// The seam defended: the prompt forbids code fences, but a model that wraps its reply in
-// them anyway must not leak them into the plan the client re-parses — strip a leading
-// ``` / ```markdown line and a trailing ``` line, trim the edges, and touch nothing else.
+// The prompt forbids code fences, but a model that wraps its reply in them anyway must not leak
+// them into the plan the client re-parses: strip a leading ``` / ```markdown line and a trailing
+// ``` line, trim the edges, and touch nothing else.
 std::string strippedPlan(const std::string& reply);
 
 // Incremental decoder for the streaming Messages reply, fed raw HTTP/1.1 response bytes
@@ -27,8 +27,8 @@ std::string strippedPlan(const std::string& reply);
 // false. After onDone every further byte is ignored.
 class AnthropicStreamParser {
 public:
-  // onFailure names the reason a stream came apart — an upstream error code, a truncating stop
-  // reason — so a failure the client only hears as "fail" is not also a failure we cannot see.
+  // onFailure names the reason a stream came apart: an upstream error code, a truncating stop
+  // reason.
   using Reporter = std::function<void(const std::string& where, const std::string& detail)>;
 
   AnthropicStreamParser(std::function<void(const std::string&)> onDelta,
@@ -37,12 +37,10 @@ public:
   void feed(const char* data, std::size_t length);
   void finish();
   bool done() const { return phase_ == Phase::Done; }
-  // What the reply's head said, or 0 while none has landed. The transport reports the call's
-  // outcome, so the decoder exposes the status rather than growing a log seam of its own.
+  // What the reply's head said, or 0 while none has landed.
   int status() const { return status_; }
-  // What the stream has cost so far, read the same way and for the same reason: the decoder is the
-  // only thing that ever sees `message_start` and `message_delta`, and the one place a stream ends
-  // is the transport, not here. State to be read at the end, not a second callback to subscribe to.
+  // What the stream has cost so far: the decoder is the only thing that sees `message_start` and
+  // `message_delta`. State to be read at the end, never a second callback.
   TokenUse tokens() const { return tokens_; }
 
 private:
@@ -67,24 +65,20 @@ private:
   TokenUse tokens_;
 };
 
-// Composes plans through Anthropic's Messages API: the raw paste rides as the user turn
-// under a system prompt that pins the F3 paste grammar. Owns a private event-loop thread
-// that carries the outbound HTTPS call, so the server's request loops are never parked
-// waiting on the model. compose buffers the whole reply (done fires once it, or the 40s
-// timeout, lands); composeStream speaks the wire itself — a raw trantor TLS connection,
-// because drogon's HttpClient only ever delivers a fully buffered response — and forwards
-// each text delta as the model writes it, under a 90s whole-stream deadline.
+// Composes plans through Anthropic's Messages API: the raw paste rides as the user turn under a
+// system prompt that pins the paste grammar. Owns a private event-loop thread that carries the
+// outbound HTTPS call, so the server's request loops are never parked waiting on the model.
+// compose buffers the whole reply (done fires once it, or the 40s timeout, lands); composeStream
+// speaks the wire itself — a raw trantor TLS connection, because drogon's HttpClient only ever
+// delivers a fully buffered response — under a 90s whole-stream deadline.
 class AnthropicComposer : public PlanComposer {
 public:
-  // The reporter is optional (null = report nowhere), so tests and local runs stay silent while
-  // production sees every upstream failure that the client only ever hears as a polite "fail". The
-  // fuse and the sink are optional in the same way and for the same reason.
+  // The reporter, the fuse and the sink are all optional (null = do nothing), so tests and local
+  // runs stay silent.
   //
-  // This is the one seam on an UNAUTHENTICATED door, so it is the one that gets attacked. The paste
-  // is capped before the call and the fuse is asked before the call, and over either of them the
-  // birth canvas falls back to the deterministic parser it already owns — never a 503, because a
-  // cost attack that becomes an availability attack on our own signup funnel is a worse trade than
-  // the money it saved.
+  // This seam sits on an UNAUTHENTICATED door: the paste is capped and the fuse is asked before
+  // the call, and over either of them the birth canvas falls back to its deterministic parser —
+  // never a 503.
   explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                              std::shared_ptr<AiFuse> fuse = nullptr,
                              std::shared_ptr<UsageSink> usage = nullptr);
@@ -97,8 +91,8 @@ public:
                                       std::function<void(bool)> onDone) override;
 
 private:
-  // Hands out a reporter that owns everything it needs. A compose call settles long after the
-  // caller may be gone, so nothing it holds is allowed to reach back through the composer.
+  // The reporter owns everything it needs: a compose call settles long after the caller may be
+  // gone, so nothing it holds may reach back through the composer.
   AnthropicStreamParser::Reporter reporter() const;
 
   std::string apiKey_;

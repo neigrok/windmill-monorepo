@@ -39,8 +39,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   legend_.join(incoming.legend);
   markDirty(incoming.graph, incoming.legend);
   ++head_;
-  // Record the headline deed so a browser edit reaches the activity feed exactly as an agent's does
-  // — one op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
+  // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A nudge (position only) is not feed-worthy, so nothing is logged.
   if (std::optional<Command> deed = headline(incoming.graph, incoming.legend))
     ops_.append(id_, AppliedOp{head_, incoming.frameId, *deed, stamp, actor});

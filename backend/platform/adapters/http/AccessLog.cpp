@@ -12,9 +12,7 @@ namespace wm {
 namespace {
 constexpr char kStartAttribute[] = "wm.received";
 
-// The probe fires every few seconds forever and says nothing when it is healthy. At info it would
-// be most of what this server ever reports; at debug it stays in stdout and out of the log stream
-// the humans read. It is not silenced — it is filed where a heartbeat belongs.
+// The probe fires every few seconds forever and says nothing when it is healthy, so it stays at debug.
 bool isProbe(const std::string& path) {
   return path == "/healthz" || path == "/v1/health" || path == "/";
 }
@@ -22,21 +20,16 @@ bool isProbe(const std::string& path) {
 
 std::string accessLine(const std::string& method, const std::string& path, int status,
                        long long micros, const std::string& caller) {
-  // Every caller-steered field goes through the hygiene in LogFormat before it is concatenated —
-  // here, once, rather than at the one call site — so no route can put a credential or a newline
-  // into this line by being registered later.
+  // Every caller-steered field goes through the hygiene in LogFormat before it is concatenated.
   std::string line = "http " + loggableField(method) + " " + loggableField(redactedPath(path)) +
                      " " + std::to_string(status) + " " + tookMs(micros) + "ms";
-  // Anonymous is a fact worth logging, not an absence to omit: "who did this write" with no answer
-  // is the shape of a bug, and a missing field reads as a logger that forgot rather than a caller
-  // that had no session.
+  // Anonymous is a fact worth logging, not an absence to omit.
   line += " caller=" + (caller.empty() ? std::string("anon") : loggableField(caller));
   return line;
 }
 
 void installAccessLog(drogon::HttpAppFramework& app) {
-  // Stamped before routing so the measurement includes everything the server does with the request,
-  // not just the handler body — a request slow because it queued is still a slow request.
+  // Stamped before routing so the measurement includes everything the server does with the request.
   app.registerPreRoutingAdvice([](const drogon::HttpRequestPtr& req) {
     req->attributes()->insert(kStartAttribute, std::chrono::steady_clock::now());
   });

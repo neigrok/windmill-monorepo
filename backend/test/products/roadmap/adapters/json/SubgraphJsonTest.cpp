@@ -11,7 +11,6 @@ using namespace wm;
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "u_1#r_a") { return Hlc{ms, 0, actor}; }
 
-// Serialize → dump → parse → deserialize, the exact path a frame takes over the socket.
 static Subgraph roundTrip(const Subgraph& subgraph) {
   return subgraphFromJson(parse(dump(toJson(subgraph))));
 }
@@ -107,7 +106,6 @@ TEST(subscribe_delta_against_a_caught_up_vector_is_empty) {
   Legend legend = Legend::seededDefaults(at(1));
   VersionVector full = frontier(graph.exportState(), legend.exportState());
 
-  // Serialize the frontier the way a caught-up client sends it, then parse it back through the codec.
   Json::Value vectorJson(Json::objectValue);
   for (const auto& [actor, mark] : full.marks) vectorJson[actor] = toString(mark);
   VersionVector parsed = versionVectorFromJson(vectorJson);
@@ -131,7 +129,6 @@ TEST(subscribe_delta_against_an_empty_vector_is_the_whole_state) {
   CHECK(delta.coverage.has_value());
   CHECK_EQ(delta.graph.nodes.size(), 1u);
 
-  // The subscribe response round-trips over the wire and reconstructs the state on join.
   Subgraph back = subgraphFromJson(parse(dump(toJson(delta))));
   LooseGraph rebuilt;
   rebuilt.join(back.graph);

@@ -14,8 +14,7 @@ ForkService::ForkService(RoomRegistry& registry, TreeRepository& trees, TokenGen
 
 ForkService::Result ForkService::fork(const TreeId& source, const std::string& requestedId,
                                       const std::string& requestedTitle, const UserId& owner) {
-  // Copy the source's *current* authoritative state (live edits folded in), not just its
-  // last snapshot — so the fork is a faithful duplicate the instant it is taken.
+  // Copy the source's *current* authoritative state (live edits folded in), not just its last snapshot.
   TreeData data;
   GraphState state;
   LegendState legend;
@@ -23,11 +22,9 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(source));
     try {
-      // Forking copies the whole document — a read, and gated like every other one: on the stored
-      // access row BEFORE a room is built, so a forker who cannot read the source is never the reason
-      // its whole lattice is loaded and pinned. An absent source and one the forker can't read are
-      // indistinguishable: noSource → 404. An infrastructure failure falls to the catch, also answered
-      // noSource — masked, never surfaced.
+      // Gated on the stored access row BEFORE a room is built, so a forker who cannot read the source
+      // never causes its whole lattice to be loaded and pinned. An absent source and one the forker
+      // can't read are indistinguishable: noSource → 404. An infrastructure failure is masked the same way.
       const std::optional<TreeAccess> access = registry_.accessOf(source);
       if (!access || !canRead(std::optional<UserId>(owner), access->owner, access->visibility))
         return {Outcome::noSource, {}};
@@ -71,10 +68,9 @@ std::optional<ForkService::Description> ForkService::describe(const TreeId& sour
   std::lock_guard<std::mutex> lock(registry_.strandFor(source));
   try {
     // The one caller (the magic-link fork invite) is UNAUTHENTICATED, so a source is named only when
-    // it is readable by id — an unlisted or public tree. An absent or private tree stays undescribed,
-    // so its title and shape never ride an email addressed by a stranger. The verdict comes off the
+    // it is readable by id; an absent or private tree stays undescribed. The verdict comes off the
     // stored row first: a stranger with no account at all chooses which ids the server materializes,
-    // and a room built for a refusal still costs the whole lattice and still evicts a live one.
+    // and a room built for a refusal still costs the whole lattice.
     const std::optional<TreeAccess> access = registry_.accessOf(source);
     if (!access || !canRead(std::nullopt, access->owner, access->visibility)) return std::nullopt;
     TreeRoom* room = registry_.open(source);

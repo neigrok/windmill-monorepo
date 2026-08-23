@@ -12,9 +12,8 @@ std::optional<User> callerUserOf(const drogon::HttpRequestPtr& req, AuthService&
     if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
   }
   std::optional<User> user = auth.authenticate(secret);
-  // The access log runs after the handler and has no way of its own to know who was behind the
-  // request. This is the one place that decides, so it is the one place that records it — every
-  // surface gets an attributed log line without a single handler being asked to cooperate.
+  // The one place that decides who is behind a request, so the one place that records it — the
+  // access log runs after the handler and has no way of its own to know.
   if (user) req->attributes()->insert(kCallerAttribute, user->id.str());
   return user;
 }

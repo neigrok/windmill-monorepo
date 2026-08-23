@@ -1,27 +1,12 @@
--- Windmill backend schema. A tree's lattice lives as per-entry rows (tree_nodes /
--- tree_edges / tree_kinds) so an edit writes only the rows it touched; tree_ops is
--- append-only history. trees.document is the legacy whole-tree jsonb snapshot, read only
--- to backfill rows on a tree's first post-migration open.
---
--- Ids are text, matching the domain's string ids (node ids like "renderer", tree slugs
--- like "windmill-roadmap"). Server-minted uuid ids + slugs arrive with accounts (§13).
---
--- Banners (── Platform ──, ── Roadmap ──, ── Journal ──, ── Gym ──) say who owns each run of
--- tables, and the runs ALTERNATE: this file is applied in order, carries FK dependencies and
--- interleaves converge `alter table … if not exists` statements with the DDL they patch, so it
--- is grouped by dependency, not by owner. Every source path cited below is relative to
--- `backend/` — `AUTH.md`, `platform/domain/Access.h`, `products/roadmap/domain/Tending.h`.
+-- Windmill backend schema. Applied in order and re-applied on every deploy, so every statement
+-- must be idempotent. Grouped by FK dependency, which is why the per-product banners alternate.
+-- Source paths cited below are relative to `backend/`.
 
 create extension if not exists citext;
 
 -- ── Platform (platform/) ─────────────────────────────────────────────────────────────────────
--- What one account owns before any product does: identity, sign-in doors, sessions, MCP keys,
--- OAuth, telemetry, feedback and billing. Every table in a platform run is read and written by
--- platform/adapters/postgres and never by a product's repository.
+-- Read and written by platform/adapters/postgres, never by a product's repository.
 
--- identity (Phase 1+). Auth is passwordless magic links (AUTH.md): "passwords never exist",
--- so users carry no password_hash and no handle — an editable name seeded from the email is
--- the whole profile in v1.
 create table if not exists users (
   id         uuid primary key,
   email      citext unique not null,
@@ -29,16 +14,11 @@ create table if not exists users (
   created_at timestamptz not null default now()
 );
 
--- Converge an older users table (email+password) onto the passwordless shape. Safe to
--- re-run: the columns only change on the first apply.
 alter table users add column if not exists name text not null default '';
 alter table users drop column if exists password_hash;
 alter table users drop column if exists handle;
 
--- Phase-3 reservation, no code: nothing in the backend reads or writes orgs, org_members or
--- trees.org_id — the tenancy model is still an open question (AUTHZ.md, "Still open"), and
--- these three shapes are what that decision gets made against. Kept rather than dropped,
--- because dropping them would strand the question that names them.
+-- Unused: nothing in the backend reads or writes orgs, org_members or trees.org_id.
 create table if not exists orgs (
   id         uuid primary key,
   name       text not null,
@@ -54,18 +34,11 @@ create table if not exists org_members (
 );
 
 -- ── Roadmap (products/roadmap) ───────────────────────────────────────────────────────────────
--- The first room in the superapp: a tree, its CRDT lattice, its append-only op log and the
--- per-user progress overlay — all read and written by products/roadmap/adapters/postgres.
--- Tending runs, weekly reminders and the demo seed are roadmap's too and sit further down; the
--- platform run between them is not a boundary, only the apply order.
+-- Read and written by products/roadmap/adapters/postgres. Tending runs, weekly reminders and the
+-- demo seed are roadmap's too and sit further down, past the platform run between them.
 
--- trees: title, ownership and the snapshot head. The title is an LWW register: `title_hlc`
--- is its stamp in canonical HLC text ('' = unset, the create-time baseline), and
--- `title_ms`/`title_counter` are the stamp's numeric split (the node_progress idiom) so the
--- write can be LWW-guarded in SQL — a save or rename lands a title only under a dominating
--- stamp, so a stale room cache in another process can never revert a newer rename.
--- `document` is the legacy jsonb blob — superseded by the per-entry tables below; kept
--- until every tree's rows are backfilled, then droppable.
+-- title is an LWW register: `title_hlc` is its stamp in canonical HLC text ('' = unset), and
+-- `title_ms`/`title_counter` are that stamp's numeric split so the write is LWW-guarded in SQL.
 create table if not exists trees (
   id            text primary key,
   org_id        uuid,
@@ -86,29 +59,18 @@ alter table trees add column if not exists title_hlc text not null default '';
 alter table trees add column if not exists title_ms bigint not null default 0;
 alter table trees add column if not exists title_counter bigint not null default 0;
 -- visibility gates every read (platform/domain/Access.h): 'private' is owner-only,
--- 'unlisted'/'public' are readable by anyone holding the id. New trees are PRIVATE, which is
--- what someone writing a plan down expects, and sharing is the deliberate act that opens it.
--- Older databases briefly carried a different default; these two lines normalize new rows to
--- 'private'. An existing table keeps whatever each row already says; only the default for new
--- rows moves.
+-- 'unlisted'/'public' are readable by anyone holding the id.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 
--- the registry list: a caller's live (not soft-deleted) trees, keyed by owner
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
--- fork counts, asked constantly and never indexed until now: loadForkLineage runs "how many trees
--- were forked from this one" on EVERY share-page render, and the gallery wall asks it once per
--- listed tree. Both were sequential scans of the whole table.
 create index if not exists trees_forked_from on trees (forked_from) where deleted_at is null;
--- the public wall: the listed set is a small slice of a table that is mostly private trees.
 create index if not exists trees_public on trees (visibility) where visibility = 'public' and deleted_at is null;
 
--- The tree lattice, one row per CRDT entry. An edit upserts only the rows it touched —
--- the old whole-document write pushed the entire tree (descriptions can be KBs per node)
--- through MVCC/TOAST/WAL on every single edit. Rows are never deleted by a save: the
--- lattice is entry-grow-only (a delete is a tombstone stamp), so saves are pure upserts.
--- Stamps are the canonical HLC text ("physicalMs:counter:actor", '' = unset); they are
--- never compared in SQL — `present` is computed by the writer for read-side projections.
+-- The tree lattice, one row per CRDT entry. Entry-grow-only — a delete is a tombstone stamp, so
+-- saves are pure upserts and rows are never deleted. Stamps are canonical HLC text
+-- ("physicalMs:counter:actor", '' = unset), never compared in SQL; `present` is the writer's
+-- projection flag for read-side use.
 create table if not exists tree_nodes (
   tree_id         text not null,
   node_id         text not null,
@@ -134,8 +96,7 @@ create table if not exists tree_nodes (
   present         boolean not null default false,
   primary key (tree_id, node_id)
 );
--- angular reorder (§F11): `ord` is a node's fractional-index sort key (opaque text, LWW by
--- `ord_hlc`), scoped to its parent. Converge a tree_nodes table that predates the column.
+-- `ord` is a fractional-index sort key (opaque text, LWW by `ord_hlc`), scoped to its parent.
 alter table tree_nodes add column if not exists ord text not null default '';
 alter table tree_nodes add column if not exists ord_hlc text not null default '';
 
@@ -164,23 +125,16 @@ create table if not exists tree_kinds (
   primary key (tree_id, kind_id)
 );
 
--- per-tree share unfurl card (og-tree-cards): the client renders its tree to a 1200×630 PNG
--- and uploads it; GET /og/:id.png serves it as the link's og:image (a missing card falls back
--- to the generic image). One row per tree, replaced on each re-upload — the bytes live inline
--- as bytea, well under a megabyte. No FK to trees: the row is addressed by tree id and read
--- behind the tree's own visibility gate, so a stray row for a deleted tree is simply unreachable.
+-- The share unfurl card served by GET /og/:id.png; a missing card falls back to the generic
+-- image. No FK to trees: addressed by tree id and read behind the tree's own visibility gate.
 create table if not exists tree_og_images (
   tree_id    text primary key,
   png        bytea not null,
   updated_at timestamptz not null default now()
 );
 
--- per-tree share video (og-share-video): the client renders + encodes a short mp4/webm loop and
--- uploads it; GET /v1/trees/:id/og-video serves it as the link's og:video, with the og:image card
--- above as the poster fallback (so a missing video is a plain 404, never a broken tag). One row per
--- tree, replaced on each re-upload — the bytes live inline as bytea, a few megabytes at most. No FK
--- to trees: the row is addressed by tree id and read behind the tree's own visibility gate, so a
--- stray row for a deleted tree is simply unreachable. `mime` records the detected container.
+-- The share video served by GET /v1/trees/:id/og-video, with the og:image card as poster
+-- fallback; a missing video is a plain 404. No FK to trees, same as tree_og_images.
 create table if not exists tree_og_videos (
   tree_id    text primary key,
   video      bytea not null,
@@ -188,7 +142,7 @@ create table if not exists tree_og_videos (
   updated_at timestamptz not null default now()
 );
 
--- append-only op log: activity, undo, reconnect replay (Phase 2)
+-- append-only op log: activity, undo, reconnect replay
 create table if not exists tree_ops (
   tree_id    text not null,
   seq        bigint not null,
@@ -202,11 +156,10 @@ create table if not exists tree_ops (
   unique (tree_id, op_id)
 );
 
--- per-user private progress overlay, a last-writer-wins register per node. `status` is a
--- stamped value including 'none' (a clear is a value, never a row delete) so a clear converges
--- across a user's devices and a stale mark can't resurrect it. `stamp_ms`/`stamp_counter` are
--- the HLC split out for a numeric LWW comparison — the room clock mints a unique (ms, counter)
--- per write, so the pair totally orders every write to a tree; the actor tiebreak is moot.
+-- Per-user private progress overlay, a last-writer-wins register per node. `status` is a stamped
+-- value including 'none' — a clear is a value, never a row delete. `stamp_ms`/`stamp_counter` are
+-- the HLC split out for numeric LWW; the room clock mints a unique (ms, counter) per write, so the
+-- pair totally orders every write to a tree.
 create table if not exists node_progress (
   tree_id       text not null,
   user_id       text not null,
@@ -222,13 +175,9 @@ alter table node_progress add column if not exists stamp_ms bigint not null defa
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 
 -- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
--- Sign-in, sessions, provider doors, MCP keys and OAuth, then telemetry, feedback and billing —
--- through to the end of the Paddle section below.
 
--- passwordless sign-in (AUTH.md). A magic link is addressed by the digest of
--- its secret (the raw token is never at rest); it works once and lasts 15 minutes.
--- Lifetimes the domain owns are stored as epoch-millisecond bigints so no timezone maths
--- sits between the code and the row. consumed_ms is null until the link is spent.
+-- Passwordless sign-in (AUTH.md). A magic link is addressed by the digest of its secret; the raw
+-- token is never at rest. Lifetimes are epoch-millisecond bigints. consumed_ms is null until spent.
 create table if not exists magic_links (
   token_hash  text primary key,
   email       citext not null,
@@ -237,17 +186,15 @@ create table if not exists magic_links (
   consumed_ms bigint,
   created_at  timestamptz not null default now()
 );
--- the rate-limit query: unspent links for an email within the recent window
 create index if not exists magic_links_email_created on magic_links (email, created_ms);
--- a pending fork may ride the link: the tree to copy into whatever account verify signs in
+-- fork_source: a tree to copy into whatever account verify signs in.
 alter table magic_links add column if not exists fork_source text;
--- the app door's second credential: a 6-digit code twin living ON the link's row — one mint, one
--- row, one rate-budget unit; either credential flips consumed_ms. attempts bounds guessing: a
--- wrong code is one atomic increment, and at the cap (domain/Auth.h, 5) the row stops resolving.
+-- The 6-digit code twin lives ON the link's row; either credential flips consumed_ms. At the
+-- attempts cap (domain/Auth.h) the row stops resolving.
 alter table magic_links add column if not exists code_hash text;
 alter table magic_links add column if not exists attempts int not null default 0;
 
--- 90-day rolling sessions, one row per device, keyed by the digest of the cookie secret.
+-- One row per device, keyed by the digest of the cookie secret.
 create table if not exists sessions (
   token_hash text primary key,
   user_id    uuid not null references users(id) on delete cascade,
@@ -256,26 +203,19 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user on sessions (user_id);
 
--- settings §5: session metadata (device/place/last-active) the "Sessions & devices" list
--- shows. `id` is the public per-session handle the revoke endpoint addresses (the digest
--- stays server-side); user_agent/ip are stored raw (the client formats device/place, the
--- server never geo-resolves); last_seen_ms rolls forward on every authenticated use, so a
--- row minted before this column existed reads 0 and the list coalesces it to created_at.
+-- `id` is the public per-session handle the revoke endpoint addresses; the digest stays
+-- server-side. user_agent/ip are stored raw — the server never geo-resolves. last_seen_ms rolls
+-- forward on every authenticated use; 0 means never recorded and the list reads created_at.
 alter table sessions add column if not exists id uuid not null default gen_random_uuid();
 alter table sessions add column if not exists user_agent text not null default '';
 alter table sessions add column if not exists last_seen_ms bigint not null default 0;
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
 
--- provider sign-in doors (AUTH.md, "Identities — one account, many doors"). The
--- provider-issued SUBJECT is the identity; the email is only ever a hint, consulted once, to find
--- an account that already exists. (provider, subject) is the primary key, so a provider that
--- changes the address behind an account — an Apple Hide-My-Email relay rotated, a Google primary
--- address moved — still resolves to the same user. There is no backfill statement here and there
--- cannot be one: no Google subject was ever stored, so this table fills itself on each account's
--- next provider sign-in, which is exactly what the resolve-by-verified-email step is for.
--- email_at_link is what the provider said at the moment the door was bound; it is never re-read
--- to resolve anyone, and exists so a human can see which address a door came in on.
+-- Provider sign-in doors (AUTH.md). The provider-issued SUBJECT is the identity and (provider,
+-- subject) is the key, so a provider that changes the address behind an account still resolves to
+-- the same user; the email is only ever a hint. email_at_link records the address the door came in
+-- on and is never read to resolve anyone.
 create table if not exists user_identities (
   provider      text not null check (provider in ('google','apple')),
   subject       text not null,
@@ -286,13 +226,9 @@ create table if not exists user_identities (
 );
 create index if not exists user_identities_user on user_identities (user_id);
 
--- settings: personal MCP API keys. A long-lived per-user bearer token that authenticates MCP
--- requests as a static-token fallback for OAuth-less clients. Show-once, hash-at-rest: the key is
--- keyed by the digest of its secret (the raw token is never stored), listable and revocable,
--- scoped to its owner. `id` is the public per-key handle the revoke endpoint addresses.
--- expires_ms is nullable (unused in v1 = never expires) but resolveKey still honours it;
--- last_used_ms rolls forward on use (throttled). The users cascade makes a key vanish with its
--- account, and findActiveUser also refuses one whose account carries the §4 soft-close stamp.
+-- Personal MCP API keys: a long-lived per-user bearer token, the static-token fallback for
+-- OAuth-less clients. Keyed by the digest of its secret; the raw token is never stored. `id` is the
+-- public per-key handle the revoke endpoint addresses. expires_ms null = never expires.
 create table if not exists mcp_keys (
   token_hash   text primary key,
   id           uuid not null default gen_random_uuid(),
@@ -306,20 +242,16 @@ create table if not exists mcp_keys (
 create index if not exists mcp_keys_user on mcp_keys (user_id);
 create unique index if not exists mcp_keys_id on mcp_keys (id);
 
--- What the key's bearer may reach, in the same space-delimited `<product>:<level>` spelling the
--- OAuth grants use. '' is the account-wide grant — every key at rest was minted before scopes
--- existed, and the mint endpoint asks for none, so a scoped key is a UI change and not a migration.
--- A scope model that covered only OAuth would leave this door wide open beside it.
+-- What the key's bearer may reach: space-delimited `<product>:<level>`, the same spelling the
+-- OAuth grants use. '' is the account-wide grant.
 alter table mcp_keys add column if not exists scope text not null default '';
 
--- settings §4 delete: a soft close with a 30-day grace. `deleted_at` stamps the request;
--- the account fully closes 30 days later. A within-grace magic-link sign-in clears it (the
--- undo), and authenticate refuses any session whose user carries it.
+-- Soft close with a 30-day grace: `deleted_at` stamps the request. A within-grace magic-link
+-- sign-in clears it, and authenticate refuses any session whose user carries it.
 alter table users add column if not exists deleted_at timestamptz;
 
--- settings §2 connected tools: the per-user, per-client authorization record the grants
--- list reads. granted_ms is stable (set once, kept as the earliest); last_used_ms advances
--- as the client's tokens act — both live here, not on the rotation-prone oauth_tokens rows.
+-- The per-user, per-client authorization record. granted_ms is set once and kept as the earliest;
+-- last_used_ms advances as the client's tokens act. Neither lives on the rotating token rows.
 create table if not exists oauth_grants (
   user_id      uuid not null references users(id) on delete cascade,
   client_id    text not null,
@@ -328,15 +260,12 @@ create table if not exists oauth_grants (
   primary key (user_id, client_id)
 );
 
--- The scope the human approved, carried here from the code so the settings list can say what each
--- connected tool may do. It lives on the grant rather than on oauth_tokens because tokens rotate
--- every hour and the answer to "what did I agree to" must not rotate with them. '' is the
--- account-wide grant every existing row carries.
+-- The scope the human approved. It lives on the grant, not on the hourly-rotating tokens.
+-- '' is the account-wide grant.
 alter table oauth_grants add column if not exists scope text not null default '';
 
--- OAuth 2.1 authorization for the MCP resource server (MCP Authorization spec, 2025-06-18).
--- Dynamically-registered public clients, single-use PKCE-bound authorization codes, and
--- audience-bound opaque access/refresh tokens — only the digest of each secret is at rest.
+-- OAuth 2.1 for the MCP resource server: dynamically-registered public clients, single-use
+-- PKCE-bound authorization codes, audience-bound opaque tokens. Only digests are at rest.
 create table if not exists oauth_clients (
   client_id     text primary key,
   redirect_uris text[] not null,
@@ -344,9 +273,8 @@ create table if not exists oauth_clients (
   created_at    timestamptz not null default now()
 );
 
--- the registration burst ceiling: how many clients registered in the last hour never completed an
--- authorization. It runs on the anonymous registration path, so it must be an index range scan over
--- one hour and never a scan of the table. Also what the retention sweep's TTL pass reads.
+-- The registration burst ceiling runs on the anonymous path, so it must stay an index range scan
+-- over one hour and never a table scan. The retention sweep's TTL pass reads it too.
 create index if not exists oauth_clients_created on oauth_clients (created_at);
 
 create table if not exists oauth_codes (
@@ -374,16 +302,13 @@ create table if not exists oauth_tokens (
 );
 create index if not exists oauth_tokens_user on oauth_tokens (user_id);
 create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
--- When this row's refresh token was spent. A rotated row is NOT deleted: it stays as a tombstone,
--- with its access token expired to 0, until its refresh window closes and the retention sweep
--- collects it. Presenting an already-spent refresh token is the classic signal that a token leaked
--- and two parties hold copies, and it is only tellable from a merely-invalid string if the spent
--- row is still here to recognise — on which the grant is revoked (OAuth 2.1 §4.14.2).
+-- When this row's refresh token was spent. A rotated row is NOT deleted: it stays as a tombstone
+-- with its access token expired to 0, until the retention sweep collects it, so presenting an
+-- already-spent refresh token is recognisable and revokes the grant (OAuth 2.1 §4.14.2).
 alter table oauth_tokens add column if not exists rotated_ms bigint;
 
--- first-party funnel telemetry (event-spine): an append-only stream of beacon events.
--- session_key is the client-minted per-browser id; user_id is resolved server-side from
--- the wm_session cookie / Bearer token — never trusted from the body, null for a ghost.
+-- Append-only stream of beacon events. session_key is the client-minted per-browser id; user_id is
+-- resolved server-side from the cookie / Bearer token, never trusted from the body, null for a ghost.
 create table if not exists events (
   id          bigserial primary key,
   ts          timestamptz not null default now(),
@@ -393,15 +318,12 @@ create table if not exists events (
   name        text not null,
   props       jsonb
 );
--- the funnel query: one event name over a time window
 create index if not exists events_name_ts on events (name, ts);
--- the per-session/day ingest bound: an anonymous beacon is counted before its batch is written, and
--- that count has to be an index range scan over one session, never a scan of the whole stream.
+-- The per-session ingest bound must stay a range scan over one session, never a scan of the stream.
 create index if not exists events_session_ts on events (session_key, ts);
 
--- the feedback door: one-click notes from anyone, signed-in or ghost. session_key is the
--- client-minted correlation id (never identity); user_id is resolved server-side from the
--- wm_session cookie / Bearer token — never trusted from the body, null for a ghost.
+-- Notes from anyone, signed-in or ghost. session_key is a client-minted correlation id, never
+-- identity; user_id is resolved server-side, never trusted from the body, null for a ghost.
 create table if not exists feedback (
   id          bigserial primary key,
   ts          timestamptz not null default now(),
@@ -411,14 +333,10 @@ create table if not exists feedback (
   email       text,
   context     text
 );
--- the weekly read: newest feedback first
 create index if not exists feedback_ts on feedback (ts);
 
--- the server-side safety net: an uncaught exception that escaped an HTTP/WS handler, so a broken
--- endpoint is queryable here instead of only in a container's stdout (the mirror of the client's
--- crash beacon). method/path/message are best-effort; actor is nullable — the exception handler
--- often can't resolve a caller. The per-handler try/catch paths never land here; this is only for
--- the exceptions nobody caught.
+-- Exceptions that escaped an HTTP/WS handler; the per-handler try/catch paths never land here.
+-- method/path/message are best-effort and actor is nullable — a handler often can't resolve a caller.
 create table if not exists server_errors (
   id      bigserial primary key,
   ts      timestamptz not null default now(),
@@ -428,20 +346,12 @@ create table if not exists server_errors (
   message text,
   actor   uuid
 );
--- the triage read: newest errors first
 create index if not exists server_errors_ts on server_errors (ts);
 
--- what every LLM call cost us: counts and costs only, never content — the same rule VendorCall
--- holds, because an accounting table is not a place to keep what someone wrote. One append-only
--- detail row per vendor call, and no rollup: a btree on (user_id, ts) is an index range scan over
--- one account's window, and a second write would only double the failure surface of the thing that
--- must never break the product it is watching.
--- user_id null = the anonymous birth canvas, by design and never invented. cost_nanos null = the
--- model was absent from the price table: unpriced is LOUD, never silently free — and cost_floor_nanos
--- carries what the CEILINGS read instead, priced at the dearest rate we know, because a model we
--- forgot to price must not be a model that spends for free. run_id groups one
--- tool loop's iterations into one logical operation. Failures record too, and disproportionately
--- matter — a max_tokens truncation burned the entire budget and produced nothing.
+-- One append-only row per vendor call: counts and costs only, never content. user_id null = the
+-- anonymous birth canvas. cost_nanos null = the model was absent from the price table, and
+-- cost_floor_nanos is what the ceilings read instead, priced at the dearest rate we know. run_id
+-- groups one tool loop's iterations into one logical operation. Failures record too.
 create table if not exists ai_usage (
   id                 bigserial primary key,
   ts                 timestamptz not null default now(),
@@ -459,20 +369,15 @@ create table if not exists ai_usage (
   cost_nanos         bigint,
   cost_floor_nanos   bigint not null default 0
 );
--- Added after the ledger shipped: the budget summed the nullable column, so an unpriced model spent
--- against no ceiling at all. Backfilled to cost_nanos so existing rows keep counting.
 alter table ai_usage add column if not exists cost_floor_nanos bigint not null default 0;
 update ai_usage set cost_floor_nanos = cost_nanos where cost_floor_nanos = 0 and cost_nanos is not null;
--- the budget check: one account's rolling window
 create index if not exists ai_usage_user_ts on ai_usage (user_id, ts);
--- the owner page: every account's window at once
 create index if not exists ai_usage_ts on ai_usage (ts);
 
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
 -- Webhooks are the source of truth: every notification upserts here, so access gating reads this
--- database instead of round-tripping the Paddle API. The bridge from a Windmill account to a
--- Paddle customer is EMAIL (citext, matching users.email) — a user has no Paddle customer until
--- their first checkout, when customer.created arrives.
+-- database and never the Paddle API. A Windmill account bridges to a Paddle customer by EMAIL
+-- (citext, matching users.email).
 create table if not exists paddle_customers (
   customer_id text primary key,   -- "ctm_..."
   email       citext not null,
@@ -481,10 +386,8 @@ create table if not exists paddle_customers (
 );
 create index if not exists paddle_customers_email on paddle_customers (email);
 
--- Deliberately NO foreign key to paddle_customers: Paddle does not order its deliveries, so a
--- subscription event can arrive before the customer event it references. Both tables converge on
--- the latest state through upserts, and an orphan row simply reads as "no access" until its
--- customer lands.
+-- No foreign key to paddle_customers: Paddle does not order its deliveries, so a subscription
+-- event can arrive before the customer event it references, and an orphan row reads as "no access".
 create table if not exists paddle_subscriptions (
   subscription_id     text primary key,  -- "sub_..."
   customer_id         text not null,
@@ -498,30 +401,22 @@ create table if not exists paddle_subscriptions (
   updated_at          timestamptz not null default now()
 );
 create index if not exists paddle_subscriptions_customer on paddle_subscriptions (customer_id);
--- Paddle retries a failed delivery for ~3 days, so an OLD event can land AFTER a newer one (a
--- retried "active" arriving after a real "canceled" would hand back paid access). Every write
--- carries the event's occurred_at and the upsert refuses to go backwards.
+-- Paddle retries a failed delivery for ~3 days, so an OLD event can land AFTER a newer one: every
+-- write carries the event's occurred_at and the upsert refuses to go backwards.
 alter table paddle_subscriptions add column if not exists occurred_at timestamptz;
--- Our checkout binds identity server-side: it stamps custom_data.user_id on the transaction, Paddle
--- carries it onto the subscription, and the webhook lands it here. Gating reads this first and falls
--- back to the email match only for subscriptions created outside that flow (e.g. by hand in the
--- Paddle dashboard). Converge a table that predates the column.
+-- Checkout stamps custom_data.user_id on the transaction and the webhook lands it here. Gating
+-- reads this first and falls back to the email match for subscriptions created outside that flow.
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
 
 -- ── Roadmap (products/roadmap), continued ────────────────────────────────────────────────────
--- Tending runs, weekly reminders and the seeded demo tree. Roadmap's, exactly like the trees
--- section above, and read and written by products/roadmap/adapters/postgres.
 
 -- ── Tending runs (server-side agent edits) ──────────────────────────────────────────────────
--- One row per sentence someone told their tree (products/roadmap/domain/Tending.h). A tend run
--- is a JOB, not a stream: the browser starts it and is free to leave, so the run's whole state
--- must outlive the socket. This table IS that durable state — the catch-up endpoint reads a row
--- here long after the request that made it has died. status is running/done/failed/refused;
--- refusal is the quiet face a never-started run wears (''=none). started_at/finished_at are
--- epoch ms (TendRun's own clock, the same units the allowance window counts in — not now()).
--- (seq_from, seq_to] is the run's footprint in the tree's op log, recorded faithfully so one
--- sentence can be one undo later.
+-- One row per sentence someone told their tree (products/roadmap/domain/Tending.h). A tend run is a
+-- job that outlives the socket, and this table is its durable state — the catch-up endpoint reads a
+-- row long after the request that made it died. status is running/done/failed/refused; refusal ''
+-- = none. started_at/finished_at are epoch ms from TendRun's own clock, not now(). (seq_from,
+-- seq_to] is the run's footprint in the tree's op log.
 create table if not exists tend_runs (
   id           text primary key,
   tree_id      text not null,
@@ -539,8 +434,6 @@ create table if not exists tend_runs (
   created_node_ids jsonb not null default '[]',
   created_at   timestamptz not null default now()
 );
--- Converge a table that predates any column (the file's idempotent habit): every add is a no-op
--- on the fresh table above and heals an older one row-for-row.
 alter table tend_runs add column if not exists refusal text not null default '';
 alter table tend_runs add column if not exists detail text not null default '';
 alter table tend_runs add column if not exists edits int not null default 0;
@@ -548,25 +441,19 @@ alter table tend_runs add column if not exists seq_from bigint not null default 
 alter table tend_runs add column if not exists seq_to bigint not null default 0;
 alter table tend_runs add column if not exists finished_at bigint not null default 0;
 alter table tend_runs add column if not exists created_node_ids jsonb not null default '[]';
--- The allowance read: how many runs this user started inside the window — keyed (user, started_at).
 create index if not exists tend_runs_user_started on tend_runs (user_id, started_at);
--- The per-tree footprint read (undo, activity): every run that touched a given tree.
 create index if not exists tend_runs_tree on tend_runs (tree_id);
 
 -- ── Weekly reminders (products/roadmap/domain/Reminders.h) ───────────────────────────────────
--- The engine holds NO schedule state in the process: a sweep is a pure function of (now, these
--- two tables), so a deploy restart loses nothing. All calendar work happens HERE, via AT TIME
--- ZONE — Postgres ships its own IANA database and therefore behaves identically on a macOS dev
--- box and on CI's Linux, which C++ calendar functions demonstrably do not.
+-- A sweep is a pure function of (now, these two tables); no schedule state lives in the process.
+-- Keep all calendar work in SQL via AT TIME ZONE: Postgres ships its own IANA database, so macOS
+-- and CI's Linux agree where C++ calendar functions do not.
 --
--- `next_due_at` is the materialized UTC instant of the user's next slot, and the ONLY thing the
--- sweep queries. It is NULL whenever we cannot know when to send — no timezone, reminders off —
--- so "unknown timezone ⇒ never send" needs no special case anywhere in the code; it falls out of
--- the partial index. Defaulting an unknown zone to UTC would mail US users at 4am, which is a
--- worse failure than silence. slot_minute is confined to 08:00–11:00 local so that DST's
--- nonexistent and ambiguous local times (2–3am) are unreachable by construction.
--- pause_digest is the emailed pause link's credential — the digest at rest, never the secret,
--- exactly like sessions, magic links and MCP keys.
+-- `next_due_at` is the materialized UTC instant of the next slot and the ONLY thing the sweep
+-- queries; NULL whenever we cannot know when to send (no timezone, reminders off), so
+-- "unknown ⇒ never send" falls out of the partial index. slot_minute is confined to 08:00–11:00
+-- local so DST's nonexistent and ambiguous local times are unreachable by construction.
+-- pause_digest is the pause link's credential — the digest at rest, never the secret.
 create table if not exists reminder_subscription (
   user_id      uuid primary key references users(id) on delete cascade,
   enabled      boolean not null default false,
@@ -574,42 +461,28 @@ create table if not exists reminder_subscription (
   slot_dow     int not null default 2 check (slot_dow between 1 and 7),      -- 1=Mon .. 7=Sun
   slot_minute  int not null default 540 check (slot_minute between 480 and 660),
   next_due_at  timestamptz,
-  -- Hard bounce / spam complaint, set by Resend's delivery webhook
-  -- (platform/adapters/email/ResendWebhookApi.h) and by nothing else. One Resend account means one
-  -- webhook for every mail the brand sends, so the receiver is platform's and each product
-  -- registers a MailStream: this row is what a dead mailbox stops for roadmap, and journal_nudge is
-  -- its counterpart. Only a PERMANENT bounce or a complaint gets here — a transient bounce (full
-  -- mailbox, throttled, oversized) must never suppress anyone, and that rule lives in
-  -- platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX, never an edit to `enabled`:
-  -- what its owner asked for survives untouched, so clearing the flag restores their choice rather
-  -- than a default. It gates reminders only — nothing in the sign-in path reads it, so magic links
-  -- still reach the address and someone who fixes it can come back. The owner turning reminders on
-  -- again is what lifts it (RemindersApi → liftSuppression); being wrong costs one more bounce.
+  -- Hard bounce / spam complaint, set by Resend's delivery webhook and by nothing else; only a
+  -- PERMANENT bounce or a complaint gets here (platform/domain/Mail.h holds that rule). It is a
+  -- fact about the MAILBOX and never an edit to `enabled`, it gates reminders only and nothing in
+  -- the sign-in path reads it, and turning reminders on again lifts it.
   suppressed   boolean not null default false,
   pause_digest text not null default '',
   created_at   timestamptz not null default now()
 );
--- the sweep's whole question: one indexed range scan over the few rows that can ever be due
 create index if not exists reminder_due on reminder_subscription (next_due_at)
   where enabled and not suppressed and next_due_at is not null;
 create unique index if not exists reminder_pause on reminder_subscription (pause_digest)
   where pause_digest <> '';
 
--- A DECISION LEDGER, not a send log: every user still ELIGIBLE at claim time gets exactly one row
--- per week recording what we decided and why. "Eligible at claim time" is deliberately narrower
--- than "reached the decision point" — the claim re-checks enabled/suppressed/deleted inside its
--- own transaction, so someone who hits Pause while the sweep is mid-batch gets no row at all
--- rather than a row saying we decided to mail them after they'd asked us not to. The primary key IS the mutex that
--- enforces "at most one per 7 days" — it is never enforced by comparing timestamps at read time.
--- It also makes the guardrail metric a GROUP BY reason rather than an analytics project.
--- A row whose sent_at is null is indistinguishable from one whose mail landed but whose update
--- was lost, so it must NEVER be auto-retried: a lost reminder costs nothing, a duplicate costs
--- trust. decision is 'sent' | 'skipped'; reason is 'ok' | 'no-ready-steps' | 'recently-active' |
--- 'in-grace' | 'too-late' | 'load-failed' (the facts could not be read; the week is claimed anyway
--- so the pointer moves) | 'held' (the arming gate withheld a send we had decided on) |
--- 'send-failed' (the provider refused it). The last three are stamped after the decision, and
--- 'held' exists so that a dark rollout's rows cannot be mistaken for a crash between claim and
--- send — which is what every one of them would otherwise look like.
+-- A decision ledger, not a send log: one row per user per week recording what we decided and why.
+-- The claim re-checks enabled/suppressed/deleted inside its own transaction, so someone who pauses
+-- mid-batch gets no row at all. The primary key IS the "at most one per 7 days" mutex; it is never
+-- enforced by comparing timestamps at read time. A row whose sent_at is null is indistinguishable
+-- from one whose mail landed but whose update was lost, so it must NEVER be auto-retried.
+-- decision is 'sent' | 'skipped'; reason is 'ok' | 'no-ready-steps' | 'recently-active' |
+-- 'in-grace' | 'too-late' | 'load-failed' (facts unreadable; the week is claimed anyway so the
+-- pointer moves) | 'held' (the arming gate withheld a decided send) | 'send-failed'. The last
+-- three are stamped after the decision.
 create table if not exists reminder_week (
   user_id     uuid not null references users(id) on delete cascade,
   slot_date   date not null,          -- the LOCAL date of the slot; unique per week by construction
@@ -621,22 +494,16 @@ create table if not exists reminder_week (
   decided_at  timestamptz not null default now(),
   primary key (user_id, slot_date)
 );
--- the guardrail read: how last week's decisions broke down, and how many mails actually landed
 create index if not exists reminder_week_decided on reminder_week (decided_at);
 
--- ── The playable demo tree (F4) ─────────────────────────────────────────────────────────────
--- The hosted "Learn to sail" roadmap a stranger meets at #/demo — read anonymously over both
--- HTTP and WS, so the row must exist AND be public or read enforcement 404s it for every visitor.
--- Seeded as data (idempotent, re-applied each deploy): a lost row self-heals on the next deploy.
--- owner_id is NULL on purpose and that is now what PROTECTS it: an unowned tree is nobody's to
--- write (canWrite, platform/domain/Access.h), so the demo is world-readable and editable by no
--- account — visitors fork their own copy, and this seed can never race a live edit. Restoring a
--- lost row is a re-deploy; the ON CONFLICT means a row that was somehow claimed will NOT self-heal,
--- so an operator repairs that by hand (UPDATE trees SET owner_id = NULL WHERE id = '...').
--- Stamps are the genesis HLC ('1:0:genesis'); '0:0:' is the never-set / never-deleted
--- sentinel and `present` is the writer's add-biased projection flag. Positions are null on purpose:
--- the client lays the tree out radially from the DAG. Only this one id is pinned public; the
--- dogfood tree (t_9362d9bc883e0a1e) stays private, owned by the MCP principal.
+-- ── The playable demo tree ──────────────────────────────────────────────────────────────────
+-- The hosted "Learn to sail" roadmap at #/demo, read anonymously over HTTP and WS: the row must
+-- exist AND be public or read enforcement 404s it for every visitor. owner_id is NULL on purpose
+-- and that is what protects it — an unowned tree is nobody's to write (canWrite,
+-- platform/domain/Access.h), so it is world-readable and editable by no account. The ON CONFLICT
+-- means a row that was somehow claimed will NOT self-heal; an operator repairs that by hand.
+-- Stamps are the genesis HLC ('1:0:genesis'); '0:0:' is the never-set / never-deleted sentinel.
+-- Positions are null on purpose: the client lays the tree out radially from the DAG.
 INSERT INTO trees (id, org_id, owner_id, title, visibility, head_seq, forked_from, document, deleted_at, created_at, updated_at, title_hlc, title_ms, title_counter) VALUES ('t_9e407a96b5330ebe', NULL, NULL, 'Learn to sail', 'public', 0, NULL, '{"nodes": []}', NULL, now(), now(), '', 0, 0)
 ON CONFLICT DO NOTHING;
 
@@ -727,20 +594,14 @@ ON CONFLICT DO NOTHING;
 INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc) VALUES ('t_9e407a96b5330ebe', 'wind-basics', 'points-of-sail', '1:0:genesis', '0:0:')
 ON CONFLICT DO NOTHING;
 
--- Force the demo live even if a pre-existing row is private OR soft-deleted: the INSERT above
--- no-ops on an existing row, so it can't repair one whose state drifted. Every read path filters
--- `deleted_at is null`, so a stray soft-delete reads byte-identical to absent — republish and
--- un-delete so the front door can never be dark while a row exists.
+-- The INSERT above no-ops on an existing row, so force the demo public and un-deleted here.
 update trees set visibility = 'public', deleted_at = null where id = 't_9e407a96b5330ebe';
 
 -- ── Journal (products/journal) ───────────────────────────────────────────────────────────────
--- The second room in the superapp: a free-form daily canvas, one page per user per LOCAL day. The
--- (user, day) pair IS the key — no id is minted. Nothing is shared: there is deliberately NO
--- visibility column and no share entity, so a page is legible to exactly one account by
--- construction, and every read is scoped `where user_id = $1`. Convergence across a user's own
--- devices is last-writer-wins on an HLC stamp (stamp_ms, stamp_counter) — the same register
--- node_progress and trees.title already use — with no CRDT text and no room. body is plain text
--- with soft line breaks kept; mood/energy are nullable-by-zero (0 = not set).
+-- One page per user per LOCAL day; the (user, day) pair IS the key and no id is minted. Nothing is
+-- shared: there is no visibility column and no share entity, and every read is scoped
+-- `where user_id = $1`. Convergence across a user's own devices is last-writer-wins on
+-- (stamp_ms, stamp_counter). body is plain text with soft line breaks kept.
 create table if not exists journal_page (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,                    -- the writer's local ISO day, the key
@@ -754,19 +615,14 @@ create table if not exists journal_page (
   updated_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
--- the canvas read (oldest→newest) and the delta feed (stamp > cursor) both scan this
 create index if not exists journal_page_user_day on journal_page (user_id, day);
 create index if not exists journal_page_user_stamp on journal_page (user_id, stamp_ms, stamp_counter);
 
--- Superseded bodies, append-only, invisible. The safety net for the one lossy case LWW admits —
--- the same day edited on two offline devices, where the loser's text would otherwise vanish. Never
--- a merge UI (the canvas is one continuous surface); kept so "nothing written is ever withdrawn"
--- holds for the recent past. BOUNDED, and by the writer rather than by a cron: every superseding
--- write prunes this table inside its own transaction (PgJournalRepository.cpp) to ten revisions a
--- day, five hundred rows and 8 MB per user, and ninety days of age. Nothing else deletes from here,
--- which is why the rule lives on the write path and not in a comment — and why the ninety days are
--- a bound on what a WRITER accumulates, not a retention guarantee: somebody who stops writing keeps
--- whatever their last write left, indefinitely. Their total is still bounded by the other two caps.
+-- Superseded bodies, append-only and shown to nobody: the safety net for the one lossy case LWW
+-- admits, the same day edited on two offline devices. Bounded by the writer, not by a cron — every
+-- superseding write prunes this table inside its own transaction (PgJournalRepository.cpp) to ten
+-- revisions a day, five hundred rows and 8 MB per user, and ninety days of age. Nothing else
+-- deletes from here, so a writer who stops keeps whatever their last write left.
 create table if not exists journal_page_revision (
   user_id       uuid not null references users(id) on delete cascade,
   day           date not null,
@@ -779,52 +635,38 @@ create table if not exists journal_page_revision (
 create index if not exists journal_page_revision_key on journal_page_revision (user_id, day);
 
 -- ── Journal nudges (one a day at most; the TIME is the DEVICE's, never ours) ─────────────────
--- Mirrors reminder_subscription/reminder_week (products/roadmap) with two differences: the slot is
--- DAILY (the dedup key is the local day), and next_due_at is materialised by the DEVICE from its
--- local rhythm — the server never learns WHEN you write, it is handed the next instant and the
--- local day that instant belongs to. So Journal needs no timezone at all: slot_day is both the
--- "did they already write today?" key and the ledger key. next_due_at is NULL whenever we cannot
--- know when to send (nudges off, or under 7 days of data so the device sends no adaptive time), and
--- the partial index turns "unknown ⇒ never send" into a fact no code has to special-case.
--- pause_digest is the emailed pause link's credential — the digest at rest, never the secret.
+-- next_due_at is materialised by the DEVICE from its local rhythm — the server is handed the next
+-- instant and the local day it belongs to, and needs no timezone. slot_day is both the "did they
+-- already write today?" key and the ledger key. next_due_at is NULL whenever we cannot know when to
+-- send, and the partial index turns "unknown ⇒ never send" into a fact no code special-cases.
+-- pause_digest is the pause link's credential — the digest at rest, never the secret.
 create table if not exists journal_nudge (
   user_id      uuid primary key references users(id) on delete cascade,
   enabled      boolean not null default false,
-  channel      text not null default 'email',    -- email | inapp (push is a later wave)
+  channel      text not null default 'email',    -- email | inapp
   next_due_at  timestamptz,                       -- device-materialised; NULL ⇒ never send
   slot_day     date,                              -- the LOCAL day next_due_at belongs to
   paused_until timestamptz,                       -- "pause for a week", one tap
-  -- Hard bounce / spam complaint, set by Resend's delivery webhook
-  -- (platform/adapters/email/ResendWebhookApi.h) and by nothing else. There is ONE Resend account,
-  -- so ONE webhook carries feedback about every mail Windmill sends: a dead mailbox stops this and
-  -- reminder_subscription.suppressed in the same delivery, because a bounce on the sign-in link is
-  -- the same dead mailbox as a bounce on the nightly knock. Only a PERMANENT bounce or a complaint
-  -- gets here — a transient bounce (full mailbox, throttled, oversized) must never suppress anyone,
-  -- and that rule lives in platform/domain/Mail.h, not in SQL. It is our fact about the MAILBOX,
-  -- never an edit to `enabled`: what its owner asked for survives untouched, so clearing the flag
-  -- restores their choice rather than a default. It gates nudges only — nothing in the sign-in path
-  -- reads it, so magic links still reach the address and someone who fixes it can come back. The
-  -- owner turning nudges on again is what lifts it (NudgeApi → liftSuppression); being wrong costs
-  -- one more bounce.
+  -- Hard bounce / spam complaint, set by Resend's delivery webhook and by nothing else; only a
+  -- PERMANENT bounce or a complaint gets here (platform/domain/Mail.h holds that rule). It is a
+  -- fact about the MAILBOX and never an edit to `enabled`, it gates nudges only and nothing in the
+  -- sign-in path reads it, and turning nudges on again lifts it.
   suppressed   boolean not null default false,
   pause_digest text not null default '',
   updated_at   timestamptz not null default now(),
   created_at   timestamptz not null default now()
 );
--- the sweep's whole question: the few rows that can be due right now
 create index if not exists journal_nudge_due on journal_nudge (next_due_at)
   where enabled and not suppressed and next_due_at is not null;
 create unique index if not exists journal_nudge_pause on journal_nudge (pause_digest)
   where pause_digest <> '';
 
--- A DECISION LEDGER, not a send log (the reminder_week lesson, verbatim): every user still eligible
--- at claim time gets exactly one row per day recording what we decided and why. The primary key IS
--- the "at most one per day" mutex — never enforced by comparing timestamps at read time. A row whose
+-- A decision ledger, not a send log: one row per eligible user per day. The primary key IS the
+-- "at most one per day" mutex, never enforced by comparing timestamps at read time. A row whose
 -- sent_at is null is indistinguishable from one whose mail landed but whose update was lost, so it
--- must NEVER be auto-retried: a lost nudge costs nothing, a duplicate costs trust. decision is
--- 'sent' | 'skipped'; reason is 'ok' | 'already-wrote' | 'paused' | 'too-late' | 'held' (the arming
--- gate withheld a send we'd decided on) | 'send-failed'. There is deliberately NO 'lapsed' reason —
--- the engine never nudges about a gap (canon §7).
+-- must NEVER be auto-retried. decision is 'sent' | 'skipped'; reason is 'ok' | 'already-wrote' |
+-- 'paused' | 'too-late' | 'held' (the arming gate withheld a decided send) | 'send-failed'. There
+-- is no 'lapsed' reason: the engine never nudges about a gap.
 create table if not exists journal_nudge_day (
   user_id    uuid not null references users(id) on delete cascade,
   slot_day   date not null,
@@ -837,19 +679,12 @@ create table if not exists journal_nudge_day (
 create index if not exists journal_nudge_day_decided on journal_nudge_day (decided_at);
 
 -- ── Journal echoes (Windmill One, computed server-side, nightly) ─────────────────────────────
--- An echo is the journal reaching back: a passage written tonight set beside an older passage of
--- the writer's own about the same thing, and the distance between them. It never speaks on its own
--- initiative and nothing here is ever inferred from silence — products/journal/ECHOES.md is the
--- contract. Produced only by the nightly EchoSweep, only for subscribers, so "absent, not locked"
--- for everyone else falls out of these tables simply staying empty for them.
---
--- Everything is PASSAGE-level. The shipped page-level pair is dropped rather than migrated: the
--- feature has never run (a NullEmbedder is wired, so no row anywhere was computed from a real
--- model), and a page-level "quote" could only ever read a whole page back at its writer.
+-- A passage written tonight set beside an older passage of the writer's own about the same thing.
+-- products/journal/ECHOES.md is the contract. Written only by the nightly EchoSweep and only for
+-- subscribers, so everyone else's tables simply stay empty. Everything is PASSAGE-level.
 
--- Same name, different key, different columns. Dropped ONCE, guarded on a column only the old
--- shape has: this file is re-applied on every deploy, and an unguarded drop would delete real
--- echoes every time we ship.
+-- Guarded on a column only the old shape has: this file is re-applied on every deploy, and an
+-- unguarded drop would delete real echoes every time we ship.
 do $$ begin
   if exists (select 1 from information_schema.columns
              where table_name = 'journal_echo' and column_name = 'trigger_lo') then
@@ -857,38 +692,20 @@ do $$ begin
   end if;
 end $$;
 
--- Per-page embeddings, replaced by journal_span's per-passage ones. Nothing in the server reads
--- this table: GET /v1/journal/vectors (the on-device search index seed) is described in
--- products/journal/ARCHITECTURE.md §8.2 and in ECHOES.md's migration list, but no route, handler
--- or repository method for it has ever been written — the browser embeds its own index locally.
--- So this drop costs nothing today, and whenever that endpoint IS built it seeds from
--- journal_span.vector, which ECHOES.md judges likely better for search anyway.
 drop table if exists journal_page_vector;
 
--- Fresh passage identities. A sequence and not max(span_id)+1 per user: the nightly heartbeat and
--- an operator rehearsal can overlap, and a read-then-increment across two passes is a race with
--- nothing holding a lock.
+-- A sequence and not max(span_id)+1 per user: the nightly heartbeat and an operator rehearsal can
+-- overlap, and a read-then-increment across two passes is a race with nothing holding a lock.
 create sequence if not exists journal_span_id_seq;
 
 -- One segmented passage of one page — the unit everything else keys on.
---
--- span_id is the IDENTITY; (day, ord) is only a coordinate. Insert a sentence at the top of a page
--- and every ordinal shifts by one, which would silently re-point every inbound echo at its
--- neighbouring sentence and render it confidently, because the wrong text still locates in the live
--- body. So re-derivation matches old passages to new by normalised TEXT and carries span_id forward
--- for survivors (products/journal/domain/SpanReconcile.h); only genuinely new text mints.
---
--- vector is float32, LITTLE-ENDIAN, four bytes per dimension, in a bytea — never a real[] rendered
--- through ::text. Measured at 8,000 passages x 384 dims, the text-array dialect the page-vector
--- table used cost 39.6 MB per user per night, 419 ms to serialize and 73 ms to parse, against 14 ms
--- of actual cosine. The arithmetic was never the cost; the wire format was.
---
--- text_sha256 digests the NORMALISED text (outer whitespace trimmed, internal runs collapsed), not
--- the raw text, because dismissals key on it: a dismissed pair must not come back through a
--- re-segmentation or a whitespace edit.
---
--- embed_version is not decoration. Cosine between two different embedding spaces is not degraded,
--- it is meaningless, and nothing about it looks like an error — retrieval reads one version only.
+-- span_id is the IDENTITY; (day, ord) is only a coordinate. Re-derivation matches old passages to
+-- new by normalised TEXT and carries span_id forward for survivors
+-- (products/journal/domain/SpanReconcile.h); only genuinely new text mints.
+-- vector is float32, LITTLE-ENDIAN, four bytes per dimension, in a bytea — never a real[].
+-- text_sha256 digests the NORMALISED text (outer whitespace trimmed, internal runs collapsed),
+-- because dismissals key on it: a dismissed pair must not come back through a re-segmentation.
+-- Retrieval reads ONE embed_version only: cosine between two embedding spaces is meaningless.
 create table if not exists journal_span (
   user_id       uuid not null references users(id) on delete cascade,
   span_id       bigint not null,
@@ -903,9 +720,7 @@ create table if not exists journal_span (
   body_stamp_ms bigint not null default 0,       -- the page HLC ms this derivation read
   primary key (user_id, span_id)
 );
--- the page read (reconciliation walks a day's spans in document order)
 create index if not exists journal_span_page on journal_span (user_id, day, ord);
--- the dismissal join: hash → span, so "has this pair been waved away" is a lookup, never a scan
 create index if not exists journal_span_hash on journal_span (user_id, text_sha256);
 
 -- One kept pair. cosine is what retrieval measured; relation is the curator's judgement and is
@@ -1057,6 +872,10 @@ create table if not exists journal_page_curation (
 -- PIPELINE does, so nothing made an existing page due and the change was silent.
 alter table journal_page_curation add column if not exists segment_version text not null default '';
 alter table journal_page_curation add column if not exists embed_version   text not null default '';
+-- The judging half: the curator's prompt and effort plus a digest of the selection knobs. Added a
+-- few hours after the other two, because fixing two false positives and deploying the fix left the
+-- pages carrying them — nothing about a curator or a threshold makes a page due.
+alter table journal_page_curation add column if not exists judge_version   text not null default '';
 
 -- ── Gym (products/gym) ───────────────────────────────────────────────────────────────────────
 -- The third room in the superapp: a training log whose one load-bearing feature is the durable

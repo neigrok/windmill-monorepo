@@ -65,8 +65,8 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
 
 void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
   // Anyone may request a tree's share video, so this stays a cheap read: the two access columns,
-  // not the whole lattice. Unlike the og:image card there is no generic fallback — the og:image
-  // poster is the fallback — so absence, an unreadable tree, or a private-denied one is a plain 404.
+  // never the whole lattice. There is no generic fallback here — the og:image poster is it — so
+  // absence, an unreadable tree, or a private-denied one is a plain 404.
   const std::optional<UserId> caller = callerOf(req, *auth_);
   const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {

@@ -19,15 +19,13 @@ const std::string kNewDay = "2026-05-01";
 const std::string kOldLine = "i want to learn kotlin properly this time, not just skimming it.";
 const std::string kNewLine = "i like kotlin now and the work is finally fun to sit down with.";
 
-// The same reaching-back user EchoSweepTest arms: one older page already derived, one page owed a
-// derivation, and two lines that share a subject and an anchor word.
+// One older page already derived, one page owed a derivation, and two lines that share a subject and an anchor word.
 void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
   echoes.addUser(uid("u1"));
   echoes.plantSpan(uid("u1"), ld(kOldDay), 11, kOldLine, embedder.embed({kOldLine})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 }
 
-// Everything a live derivation needs, held together so a test varies one knob and reads the rest.
 struct LiveStack {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;
@@ -51,8 +49,6 @@ LiveDerivationRules rules() {
 
 }
 
-// The whole point of the wave: the writer's own save is what produces the echo, and it produces it
-// seconds later rather than at some point in the next six hours.
 TEST(a_save_derives_the_page_once_the_writer_has_gone_quiet) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
@@ -60,7 +56,6 @@ TEST(a_save_derives_the_page_once_the_writer_has_gone_quiet) {
 
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
 
-  // Still typing: nothing has been bought yet.
   const EchoLiveReport early = live.drain(stack.clock.now + kQuietMs - 1);
   CHECK_EQ(early.derived, 0);
   CHECK_EQ(stack.curator.calls, 0);
@@ -77,14 +72,12 @@ TEST(a_save_derives_the_page_once_the_writer_has_gone_quiet) {
   CHECK(rows[0].matchDay == ld(kOldDay));
 }
 
-// Ten minutes of typing is one derivation, not ten. Each save pushes the quiet deadline out again,
-// so the page is derived once the writer actually stops.
+// Each save pushes the quiet deadline out again, so the page is derived once the writer actually stops.
 TEST(rapid_successive_saves_coalesce_into_a_single_derivation) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
   EchoDerivations live{stack.sweep, stack.clock, rules()};
 
-  // Six saves two seconds apart, none of them adding a paragraph.
   for (int save = 0; save < 6; ++save) {
     stack.clock.now += 2'000;
     live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size() + static_cast<std::size_t>(save));
@@ -97,8 +90,7 @@ TEST(rapid_successive_saves_coalesce_into_a_single_derivation) {
   CHECK_EQ(stack.curator.calls, 1);
 }
 
-// The other half of the debounce: an evening of steady writing never goes quiet, and a page that has
-// grown by a paragraph is worth answering about without waiting for a pause that may never come.
+// An evening of steady writing never goes quiet, and a page that has grown by a paragraph is answered without waiting for a pause.
 TEST(a_paragraph_of_new_text_is_derived_without_waiting_for_the_quiet_time) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
@@ -113,15 +105,12 @@ TEST(a_paragraph_of_new_text_is_derived_without_waiting_for_the_quiet_time) {
   CHECK_EQ(stack.curator.calls, 1);
 }
 
-// The cap DEFERS, and deferring is not failing. Nothing is written past it, so the page's stamps
-// never advance and it is still owed — the repair pass picks it up exactly as it picks up a page a
-// vendor blip failed.
+// The cap DEFERS: nothing is written past it, so the page's stamps never advance and it is still owed.
 TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
   EchoDerivations live{stack.sweep, stack.clock, rules()};
 
-  // Five rounds of write-then-go-quiet on the same page. Four are bought; the fifth is deferred.
   for (int round = 0; round < 5; ++round) {
     stack.echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);   // the body moved again
     live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
@@ -136,10 +125,8 @@ TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
     }
   }
   CHECK_EQ(stack.curator.calls, 4);
-  // Still owed: the deferred round left the page on the repair pass's list, untouched.
   CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
 
-  // A day later the window has rolled and the page can be derived live again.
   stack.clock.now += 24ull * 60 * 60 * 1000;
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
   CHECK_EQ(live.drain(stack.clock.now + kQuietMs).derived, 1);
@@ -148,8 +135,7 @@ TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
 
 // ---- fairness: one account can no longer own the drain thread -----------------------------
 
-// Every date is a valid page, so an account writing distinct days used to enqueue as many entries as
-// it liked and the single drain thread walked all of them before anybody else's page.
+// Every date is a valid page, so one account writing distinct days could enqueue as many entries as it liked.
 TEST(an_account_may_hold_only_a_few_pages_in_the_queue_at_once) {
   LiveStack stack;
   stack.echoes.addUser(uid("u1"));
@@ -167,14 +153,12 @@ TEST(an_account_may_hold_only_a_few_pages_in_the_queue_at_once) {
   CHECK_EQ(report.derived, 5);     // the five the queue would hold
   CHECK_EQ(report.queueFull, 3);   // and the three it refused to hold
   CHECK_EQ(stack.echoes.derived.size(), std::size_t{5});
-  // Refused is not lost: those three pages never had a stamp advanced, so the repair pass owes them.
   CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-06"), 0, PipelineVersions{}).has_value());
   CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-07"), 0, PipelineVersions{}).has_value());
   CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-08"), 0, PipelineVersions{}).has_value());
 }
 
-// The measured harm was one account's flood delaying another writer's echo by twenty seconds,
-// strictly serially. Dealt round-robin, the second writer waits behind one page, never five.
+// Dealt round-robin, a second writer waits behind one page, never five.
 TEST(one_accounts_flood_does_not_go_ahead_of_another_writers_page) {
   LiveStack stack;
   for (const char* who : {"u1", "u2"}) {
@@ -195,14 +179,11 @@ TEST(one_accounts_flood_does_not_go_ahead_of_another_writers_page) {
 
   CHECK_EQ(report.derived, 6);
   REQUIRE_EQ(stack.echoes.derived.size(), std::size_t{6});
-  // The second writer's page is worked in the FIRST round, whichever account the deal starts with —
-  // never behind all five of the flood, which is what insertion order used to mean.
   const std::string theirs = uid("u2").str() + "|" + kNewDay;
   CHECK(stack.echoes.derived[0] == theirs || stack.echoes.derived[1] == theirs);
 }
 
-// The embedder is CPU we pay for on every derivation, before the curator's dollars are metered at
-// all — so the account, not only the page, has a day's worth.
+// The embedder is CPU we pay for on every derivation, before the curator's dollars are metered, so the account has a day's worth too.
 TEST(an_account_may_only_buy_so_many_derivations_in_a_day) {
   LiveStack stack;
   stack.echoes.addUser(uid("u1"));
@@ -223,15 +204,12 @@ TEST(an_account_may_only_buy_so_many_derivations_in_a_day) {
   CHECK_EQ(report.deferred, 3);
   CHECK_EQ(stack.curator.calls, 2);
 
-  // A day later the window has rolled, and the account may buy again.
   stack.clock.now += 24ull * 60 * 60 * 1000;
   live.pageSaved(uid("u1"), ld("2026-06-03"), kNewLine.size());
   CHECK_EQ(live.drain(stack.clock.now + kQuietMs).derived, 1);
 }
 
-// The per-user AI ceiling applies to a save-triggered derivation exactly as it applies to a swept
-// one — a writer typing all evening is still a background spend. Over it, SKIPPED: nothing bought,
-// nothing written, no stamp advanced, page still owed.
+// The per-user AI ceiling applies to a save-triggered derivation as to a swept one. Over it, SKIPPED: nothing bought, nothing written, no stamp advanced.
 TEST(a_user_over_the_background_ai_budget_is_skipped_with_the_page_still_due) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
@@ -248,14 +226,12 @@ TEST(a_user_over_the_background_ai_budget_is_skipped_with_the_page_still_due) {
   CHECK_EQ(stack.echoes.outcomes.size(), std::size_t{0});   // no stamp moved
   CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
 
-  // And it did not count against the page's daily cap: nothing was bought to count.
   stack.spend(0);
   live.pageSaved(uid("u1"), ld(kNewDay), kNewLine.size());
   CHECK_EQ(live.drain(stack.clock.now + 2 * kQuietMs).derived, 1);
 }
 
-// A vendor blip costs the page a derivation, never its echoes. The stamps stay where they were, so
-// the page is still owed and the repair pass will try it again.
+// A vendor blip costs the page a derivation, never its echoes: the stamps stay where they were and the page is still owed.
 TEST(a_failed_curate_leaves_the_page_still_due) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
@@ -275,8 +251,7 @@ TEST(a_failed_curate_leaves_the_page_still_due) {
   CHECK_EQ(stack.echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }
 
-// A second debounced save that carried nothing new costs nothing at all: the page is no longer owed,
-// so the pipeline is never entered and the curator is never asked.
+// A second debounced save carrying nothing new never enters the pipeline: the page is no longer owed.
 TEST(a_page_already_derived_is_not_bought_a_second_time) {
   LiveStack stack;
   armReachingBack(stack.echoes, stack.embedder);
@@ -294,8 +269,6 @@ TEST(a_page_already_derived_is_not_bought_a_second_time) {
   CHECK_EQ(stack.curator.calls, 1);
 }
 
-// The write path's half of the trigger, asserted through PageService itself: a save that WON the
-// last-writer-wins guard announces itself, and one that lost changed nothing and announces nothing.
 namespace {
 struct RecordingWatcher : PageWatcher {
   struct Saved {

@@ -38,15 +38,11 @@ unsigned nibbleOf(char digit) {
 
 // A vector is four bytes per dimension, LITTLE-ENDIAN — the low byte of the IEEE-754 bit pattern
 // first — shifted out a byte at a time rather than memcpy'd, so the bytes on disk are the same
-// bytes on any host and a dump stays readable if we ever build somewhere big-endian.
+// bytes on any host.
 //
 // It travels as its own hex text with an explicit decode()/encode() at the SQL boundary, not as a
 // bytea literal: that keeps the format independent of the server's bytea_output setting and off
-// pqxx's binary readers entirely, which matters because the dev box is on libpqxx 8 and the CI
-// image builds 7.10. Hex doubles the wire bytes against true binary (24.6 MB against 12.3 MB for
-// a 8,000-passage corpus), and still costs a third of the 39.6 MB the float-array-through-::text
-// dialect did, at roughly a thirtieth of the serialize and parse time. Binary results are an
-// optimisation behind this function, never a schema change.
+// pqxx's binary readers, which matters because the dev box is on libpqxx 8 and CI builds 7.10.
 std::string hexOfVector(const std::vector<float>& vector) {
   std::string hex;
   hex.reserve(vector.size() * 8);
@@ -76,9 +72,8 @@ std::vector<float> vectorFrom(const std::string& hex) {
   return values;
 }
 
-// The identity of a passage, digested. Normalised first — a dismissal keyed on raw text would be
-// undone by a re-flowed line, and a dismissed echo coming back is the one failure this feature
-// cannot afford.
+// The identity of a passage, digested. Normalised first: a dismissal keyed on raw text would be
+// undone by a re-flowed line.
 std::string hashOf(const std::string& text) {
   const std::string identity = normalizedForIdentity(text);
   std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
@@ -99,12 +94,11 @@ std::string statusText(CurationStatus status) {
   return "transport";   // an unrecognised status reads as a failure, never as a page that is done
 }
 
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
-// binding it concretely compiles on one and fails on the other.
+// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
 //
-// The anchoring hint is computed against the LIVE match body rather than read out of storage,
-// which is what makes it worth sending: a passage whose page has been edited under it produces -1
-// here and the client goes back to searching, instead of being handed a confident wrong sentence.
+// The anchoring hint is computed against the LIVE match body rather than read out of storage: a
+// passage whose page has been edited under it produces -1 here and the client goes back to
+// searching, instead of being handed a confident wrong sentence.
 template <typename Row>
 EchoView viewFrom(const Row& row, const std::string& matchBody) {
   std::string matchText = row["match_text"].template as<std::string>();
@@ -127,9 +121,7 @@ EchoView viewFrom(const Row& row, const std::string& matchBody) {
 PgEchoRepository::PgEchoRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
-  // The repair pass's candidate list: distinct owners of a recently-touched page. The join to
-  // users earns its place on `deleted_at` alone — a soft-closed account never comes up, so its
-  // echoes stop being computed the moment the grace period starts.
+  // The join to users is for `deleted_at` alone: a soft-closed account never comes up.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -146,9 +138,8 @@ std::vector<EchoUser> PgEchoRepository::activeSince(std::uint64_t sinceMs) {
 }
 
 std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
-  // The corpus stamp IS the newest passage stamp the user has — no separate counter to bump and so
-  // no way for one to drift out of step with the spans it claims to describe. A user with no spans
-  // yet reads 0, which makes every page of theirs stale and is exactly right.
+  // The corpus stamp IS the newest passage stamp the user has. A user with no spans reads 0, which
+  // makes every page of theirs stale.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -160,24 +151,17 @@ std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
 
 std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp,
                                                 const PipelineVersions& versions) {
-  // Four ways to be owed a pass: never derived, a body that moved past the derivation, a
-  // corpus that moved past it, or a PIPELINE that moved under it. The third is what makes a backfill work — write "i like c++" in May,
-  // add the January page in July, and the May page has to learn January exists even though its own
-  // body never changed.
-  //
-  // And one way to be owed nothing ever again, which is the `status` clause: a body the vendor
-  // REFUSED to judge is not asked about twice. Advancing its stamps is not enough on its own —
-  // the corpus stamp is the newest passage anywhere in the account, so the writer's next page
-  // anywhere would move it and make the refused body due all over again, every night, forever. Only
-  // an edit to that body reopens it, and then it is different text. The literal is the one
+  // Four ways to be owed a pass: never derived, a body that moved, a corpus that moved, or a
+  // PIPELINE that moved. And one way to be owed nothing ever again, the `status` clause: a body the
+  // vendor REFUSED is not asked about twice, and advancing its stamps is not enough on its own,
+  // because the corpus stamp moves with the account's next page anywhere. The literal is the one
   // `statusText` writes; the two spellings live one file apart and must stay in step.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      // A page whose SEGMENTER moved has to be cut again, which is the same work a moved body
-      // needs — so it reports as moved and the sweep buys a fresh cut for it. A moved embedder
-      // does not: those units still stand and only their vectors are worthless.
+      // A page whose SEGMENTER moved reports as moved: it has to be cut again. A moved embedder
+      // does not — those units stand and only the vectors are dead.
       "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
       "     OR c.segment_version IS DISTINCT FROM $3) AS body_moved "
       "FROM journal_page p "
@@ -185,13 +169,14 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
       "WHERE p.user_id = $1::uuid "
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
       "     OR (c.corpus_stamp < $2 AND c.status <> 'refused') "
-      // A pipeline change reopens even a REFUSED page: the refusal was an answer about text this
-      // build no longer asks the same question about, and a body cut into different units is a
-      // different question. It is the one thing besides an edit that reopens one.
+      // A pipeline change reopens even a REFUSED page: a body cut into different units is a
+      // different question.
       "     OR c.segment_version IS DISTINCT FROM $3 "
-      "     OR c.embed_version IS DISTINCT FROM $4) "
+      "     OR c.embed_version IS DISTINCT FROM $4 "
+      "     OR c.judge_version IS DISTINCT FROM $5) "
       "ORDER BY p.day",
-      user.str(), static_cast<long long>(corpusStamp), versions.segment, versions.embed);
+      user.str(), static_cast<long long>(corpusStamp), versions.segment, versions.embed,
+      versions.judge);
 
   std::vector<DuePage> pages;
   pages.reserve(rows.size());
@@ -207,10 +192,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
 std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const LocalDate& day,
                                                  std::uint64_t corpusStamp,
                                                  const PipelineVersions& versions) {
-  // The same conditions duePages asks, asked of one named row — including the refusal clause, so a
-  // refused body is not re-derived by the live path either. The live path calls this the moment a
-  // writer stops typing, so it is also the guard that makes a debounced second save free: a page
-  // already derived against this body and this corpus is not due, and nothing downstream is reached.
+  // The same conditions duePages asks, of one named row, refusal clause included. It is also what
+  // makes a debounced second save free: the page is not due against this body and this corpus.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -223,9 +206,10 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
       "     OR (c.corpus_stamp < $3 AND c.status <> 'refused') "
       "     OR c.segment_version IS DISTINCT FROM $4 "
-      "     OR c.embed_version IS DISTINCT FROM $5)",
+      "     OR c.embed_version IS DISTINCT FROM $5 "
+      "     OR c.judge_version IS DISTINCT FROM $6)",
       user.str(), day.iso(), static_cast<long long>(corpusStamp), versions.segment,
-      versions.embed);
+      versions.embed, versions.judge);
 
   if (rows.empty()) return std::nullopt;
   return DuePage{LocalDate{rows[0]["day"].as<std::string>()}, rows[0]["body"].as<std::string>(),
@@ -234,10 +218,9 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
 }
 
 std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalDate& day) {
-  // No due-ness clause at all, which is the whole difference from duePage above: the reverse edge
-  // walks to pages that are owed nothing by their own body or corpus, and needs their text anyway.
-  // `bodyMoved` false is stated rather than computed — this page is being re-derived because
-  // ANOTHER page moved, so its own units still stand and must not be bought a second time.
+  // No due-ness clause at all, which is the whole difference from duePage: the reverse edge walks to
+  // pages owed nothing by their own body or corpus and needs their text anyway. `bodyMoved` false is
+  // stated rather than computed — this page's own units still stand.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -253,8 +236,8 @@ std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalD
 }
 
 std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
-  // Ordered by ord because reconciliation matches duplicated text within a page in document order —
-  // two identical lines have to keep two stable, distinct identities rather than collapse into one.
+  // Ordered by ord because reconciliation matches duplicated text within a page in document order:
+  // two identical lines have to keep two stable, distinct identities.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -273,21 +256,17 @@ std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const L
                                                      const std::vector<SpanWrite>& spans,
                                                      const std::string& embedVersion,
                                                      std::uint64_t bodyStampMs) {
-  // Delete then insert, in one transaction: a day's passages are always a complete set, and a
-  // carried span_id is re-inserted under the identity the caller chose. Nothing here decides which
-  // identities survive — that judgement is made in the domain and this only records it.
-  //
-  // No foreign key ties journal_echo to these rows, so an echo aimed at a passage that just died is
-  // orphaned rather than deleted. It is invisible immediately (echoesFor inner-joins both spans) and
-  // is swept when its own page is next derived, which the reverse edge is what schedules.
+  // A day's passages are always a complete set, and a carried span_id is re-inserted under the
+  // identity the caller chose. No foreign key ties journal_echo to these rows, so an echo aimed at a
+  // passage that just died is orphaned rather than deleted: invisible immediately (echoesFor
+  // inner-joins both spans) and swept when its own page is next derived.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM journal_span WHERE user_id = $1::uuid AND day = $2::date",
                   user.str(), day.iso());
 
-  // RETURNING, so the identity storage just minted travels back with the row rather than being
-  // read for a second time. In ord order, which is the order corpusOf serves this page in — a warm
-  // corpus splices this straight in and stays byte-identical to a fresh load.
+  // RETURNING in ord order, which is the order corpusOf serves this page in, so a warm corpus
+  // splices it in unchanged.
   std::vector<Vectored> stored;
   stored.reserve(spans.size());
   for (const SpanWrite& span : spans) {
@@ -311,16 +290,9 @@ std::vector<Vectored> PgEchoRepository::replaceSpans(const UserId& user, const L
 
 std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,
                                                  const std::string& embedVersion) {
-  // The comparison set, and not one page body with it: the corpus load is the entire cost of a night
-  // and a body is dead weight in it — the passage text is already here, and it is the only text an
-  // echo may ever quote.
-  //
-  // BOUNDED AT kCorpusSpans, newest days first, then handed back oldest-first as the port promises.
-  // Unbounded, one account could make every one of its own derivations — and, on the single drain
-  // thread, everybody else's — arbitrarily expensive by writing more passages. The cut is by
-  // RECENCY and it is the honest trade to state: past this many passages the oldest days stop being
-  // reachable by an echo. At 384 float32 dims the ceiling is ~30 MB of vectors, and a writer putting
-  // five passages a day on the page reaches it after eleven years.
+  // The comparison set, and not one page body with it. BOUNDED AT kCorpusSpans, newest days first,
+  // then handed back oldest-first as the port promises: past that the oldest days stop being
+  // reachable by an echo.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -343,9 +315,8 @@ std::vector<Vectored> PgEchoRepository::corpusOf(const UserId& user,
 
 std::vector<SpanPair> PgEchoRepository::dismissalsOn(const UserId& user,
                                                      const LocalDate& triggerDay) {
-  // Dismissals are keyed on content, so this resolves them back into the span ids the pipeline is
-  // holding. Text repeats: every span carrying dismissed text is dismissed, which is the whole
-  // point of hashing rather than pinning to an id.
+  // Dismissals are keyed on content, so this resolves them back into span ids. Every span carrying
+  // dismissed text is dismissed.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -366,15 +337,10 @@ std::vector<SpanPair> PgEchoRepository::dismissalsOn(const UserId& user,
 
 void PgEchoRepository::dismissPair(const UserId& user, const LocalDate& triggerDay,
                                    const LocalDate& matchDay) {
-  // One pairing, in one statement, and the same shape as the panel door below with one more day in
-  // the WHERE. Stored as the two passages' content, never as their ids, so the pair stays faded
-  // across an edit, a re-segmentation and a segmenter version bump.
-  //
-  // Two days can name several pairings — a page with two passages both reaching into the same
-  // January page is two rows — and the reader retiring "that match" means all of them. DISTINCT
-  // because two spans can carry identical text and therefore identical hashes.
-  //
-  // Scoped by e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
+  // Stored as the two passages' content, never as their ids, so the pair stays faded across an edit,
+  // a re-segmentation and a segmenter version bump. Two days can name several pairings and retiring
+  // "that match" means all of them; DISTINCT because two spans can carry identical hashes. Scoped by
+  // e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -390,13 +356,9 @@ void PgEchoRepository::dismissPair(const UserId& user, const LocalDate& triggerD
 }
 
 void PgEchoRepository::dismissPage(const UserId& user, const LocalDate& triggerDay) {
-  // The whole panel in one statement, on the same content hashes the pair-level door writes — a
-  // position-keyed dismissal would resurrect itself the moment a sentence is inserted above it,
-  // which is the failure this feature can least afford. DISTINCT because two spans on a page can
-  // carry the same text and therefore the same hash pair; ON CONFLICT because pressing "Not useful"
-  // twice has to be the same as pressing it once.
-  //
-  // Scoped by e.user_id and nothing else: a forged day reaches this caller's rows or no rows.
+  // The whole panel in one statement, on the same content hashes the pair-level door writes.
+  // DISTINCT because two spans on a page can carry the same hash pair; ON CONFLICT because pressing
+  // "Not useful" twice has to be the same as pressing it once. Scoped by e.user_id and nothing else.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -412,14 +374,9 @@ void PgEchoRepository::dismissPage(const UserId& user, const LocalDate& triggerD
 }
 
 void PgEchoRepository::dismissOffer(const UserId& user, const LocalDate& day) {
-  // One row per page, and it does not touch journal_echo at all — declining the offer retires the
-  // ASKING, never the echoes. The reader keeps everything they had, including the honest cut; the
-  // page just stops selling.
-  //
-  // Keyed on the day rather than on a passage hash, unlike both dismissal doors above, because the
-  // offer belongs to the page and not to any pairing on it: re-derive the page and the answer still
-  // stands. Aligning this with the other two would put the question back the moment a sentence
-  // moved, which is the nagging the mission rule forbids.
+  // Declining the offer retires the ASKING, never the echoes, so this does not touch journal_echo.
+  // Keyed on the day rather than a passage hash, unlike both dismissal doors above: the offer
+  // belongs to the page, so re-deriving it leaves the answer standing.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -431,15 +388,10 @@ void PgEchoRepository::dismissOffer(const UserId& user, const LocalDate& day) {
 
 void PgEchoRepository::recordSignal(const UserId& user, const LocalDate& triggerDay,
                                     const LocalDate& matchDay, EchoSignal kind) {
-  // The echo row is the source of every column here, which is what makes this a dataset rather
-  // than a tally: the score that retrieved the pair and the model that judged it are copied in
-  // beside the reader's answer, so a later question — did the 2026-08-09 swap to sonnet cost
-  // precision? — is a GROUP BY rather than an archaeology dig. Copied and not joined at read time
-  // on purpose: journal_echo is rewritten every night and would answer about tonight's curator,
-  // not the one whose pairing the reader actually saw.
-  //
-  // ON CONFLICT DO NOTHING, so the first answer stands. Pressing a button twice is one row, and a
-  // pairing this account never had is no row at all.
+  // The score that retrieved the pair and the model that judged it are copied in beside the reader's
+  // answer, not joined at read time: journal_echo is rewritten every night and would answer about
+  // tonight's curator. ON CONFLICT DO NOTHING, so the first answer stands and a pairing this account
+  // never had is no row at all.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -456,9 +408,7 @@ void PgEchoRepository::recordSignal(const UserId& user, const LocalDate& trigger
 
 void PgEchoRepository::recordPageSignal(const UserId& user, const LocalDate& triggerDay,
                                         EchoSignal kind) {
-  // The same answer about every pairing on a page, because the panel-level "Not useful" is one tap
-  // about all of them. One statement for the same reason the panel dismissal is one: a page whose
-  // signals half-landed is a page whose dataset quietly disagrees with its own dismissals.
+  // One statement, so a page's signals cannot half-land.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -475,11 +425,8 @@ void PgEchoRepository::recordPageSignal(const UserId& user, const LocalDate& tri
 
 void PgEchoRepository::replaceEchoes(const UserId& user, const LocalDate& triggerDay,
                                      const CuratedEchoes& curated) {
-  // Replace, additively. What goes is only what can no longer be shown — a row whose trigger or
-  // match passage died with the last re-derivation. A row the curator simply did not return this
-  // time is KEPT: the curator is not deterministic, and a typo fix must not silently destroy a
-  // chain the reader has already walked. created_at survives an update for the same reason; an
-  // echo re-affirmed tonight has been on the page since the night it was first found.
+  // Replace, additively. What goes is only what can no longer be shown; a row the curator did not
+  // return this time is KEPT, because the curator is not deterministic. created_at survives too.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -511,11 +458,8 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
-  // An UNSETTLED pass records WHAT failed and leaves both stamps exactly where they were, so the
-  // page comes back as due on the next sweep. Advancing them here — the idiom the shipped vector
-  // path used, where completion and success were the same thing — loses the page permanently to one
-  // transient blip at 02:14. A refusal is not in this branch: it is a failure that is nonetheless
-  // finished, and it settles below (ports/EchoRepository.h, isSettled).
+  // An UNSETTLED pass records WHAT failed and leaves both stamps where they were, so the page comes
+  // back as due. A refusal is not in this branch: it settles below (EchoRepository.h, isSettled).
   if (!isSettled(outcome.status)) {
     txn.exec_params(
         "INSERT INTO journal_page_curation (user_id, day, status, attempts, last_error, updated_at) "
@@ -529,29 +473,26 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
   }
 
   // Settled: both stamps advance, so nothing but an edit to this body makes the page due again.
-  // `last_error` still carries the word — empty on a success, "refused" on the one settled failure —
-  // because a page sitting at status refused is a question someone will eventually ask about, and
-  // the row is the only place the answer exists.
+  // `last_error` still carries the word — empty on a success, "refused" on the settled failure.
   txn.exec_params(
       "INSERT INTO journal_page_curation "
       "(user_id, day, body_stamp_ms, corpus_stamp, status, attempts, last_error, "
-      " segment_version, embed_version, updated_at) "
-      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, $6, $7, $8, now()) "
+      " segment_version, embed_version, judge_version, updated_at) "
+      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, $6, $7, $8, $9, now()) "
       "ON CONFLICT (user_id, day) DO UPDATE "
       "SET body_stamp_ms = EXCLUDED.body_stamp_ms, corpus_stamp = EXCLUDED.corpus_stamp, "
       "status = EXCLUDED.status, attempts = 0, last_error = EXCLUDED.last_error, "
       "segment_version = EXCLUDED.segment_version, embed_version = EXCLUDED.embed_version, "
-      "updated_at = now()",
+      "judge_version = EXCLUDED.judge_version, updated_at = now()",
       user.str(), day.iso(), static_cast<long long>(outcome.bodyStampMs),
       static_cast<long long>(outcome.corpusStamp), statusText(outcome.status), outcome.error,
-      outcome.versions.segment, outcome.versions.embed);
+      outcome.versions.segment, outcome.versions.embed, outcome.versions.judge);
   txn.commit();
 }
 
 std::vector<LocalDate> PgEchoRepository::inboundPages(const UserId& user,
                                                       const LocalDate& matchDay) {
-  // The reverse edge, served by journal_echo_inbound: which pages are reaching into this one, and
-  // therefore have to be derived again now that its passages have moved.
+  // The reverse edge: which pages reach into this one and so must be derived again.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -567,19 +508,13 @@ std::vector<LocalDate> PgEchoRepository::inboundPages(const UserId& user,
 
 std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const LocalDate& from,
                                                   const LocalDate& to) {
-  // Both spans join INNER: an echo whose passage no longer exists is not a row to be filtered
-  // later, it simply is not here. The dismissal check runs on content hashes rather than on ids,
-  // which is what makes a waved-away pair stay away through an edit.
-  //
-  // Ordered trigger day, then position on the page, then match day — oldest match first. Read
-  // top-down that list is reach ("this goes back to 2024"); newest-first the same rows read as
-  // accumulation ("and again, and again"). Same data, opposite rhetoric.
+  // Both spans join INNER: an echo whose passage no longer exists simply is not here. The dismissal
+  // check runs on content hashes rather than ids, so a waved-away pair stays away through an edit.
+  // Ordered trigger day, then position on the page, then match day — oldest match first.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
 
-  // The match pages' bodies, once each, so the anchoring hint can be counted against the page the
-  // reader will actually walk back to. Its own query rather than a column on the one below: ten
-  // echoes into one January page would otherwise ship that page's text ten times.
+  // The match pages' bodies, once each, so one January page's text is not shipped ten times.
   pqxx::result bodyRows = txn.exec_params(
       "SELECT DISTINCT mp.day::text AS day, mp.body "
       "FROM journal_echo e "
@@ -596,8 +531,7 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
       "e.match_day::text AS match_day, e.match_span_id, sm.text AS match_text, sm.lo AS match_lo, "
       "e.match_is_self, mp.source AS match_source, "
       "(e.trigger_day - e.match_day) AS days_earlier, "
-      // The reader's own answer, coming back to them. Served rather than remembered by the device:
-      // a mark made on a laptop that a phone cannot see is a mark the phone will ask for again.
+      // Served rather than remembered by the device, so the next device knows it too.
       "EXISTS (SELECT 1 FROM journal_echo_signal g WHERE g.user_id = e.user_id "
       "AND g.trigger_span_id = e.trigger_span_id AND g.match_span_id = e.match_span_id "
       "AND g.kind = 'useful') AS marked_useful "
@@ -623,8 +557,7 @@ std::vector<EchoView> PgEchoRepository::echoesFor(const UserId& user, const Loca
 
 std::vector<LocalDate> PgEchoRepository::retiredOffers(const UserId& user, const LocalDate& from,
                                                        const LocalDate& to) {
-  // Which pages in view have already been answered with "not now", so the surface can decline to
-  // ask again. A reader who never declined anything reads zero rows here, which is the whole cost.
+  // Which pages in view have already been answered with "not now".
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -640,8 +573,7 @@ std::vector<LocalDate> PgEchoRepository::retiredOffers(const UserId& user, const
 
 int PgEchoRepository::pagesWritten(const UserId& user) {
   // Pages the user has actually written on — a row holding only whitespace is a page they opened,
-  // not one they wrote. This is the number the ~20-page corpus floor is judged against, and the
-  // reason it is served at all is that the browser cannot count what it has not synced.
+  // not one they wrote. The browser cannot count what it has not synced.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(

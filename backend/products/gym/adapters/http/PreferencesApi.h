@@ -13,17 +13,16 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// §I's rows over REST — one document per account, read and written whole. One of five HTTP
+// The settings over REST — one document per account, read and written whole. One of five HTTP
 // adapters mirroring the five aggregate ports (TrainingApi holds the status ladder they all share;
-// routes.cpp is the one mount). It needs the preferences service and the auth seam and nothing else.
+// routes.cpp is the one mount).
 //
 // The read never 404s — a lifter with no row is served the defaults — and the write is the whole
 // document, so the two carry the same shape in both directions.
 //
-// The settings write keeps a tighter rule than most of gym: EVERY refusal it can make carries a
-// code (`preferences-unreadable`, `unknown-unit`, `rest-target` among the sixteen), because it
-// carries five independent values at once, and a single "could not read that" would leave the
-// screen unable to say WHICH row a lifter has to go back and fix.
+// EVERY refusal the write can make carries a code (`preferences-unreadable`, `unknown-unit`,
+// `rest-target`), because five independent values arrive at once and one "could not read that"
+// would leave the screen unable to say WHICH row to fix.
 class PreferencesApi {
 public:
   PreferencesApi(std::shared_ptr<PreferencesService> preferences,

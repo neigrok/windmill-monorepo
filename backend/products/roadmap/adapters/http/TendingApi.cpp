@@ -55,8 +55,8 @@ TendingApi::TendingApi(std::shared_ptr<TendingService> tending, std::shared_ptr<
 
 void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                       const std::string& treeId) {
-  // Resolved to the full user, not just the id: the allowance's plan lookup reads the email as its
-  // second binding (a subscription bound by customer email, not only by the checkout's stamped id).
+  // The full user, not just the id: the allowance's plan lookup reads the email as its second
+  // binding.
   std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to tend a tree"));
@@ -72,8 +72,7 @@ void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(jsonResponse(toJson(run)));
     return;
   }
-  // 202: the work is accepted and underway; the id is how the client (or a phone that comes back)
-  // reads the outcome from the GET below, whenever it next has a moment.
+  // 202: accepted and underway; the id is how a client reads the outcome from the GET below.
   Json::Value body(Json::objectValue);
   body["runId"] = run.id;
   callback(jsonResponse(body, drogon::k202Accepted));
@@ -96,8 +95,8 @@ void TendingApi::getRun(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 }
 
 void TendingApi::summary(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The full user for the same plan lookup start() makes. Available whether or not tending is armed
-  // — a signed-out caller can't have a meter, but a signed-in one always reads its month's budget.
+  // The full user for the same plan lookup start() makes. Available whether or not tending is
+  // armed.
   std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to read your tending"));

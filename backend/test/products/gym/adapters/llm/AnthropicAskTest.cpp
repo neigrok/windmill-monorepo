@@ -13,8 +13,7 @@ using namespace wm::gym;
 
 namespace {
 
-// A ToolHost the test scripts: a fixed catalog, every call answered through a supplied responder,
-// and every call recorded so the loop's traffic is observable.
+// A ToolHost the test scripts: a fixed catalog, every call answered by a responder and recorded.
 struct FakeToolHost : ToolHost {
   std::vector<ToolDeclaration> catalog;
   std::vector<std::pair<std::string, Json::Value>> calls;
@@ -100,8 +99,6 @@ struct Recorder {
 
 const UserId kLifter{"lifter"};
 
-// Ask's grant, said the same way AskService says it at its own call site: the levels that let the
-// reads and the two proposal mints through the catalog filter, and nothing wider.
 ToolCaller asked() {
   return ToolCaller{kLifter, ToolScope({{"gym", Access::read},
                                         {"gym", Access::write},
@@ -135,21 +132,17 @@ TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
   CHECK_EQ(outcome.error, std::string(""));
   CHECK_EQ(rec.failures.size(), 0u);
 
-  // THE LOG, not one workout: the opening read is the newest page and it happens before the model is
-  // asked anything. W7's whole widening is this line.
+  // The opening read is the newest page of the LOG, made before the model is asked anything.
   REQUIRE_EQ(host.calls.size(), 2u);
   CHECK_EQ(host.calls[0].first, std::string("list_sessions"));
   CHECK_EQ(host.calls[0].second, Json::Value(Json::objectValue));  // the default page, no arguments
   CHECK_EQ(host.calls[1].first, std::string("get_stats"));
 
-  // One step, and it is the tool the model asked for — not the opening read, which Ask made on the
-  // lifter's behalf rather than at the model's request.
+  // One step, and it is the tool the model asked for, not Ask's own opening read.
   REQUIRE_EQ(outcome.steps.size(), 1u);
   CHECK_EQ(outcome.steps[0].tool, std::string("get_stats"));
   CHECK_FALSE(outcome.steps[0].failed);
 
-  // The first request carried the catalog the caller's grant can see, the model, the cap's room, and
-  // the log welded to the lifter's first turn.
   REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-opus-5"));
   CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
@@ -162,9 +155,6 @@ TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
   CHECK(firstTurn.find("list_sessions returns it") != std::string::npos);
 }
 
-// The word the brief bans, checked where it would actually be read: the system prompt is the one
-// place gym still writes prose for a model, and a prompt that called Ask a coach would put the word
-// straight back into the answers a lifter reads.
 TEST(nothing_ask_sends_the_model_calls_it_a_coach) {
   FakeToolHost host;
   FakeModel model;
@@ -177,7 +167,6 @@ TEST(nothing_ask_sends_the_model_calls_it_a_coach) {
   const std::string prompt = model.requests[0]["system"][0]["text"].asString();
   CHECK(prompt.find("coach") == std::string::npos);
   CHECK(prompt.find("Coach") == std::string::npos);
-  // …and it says the two things §L's ladder turns on.
   CHECK(prompt.find("propose_routine_change") != std::string::npos);
   CHECK(prompt.find("CHANGE NOTHING") != std::string::npos);
 }
@@ -203,9 +192,7 @@ TEST(ask_sends_the_thread_so_far_with_the_roles_the_client_gave_it) {
   CHECK_EQ(messages[1]["role"].asString(), std::string("assistant"));
   CHECK_EQ(messages[1]["content"].asString(), std::string("You squatted 100 for five."));
   CHECK_EQ(messages[2]["role"].asString(), std::string("user"));
-  // Only the FIRST turn carries the log — the document never moves, which is what makes the growing
-  // prefix cacheable across a conversation. It also stays a bare string once it is no longer the
-  // newest turn: only the turn holding the cache breakpoint is promoted to a block.
+  // Only the FIRST turn carries the log, and only the turn holding the cache breakpoint is a block.
   CHECK(messages[0]["content"].asString().find("list_sessions returns it") != std::string::npos);
   CHECK(messages[2]["content"][0].isMember("cache_control"));
 }
@@ -240,8 +227,6 @@ TEST(ask_refuses_an_empty_thread_without_touching_anything) {
   CHECK_EQ(model.requests.size(), 0u);
 }
 
-// The cap is wider than the panel's six because the reach is wider — and hitting it is still a
-// failure, printed to nobody.
 TEST(ask_treats_the_eight_iteration_cap_as_a_failure) {
   FakeToolHost host;
   FakeModel model;
@@ -255,9 +240,7 @@ TEST(ask_treats_the_eight_iteration_cap_as_a_failure) {
   CHECK_EQ(outcome.answer, std::string(""));
   CHECK_EQ(outcome.error, std::string("hit the 8-iteration cap without the model finishing"));
   CHECK_EQ(model.requests.size(), 8u);
-  // …and the cost travels with the failure, because it is what decides whether the day's question is
-  // given back. Eight billed turns is the most expensive run this product has; refunding it waived
-  // the stated cap on exactly the runs that spend most (AskService::ask).
+  // …and the cost travels with the failure, because it decides whether the day's question is given back.
   CHECK_EQ(outcome.modelTurns, 8);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0],

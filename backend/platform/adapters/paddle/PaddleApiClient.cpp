@@ -48,7 +48,7 @@ void PaddleApiClient::request(int method, const std::string& op, const std::stri
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(static_cast<drogon::HttpMethod>(method));
   req->setPath(path);
-  // Never fold a query string into setPath — drogon percent-encodes the '?' into the path and the
+  // Never fold a query string into setPath — drogon percent-encodes the '?' into the path.
   // request arrives at a route that doesn't exist.
   for (const auto& [key, value] : query) req->setParameter(key, value);
   req->addHeader("authorization", "Bearer " + apiKey_);
@@ -57,8 +57,7 @@ void PaddleApiClient::request(int method, const std::string& op, const std::stri
     req->setBody(body);
   }
 
-  // The status and the operation are enough to triage; the body can echo request detail — the
-  // customer's address above all — and the key never appears in either.
+  // The status and the operation are enough to triage; the body can echo the customer's address.
   VendorCall call("paddle", op);
   client->sendRequest(
       req,
@@ -112,8 +111,7 @@ void PaddleApiClient::startCheckout(const std::string& email, const std::string&
     return;
   }
 
-  // Reuse the customer this email already has, so a returning subscriber keeps one Paddle identity
-  // (and one billing history) instead of collecting a customer per checkout.
+  // Reuse the customer this email already has, so a returning subscriber keeps one Paddle identity.
   request(drogon::Get, "customers.find", "/customers", {{"email", email}}, "",
           [this, email, userId, priceId, done = std::move(done)](std::optional<std::string> body) mutable {
             const std::optional<Json::Value> json = body ? parse(*body) : std::nullopt;

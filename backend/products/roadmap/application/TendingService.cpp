@@ -32,16 +32,15 @@ TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHo
 TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& email,
                               const std::string& prompt) {
   // The pipeline the contract pins, top to bottom: an unusable prompt, then a dark feature, then a
-  // spent allowance — each a persisted refusal the client wears as a quiet face, none of them work.
+  // spent allowance — each a persisted refusal, none of them work.
   if (blank(prompt)) return refuse(tree, caller, prompt, TendRefusal::promptEmpty);
   // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
   if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
   if (!allowanceAt(caller, email, clock_.nowMs()).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
-  // The dollar fuse, last because it is the only rung that reads the ledger. It measures something
-  // the run count cannot: one sentence that sets a twelve-iteration agent loose costs many times
-  // what another does.
+  // The dollar fuse, last because it is the only rung that reads the ledger. It measures what the
+  // run count cannot: one sentence that sets a twelve-iteration agent loose costs many times another.
   if (!entitlements_.aiAllowanceFor(caller, email).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfBudget);
 
@@ -54,8 +53,8 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   run.startedAtMs = clock_.nowMs();
   runs_.save(run);  // durable BEFORE we answer, so the returned id is queryable the instant it lands
 
-  // Hand the blocking loop to the next worker in the pool and return. The service is a
-  // process-lifetime singleton, so capturing `this` is safe for as long as the pool (a member) lives.
+  // The service is a process-lifetime singleton, so capturing `this` is safe for as long as the pool
+  // (a member) lives.
   workers_.getNextLoop()->queueInLoop([this, run] { execute(run); });
   return run;
 }
@@ -91,10 +90,9 @@ TendingSummary TendingService::summaryFor(const UserId& caller, const std::strin
   return summary;
 }
 
-// The two loads the allowance is built from — the plan (a live subscription grants Pro, everything
-// else is Free) and this calendar month's spend — then the pure domain budget over them. Takes the
-// instant so a single caller reads its meter and its ledger against one month, never straddling a
-// roll between two clock reads.
+// The plan (a live subscription grants Pro, everything else is Free) and this calendar month's
+// spend, then the pure domain budget over them. Takes the instant so a single caller reads its meter
+// and its ledger against one month, never straddling a roll between two clock reads.
 TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::string& email,
                                              std::uint64_t nowMs) {
   const Plan plan = entitlements_.hasWindmillOne(caller, email) ? Plan::pro : Plan::free;
@@ -106,11 +104,11 @@ void TendingService::execute(TendRun run) {
   // The crash guard: whatever happens below, the worker thread must survive to serve the next run.
   try {
     run.seqFrom = seqOf(run.tree, run.user);  // the tree's head before the agent writes anything
-    // The failed-run guard: an upstream error, a timeout, or a tool that would not settle becomes a
-    // `failed` run carrying its diagnostic, never a thrown exception past this point.
+    // An upstream error, a timeout, or a tool that would not settle becomes a `failed` run carrying
+    // its diagnostic, never a thrown exception past this point.
     try {
-      // The agent is pinned to the tended tree: it can edit only this one, and cannot mint, list or
-      // delete trees, so an injected node label can't turn a tend into a raid on the caller's other trees.
+      // The agent is pinned to the tended tree, so an injected node label can't turn a tend into a raid
+      // on the caller's other trees.
       ScopedToolHost scoped(tools_, run.tree);
       const AgentOutcome outcome =
           agent_.run(run.prompt, run.tree, run.user, scoped, [](const AgentStep&) {});
@@ -137,9 +135,9 @@ void TendingService::execute(TendRun run) {
 }
 
 std::uint64_t TendingService::seqOf(const TreeId& tree, const UserId& caller) {
-  // The run's footprint in the op log is read through the very seam the agent edits through:
-  // get_tree answers as the caller with the tree's current head seq. A tree the caller can't read
-  // (or any tool error) reads as 0 — the run records no footprint rather than leaking one.
+  // The footprint is read through the very seam the agent edits through: get_tree answers as the
+  // caller with the tree's current head seq. A tree the caller can't read (or any tool error) reads
+  // as 0 — the run records no footprint rather than leaking one.
   Json::Value args(Json::objectValue);
   args["treeId"] = tree.str();
   const ToolResult result =

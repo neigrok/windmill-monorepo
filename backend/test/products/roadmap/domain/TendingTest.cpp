@@ -5,7 +5,7 @@
 using namespace wm;
 
 namespace {
-// Exact UTC epoch-ms vectors, hand-derived so the civil-date math is pinned to real dates.
+// Exact UTC epoch-ms vectors.
 constexpr std::uint64_t k2026_07_01 = 1782864000000ull;  // 2026-07-01T00:00:00Z
 constexpr std::uint64_t k2026_07_20_noon = 1784548800000ull;  // 2026-07-20T12:00:00Z
 constexpr std::uint64_t k2026_08_01 = 1785542400000ull;  // 2026-08-01T00:00:00Z

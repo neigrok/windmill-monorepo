@@ -18,8 +18,7 @@ Texts textsOf(const std::vector<Passage>& passages) {
   return texts;
 }
 
-// Every field of every passage in one comparable line — "ord:lo-hi:text" — so a case can pin the
-// whole result including the byte offsets, not a sample of it.
+// Every field of every passage in one comparable line — "ord:lo-hi:text".
 Texts shapeOf(const std::vector<Passage>& passages) {
   Texts shapes;
   for (const Passage& passage : passages) {
@@ -34,9 +33,7 @@ bool isCodepointStart(const std::string& body, int at) {
   return (static_cast<unsigned char>(body[at]) & 0xC0) != 0x80;
 }
 
-// The three promises the contract makes about every passage it returns, asserted for all of them at
-// once: the span indexes back into the body exactly, both ends land on a codepoint boundary, and
-// the ordinals are 0-based and contiguous.
+// The three promises: the span indexes back into the body exactly, both ends land on a codepoint boundary, and the ordinals are 0-based and contiguous.
 void checkContract(const std::string& body, const std::vector<Passage>& passages) {
   for (std::size_t i = 0; i < passages.size(); ++i) {
     const Passage& passage = passages[i];
@@ -62,8 +59,6 @@ TEST(a_bare_list_with_no_terminal_punctuation_is_one_passage_per_line) {
 }
 
 TEST(a_line_break_ends_a_passage_even_when_the_sentence_cap_has_room) {
-  // Two sentences, thirteen words, well inside a three-sentence passage — and still two passages,
-  // because the line between them is a wall.
   const std::string body =
       "i finally called mum about the house today.\nhe texted me again about the weekend.";
 
@@ -87,7 +82,6 @@ TEST(prose_on_one_line_splits_at_the_sentence_cap) {
                   "he texted me again about the weekend."}));
   checkContract(body, passages);
 
-  // The cap is a rule, not a constant: one sentence per passage puts all four back on the table.
   const std::vector<Passage> singles = segment(body, SegmentRules{1, 1});
 
   CHECK_EQ(textsOf(singles), (Texts{"i finally called mum about the house today.",
@@ -110,8 +104,6 @@ TEST(spans_index_back_into_a_body_of_emoji_and_accents) {
                                      "- naïve idea: sleep before midnight"}));
   checkContract(body, passages);
 
-  // Spelled out once rather than left to the helper: this is the guarantee the whole pipeline
-  // stands on, and it is a byte comparison against the body itself.
   CHECK_EQ(body.substr(passages[1].lo, passages[1].hi - passages[1].lo),
            std::string("j'étais fatigué 😀 mais content de marcher un peu"));
 }
@@ -128,7 +120,6 @@ TEST(a_fragment_joins_the_passage_before_it) {
 }
 
 TEST(a_fragment_that_opens_the_line_joins_the_passage_after_it) {
-  // Same three sentences, the fragment moved to the front: with nothing before it, it glues forward.
   const std::string body =
       "tired. he texted me again about the weekend. i went to bed early and slept badly.";
 
@@ -174,8 +165,6 @@ TEST(abbreviations_and_decimals_do_not_end_a_sentence) {
                                      "i left early, i.e. before the meeting ended, and walked home."}));
   checkContract(body, passages);
 
-  // One sentence per passage, so the only thing holding these lines together is the refusal — and
-  // an ordinary full stop still splits.
   CHECK_EQ(textsOf(segment("dr. nowak said hello. i left.", SegmentRules{1, 1})),
            (Texts{"dr. nowak said hello.", "i left."}));
 }
@@ -191,8 +180,6 @@ TEST(a_closing_quote_stays_with_the_sentence_it_closes) {
 }
 
 TEST(fragments_merge_even_where_that_overruns_the_sentence_cap) {
-  // Four sentences and four words. Splitting this at three sentences would buy a cap and pay in
-  // fragments, which are the thing the cap exists to avoid.
   const std::string body = "hi. ok. no. yes.";
 
   const std::vector<Passage> passages = segment(body);
@@ -214,7 +201,6 @@ TEST(a_single_short_fragment_is_one_passage_and_never_none) {
   CHECK_EQ(shapeOf(segment(body)), Texts{"0:0-5:tired"});
   checkContract(body, segment(body));
 
-  // The passage is the fragment, not the padding around it.
   const std::string padded = "  tired  ";
   CHECK_EQ(shapeOf(segment(padded)), Texts{"0:2-7:tired"});
   checkContract(padded, segment(padded));
@@ -257,17 +243,13 @@ TEST(normalized_identity_does_not_fold_case_or_strip_punctuation) {
 }
 
 TEST(normalized_identity_makes_a_passage_survive_a_reflow) {
-  // The one thing this function is for: the same sentence, rewrapped by the editor, is the same
-  // passage — and a different sentence is not.
   CHECK_EQ(normalizedForIdentity("i finally called mum\nabout the house today."),
            normalizedForIdentity("i finally called mum about the house today."));
   CHECK(normalizedForIdentity("i finally called mum about the house today.") !=
         normalizedForIdentity("i finally called mum about the house."));
 }
 
-// THE VERBATIM CHECK. Step 1 is a vendor call since 2026-08-23, so the one thing standing between a
-// model and the writer's own page is `locateUnits`: a unit is kept only if it is genuinely in the
-// body, and what is stored is the BODY's bytes rather than the model's.
+// The verbatim check: a unit is kept only if it is genuinely in the body, and what is stored is the BODY's bytes rather than the model's.
 
 TEST(units_are_kept_only_where_they_are_genuinely_in_the_body) {
   const std::string body = "заебался, нет сил продолжать\nзато завтра выходной";
@@ -277,7 +259,6 @@ TEST(units_are_kept_only_where_they_are_genuinely_in_the_body) {
   REQUIRE_EQ(located.size(), std::size_t{2});
   CHECK_EQ(located[0].text, std::string{"заебался, нет сил продолжать"});
   CHECK_EQ(located[1].text, std::string{"зато завтра выходной"});
-  // The offsets index the body exactly, which is what the client re-locates against.
   CHECK_EQ(body.substr(located[0].lo, located[0].hi - located[0].lo), located[0].text);
   CHECK_EQ(body.substr(located[1].lo, located[1].hi - located[1].lo), located[1].text);
   CHECK_EQ(located[0].ord, 0);
@@ -286,8 +267,6 @@ TEST(units_are_kept_only_where_they_are_genuinely_in_the_body) {
 
 TEST(a_unit_the_model_rewrote_is_discarded_rather_than_shown_to_the_writer) {
   const std::string body = "заебался, нет сил продолжать. пиздец как тяжело";
-  // Three ways a model helpfully ruins a quote: it tidies the swearing, it corrects the case, and
-  // it translates. None of the three is in the page, so none of the three is a passage.
   const std::vector<Passage> located = locateUnits(body, {
       "устал, нет сил продолжать",
       "Заебался, нет сил продолжать",
@@ -300,14 +279,12 @@ TEST(a_unit_the_model_rewrote_is_discarded_rather_than_shown_to_the_writer) {
 }
 
 TEST(a_unit_spanning_a_soft_line_break_still_locates) {
-  // "One unit per line" flattens the newline the writer typed into a space. That is the one
-  // difference tolerated, because the alternative is discarding every unit that crosses a wrap.
+  // "One unit per line" flattens the newline the writer typed into a space; that is the one difference tolerated.
   const std::string body = "хочу переехать в лиссабон,\nно тогда я всех оставлю здесь";
   const std::vector<Passage> located =
       locateUnits(body, {"хочу переехать в лиссабон, но тогда я всех оставлю здесь"});
 
   REQUIRE_EQ(located.size(), std::size_t{1});
-  // The stored text is the BODY's — newline and all — never the flattened copy the model sent back.
   CHECK_EQ(located[0].text, body);
   CHECK_EQ(located[0].lo, 0);
   CHECK_EQ(located[0].hi, static_cast<int>(body.size()));
@@ -318,8 +295,7 @@ TEST(the_same_sentence_twice_takes_two_different_places) {
   const std::vector<Passage> located = locateUnits(body, {"не знаю.", "надо подумать.", "не знаю."});
 
   REQUIRE_EQ(located.size(), std::size_t{3});
-  // The scan runs forward, so the second "не знаю." anchors to the SECOND occurrence — the thing
-  // that keeps two identical lines two stable, distinct passages.
+  // The scan runs forward, so the second "не знаю." anchors to the SECOND occurrence.
   CHECK_EQ(located[0].lo, 0);
   CHECK_EQ(located[2].lo, static_cast<int>(body.rfind("не знаю.")));
   CHECK(located[1].lo > located[0].lo);
@@ -329,8 +305,7 @@ TEST(units_returned_out_of_order_are_still_found) {
   const std::string body = "первое. второе. третье.";
   const std::vector<Passage> located = locateUnits(body, {"третье.", "первое."});
 
-  // Found from the top on the second pass rather than dropped: a segmenter that reordered its
-  // answer still named real text, and discarding it would silently lose half the page.
+  // Found from the top on the second pass rather than dropped: a segmenter that reordered its answer still named real text.
   REQUIRE_EQ(located.size(), std::size_t{2});
   CHECK_EQ(located[0].text, std::string{"третье."});
   CHECK_EQ(located[1].text, std::string{"первое."});

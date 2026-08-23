@@ -31,8 +31,6 @@ TEST(an_unchanged_page_keeps_every_identity) {
   CHECK_EQ(carried[1].spanId, std::int64_t{12});
 }
 
-// The defect this whole file exists for: a sentence inserted at the top shifts every ordinal, and a
-// position-keyed identity would silently re-point every inbound echo to its neighbour.
 TEST(a_sentence_inserted_at_the_top_shifts_no_identity) {
   const std::vector<KnownSpan> stored{{11, "i want to learn c++."}, {12, "rain all evening."}};
   const std::vector<IdentifiedPassage> carried =
@@ -66,7 +64,6 @@ TEST(edited_text_mints_and_does_not_inherit_a_neighbours_identity) {
   CHECK_EQ(carried[1].spanId, std::int64_t{12});
 }
 
-// Whitespace is not identity: a soft rewrap must not orphan a passage and destroy its echoes.
 TEST(reflowed_whitespace_is_the_same_passage) {
   const std::vector<KnownSpan> stored{{11, "i want to learn c++."}};
   const std::vector<IdentifiedPassage> carried =

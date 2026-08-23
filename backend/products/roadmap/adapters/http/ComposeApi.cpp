@@ -10,8 +10,7 @@
 namespace wm {
 
 namespace {
-// A whole page of notes, or a document someone actually wrote — pasting a plan should not mean
-// trimming it first. The spend ceiling is the rate limiter's job, not a stingy input cap.
+// The spend ceiling is the rate limiter's job, not a stingy input cap.
 constexpr std::size_t kMaxTextBytes = 24576;
 constexpr double kHeartbeatSeconds = 15.0;
 
@@ -32,9 +31,9 @@ std::string sseEvent(const char* name, const std::string& data) {
 }
 
 // One live SSE reply. Every write goes through the mutex, so the composer's loop and the
-// heartbeat timer never interleave a frame. drogon 1.9.13 offers no disconnect callback on
-// a streaming response — a failed send is the only sign the client hung up — so the first
-// dead write cancels the upstream call instead of letting the model finish for nobody.
+// heartbeat timer never interleave a frame. drogon offers no disconnect callback on a streaming
+// response — a failed send is the only sign the client hung up — so the first dead write cancels
+// the upstream call.
 class SseReply {
 public:
   explicit SseReply(drogon::ResponseStreamPtr stream) : stream_(std::move(stream)) {}
@@ -68,8 +67,8 @@ public:
     if (ok) {
       stream_->send(sseEvent("done", "{}"));
     } else {
-      // Mid-stream failure after deltas leaves the partial text with the client; the fail
-      // event is its failure line. Before any delta it is the whole story of the stream.
+      // Mid-stream failure after deltas leaves the partial text with the client; the fail event
+      // is its failure line.
       stream_->send(sseEvent("fail", R"({"code":"compose-failed"})"));
     }
     stream_->close();
@@ -110,11 +109,9 @@ void heartbeatWhileWaiting(const std::shared_ptr<SseReply>& reply) {
 ComposeApi::ComposeApi(std::shared_ptr<PlanComposer> composer) : composer_(std::move(composer)) {}
 
 void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The pipeline the contract pins: parse → empty 400 → too-long 400 → no-key 503 → then
-  // branch on the stream flag. Every guard answers plain JSON — SSE begins only once the
-  // request is known good, so pre-stream failures keep their codes. (The per-IP and global
-  // rate limits sit with the other abuse ceilings in infra/main.cpp, ahead of routing, and
-  // charge a streamed compose exactly once, like a buffered one.)
+  // parse → empty 400 → too-long 400 → no-key 503 → then branch on the stream flag. Every guard
+  // answers plain JSON: SSE begins only once the request is known good, so pre-stream failures
+  // keep their codes.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   if (!json || !json->isObject() || !(*json)["text"].isString() ||
       isBlank((*json)["text"].asString())) {
@@ -144,10 +141,9 @@ void ComposeApi::compose(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     return;
   }
 
-  // The streaming reply: 200 + SSE headers go on the wire immediately, then the plan grows
-  // delta by delta. From here every outcome — even an upstream error before the first byte —
-  // arrives as an SSE event, because the status line is already spent. The stream callback
-  // fires once drogon starts writing the response on the connection's own IO thread.
+  // 200 + SSE headers go on the wire immediately, so from here every outcome — even an upstream
+  // error before the first byte — arrives as an SSE event. The stream callback fires once drogon
+  // starts writing the response on the connection's own IO thread.
   auto composer = composer_;
   auto response = drogon::HttpResponse::newAsyncStreamResponse(
       [composer, text](drogon::ResponseStreamPtr stream) {

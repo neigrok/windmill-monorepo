@@ -8,14 +8,6 @@
 #include <memory>
 #include <string>
 
-// The personal-MCP-key surface, at the edge. McpKeyServiceTest pins the minting and the name rules;
-// this file is about the two things the HTTP layer decides on its own, and both are the kind of
-// mistake that reads as working software:
-//
-//   · The secret leaves in the CREATE reply and nowhere else. A token that also appeared in the
-//     list would turn every settings page load into a fresh copy of a live credential.
-//   · A key id that belongs to somebody else is a 404, identical to an id that never existed —
-//     the same not-an-oracle rule the sessions endpoint follows, for the same reason.
 using namespace wm;
 using namespace wm::fake;
 
@@ -89,8 +81,6 @@ TEST(mcp_key_every_route_refuses_a_caller_with_no_session) {
   CHECK(h.keyRepo.keys.empty());
 }
 
-// The secret is shown once, at mint, and the list never carries it — a list that did would hand a
-// live credential to anything that could read one page of settings HTML.
 TEST(mcp_key_the_secret_is_handed_over_once_and_never_appears_in_the_list) {
   Harness h;
   h.signIn("s-live");
@@ -111,8 +101,6 @@ TEST(mcp_key_the_secret_is_handed_over_once_and_never_appears_in_the_list) {
   CHECK(rows["keys"][0]["lastUsedMs"].isNull());  // null, not absent — the client renders "never"
   CHECK_FALSE(rows["keys"][0].isMember("token"));
 
-  // The token really is the credential: it authenticates as the account that minted it, and the
-  // list starts reporting when — the one thing about a key the owner can watch for a stranger in.
   h.clock->now += 5000;
   CHECK(h.keys->resolveKey(minted["token"].asString()).has_value());
   const Json::Value used = *list(h, "s-live")->getJsonObject();
@@ -121,8 +109,7 @@ TEST(mcp_key_the_secret_is_handed_over_once_and_never_appears_in_the_list) {
   CHECK_FALSE(used["keys"][0].isMember("token"));
 }
 
-// A name is display text from a text field, so every shape it can arrive in has to be a 201 rather
-// than a 500 — jsoncpp's asString() throws on an array or an object.
+// A name is display text from a text field, and jsoncpp's asString() throws on an array or an object.
 TEST(mcp_key_a_name_of_any_shape_still_mints_a_key) {
   Harness h;
   h.signIn("s-live");
@@ -138,8 +125,6 @@ TEST(mcp_key_a_name_of_any_shape_still_mints_a_key) {
   CHECK_EQ(h.keyRepo.keys.size(), std::size_t{7});
 }
 
-// Owner-scoped, and the refusal says nothing about whose it is: an unknown id and another account's
-// id are the same 404, so this endpoint cannot be used to test whether a key id exists.
 TEST(mcp_key_a_key_that_is_not_yours_is_a_404_and_never_a_403) {
   Harness h;
   h.signIn("s-mine", "sam@example.com");
@@ -156,17 +141,15 @@ TEST(mcp_key_a_key_that_is_not_yours_is_a_404_and_never_a_403) {
 
   const drogon::HttpResponsePtr foreign = revoke(h, "s-mine", theirId);
   CHECK_EQ(foreign->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(std::string(foreign->getBody()), std::string(unknown->getBody()));  // byte-identical
-  CHECK_EQ((*list(h, "s-theirs")->getJsonObject())["keys"].size(), 1u);  // and it survived
+  CHECK_EQ(std::string(foreign->getBody()), std::string(unknown->getBody()));
+  CHECK_EQ((*list(h, "s-theirs")->getJsonObject())["keys"].size(), 1u);
 
   CHECK_EQ(revoke(h, "s-mine", myId)->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ((*list(h, "s-mine")->getJsonObject())["keys"].size(), 0u);
-  // Revoking it twice is the same 404 as any other id that is no longer there.
   CHECK_EQ(revoke(h, "s-mine", myId)->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ((*list(h, "s-theirs")->getJsonObject())["keys"].size(), 1u);
 }
 
-// The list is the caller's own, newest first — the order the settings screen shows without sorting.
 TEST(mcp_key_the_list_is_the_caller_s_own_newest_first) {
   Harness h;
   h.signIn("s-mine", "sam@example.com");

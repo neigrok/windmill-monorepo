@@ -17,11 +17,6 @@
 using namespace wm;
 using namespace wm::fake;
 
-// The skeleton, proved once over a product small enough to fit in this file. Every real sweep
-// derives from the same base, so what is pinned here — the lock, the rehearsal, the lost claim,
-// the arming gate, the pause credential's ordering, the per-user guard — is pinned for all of them,
-// and each product's own test is free to be about the product.
-
 namespace {
 
 constexpr std::uint64_t kNow = 1'700'000'000'000;
@@ -31,9 +26,7 @@ struct FakeMutex : SweepMutex {
   int locksTaken = 0;
   int locksReleased = 0;
 
-  // RAII, like the Postgres one: the port promises the lock is handed back BEFORE a throwing pass
-  // reaches its caller, and a fake that counted the release after pass() could not tell whether the
-  // real one keeps that promise.
+  // RAII, like the Postgres one: the lock is handed back BEFORE a throwing pass reaches its caller.
   struct Handback {
     ~Handback() { ++released; }
     int& released;
@@ -53,7 +46,6 @@ struct Slot {
   std::string key;
 };
 
-// A decision small enough to read at a glance: what to do, and whether the load blew up first.
 struct Call {
   bool send = false;
   bool unreadable = false;
@@ -64,8 +56,6 @@ struct Closed {
   ClosedAs as;
 };
 
-// The pretend product: its ledger and its mailer in one place, with every knob a case below turns
-// exposed as a plain field.
 class TinySweep : public MailSweep<Slot, Call> {
 public:
   TinySweep(FakeMutex& mutex, TokenGenerator& tokens, MailArming arming)
@@ -165,7 +155,6 @@ TEST(a_delivered_send_stores_the_pause_and_closes_delivered_in_that_order) {
   CHECK_EQ(mutex.locksTaken, 1);
   CHECK_EQ(mutex.locksReleased, 1);
 
-  // DECIDE → CLAIM → SEND, and the mail carries the fresh secret whose digest is then stored.
   REQUIRE_EQ(sweep.claims.size(), std::size_t{1});
   CHECK_EQ(sweep.claims[0], std::string("u1@slot"));
   REQUIRE_EQ(sweep.mailed.size(), std::size_t{1});
@@ -213,8 +202,6 @@ TEST(a_slot_another_sweep_already_owns_is_dropped_in_silence) {
   CHECK_EQ(report.due, 1);
   CHECK_EQ(report.claimed, 0);
   CHECK_EQ(report.sent, 0);
-  // A lost race is not a skip: that slot belongs to the sweep that won it, and counting it here
-  // would report a decision this run never wrote to the ledger.
   CHECK_EQ(report.skipped, 0);
   CHECK_EQ(sweep.claims.size(), std::size_t{1});   // it tried, and lost
   CHECK_EQ(sweep.mailed.size(), std::size_t{0});
@@ -250,12 +237,10 @@ TEST(a_dark_gate_claims_the_send_closes_it_held_and_mails_nobody) {
   CHECK_EQ(report.claimed, 1);
   CHECK_EQ(report.held, 1);
   CHECK_EQ(report.sent, 0);
-  // The ledger says what we decided, not what the flag allowed, and the slot is CLOSED as held so
-  // the row can never be read as a crash between the claim and the send.
+  // The ledger says what we decided, not what the flag allowed, and the slot is CLOSED as held.
   REQUIRE_EQ(sweep.closes.size(), std::size_t{1});
   CHECK(sweep.closes[0].as == ClosedAs::held);
   CHECK_EQ(sweep.mailed.size(), std::size_t{0});
-  // Nothing left, so no credential was minted and the last pause link is untouched.
   CHECK_EQ(tokens.counter, 0);
   CHECK_EQ(sweep.pauseDigests.size(), std::size_t{0});
 }
@@ -294,8 +279,7 @@ TEST(a_refused_send_closes_refused_and_leaves_the_old_pause_link_alive) {
   CHECK_EQ(sweep.mailed.size(), std::size_t{0});
   REQUIRE_EQ(sweep.closes.size(), std::size_t{1});
   CHECK(sweep.closes[0].as == ClosedAs::refused);
-  // The credential rotates only on a mail that actually left. Rotating first would kill a pause
-  // link still sitting in someone's inbox on behalf of a replacement that never arrived.
+  // The credential rotates only on a mail that actually left, or a pause link still in someone's inbox dies for a replacement that never arrived.
   CHECK_EQ(sweep.pauseDigests["u1"], std::string("last-times-digest"));
 }
 
@@ -321,9 +305,7 @@ TEST(a_turn_that_throws_is_counted_and_the_next_user_still_runs) {
 }
 
 TEST(an_unreadable_decision_is_claimed_like_a_skip_and_counted_as_an_error) {
-  // A product whose ledger must own the slot anyway — roadmap, whose pointer only advances inside
-  // a claim — answers an `unreadable` verdict instead of throwing: it is claimed, it is skipped,
-  // and it is an error, all three.
+  // A product whose ledger must own the slot anyway answers an `unreadable` verdict instead of throwing: claimed, skipped and an error, all three.
   FakeMutex mutex;
   FakeTokens tokens;
   TinySweep sweep(mutex, tokens, MailArming(true, "u0,u1"));
@@ -342,7 +324,6 @@ TEST(an_unreadable_decision_is_claimed_like_a_skip_and_counted_as_an_error) {
   CHECK_EQ(sweep.claims[0], std::string("u0@slot"));
   CHECK_EQ(sweep.claims[1], std::string("u1@slot"));
 
-  // And in a rehearsal it is still an error and still a skip, with nothing committed.
   sweep.claims.clear();
   const MailSweepReport dry = sweep.run(kNow, true);
 
@@ -354,9 +335,7 @@ TEST(an_unreadable_decision_is_claimed_like_a_skip_and_counted_as_an_error) {
 }
 
 TEST(a_pass_that_throws_hands_the_fleet_lock_back_before_the_caller_sees_the_throw) {
-  // The per-user guard covers a turn that blows up; nothing covers the batch read itself. A throw
-  // there escapes `run`, and if it took the fleet lock with it, every process on this database
-  // would stop mailing until a restart — which is precisely the outage SWEEP-1 was.
+  // The per-user guard covers a turn that blows up; nothing covers the batch read itself, and a throw there must not take the fleet lock with it.
   FakeMutex mutex;
   FakeTokens tokens;
   TinySweep sweep(mutex, tokens, MailArming(true, "u1"));
@@ -374,11 +353,7 @@ TEST(a_pass_that_throws_hands_the_fleet_lock_back_before_the_caller_sees_the_thr
   CHECK_EQ(mutex.locksReleased, 1);
 }
 
-// The other sweep on this seam, and the only one that deletes rather than sends. It lives here
-// beside MailSweep because what is asserted is the same skeleton — the fleet lock, and a pass that
-// reports what it did — and because the windows themselves are the operator's to choose, not ours
-// to test. What must hold: a pass that could not take the lock removed nothing and says so, and a
-// window an operator zeroed is a table the sweep does not touch at all.
+// The only sweep on this seam that deletes rather than sends. A pass that could not take the lock removed nothing and says so, and a window an operator zeroed is a table the sweep does not touch.
 namespace {
 struct FakeRetentionStore : RetentionStore {
   RetentionWindows sawWindows;
@@ -432,8 +407,7 @@ TEST(retention_sweep_deletes_nothing_when_another_process_holds_the_lock) {
 
   const RetentionReport report = sweep.run();
 
-  // ran=false is "nothing was looked at", which is not the same as "nothing was due" — and no
-  // DELETE was reached at all.
+  // ran=false is "nothing was looked at", not "nothing was due" — and no DELETE was reached.
   CHECK_FALSE(report.ran);
   CHECK_EQ(report.rows(), 0);
   CHECK_EQ(store.passes, 0);

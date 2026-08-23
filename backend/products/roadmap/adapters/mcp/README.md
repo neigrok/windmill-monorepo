@@ -12,24 +12,26 @@ projections and the documents are roadmap's.
 
 ```
 platform/adapters/mcp/
-  McpServer.{h,cpp}        transport-agnostic JSON-RPC 2.0 engine (initialize, tools/list,
-                           tools/call, resources/list, resources/read, ping). Depends only on
-                           jsoncpp + an injected ToolHost, a ServerInfo and a resource vector.
-  CompositeToolHost.{h,cpp} every connected product's tools behind the one ToolHost McpServer
+  McpServer                JSON-RPC 2.0 engine (initialize, tools/list, tools/call,
+                           resources/list, resources/read, ping). Depends only on jsoncpp + an
+                           injected ToolHost, a ServerInfo and a resource vector.
+  CompositeToolHost        every connected product's tools behind the one ToolHost McpServer
                            binds, AND the grant gate: filters tools/list, refuses an
                            out-of-scope call, a duplicate tool name at construction, and an
-                           argument no schema declares. `windmillServerInfo()` frames the
+                           argument no schema declares. A retired name answers with the sentence
+                           naming its replacement, consulted only after a catalog miss;
+                           construction refuses a retirement that shadows a live tool or names a
+                           replacement no product declares. `windmillServerInfo()` frames the
                            handshake.
-  McpHttpEndpoint.{h,cpp}  the Streamable-HTTP transport: sessions, Origin checks, the three
-                           verbs, and `McpAuth` — how a request becomes a `ToolCaller`.
+  McpHttpEndpoint          the Streamable-HTTP transport: sessions, Origin checks, the three
+                           verbs, and `McpAuth`.
 products/roadmap/adapters/mcp/
-  RoadmapTools.{h,cpp}     roadmap's ToolHost: catalog + dispatch into RoomRegistry / TreeRoom /
+  RoadmapTools             roadmap's ToolHost: catalog + dispatch into RoomRegistry / TreeRoom /
                            ProgressService. It declares its tools and never its own gate.
-  ToolArgs.{h,cpp}         argument validation and the sentence a refusal is written in.
-  ReadShape.{h,cpp}        the read projections (`fields`) and paging (`limit`/`cursor`).
-  EditReceipt.{h,cpp}      what an edit answers about diagnostics.
-  RoadmapResources.{h,cpp} `roadmapInstructions()` (this product's paragraph in the
-                           `instructions` brief) and `roadmapResources()` (`windmill://quickstart`).
+  ToolArgs                 argument validation and the sentence a refusal is written in.
+  ReadShape                the read projections (`fields`) and paging (`limit`/`cursor`).
+  EditReceipt              what an edit answers about diagnostics.
+  RoadmapResources         `roadmapInstructions()` and `roadmapResources()`.
   golden/wire_corpus.json  a byte-compared transcript of one authoring session (WireCorpusTest).
 platform/infra/
   main.cpp                 `windmill_server`   — REST + the collab socket + MCP, one process.
@@ -43,9 +45,8 @@ handshake, so the surface an agent connects to cannot differ by transport.
 The dependency arrow points inward: `McpServer` knows nothing of rooms, Postgres, or HTTP; the
 transports know nothing of the tools. The edit tools reuse the `commandFromJson` codec — their
 argument names are the command payload keys, save for the node handle, which the tool layer
-normalizes (`nodeId` → the codec's `id`) before the decode. `commandFromJson` is a bare yes/no
-because it is also the op-log replay decoder (`PgOpLog`), so **arguments are validated in the
-tool layer**, where the failure can name the field.
+normalizes (`nodeId` → the codec's `id`) before the decode. `commandFromJson` is also the op-log
+replay decoder (`PgOpLog`) and answers a bare yes/no, so arguments are validated in the tool layer.
 
 ## The error contract
 
@@ -83,8 +84,8 @@ published as `maxLength` / `maxItems` in its `inputSchema`.
 ## Resources
 
 `resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — edge direction,
-the handle law, what is never refused, the read projections, and the caps. A resource costs no
-tool slot. Everything it claims is checked against the shipped catalog by a test.
+the handle law, what is never refused, the read projections, and the caps. A test checks every
+claim it makes against the shipped catalog.
 
 ## Transports
 
@@ -103,16 +104,15 @@ both speak JSON-RPC 2.0, protocol version `2025-06-18`:
   - `GET` — would open a server→client SSE stream; there is none, so `405`.
   - `DELETE` — ends a session.
   - The `Origin` header is validated (DNS-rebinding protection); a client that sends no Origin
-    is not a browser and passes. Every tool is synchronous, so no server→client streaming is
-    used. `windmill_mcp_http` also serves `/healthz`; in `windmill_server` the liveness probe is
-    the app root (`deploy/docker-compose.yml`).
+    is not a browser and passes. `windmill_mcp_http` also serves `/healthz`; in `windmill_server`
+    the liveness probe is the app root (`deploy/docker-compose.yml`).
 
-**The HTTP transport is mounted twice, and the deployed one is `windmill_server`.** `main.cpp`
-registers the same `McpHttpEndpoint` on the REST host's `WINDMILL_MCP_PATH`, over the *same*
-`RoomRegistry` REST and the collab socket use — one live room per tree, and an agent's edit fans
-out to connected browsers through `WsPresenceBus` as it lands. `windmill_mcp_http` is the
-standalone build of that endpoint: its own process, its own `RoomRegistry`, a null presence bus.
-Use it for local and single-purpose runs only (see *Operating notes*).
+The deployed HTTP transport is `windmill_server`: `main.cpp` registers `McpHttpEndpoint` on the
+REST host's `WINDMILL_MCP_PATH`, over the *same* `RoomRegistry` REST and the collab socket use, so
+an agent's edit fans out to connected browsers through `WsPresenceBus` as it lands.
+`windmill_mcp_http` is the standalone build of that endpoint — its own process, its own
+`RoomRegistry`, a null presence bus — for local and single-purpose runs only (see *Operating
+notes*).
 
 ## Auth
 
@@ -155,10 +155,9 @@ from the products actually connected.
 **An empty scope is the account-wide grant** — the one exception to fail-closed, written down at
 the parse site (`platform/domain/ToolScope.h`).
 
-Tending does NOT go through the composite. `TendingService` holds roadmap's host directly,
-because a tend agent reads node text an attacker may have written (`ScopedToolHost.h`) and has no
-business seeing another product's tools. The two narrowings stack: `ScopedToolHost` pins a run to
-one tree, the composite pins a credential to its grant.
+Tending does NOT go through the composite: `TendingService` holds roadmap's host directly
+(`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
+composite pins a credential to its grant.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -227,22 +226,20 @@ for one node's whole text.
   `nodeCollisions`/`kindCollisions`; a new id is added; nothing is removed. The receipt counts
   `nodes`, `edges` and `kinds` as carried, so a batch whose prerequisites were put in the wrong
   place reads as `edges: 0`. `dryRun: true` previews the collisions and the refusals and changes
-  nothing. The graft is held to the per-tree capacity (10000 nodes, 20000 edges) like every other
-  write, counted on what the tree would hold AFTER the upsert, so re-sending nodes already
-  present costs nothing. The graft path does not run the domain's `validate()` — this tool's own
-  item checks are the only admission standing there.
+  nothing. The graft is held to the per-tree capacity (10000 nodes, 20000 edges), counted on what
+  the tree would hold AFTER the upsert, so re-sending nodes already present costs nothing. The
+  graft path does not run the domain's `validate()` — this tool's own item checks are the only
+  admission standing there.
 - **`set_progress`** accepts a bulk `updates[]` and evaluates the `prerequisitesMet` advisory
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. Unknown node ids are rejected, so no orphan overlay rows are created.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
-- **`add_kind`** seeds `label` + `description` inline.
-- **`find_nodes`** searches without pulling the whole tree: `color` or `kind` pins a hue (a node's
-  color *is* its kind), `state` pins the derived unlock state, `query` is a case-insensitive
-  substring over **id + label + description**; every set filter must match (AND). Matches come
-  back best first — exact id, id prefix, label hit, id substring, description-only hit. Matching
-  and ranking both live in the pure `selectNodes` read-model (`domain/NodeQuery`); the order is
-  deterministic, which is what keeps a resume `cursor` pointing at the row it was minted from.
+- **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a
+  node's color *is* its kind); every set filter must match (AND). Matches come back best first —
+  exact id, id prefix, label hit, id substring, description-only hit. Matching and ranking live in
+  the pure `selectNodes` read-model (`domain/NodeQuery`); the order is deterministic, which is what
+  keeps a resume `cursor` pointing at the row it was minted from.
 
 ## Build
 
@@ -260,9 +257,8 @@ claude mcp add --transport http windmill https://windmill.works/mcp
 ```
 
 The client is challenged, discovers the authorization server from
-`/.well-known/oauth-protected-resource`, and runs OAuth against the API host — you approve the
-grant in the browser and it acts as your account. A client that cannot do OAuth uses a personal
-key from settings instead, as `Authorization: Bearer <key>`.
+`/.well-known/oauth-protected-resource`, and runs OAuth against the API host. A client that
+cannot do OAuth uses a personal key from settings instead, as `Authorization: Bearer <key>`.
 
 ## Run — stdio (local)
 
@@ -305,12 +301,10 @@ owner. `WINDMILL_MCP_USER` is the fallback identity only.
 
 ## Operating notes
 
-- **One live room, one process holding it.** `windmill_server` mounts MCP over the same
-  `RoomRegistry` as REST and the socket, so agent and browser edits share one head, one `seq` and
-  one broadcast. Running `windmill_mcp_http` (or `windmill_mcp`) against the *same* database
-  opens a second registry: each process reloads head on open and is the authority for a tree
-  while it holds it, so two of them writing one tree can race on `(tree_id, seq)`. That is a
-  local/standalone topology, not a second production writer.
+- **One live room, one process holding it.** Running `windmill_mcp_http` (or `windmill_mcp`)
+  against the *same* database as `windmill_server` opens a second registry: each process reloads
+  head on open and is the authority for a tree while it holds it, so two of them writing one tree
+  can race on `(tree_id, seq)`. A local/standalone topology, never a second production writer.
 - **Blocking DB on the event loop.** Repositories are synchronous libpqxx. Each borrows a
   connection for one transaction from a bounded pool of at most 20
   (`platform/adapters/postgres/PgPool.h`), opened lazily and given a 5s statement timeout. The

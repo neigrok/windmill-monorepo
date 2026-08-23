@@ -36,8 +36,7 @@ std::vector<Link> linksFromJson(const Json::Value& array) {
   for (const Json::Value& value : array) {
     if (value.isString()) { links.push_back(Link{"", value.asString()}); continue; }
     if (!value.isObject()) continue;
-    // Each leaf read only once it IS a string: asString() on a number throws, and that throw used
-    // to escape the handler as a 500 rather than being answered as the malformed input it is.
+    // Each leaf read only once it IS a string: asString() on a number throws.
     Link link;
     if (value["label"].isString()) link.label = value["label"].asString();
     if (value["url"].isString()) link.url = value["url"].asString();
@@ -106,9 +105,8 @@ Json::Value toJson(const TreeSummary& summary) {
 
 Json::Value toJson(const GalleryEntry& entry) {
   Json::Value row(Json::objectValue);
-  // A gallery card is a registry row plus what the wall knows: the forks it inspired, the tree
-  // it came from, and the two facts about its reader — spelled the same as GET /v1/trees so one
-  // card component paints both surfaces.
+  // A gallery card is a registry row plus what the wall knows, spelled the same as GET /v1/trees
+  // so one card component paints both surfaces.
   row["id"] = entry.id.str();
   row["title"] = entry.title;
   row["total"] = entry.stats.total;
@@ -116,21 +114,18 @@ Json::Value toJson(const GalleryEntry& entry) {
   row["updatedAt"] = static_cast<Json::Int64>(entry.updatedAt);
   if (entry.stats.dominantKind) row["dominantKind"] = std::string(toString(*entry.stats.dominantKind));
   row["forks"] = entry.forks;
-  // Always spelled, never inferred: a card that must say "Listed by you" or refuse a second fork
-  // reads a boolean, and an absent key would leave it guessing.
+  // Always spelled, never inferred: an absent key would leave the card guessing.
   row["mine"] = entry.mine;
   row["forked"] = entry.forked;
-  // Present only when this tree is a fork whose source may still be named — an unlisted, private
-  // or deleted source leaves the key off entirely rather than naming an empty tree.
+  // Present only when this tree is a fork whose source may still be named; an unlisted, private
+  // or deleted source leaves the key off entirely.
   if (!entry.sourceTitle.empty()) row["sourceTitle"] = entry.sourceTitle;
   return row;
 }
 
-// The overlay as a lattice frame: one stamped register per node, which is everything a
-// replica needs to join it (GRAPH_SYNC_DESIGN.md §12). The three id sets are NOT sent — a
-// reader derives them from the statuses, and shipping both would be two spellings of one
-// fact on the wire. `none` rides along like any other value: it is a cleared register, and
-// the client needs it to converge, not a tombstone list beside the data.
+// The overlay as a lattice frame: one stamped register per node, everything a replica needs to
+// join it. The three id sets are NOT sent — a reader derives them from the statuses. `none` rides
+// along like any other value: it is a cleared register the client needs to converge.
 Json::Value toJson(const Progress& progress) {
   Json::Value marks(Json::arrayValue);
   for (const auto& [id, mark] : progress.marks) {
@@ -183,8 +178,7 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
 
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) {
   // Every read below goes through these: a field that is absent or null takes its default, a
-  // field of the wrong type refuses the whole document. Reading it any other way is what turned
-  // {"nodes":[1]} into an uncaught Json::LogicError and a 500.
+  // field of the wrong type refuses the whole document.
   auto text = [](const Json::Value& value, std::string& out) {
     if (value.isNull()) return true;
     if (!value.isString()) return false;
@@ -198,9 +192,8 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
     return true;
   };
   auto list = [](const Json::Value& value) { return value.isNull() || value.isArray(); };
-  // linksFromJson is deliberately lenient (it is shared with the command decoder and must never
-  // throw), so the document path states the strictness itself rather than letting a numeric url
-  // land as an empty one.
+  // linksFromJson is lenient — it is shared with the command decoder and must never throw — so
+  // the document path states the strictness itself.
   auto links = [](const Json::Value& value) {
     if (!value.isArray()) return false;
     for (const Json::Value& link : value) {

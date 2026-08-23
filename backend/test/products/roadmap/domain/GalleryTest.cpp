@@ -44,9 +44,7 @@ TEST(wall_ranks_by_forks_then_freshness_then_id) {
 }
 
 TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
-  // The whole of the wall's answer to abandonment. A progress mark writes only the owner's
-  // overlay and never moves the tree's own stamp, so a tiebreak reading that stamp alone would
-  // put a tree nobody has touched above one its owner ticks a step on every day.
+  // A progress mark writes only the owner's overlay and never moves the tree's own stamp.
   WallCandidate tended = candidate("t_tended", "Tended", 5, 1, 100);
   tended.lastMarkedAt = 900;
   WallCandidate abandoned = candidate("t_abandoned", "Abandoned", 5, 1, 500);
@@ -55,13 +53,12 @@ TEST(a_tended_tree_outranks_a_structurally_newer_one_nobody_has_opened) {
 
   REQUIRE_EQ(wall.size(), std::size_t{2});
   CHECK_EQ(wall[0].id, TreeId{"t_tended"});
-  CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});  // the row wears last-active, not the stamp
+  CHECK_EQ(wall[0].updatedAt, std::uint64_t{900});
   CHECK_EQ(wall[1].id, TreeId{"t_abandoned"});
   CHECK_EQ(wall[1].updatedAt, std::uint64_t{500});
 }
 
 TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
-  // The fold is a max, not a preference: a stale mark never drags down a tree edited since.
   WallCandidate edited = candidate("t_edited", "Edited", 5, 1, 900);
   edited.lastMarkedAt = 100;
   WallCandidate marked = candidate("t_marked", "Marked", 5, 1, 100);
@@ -77,8 +74,6 @@ TEST(last_active_is_the_freshest_of_the_two_stamps_in_either_direction) {
 }
 
 TEST(forks_still_outrank_freshness) {
-  // Last-active only ever breaks a tie: the wall is fork-ranked first, so a much-forked plan
-  // never falls behind a busy one.
   WallCandidate popular = candidate("t_popular", "Popular", 5, 7, 100);
   WallCandidate busy = candidate("t_busy", "Busy", 5, 1, 100);
   busy.lastMarkedAt = 9000;
@@ -99,7 +94,7 @@ TEST(wall_drops_a_tree_too_small_to_read_as_a_plan) {
   std::vector<GalleryEntry> wall = publicWall(candidates, ANONYMOUS);
 
   REQUIRE_EQ(wall.size(), std::size_t{1});
-  CHECK_EQ(wall[0].id, TreeId{"t_plan"});  // the stub's 99 forks don't buy it a place
+  CHECK_EQ(wall[0].id, TreeId{"t_plan"});
 }
 
 TEST(wall_drops_an_unnamed_tree) {
@@ -116,8 +111,6 @@ TEST(wall_drops_an_unnamed_tree) {
 }
 
 TEST(wall_keeps_an_unstarted_plan) {
-  // No progress floor: an unstarted plan is still a plan, and an abandoned one loses on ranking
-  // rather than being gated off the wall.
   std::vector<GalleryEntry> wall = publicWall({candidate("t_new", "Untouched", 5, 0, 100)}, ANONYMOUS);
 
   REQUIRE_EQ(wall.size(), std::size_t{1});
@@ -207,7 +200,7 @@ TEST(who_is_reading_never_changes_the_ranking) {
       candidate("t_b", "B", 5, 7, 100),
       candidate("t_c", "C", 5, 3, 100),
   };
-  candidates[0].owner = UserId{"u_sam"};  // the reader's own tree earns no lift
+  candidates[0].owner = UserId{"u_sam"};
 
   const Viewer sam{UserId{"u_sam"}, {TreeId{"t_b"}}};
   std::vector<GalleryEntry> anonymousWall = publicWall(candidates, Viewer{});
@@ -235,7 +228,7 @@ TEST(a_page_is_the_first_limit_entries_and_the_token_that_resumes_it) {
   REQUIRE(second.has_value());
   REQUIRE_EQ(second->entries.size(), std::size_t{1});
   CHECK_EQ(second->entries[0].id, TreeId{"t_c"});
-  CHECK_EQ(second->nextCursor, std::string(""));  // the last page never invites another
+  CHECK_EQ(second->nextCursor, std::string(""));
 }
 
 TEST(a_page_that_holds_the_whole_index_carries_no_cursor) {

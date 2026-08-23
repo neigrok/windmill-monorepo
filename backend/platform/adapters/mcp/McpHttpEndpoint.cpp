@@ -58,8 +58,7 @@ bool originAllowed(const std::set<std::string>& allowed, const std::string& orig
   return allowed.count(origin) > 0;
 }
 
-// Accept whatever the client labelled its body as: prefer Drogon's parse, fall back to a
-// raw parse so a missing/loose Content-Type still works.
+// Accept whatever the client labelled its body as: prefer Drogon's parse, fall back to a raw parse.
 Json::Value parseBody(const drogon::HttpRequestPtr& request) {
   // Both Drogon's getJsonObject and a manual parse throw on an over-nested body; keep the
   // whole thing a null value so handlePost answers a clean parse error, never a 500/crash.
@@ -110,9 +109,7 @@ std::optional<ToolCaller> McpHttpEndpoint::resolveCaller(const drogon::HttpReque
   const std::string bearer = authorization.substr(7);
   if (bearer.empty()) return std::nullopt;
 
-  // Each credential answers with its own grant — this is the point where the two halves of an
-  // authorization stop being one UserId, and where a read-only token stops being indistinguishable
-  // from a full one for the rest of the request.
+  // Each credential answers with its own grant: a read-only token is not interchangeable with a full one.
   if (auth_.oauth)
     if (std::optional<ToolCaller> caller = auth_.oauth->resolveAccessToken(bearer, auth_.resource)) return caller;
   if (auth_.mcpKeys)

@@ -46,7 +46,6 @@ TEST(dangling_edge_detected) {
 }
 
 TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
-  // The phone deletes "parent"; the laptop, concurrently, builds a child under it.
   LooseGraph g;
   put(g, "parent");
   g.deleteNode(nid("parent"), at(10));           // the delete stands
@@ -57,7 +56,6 @@ TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
   REQUIRE_EQ(report.maskedWork.size(), 1u);
   CHECK_EQ(report.maskedWork[0], nid("parent"));
 
-  // Resurrecting the parent clears the masked-work signal — the child is re-connected.
   g.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
   CHECK_EQ(TreeDiagnostics::assess(g).maskedWork.size(), 0u);
 }

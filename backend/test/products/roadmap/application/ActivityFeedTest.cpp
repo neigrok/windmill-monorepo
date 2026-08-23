@@ -7,7 +7,6 @@ using namespace wm::fake;
 
 namespace {
 
-// current tree: Windmill (gold root) ← WebGL2 renderer (sky).
 TreeData currentTree() {
   TreeData data;
   data.id = tid();
@@ -50,7 +49,7 @@ TEST(activity_projects_ops_to_human_events_skipping_nudges) {
 
   CHECK_EQ(events[0].seq, 1u);
   CHECK_EQ(events[0].verb, std::string("added"));
-  CHECK_EQ(events[0].summary, std::string("added WebGL2 renderer"));  // current label, not the payload's
+  CHECK_EQ(events[0].summary, std::string("added WebGL2 renderer"));
   CHECK_EQ(events[0].actor, std::string("Guest 5"));
   CHECK_EQ(events[0].kind, std::string("sky"));
   CHECK_EQ(events[0].at, 1000u);
@@ -61,7 +60,7 @@ TEST(activity_projects_ops_to_human_events_skipping_nudges) {
 
   CHECK_EQ(events[2].seq, 4u);
   CHECK_EQ(events[2].verb, std::string("linked"));
-  CHECK_EQ(events[2].summary, std::string("linked Windmill → WebGL2 renderer"));  // trunk edge, no cross-branch note
+  CHECK_EQ(events[2].summary, std::string("linked Windmill → WebGL2 renderer"));
   CHECK_EQ(events[2].node, nid("renderer"));
 
   CHECK_EQ(events[3].verb, std::string("removed"));

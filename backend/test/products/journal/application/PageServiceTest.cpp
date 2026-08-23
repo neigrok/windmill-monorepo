@@ -5,8 +5,6 @@
 using namespace wm;
 using namespace wm::fake;
 
-// One writer's page on a given day. Mood/energy/source are held at their defaults so a test reads as
-// the thing it exercises — the day, the body, and the stamp that decides the LWW race.
 namespace {
 Page pageOn(std::string iso, std::string body, Hlc stamp) {
   return Page{uid(), ld(std::move(iso)), std::move(body), Mood::none, Energy::none, Source::typed,

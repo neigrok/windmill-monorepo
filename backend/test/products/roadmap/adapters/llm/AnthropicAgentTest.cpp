@@ -10,8 +10,6 @@ using namespace wm;
 
 namespace {
 
-// A ToolHost the test scripts: it declares a fixed catalog and answers every callTool
-// through a supplied responder, recording each call so the loop's tool traffic is observable.
 struct FakeToolHost : ToolHost {
   std::vector<ToolDeclaration> catalog;
   std::vector<std::pair<std::string, Json::Value>> calls;
@@ -26,9 +24,7 @@ struct FakeToolHost : ToolHost {
   }
 };
 
-// A scripted MessagesCall: it hands out `replies` one per iteration, then falls back to
-// `whenExhausted` (a repeating reply, e.g. for the cap) or nullopt (an upstream failure). Every
-// request the loop sends is recorded.
+// Hands out `replies` one per iteration, then falls back to `whenExhausted` (a repeating reply) or nullopt (an upstream failure).
 struct FakeModel {
   std::vector<Json::Value> replies;
   std::optional<Json::Value> whenExhausted;
@@ -104,13 +100,10 @@ struct Recorder {
 const TreeId kTree{"t_0123456789abcdef"};
 const UserId kCaller{"agent"};
 
-// One declaration for the fake catalog. A tend acts as the account on itself, so the level here is
-// beside the point — ScopedToolHost is what narrows a run, not the grant.
 ToolDeclaration declared(const char* name, const char* description) {
   return ToolDeclaration{mcpTool(name, description), "roadmap", Access::write};
 }
 
-// What the loop itself hands to agentTools: the catalog as the run's caller sees it.
 Json::Value catalogSeenBy(const FakeToolHost& host) {
   return host.listTools(ToolCaller{kCaller, ToolScope::everything()});
 }
@@ -165,8 +158,7 @@ TEST(mutates_tree_treats_the_get_list_find_family_as_read_only) {
 }
 
 TEST(mutates_tree_counts_describe_kind_which_writes_despite_its_name) {
-  // "Set a legend kind's description" — it reads like an inspector but it mutates, so an
-  // edit-only tend that only re-describes a kind still counts as having changed the tree.
+  // "Set a legend kind's description" reads like an inspector but mutates.
   CHECK(mutatesTree("describe_kind"));
 }
 
@@ -201,43 +193,35 @@ TEST(drive_agent_runs_the_tools_and_returns_the_receipt_on_end_turn) {
   CHECK_EQ(outcome.error, std::string(""));
   CHECK_EQ(rec.failures.size(), 0u);
 
-  // One step fired, as it happened, for the one tool the model asked for.
   REQUIRE_EQ(rec.steps.size(), 1u);
   CHECK_EQ(rec.steps[0].tool, std::string("create_node"));
   CHECK(rec.steps[0].changedTree);
   CHECK_FALSE(rec.steps[0].failed);
   CHECK_EQ(rec.steps[0].note, std::string("create_node"));
 
-  // get_tree first (the read), then the create the model asked for.
   REQUIRE_EQ(host.calls.size(), 2u);
   CHECK_EQ(host.calls[0].first, std::string("get_tree"));
   CHECK_EQ(host.calls[1].first, std::string("create_node"));
 
-  // The first request carried the translated catalog, the Sonnet model, and the sentence.
   REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-sonnet-5"));
   CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
   CHECK_EQ(model.requests[0]["tools"], agentTools(catalogSeenBy(host)));
-  // System is a cached text block (caches the tool catalog with it), not a bare string.
   CHECK(model.requests[0]["system"][0]["text"].asString().size() > 0);
   CHECK_EQ(model.requests[0]["system"][0]["cache_control"]["type"].asString(), std::string("ephemeral"));
-  // The first user turn (prompt + tree) is promoted to a block so the conversation cache breakpoint
-  // has somewhere to sit; the sentence is inside that block.
+  // The first user turn is promoted to a block so the conversation cache breakpoint has somewhere to sit.
   CHECK(model.requests[0]["messages"][0]["content"][0]["text"].asString().find("add a deploy step") !=
         std::string::npos);
   CHECK_EQ(model.requests[0]["messages"][0]["content"][0]["cache_control"]["type"].asString(),
            std::string("ephemeral"));
 
-  // The second request fed the tool_result back as a user turn keyed to the tool_use id.
   const Json::Value& secondMessages = model.requests[1]["messages"];
   const Json::Value& lastTurn = secondMessages[secondMessages.size() - 1];
   CHECK_EQ(lastTurn["role"].asString(), std::string("user"));
   CHECK_EQ(lastTurn["content"][0]["type"].asString(), std::string("tool_result"));
   CHECK_EQ(lastTurn["content"][0]["tool_use_id"].asString(), std::string("toolu_1"));
 
-  // The conversation cache breakpoint MOVED to the newest turn: the first message no longer
-  // carries it, the last one does. This is what keeps the count under the four-per-request cap
-  // however long the loop runs — a run that accumulated a marker per turn would 400.
+  // The conversation cache breakpoint MOVES to the newest turn, which keeps the count under the four-per-request cap however long the loop runs.
   int marks = 0;
   for (const Json::Value& message : secondMessages)
     for (const Json::Value& block : message["content"])
@@ -277,7 +261,7 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
       driveAgent("remove that", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
 
   CHECK(outcome.ok);
-  CHECK_EQ(outcome.edits, 0);  // a failed mutation changed nothing
+  CHECK_EQ(outcome.edits, 0);
   REQUIRE_EQ(rec.steps.size(), 1u);
   CHECK(rec.steps[0].failed);
   CHECK_FALSE(rec.steps[0].changedTree);
@@ -296,7 +280,7 @@ TEST(drive_agent_treats_the_iteration_cap_as_a_failure) {
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.error, std::string("hit the 12-iteration cap without the model finishing"));
   CHECK_EQ(outcome.edits, 12);
-  CHECK_EQ(model.requests.size(), 12u);  // stopped at the cap, not one more
+  CHECK_EQ(model.requests.size(), 12u);
   CHECK_EQ(rec.steps.size(), 12u);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0], std::string("agent.run | hit the 12-iteration cap without the model finishing"));
@@ -343,7 +327,7 @@ TEST(drive_agent_fails_when_the_tree_cannot_be_read) {
 
   CHECK_FALSE(outcome.ok);
   CHECK_EQ(outcome.error, std::string("could not read the tree before tending"));
-  CHECK_EQ(model.requests.size(), 0u);  // never reached the model
+  CHECK_EQ(model.requests.size(), 0u);
   REQUIRE_EQ(rec.failures.size(), 1u);
   CHECK_EQ(rec.failures[0], std::string("agent.setup | could not read the tree before tending"));
 }
@@ -356,7 +340,7 @@ TEST(anthropic_agent_without_a_key_is_unconfigured_and_never_calls_upstream) {
   Recorder rec;
   const AgentOutcome outcome = agent.run("anything", kTree, kCaller, host, rec.onStep());
   CHECK_FALSE(outcome.ok);
-  CHECK_EQ(host.calls.size(), 0u);  // no tree read, no model call
+  CHECK_EQ(host.calls.size(), 0u);
 }
 
 TEST(anthropic_agent_with_a_key_reports_configured) {
@@ -373,8 +357,6 @@ struct RecordedSpend : UsageSink {
   void record(const AiSpend& spend) noexcept override { rows.push_back(spend); }
 };
 
-// A reply carrying what the vendor billed for it. The loop itself discards `usage`, which is
-// precisely why the metering wraps the call instead of living inside driveAgent.
 Json::Value billed(Json::Value reply, long long input, long long output, long long cacheRead) {
   Json::Value usage(Json::objectValue);
   usage["input_tokens"] = static_cast<Json::Int64>(input);
@@ -413,24 +395,21 @@ TEST(metered_writes_one_row_per_turn_with_a_stable_run_id_and_a_climbing_iterati
   CHECK(outcome.ok);
   REQUIRE_EQ(ledger->rows.size(), std::size_t{3});
   for (std::size_t turn = 0; turn < 3; ++turn) {
-    // One run id across all three, which is the only thing that lets a conversation be summed as
-    // the single act it was rather than read as three unrelated calls.
+    // One run id across all three, so a conversation can be summed as the single act it was.
     CHECK_EQ(ledger->rows[turn].runId, std::string("tend-abc"));
     CHECK_EQ(ledger->rows[turn].iteration, static_cast<int>(turn));
     CHECK_EQ(ledger->rows[turn].product, std::string("roadmap"));
     CHECK_EQ(ledger->rows[turn].operation, std::string("tend"));
     CHECK_EQ(ledger->rows[turn].model, std::string("claude-sonnet-5"));
     CHECK(ledger->rows[turn].user == std::optional<UserId>{kCaller});
-    CHECK_EQ(ledger->rows[turn].outcome, std::string("ok"));   // tool_use is a finished turn too
+    CHECK_EQ(ledger->rows[turn].outcome, std::string("ok"));
   }
   CHECK_EQ(ledger->rows[0].tokens.input, 9000LL);
   CHECK_EQ(ledger->rows[0].tokens.cacheRead, 0LL);
-  CHECK_EQ(ledger->rows[1].tokens.cacheRead, 9000LL);   // the prefix cached by the first turn
+  CHECK_EQ(ledger->rows[1].tokens.cacheRead, 9000LL);
   CHECK_EQ(ledger->rows[2].tokens.output, 60LL);
 }
 
-// The failure that costs the most money in this product: twelve full Sonnet turns, a tree half
-// built, and nothing to show for it. It is the single most important row in the ledger.
 TEST(metered_records_all_twelve_turns_of_a_run_that_hit_the_cap) {
   FakeToolHost host;
   FakeModel model;
@@ -462,7 +441,7 @@ TEST(metered_records_a_turn_the_model_stopped_early_as_truncated) {
 
   REQUIRE_EQ(ledger->rows.size(), std::size_t{1});
   CHECK_EQ(ledger->rows[0].outcome, std::string("truncated"));
-  CHECK_EQ(ledger->rows[0].tokens.output, 8000LL);   // the budget it burned on the way to nothing
+  CHECK_EQ(ledger->rows[0].tokens.output, 8000LL);
 }
 
 TEST(metered_records_a_turn_that_never_landed_as_transport) {
@@ -495,9 +474,8 @@ TEST(metered_over_the_fuse_refuses_the_turn_before_it_reaches_the_vendor) {
                  rec.report());
 
   CHECK_FALSE(outcome.ok);
-  CHECK_EQ(model.requests.size(), 0u);   // refused BEFORE the call, or it is not a fuse
-  CHECK_EQ(ledger->rows.size(), 0u);     // nothing spent, so nothing to record
-  // The alert fires ONCE. A report per blocked call is the same runaway pointed at the alerting.
+  CHECK_EQ(model.requests.size(), 0u);
+  CHECK_EQ(ledger->rows.size(), 0u);
   REQUIRE_EQ(rec.failures.size(), 2u);
   CHECK(rec.failures[0].rfind("ai.fuse | over the hourly spend ceiling", 0) == 0);
   CHECK_EQ(rec.failures[1],

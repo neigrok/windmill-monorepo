@@ -120,9 +120,7 @@ TEST(delta_masks_fields_the_peer_already_covers) {
   CHECK_EQ(node.color, NodeColor::brick);
 }
 
-// The order register must ride anti-entropy exactly like color: frontier observes orderAt,
-// nodeUncovered detects it, maskNode carries it. Miss any one and a reorder converges only via
-// a full graft, never a delta — so this asserts the whole trio through one masked delta.
+// The order register rides anti-entropy exactly like color: frontier observes orderAt, nodeUncovered detects it, maskNode carries it.
 TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   LooseGraph source;
   source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
@@ -159,14 +157,12 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   Legend baseLegend = Legend::seededDefaults(at(1));
   LegendState baseLegendState = baseLegend.exportState();
 
-  // Replica X: renames root late, adds a node, adds a kind.
   LooseGraph xGraph(base);
   xGraph.setLabel(nid("root"), "Root-X", at(30, "x"));
   xGraph.createNode(nid("x1"), "X1", "x", NodeColor::gold, std::nullopt, at(31, "x"));
   Legend xLegend(baseLegendState);
   xLegend.addKind(kid("infra"), NodeColor::sky, at(32, "x"));
 
-  // Replica Y: deletes root, builds a child under it offline, relabels a kind.
   LooseGraph yGraph(base);
   yGraph.deleteNode(nid("root"), at(20, "y"));
   yGraph.createNode(nid("y1"), "Y1", "x", NodeColor::plum, std::nullopt, at(21, "y"));
@@ -174,7 +170,6 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   Legend yLegend(baseLegendState);
   yLegend.setLabel(kid("build"), "Build-Y", at(23, "y"));
 
-  // The truth: a replica that simply joins both full states.
   LooseGraph truthGraph(base);
   truthGraph.join(xGraph.exportState());
   truthGraph.join(yGraph.exportState());
@@ -182,7 +177,6 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   truthLegend.join(xLegend.exportState());
   truthLegend.join(yLegend.exportState());
 
-  // Anti-entropy: each computes the delta the other is missing, against original frontiers.
   VersionVector vX = frontier(xGraph.exportState(), xLegend.exportState());
   VersionVector vY = frontier(yGraph.exportState(), yLegend.exportState());
   Subgraph forY = deltaBetween(xGraph.exportState(), xLegend.exportState(), vY);
@@ -196,8 +190,6 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   CHECK(xLegend.exportState() == truthLegend.exportState());
   CHECK(yLegend.exportState() == truthLegend.exportState());
 
-  // And the product principle holds through the reconciliation: root is deleted, yet the
-  // child built under it offline survives and is one re-add from resurrection.
   CHECK_FALSE(xGraph.hasNode(nid("root")));
   CHECK(xGraph.hasNode(nid("y1")));
   CHECK_EQ(xGraph.presentEdges().size(), 1u);

@@ -50,7 +50,6 @@ AmplitudeUsageSink::AmplitudeUsageSink(std::shared_ptr<UsageSink> ledger,
 void AmplitudeUsageSink::record(const AiSpend& spend) noexcept {
   // The ledger first and unconditionally; the mirror must never cost us a row. `record` is noexcept
   // on both sides, so nothing here escapes into the reply the user is owed.
-  // cost us a row. `record` is noexcept on both sides, so nothing here can escape into the reply the
   if (ledger_) ledger_->record(spend);
   if (!amplitude_) return;
 

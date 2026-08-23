@@ -63,7 +63,8 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.due =
       echoes_
           .duePage(user, request.day, corpusStamp,
-                   PipelineVersions{segmenter_.version(), embedder_.version()})
+                   PipelineVersions{segmenter_.version(), embedder_.version(),
+                                    curator_.version()})
           .has_value();
 
   // The corpus, read BEFORE anything can return early, so an empty page or an unwired embedder does

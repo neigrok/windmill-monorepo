@@ -10,8 +10,6 @@ using namespace wm;
 
 namespace {
 
-// Records every call and answers a canned catalog spanning both single-tree tools and the
-// cross-tree reach the scope must strip.
 struct RecordingToolHost : ToolHost {
   struct Call {
     std::string name;
@@ -34,8 +32,7 @@ struct RecordingToolHost : ToolHost {
     calls.push_back({name, arguments, caller.user.str()});
     Json::Value out(Json::objectValue);
     out["ok"] = true;
-    // Mirror applyEdit: EVERY single-node edit echoes the id it touched (create, rename, recolor),
-    // so the recorder must key on the tool name, not the mere presence of an id.
+    // Mirror applyEdit: EVERY single-node edit echoes the id it touched, so the recorder keys on the tool name.
     if (name == "create_node" || name == "rename_node") out["id"] = arguments.get("id", "minted").asString();
     if (name == "import_subgraph") out["nodeCollisions"] = Json::Value(Json::arrayValue);  // nothing pre-existing
     return ToolResult::json(out);
@@ -88,7 +85,7 @@ TEST(scoped_tool_host_refuses_a_cross_tree_tool_without_reaching_the_inner_host)
   ScopedToolHost scoped(inner, TreeId{"t_target"});
   const ToolResult deleted = scoped.callTool("delete_tree", Json::Value(Json::objectValue), tender("u1"));
   CHECK(deleted.isError);
-  CHECK_EQ(inner.calls.size(), std::size_t{0});  // the destructive call never reached the real host
+  CHECK_EQ(inner.calls.size(), std::size_t{0});
 }
 
 TEST(scoped_tool_host_records_exactly_the_nodes_the_tend_planted) {
@@ -98,9 +95,7 @@ TEST(scoped_tool_host_records_exactly_the_nodes_the_tend_planted) {
 
   Json::Value a(Json::objectValue); a["id"] = "n1"; scoped.callTool("create_node", a, u);
   Json::Value b(Json::objectValue); b["id"] = "n2"; scoped.callTool("create_node", b, u);
-  // A rename echoes an id too (applyEdit does), but it created nothing — it must NOT be recorded.
   Json::Value renamed(Json::objectValue); renamed["id"] = "existing"; scoped.callTool("rename_node", renamed, u);
-  // import_subgraph plants every incoming node that wasn't already there (no collisions here).
   Json::Value imp(Json::objectValue);
   Json::Value nodes(Json::arrayValue);
   Json::Value n3(Json::objectValue); n3["id"] = "n3"; nodes.append(n3);

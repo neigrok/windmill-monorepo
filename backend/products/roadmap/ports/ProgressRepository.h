@@ -8,8 +8,7 @@
 
 namespace wm {
 
-// One tree's overlay for a user, plus when they last marked it — the registry reads both:
-// the completed set drives `done`, lastMarkedAt bumps the tree's recency.
+// The completed set drives `done`; lastMarkedAt bumps the tree's recency.
 struct ProgressDigest {
   Progress overlay;
   std::uint64_t lastMarkedAt = 0;  // epoch ms of the caller's latest mark on this tree, 0 if none
@@ -19,9 +18,8 @@ struct ProgressDigest {
 // op log or the tree document. `none` is a stamped VALUE, not a row delete.
 //
 // `at` is the stamp the marking replica minted and the ONLY input to the merge. `receivedAtMs` is
-// when this server took delivery, on its own clock, so a reader can be told when a mark happened
-// without being told a marking device's clock. It is passed in rather than taken as `now()` inside
-// the statement, so one write's row and the echo that announces it cannot disagree.
+// when this server took delivery, on its own clock; it is passed in rather than taken as `now()`
+// inside the statement, so a write's row and the echo that announces it cannot disagree.
 struct ProgressRepository {
   virtual ~ProgressRepository() = default;
   virtual Progress load(const TreeId& tree, const UserId& user) = 0;

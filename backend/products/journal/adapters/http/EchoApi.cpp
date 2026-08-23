@@ -18,9 +18,8 @@ namespace wm {
 namespace {
 constexpr std::uint64_t kDayMs = 24ULL * 60 * 60 * 1000;
 
-// How much of a passage an unentitled reader is shown. Enough to recognise their own sentence and
-// know it is genuinely theirs; not enough to be the feature. The withheld count travels with it so
-// the cut is stated rather than disguised.
+// How much of a passage an unentitled reader is shown: enough to recognise their own sentence, not
+// enough to be the feature. The withheld count travels with it so the cut is stated.
 constexpr std::size_t kFreeWords = 8;
 
 drogon::HttpResponsePtr noContent() {
@@ -37,17 +36,14 @@ std::vector<std::string> wordsOf(const std::string& text) {
 }
 
 // The honest cut. An entitled reader gets the passage; everyone else gets its real opening words
-// and the number withheld — which is the truth about what exists, rather than the older behaviour
-// of hiding that anything was found at all.
+// and the number withheld.
 void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
   Json::Value match(Json::objectValue);
   match["day"] = echo.matchDay.iso();
   match["isSelf"] = echo.matchIsSelf;
   match["source"] = echo.matchSource == Source::spoken ? "spoken" : "typed";
-  // The reader's own answer, on both sides of the cut: whether they are shown the passage or its
-  // opening words, "I already said this one was useful" is a fact about them and not about what
-  // they have paid for. Served rather than left to the device, because a mark made on a laptop
-  // that a phone cannot see is a mark the phone asks for a second time.
+  // The reader's own answer, on both sides of the cut, and served rather than left to the device so
+  // a mark made on a laptop is not asked for again on a phone.
   match["useful"] = echo.markedUseful;
 
   if (entitled) {
@@ -55,8 +51,7 @@ void appendMatch(Json::Value& into, const EchoView& echo, bool entitled) {
     match["withheldWords"] = 0;
     // Which occurrence of that text the passage is, 0 for the first. Absent when the server has
     // nothing honest to say — the body moved under the passage — and absent for the honest cut
-    // below, where the text served is a prefix and an occurrence count of the whole passage would
-    // be a number about a string the reader was never handed.
+    // below, where the text served is a prefix.
     if (echo.matchOccurrenceHint >= 0) match["occurrenceHint"] = echo.matchOccurrenceHint;
     into.append(match);
     return;
@@ -88,9 +83,8 @@ Json::Value toJson(const EchoSweepReport& report) {
 }
 
 
-// The tuning door's query knobs. A malformed value is IGNORED rather than answered 400: every one
-// of these is an experiment an operator is typing by hand, and a typo that silently changes the
-// policy is the only outcome worth refusing — falling back to the shipped default cannot.
+// The tuning door's query knobs. A malformed value is IGNORED rather than answered 400: these are
+// experiments an operator types by hand, and the fallback is the shipped default.
 double knob(const drogon::HttpRequestPtr& req, const char* name, double fallback) {
   const std::string value = req->getParameter(name);
   if (value.empty()) return fallback;
@@ -128,8 +122,7 @@ Json::Value toJson(const SelectionRules& rules) {
   return body;
 }
 
-// One candidate and the whole of what the rules read about it. `fate` is the answer the operator
-// came for; everything beside it is the arithmetic behind that answer.
+// One candidate and the whole of what the rules read about it.
 Json::Value toJson(const CandidateNote& note) {
   Json::Value body(Json::objectValue);
   body["spanId"] = static_cast<Json::Int64>(note.spanId);
@@ -168,7 +161,7 @@ Json::Value toJson(const EchoExplanation& explained) {
   page["bodyBytes"] = static_cast<Json::UInt64>(explained.body.size());
   page["bodyStampMs"] = static_cast<Json::UInt64>(explained.bodyStampMs);
   // Whether a save right now would derive at all — a settled page answers "no echoes" without the
-  // pipeline running, and that is a different silence from every rule below saying no.
+  // pipeline running, which is a different silence from every rule below saying no.
   page["due"] = explained.due;
   page["storedSpans"] = explained.storedSpans;
   body["page"] = page;
@@ -184,7 +177,7 @@ Json::Value toJson(const EchoExplanation& explained) {
 
   Json::Value corpus(Json::objectValue);
   // Under THIS embedding version only: a version bump leaves the old vectors unreachable, which
-  // reads to a user as echoes simply stopping, so the number has to be visible here.
+  // reads to a user as echoes simply stopping.
   corpus["spans"] = explained.corpus;
   corpus["history"] = static_cast<int>(explained.history.size());
   body["corpus"] = corpus;
@@ -197,8 +190,8 @@ Json::Value toJson(const EchoExplanation& explained) {
     passages.append(one);
   }
   body["passages"] = passages;
-  // Where those units came from, because it changes what the answer means: the stored cut is what
-  // the page reaches on today, a fresh one is what it WOULD reach if it were re-derived now.
+  // Where those units came from: the stored cut is what the page reaches on today, a fresh one is
+  // what it WOULD reach if it were re-derived now.
   body["unitsFromStorage"] = explained.unitsFromStorage;
   body["unitsDiscarded"] = explained.unitsDiscarded;
 
@@ -297,15 +290,13 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   const bool entitled = entitlements_->hasWindmillOne(caller->id, caller->email.value);
 
   // Which pages the reader has already answered "not now" on. Served rather than remembered by the
-  // device, because a decline that only one device knows about is a decline the next device ignores
-  // — and being asked again on your phone is precisely the nagging this refuses to do.
+  // device, so the next device does not ask again.
   std::set<std::string> offersRetired;
   for (const LocalDate& day : echoes_->retiredOffers(caller->id, *first, *last))
     offersRetired.insert(day.iso());
 
-  // Grouped by the page that carries them: the canon renders one card per page, and the ordering
-  // the repository returns (newest trigger first, then each page's matches newest first) is the
-  // order the surface draws.
+  // Grouped by the page that carries them, in the order the repository returns: newest trigger
+  // first, then each page's matches newest first.
   Json::Value pages(Json::arrayValue);
   std::string openDay;
   Json::Value page(Json::objectValue);
@@ -330,18 +321,14 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     pages.append(page);
   }
 
-  // How many pages the reader has written on, whether or not any of them carries an echo. The
-  // surface owes them no mark and no offer below a ~20-page corpus floor, and the browser cannot
-  // count pages it has not synced — so the floor is unenforceable unless the count is served.
+  // The browser cannot count pages it has not synced, so the ~20-page floor is unenforceable unless
+  // this is served.
   Json::Value body(Json::objectValue);
   body["pages"] = pages;
   body["pagesWritten"] = echoes_->pagesWritten(caller->id);
-  // The ~20-page corpus floor is a rule about whether this feature has anything true to sell yet,
-  // and it is right for a stranger's first fortnight. It is wrong for the people building it: an
-  // owner's account is where the surface has to be looked at, and below the floor the client draws
-  // NOTHING — no mark, no tab, not even the honest cut — so a working echo is indistinguishable
-  // from a broken pipeline. Measured on the owner's own journal: twelve pages, real echoes stored
-  // and served, and a blank canvas. The floor still applies to everybody else.
+  // The ~20-page corpus floor is right for a stranger's first fortnight and wrong for the people
+  // building it: below the floor the client draws NOTHING, so a working echo is indistinguishable
+  // from a broken pipeline. The floor still applies to everybody else.
   body["floorWaived"] = entitlements_->isOwner(caller->email.value);
   cb(jsonResponse(body));
 }
@@ -363,15 +350,10 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The reader waves away a pairing between two DAYS, and that gesture says two separate things.
-  // It retires the pair — keyed on the two passages' content down in storage, because an ordinal
-  // shifts the moment a sentence is inserted and a position-keyed dismissal would quietly
-  // resurrect the very echo they retired. And it is a JUDGEMENT, the negative half of the only
-  // dataset this feature has about whether its curator is any good.
-  //
-  // Two calls rather than one hidden side effect, and in this order: the dismissal writes to its
-  // own table and leaves journal_echo standing, so the signal still finds the row it needs to copy
-  // the retrieval score and the curator's version off.
+  // Waving away a pairing between two DAYS says two things: it retires the pair — keyed on the two
+  // passages' content down in storage, because an ordinal shifts the moment a sentence is inserted —
+  // and it is a JUDGEMENT. Two calls, in this order: the dismissal leaves journal_echo standing, so
+  // the signal still finds the row it copies the score and version off.
   echoes_->dismissPair(*caller, *trigger, *match);
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a pairing that is already gone dismisses nothing, and says 204
@@ -392,11 +374,9 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // "Not useful" is one tap on a panel, so it is one request. The pair-level door stays — a reader
-  // retiring a single match still has one — but nine matches must not cost nine round trips, each
-  // of which can fail on its own and leave the page half faded. The judgement is recorded for all
-  // of them too: this is the gesture where a reader actually says "not useful", and a dataset that
-  // heard only the pair-level door would be missing most of its negative labels.
+  // "Not useful" is one tap on a panel, so it is one request: nine matches must not cost nine round
+  // trips, each able to fail on its own and leave the page half faded. The judgement is recorded for
+  // all of them too.
   echoes_->dismissPage(*caller, *trigger);
   echoes_->recordPageSignal(*caller, *trigger, EchoSignal::notUseful);
   cb(noContent());   // idempotent: a page with nothing left to retire dismisses nothing, and says 204
@@ -417,9 +397,8 @@ void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // "Not now" — a different answer from "Not useful", and it costs the reader nothing. The echoes
-  // on this page stay, the honest cut stays, and only the asking stops. Recorded server-side so the
-  // same person is not asked again from their phone.
+  // "Not now" — the echoes on this page stay, the honest cut stays, and only the asking stops.
+  // Recorded server-side so the same person is not asked again.
   echoes_->dismissOffer(*caller, *day);
   cb(noContent());   // idempotent: declining twice is declining once
 }
@@ -441,10 +420,8 @@ void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The reader saying outright that a pairing was worth showing them. It changes nothing they can
-  // see beyond the mark itself — no echo is retired, nothing is re-ranked tonight — and it exists
-  // because the alternative is judging a curator on its complaints alone. It answers 204 however
-  // many times it is pressed, the same discipline the dismissal doors keep.
+  // The reader saying outright that a pairing was worth showing them: no echo is retired and nothing
+  // is re-ranked. It answers 204 however many times it is pressed.
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::useful);
   cb(noContent());
 }
@@ -466,10 +443,7 @@ void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
 
-  // The cheapest positive label this feature will ever get: the reader walked back to the older
-  // page, which is a button they were pressing anyway. Weaker than a "useful" — opening something
-  // is not endorsing it — so it is recorded as its own kind rather than folded in with one. It
-  // used to be a LOG_INFO line and nothing else, which is a signal collected and thrown away.
+  // The reader walked back to the older page. Weaker than a "useful", so it is its own kind.
   echoes_->recordSignal(*caller, *trigger, *match, EchoSignal::opened);
   cb(noContent());
 }
@@ -491,10 +465,9 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     return;
   }
 
-  // `sinceMs` is the whole rehearsal: which users to look at. There is no "as of" instant to state,
-  // because a pass judges every page against stamps the corpus carries rather than against a clock.
-  // An unstated window is the last day, read off the wall here — this edge owns no Clock, and
-  // reading it on the way in is exactly the boundary's job.
+  // `sinceMs` is the whole rehearsal: which users to look at. There is no "as of" instant, because a
+  // pass judges every page against stamps the corpus carries. An unstated window is the last day,
+  // read off the wall here — this edge owns no Clock.
   std::uint64_t sinceMs = *since;
   if (sinceMs == 0) {
     const std::uint64_t nowMs =
@@ -505,7 +478,7 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   }
 
   // Off this thread: a repair pass is minutes of embedder and curator calls, and the IO thread that
-  // took this request is one of the handful serving every other route in the product.
+  // took this request also serves every other route.
   sweep_->runAsync(sinceMs, [cb = std::move(cb)](const EchoSweepReport& report) {
     cb(jsonResponse(toJson(report)));
   });
@@ -519,8 +492,8 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k403Forbidden, "admin token required"));
     return;
   }
-  // And a signed-in owner on top of it: this hands back whole passages, and the only journal it
-  // may ever hand back is the caller's own. The admin secret opens the door; it names nobody.
+  // And a signed-in owner on top of it: this hands back whole passages, and only the caller's own.
+  // The admin secret opens the door; it names nobody.
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in as the owner of the page"));
@@ -554,13 +527,12 @@ void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   request.recut = req->getParameter("recut") == "1" || req->getParameter("recut") == "true";
 
   // Off this thread: an embed round trip and, when asked, a curator call — seconds, on one of the
-  // handful of IO threads serving every other route in the product.
+  // handful of IO threads serving every other route.
   explainer_->explainAsync(*caller, request,
                            [cb = std::move(cb), rules = request.rules](
                                const EchoExplanation& explained) {
                              Json::Value body = toJson(explained);
-                             // The rules the run actually used, echoed back — an operator sweeping
-                             // a threshold has to be able to tell a typo from a result.
+                             // The rules the run actually used, echoed back.
                              body["rules"] = toJson(rules);
                              cb(jsonResponse(body));
                            });

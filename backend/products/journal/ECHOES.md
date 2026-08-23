@@ -14,9 +14,8 @@ concludes nothing, advises nothing and grades nothing.
 - **Plural, capped.** Up to 10 per page.
 
 Never inferred: that something ended, resolved or went undone; arcs or before/after judgements; mood
-scores, categories, or counts of anything the reader cannot see and check. Every one of those reasons
-from the *absence* of writing, and absence in a journal is indistinguishable between a subject that
-resolved and a writer who stopped.
+scores, categories, or counts of anything the reader cannot see and check. Each of those reasons from
+the *absence* of writing, which a journal cannot tell apart from a writer who stopped.
 
 ## Rules that hold
 
@@ -58,9 +57,8 @@ sees tonight's passages and the selected candidates and returns, per pair, wheth
 relate plus `speaker: self | other`. It writes no copy and asserts nothing: its job is to reject
 candidates that share vocabulary without sharing subject, and candidates about someone else's life.
 It grades every pairing on the absolute `relation` scale below and **anything under its floor (0.6)
-is not shown** — the band beneath it is "same theme, not same subject", which is what a false
-positive is made of. A shared STATE is the commonest one and the prompt names it: feeling rested,
-feeling ill, being tired, a good evening. Two of those are two evenings, not an echo.
+is not shown**. The prompt names the case that band is made of: a shared STATE — feeling rested,
+feeling ill, being tired, a good evening — is two evenings, not an echo.
 
 If any of the three boundaries is unconfigured the pass is a quiet no-op and no echo is written.
 
@@ -155,12 +153,29 @@ night it means the model is rewriting rather than cutting.
 that moved under unchanged text changes what a page reaches, never what it says, so those passes read
 the units back out of storage.
 
-`journal_page_curation` records `segment_version` and `embed_version` on every settled pass, and both
-due-ness queries compare them against what the running build would produce (`PipelineVersions`, asked
-of both vendors at the top of each pass). Two separate strings because they go stale differently: a
-moved segmenter means the page must be **cut** again, so it reports as `bodyMoved` and buys a vendor
-call; a moved embedder means the units still stand and only their vectors are worthless, so the page
-is re-embedded and never re-cut.
+`journal_page_curation` records three version strings on every settled pass, and both due-ness
+queries compare them against what the running build would produce (`PipelineVersions`). Neither a
+page's body nor its corpus moves when a prompt, a model or a threshold does, so without them an
+archive keeps its old units, vectors and verdicts until somebody edits each page. Three strings
+rather than one, because they go stale differently:
+
+| column | what moved | what it costs |
+|---|---|---|
+| `segment_version` | the segmenter's prompt or model | the page is **cut** again — a vendor call, so it reports as `bodyMoved` |
+| `embed_version` | the embedding model | the units still stand; only their vectors are worthless |
+| `judge_version` | the curator's prompt/effort, or **any `SelectionRules` knob** (folded to eight characters by `rulesTag`) | units and vectors stand; only the verdicts are stale |
+
+The columns default to empty, which is the migration: every row written before them reads as derived
+by a pipeline that is not the current one, so the archive re-derives over the following passes at the
+ordinary per-user budget. A pipeline change is also the one thing besides an edit that reopens a
+**refused** page — a body cut into different units, or judged by a different prompt, is a different
+question from the one the vendor declined.
+
+`judge_version` arrived hours after the other two, and was found the way these always are: two false
+positives were fixed, the fix deployed, and every page went on carrying them, because nothing about a
+verdict or a threshold made a page due. **Add a knob to `SelectionRules` and add it to `rulesTag`, or
+that knob ships silently.** What still needs the operator's lever — clearing `journal_page_curation`
+— is a change to the selection ALGORITHM rather than to its knobs: no string moves for that.
 
 A spoken page is cut exactly like a typed one — `ports/Transcriber.h` hands back a finished
 `Transcript` with no pause boundaries, and `DuePage` carries no `source` field.
@@ -235,7 +250,9 @@ same function, so an operator is shown what a save did rather than a second opin
 ### Re-derivation, deletion, the reverse edge
 
 **Outbound.** When a page's body changes, its passages and echoes are recomputed and replace the
-previous set, never appended.
+previous set, never appended. The replacement is additive: `replaceEchoes` deletes only rows whose
+trigger or match passage no longer exists, so a pairing the non-deterministic curator did not return
+this time is kept.
 
 **Inbound.** When page X's passages change, every page holding an echo into X (`where match_day = X`)
 is enqueued for re-derivation; otherwise fixing one typo in a January page permanently kills every
@@ -263,7 +280,7 @@ Match exactly; no case-folding, no fuzzy matching.
 | `journal_echo_dismissal` | `(user_id, trigger_hash, match_hash)` | the reader retired a pairing |
 | `journal_echo_signal` | `(user_id, trigger_span_id, match_span_id, kind)` | `opened` / `useful` / `not_useful`, with the `cosine`, `relation` and `curator_version` of the pairing judged |
 | `journal_echo_offer_dismissal` | `(user_id, day)` | "not now" — the offer, not the echoes |
-| `journal_page_curation` | `(user_id, day)` | `body_stamp_ms`, `corpus_stamp`, `segment_version`, `embed_version`, `status`, `attempts`, `last_error` |
+| `journal_page_curation` | `(user_id, day)` | `body_stamp_ms`, `corpus_stamp`, `segment_version`, `embed_version`, `judge_version`, `status`, `attempts`, `last_error` |
 
 Indexes that carry the design: `journal_span_page (user_id, day, ord)` for the page read,
 `journal_span_hash (user_id, text_sha256)` for the dismissal join, `journal_echo_page
@@ -275,14 +292,11 @@ reverse edge, `journal_echo_signal_page (user_id, trigger_day, kind)` for the `u
 failed curate.** `attempts` counts consecutive unsettled failures and is a diagnostic — nothing backs
 off on it.
 
-`relation` is an ABSOLUTE score since 2026-08-23, defined by the curator's prompt: 0.9+ the same
-specific thing, 0.6-0.8 that thing seen later, 0.3-0.5 the same theme and not the same subject. It
-was comparative-within-one-call before, and it was also **never read** — so a pairing the model
-itself graded 0.3 was shown as an echo. Measured on a real page: the two pairings its writer called
-false positives came back at 0.3 and 0.4, the one they had meant at 0.9. `AnthropicCurator` now
-refuses anything under its floor (0.6), and keeps the number as graded so the tuning door can say
-what happened. Two rows' values are comparable, which is what makes the floor meaningful at all.
-`z` and `family_size` are computed in `domain/EchoSelection` and discarded — persisted nowhere.
+`relation` is an absolute score defined by the curator's prompt: 0.9+ the same specific thing,
+0.6–0.8 that thing seen later, 0.3–0.5 the same theme and not the same subject. `AnthropicCurator`
+drops anything under its floor (0.6) and stores the grade as given, so two rows are comparable and
+the tuning door can report what the model said. `z` and `family_size` are computed in
+`domain/EchoSelection` and discarded — persisted nowhere.
 
 ## Layering
 
@@ -341,8 +355,8 @@ floorWaived }`. Per match: `day`, `isSelf`, `source`, `useful`, `text`, `withhel
   about the whole corpus and the browser cannot count pages it has not synced.
 - **`floorWaived`** is true for the owner account (`Entitlements::isOwner`), because below the floor
   the client draws nothing at all and a working echo is indistinguishable from a broken pipeline.
-- **`useful` and `offerRetired` are served, not device-local.** An answer only one device knows about
-  is an answer the next device ignores.
+- **`useful` and `offerRetired` are served, not device-local**, and `useful` is served on both sides
+  of the honest cut. An answer only one device knows about is an answer the next device ignores.
 
 ### The tuning door
 
@@ -374,7 +388,7 @@ passage (`kFreeWords` = 8), the withheld word count, and every match's date and 
 
 So **the sweep is entitlement-blind and the gate lives in the read layer** — `EchoApi::listEchoes`
 asks `Entitlements::hasWindmillOne` once and the serialiser serves either full text or a prefix plus
-`withheldWords`. Absent-not-locked stays one branch in the read path if the ruling changes.
+`withheldWords`.
 
 What the lock may never become:
 
@@ -395,7 +409,6 @@ requires of the surface:
 - **Newest first**, oldest at the bottom, matching every other list in the journal.
 - **Distance is rendered client-side from the two ISO days**, in the canon's units — "five months
   ago" on tonight's page, "eight months earlier" on a walked page, "1 yr 2 mo" in the desktop margin.
-- **The count renders only when every counted match is on screen.** Truncated list, no total.
 - **`count` is computed after re-location succeeds**, so the mark and the card cannot disagree.
 - **No marks and no offer below a ~20-page corpus floor**, unless the server says `floorWaived`.
 - **Label non-self passages** — `isSelf: false` renders as *"something you copied down"*, and
@@ -449,13 +462,13 @@ Present candidates to the curator **chronologically, without their cosine scores
 it ratifies the top of the retriever's list, which is frequently the vocabulary twin it exists to
 reject.
 
-## Quality gates — none has been run
+## Quality gates
 
-`journal_echo_signal` is the collection apparatus and it is empty. Because `curator_version` rides
-along on every row, the dataset separates model vintages by that column alone. A signal is keyed on
-the span pair, so it survives re-derivation as far as reconciliation carries a `span_id` forward —
-through an edit elsewhere on the page, not through a rewrite of the passage itself — which means the
-dataset thins on heavily-edited corpora.
+None of these has been run. `journal_echo_signal` is the collection apparatus and it is empty.
+`curator_version` rides along on every row, so the dataset separates model vintages by that column
+alone. A signal is keyed on the span pair, so it survives re-derivation as far as reconciliation
+carries a `span_id` forward — through an edit elsewhere on the page, not through a rewrite of the
+passage itself — so the dataset thins on heavily-edited corpora.
 
 | Gate | Threshold |
 |---|---|

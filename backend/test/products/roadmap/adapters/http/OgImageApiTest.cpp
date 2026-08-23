@@ -134,7 +134,6 @@ TEST(put_to_an_unclaimed_tree_is_403) {
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_orphan", PNG);
 
   CHECK_EQ(resp->getStatusCode(), drogon::k403Forbidden);
-  // Nobody's, and said so — "belongs to another account" would name an account that does not exist.
   CHECK_EQ((*resp->getJsonObject())["code"].asString(), std::string("nobodys-tree"));
   CHECK_EQ((*resp->getJsonObject())["error"].asString(),
            std::string("no account owns this tree, so it cannot be edited — you can still read it, or fork it into a roadmap of your own"));

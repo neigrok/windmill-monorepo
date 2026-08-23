@@ -12,8 +12,8 @@
 namespace wm {
 
 namespace {
-// The date is the resource's address, so a shape other than YYYY-MM-DD names nothing — it
-// refuses here, before storage is ever asked about it.
+// The date is the resource's address, so a shape other than YYYY-MM-DD refuses here, before storage
+// is ever asked about it.
 std::optional<LocalDate> dayOf(const std::string& date) {
   try {
     return LocalDate{date};
@@ -68,19 +68,17 @@ void JournalApi::putPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   try {
     incoming = parsePageWrite(*json, *caller, *day);
   } catch (const PageTooLarge&) {
-    // Its own status, and its own sentence, because it is the one parse failure the writer can do
-    // something about — and because a page this long is a storage rule being enforced (kMaxPageBytes,
-    // domain/Page.h), not prose anybody should go hunting through for a typo.
+    // Its own status and its own sentence: it is the one parse failure the writer can do something
+    // about, and a page this long is a storage rule (kMaxPageBytes, domain/Page.h).
     cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
     return;
   } catch (const std::exception&) {
     // A malformed field — a non-numeric mood, a garbled stamp — is the client's mistake, so it is a
-    // 400, never a 500 that would also land a row in the server-error ledger for a plain typo.
+    // 400, never a 500 that would also land a row in the server-error ledger.
     cb(error(drogon::k400BadRequest, "could not read that page"));
     return;
   }
-  // The reply is always the WINNING row: a device that raced and lost is handed the body that won,
-  // so the canvas is honest immediately, without a second request.
+  // The reply is always the WINNING row, so a device that raced and lost is handed the body that won.
   WriteOutcome out = pages_->write(*incoming);
   cb(jsonResponse(toJson(out.page)));
 }
@@ -92,8 +90,8 @@ void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     return;
   }
 
-  // Three reads behind one path, most specific first: the sync feed (since), the canvas
-  // window (from/to), and the whole shelf when neither is asked for.
+  // Three reads behind one path, most specific first: the sync feed (since), the canvas window
+  // (from/to), and the whole shelf when neither is asked for.
   const std::string since = req->getParameter("since");
   if (!since.empty()) {
     Hlc cursor;
@@ -143,8 +141,7 @@ void JournalApi::exportAll(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
     return;
   }
-  // Export is the shelf in the same envelope the list wears (canon "Free, forever"): every
-  // page, oldest first, nothing the ordinary read wouldn't show.
+  // Export is the shelf in the same envelope the list wears: every page, oldest first.
   Json::Value body(Json::objectValue);
   body["pages"] = toJson(pages_->all(*caller));
   cb(jsonResponse(body));

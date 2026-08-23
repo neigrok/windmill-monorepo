@@ -15,22 +15,17 @@ namespace wm::gym {
 // The write shapes the wire parses into — everything the client says, nothing the server decides
 // (the set number and the owner are the store's and the session's to assign).
 //
-// joinOpenSession is the one thing about a Start that cannot be read off its other fields. The
-// phone pressing Start means "get me into the open session, whatever it is" — that join is what
-// makes the device-to-device handoff free (§11.3), a dead phone and a borrowed iPad continuing one
-// workout. Backfill and lift-import mean the opposite thing in the same shape: "create exactly this
-// session, which is not now", and for them a join files a past workout's sets into the live one.
-// startedAt cannot tell the two apart — clock skew and a genuinely-ten-minutes-ago handoff read
-// identically — so the caller states which it means, and a silent heuristic never guesses. The
-// default is the join, because that is what every caller written before this field meant. It is not
-// a surface gate (§11): any surface may state either, and the server still never asks who is asking.
+// joinOpenSession says which of two things a Start means, and startedAt cannot tell them apart:
+// joining puts the caller into whatever session is open, which is what makes a device-to-device
+// handoff free; declining creates exactly the session named, which is what backfill and import need
+// so a past workout's sets are not filed into the live one. It defaults to the join. Any surface may
+// state either; the server never asks who is asking.
 //
 // routine is the day of the program this workout is: the server loads it, freezes its name and its
-// entries onto the session, and answers with that snapshot. The client never composes the copy —
-// a client-composed one freezes whatever that client last read, which is the staleness the
-// snapshot exists to prevent. Omitted is the ad-hoc session, which is most of them. It is read only
-// where a session is CREATED: a replay and a join are handed the session the store already holds,
-// with the plan that session began under, and neither is refused for a routine deleted since.
+// entries onto the session, and answers with that snapshot — the client never composes the copy.
+// Omitted is the ad-hoc session. It is read only where a session is CREATED: a replay and a join are
+// handed the session the store already holds, with the plan it began under, and neither is refused
+// for a routine deleted since.
 struct SessionStart {
   SessionId id;
   std::uint64_t startedAtMs;
@@ -49,23 +44,16 @@ struct SetWrite {
   std::uint64_t completedAtMs;
 };
 
-// How a write can refuse, as facts the HTTP edge maps to statuses (400 / 404 / 409) — flow control
-// is never an exception here; InvalidTraining stays reserved for malformed input (the other 400).
-// Every refusal is a fact about the caller's own log: idTaken says a client-minted id is already
-// spent, never by whom, so absent stays byte-identical to forbidden. unknownExercise arrives from
-// the store, which is the only layer that knows the catalog, and is passed through untouched.
-// alreadyOpen is reachable only by a caller that said it would not join: this lifter's own workout
-// is in progress, so the session it asked for could not be created, and the join that would have
-// created the illusion of one is exactly the data corruption it declined. unknownRoutine is a
-// CREATING start that named a plan this account cannot read — refused rather than started ad-hoc,
-// because a session that quietly loses its plan is a workout with no targets and no way to notice.
-// It is unreachable from a replay or a join, which are handed a session that already exists.
-// `deleted` is the store's own fact and the one refusal here that exists because of the delete
-// route: the id names a set this lifter TOOK OUT of the log. It is not idTaken and must never be
-// answered as one — a spent id is repaired by minting a fresh one and sending the set again, which
-// is exactly how a deleted set would come back under a new number the first time an append whose
-// reply was lost is replayed. Nothing repairs this one: the set is not owed, and the queue holding
-// it drops it.
+// How a write can refuse, as facts the HTTP edge maps to statuses (400 / 404 / 409); flow control is
+// never an exception here, and InvalidTraining stays reserved for malformed input.
+//
+// idTaken: a client-minted id is already spent, never by whom, so absent stays byte-identical to
+// forbidden. unknownExercise comes from the store and passes through untouched. alreadyOpen is
+// reachable only by a caller that said it would not join. unknownRoutine is a CREATING start naming
+// a plan this account cannot read, refused rather than started ad-hoc; a replay and a join cannot
+// reach it. `deleted` names a set this lifter TOOK OUT of the log — never answered as idTaken, whose
+// repair is minting a fresh id and resending, which would bring the deleted set back. Nothing
+// repairs this one: the queue holding it drops it.
 enum class StartError { none, idTaken, alreadyOpen, unknownRoutine, clockAhead };
 enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted };
 enum class FinishError { none, notFound, badInstant };
@@ -96,28 +84,15 @@ struct SessionDetail {
 // One row of the log as a SURFACE reads it: the store's summary, plus the two facts on it that are
 // rules rather than aggregations.
 //
-// record is §G's gold dot — a personal record happened in this workout. It is the domain's three
-// rules (domain/Review.h), run over the whole page in one walk against the marks standing before
-// it, so the dot on a row and the loud line on that session's finish screen are the same judgement
-// and cannot disagree — which takes the walk being told which rows are FINISHED, because the finish
-// read counts finished sessions alone and the page carries the open workout too. It is recomputed
-// on every read and stored nowhere, which is what keeps it
-// honest: a record is judged against the log AS IT IS NOW, so a set arriving late from a flush
-// queue — or a later correction — moves the dot instead of leaving it lying.
+// record is the gold dot: the domain's three rules (domain/Review.h) run over the whole page in one
+// walk against the marks standing before it, which takes the walk being told which rows are FINISHED
+// because the finish read counts finished sessions alone. Recomputed on every read and stored
+// nowhere, so a late set or a correction moves the dot.
 //
-// topE1rm is `domain/Review`'s `topE1rmOf` over the loads the store handed back — the SAME function
-// the finish screen's `ReviewStats::topE1rm` comes through, which is the whole point of routing it
-// here. It is the best estimate over every working set and NOT Epley over `summary.topSet`: those
-// two disagree on an ordinary top-set-and-back-offs session (100 × 5 then 3 × 95 × 10 estimates
-// 126.7 off the back-offs and 116.7 off the top set), and a lifter who finished a workout and then
-// opened The log would have read two numbers under the word `e1RM`, two taps apart.
-//
-// Epley reaches neither the database — picking a set BY e1RM is the formula, not an ordering, so the
-// store hands over its per-load projection instead (`ports/LogRepository.h`) — nor a client,
-// because the formula has one copy per language (§11.5) and a log row that computed its own would be
-// the second copy in JavaScript. It is absent exactly where Epley is undefined: a session holding no
-// working set, and one whose working sets were all chin-ups at 0 kg or band-assisted pulls at −20,
-// which have no honest one-rep estimate to print.
+// topE1rm is `topE1rmOf` over the loads the store handed back — the same function the finish
+// screen's `ReviewStats::topE1rm` comes through. It is the best estimate over every working set and
+// NOT Epley over `summary.topSet`, which disagree on a top-set-and-back-offs session. Epley reaches
+// neither the database nor a client. Absent exactly where Epley is undefined.
 struct LogRow {
   SessionSummary summary;
   std::optional<double> topE1rm;
@@ -126,31 +101,23 @@ struct LogRow {
   bool operator==(const LogRow&) const = default;
 };
 
-// A discard answers with a status and nothing else — a deleted session has no row to hand back —
-// so this is the one operation here with no `{value, error}` pair beside it. `open` is the refusal
-// the store cannot state on its own: only the device holding the offline queue knows every set has
-// landed, and deleting a workout somebody is still logging into destroys the sets in flight.
+// A discard answers with a status and nothing else — a deleted session has no row to hand back.
+// `open` refuses to delete a workout still being logged into, whose queued sets are in flight.
 enum class DiscardOutcome { done, notFound, open };
 
-// The application seam over the training log — one of five services, each over the aggregate port
-// of the same name (CatalogService, ProgramService, ThreadService, PreferencesService are the other
-// four), and the one that owns everything that reads or writes a workout: the HTTP adapter and the
-// MCP tools talk to this, never to the repository. It owns the two-phase auto-close (load the open
-// session + its last set instant → the pure rule → persist the close) and the write-then-resolve
-// idempotency story — every write returns the resolved row, so a replayed or double-tapped client
-// sees the winning truth in one round trip. No cron, no sweep: staleness is settled lazily, before a
-// start and before every read whose answer a close rewrites (the log page, one session's detail,
-// the open-session read, the statistics, a movement's record).
+// The application seam over the training log: the HTTP adapter and the MCP tools talk to this, never
+// to the repository. It owns the two-phase auto-close (load the open session + its last set instant →
+// the pure rule → persist the close) and the write-then-resolve idempotency story — every write
+// returns the resolved row, so a replayed or double-tapped client sees the winning truth in one round
+// trip. No cron, no sweep: staleness is settled lazily, before a start and before every read whose
+// answer a close rewrites.
 //
 // The program port is here for exactly one write: a start that names a routine freezes that day's
-// plan onto the session (§2.5), and the plan is loaded from the store's own routine rather than
-// composed by the client. It is a port and not ProgramService because services depend on ports and
-// the domain, never on each other — a service that reached for a sibling would be the facade this
-// file replaced, one layer down.
+// plan onto the session, loaded from the store's own routine. It is a port and not ProgramService
+// because services depend on ports and the domain, never on each other.
 //
-// The token generator is here for exactly one thing — minting a coach share's secret — and it is
-// the platform's own, the same mint that makes a session cookie and a magic link, so the one
-// unguessable string gym hands out is not a second-best random of gym's own.
+// The token generator is here for exactly one thing — minting a coach share's secret — and it is the
+// platform's own, the same mint that makes a session cookie and a magic link.
 class TrainingService {
 public:
   TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
@@ -160,57 +127,46 @@ public:
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
 
-  // The correction, and the delete beside it — the log moves, the routine does not. Both name the
-  // SESSION as well as the set, because a set id that resolves under this account but in another
-  // workout is not this session's to change: it is the same absent fact as one that never existed,
-  // and a client cannot walk a stale id into a workout it is not looking at.
+  // The correction and the delete beside it: the log moves, the routine does not. Both name the
+  // SESSION as well as the set, so a set id resolving under this account but in another workout is
+  // the same absent fact as one that never existed.
   //
-  // `fixSet` is the load → pure rule → write → answer-with-the-store shape every write in this file
-  // has; `deleteSet` answers nothing, which is what makes a lost reply safe to send again. NOTHING
-  // either of them does reaches `gym_sessions.plan` or a routine entry — the frozen snapshot is the
-  // program's word about the past and a correction is the log's word about it, and §G18 puts that
-  // on screen: *Push A keeps its own numbers.*
+  // `fixSet` is the load → pure rule → write → answer-with-the-store shape; `deleteSet` answers
+  // nothing, which makes a lost reply safe to send again. Neither reaches `gym_sessions.plan` or a
+  // routine entry.
   std::optional<Set> fixSet(const UserId& user, const SessionId& session, const SetId& id,
                             const SetFix& fix);
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id);
   std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   // Is a workout running? Settled first — the same lazy close a log read takes — so a session
-  // somebody walked away from yesterday answers as the closed thing it is rather than as a workout
-  // in flight. Ask asks this before it will answer at all (§L: never offered mid-session), and it is
-  // one row rather than a search because one open session per account is the store's own index.
+  // walked away from yesterday answers as the closed thing it is. One row rather than a search:
+  // one open session per account is the store's own index.
   std::optional<Session> openSession(const UserId& user);
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise);
-  // The picker's meta beside the catalog, and deliberately NOT inside it: the catalog is 64 rows
-  // read on nearly every screen and most of them are movements a given lifter has never touched, so
-  // the annotation is asked for by the one surface that draws it. Nothing here computes anything —
-  // which set is "last" is the store's ordering, the same one lastTime states.
+  // The picker's meta beside the catalog and deliberately not inside it, asked for by the one surface
+  // that draws it. Which set is "last" is the store's ordering, the same one lastTime states.
   std::vector<LastSet> lastSets(const UserId& user);
 
-  // The finish surface. review is a read with no refusal of its own — an absent review is an absent
-  // session, exactly as detail's is — and discard is the one door that takes something away.
+  // review has no refusal of its own: an absent review is an absent session.
   std::optional<Review> review(const UserId& user, const SessionId& session);
   DiscardOutcome discard(const UserId& user, const SessionId& session);
 
-  // The two long reads. `statistics` is one load and one pure rule, exactly as `review` is — the
-  // shape this service uses wherever a surface is computed rather than stored. `exportedSets` has
-  // no rule at all: it hands back what is stored, which is the point of an export.
+  // `statistics` is one load and one pure rule; `exportedSets` has no rule at all and hands back what
+  // is stored.
   Statistics statistics(const UserId& user);
   std::vector<ExportedSet> exportedSets(const UserId& user);
-  // A movement's record — the same one-load-one-rule shape, narrowed to one movement, and the read
-  // that replaced the statistics room on every surface. It is a read OF THE LOG and lives here even
-  // though CatalogApi mounts it under the movement's path. Absent is the store's one fact: this
-  // account's catalog holds no such movement.
+  // The same one-load-one-rule shape narrowed to one movement. A read OF THE LOG, living here though
+  // CatalogApi mounts it under the movement's path. Absent means this account's catalog holds no such
+  // movement.
   std::optional<MovementRecord> movementRecord(const UserId& user, const ExerciseId& exercise);
 
-  // The coach share. The mint answers with the live share on a repeat, so nothing here has to ask
-  // first — the store resolves it, the same write-then-resolve every other write in this file uses.
-  // An absent answer is the one fact a session read gives: absent and another account's alike.
+  // The mint answers with the live share on a repeat, resolved by the store. An absent answer covers
+  // absent and another account's alike.
   std::optional<SessionShare> share(const UserId& user, const SessionId& session);
   bool revokeShare(const UserId& user, const SessionId& session);
   // The one read here with no caller, and it settles NOTHING: a stranger holding a link must never
-  // be able to write to the owner's log, not even the four-hour close every authenticated read
-  // takes. The token is the whole credential and the clock decides whether it is still one.
+  // write to the owner's log, not even the four-hour close. The token is the whole credential.
   std::optional<SharedSession> shared(const std::string& token);
 
 private:

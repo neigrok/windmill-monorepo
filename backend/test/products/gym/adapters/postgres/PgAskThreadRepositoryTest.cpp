@@ -1,8 +1,7 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 
-// The in-memory twin is included for the thread export alone: the two export cases below build the
-// same threads in it and assert the rows match, so neither rendering can drift on its own.
+// The in-memory twin is included for the thread export alone: both renderings are asserted to match.
 #include "test/products/gym/Fakes.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -20,8 +19,7 @@
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
-// The title is the first message VERBATIM, the turns are stored as sent, and a second ask into the
-// same conversation does not rename it.
+// The title is the first message VERBATIM, and a second ask into the same conversation does not rename it.
 TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -30,8 +28,7 @@ TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent
 
   openedAt(repo, "thr_pg000001", typed);
   said(repo, "thr_pg000001", typed, "Your top set has not moved.");
-  // A second ask into the same conversation: the title is passed and ignored, because a thread is
-  // named by how it opened.
+  // A second ask into the same conversation: the title is passed and ignored.
   openedAt(repo, "thr_pg000001", "something else entirely", kNow + 1'000);
   said(repo, "thr_pg000001", "and the squat?", "That one is moving.", kNow + 1'000);
 
@@ -47,9 +44,7 @@ TEST(pg_gym_a_thread_is_titled_by_its_first_message_and_keeps_every_turn_as_sent
   CHECK_EQ(held->turns[3], (ThreadTurn{false, "That one is moving.", kNow + 1'000}));
 }
 
-// The id is a primary key across every account: one somebody else holds is refused, never appended
-// to — and the refusal is the ONE place the two absences are told apart, because a write cannot
-// quietly land in a stranger's conversation.
+// The id is a primary key across every account: one somebody else holds is refused, never appended to.
 TEST(pg_gym_a_thread_id_another_account_holds_is_refused_and_their_words_stay_theirs) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -67,8 +62,7 @@ TEST(pg_gym_a_thread_id_another_account_holds_is_refused_and_their_words_stay_th
   CHECK_EQ(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"})->turns.size(), 2u);
 }
 
-// A thread whose run never answered is taken back whole — but only while it holds no turns, so a
-// failed follow-up cannot delete a conversation that already happened.
+// A thread whose run never answered is taken back whole, but only while it holds no turns.
 TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -84,8 +78,7 @@ TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
   REQUIRE(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000002"}).has_value());
 }
 
-// THE LIST: newest asked first, each row carrying the proposals its outcome is derived from — and
-// the routine's name AS IT NOW STANDS, because the row points at a day a lifter can open.
+// THE LIST: newest asked first, each row carrying the routine's name AS IT NOW STANDS.
 TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -113,12 +106,7 @@ TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) 
   CHECK(outcomeOf(listed[1]).kind == ThreadOutcomeKind::readOnly);
 }
 
-// ── DELETE DELETES THE CONVERSATION, NOT THE CONSEQUENCE (§O) ────────────────────────────────
-//
-// The proof the wave turns on: apply a proposal minted in a conversation, delete the conversation,
-// and read the routine's history. The change is still there, still says it came from Ask, and simply
-// no longer opens a conversation that exists — because an applied change is a fact about somebody's
-// program rather than a message.
+// Deleting a conversation leaves the change it minted standing in the routine's history.
 TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_history) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -139,7 +127,6 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   // The conversation is gone, turns and all.
   CHECK_EQ(repo.thread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}), std::optional<AskThread>());
   CHECK(repo.threads(wm::UserId{kUser}).empty());
-  // The consequence is not. The routine's history still carries the change…
   const std::vector<RoutineEvent> history =
       program.routineHistory(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
   REQUIRE_EQ(history.size(), 2u);
@@ -147,11 +134,8 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   REQUIRE(history[0].proposal.has_value());
   CHECK(history[0].proposal->state == ProposalState::applied);
   CHECK_EQ(history[0].proposal->changes, 1);
-  // …still says it came from Ask…
   CHECK(history[0].proposal->source.door == ProposalDoor::ask);
-  // …and simply no longer opens a conversation that exists.
   CHECK_FALSE(history[0].proposal->source.thread.has_value());
-  // And the program itself is exactly what the apply made it.
   const std::optional<Routine> standing = program.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"});
   REQUIRE(standing.has_value());
   CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchAt(87.5, 3)});
@@ -159,10 +143,7 @@ TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_histo
   CHECK_FALSE(repo.deleteThread(wm::UserId{kUser}, ThreadId{"thr_pg000001"}));
 }
 
-// The export: one row per turn, the thread's facts beside each, everything text and every rendering
-// Postgres's — asserted against the in-memory twin so neither can drift on its own. The outcome
-// columns come back EMPTY on both sides, because that ladder is the domain's and ThreadService stamps
-// it on.
+// The export: one row per turn, every rendering Postgres's, asserted against the in-memory twin.
 TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -200,11 +181,7 @@ TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin
   CHECK_EQ(exported[0].changes, std::string(""));
 }
 
-// A THREAD WITH NO TURNS IS IN THE FILE, WITH THE TURN COLUMNS EMPTY. `openThread` commits before
-// the model runs, so such a row exists for the whole of every in-flight ask and stays if the process
-// died before the answer came back. An INNER JOIN made the export quietly smaller than the list a
-// lifter is looking at, under a route that promises nothing omitted — so the join is a LEFT one, and
-// the in-memory twin says the same.
+// A THREAD WITH NO TURNS IS IN THE FILE, WITH THE TURN COLUMNS EMPTY: the join is a LEFT one.
 TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -233,14 +210,10 @@ TEST(pg_gym_a_thread_whose_run_never_answered_is_still_in_the_export) {
   CHECK_EQ(exported[0].saidAt, std::string(""));
   CHECK_EQ(exported[1].threadId, std::string("thr_pg000002"));
   CHECK_EQ(exported[1].turnNumber, std::string("1"));
-  // And it is in the list too, which is the whole complaint: the two doors show one account.
   CHECK_EQ(repo.threads(wm::UserId{kUser}).size(), 2u);
 }
 
-// `allThreads` IS THE ARCHIVE'S READ AND HAS NO CEILING — the list stops at kThreadList because that
-// is a screen, and the export's outcomes are stamped from this one because an archive that dropped a
-// conversation's outcome would be the route's own promise made false. Oldest first, like the turns
-// beside it, and carrying what each one minted just as the list does.
+// `allThreads` is the archive's read and has no ceiling, oldest first, carrying what each one minted.
 TEST(pg_gym_every_thread_is_read_for_the_archive_past_the_lists_own_ceiling) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

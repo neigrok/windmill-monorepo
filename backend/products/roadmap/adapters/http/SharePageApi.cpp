@@ -23,9 +23,8 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   const std::string safeTitle = htmlEscape(title.empty() ? "Untitled tree" : title);
   const std::string host = "https://windmill.works";
   const std::string url = host + "/t/" + htmlEscape(id);
-  // Fork attribution (fork-attribution-unfurl): the description advertises the loop this tree came
-  // from and the loop it invites. The source is named only when loadForkLineage found it public;
-  // an unlisted/private source stays anonymous ("a forked Windmill skill tree").
+  // The source is named only when loadForkLineage found it public; an unlisted or private source
+  // stays anonymous.
   const std::string stepPhrase = std::to_string(steps) + (steps == 1 ? " step." : " steps.");
   std::string description;
   if (lineage.isFork && !lineage.sourceTitle.empty())
@@ -38,8 +37,8 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
     description += " Forked " + std::to_string(lineage.forkCount) + (lineage.forkCount == 1 ? " time." : " times.");
   const std::string robots =
       visibility == Visibility::public_ ? "index, follow, max-image-preview:large" : "noindex";
-  // Per-tree unfurl card (og-tree-cards): GET /og/:id.png serves this tree's own rendered image
-  // and falls back to the generic card when none was uploaded — so the tag can always point here.
+  // GET /og/:id.png serves this tree's own rendered image and falls back to the generic card, so
+  // the tag can always point here.
   const std::string image = host + "/og/" + htmlEscape(id) + ".png";
 
   std::string meta;
@@ -57,8 +56,8 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
   meta += "    <meta property=\"og:image:type\" content=\"image/png\" />\n";
   meta += "    <meta property=\"og:image:width\" content=\"1200\" />\n";
   meta += "    <meta property=\"og:image:height\" content=\"630\" />\n";
-  // Per-tree share video (og-share-video): only for a tree that carries an uploaded loop. The
-  // og:image above stays the unconditional poster fallback for scrapers that ignore og:video.
+  // Only for a tree that carries an uploaded loop; the og:image above stays the unconditional
+  // poster for scrapers that ignore og:video.
   if (hasVideo) {
     const std::string video = host + "/v1/trees/" + htmlEscape(id) + "/og-video";
     meta += "    <meta property=\"og:video\" content=\"" + video + "\" />\n";
@@ -79,9 +78,8 @@ std::string SharePageApi::renderShell(const std::string& shell, const std::strin
 void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
   const std::string shell = readWebFile(webRoot_, "index.html");
   if (shell.empty()) {
-    // The web root is misconfigured (no shell to serve). Bounce the human to the working
-    // hash route so the tree still opens; scrapers get nothing to unfurl, which is fine for
-    // a deploy-error fallback. The target is the id the caller already holds — no leak.
+    // No shell to serve: bounce the human to the working hash route so the tree still opens.
+    // The target is the id the caller already holds — no leak.
     callback(htmlPage("<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=/#/t/"
                       + htmlEscape(id) + "\">"));
     return;
@@ -95,10 +93,9 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
     try {
-      // Authorize on the stored row BEFORE opening, exactly as HttpApi::readRoom does. This door is
-      // the anonymous one — anybody may name any id here — so opening first let a stranger drag the
-      // whole lattice of a tree they cannot read off disk and into memory, one room per id they
-      // cared to guess.
+      // Authorize on the stored row BEFORE opening, exactly as HttpApi::readRoom does: this door
+      // is anonymous, so opening first would let a stranger pull the lattice of any id they guess
+      // off disk and into memory.
       const std::optional<TreeAccess> access = registry_->accessOf(TreeId{id});
       if (access && canRead(caller, access->owner, access->visibility)) {
         TreeRoom* room = registry_->open(TreeId{id});
@@ -110,17 +107,16 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
         }
       }
     } catch (const std::exception&) {
-      // An infrastructure failure — leave it unreadable, so the shell is served verbatim (== private).
-      // An absent tree is a null open, handled above; only breakage reaches here, and it never leaks.
+      // An infrastructure failure leaves it unreadable, so the shell is served verbatim, exactly
+      // as for a private tree.
     }
   }
 
-  // Fork lineage is a two-count DB read, taken OUTSIDE the room strand (never hold a room lock
-  // across Postgres) and only when the tree is actually readable — a private/absent tree gets the
-  // shell verbatim, so the extra query never fires for it and "private = absent" holds.
+  // Taken OUTSIDE the room strand (never hold a room lock across Postgres) and only for a
+  // readable tree, so a private or absent one never fires the query and stays indistinguishable.
   const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
-  // A cheap SELECT 1 (never the bytes) that decides whether the og:video tag is emitted — taken
-  // only for a readable tree, so a private/absent tree never fires it and "private = absent" holds.
+  // A cheap SELECT 1, never the bytes, and only for a readable tree, so a private or absent one
+  // stays indistinguishable.
   const bool hasVideo = readable && videos_->has(id);
   callback(htmlPage(readable ? renderShell(shell, title, steps, visibility, id, lineage, hasVideo) : shell));
 }

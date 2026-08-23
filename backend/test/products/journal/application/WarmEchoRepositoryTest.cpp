@@ -21,9 +21,7 @@ const std::string kMay = "2026-05-01";
 const std::string kJanuaryLine = "i want to learn kotlin properly this time.";
 const std::string kMayLine = "i like kotlin now and the work is fun.";
 
-// Two derived pages behind storage, which is the smallest corpus that can prove ordering as well as
-// warmth: the May page is planted first, so an implementation that served insertion order rather
-// than (day, ord) would be caught by the very first assertion.
+// Two derived pages behind storage: the May page is planted first, so insertion order would be caught by the first assertion.
 void plantTwoPages(FakeEchoRepository& storage, FakeEmbedder& embedder) {
   storage.plantSpan(uid("u1"), ld(kMay), 22, kMayLine, embedder.embed({kMayLine})[0]);
   storage.plantSpan(uid("u1"), ld(kJanuary), 11, kJanuaryLine, embedder.embed({kJanuaryLine})[0]);
@@ -41,8 +39,6 @@ void checkSame(const std::vector<Vectored>& got, const std::vector<Vectored>& wa
 
 }
 
-// The whole reason this class exists: the corpus load was the entire cost of a pass, and a
-// save-triggered derivation asks for it far more often than a six-hourly ticker did.
 TEST(a_second_derivation_is_served_from_the_warm_corpus_without_reloading_it) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -55,16 +51,13 @@ TEST(a_second_derivation_is_served_from_the_warm_corpus_without_reloading_it) {
 
   CHECK_EQ(storage.corpusLoads, 1);
   CHECK_EQ(warm.loads(), 1);
-  // Warm and cold answer with the same passages in the same order — January first.
   REQUIRE_EQ(first.size(), std::size_t{2});
   CHECK_EQ(first[0].spanId, std::int64_t{11});
   CHECK_EQ(first[1].spanId, std::int64_t{22});
   checkSame(second, first);
 }
 
-// The invalidation that matters, and the reason replaceSpans hands back what it stored: every
-// derivation rewrites its own page's passages, so a cache that could only DROP would be cold at
-// every single read and warm for nobody.
+// Every derivation rewrites its own page's passages, which is why replaceSpans hands back what it stored.
 TEST(a_re_derived_page_moves_the_warm_corpus_rather_than_emptying_it) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -83,12 +76,10 @@ TEST(a_re_derived_page_moves_the_warm_corpus_rather_than_emptying_it) {
   CHECK_EQ(storage.corpusLoads, 1);   // still warm — the page moved, the corpus did not reload
   CHECK_EQ(after.size(), std::size_t{2});
   CHECK_EQ(after[1].text, rewritten);
-  // And it says exactly what a cold read would say.
   checkSame(after, storage.corpusOf(uid("u1"), "fake-embedder-v1"));
 }
 
-// A page whose body was emptied leaves the corpus entirely. Keeping the passages it used to have
-// would let a deleted page go on echoing, which is the one failure a cache here could cause.
+// A page whose body was emptied leaves the corpus entirely, or a deleted page goes on echoing.
 TEST(a_page_emptied_of_passages_leaves_the_warm_corpus) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -105,8 +96,7 @@ TEST(a_page_emptied_of_passages_leaves_the_warm_corpus) {
   CHECK_EQ(storage.corpusLoads, 1);
 }
 
-// Cosine across two embedding spaces is not degraded, it is meaningless — so a write in another
-// space drops the warm copy outright rather than splicing into it.
+// Cosine across two embedding spaces is meaningless, so a write in another space drops the warm copy outright.
 TEST(a_write_in_another_embedding_version_drops_the_warm_corpus) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -121,8 +111,6 @@ TEST(a_write_in_another_embedding_version_drops_the_warm_corpus) {
   CHECK_EQ(storage.corpusLoads, 2);
 }
 
-// Asked about a version it is not holding, it loads that version rather than answering about the
-// one it has.
 TEST(a_read_of_another_embedding_version_is_never_answered_from_the_warm_copy) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -135,8 +123,7 @@ TEST(a_read_of_another_embedding_version_is_never_answered_from_the_warm_copy) {
   CHECK_EQ(storage.corpusLoads, 2);
 }
 
-// The TTL is the bound on the one thing this process cannot see: a span written by somebody else.
-// It is not a performance knob — it is the whole staleness guarantee, so it is asserted.
+// The TTL is the bound on a span written by somebody else — a staleness guarantee, not a performance knob.
 TEST(a_warm_corpus_older_than_its_ttl_is_loaded_again) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -172,8 +159,6 @@ TEST(each_account_is_held_warm_on_its_own) {
   CHECK_EQ(storage.corpusLoads, 2);
 }
 
-// The pass driven straight through the warm repository: two derivations of the same user pay for
-// exactly one corpus load, which is the latency claim this whole wave rests on.
 TEST(two_derivations_for_one_user_cost_one_corpus_load) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -200,10 +185,7 @@ TEST(two_derivations_for_one_user_cost_one_corpus_load) {
   CHECK_EQ(curator.calls, 2);
 }
 
-// A cache that only checks expiry on the way IN looks exactly like one that frees nothing: both
-// serve correct answers forever. The difference is a process that survives the month, so it needs
-// an assertion of its own rather than trust. Two accounts go warm, the clock passes the TTL, and a
-// third load must leave the two stale ones behind rather than carrying them to process exit.
+// A cache that only checks expiry on the way IN frees nothing: two accounts go warm, the clock passes the TTL, and a third load must leave the stale ones behind.
 TEST(a_corpus_nobody_came_back_for_is_freed_and_not_merely_ignored) {
   FakeEchoRepository storage;
   FakeEmbedder embedder;
@@ -219,15 +201,12 @@ TEST(a_corpus_nobody_came_back_for_is_freed_and_not_merely_ignored) {
   warm.corpusOf(uid("u2"), "fake-embedder-v1");
   CHECK_EQ(warm.warmUsers(), 2);
 
-  // Exactly one millisecond past the TTL, so the boundary is asserted rather than approached.
   clock.now += kTtlMs + 1;
   warm.corpusOf(uid("u3"), "fake-embedder-v1");
 
-  // The two who went quiet are gone; the one who just loaded is held.
   CHECK_EQ(warm.warmUsers(), 1);
   CHECK_EQ(storage.corpusLoads, 3);
 
-  // And the eviction is a release, not a corruption: u1 coming back reloads and is correct.
   const std::vector<Vectored> again = warm.corpusOf(uid("u1"), "fake-embedder-v1");
   CHECK_EQ(again.size(), std::size_t{2});
   CHECK_EQ(storage.corpusLoads, 4);

@@ -50,9 +50,8 @@ std::string base64Url(const std::string& bytes) {
 }
 
 // ECDSA P-256 over SHA-256, in the raw r||s form JWS requires — OpenSSL signs to DER, and the two
-// halves have to be left-padded to 32 bytes each, which is exactly what a DER encoding drops.
-// Empty on any failure: a key that won't load or won't sign is a misconfigured deploy, and the
-// exchange that follows refuses rather than sending Apple a secret it will reject.
+// halves have to be left-padded to 32 bytes each. Empty on any failure, and the exchange that
+// follows refuses rather than sending Apple a secret it will reject.
 std::string es256(const std::string& privateKeyPem, const std::string& message) {
   const std::unique_ptr<BIO, decltype(&BIO_free)> bio(
       BIO_new_mem_buf(privateKeyPem.data(), static_cast<int>(privateKeyPem.size())), &BIO_free);
@@ -85,8 +84,8 @@ std::string es256(const std::string& privateKeyPem, const std::string& message) 
 }
 
 // The identity inside an Apple id_token, or nullopt if it's malformed, minted for another client,
-// or carries an unverified address. `sub` is Apple's stable per-app key for this human and is the
-// only field allowed to resolve an account on its own.
+// or carries an unverified address. `sub` is Apple's stable per-app key for this human and the only
+// field allowed to resolve an account on its own.
 std::optional<ProviderIdentity> identityFromIdToken(const std::string& idToken, const std::string& clientId) {
   const std::optional<Json::Value> claims = idTokenClaims(idToken);
   if (!claims) return std::nullopt;

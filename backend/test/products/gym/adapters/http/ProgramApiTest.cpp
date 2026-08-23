@@ -12,10 +12,7 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::apitest;
 
-// ProgramApi over the fake store: routines as one document over four routes, and the proposal
-// ledger with THE TAP that only a hand reaches.
-
-// ---- routines: the whole document, over four routes ----------------------------------------
+// ProgramApi over the fake store: routines as one document over four routes, and the proposal ledger.
 
 TEST(gym_routines_round_trip_the_whole_document) {
   Harness h;
@@ -30,16 +27,13 @@ TEST(gym_routines_round_trip_the_whole_document) {
                                      "rt_11111111");
 
   CHECK_EQ(created->getStatusCode(), drogon::k200OK);
-  // Entries come back NUMBERED — the client sends order and reads back position — and the two
-  // optionals ride only when they were sent. lastTrainedAt is absent: it has never been trained.
+  // Entries come back NUMBERED, and the two optionals ride only when they were sent.
   CHECK_EQ(dump(bodyOf(created)),
            std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5}],)"
                        R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
   CHECK_EQ(dump(bodyOf(listed)), R"({"routines":[)" + dump(bodyOf(created)) + R"(]})");
-  // The single read is the create's reply plus the day's own history, which the LIST does not carry:
-  // §M30 draws that section and a routines screen does not. The creation row names no door, and
-  // that absence is what the screen draws as `created by you`.
+  // The single read is the create's reply plus the day's own history, which the LIST does not carry.
   CHECK_EQ(dump(bodyOf(one)),
            std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5}],)"
@@ -61,8 +55,7 @@ TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
       send(h.program, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", body, "s-live"));
 
   CHECK_EQ(created->getStatusCode(), drogon::k200OK);
-  // No targetWeightKg means "whatever you did last time" and no restSeconds means the client's own
-  // default: a zero in either would read as a real target the lifter never set.
+  // No targetWeightKg means "whatever you did last time", and no restSeconds the client's own default.
   CHECK_EQ(dump(bodyOf(created)),
            std::string(R"({"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,)"
                        R"("targetReps":5,"targetSets":5,"targetWeightKg":82.5},)"
@@ -70,9 +63,7 @@ TEST(gym_routine_entry_omissions_ride_the_reply_as_omissions) {
                        R"("id":"rt_11111111","name":"Push A","position":0,"revision":1})"));
 }
 
-// `Chin-up 3 × max` on the wire. targetReps is one of the four omissions that MEAN something, and it is
-// omitted on the way out exactly as it was on the way in — never null, and never a zero a client
-// would draw as a target. The frozen plan carries the same absence onto the session.
+// targetReps is omitted on the way out exactly as it was on the way in — never null, never a zero.
 TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
   Harness h;
   h.signIn("s-live");
@@ -101,8 +92,7 @@ TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
            std::string(R"({"id":"ses_11111111","plan":{"entries":[{"exerciseId":"chin-up",)"
                        R"("sets":3}],"routine":"Push A"},"routineId":"rt_11111111",)"
                        R"("startedAt":1700000000000})"));
-  // An explicit null reads as the same absence every other optional on this wire reads it as, and
-  // the reply still omits the field rather than echoing the null back.
+  // An explicit null reads as the same absence, and the reply omits the field rather than echoing it.
   Json::Value nulled = body;
   nulled["id"] = "rt_22222222";
   nulled["entries"][0]["targetReps"] = Json::nullValue;
@@ -112,10 +102,6 @@ TEST(gym_a_routine_line_with_no_rep_target_omits_it_in_and_out) {
   CHECK_EQ(dump(bodyOf(sentNull)["entries"]), dump(bodyOf(created)["entries"]));
 }
 
-// §M's third door: a routine copied out of a notebook on Sunday night, SAVED while it is still
-// incomplete. The open line omits targetSets on the way in and on the way out — the absence is the
-// state, and a zero would be a target of nothing — and the frozen plan carries the same absence
-// onto the session, which is what lets the logger ask at the rack instead of reading `0 × 5`.
 TEST(gym_a_routine_saves_with_an_open_line_and_the_plan_freezes_it_open) {
   Harness h;
   h.signIn("s-live");
@@ -146,8 +132,6 @@ TEST(gym_a_routine_saves_with_an_open_line_and_the_plan_freezes_it_open) {
                        R"("routine":"Push A"})"));
 }
 
-// Half a target is not a target: the sheet that leaves a line open clears the whole row, so a line
-// naming reps with no sets is refused where every unstorable value is.
 TEST(gym_a_routine_line_with_reps_but_no_sets_is_400) {
   Harness h;
   h.signIn("s-live");
@@ -188,14 +172,11 @@ TEST(gym_create_routine_naming_a_movement_no_catalog_holds_is_400_no_such_exerci
       send(h.program, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", body, "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-  // The same fact the set write names, under the same machine word — the entry has to be resolved
-  // against GET /v1/gym/exercises before a plan can hold it.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
   CHECK(h.repo.db.routineRows.empty());
 }
 
-// One sentence for every way a routine is unstorable as written, and nothing lands for any of them.
 TEST(gym_a_routine_that_could_not_be_stored_as_written_is_400) {
   Harness h;
   h.signIn("s-live");
@@ -220,11 +201,7 @@ TEST(gym_a_routine_that_could_not_be_stored_as_written_is_400) {
   CHECK(h.repo.db.routineRows.empty());
 }
 
-// A key the entry schema never declared is REFUSED, never dropped — the rule the tool surface
-// publishes as `additionalProperties: false` and the composite tool host enforces on a call's
-// arguments, reaching one level down into the line. `targetRepsl: 5` used to read clean: the entry
-// stored no rep target at all, the reply said the routine had saved, and the target the lifter
-// typed was gone from a plan they will train off for months.
+// A key the entry schema never declared is REFUSED, never dropped.
 TEST(gym_a_routine_entry_key_the_schema_never_declared_is_400_and_nothing_lands) {
   Harness h;
   h.signIn("s-live");
@@ -240,10 +217,7 @@ TEST(gym_a_routine_entry_key_the_schema_never_declared_is_400_and_nothing_lands)
   CHECK(h.repo.db.routineRows.empty());
 }
 
-// An editor that says which revision it read is refused when the day moved since — a proposal
-// applied on the phone, another tab's save — rather than landing whole over it; a PUT that names no
-// revision keeps landing (the phone's one-weight read-modify-write). The remedy is a re-read, and
-// the code says so.
+// A PUT naming a revision the day has moved past is refused; one naming no revision keeps landing.
 TEST(gym_replace_routine_naming_a_stale_revision_is_409_and_writes_nothing) {
   Harness h;
   h.signIn("s-live");
@@ -271,8 +245,7 @@ TEST(gym_replace_routine_naming_a_stale_revision_is_409_and_writes_nothing) {
   CHECK_EQ(bodyOf(blind)["name"].asString(), std::string("Push A4"));
   CHECK_EQ(bodyOf(blind)["revision"].asInt(), 3);
 
-  // A REPLAY of a revision-named PUT whose bytes already stand reads back what landed, whatever
-  // revision it named — a lost reply must never turn into a refusal.
+  // A REPLAY of a revision-named PUT whose bytes already stand reads back what landed.
   Json::Value replayed = routineBody("rt_11111111", "Push A4");
   replayed["revision"] = 2;                                                       // stale by now, identical body
   drogon::HttpResponsePtr again = send(h.program, &ProgramApi::replaceRoutine,
@@ -305,8 +278,6 @@ TEST(gym_replace_routine_rewrites_it_and_a_missing_one_is_404) {
   CHECK_EQ(h.repo.db.routineRows.size(), static_cast<std::size_t>(1));
 }
 
-// Absent and another account's are ONE fact on every routine route, so a caller can never learn
-// that an id exists by the shape of its refusal.
 TEST(gym_another_accounts_routine_is_404_on_every_route) {
   Harness h;
   h.signIn("s-live");
@@ -347,11 +318,7 @@ TEST(gym_delete_routine_is_204_with_no_body_and_then_404) {
   CHECK(h.repo.db.routineRows.empty());
 }
 
-// ---- the proposal ledger, and THE TAP ----------------------------------------------------------
-
 namespace {
-// The mint an agent makes, put straight into the store — the HTTP surface has no door for it, and
-// that is the point: proposing is a tool, applying is a tap.
 RoutineProposal proposedFor(const UserId& owner, std::vector<RoutineEntry> becomes,
                             const std::string& id = "prop_11111111", int baseRevision = 1) {
   const std::vector<RoutineEntry> base{benchEntry()};
@@ -370,8 +337,7 @@ RoutineEntry benchAt(double weightKg, int reps) {
 }
 }
 
-// The diff screen's read, and the shape three clients are pinned to. `changes` are the rows a lifter
-// reads; `changeCount` is what the button counts.
+// `changes` are the rows a lifter reads; `changeCount` is what the button counts.
 TEST(gym_a_proposal_reads_as_a_typed_field_level_diff) {
   Harness h;
   const UserId caller = h.signIn("s-live");
@@ -394,8 +360,6 @@ TEST(gym_a_proposal_reads_as_a_typed_field_level_diff) {
                        R"("source":{"door":"mcp"},"state":"pending","summary":"Heavier triples."})"));
 }
 
-// THE TAP: all of it or none, and the reply carries both halves so the card redraws as `Applied`
-// and the editor behind it redraws without a second read.
 TEST(gym_applying_a_proposal_writes_the_whole_document_and_settles_the_card) {
   Harness h;
   const UserId caller = h.signIn("s-live");
@@ -416,8 +380,6 @@ TEST(gym_applying_a_proposal_writes_the_whole_document_and_settles_the_card) {
   CHECK_EQ(bodyOf(applied)["routine"]["entries"][0]["targetReps"].asInt(), 3);
 }
 
-// The line the whole ledger stands on, over the wire: the lifter's own PUT moves the routine, and a
-// proposal minted against what it replaced is SUPERSEDED rather than merged over the top.
 TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
   Harness h;
   const UserId caller = h.signIn("s-live");
@@ -436,21 +398,18 @@ TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
 
   CHECK_EQ(refused->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(bodyOf(refused)["code"].asString(), std::string("proposal-superseded"));
-  // The lifter's own numbers stand.
   drogon::HttpResponsePtr routine =
       send(h.program, &ProgramApi::getRoutine, getRequest("/v1/gym/routines/rt_11111111", "s-live"),
            "rt_11111111");
   CHECK_EQ(bodyOf(routine)["entries"][0]["targetWeightKg"].asDouble(), 85.0);
   CHECK_EQ(bodyOf(routine)["revision"].asInt(), 2);
-  // And the superseded card is still on the routine's history rather than gone.
   drogon::HttpResponsePtr history = send(
       h.program, &ProgramApi::listProposals,
       getRequest("/v1/gym/proposals?routineId=rt_11111111", "s-live"));
   CHECK_EQ(bodyOf(history)["proposals"][0]["state"].asString(), std::string("superseded"));
 }
 
-// Dismissing asks for no reason and changes nothing, and the card stays in the history in case the
-// lifter wants it back. Asking again for the SAME decision replays 200; the other one is 409.
+// Asking again for the SAME decision replays 200; the other one is 409.
 TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused) {
   Harness h;
   const UserId caller = h.signIn("s-live");
@@ -482,8 +441,6 @@ TEST(gym_dismissing_a_proposal_changes_nothing_and_the_other_decision_is_refused
   CHECK_EQ(h.repo.db.routineRows[0].revision, 1);
 }
 
-// Every proposal route is owner-scoped, and absent is byte-identical to another account's — the
-// same rule every other route in this file keeps.
 TEST(gym_another_accounts_proposal_is_404_on_every_route) {
   Harness h;
   h.signIn("s-live");
@@ -506,12 +463,9 @@ TEST(gym_another_accounts_proposal_is_404_on_every_route) {
   CHECK_EQ(dump(bodyOf(read)), std::string(R"({"error":"no such proposal"})"));
   CHECK_EQ(applied->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(bodyOf(listed)["proposals"].size(), 0u);
-  // And their plan is exactly where it was.
   CHECK_EQ(h.repo.db.routineRows[0].entries[0].targetWeightKg, std::optional<double>(82.5));
 }
 
-// Proposals have no anonymous story: no account, no proposal. Every door 401s before it reads
-// anything, which is what the claim replay leans on — there is nothing here for it to replay.
 TEST(gym_every_proposal_route_refuses_a_caller_with_no_session) {
   Harness h;
 
@@ -534,7 +488,6 @@ TEST(gym_every_proposal_route_refuses_a_caller_with_no_session) {
            drogon::k401Unauthorized);
 }
 
-// §B5's dot, on the read the routines screen already makes.
 TEST(gym_the_routines_list_carries_the_proposal_waiting_on_a_day_of_the_program) {
   Harness h;
   const UserId caller = h.signIn("s-live");

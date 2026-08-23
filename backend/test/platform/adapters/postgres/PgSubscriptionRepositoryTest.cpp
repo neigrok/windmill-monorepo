@@ -10,18 +10,7 @@
 #include <optional>
 #include <string>
 
-// Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
-// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own rows, so it
-// is fully self-contained.
-//
-// It exists for the one thing no fake can hold an opinion about: the upsert's trailing
-// `WHERE excluded.occurred_at >= paddle_subscriptions.occurred_at`. Paddle retries a delivery for
-// days, so an "active" from before a cancel can arrive after it — and that WHERE is the only thing
-// between a retried old event and a closed account walking back through the paid door
-// (db/schema.sql, `occurred_at timestamptz`). The clause lives in SQL, so it is provable in SQL
-// alone. The read's preference for an access-granting row is here for the same reason: the ORDER BY
-// is what stops a row anyone can plant from shadowing the subscription that pays.
+// Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own rows.
 using namespace wm;
 
 namespace {
@@ -34,7 +23,6 @@ const std::string kMyEmail = "billing-pgtest@example.com";
 const std::string kSubscription = "sub_pgtest01";
 const std::string kCustomer = "ctm_pgtest01";
 
-// Paddle's own event times, a week apart, so "older" and "newer" are unambiguous.
 const std::string kEarly = "2026-05-01T10:00:00Z";
 const std::string kLate = "2026-05-08T10:00:00Z";
 
@@ -55,8 +43,7 @@ PaddleSubscription event(const std::string& status, const std::string& occurredA
                             "pri_pgtest",   "pro_pgtest", "", occurredAt};
 }
 
-// The stored instant, compared IN Postgres: `to_json` renders a timestamptz in the session's own
-// timezone, so a string comparison here would assert the developer's TZ rather than the value.
+// Compared IN Postgres: `to_json` renders a timestamptz in the session's own timezone, so a string comparison here would assert the developer's TZ.
 bool storedOccurredAtIs(const std::string& iso) {
   std::optional<std::string> value;
   if (!iso.empty()) value = iso;
@@ -70,9 +57,7 @@ bool storedOccurredAtIs(const std::string& iso) {
 }
 }
 
-// The whole reason the guard exists. Paddle retries for days on the same budget, so the delivery
-// order on the wire is not the order the events happened in — and a replayed "active" that lands
-// after a real cancel would hand a closed account the paid product back with nothing to notice it.
+// Paddle retries for days, so wire order is not event order: a replayed "active" landing after a real cancel must not reopen the paid door.
 TEST(pg_subscription_a_retried_older_event_never_hands_back_the_access_a_cancel_took_away) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -94,7 +79,6 @@ TEST(pg_subscription_a_retried_older_event_never_hands_back_the_access_a_cancel_
   CHECK_FALSE(grantsAccess(row->status));
   CHECK(storedOccurredAtIs(kLate));  // the newer event's own time, still standing
 
-  // ...and a genuinely newer event is not blocked by the guard: the row moves forward again.
   repo.upsertSubscription(event("active", "2026-06-01T10:00:00Z"));
   const std::optional<PaddleSubscription> resumed = repo.findFor(UserId{kMine}, kMyEmail);
   REQUIRE(resumed.has_value());
@@ -103,10 +87,7 @@ TEST(pg_subscription_a_retried_older_event_never_hands_back_the_access_a_cancel_
   CHECK(storedOccurredAtIs("2026-06-01T10:00:00Z"));
 }
 
-// The comparison is `>=`, not `>`, and that is not a slip. Paddle stamps a transaction's events
-// from one instant, so two deliveries can carry the identical occurred_at — under a strict `>` the
-// second would be dropped forever, and whichever of them arrived first would be the account's
-// permanent state.
+// The comparison is `>=`, not `>`: Paddle stamps a transaction's events from one instant, so two deliveries can carry the identical occurred_at.
 TEST(pg_subscription_a_second_event_stamped_at_the_same_instant_still_applies) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -121,15 +102,12 @@ TEST(pg_subscription_a_second_event_stamped_at_the_same_instant_still_applies) {
   CHECK(storedOccurredAtIs(kLate));
 }
 
-// Both null arms of the guard, which are what make it safe to have shipped after the rows existed:
-// a row written before the column did carries no time, and an event that carries none cannot be
-// ordered against anything. Either way the newer write must land, or a mirror could freeze.
+// Both null arms of the guard: a row written before the column carries no time, and an event that carries none cannot be ordered. Either way the newer write must land.
 TEST(pg_subscription_an_event_or_a_row_with_no_recorded_time_still_applies) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgSubscriptionRepository repo{pgTestPool()};
 
-  // A row with no time of its own — the pre-column shape — is not frozen by a timed event.
   repo.upsertSubscription(event("active", ""));
   CHECK(storedOccurredAtIs(""));
   repo.upsertSubscription(event("canceled", kEarly));
@@ -138,7 +116,6 @@ TEST(pg_subscription_an_event_or_a_row_with_no_recorded_time_still_applies) {
   CHECK_EQ(canceled->status, std::string("canceled"));
   CHECK(storedOccurredAtIs(kEarly));
 
-  // ...and an event with no time of its own is not blocked by a row that has one.
   repo.upsertSubscription(event("active", ""));
   const std::optional<PaddleSubscription> untimed = repo.findFor(UserId{kMine}, kMyEmail);
   REQUIRE(untimed.has_value());
@@ -146,9 +123,7 @@ TEST(pg_subscription_an_event_or_a_row_with_no_recorded_time_still_applies) {
   CHECK(storedOccurredAtIs(""));
 }
 
-// Only the checkout stamps custom_data, so every later subscription.* event carries no binding at
-// all. A plain `user_id = excluded.user_id` would erase the account the subscription belongs to on
-// the very first renewal, and the read would fall back to matching an email that may not match.
+// Only the checkout stamps custom_data, so a plain `user_id = excluded.user_id` would erase the binding on the first renewal.
 TEST(pg_subscription_a_later_event_carrying_no_account_never_erases_the_one_already_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -161,13 +136,10 @@ TEST(pg_subscription_a_later_event_carrying_no_account_never_erases_the_one_alre
   REQUIRE(row.has_value());
   CHECK_EQ(row->userId, kMine);
   CHECK_EQ(row->status, std::string("past_due"));
-  CHECK(grantsAccess(row->status));  // dunning keeps the door open
+  CHECK(grantsAccess(row->status));
 }
 
-// custom_data rides in from a checkout anyone can open, so anyone can plant a row carrying someone
-// else's user id and then cancel it. Under a newest-row-wins read that dead row would shadow the
-// real subscription and lock a paying customer out — so the read asks "any LIVE subscription"
-// first, and only falls back to the newest row for display.
+// custom_data rides in from a checkout anyone can open, so the read asks "any LIVE subscription" first and only falls back to the newest row for display.
 TEST(pg_subscription_a_planted_dead_row_never_shadows_the_subscription_that_pays) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -183,8 +155,7 @@ TEST(pg_subscription_a_planted_dead_row_never_shadows_the_subscription_that_pays
   CHECK(grantsAccess(row->status));
 }
 
-// The other binding, and the only one a subscription created outside our checkout has: the Paddle
-// customer's email, matched against the account's. An account with neither binding sees nothing.
+// The other binding: the Paddle customer's email, matched against the account's. An account with neither binding sees nothing.
 TEST(pg_subscription_the_read_finds_a_subscription_bound_only_by_its_customer_s_email) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

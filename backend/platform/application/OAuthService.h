@@ -13,19 +13,14 @@
 
 namespace wm {
 
-// The OAuth 2.1 authorization server for the MCP resource server. Each method is a fail-fast
-// pipeline: check through the domain, persist a digest, hand back the raw secret. Consent
-// (resolving the human via the magic-link session) lives at the HTTP edge; this service is
-// handed an already-authenticated UserId when a code is issued.
+// The OAuth 2.1 authorization server fronting the MCP resource server. Consent lives at the HTTP
+// edge; this service is handed an already-authenticated UserId when a code is issued.
 class OAuthService {
 public:
   OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock& clock);
 
-  // Dynamic Client Registration (RFC 7591). The two refusals are DIFFERENT facts and say so: bad
-  // metadata is the caller's to fix (an empty redirect list, a redirect that is not HTTPS/loopback,
-  // more redirects or longer ones than OAuthPolicy allows), while `atCapacity` is ours — the door
-  // is briefly shut on everyone because someone is bursting through it. An operator debugging a
-  // dead connect flow must never be sent to look at a redirect URI that was fine.
+  // Dynamic Client Registration (RFC 7591). The two refusals are different facts: invalidMetadata
+  // is the caller's to fix, atCapacity is the door briefly shut on everyone.
   enum class RegisterError { ok, invalidMetadata, atCapacity };
   struct Registration {
     RegisterError error = RegisterError::ok;
@@ -46,8 +41,7 @@ public:
   // The registered client, for the consent screen to show verified name/redirects.
   std::optional<OAuthClient> describeClient(const std::string& clientId);
 
-  // On consent approval: mint a single-use authorization code bound to the grant. The raw
-  // code is returned to append to the client's redirect; only its digest is stored.
+  // Mints a single-use authorization code bound to the grant; only its digest is stored.
   std::string issueCode(const std::string& clientId, const std::string& redirectUri,
                         const std::string& codeChallenge, const std::string& resource,
                         const std::string& scope, const UserId& user);
@@ -66,26 +60,22 @@ public:
   TokenResult exchangeCode(const std::string& code, const std::string& clientId,
                            const std::string& redirectUri, const std::string& codeVerifier,
                            const std::string& resource);
-  // Rotation, and the breach signal that rides with it: presenting a refresh token that has
-  // already been spent revokes the whole (user, client) grant before answering invalid_grant.
+  // Presenting an already-spent refresh token revokes the whole (user, client) grant before
+  // answering invalid_grant.
   TokenResult refresh(const std::string& refreshToken, const std::string& clientId);
 
-  // Resource-server validation: the account a valid, unexpired, audience-matching access token acts
-  // as AND the grant it carries, or nullopt. The scope has been stored end to end since the first
-  // token; this is the line where it stops being an opaque string and starts being enforced. A
-  // resolved token also advances its grant's last-used stamp (throttled), so the settings §2 list
-  // shows honest recent activity.
+  // The account a valid, unexpired, audience-matching access token acts as and the grant it
+  // carries, or nullopt. A resolved token advances its grant's last-used stamp (throttled).
   std::optional<ToolCaller> resolveAccessToken(const std::string& accessToken,
                                                const std::string& serverResource);
 
-  // The settings §2 "Connected tools" surface: list a user's grants, disconnect one tool
-  // (drops its tokens+codes+grant), and disconnect them all (account close).
+  // disconnect drops one tool's tokens, codes and grant; disconnectAll does it for every tool.
   std::vector<GrantView> listGrants(const UserId& user);
   void disconnect(const UserId& user, const std::string& clientId);
   void disconnectAll(const UserId& user);
 
 private:
-  // Shared by exchangeCode and refresh: mint + persist a fresh access/refresh pair.
+  // Shared by exchangeCode and refresh: mint and persist a fresh access/refresh pair.
   Tokens mintPair(const std::string& clientId, const UserId& user, const std::string& resource,
                   const std::string& scope, UnixMs now);
 

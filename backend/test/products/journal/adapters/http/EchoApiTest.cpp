@@ -669,9 +669,6 @@ TEST(opening_the_same_pairing_twice_records_one_row) {
   CHECK_EQ(h.echoes->signals[user.str()].size(), std::size_t{1});
 }
 
-// The three answers are three kinds, and one pairing can carry all of them: opened on Monday,
-// useful on Tuesday, retired in March. Collapsing them would lose exactly the distinction the
-// table exists to record.
 TEST(the_three_answers_about_one_pairing_are_three_rows) {
   Harness h;
   const UserId user = h.signIn("s-live");

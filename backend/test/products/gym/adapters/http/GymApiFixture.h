@@ -18,16 +18,7 @@
 #include <string>
 #include <utility>
 
-// The fixture every gym HTTP test file shares — one file per adapter (TrainingApiTest,
-// CatalogApiTest, ProgramApiTest, PreferencesApiTest, ThreadsApiTest), as PgGymFixture.h is for
-// the Pg files. It is ONE harness holding all five adapters over ONE fake store, because a case
-// about one adapter's wire routinely lays rows through another's: a movement's record is trained
-// through the log's doors, a routine's proposal is read off the routines list, a units preference
-// is proved by what the log reads answer. So the builders here are the request shapes and the
-// bodies more than one file sends, and a helper only one file reaches for stays in that file.
-//
-// The fake repository enforces the SAME rules as the SQL (PK no-op, one-open refusal, max+1
-// numbering), so what the wire assertions pin down is exactly what the live server says.
+// The fixture every gym HTTP test file shares: all five adapters over one fake store.
 namespace wm::gym::apitest {
 
 using namespace wm::fake;
@@ -176,8 +167,7 @@ inline Json::Value renameBody(const std::string& name = "Low-bar Squat") {
   return body;
 }
 
-// One handler driven as Drogon would drive it, with the reply captured. The ids after the request are
-// the path segments the handler takes — none, one, or the workout-and-set pair.
+// One handler driven as Drogon would drive it, with the reply captured.
 template <class Api, class... Ids, class... Given>
 drogon::HttpResponsePtr send(Api& api,
                              void (Api::*handler)(const drogon::HttpRequestPtr&, HttpCallback&&,
@@ -193,9 +183,7 @@ inline Json::Value bodyOf(const drogon::HttpResponsePtr& response) {
   return *response->getJsonObject();
 }
 
-// A whole finished workout driven through the wire, which is what the reads about a trained account
-// are asked about — nothing there reaches past a handler into the store.
-// bottom of this file are asked about — nothing there reaches past a handler into the store.
+// A whole finished workout driven through the wire.
 inline void trainedThrough(Harness& h, const std::string& cookie, const std::string& session,
                     std::uint64_t startedAt, int sets) {
   send(h.training, &TrainingApi::startSession,

@@ -21,8 +21,8 @@ constexpr std::uint64_t kDay = 24ull * 60 * 60 * 1000;
 
 struct Harness {
   FakeAuthRepository authRepo;
-  FakeEmail email;                // the platform sign-in mailer AuthService still speaks to
-  FakeReminderMail reminderMail;  // the roadmap reminder mailer the sweep now speaks to
+  FakeEmail email;
+  FakeReminderMail reminderMail;
   std::shared_ptr<FakeTokens> tokens = std::make_shared<FakeTokens>();
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeOAuthRepository oauthRepo;
@@ -48,7 +48,6 @@ struct Harness {
     return user.id;
   }
 
-  // One person the sweep would otherwise write to, so a rehearsal has something to rehearse.
   void planOneDueUser() {
     DueUser row;
     row.user = UserId{"u1"};
@@ -104,7 +103,6 @@ drogon::HttpResponsePtr pause(Harness& h, const drogon::HttpRequestPtr& req) {
   return captured;
 }
 
-// The one-click secret rides the query, not the body — an empty token stands for a URL with no `t`.
 drogon::HttpResponsePtr unsubscribe(Harness& h, const std::string& token) {
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/reminders/unsubscribe", "");
   if (!token.empty()) req->setParameter("t", token);
@@ -113,9 +111,7 @@ drogon::HttpResponsePtr unsubscribe(Harness& h, const std::string& token) {
   return captured;
 }
 
-// The admin sweep answers from the sweep's OWN loop, never the thread that called it, so the test
-// waits for it exactly as a client would. `answeredOn` is the proof of that: a run that came back
-// on this thread would have blocked a drogon IO thread for the length of the whole batch.
+// The admin sweep answers from the sweep's OWN loop, never the calling thread; `answeredOn` is the proof.
 struct SweepAnswer {
   drogon::HttpResponsePtr response;
   std::thread::id answeredOn;
@@ -161,9 +157,6 @@ TEST(reminders_a_signed_out_caller_is_asked_to_sign_in) {
 }
 
 TEST(reminders_armed_answers_whether_the_engine_can_reach_THIS_caller) {
-  // The rollout state .env.example prescribes: the feature enabled, an allowlist of one. Answering
-  // this question with the feature's flag alone would advertise the switch to every signed-in
-  // stranger, who would turn it on, be told when we send, and receive nothing for a month.
   Harness reachable(MailArming(true, "u1"));
   reachable.signIn("s-live");
   CHECK(bodyOf(get(reachable, signedIn(drogon::Get, "/v1/reminders", "")))["armed"].asBool());
@@ -189,7 +182,6 @@ TEST(reminders_a_patch_edits_only_the_fields_it_carries) {
   CHECK_FALSE(body["enabled"].asBool());
   CHECK_EQ(body["timezone"].asString(), std::string("Europe/Berlin"));
 
-  // Turning it on carries no timezone, and must not erase the one already stored.
   CHECK_EQ(patch(h, signedIn(drogon::Patch, "/v1/reminders", R"({"enabled":true})"))->getStatusCode(),
            drogon::k204NoContent);
   body = bodyOf(get(h, signedIn(drogon::Get, "/v1/reminders", "")));
@@ -198,8 +190,6 @@ TEST(reminders_a_patch_edits_only_the_fields_it_carries) {
 }
 
 TEST(reminders_enabling_without_a_timezone_is_refused) {
-  // No zone means no hour to send at, and defaulting to UTC would mail US users at 4am. Refusing
-  // beats accepting the row into permanent silence.
   Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
 
@@ -211,8 +201,6 @@ TEST(reminders_enabling_without_a_timezone_is_refused) {
 }
 
 TEST(reminders_enabling_is_refused_for_anyone_the_engine_cannot_reach) {
-  // No row may claim "on" while the sweep cannot deliver to its owner: that row would decide an
-  // honest week every Tuesday and withhold every single one of them.
   Harness h(MailArming(true, "somebody-else"));
   h.signIn("s-live");
 
@@ -224,8 +212,7 @@ TEST(reminders_enabling_is_refused_for_anyone_the_engine_cannot_reach) {
 }
 
 TEST(reminders_a_field_of_the_wrong_type_is_a_400_and_never_a_500) {
-  // jsoncpp's asBool/asString THROW on a type they cannot convert, and an exception out of a
-  // handler is a 500, a server_errors row and a Sentry event — mintable by any signed-in caller.
+  // jsoncpp's asBool/asString THROW on a type they cannot convert, and an exception out of a handler is a 500.
   Harness h(MailArming(true, "u1"));
   h.signIn("s-live");
 
@@ -255,8 +242,6 @@ TEST(reminders_a_timezone_the_database_does_not_know_is_refused) {
 }
 
 TEST(reminders_the_pause_door_answers_204_to_everything_it_is_given) {
-  // It takes no credential and can never say no: a token that matches nothing gets the same answer
-  // as one that matches, so this door can never be asked whose reminders exist.
   Harness h;
   h.reminders->pauseDigests["u1"] = "d1";
   h.reminders->settings["u1"].enabled = true;
@@ -264,19 +249,16 @@ TEST(reminders_the_pause_door_answers_204_to_everything_it_is_given) {
   CHECK_EQ(pause(h, request(drogon::Post, "/v1/reminders/pause", R"({"token":"nope"})"))
                ->getStatusCode(),
            drogon::k204NoContent);
-  CHECK(h.reminders->settings["u1"].enabled);  // a stranger's guess changes nothing
+  CHECK(h.reminders->settings["u1"].enabled);
 
   CHECK_EQ(pause(h, request(drogon::Post, "/v1/reminders/pause", R"({"token":"s1"})"))
                ->getStatusCode(),
            drogon::k204NoContent);
   CHECK_FALSE(h.reminders->settings["u1"].enabled);
-  // And the credential is spent: a forwarded reminder must not stay a live pause link forever.
   CHECK_EQ(h.reminders->pauseDigests.count("u1"), std::size_t{0});
 }
 
 TEST(reminders_a_pause_body_of_the_wrong_shape_is_still_a_204_and_never_a_500) {
-  // This handler is UNCREDENTIALED. A throw here would be an anonymous 500 generator: one
-  // server_errors row and one Sentry event per request, at whatever rate the sender likes.
   Harness h;
 
   CHECK_EQ(pause(h, request(drogon::Post, "/v1/reminders/pause", R"({"token":[]})"))->getStatusCode(),
@@ -290,24 +272,20 @@ TEST(reminders_a_pause_body_of_the_wrong_shape_is_still_a_204_and_never_a_500) {
 }
 
 TEST(reminders_the_one_click_unsubscribe_spends_the_same_secret_pause_does) {
-  // RFC 8058: a mail client POSTs the List-Unsubscribe URL for the reader, carrying the query
-  // secret from their own mail. Like pause it answers the same to a matching and a non-matching
-  // secret, and the credential is single-use.
+  // RFC 8058: a mail client POSTs the List-Unsubscribe URL carrying the query secret. The credential is single-use.
   Harness h;
   h.reminders->pauseDigests["u1"] = "d1";
   h.reminders->settings["u1"].enabled = true;
 
   CHECK_EQ(unsubscribe(h, "nope")->getStatusCode(), drogon::k200OK);
-  CHECK(h.reminders->settings["u1"].enabled);  // a stranger's guess changes nothing
+  CHECK(h.reminders->settings["u1"].enabled);
 
   CHECK_EQ(unsubscribe(h, "s1")->getStatusCode(), drogon::k200OK);
   CHECK_FALSE(h.reminders->settings["u1"].enabled);
-  CHECK_EQ(h.reminders->pauseDigests.count("u1"), std::size_t{0});  // spent
+  CHECK_EQ(h.reminders->pauseDigests.count("u1"), std::size_t{0});
 }
 
 TEST(reminders_unsubscribe_with_no_token_is_a_200_and_a_noop) {
-  // A prefetcher or scanner that reaches this URL without the `t` — or the door's own empty case —
-  // must change nothing and still answer a clean 2xx, never throw out of an uncredentialed handler.
   Harness h;
   h.reminders->pauseDigests["u1"] = "d1";
   h.reminders->settings["u1"].enabled = true;
@@ -318,7 +296,6 @@ TEST(reminders_unsubscribe_with_no_token_is_a_200_and_a_noop) {
 }
 
 TEST(reminders_the_admin_sweep_is_a_404_rather_than_a_403) {
-  // A 403 would confirm the route exists. An unconfigured token and a wrong one answer identically.
   Harness unconfigured;
   CHECK_EQ(sweep(unconfigured, request(drogon::Post, "/v1/admin/reminders/sweep", "{}"))
                .response->getStatusCode(),
@@ -335,8 +312,6 @@ TEST(reminders_the_admin_sweep_is_a_404_rather_than_a_403) {
 }
 
 TEST(reminders_an_admin_sweep_runs_off_the_calling_thread) {
-  // A full batch is up to 200 users' worth of database round trips and provider calls. Running it
-  // on the thread that took the request would pin a quarter of the server's IO for that long.
   Harness h(MailArming(), "the-secret");
   h.planOneDueUser();
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/reminders/sweep", "{}");
@@ -350,7 +325,7 @@ TEST(reminders_an_admin_sweep_runs_off_the_calling_thread) {
   CHECK(body["ran"].asBool());
   CHECK_EQ(body["due"].asInt(), 1);
   CHECK_EQ(body["claimed"].asInt(), 1);
-  CHECK_EQ(body["held"].asInt(), 1);  // dark engine: decided, claimed, withheld
+  CHECK_EQ(body["held"].asInt(), 1);
   CHECK_EQ(body["sent"].asInt(), 0);
   CHECK_EQ(body["wouldSend"].asInt(), 0);
 }
@@ -369,9 +344,6 @@ TEST(reminders_a_time_travelling_sweep_is_refused_while_the_engine_is_armed) {
 }
 
 TEST(reminders_a_time_travelling_sweep_is_always_a_rehearsal) {
-  // The pointer advance computes next week from SQL now(), not from asOfMs, so a real run against
-  // a future clock would claim the whole fleet's week and push every pointer against real time.
-  // One mistyped rehearsal would cost everybody their next reminder.
   Harness h(MailArming(), "the-secret");
   h.planOneDueUser();
   drogon::HttpRequestPtr req = request(drogon::Post, "/v1/admin/reminders/sweep",
@@ -399,8 +371,7 @@ TEST(reminders_an_admin_sweep_of_the_wrong_shape_is_a_400) {
   badClock->addHeader("authorization", "Bearer the-secret");
   CHECK_EQ(sweep(h, badClock).response->getStatusCode(), drogon::k400BadRequest);
 
-  // A number is not enough: asUInt64 throws on a negative or a fraction exactly as it does on a
-  // string, and every one of those throws would be the same anonymous 500.
+  // asUInt64 throws on a negative or a fraction exactly as it does on a string.
   drogon::HttpRequestPtr negativeClock =
       request(drogon::Post, "/v1/admin/reminders/sweep", R"({"asOfMs":-1})");
   negativeClock->addHeader("authorization", "Bearer the-secret");
@@ -420,9 +391,6 @@ TEST(reminders_an_admin_sweep_of_the_wrong_shape_is_a_400) {
 }
 
 TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) {
-  // The one fact on this surface the reader did not choose. Someone whose weekly mail silently
-  // stopped is owed the reason: a settings page answering `enabled: true` while nothing ever
-  // arrives is lying to them, and the flag is the only thing that can tell them the truth.
   Harness h;
   UserId me = h.signIn("s-live");
   h.reminders->settings[me.str()].enabled = true;
@@ -433,17 +401,11 @@ TEST(reminders_the_settings_surface_reports_a_mailbox_the_provider_called_dead) 
 
   const Json::Value body = bodyOf(get(h, signedIn(drogon::Get, "/v1/reminders", "")));
   CHECK(body["suppressed"].asBool());
-  // And only the suppression: what its owner asked for is untouched, so lifting the flag restores
-  // their choice rather than a default.
   CHECK(body["enabled"].asBool());
   CHECK_EQ(body["timezone"].asString(), std::string("Europe/Berlin"));
-  // An address no account owns writes nothing and says so, which is what keeps the webhook from
-  // being an account-existence oracle.
   CHECK_FALSE(h.reminders->stopMailing(Email{"stranger@example.com"}));
 }
 
-// A turn-on the store refuses lifts nothing: the provider's verdict is not discarded on the way to
-// a 400 that left reminders exactly as they were.
 TEST(reminders_a_refused_turn_on_leaves_a_suppression_standing) {
   Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
@@ -462,8 +424,6 @@ TEST(reminders_a_refused_turn_on_leaves_a_suppression_standing) {
 }
 
 TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
-  // The one deliberate act that clears the provider's verdict: the owner, signed in, saying
-  // "on" — which is them saying the address works now. Being wrong costs one more bounce.
   Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   h.reminders->settings[me.str()].enabled = true;
@@ -486,8 +446,6 @@ TEST(reminders_the_owner_turning_them_on_lifts_a_suppression) {
 }
 
 TEST(reminders_a_patch_that_does_not_turn_them_on_leaves_a_suppression_alone) {
-  // Switching off is not a claim about the mailbox, and neither is moving the timezone over a row
-  // that already reads "on": the flag is the provider's fact until the owner says otherwise.
   Harness h(MailArming(true, "u1"));
   UserId me = h.signIn("s-live");
   h.reminders->settings[me.str()].enabled = true;

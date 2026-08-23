@@ -12,24 +12,15 @@
 
 namespace wm {
 
-// The pass that makes the database forget. It is the only sweep in the system that DELETES rather
-// than sends, so it is loud twice over: it says what its windows are the moment it is armed, and it
-// says what each pass removed, per table. An operator who thinks a window is wrong must be able to
-// find that out from the log before the disk tells them.
-//
-// It takes the fleet lock like the mail sweeps do, for the same reason and with no more force: two
-// processes deleting the same rows is wasted work, not a correctness problem — the rows are gone
-// either way.
-//
-// The trigger is DUMB, like every other heartbeat here: no schedule, no state, just "what is past
-// its window right now". A restart loses nothing.
+// The pass that makes the database forget. It logs its windows when armed and what each pass
+// removed, per table. It takes the fleet lock to avoid duplicated work, not for correctness.
 class RetentionSweep {
 public:
   RetentionSweep(RetentionStore& store, SweepMutex& mutex, Clock& clock, RetentionWindows windows)
       : store_(store), mutex_(mutex), clock_(clock), windows_(std::move(windows)) {}
 
-  // Armed a few minutes past boot, then hourly. The first delay is generous on purpose: this pass
-  // deletes, and a crash-looping process must not get a delete in on every restart.
+  // Armed a few minutes past boot, then hourly: a crash-looping process must not delete on every
+  // restart.
   void start() {
     LOG_INFO << "retention: events " << window(windows_.eventDays) << ", feedback "
              << window(windows_.feedbackDays) << ", server errors " << window(windows_.serverErrorDays)

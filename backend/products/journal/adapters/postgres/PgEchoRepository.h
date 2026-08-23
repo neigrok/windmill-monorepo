@@ -11,13 +11,11 @@ namespace wm {
 // Echo storage over Postgres. Stateless but for the connection string; every read owner-scoped.
 //
 // Vectors live in a bytea as little-endian float32 and are matched in memory by the pure selection
-// domain — brute force is correct at journal's scale and keeps exact recall measurable, and pgvector
-// stays the escape hatch behind this class rather than a dependency in front of it.
+// domain; pgvector stays an escape hatch behind this class rather than a dependency in front of it.
 //
-// The mac-vs-CI portability rules hold throughout: day::text, epoch-ms bigints, a template<Row>
-// mapper, and bytea moved as its own hex text in BOTH directions. The Homebrew dev box is on
-// libpqxx 8 and the CI image builds 7.10, so nothing here touches a pqxx binary or array reader —
-// the same reasoning that already keeps every date off pqxx's date parsers.
+// Portability rules hold throughout: day::text, epoch-ms bigints, a template<Row> mapper, and bytea
+// moved as its own hex text in BOTH directions. The dev box is on libpqxx 8 and the CI image builds
+// 7.10, so nothing here touches a pqxx binary, date or array reader.
 class PgEchoRepository : public EchoRepository {
 public:
   explicit PgEchoRepository(std::shared_ptr<PgPool> pool);

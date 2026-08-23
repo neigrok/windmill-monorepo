@@ -10,7 +10,7 @@ namespace wm {
 namespace {
 constexpr char kHexDigits[] = "0123456789ABCDEF";
 
-// The routes whose NEXT path segment is a live credential. One entry today; the table is the point.
+// The routes whose NEXT path segment is a live credential.
 constexpr std::string_view kSecretSegmentAfter[] = {"/v1/gym/shared/"};
 
 // Enough of the secret to correlate two reads of the same link in one log, far too little to use as
@@ -18,8 +18,7 @@ constexpr std::string_view kSecretSegmentAfter[] = {"/v1/gym/shared/"};
 constexpr std::size_t kKeptSecretPrefix = 8;
 
 // A logged field is a debugging aid, not a transcript. A path is caller-supplied and unbounded, and
-// this line is teed to Sentry as an event body — so an anonymous request with a 60 KB path was a 60
-// KB log line and a 60 KB event, for free, as often as it liked. What is cut is said out loud.
+// this line is teed to Sentry as an event body. What is cut is said out loud.
 constexpr std::size_t kMaxLoggedField = 1024;
 constexpr std::string_view kTruncated = "~truncated";
 }
@@ -56,10 +55,8 @@ std::string loggableField(const std::string& value) {
 }
 
 std::string redactedPath(const std::string& path) {
-  // Matched on a lowercased copy and spliced back out of the original by index. Drogon ROUTES
-  // case-insensitively while path() preserves what the caller typed, so a case-sensitive match here
-  // would have let `GET /V1/GYM/SHARED/<token>` serve the workout AND log the working token — the
-  // same trap the rate limiter documents at main.cpp, defeated by one capital letter.
+  // Matched on a lowercased copy and spliced back out of the original by index: drogon ROUTES
+  // case-insensitively while path() preserves what the caller typed.
   std::string folded = path;
   std::transform(folded.begin(), folded.end(), folded.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

@@ -10,14 +10,7 @@
 #include <string>
 #include <vector>
 
-// Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only when
-// WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts as
-// skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own rows.
-//
-// It exists for the three things no fake holds an opinion about: that `record` swallows everything
-// rather than breaking the product it is watching, that `unpriced` rides on every aggregate row and
-// not only the summary scalar, and that anonymous spend lands in the total while staying out of the
-// ranked list of people. All three live in SQL, so all three are provable only in SQL.
+// Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own rows.
 using namespace wm;
 
 namespace {
@@ -28,8 +21,6 @@ const std::string kOther = "77777777-7777-7777-7777-777777777777";
 const std::string kMyEmail = "ai-usage-pgtest@example.com";
 const std::string kOtherEmail = "ai-usage-pgtest-other@example.com";
 
-// The window every case works in, and two instants inside it a day apart, so day grouping is
-// unambiguous without anyone waiting for midnight.
 constexpr long long kFromMs = 1'767'225'600'000;  // 2026-01-01T00:00:00Z
 constexpr long long kToMs = 1'769'904'000'000;    // 2026-02-01T00:00:00Z
 constexpr long long kDayOneMs = 1'767'268'800'000;   // 2026-01-01T12:00:00Z
@@ -45,8 +36,7 @@ void reset() {
   w.commit();
 }
 
-// The adapter stamps `ts` with now(), and every read here is a window query — so a case that wants a
-// row inside a known window has to move it there afterwards.
+// The adapter stamps `ts` with now(), and every read here is a window query, so a row has to be moved into the window afterwards.
 void stampLatest(long long atMs) {
   PgLease c{*pgTestPool()};
   pqxx::work w{*c};
@@ -56,9 +46,7 @@ void stampLatest(long long atMs) {
   w.commit();
 }
 
-// `to_char` renders a timestamptz in the session's own timezone, so a hard-coded day string here
-// would assert the developer's TZ rather than the grouping. Ask Postgres what day it calls that
-// instant, exactly as the summary does.
+// `to_char` renders a timestamptz in the session's own timezone, so ask Postgres what day it calls that instant rather than hard-coding one.
 std::string dayOf(long long atMs) {
   PgLease c{*pgTestPool()};
   pqxx::work w{*c};
@@ -82,8 +70,6 @@ AiSpend spend(const std::string& product, const std::string& model, const std::s
 }
 }
 
-// One row, every column, read back raw. The adapter computes the cost itself — no caller is trusted
-// with it — so this is the only place the stored number is checked against the priced one.
 TEST(pg_ai_usage_a_recorded_call_stores_every_count_and_the_cost_it_priced) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -113,8 +99,6 @@ TEST(pg_ai_usage_a_recorded_call_stores_every_count_and_the_cost_it_priced) {
   CHECK_EQ(rows[0][11].as<long long>(), *costNanos("claude-sonnet-5", TokenUse{400, 1000, 8000, 2000}));
 }
 
-// Two rows nothing else in the meter would tolerate: an anonymous call, which has no account and
-// must never be given an invented one, and an unpriced model, which stores null rather than zero.
 TEST(pg_ai_usage_an_anonymous_call_and_an_unpriced_model_both_store_the_absence_honestly) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -139,9 +123,6 @@ TEST(pg_ai_usage_an_anonymous_call_and_an_unpriced_model_both_store_the_absence_
   CHECK_EQ(rows[1][3].as<std::string>(), std::string("truncated"));
 }
 
-// The port's `noexcept` is a promise about the product, not about the database. A row the database
-// refuses outright must leave the caller — who is holding a finished answer for a waiting person —
-// completely undisturbed.
 TEST(pg_ai_usage_a_row_the_database_refuses_is_swallowed_rather_than_thrown_at_the_product) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -157,14 +138,12 @@ TEST(pg_ai_usage_a_row_the_database_refuses_is_swallowed_rather_than_thrown_at_t
   REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0][0].as<long long>(), 0);
 
-  // ...and the repository is still usable afterwards: nothing was left half-open.
   repo.record(spend("pgtest-roadmap", "claude-sonnet-5", kMine, TokenUse{1, 1, 0, 0}));
   const pqxx::result after = w.exec("SELECT count(*) FROM ai_usage WHERE product LIKE 'pgtest-%'");
   CHECK_EQ(after[0][0].as<long long>(), 1);
 }
 
-// The budget read: one account, one rolling window, optionally one product. The product filter is
-// what keeps a background sweep out of the allowance a person's own question is refused for.
+// The budget read: one account, one rolling window, optionally one product.
 TEST(pg_ai_usage_the_budget_read_sums_one_account_s_window_and_one_product_of_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -181,9 +160,7 @@ TEST(pg_ai_usage_the_budget_read_sums_one_account_s_window_and_one_product_of_it
   repo.record(spend("pgtest-roadmap", "unpriced-model", kMine, TokenUse{9999, 9999, 0, 0}));
   stampLatest(kDayOneMs);  // unpriced: charged the DEAREST rate we know, never nothing
 
-  // 9999 in + 9999 out at the fable rate ($10/$50 per MTok), because a model we forgot to price must
-  // not be a model that spends against no ceiling. This read is the ceiling's read, so it takes the
-  // floor column; the dashboard's read still shows the nullable truth and marks it with a "≥".
+  // 9999 in + 9999 out at the fable rate ($10/$50 per MTok): the ceiling's read takes the floor column, while the dashboard's read shows the nullable truth.
   const long long floor = 9999LL * 10'000 + 9999LL * 50'000;
 
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000 + floor);
@@ -194,8 +171,7 @@ TEST(pg_ai_usage_the_budget_read_sums_one_account_s_window_and_one_product_of_it
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kToMs), 0);
 }
 
-// The owner page's one read. Every aggregate row carries its own unpricedCalls — that is what lets
-// the page mark a total as a floor instead of presenting a number it cannot stand behind.
+// Every aggregate row carries its own unpricedCalls, which is what lets the page mark a total as a floor.
 TEST(pg_ai_usage_the_summary_carries_unpriced_counts_on_every_aggregate_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -250,8 +226,7 @@ TEST(pg_ai_usage_the_summary_carries_unpriced_counts_on_every_aggregate_row) {
   CHECK_EQ(summary.unpricedModels[1], std::string("unpriced-b"));
 }
 
-// The ranked table is a list of PEOPLE. Anonymous spend belongs in the total and nowhere near this
-// query — an unattributed aggregate sitting in a leaderboard is exactly the misread we owe nobody.
+// The ranked table is a list of PEOPLE: anonymous spend belongs in the total and nowhere near this query.
 TEST(pg_ai_usage_the_ranked_table_names_people_and_never_the_anonymous_canvas) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -285,7 +260,6 @@ TEST(pg_ai_usage_the_ranked_table_names_people_and_never_the_anonymous_canvas) {
   CHECK_EQ(spenders[1].unpricedCalls, 0);
   CHECK_EQ(spenders[1].topProduct, std::string("pgtest-journal"));
 
-  // The limit is honoured, and it cuts from the bottom of the ranking rather than anywhere else.
   const std::vector<UserSpend> top = repo.topSpenders(kFromMs, kToMs, 1);
   REQUIRE_EQ(top.size(), 1u);
   CHECK_EQ(top[0].user, UserId{kMine});

@@ -22,9 +22,8 @@ VoiceTake VoiceRation::take(const std::string& account, std::size_t bytes) {
   if (opened) talking.refilledAt = now;
   if (talking.inFlight >= kVoiceInFlightPerAccount) return VoiceTake::busy;
 
-  // Refill first, so a bucket is judged at the instant it is asked about rather than at the instant
-  // it was last spent. Clamped at full: a bucket nobody touched for a week is a fresh day, never a
-  // week's worth of credit.
+  // Refill first, so a bucket is judged at the instant it is asked about. Clamped at full: a bucket
+  // nobody touched for a week is a fresh day, never a week's worth of credit.
   const double seconds = std::chrono::duration<double>(now - talking.refilledAt).count();
   talking.bytesLeft = std::min(static_cast<double>(kVoiceBytesPerDay),
                                talking.bytesLeft + seconds * kVoiceBytesPerDay / 86'400.0);
@@ -55,8 +54,8 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k401Unauthorized, "sign in to talk"));
     return;
   }
-  // The entitlement is read BEFORE the audio is touched — a non-subscriber's bytes never reach the
-  // vendor, and we never spend on an unpaid request.
+  // The entitlement is read BEFORE the audio is touched, so a non-subscriber's bytes never reach the
+  // vendor.
   if (!entitlements_->hasWindmillOne(caller->id, caller->email.value)) {
     cb(error(drogon::k403Forbidden, "talk is part of Windmill One"));
     return;
@@ -92,17 +91,16 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     return;
   }
 
-  // Text out only — no page is created here; transcription stays orthogonal to persistence. The
-  // callback fires on the transcriber's loop, and this handler thread is already gone by then.
+  // Text out only — no page is created here. The callback fires on the transcriber's loop, and this
+  // handler thread is already gone by then.
   const std::string account = caller->id.str();
   transcriber_->transcribe(
       caller->id, audio, req->getHeader("content-type"),
       [this, account, cb = std::move(cb)](std::optional<Transcript> transcript) {
         ration_.release(account);
         if (!transcript) {
-          // A vendor failure is an outage, and it says so. It used to answer 200 {"text":""}, which
-          // made a bad night at the vendor indistinguishable from a take that carried no words —
-          // and left the writer no reason to try again.
+          // A vendor failure is an outage, and it says so: answering 200 {"text":""} would make a
+          // bad night at the vendor indistinguishable from a take that carried no words.
           cb(error(drogon::k502BadGateway, "the transcriber could not answer"));
           return;
         }

@@ -21,8 +21,7 @@ ReminderDecision skipped(SkipReason reason, int readyCount) {
   return decision;
 }
 
-// The featured tree is the one worked in most recently, among those that have something ready, so
-// the LATEST sorts greatest. Ties fall to the smaller id so the choice never wobbles.
+// The most recent activity sorts greatest. Ties fall to the smaller id so the choice never wobbles.
 bool earlier(const TreeReadiness* a, const TreeReadiness* b) {
   if (a->lastActivityAtMs != b->lastActivityAtMs) return a->lastActivityAtMs < b->lastActivityAtMs;
   return b->id < a->id;
@@ -31,8 +30,7 @@ bool earlier(const TreeReadiness* a, const TreeReadiness* b) {
 }
 
 ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs) {
-  // First, what is actually waiting. Counted BEFORE any gate, so the ledger records it even for a
-  // week we held back.
+  // Counted BEFORE any gate, so the ledger records it even for a week we held back.
   std::vector<const TreeReadiness*> waiting;
   for (const TreeReadiness& tree : candidate.trees)
     if (!tree.ready.empty()) waiting.push_back(&tree);
@@ -42,8 +40,7 @@ ReminderDecision decide(const ReminderCandidate& candidate, std::uint64_t nowMs)
 
   // Then the gates, first match wins.
   //
-  // The box was down through the slot and is only now catching up. Serving a stale slot would mail
-  // everyone at whatever hour the process came back, so the week is abandoned instead.
+  // Serving a slot this stale would mail everyone at whatever hour the process came back.
   if (elapsed(nowMs, candidate.slotInstantMs) > kMaxLatenessMs)
     return skipped(SkipReason::tooLate, readyCount);
   // Someone who has been here this week already knows what is waiting.

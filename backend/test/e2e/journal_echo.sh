@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# Journal echoes, end-to-end against the LIVE local stack. Locally there is usually no embedder and
-# no curator wired, so every pass — the one a save triggers and the six-hourly repair one — is a
-# quiet no-op; what this drives is everything downstream
-# of it, over real Postgres rows: the owner-scoped READ and its honest cut, the anchoring hint, the
-# three dismissal doors and the route order that makes them reachable, and the admin door's gate and
-# report shape. The embed→select→curate compute path is unit-covered (EchoSweepTest).
+# Journal echoes, end-to-end against the LIVE local stack. With no embedder or curator wired
+# locally every pass is a quiet no-op; this drives everything downstream of it over real Postgres
+# rows. The embed→select→curate compute path is unit-covered (EchoSweepTest).
 #
-# The rows below are planted the way a finished pass would have left them — journal_span carries the
-# passage text and the sha256 of its NORMALISED form, because dismissal keys on content and not on
-# an id, and journal_echo names two span ids and never two pages.
+# The rows below are planted the way a finished pass would have left them: journal_span carries the
+# passage text and the sha256 of its NORMALISED form, and journal_echo names two span ids.
 #
 # Prereqs: schema applied; server running with the echo admin token, e.g.:
 #   set -a && . ./.env && set +a && JOURNAL_ECHO_ADMIN_TOKEN=e2e-echo ./build/windmill_server

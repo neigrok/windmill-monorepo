@@ -45,8 +45,7 @@ struct Harness {
   ComposeApi api{composer};
 };
 
-// The wire record outlives the stream on purpose: ResponseStream::close() destroys the
-// AsyncStream it owns, so the observations must live with the test, not the stream.
+// ResponseStream::close() destroys the AsyncStream it owns, so the observations must live with the test, not the stream.
 struct WireLog {
   std::string sent;
   bool closed = false;
@@ -97,8 +96,7 @@ std::string bodyOf(const drogon::HttpResponsePtr& response) {
   return dump(*response->getJsonObject());
 }
 
-// Hands the streaming response its wire — the fake stands in for the connection drogon
-// would attach — and everything sent lands in the given log.
+// Hands the streaming response its wire — the fake stands in for the connection drogon would attach.
 void attachWire(const drogon::HttpResponsePtr& response, WireLog& log) {
   response->asyncStreamCallback()(
       std::make_unique<drogon::ResponseStream>(std::make_unique<RecordingAsyncStream>(log)));

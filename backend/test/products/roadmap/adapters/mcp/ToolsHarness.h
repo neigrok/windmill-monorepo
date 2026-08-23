@@ -21,7 +21,6 @@ struct StepClock : Clock {
   std::uint64_t nowMs() override { return ms++; }
 };
 
-// A harness owning the fakes + wiring, seeded with one empty tree "t".
 struct Harness {
   fake::FakeTreeRepository trees;
   fake::FakeOpLog ops;
@@ -41,18 +40,14 @@ struct Harness {
         StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   }
 
-  // These cases drive RoadmapTools directly, below the grant gate — CompositeToolHost is what
-  // enforces a scope, and it has its own suite. Here the caller holds everything, so what is under
-  // test is the tool's own ownership and argument behaviour and nothing else.
+  // These cases drive RoadmapTools directly, below the grant gate: the caller holds everything, so what is under test is the tool's own ownership and argument behaviour.
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";
     return tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
   }
 };
 
-// Every successful result speaks through content[0].text — the one channel every MCP client
-// reads. structuredContent is not sent (no tool declares an outputSchema), so these tests read
-// exactly the bytes an agent reads.
+// Every successful result speaks through content[0].text. structuredContent is not sent, since no tool declares an outputSchema.
 inline Json::Value body(const ToolResult& result) { return parse(result.content[0]["text"].asString()); }
 
 inline std::string message(const ToolResult& result) { return result.content[0]["text"].asString(); }

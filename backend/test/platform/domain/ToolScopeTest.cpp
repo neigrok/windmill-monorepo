@@ -23,7 +23,6 @@ TEST(tool_scope_parses_the_wire_spelling_into_product_level_pairs) {
   CHECK_FALSE(scope.allows("journal", Access::read));
 }
 
-// The gate itself: three levels, and holding one is never holding another.
 TEST(tool_scope_never_implies_delete_from_write) {
   const ToolScope scope = parseToolScope("gym:read gym:write");
   CHECK(scope.allows("gym", Access::write));
@@ -55,8 +54,7 @@ TEST(tool_scope_grants_nothing_when_every_token_is_unreadable) {
   CHECK_FALSE(scope == ToolScope::everything());  // "" here is an empty SET, not the legacy grant
 }
 
-// The one deliberate exception, and the reason it cannot be "fixed": every code and token at rest
-// carries scope ''. Narrowing this disconnects every tool anyone has connected, on deploy.
+// Every code and token at rest carries scope ''. Narrowing this disconnects every tool anyone has connected, on deploy.
 TEST(tool_scope_reads_an_empty_string_as_the_legacy_account_wide_grant) {
   for (const char* stored : {"", "   ", "\t"}) {
     const ToolScope scope = parseToolScope(stored);
@@ -73,8 +71,7 @@ TEST(tool_scope_default_constructs_to_nothing_not_to_everything) {
   CHECK_FALSE(scope == ToolScope::everything());
 }
 
-// Canonical order is by product, then by level in ladder order (read, write, delete) — the enum's
-// own order, which is also the order a consent screen reads them out in.
+// Canonical order is by product, then by level in ladder order (read, write, delete) — the enum's own order.
 TEST(tool_scope_round_trips_through_its_canonical_spelling) {
   const ToolScope scope = parseToolScope("gym:delete roadmap:read gym:read");
   CHECK_EQ(scope.toString(), std::string("gym:read gym:delete roadmap:read"));

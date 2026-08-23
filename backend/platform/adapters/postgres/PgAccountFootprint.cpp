@@ -26,8 +26,7 @@ PgAccountFootprint::PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector
       throw std::invalid_argument("account footprint probe is not a plain identifier: " + probe.table +
                                   "." + probe.ownerColumn);
     if (!query_.empty()) query_ += " UNION ALL ";
-    // Each branch is PARENTHESISED: a bare LIMIT inside a UNION arm is a Postgres syntax error, and
-    // it is one no fake can reproduce — only a live statement says so.
+    // Each branch is PARENTHESISED: a bare LIMIT inside a UNION arm is a Postgres syntax error.
     query_ += "(SELECT 1 FROM " + probe.table + " WHERE " + probe.ownerColumn + " = $1::uuid LIMIT 1)";
   }
   query_ += " LIMIT 1";

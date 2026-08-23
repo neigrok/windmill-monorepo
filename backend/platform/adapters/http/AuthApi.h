@@ -16,15 +16,11 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The REST surface for auth (guidelines/auth.md §7). One door in, one link out, a session
-// cookie on the way back. The app door asks the same mint for a 6-digit code instead
-// (`door: "app"` on /magic-link) and types it back at /verify-code — the same cookie, the same
-// one-brick collapse of refusals. The session rides in an HttpOnly `wm_session` cookie; a Bearer
-// token is also honoured for API and test callers. Every reply uses the doc's exact copy.
-// Google sign-in is a second door onto the same `wm_session`: two top-level redirects that
-// mint the identical cookie, so an account reached via Google or a magic link is one account.
-// Apple is the third, and the native one — the app posts an authorization code rather than being
-// redirected — with the link door beside it for the relay-address case (backend/AUTH.md).
+// The REST surface for auth: one door in, one link out, a session cookie back. The app door asks
+// the same mint for a 6-digit code (`door: "app"` on /magic-link) and types it back at /verify-code.
+// Google is a second door onto the same `wm_session`; Apple is the third and native one — the app
+// posts an authorization code rather than being redirected. The session rides in an HttpOnly
+// `wm_session` cookie; a Bearer token is also honoured for API and test callers.
 class AuthApi {
 public:
   AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
@@ -48,9 +44,8 @@ public:
   void signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // DELETE /v1/sessions
 
 private:
-  // The 200 every credential door shares: the user in the body, a pending fork planted through
-  // the port, and the session ONLY as the cookie — both apps lift it from Set-Cookie, so parity
-  // between /verify and /verify-code is a contract, not a coincidence.
+  // The 200 every credential door shares: the user in the body, a pending fork planted through the
+  // port, and the session ONLY as the cookie — both apps lift it from Set-Cookie.
   void respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
                        HttpCallback& callback);
 

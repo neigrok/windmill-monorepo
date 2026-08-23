@@ -18,14 +18,9 @@ namespace wm::gym {
 
 namespace {
 
-// THE LOAD-BEARING ARTIFACT: what Ask is, what it may touch, and the two things gym has always
-// refused — a grade, and a number nobody lifted. It is byte-stable across every request on purpose;
-// the whole of it plus the tool catalog is one cached prefix, and a single interpolated byte here
-// would move that prefix and the cache would silently never read.
-//
-// The word COACH is not in it, and that is canon rather than taste: there is no coach in this
-// product, there is the lifter's own agent, and a prompt that called itself one would put the word
-// back on the surface a lifter reads.
+// Byte-stable across every request: the whole of it plus the tool catalog is one cached prefix, and
+// a single interpolated byte here would move that prefix and the cache would silently never read.
+// The word COACH is not in it, and must not be.
 constexpr const char* kSystemPrompt =
     "You are Ask, inside Windmill's training log, talking with the lifter whose log it is. You are "
     "not a chat assistant with opinions about their life and you are not there to encourage anybody; "
@@ -74,10 +69,8 @@ constexpr const char* kSystemPrompt =
     "- You are not a doctor or a physiotherapist. If the question is about pain, injury, illness or "
     "medication, say plainly that this is outside what a training log can answer and stop there.";
 
-// Opus, and the effort is what bounds it. The composer picks Haiku for latency and the tending agent
-// picks Sonnet for tool quality; this one is the house default for a new vendor call, and what makes
-// that affordable in a chat somebody is waiting on is `effort: medium` plus a context that is one
-// page of the log and at most eight turns.
+// `effort: medium` is what makes Opus affordable in a chat somebody is waiting on, alongside a
+// context that is one page of the log and at most eight turns.
 constexpr const char* kModel = "claude-opus-5";
 constexpr const char* kEffort = "medium";
 
@@ -85,13 +78,12 @@ constexpr const char* kEffort = "medium";
 // for the paragraph the lifter reads.
 constexpr int kMaxTokens = 8000;
 
-// The cap, two higher than the one-workout panel W7 widened. Ask reads the LOG, so an honest answer
-// may cost a page, a movement's history and the statistics before it says anything — and a proposal
-// costs a routine read on top. Hitting it is a failure, not a success.
+// Ask reads the LOG, so an honest answer may cost a page, a movement's history and the statistics
+// before it says anything, and a proposal a routine read on top. Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
 
-// A person is watching a spinner. Long enough for a couple of tool calls and a considered answer,
-// short enough that a wedged upstream does not hold the worker for a minute and a half.
+// Long enough for a couple of tool calls and a considered answer, short enough that a wedged
+// upstream does not hold the worker.
 constexpr double kRequestTimeoutSeconds = 75.0;
 
 Json::Value textMessage(const char* role, const std::string& text) {
@@ -104,9 +96,8 @@ Json::Value textMessage(const char* role, const std::string& text) {
 }  // namespace
 
 Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::string& logDocument) {
-  // The conversation, oldest first, with the log welded to the FIRST turn. Putting it there rather
-  // than in the newest turn is what makes the growing prefix cacheable: the document never moves, so
-  // every later ask reads it back instead of paying for it again.
+  // The conversation, oldest first, with the log welded to the FIRST turn: the document never moves,
+  // so the growing prefix stays cacheable.
   Json::Value messages(Json::arrayValue);
   for (std::size_t index = 0; index < turns.size(); ++index) {
     const AskTurn& turn = turns[index];
@@ -132,9 +123,8 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   }
 
   // Read the newest page of the log before the model is asked anything, so it answers against real
-  // workouts rather than spending an iteration fetching what every question needs. An unreadable log,
-  // no run — and this read is owner-scoped like every other, though AskService has already settled
-  // whose log this is before any of it was reached.
+  // workouts rather than spending an iteration on what every question needs. An unreadable log means
+  // no run.
   const ToolResult opening = tools.callTool("list_sessions", Json::Value(Json::objectValue), caller);
   if (opening.isError) {
     outcome.error = "could not read the log before answering";
@@ -191,10 +181,9 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   const AskCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
-    // Trantor forbids driving a loop from any thread but its own — and creating the client or
-    // sending the request from this worker thread is a race that intermittently FATALs the whole
-    // process. So marshal EVERY client + loop touch onto the loop thread; the worker only queues
-    // the work and blocks on the future, which the timeout-guaranteed callback always fulfils.
+    // Trantor forbids driving a loop from any thread but its own: creating the client or sending
+    // the request from this worker thread intermittently FATALs the process. Marshal EVERY client +
+    // loop touch onto the loop thread; the worker queues the work and blocks on the future.
     loop->queueInLoop([apiKey, loop, request, promise]() {
       auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
@@ -205,8 +194,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
       req->setBody(Json::writeString(builder, request));
-      // One line per model turn. The lifter's question and their sets are in the request body and
-      // reach no log.
+      // One line per model turn. The lifter's question and their sets reach no log.
       VendorCall vendor("anthropic", "gym-ask");
       client->sendRequest(
           req,
@@ -229,9 +217,8 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
     return future.get();
   };
 
-  // The frame the loop cannot supply: it has never seen a model name, a product or a clock, and the
-  // reply's `usage` — which it discards — only exists inside the call above. One row per turn, one
-  // run id across the exchange, so a question that took four turns reads as one question.
+  // The frame the loop cannot supply: it has never seen a model name, a product or a clock. One row
+  // per turn, one run id across the exchange, so a question that took four turns reads as one.
   AiSpend frame;
   frame.user = caller.user;
   frame.product = "gym";

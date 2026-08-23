@@ -19,9 +19,8 @@
 
 namespace wm {
 
-// What one pass did, and the only metric a mail sweep ships: the admin endpoints return it and the
-// product's ledger answers everything else with a GROUP BY. `ran` is false when another sweep
-// already held the fleet lock — nothing was looked at, which is not the same as nothing being due.
+// `ran` is false when another sweep held the fleet lock: nothing was looked at, which is not the
+// same as nothing being due.
 struct MailSweepReport {
   bool ran = false;
   int due = 0;        // slots that had arrived
@@ -34,99 +33,65 @@ struct MailSweepReport {
   int errors = 0;     // users whose turn threw; the sweep carried on past each one
 };
 
-// What the pipeline concluded about one user's decision, as the base needs to read it. The product
-// keeps its own decision type and its own reason vocabulary; this is the three-way split the
-// skeleton acts on. `unreadable` is a decision the product stamped because the facts could not be
-// loaded at all — it is claimed like a skip AND counted as an error, so a user whose load keeps
-// failing does not keep the oldest pointer in the fleet and crowd everyone else out of the batch.
+// The three-way split the skeleton acts on; the product keeps its own decision type. `unreadable`
+// means the facts could not be loaded: claimed like a skip, and counted as an error.
 enum class SweepVerdict { send, skip, unreadable };
 
-// How a claimed slot ended, as the base closes it. The product maps this onto its own ledger
-// vocabulary (WeekOutcome, DayOutcome). Exactly one is recorded for every claim that was a send,
-// which is what lets the ledger tell a slot we deliberately withheld from a slot whose process died
-// between the claim and the mail — during a dark rollout EVERY row would otherwise look like the
-// crash.
+// Exactly one is recorded for every claim that was a send, so the ledger can tell a slot withheld
+// on purpose from one whose process died between the claim and the mail.
 enum class ClosedAs { held, delivered, refused };
 
-// The mail sweep: one pass of DECIDE → CLAIM → SEND over everyone whose slot has arrived, written
-// once for every product that mails on a schedule. Roadmap's weekly reminder and journal's nightly
-// nudge each wrote this skeleton out and the two had already drifted — one guarded a user's turn
-// and one did not, one reported a rehearsal apart from a real run and one folded them together —
-// so the second consumer earned the promotion. What varies per product is the handful of pure
-// virtuals below: who is due, what to decide, how to claim and close its own ledger, and the mail
-// itself. Everything that must not vary is here, in `run`.
+// One pass of DECIDE → CLAIM → SEND over everyone whose slot has arrived. What varies per product
+// is the pure virtuals below; everything that must not vary is in `run`.
 //
-// The write ordering is the correctness story and it is DECIDE → CLAIM → SEND, never any other:
-// the committed claim is the permission slip to perform I/O. A crash between claim and send costs
-// one person one mail; a retry of an unconfirmed send would mail somebody twice, and the two cases
-// are observationally identical from the outside. So a claimed row is never retried. A lost mail
-// costs nothing; a duplicate costs trust.
+// The write ordering is DECIDE → CLAIM → SEND and never any other: the committed claim is the
+// permission slip to perform I/O, and a claimed row is never retried.
 //
-// The heartbeat that drives `run` is NOT here. It is the product's own member — declared LAST, so
-// it is destroyed first (platform/application/Heartbeat.h) — because the tick and the pipeline are
-// two things shared at two depths: journal's EchoSweep beats and derives but never mails, and a
-// gate it must inherit and ignore is worse than none.
+// The heartbeat that drives `run` is the product's own member, not this base's.
 template <typename Due, typename Decision>
 class MailSweep {
 public:
   virtual ~MailSweep() = default;
 
-  // One pass, top to bottom. `dryRun` rehearses the whole decision and claims nothing, which is
-  // what makes a weekly feature iterable in an afternoon instead of seven days at a time. It is
-  // a SLOW, blocking pipeline — up to a full batch of database round trips and provider calls —
-  // so a request thread reaches it through the product's own loop — ReminderSweep::runAsync and,
-  // since 2026-08-22, NudgeSweep::runAsync — rather than inline. Journal's admin door used to call
-  // it inline and paid for that twice over, holding an IO thread AND the pooled connection the
-  // fleet lock rides on across every send, for the whole batch.
+  // `dryRun` rehearses every decision and claims nothing. Slow and blocking, so a request thread
+  // must reach it through the product's own loop rather than inline.
   MailSweepReport run(std::uint64_t nowMs, bool dryRun) {
     MailSweepReport report;
-    // The fleet lock is scoped by the port on purpose (platform/ports/SweepMutex.h): the pass runs
-    // inside it or does not run at all, and there is no unlock verb here to aim at the wrong
-    // connection. `ran` is false when someone else already holds it — nothing was looked at, which
-    // is not the same as nothing being due.
     report.ran = mutex_.underSweepLock([&] {
       for (const Due& due : dueNow(nowMs, batch())) {
         ++report.due;
-        // One user's turn is one user's risk: an unreadable tree or a lost row costs that person
-        // this slot's mail and nothing more. The sweep carries on down the list.
+        // One user's turn is one user's risk; the sweep carries on down the list.
         try {
           const Decision decision = decideFor(due, nowMs);
           const SweepVerdict verdict = verdictOf(decision);
           if (verdict == SweepVerdict::unreadable) ++report.errors;
 
-          // A rehearsal decides everything and commits nothing. It reports what WOULD have gone out
-          // separately from what the arming gate withholds on a real run — two different facts that
-          // once shared one counter and told the operator neither.
+          // A rehearsal decides everything and commits nothing.
           if (dryRun) {
             if (verdict == SweepVerdict::send) ++report.wouldSend;
             else ++report.skipped;
             continue;
           }
 
-          // The permission slip. Losing this race means another sweep owns the slot; its pointer
-          // moved too, so falling silent here is the whole of the correct response.
+          // The permission slip. Losing this race means another sweep owns the slot.
           if (!claim(due, decision)) continue;
           ++report.claimed;
-          // Counted only once the slot is ours: a skip that lost the race belongs to another sweep's
-          // row, and reporting it here would name a decision the ledger never took.
+          // Counted only once the slot is ours: a skip that lost the race is another sweep's row.
           if (verdict != SweepVerdict::send) {
             ++report.skipped;
             continue;
           }
 
-          // Armed at SEND time, never at decide time — so a dark launch still leaves an honest slot
-          // in the ledger saying what we would have sent, and arming later cannot double-mail it. The
-          // slot is closed as `held` so that row can never be mistaken for a crash between claim and
-          // send, which is what every row would look like for the whole of a dark rollout.
+          // Armed at SEND time, never at decide time, so the ledger keeps an honest slot and arming
+          // later cannot double-mail it. Closed as `held` so the row is not read as a crash.
           if (!arming_.allows(due.user)) {
             close(due, ClosedAs::held);
             ++report.held;
             continue;
           }
 
-          // A fresh pause credential per mail, stored only once the mail carrying it actually left:
-          // rotating first would kill last time's still-in-an-inbox pause link on behalf of a
-          // replacement that never arrived.
+          // Store the fresh pause credential only once its mail actually left, or a failed send
+          // kills the pause link still sitting in the last one.
           const MintedToken pause = tokens_.mint();
           const bool delivered = deliver(due, decision, pause.secret);
           if (delivered) storePause(due.user, pause.digest);
@@ -145,9 +110,6 @@ public:
     return report;
   }
 
-  // The dark-launch gate, whole. `enabled` is the FEATURE's state; `allows` is one person's —
-  // two different questions, and answering the second with the first is how a settings page ends
-  // up advertising a switch that can never reach the person who flips it.
   const MailArming& arming() const { return arming_; }
 
 protected:
@@ -155,12 +117,10 @@ protected:
       : mutex_(mutex), tokens_(tokens), arming_(std::move(arming)) {}
 
 private:
-  // The pieces that vary, in the order the pipeline reaches them.
   virtual std::string name() const = 0;   // the log prefix: "reminders", "journal nudge"
   virtual int batch() const = 0;          // the ceiling on one pass, and so the fleet's send rate
   virtual std::vector<Due> dueNow(std::uint64_t nowMs, int limit) = 0;
-  // May throw: a throw costs this user this slot and is counted in `errors`. A product whose ledger
-  // wants the slot claimed anyway catches its own load and answers an `unreadable` decision.
+  // May throw: a throw costs this user this slot and is counted in `errors`.
   virtual Decision decideFor(const Due& due, std::uint64_t nowMs) = 0;
   virtual SweepVerdict verdictOf(const Decision& decision) const = 0;
   virtual bool claim(const Due& due, const Decision& decision) = 0;
@@ -170,10 +130,9 @@ private:
                     std::function<void(bool)> done) = 0;
   virtual void storePause(const UserId& user, const std::string& digest) = 0;
 
-  // The mailer is asynchronous and answers on its own loop; the sweep is a synchronous pipeline on
-  // its own thread, and the row it writes next must record what actually happened. So it waits —
-  // and a send that never answers is recorded as a failure, never as a success. The wait is
-  // comfortably past the provider client's own 10s timeout, so a real refusal is never lost to ours.
+  // The mailer answers on its own loop and the sweep must record what actually happened, so it
+  // waits; a send that never answers is recorded as a failure. Past the provider client's own
+  // 10s timeout, so a real refusal is never lost to this one.
   static constexpr int kSendTimeoutSeconds = 30;
   bool deliver(const Due& due, const Decision& decision, const std::string& pauseSecret) {
     auto settled = std::make_shared<std::promise<bool>>();

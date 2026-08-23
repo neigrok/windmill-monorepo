@@ -17,8 +17,7 @@
 
 namespace wm {
 
-// The JSON boundary: converts domain types to and from the wire/persist shape. This is
-// the only place the domain meets a serialization format.
+// The JSON boundary: the only place the domain meets a serialization format.
 Json::Value nodeToJson(const NodeSpec& node);  // one node's wire shape, shared by get_tree and find_nodes
 Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
@@ -28,10 +27,9 @@ Json::Value toJson(const GalleryEntry& entry);    // one gallery card (GET /v1/g
 Json::Value toJson(const GraphState& state);    // the persisted graph document
 Json::Value toJson(const LegendState& legend);  // the persisted legend document
 
-// nullopt when the root is not an object, or when a field is present but the wrong type. jsoncpp
-// THROWS on a keyed read of an array or a scalar and on a bad conversion, and an escaped throw
-// reached the global handler as a 500, a server_errors row and a Sentry event for what is plainly
-// a 400 — so the decoder answers the mismatch instead of raising it.
+// nullopt when the root is not an object, or when a field is present but the wrong type: jsoncpp
+// THROWS on a keyed read of an array or a scalar and on a bad conversion, so the decoder answers
+// the mismatch rather than raising it.
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id);
 GraphState graphStateFromJson(const Json::Value& root);
 LegendState legendStateFromJson(const Json::Value& kinds);

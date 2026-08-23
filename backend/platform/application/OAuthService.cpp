@@ -8,9 +8,8 @@ OAuthService::OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock&
 OAuthService::Registration OAuthService::registerClient(std::vector<std::string> redirectUris,
                                                         std::string name) {
   if (redirectUris.empty()) return {RegisterError::invalidMetadata, std::nullopt, 0};
-  // Registration is the one door on this server that anyone may walk through, so what it may cost
-  // us is bounded here rather than left to the rate limiter: an 8 MB body used to persist 8 MB of
-  // redirect URIs, and nothing capped how many rows a script could plant (OAUTH-3).
+  // Registration is open to anyone, so bound the size and the count here rather than in the rate
+  // limiter.
   if (redirectUris.size() > OAuthPolicy::maxRedirectUris)
     return {RegisterError::invalidMetadata, std::nullopt, 0};
   for (const std::string& uri : redirectUris) {
@@ -18,19 +17,15 @@ OAuthService::Registration OAuthService::registerClient(std::vector<std::string>
       return {RegisterError::invalidMetadata, std::nullopt, 0};
     if (!redirectSchemeAllowed(uri)) return {RegisterError::invalidMetadata, std::nullopt, 0};
   }
-  // The ceiling counts only clients that never completed an authorization, and only those
-  // registered inside the rolling window: an honest client is attached to a grant within a minute,
-  // so what this sees is a burst and not a table. It is a refusal of OURS, so it is reported as
-  // one — a caller told "invalid_redirect_uri" here would go looking at a redirect that was fine.
+  // Counts only clients that never completed an authorization inside the rolling window, so it
+  // sees a burst and not a table. Reported as our refusal, never as invalid metadata.
   const UnixMs now = clock_.nowMs();
   const int unattached = repo_.unattachedClientsSince(now - OAuthPolicy::unattachedClientWindowMs);
   if (unattached >= OAuthPolicy::maxUnattachedClients)
     return {RegisterError::atCapacity, std::nullopt, unattached};
 
-  // Registration is open (RFC 7591), and this name becomes the headline on the consent screen —
-  // "<name> wants access to your Windmill account". Anyone could otherwise register a name that impersonates
-  // us or runs long enough to push the honest signal (which host you'd be sent back to) off screen.
-  // Clamp the length and drop control characters; the redirect host remains the real trust anchor.
+  // This name becomes the consent screen's headline and anyone may register one, so clamp the
+  // length and drop control characters. The redirect host remains the real trust anchor.
   std::string safeName;
   for (char c : name) {
     if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F) continue;
@@ -79,12 +74,11 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
   if (stored->clientId != clientId) return {GrantError::invalidClient, std::nullopt};
   if (stored->redirectUri != redirectUri) return {GrantError::badRedirect, std::nullopt};
   if (tokens_.s256Challenge(codeVerifier) != stored->codeChallenge) return {GrantError::pkceMismatch, std::nullopt};
-  // The token stays bound to the resource the code was issued for; a token request that
-  // repeats it must match, but an omitted one falls back to that binding.
+  // The token stays bound to the resource the code was issued for; a repeated one must match, an
+  // omitted one falls back to that binding.
   if (!resource.empty() && !audienceMatches(resource, stored->resource)) return {GrantError::badResource, std::nullopt};
-  // Consent → token: record the grant (settings §2), keyed apart from the rotating token rows. The
-  // scope rides along so the settings row can say what a connected tool may do, months later, without
-  // hunting down a token that has rotated a hundred times since.
+  // Record the grant apart from the rotating token rows, scope included, so the settings row can
+  // still say what a connected tool may do after the tokens have rotated.
   repo_.recordGrant(stored->user, stored->clientId, now, stored->scope);
   return {GrantError::ok, mintPair(stored->clientId, stored->user, stored->resource, stored->scope, now)};
 }
@@ -92,15 +86,11 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
 OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken, const std::string& clientId) {
   const UnixMs now = clock_.nowMs();
   const RefreshRotation rotation = repo_.rotateRefreshToken(tokens_.digestOf(refreshToken), now);
-  // A refresh token presented twice means two parties hold it, and there is no way to tell which
-  // of them is the thief — so the grant goes, both of them lose access, and the person re-consents
-  // (OAuth 2.1 §4.14.2). Answering invalid_grant and leaving the live family standing, which is
-  // what this did before, hands the race winner a working token and tells nobody (OAUTH-2).
+  // A refresh token presented twice means two parties hold it and neither can be told from the
+  // thief, so the whole grant goes and the person re-consents (OAuth 2.1 §4.14.2).
   if (rotation.outcome == RefreshOutcome::reused) {
-    // ...unless the same client is presenting it again within moments of its own rotation. A retry
-    // after a lost response, and two threads that both saw a 401, look exactly like theft from
-    // here — and revoking on those disconnects an honest person from their tools, silently, in
-    // favour of a thief who was never distinguishable inside that window anyway. Outside it, and
+    // ...unless the same client presents it again within moments of its own rotation: a retry
+    // after a lost response is indistinguishable from theft inside that window. Outside it, and
     // for any other client, reuse is reuse and the grant goes.
     const bool ownRetry = rotation.grant && rotation.grant->clientId == clientId &&
                           now - rotation.spentMs <= OAuthPolicy::refreshReplayGraceMs;
@@ -122,8 +112,8 @@ std::optional<ToolCaller> OAuthService::resolveAccessToken(const std::string& ac
   if (!token || token->expiresAt <= now) return std::nullopt;
   if (!audienceMatches(token->resource, serverResource)) return std::nullopt;
   repo_.touchGrantUsed(token->user, token->clientId, now, OAuthPolicy::grantTouchThrottleMs);
-  // The connection is the client: its id from the token, its registered name from the client row.
-  // A client row that is gone costs the name and nothing else — the token still stands on its own.
+  // The connection is the client: its id from the token, its name from the client row. A missing
+  // client row costs the name and nothing else.
   const std::optional<OAuthClient> client = repo_.findClient(token->clientId);
   return ToolCaller{token->user, parseToolScope(token->scope),
                     ToolConnection{token->clientId, client ? client->name : ""}};

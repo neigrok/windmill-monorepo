@@ -15,9 +15,8 @@ std::string emailSafeTitle(const std::string& title) {
   safe.reserve(title.size());
   for (unsigned char c : title) {
     if (c == '<' || c == '>') continue;  // markup, in a body
-    // Control characters, in a HEADER. A tree title carries no length or charset validation
-    // anywhere in the system and now reaches a Subject line, where a CR or an LF is not a stray
-    // character but the end of the header. Multi-byte UTF-8 is all >= 0x80 and passes untouched.
+    // Control characters, in a HEADER: a CR or LF ends the header. Multi-byte UTF-8 is all >= 0x80
+    // and passes untouched.
     if (c < 0x20 || c == 0x7F) continue;
     safe.push_back(static_cast<char>(c));
   }
@@ -73,10 +72,9 @@ void ResendClient::send(const Email& to, const std::string& templateId,
 
   VendorCall call("resend", "send");
 
-  // The async overload runs the whole call on the private loop and answers on it, so the
-  // calling handler thread is freed the instant this returns. client rides in the callback
-  // to outlive the send; done carries the 2xx verdict back to the edge, and the same verdict
-  // is what the call reports. Resend's failure body is never read: it quotes the `to` field.
+  // The async overload runs the whole call on the private loop and answers on it, so the calling
+  // handler thread is freed the instant this returns; `client` rides in the callback to outlive the
+  // send. Resend's failure body is never read: it quotes the `to` field.
   client->sendRequest(
       req,
       [client, call, done = std::move(done)](drogon::ReqResult result,

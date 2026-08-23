@@ -3,8 +3,7 @@
 
 using namespace wm;
 
-// LocalDate has no throwing observer, so a rejection is proven by constructing one and catching
-// InvalidPage — true means the shape was refused at the boundary before it could become a row.
+// LocalDate has no throwing observer, so a rejection is proven by constructing one and catching InvalidPage.
 namespace {
 bool rejects(const std::string& iso) {
   try {
@@ -36,8 +35,6 @@ TEST(local_date_rejects_malformed_shapes) {
 }
 
 TEST(local_date_rejects_days_the_calendar_does_not_have) {
-  // Every one of these used to pass the shape check, reach a `$n::date` cast and throw inside pqxx —
-  // a 500, a retained server_errors row and a Sentry event, on any date-bearing journal route.
   CHECK(rejects("2026-02-29"));   // 2026 is not a leap year
   CHECK(rejects("2026-02-31"));
   CHECK(rejects("2026-04-31"));   // April has 30
@@ -57,9 +54,9 @@ TEST(local_date_keeps_the_leap_days_that_exist) {
 }
 
 TEST(local_date_rejects_the_year_that_is_not_a_year) {
-  CHECK(rejects("0000-01-01"));   // not a date Postgres holds — it used to arrive as a 500
+  CHECK(rejects("0000-01-01"));
   CHECK(rejects("0000-12-31"));
-  // 0001-01-01 stands, and has to: it is the open-ended window every echo read sends as `from`.
+  // 0001-01-01 stands: it is the open-ended window every echo read sends as `from`.
   CHECK_EQ(LocalDate{"0001-01-01"}.iso(), std::string("0001-01-01"));
   CHECK_EQ(LocalDate{"9999-12-31"}.iso(), std::string("9999-12-31"));
 }

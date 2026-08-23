@@ -59,14 +59,10 @@ struct FakeTreeRepository : TreeRepository {
   std::map<std::string, StoredTree> byId;
   std::map<std::string, std::string> forkedFrom;
   std::map<std::string, std::uint64_t> updatedAt;  // epoch ms per tree, for registry ordering
-  // The owner's latest progress mark per tree — the column listPublic joins in. It lives here
-  // rather than being derived from a progress fake because it is a fact of the wall ROW: the real
-  // query carries it on the same row as the fork count, and a repository fake models the row it
-  // hands back, not the tables behind it.
+  // The owner's latest progress mark per tree — a fact of the wall ROW, carried on the same row as the fork count.
   std::map<std::string, std::uint64_t> lastMarkedAt;
   std::set<std::string> deletedIds;
-  // One entry per save call: how many node rows the slice carried — the sparse-persistence
-  // assertions read this (a one-node edit must save one node, not the tree).
+  // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (deletedIds.count(tree.str())) return std::nullopt;
@@ -74,15 +70,13 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
-  // The same two facts the real repository reads with a two-column select — projected off the
-  // stored tree here, so a fake can never disagree with load() about who may read what.
+  // The same two facts the real repository reads with a two-column select, projected off the stored tree.
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
     const std::optional<StoredTree> stored = load(tree);
     if (!stored) return std::nullopt;
     return TreeAccess{stored->owner, stored->visibility};
   }
-  // Projected off the row the delete left behind, exactly as the real repository reads the
-  // column load() filters away: only a deleted id answers, and only when it had an owner.
+  // Projected off the row the delete left behind: only a deleted id answers, and only when it had an owner.
   std::optional<UserId> retiredOwner(const TreeId& tree) override {
     if (!deletedIds.count(tree.str())) return std::nullopt;
     auto it = byId.find(tree.str());
@@ -126,15 +120,12 @@ struct FakeTreeRepository : TreeRepository {
       if (match != stored.legend.kinds.end()) *match = kind;
       else stored.legend.kinds.push_back(kind);
     }
-    // The title register lands only under a dominating stamp — the rule PgTreeRepository
-    // enforces in SQL on the trees row; only Postgres carries the byte-order tiebreak
-    // collation, the fake mirrors the same order through Hlc's own comparison.
+    // The title register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
     if (fresh || title.stamp > stored.title.stamp) stored.title = title;
     stored.head = head;
   }
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override {
-    // The unique index Postgres enforces: a soft-deleted row still holds its id.
     if (byId.count(tree.str())) throw DuplicateTree{};
     byId[tree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
   }
@@ -145,8 +136,7 @@ struct FakeTreeRepository : TreeRepository {
       if (!stored.owner || *stored.owner != owner) continue;
       TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
       std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
-      // The planting time rides the stored tree (the real column is read by load() too), unlike
-      // updated_at, which no read ever hands back and which this fake keeps in its own map.
+      // The planting time rides the stored tree, unlike updated_at, which this fake keeps in its own map.
       owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms});
     }
     return owned;
@@ -164,8 +154,7 @@ struct FakeTreeRepository : TreeRepository {
       entry.owner = *stored.owner;
       for (const auto& [forkId, from] : forkedFrom)
         if (from == id && !deletedIds.count(forkId)) entry.forks++;
-      // The same rule the real query carries in its join, and the same one loadForkLineage
-      // applies: a source is named only while it exists and is public.
+      // The same rule the real query carries in its join: a source is named only while it exists and is public.
       auto source = forkedFrom.find(id);
       if (source != forkedFrom.end()) {
         auto src = byId.find(source->second);
@@ -201,8 +190,7 @@ struct FakeTreeRepository : TreeRepository {
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const std::string& title, const UserId& owner) override {
     if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
-    // A fork's title starts stampless — its own baseline, like create; a later rename stamps it.
-    // Born private (the column default), like every fresh tree.
+    // A fork's title starts stampless, and it is born private, like every fresh tree.
     byId[newTree.str()] = StoredTree{state, legend, {title, {}}, 0, owner};
     forkedFrom[newTree.str()] = source.str();
   }
@@ -234,9 +222,7 @@ struct FakeProgressRepository : ProgressRepository {
     std::string prefix = tree.str() + "\n" + user.str() + "\n";
     for (const auto& [k, entry] : byKey) {
       if (k.rfind(prefix, 0) != 0) continue;
-      // The fake dates a mark by the stamp it arrived with. A real store answers with its OWN
-      // receipt instant, which is the only one a surface may show — a fake has no second clock
-      // to be honest with, so tests that care about the difference must use the real repository.
+      // The fake dates a mark by the stamp it arrived with; a real store answers with its OWN receipt instant, so tests that care about the difference must use the real repository.
       progress.record(NodeId{k.substr(prefix.size())},
                       ProgressMark{entry.status, entry.at, entry.at.physicalMs});
     }

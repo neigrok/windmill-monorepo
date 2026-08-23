@@ -7,19 +7,11 @@
 #include <optional>
 #include <string>
 
-// The trust gate behind both provider doors. Google's and Apple's clients each read an id_token's
-// claims through here and refuse the sign-in on anything surprising — so every "return {}" in this
-// file is a door staying shut, and every one of them is silent when it stops working.
-//
-// It is also the only reachable half of the OIDC path: GoogleOAuthClient and AppleOAuthClient are
-// concrete classes with no port behind them, so a test cannot drive an exchange without a live call
-// to the provider. This is where that path is provable.
 using namespace wm;
 
 namespace {
 
-// A JWT segment: base64url, unpadded. Built by hand rather than borrowed from the decoder, so the
-// assertions are about the JWT encoding rather than about this codebase agreeing with itself.
+// A JWT segment: base64url, unpadded, built by hand rather than borrowed from the decoder.
 std::string segment(const std::string& raw) {
   std::string encoded = drogon::utils::base64Encode(
       reinterpret_cast<const unsigned char*>(raw.data()), raw.size());
@@ -55,23 +47,18 @@ TEST(id_token_reads_the_claims_out_of_a_well_formed_token) {
   CHECK(verifiedClaim(*claims, "email_verified"));
 }
 
-// Only the payload is read, and the header and signature segments are never touched — which is the
-// whole shape of the trust model: the TLS connection this process opened is the proof of origin, so
-// there is nothing to verify here and nothing that pretends to.
+// Only the payload is read; the TLS connection this process opened is the proof of origin, so there is nothing to verify here.
 TEST(id_token_reads_the_middle_segment_and_ignores_what_flanks_it) {
   const std::string payload = segment(kGoogle);
 
   REQUIRE(idTokenClaims("anything." + payload + ".anything").has_value());
   CHECK_EQ(stringClaim(*idTokenClaims("anything." + payload + ".anything"), "sub"),
            std::string("1078"));
-  // A signature segment that is not even base64url is still not this function's business.
   CHECK(idTokenClaims("h." + payload + ".!!!!").has_value());
-  // Two dots is enough; a token with more is read on the second, exactly as a JWE-shaped one would be.
   CHECK(idTokenClaims("h." + payload + ".s.extra").has_value());
 }
 
-// A malformed token must be a refusal, never a throw: this runs on the vendor client's event-loop
-// thread, where an exception is the process rather than the request.
+// A malformed token must be a refusal, never a throw: this runs on the vendor client's event-loop thread.
 TEST(id_token_refuses_everything_that_is_not_a_token_rather_than_throwing) {
   const std::string payload = segment(kGoogle);
 
@@ -87,9 +74,7 @@ TEST(id_token_refuses_everything_that_is_not_a_token_rather_than_throwing) {
   CHECK_FALSE(idTokenClaims("h." + segment("7") + ".s").has_value());
 }
 
-// `aud` may legally be an array, and jsoncpp's asString() THROWS on one. Every claim goes through
-// stringClaim for exactly that reason — a multi-audience token has to fail the aud comparison, not
-// take the loop thread down.
+// `aud` may legally be an array and jsoncpp's asString() THROWS on one, which is why every claim goes through stringClaim.
 TEST(id_token_a_claim_of_a_surprising_type_reads_as_absent_and_never_throws) {
   const std::optional<Json::Value> claims = idTokenClaims(
       token(R"({"aud":["cli","other"],"sub":1078,"email":null,"name":{"given":"Sam"},"nbf":[]})"));
@@ -103,8 +88,7 @@ TEST(id_token_a_claim_of_a_surprising_type_reads_as_absent_and_never_throws) {
   CHECK_EQ(stringClaim(*claims, "never_present"), std::string(""));
 }
 
-// Apple serializes email_verified as the STRING "true"; Google has sent both. Reading it as a bool
-// alone would refuse every Apple sign-in, and reading it as truthy would accept "false".
+// Apple serializes email_verified as the STRING "true"; Google has sent both.
 TEST(id_token_a_verified_address_is_the_bool_or_the_word_and_nothing_else) {
   auto verified = [](const std::string& literal) {
     const std::optional<Json::Value> claims = idTokenClaims(token(R"({"email_verified":)" + literal + "}"));

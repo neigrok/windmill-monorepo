@@ -82,16 +82,13 @@ TEST(verify_link_distinguishes_every_outcome) {
   CHECK(verifyLink(true, true, now - 1, now) == LinkVerdict::alreadyUsed);  // used beats expired
 }
 
-// The code's whole policy in one place, because the mail copy ("6-digit", "works once and lasts
-// 15 minutes") and the app door's field are built on these numbers being exactly these.
+// The mail copy ("6-digit", "works once and lasts 15 minutes") and the app door's field are built on these numbers.
 TEST(the_code_is_six_digits_with_five_attempts_on_the_links_own_clock) {
   CHECK_EQ(AuthPolicy::codeLength, 6);
   CHECK_EQ(AuthPolicy::maxCodeAttempts, 5);
 }
 
-// The lookup owns liveness (newest unspent, unexpired, under-cap row), so the verdict decides
-// only what is left: no live row and a wrong guess are different verdicts because only the wrong
-// guess spends an attempt — at the edge both collapse to one identical refusal.
+// The lookup owns liveness, so the verdict decides only what is left: no live row and a wrong guess differ because only the wrong guess spends an attempt.
 TEST(verify_code_distinguishes_a_wrong_guess_from_no_live_code) {
   CHECK(verifyCode(true, true) == CodeVerdict::valid);
   CHECK(verifyCode(true, false) == CodeVerdict::wrongCode);
@@ -114,12 +111,10 @@ TEST(the_apple_relay_domain_is_recognised_and_nothing_else_is) {
   CHECK_FALSE(isPrivateRelay(Email{"sam@example.com"}));
   CHECK_FALSE(isPrivateRelay(Email{"sam@appleid.com"}));
   CHECK_FALSE(isPrivateRelay(Email{"sam@privaterelay.appleid.com.example.com"}));
-  // The suffix alone is not an address — a bare domain names no human.
   CHECK_FALSE(isPrivateRelay(Email{"@privaterelay.appleid.com"}));
 }
 
-// The whole trust ladder as a table. Only `unusable` refuses; `appOnly` is a full sign-in that also
-// tells the client to offer the link door, because a relay can never find the human's web account.
+// Only `unusable` refuses; `appOnly` is a full sign-in that also tells the client to offer the link door.
 TEST(address_trust_separates_refusal_from_the_link_door) {
   ProviderIdentity real{Provider::google, "g-1", Email{"sam@example.com"}, "Sam", true, false};
   CHECK(trustOf(real) == AddressTrust::crossDoor);
@@ -127,8 +122,6 @@ TEST(address_trust_separates_refusal_from_the_link_door) {
   ProviderIdentity relayByDomain{Provider::apple, "a-1", Email{"abc@privaterelay.appleid.com"}, "", true, false};
   CHECK(trustOf(relayByDomain) == AddressTrust::appOnly);
 
-  // The provider's own claim stands even on an address whose domain we don't recognise, so a future
-  // relay domain can't quietly downgrade to crossDoor.
   ProviderIdentity relayByClaim{Provider::apple, "a-2", Email{"abc@newrelay.example"}, "", true, true};
   CHECK(trustOf(relayByClaim) == AddressTrust::appOnly);
 

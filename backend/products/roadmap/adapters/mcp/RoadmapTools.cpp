@@ -29,8 +29,8 @@ namespace wm {
 
 namespace {
 
-// `status` names the caller's own mark on this surface; a node carrying it where the document's
-// authored baseline was meant is refused by name rather than guessed at.
+// `status` is the caller's own mark here, so a node carrying it where the document's authored
+// baseline was meant is refused by name.
 constexpr char kSeedStatusMoved[] =
     ".status is your own mark on this surface, not the document's — the authored baseline every "
     "reader sees is \"seedStatus\", and your own progress goes in \"progress\": [{nodeId, status}].";
@@ -81,8 +81,7 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
   return std::nullopt;
 }
 
-// The tools whose subject is a node that ALREADY exists. create_node is not among them: the id
-// it takes is one it proposes.
+// The tools whose subject is a node that ALREADY exists; create_node proposes its id instead.
 bool namesAnExistingNode(const std::string& tool) {
   return tool == "annotate_node" || tool == "rename_node" || tool == "set_node_color" ||
          tool == "move_node" || tool == "delete_node";
@@ -102,8 +101,7 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
-// The graft path does not run the domain's validate(), so the caps every other authoring tool
-// obeys are checked here or not at all.
+// The graft path never runs the domain's validate(), so the caps are checked here or nowhere.
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
@@ -132,9 +130,8 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
 // `nodeId` and `id` land on payload["id"], the key commandFromJson reads. Checked BEFORE that
 // decode, which answers a bare yes/no because it is also the op-log replay decoder.
 std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& payload) {
-  // These checks read a null as "not given"; commandFromJson reads presence with isMember. Left
-  // to disagree, `links: null` reaches AnnotateNode as "replace the set with []" and `x: null,
-  // y: null` reaches CreateNode as the position (0, 0).
+  // These checks read a null as "not given" while commandFromJson reads presence with isMember:
+  // left to disagree, `links: null` empties a node's links and `x/y: null` pins it at (0, 0).
   for (const std::string& key : payload.getMemberNames())
     if (payload[key].isNull()) payload.removeMember(key);
 
@@ -222,8 +219,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
 }
 
 // Every room-touching tool holds the tree's strand, opens the room, and turns a "no such tree"
-// into a tool-level error. An infrastructure failure is left to throw past this, to callTool,
-// which logs the detail and answers generically.
+// into a tool-level error. An infrastructure failure throws past this, to callTool.
 template <typename Fn>
 ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
@@ -233,8 +229,7 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
 }
 
 // The caller's own progress rows and the states derived from them, read ONCE per tree read and
-// only when asked for. States are derived over the WHOLE tree, never a page or a match list,
-// because a prerequisite may sit off either.
+// only when asked for. Derived over the WHOLE tree: a prerequisite may sit off the page.
 NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, const std::optional<UserId>& caller,
                                const std::vector<NodeSpec>& nodes, const NodeFields& fields, bool filtersOnState) {
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
@@ -248,8 +243,7 @@ NodeReadContext readContextFor(ProgressService& progress, const TreeId& tree, co
 ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                     const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message: a private tree must not be distinguishable from one
-    // that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
     std::string error;
@@ -288,8 +282,7 @@ ToolResult readTree(RoomRegistry& registry, ProgressService& progress, const Tre
 
 ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message: a private tree must not be distinguishable from one
-    // that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     return ToolResult::json(toJson(room.diagnose()));
   });
@@ -297,8 +290,7 @@ ToolResult readDiagnostics(RoomRegistry& registry, const TreeId& tree, const std
 
 ToolResult readHealth(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message: a private tree must not be distinguishable from one
-    // that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (!room.diagnose().clean())
       return ToolResult::failure(
@@ -331,8 +323,7 @@ ToolResult readProgress(ProgressService& progress, const TreeId& tree, const Jso
 ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
                      const Json::Value& args, const std::optional<UserId>& caller) {
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Byte-identical to the absent message: a private tree must not be distinguishable from one
-    // that does not exist, or the id is an oracle.
+    // Byte-identical to the absent message, or the id is an existence oracle.
     if (!canRead(caller, room.owner(), room.visibility())) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
       return ToolResult::failure(*bad);
@@ -355,9 +346,8 @@ ToolResult findNodes(RoomRegistry& registry, ProgressService& progress, const Tr
     std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
     if (!fields) return ToolResult::failure(error);
 
-    // selectNodes is a pure function of (tree, filter), which is what keeps a cursor valid, so the
-    // per-caller state filter runs here: after the ranked selection, before the page, so `count`
-    // and the cursor speak of the filtered set.
+    // selectNodes must stay a pure function of (tree, filter) or a cursor stops resuming, so the
+    // per-caller state filter runs here: after the ranked selection, before the page.
     const TreeData data = room.snapshot();
     const NodeReadContext context = readContextFor(progress, tree, caller, data.nodes, *fields, state.has_value());
     std::vector<NodeSpec> matches = selectNodes(data, filter);
@@ -383,8 +373,7 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    // Read gate first, answering exactly as an absent tree does, then the write gate, which
-    // admits the owner alone — an unowned tree is nobody's to edit.
+    // Read gate first, answering as an absent tree does, then the write gate: the owner alone.
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
@@ -405,8 +394,7 @@ ToolResult applyEdit(RoomRegistry& registry, const TreeId& tree, const std::stri
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
 
-    // Bracketing the write under the strand makes the receipt attributable: whatever the tree
-    // gains between these two reads, this command gained it.
+    // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
     registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
@@ -433,17 +421,15 @@ std::optional<std::string> applyProgressBatch(
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
-    // A per-user overlay, so not owner-gated — but a mark against someone else's PRIVATE tree
-    // would confirm which node ids exist, so private is owner-only here too. Both cases leave as a
-    // returned error, never a throw, so the caller's catch means only infrastructure failure.
+    // A per-user overlay, so not owner-gated — but private stays owner-only, since a mark would
+    // confirm which node ids exist. Refused by return, never a throw.
     if (!room || !canRead(user, room->owner(), room->visibility()))
       return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent/denied message
     for (const auto& [node, status] : requested) {
       if (!room->hasNode(node)) { skipped.append(node.str()); continue; }
       marks.push_back({node, status, room->prerequisitesOf(node), room->nextStamp(clock.nowMs())});
     }
-    // set_progress rejects an unknown id outright; an import's carried progress skips it and
-    // reports it in `skipped`, since the graft has already landed.
+    // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
     if (rejectUnknown && !skipped.empty()) {
       std::string names;
       for (const Json::Value& id : skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
@@ -471,8 +457,8 @@ std::optional<std::string> applyProgressBatch(
 
 ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
                          const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
-  // Two shapes, one tool: a single mark or a batch. Both boundary cases are answered here,
-  // before either shape is read, because both messages name both routes.
+  // Two shapes, one tool: a single mark or a batch. Both boundary cases answer before either
+  // shape is read, because both messages name both routes.
   const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
   const bool bulk = !args["updates"].isNull();
   if (!single && !bulk)
@@ -509,8 +495,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     requested.emplace_back(NodeId{node}, *parseProgressStatus(args["status"].asString()));
   }
 
-  // applyProgressBatch answers an absent/private-denied tree with a returned error string, so
-  // what is left to throw is only infrastructure failure — left to reach callTool.
+  // applyProgressBatch returns its refusals, so what throws here is only infrastructure.
   Json::Value results, skipped;  // set_progress rejects unknowns, so on success `skipped` stays empty
   if (std::optional<std::string> error =
           applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true, results, skipped))
@@ -523,15 +508,12 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   return ToolResult::json(results[0]);  // a singular call keeps its flat {nodeId, status, prerequisitesMet}
 }
 
-// Every item of an import, checked before treeFromJson reads it: the decoder indexes each item
-// as an object and throws on anything else.
+// Checked before treeFromJson reads it: the decoder indexes each item as an object.
 std::optional<std::string> checkImport(const Json::Value& args) {
-  // `nodes` is required, but the refusal names the escape for a legend-only or progress-only
-  // import.
+  // `nodes` is required; the refusal names the escape for a legend- or progress-only import.
   if (args["nodes"].isNull())
     return "missing required argument \"nodes\". Pass \"nodes\": [] to import only kinds or progress.";
-  // Two incoming rows under one id is malformed, not an upsert: which wins is order-dependent,
-  // so it is refused up front, before a byte is written.
+  // Two rows under one id is malformed, not an upsert: which wins is order-dependent.
   if (std::optional<std::string> bad = optionalObjects(args["nodes"], "nodes")) return bad;
   std::map<std::string, Json::ArrayIndex> nodeIdAt;
   for (Json::ArrayIndex i = 0; i < args["nodes"].size(); ++i) {
@@ -575,8 +557,7 @@ std::optional<std::string> checkImport(const Json::Value& args) {
       return bad;
   }
 
-  // A preview is a promise not to write, so the flag asking for one is a boolean and nothing
-  // else: a string would read as a go-ahead and turn a preview into a real import.
+  // A preview is a promise not to write, so its flag is a boolean: a string reads as go-ahead.
   if (!args["dryRun"].isNull() && !args["dryRun"].isBool())
     return "argument \"dryRun\" must be a boolean, got " + typeName(args["dryRun"]);
   return std::nullopt;

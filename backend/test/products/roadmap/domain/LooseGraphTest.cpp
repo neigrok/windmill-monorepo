@@ -7,8 +7,6 @@ using namespace wm;
 static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
-// The order register is opaque LWW: a dominating stamp wins, a stale one is ignored, and the
-// value survives export/reload and the TreeData projection (what the layout sorts by).
 TEST(order_register_is_lww_and_survives_export_and_projection) {
   LooseGraph g;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
@@ -111,8 +109,6 @@ TEST(status_seed_round_trips_through_projection) {
   CHECK_EQ(*view->status, std::string("complete"));
 }
 
-// The document seed constructor (POST /v1/trees create-from-document, and the byte-exact copy
-// trick) must carry each node's fractional-index order, not just label/description/links.
 TEST(order_seed_survives_the_document_seed_constructor) {
   TreeData data;
   data.id = TreeId{"t"};
@@ -291,9 +287,7 @@ TEST(merge_is_order_independent) {
   CHECK_EQ(forward.nodeView(nid("b"))->label, std::string("B2"));
 }
 
-// The transitive-closure pass is bounded by the WORK, not by nodes: guarded on node count alone,
-// a small-but-dense tree cost 32 seconds of one handler thread per call. Over budget it reports
-// nothing, which is exactly how the old node ceiling behaved.
+// The transitive-closure pass is bounded by the WORK, not by nodes. Over budget it reports nothing.
 TEST(redundant_edges_skips_a_tree_whose_edges_blow_the_work_budget) {
   CHECK(withinReachabilityBudget(1500, 2000));
   CHECK(withinReachabilityBudget(500, 6000));          // the shape tidy is slowest on: ~510ms

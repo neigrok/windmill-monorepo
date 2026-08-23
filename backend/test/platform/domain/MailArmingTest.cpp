@@ -5,11 +5,6 @@
 
 using namespace wm;
 
-// The dark-launch truth table, once. Two products used to carry a copy each — roadmap's
-// ReminderArming and journal's NudgeArming — and the copies had drifted into opposite answers on
-// the empty list and on id casing before anyone read them side by side. Every case both files had
-// is here, and there is exactly one struct for it to be true of.
-
 TEST(arming_defaults_to_nobody) {
   const MailArming dark;
 
@@ -27,8 +22,7 @@ TEST(the_allowlist_alone_arms_nobody_while_the_engine_is_dark) {
   CHECK_FALSE(dark.allows(UserId{"stranger"}));
 }
 
-// THE DECISION, pinned: an empty allowlist reaches NOBODY. The flag alone arms no one, so the two
-// variables are order-independent and forgetting the list cannot launch the feature to the fleet.
+// An empty allowlist reaches NOBODY: the flag alone arms no one, so the two variables are order-independent.
 TEST(an_empty_allowlist_arms_nobody_even_when_the_engine_is_enabled) {
   const MailArming armed(true, "");
 
@@ -38,8 +32,7 @@ TEST(an_empty_allowlist_arms_nobody_even_when_the_engine_is_enabled) {
   CHECK_FALSE(armed.allows(UserId{"anyone-at-all"}));
 }
 
-// The same answer for the shape an operator actually mistypes: a list of separators and spacing
-// parses to no ids at all, and no ids means no one. It must not fall through to "everybody".
+// A list of separators and spacing parses to no ids at all, and no ids means no one.
 TEST(an_allowlist_of_only_separators_and_spacing_reaches_nobody) {
   const MailArming armed(true, " , ,\t\n");
 
@@ -68,9 +61,7 @@ TEST(the_allowlist_forgives_the_shapes_a_pasted_uuid_arrives_in) {
   CHECK_FALSE(armed.allows(UserId{""}));
 }
 
-// The casing rule. A uuid pasted from a console or a dashboard often arrives upper- or mixed-case;
-// the id it is compared against is always lowercase. A parser that trimmed but did not lowercase
-// let an operator name an account, read it back on the list, and reach nobody.
+// The id a caller is compared against is always lowercase, so a pasted upper- or mixed-case uuid must be folded on parse.
 TEST(an_uppercase_id_on_the_allowlist_reaches_the_lowercase_account) {
   const MailArming armed(true, "A1B2C3D4-0000-4000-8000-00000000FFFF");
 
@@ -79,8 +70,7 @@ TEST(an_uppercase_id_on_the_allowlist_reaches_the_lowercase_account) {
   CHECK_FALSE(armed.allows(UserId{"a1b2c3d4-0000-4000-8000-00000000fffe"}));
 }
 
-// And the other direction, so the gate is casing-blind rather than merely lowercase-tolerant on
-// one side: a mixed-case caller id is folded before the lookup too.
+// And the other direction: a mixed-case caller id is folded before the lookup too.
 TEST(a_mixed_case_account_is_matched_against_the_lowercased_allowlist) {
   const MailArming armed(true, "u1, MiXeD-Case-Id");
 

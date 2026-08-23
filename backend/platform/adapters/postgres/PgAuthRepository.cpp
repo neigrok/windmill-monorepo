@@ -10,8 +10,8 @@ PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool) : pool_(std::mo
 
 namespace {
 // A users row → User, carrying the soft-close stamp (null deleted_at → a live account).
-// `const auto&` (as sibling repos do) — pqxx names the row type differently across
-// versions (row vs row_ref); deducing it keeps the build portable macOS↔Linux.
+// `const auto&` for the row: pqxx names the row type differently across versions (row vs row_ref),
+// and deducing it keeps the build portable macOS↔Linux.
 User userFrom(const auto& row) {
   std::optional<UnixMs> deletedAt;
   if (!row["deleted_ms"].is_null()) deletedAt = static_cast<UnixMs>(row["deleted_ms"].template as<long long>());
@@ -93,8 +93,7 @@ std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const st
 
 void PgAuthRepository::bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
                                     const std::string& emailAtLink) {
-  // DO UPDATE, not DO NOTHING: the service only reaches this after resolving whatever the door was
-  // already bound to, so re-binding is the door following its account rather than overwriting one.
+  // DO UPDATE, not DO NOTHING: re-binding is the door following its account rather than overwriting one.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params(
@@ -107,9 +106,8 @@ void PgAuthRepository::bindIdentity(Provider provider, const std::string& subjec
 }
 
 void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {
-  // The destination may already hold a door for the same provider (they signed in with Google on
-  // the web and Apple on the phone); the pair is the key, and only the loser's own doors move, so
-  // a collision is impossible — two rows for one provider differ by subject.
+  // The destination may already hold a door for the same provider; the (provider, subject) pair is
+  // the key and only the loser's own doors move, so a collision is impossible.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   txn.exec_params("UPDATE user_identities SET user_id = $2::uuid WHERE user_id = $1::uuid",
@@ -156,8 +154,7 @@ std::optional<StoredLink> PgAuthRepository::findLink(const std::string& digest) 
 
 std::optional<StoredSignInCode> PgAuthRepository::findLiveCode(const Email& email, UnixMs now,
                                                                int maxAttempts) {
-  // Newest live row wins — a resend supersedes the code before it. The (email, created_ms) index
-  // built for the rate-limit query carries this walk too.
+  // Newest live row wins — a resend supersedes the code before it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -175,8 +172,8 @@ std::optional<StoredSignInCode> PgAuthRepository::findLiveCode(const Email& emai
 }
 
 int PgAuthRepository::spendCodeAttempt(const std::string& digest, int maxAttempts) {
-  // One statement, gated in the WHERE — racing wrong guesses each pay for themselves, and the
-  // count can only climb to the cap, never past it.
+  // One statement, gated in the WHERE: racing wrong guesses each pay for themselves, and the count
+  // can only climb to the cap, never past it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(

@@ -7,7 +7,7 @@
 
 namespace wm::gym {
 
-// The settings row over Postgres (§I): one row per account at most, absent until written, and a
+// The settings row over Postgres: one row per account at most, absent until written, and a
 // whole-document upsert keyed on the account. Stateless but for the pool — each method borrows a
 // connection for exactly one transaction (platform/adapters/postgres/PgPool.h). Nothing else in
 // gym's storage reads this table.

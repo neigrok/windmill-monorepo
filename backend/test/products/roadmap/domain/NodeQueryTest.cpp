@@ -85,9 +85,7 @@ static std::vector<std::string> ids(const std::vector<NodeSpec>& nodes) {
   return out;
 }
 
-// The id is the handle every edit is aimed by, so a query that IS an id is a caller naming the
-// node it already means. The tree is deliberately in another order: the ranking decides, not the
-// input.
+// A query that IS an id is a caller naming the node it means. The tree is deliberately in another order: the ranking decides, not the input.
 static TreeData rankableTree() {
   TreeData tree;
   tree.id = TreeId{"t"};

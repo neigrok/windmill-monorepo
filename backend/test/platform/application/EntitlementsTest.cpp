@@ -55,8 +55,7 @@ TEST(a_free_account_spends_up_to_the_free_ceiling_and_not_past_it) {
   CHECK_EQ(under.remainingNanos(), 1);
   CHECK_EQ(under.allows(), true);
 
-  // Exactly at the ceiling is spent, not allowed — the limit is the last nano you may reach, not
-  // one more call.
+  // Exactly at the ceiling is spent, not allowed.
   usage.spentByProduct[""] = kFreeMonthlyAiNanos;
   const AiAllowance at = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
   CHECK_EQ(at.remainingNanos(), 0);
@@ -74,8 +73,6 @@ TEST(windmill_one_raises_the_ceiling_to_the_pro_one) {
   subs.subscribe(UserId{"u"});
   Entitlements entitlements{subs, usage};
 
-  // The spend that exhausts a free account leaves a subscriber with room, and the pro ceiling
-  // refuses at its own line.
   usage.spentByProduct[""] = kFreeMonthlyAiNanos;
   const AiAllowance under = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
   CHECK_EQ(under.limitNanos, kProMonthlyAiNanos);
@@ -91,8 +88,6 @@ TEST(the_sweep_bucket_is_its_own_and_a_maxed_one_leaves_the_account_free_to_ask)
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
 
-  // Journal has spent its whole background bucket; the account's own total is nowhere near its
-  // ceiling. The sweep stops. Nothing the person asks for does.
   usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
   usage.spentByProduct[""] = kSweepMonthlyAiNanos;
 
@@ -118,7 +113,6 @@ TEST(both_ceilings_are_measured_over_the_trailing_thirty_days) {
   const long long after = nowMs();
 
   CHECK_EQ(usage.asked.size(), std::size_t{2});
-  // The account's ceiling reads every product; the sweep's reads journal's bucket alone.
   CHECK_EQ(usage.asked[0].user.str(), std::string{"u"});
   CHECK_EQ(usage.asked[0].product, std::string{""});
   CHECK_EQ(usage.asked[1].product, std::string{"journal"});
@@ -126,26 +120,21 @@ TEST(both_ceilings_are_measured_over_the_trailing_thirty_days) {
     CHECK_EQ(query.sinceMs >= before - kAiWindowMs, true);
     CHECK_EQ(query.sinceMs <= after - kAiWindowMs, true);
   }
-  CHECK_EQ(kAiWindowMs, 2'592'000'000LL);  // thirty days, and not a calendar month
+  CHECK_EQ(kAiWindowMs, 2'592'000'000LL);
 }
 
-// THE OWNER LIST. Nothing can be bought — checkout is hardcoded shut and BillingApi 503s — so
-// without this every account on earth is unentitled, the accounts of the people shipping the paid
-// surfaces included. It grants what a subscription grants and not one level more.
+// Nothing can be bought — checkout is hardcoded shut and BillingApi 503s — so the owner list grants what a subscription grants and not one level more.
 TEST(an_owner_address_holds_windmill_one_without_a_subscription) {
   FakeSubscriptionRepository subscriptions;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subscriptions, usage, "Sam@Example.com, other@windmill.works"};
 
-  // Case and stray spaces are a person typing into a deploy variable, not a claim about identity.
   CHECK_EQ(entitlements.hasWindmillOne(UserId{"u1"}, "sam@example.com"), true);
   CHECK_EQ(entitlements.isOwner("other@windmill.works"), true);
   CHECK_EQ(entitlements.isOwner("OTHER@WINDMILL.WORKS"), true);
-  // Everybody else is exactly as unentitled as they were.
   CHECK_EQ(entitlements.hasWindmillOne(UserId{"u2"}, "stranger@example.com"), false);
   CHECK_EQ(entitlements.isOwner("stranger@example.com"), false);
   CHECK_EQ(entitlements.isOwner(""), false);
-  // A prefix of an owner address is not that address.
   CHECK_EQ(entitlements.isOwner("sam@example.co"), false);
   CHECK_EQ(entitlements.isOwner("am@example.com"), false);
 }

@@ -6,9 +6,8 @@
 namespace wm {
 
 namespace {
-// The cross-tree reach a single-tree tend has no use for: minting a tree, enumerating the caller's
-// trees, or deleting a whole one. Dropped from the catalog the agent sees, and refused if it names
-// one anyway.
+// The cross-tree reach a single-tree tend has no use for. Dropped from the catalog the agent sees,
+// and refused if it names one anyway.
 const std::set<std::string>& crossTreeTools() {
   static const std::set<std::string> names{"create_tree", "list_trees", "delete_tree"};
   return names;
@@ -35,10 +34,9 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
   scopedArgs["treeId"] = scope_.str();
   ToolResult result = inner_.callTool(name, scopedArgs, caller);
 
-  // Record what this call planted, from the tool's own result, so the tend's Undo reverts exactly the
-  // agent's additions. create_node echoes the one id it minted; import_subgraph plants every incoming
-  // node that wasn't already there (its result names the collisions). Only those two CREATE, so a
-  // modify tool's echoed id is never captured.
+  // Record what this call planted, from the tool's own result. create_node echoes the one id it
+  // minted; import_subgraph plants every incoming node that wasn't already there. Only those two
+  // CREATE, so a modify tool's echoed id is never captured.
   if (!result.isError) {
     if (name == "create_node") {
       const std::string id = result.payload.get("id", "").asString();

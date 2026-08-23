@@ -1,7 +1,7 @@
 # Backend notes — roadmap sync and its neighbours
 
 Rules that are not obvious from a single file, and the open items. The contracts live
-elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
+elsewhere and win where they disagree: `SPEC.md`, `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
 `RUNNING.md`, `deploy/README.md`, `CLAUDE.md`.
 
 ## The sync spine
@@ -24,6 +24,8 @@ elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
   and `updatedAt` is defined off the persisted stamp.
 - Subscribe replies with `deltaBetween(state, clientVector)`, not the full state.
 - A client-stamped frame past `now + 5min` is refused whole with a `skew` nack.
+- Cursors and selections are ephemeral: they ride `PresenceHub` (coalesced to 20 Hz,
+  latest-wins per actor), never `PresenceBus` and never the op log.
 
 ## Clock
 
@@ -46,9 +48,8 @@ elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
 - `merge` is unconditional. Legend validity (hue uniqueness, `kMaxKinds`, no in-use removal,
   length caps in `domain/Command.h`) is enforced **at the write edge before admission**,
   never inside merge.
-- The backend seeds the default legend only on genuine tree creation. A PUT without kinds to
-  an existing tree preserves its legend, and an old tree returns `kinds: []` for the client
-  to derive.
+- The backend seeds the default legend only on genuine tree creation; a PUT without kinds to
+  an existing tree preserves its legend, and the reply reflects the stored legend back.
 - Fork snapshots the source room's current graph + legend under the new id with
   `forked_from` provenance and a fresh op log.
 
@@ -56,7 +57,7 @@ elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
 
 - `SkillTree` / `TrunkTree` / `TreeHealth` assume a valid DAG. Gate on
   `TreeDiagnostics::assess(graph).clean()`; an unclean graph never reaches them.
-- Reach for `SkillTree` only when you need ranks / ancestry / trunk. For anything a loose
+- Reach for `SkillTree` only when you need topo order, ancestry or the trunk. For anything a loose
   graph can answer (a node's live prerequisites, present ids, edges) pass that in and stay
   validity-agnostic — progress must never block on graph validity.
 - Cycle detection is **iterative** Tarjan, so a 20k-node graph cannot blow the stack.
@@ -68,9 +69,10 @@ elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
 
 - `node_progress` is a per-user LWW register. A clear is `status='none'` **with a stamp** —
   never a row delete, or an out-of-order stale mark resurrects the node.
-- The upsert is guarded: `WHERE (EXCLUDED.stamp_ms, EXCLUDED.stamp_counter) >
-  (node_progress.stamp_ms, node_progress.stamp_counter)`. The room clock mints a unique
-  `(ms, counter)` per tree, so that pair totally orders every write.
+- The upsert lands only when `(EXCLUDED.stamp_ms, EXCLUDED.stamp_counter)` strictly beats the
+  stored pair. The comparison is numeric only — a tie loses, and the actor is never consulted.
+- A WS `progress` frame carries the marking replica's own stamps (skew-clamped like a subgraph
+  frame, at most `kMaxMarksPerFrame` marks); MCP mints from the room clock instead.
 - A progress change fans over the socket to the author's **own** connections only — it is a
   private overlay, never broadcast to collaborators.
 
@@ -93,22 +95,12 @@ elsewhere and win where they disagree: `AUTH.md`, `AUTHZ.md`, `db/schema.sql`,
 
 ## Open items
 
-- **Scale-out breaks single-authority.** Two `windmill_server` replicas reintroduce the seq
-  collision. Needs DB-authoritative `seq` (per-tree sequence or advisory-locked `max(seq)+1`,
-  never a cached `head_`), a cross-process bus behind `PresenceBus` so resident rooms replay
-  remote ops (dedup via `unique (tree_id, op_id)`), and sticky per-tree routing. A cheaper
-  guardrail first: make the write persist-then-apply and treat a seq conflict as "behind →
-  replay + retry". The same deploy must qualify the HLC actor per instance (`srv#<region>`).
+- **Scale-out breaks single-authority.** A second `windmill_server` replica reintroduces the
+  `seq` collision: `head_` is cached per room, `PresenceBus` is in-process, and the HLC actor
+  `"srv"` is not qualified per instance.
 - `TreeRoom::appliedOpIds_` grows unbounded in memory; `tree_ops`' `unique (tree_id, op_id)`
-  is the durable backstop. Wants a windowed dedupe.
+  is the durable backstop.
 - `ActivityFeed::displayActor` resolves only `dev` and `u<n>`; a real user uuid renders as the
-  tree itself. Needs a name-resolution pass.
+  tree itself.
 - An offline flush logs one coarse headline for many coalesced gestures.
-- Progress is not yet a client-side lattice: no stamped, offline-durable overlay with
-  reconnect catch-up. The data layer is correct; the client overlay still shadows in
-  localStorage.
-- Golden-corpus vectors do not cover the title / delta round-trip.
-- WebRTC device-to-device sync (server as signaling only, the same subscribe/delta/ack
-  exchange over a data channel) is unbuilt; the `.windmill` graft file is the only
-  device-to-device transport.
-- Imported `.windmill` hues are not reconciled against the local legend.
+- `test/golden` covers hlc / element-set / version-vector, not the title / delta round-trip.

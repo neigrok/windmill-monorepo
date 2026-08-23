@@ -12,9 +12,8 @@
 
 namespace wm {
 
-// A causal frontier: the greatest stamp seen from each actor. Two frontiers join by pointwise max;
-// `covers` asks whether a stamp is already accounted for. Keyed by actor string, so distinct
-// replicas (a tab, a device, the server) never alias.
+// A causal frontier: the greatest stamp seen from each actor. Frontiers join by pointwise max.
+// Keyed by actor string, so distinct replicas (a tab, a device, the server) never alias.
 struct VersionVector {
   std::map<std::string, Hlc> marks;
 
@@ -29,8 +28,7 @@ struct VersionVector {
 // carries coverage; `graft` = state joined for its own sake, never advancing coverage.
 enum class SubgraphIntent { live, flush, delta, graft };
 
-// What a user did, carried alongside the writes it produced — for the activity feed,
-// animation, and undo grouping. Descriptive metadata; never re-executed on a peer.
+// Descriptive metadata carried alongside the writes it produced; never re-executed on a peer.
 struct Gesture {
   std::string id;
   std::string kind;
@@ -53,13 +51,11 @@ struct Subgraph {
   bool operator==(const Subgraph&) const = default;
 };
 
-// The frontier of a full serialized state — every stamp it carries, folded together. The
-// reference computation; a live room keeps this incrementally.
+// Every stamp a full serialized state carries, folded together; a live room keeps this incrementally.
 VersionVector frontier(const GraphState& graph, const LegendState& legend);
 
-// The subgraph a peer at `since` is missing: every entry with a stamp beyond the vector,
-// with already-covered fields masked back to "no information". Its coverage is the sender's
-// full frontier — what the receiver is brought up to once it joins.
+// The subgraph a peer at `since` is missing: every entry stamped beyond the vector, with
+// already-covered fields masked back to "no information". Its coverage is the sender's full frontier.
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since);
 
 }

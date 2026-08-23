@@ -12,7 +12,6 @@ TreeRoom makeRoom(FakeOpLog& log, FakeBus& bus) {
                   Visibility::private_, 0, log, bus);
 }
 
-// A server-origin edit (the MCP path): stamp it, apply it, log it, broadcast the delta.
 Seq apply(TreeRoom& room, Command command, std::uint64_t ms) {
   return room.applyCommand(command, ms, uid());
 }
@@ -27,8 +26,8 @@ TEST(room_applies_command_assigns_seq_logs_and_broadcasts) {
   Seq seq = apply(room, createNode("a"), 1);
   CHECK_EQ(seq, static_cast<Seq>(1));
   CHECK_EQ(room.head(), static_cast<Seq>(1));
-  CHECK_EQ(log.byTree["t"].size(), 1u);           // the op log still powers the activity feed
-  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);    // and the edit fans out as one subgraph
+  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
 }
 
@@ -42,7 +41,7 @@ TEST(room_next_stamp_is_monotone_and_server_actored) {
   Hlc third = room.nextStamp(50);    // wall time goes backward → still strictly greater
   CHECK(second > first);
   CHECK(third > second);
-  CHECK_EQ(first.actor, std::string("srv"));  // authorship lives in AppliedOp.actor, not the stamp
+  CHECK_EQ(first.actor, std::string("srv"));
 }
 
 TEST(room_next_stamp_dominates_a_replayed_op_after_restart) {
@@ -102,12 +101,12 @@ TEST(room_join_subgraph_logs_its_headline_for_the_feed) {
   TreeRoom room = makeRoom(log, bus);
 
   Seq seq = *room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid());
-  REQUIRE_EQ(log.byTree["t"].size(), 1u);            // a browser edit reaches the feed like an agent's
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);
   const AppliedOp& op = log.byTree["t"].front();
   CHECK_EQ(op.seq, seq);                           // logged at the seq the frame took
   CHECK_EQ(op.opId, std::string("f1"));            // keyed on the frameId, so a re-gossip can't double-count
   const CreateNode* deed = std::get_if<CreateNode>(&op.command);
-  REQUIRE(deed != nullptr);                        // the headline read off the frame's life-add
+  REQUIRE(deed != nullptr);
   CHECK_EQ(deed->id, nid("a"));
   CHECK_EQ(deed->label, std::string("N"));
 }
@@ -127,9 +126,9 @@ TEST(room_join_subgraph_reposition_only_frame_logs_nothing) {
   frame.graph.nodes.push_back(moved);
 
   Seq seq = *room.joinSubgraph(frame, uid());
-  CHECK_EQ(seq, static_cast<Seq>(1));              // the frame still takes a seq and broadcasts
+  CHECK_EQ(seq, static_cast<Seq>(1));
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
-  CHECK(log.byTree["t"].empty());                  // but a nudge is not a feed-worthy deed
+  CHECK(log.byTree["t"].empty());
 }
 
 TEST(room_join_subgraph_edge_frame_logs_a_link) {
@@ -161,9 +160,9 @@ TEST(room_join_subgraph_dedupes_on_frame_id) {
   CHECK(room.joinSubgraph(frameWith("f1", nid("a"), at(7)), uid()).has_value());
   CHECK_FALSE(room.joinSubgraph(frameWith("f1", nid("b"), at(8)), uid()).has_value());  // same frameId
   CHECK_EQ(room.head(), static_cast<Seq>(1));
-  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);  // the duplicate never broadcasts
-  CHECK_EQ(log.byTree["t"].size(), 1u);         // and never logs a second feed op
-  CHECK_FALSE(room.snapshot().nodes.size() == 2u);  // 'b' was never joined
+  CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
+  CHECK_EQ(log.byTree["t"].size(), 1u);
+  CHECK_FALSE(room.snapshot().nodes.size() == 2u);
 }
 
 TEST(room_join_subgraph_observes_client_stamps) {
@@ -230,9 +229,9 @@ TEST(room_validate_rejects_invalid_legend_ops_only) {
   TreeRoom room = makeRoom(log, bus);
 
   apply(room, AddKind{KindId{"sky"}, NodeColor::sky}, 1);
-  CHECK(room.validate(AddKind{KindId{"dupe"}, NodeColor::sky}).has_value());   // hue taken
+  CHECK(room.validate(AddKind{KindId{"dupe"}, NodeColor::sky}).has_value());
   CHECK_FALSE(room.validate(AddKind{KindId{"gold"}, NodeColor::gold}).has_value());
-  CHECK_FALSE(room.validate(RenameNode{nid("anything"), "x"}).has_value());    // graph op: never rejected
+  CHECK_FALSE(room.validate(RenameNode{nid("anything"), "x"}).has_value());
 }
 
 TEST(room_recolor_kind_repaints_nodes) {
@@ -246,7 +245,7 @@ TEST(room_recolor_kind_repaints_nodes) {
 
   TreeData snapshot = room.snapshot();
   REQUIRE_EQ(snapshot.nodes.size(), 1u);
-  CHECK_EQ(snapshot.nodes[0].color, NodeColor::brick);   // node followed its kind
+  CHECK_EQ(snapshot.nodes[0].color, NodeColor::brick);
   CHECK_EQ(snapshot.kinds[0].hue, NodeColor::brick);
 }
 
@@ -256,11 +255,11 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
   TreeRoom room = makeRoom(log, bus);
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
-  room.markClean();  // as if a save just landed
+  room.markClean();
 
-  apply(room, RenameNode{nid("b"), "B2"}, 3);  // touch one node only
+  apply(room, RenameNode{nid("b"), "B2"}, 3);
   auto [graph, legend] = room.dirtyState();
-  REQUIRE_EQ(graph.nodes.size(), 1u);            // just b — not the whole tree
+  REQUIRE_EQ(graph.nodes.size(), 1u);
   CHECK_EQ(graph.nodes[0].id, nid("b"));
   CHECK_EQ(graph.nodes[0].label, std::string("B2"));
   CHECK_EQ(graph.edges.size(), 0u);
@@ -268,8 +267,8 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
 
   apply(room, AddEdge{nid("a"), nid("b")}, 4);
   auto [withEdge, legendStill] = room.dirtyState();
-  CHECK_EQ(withEdge.nodes.size(), 1u);         // b still pending
-  REQUIRE_EQ(withEdge.edges.size(), 1u);         // plus the new edge
+  CHECK_EQ(withEdge.nodes.size(), 1u);
+  REQUIRE_EQ(withEdge.edges.size(), 1u);
   CHECK_EQ(withEdge.edges[0].edge, (Edge{nid("a"), nid("b")}));
   CHECK_EQ(legendStill.kinds.size(), 0u);
 
@@ -287,8 +286,8 @@ TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
   apply(room, createNode("a"), 1);
   room.markClean();
 
-  room.replay(AppliedOp{2, "r1", createNode("z"), at(5), uid()});  // footprint unknown to the room
+  room.replay(AppliedOp{2, "r1", createNode("z"), at(5), uid()});
   auto [graph, legend] = room.dirtyState();
-  CHECK_EQ(graph.nodes.size(), 2u);  // full state, a included
+  CHECK_EQ(graph.nodes.size(), 2u);
   CHECK_EQ(legend.kinds.size(), 0u);
 }

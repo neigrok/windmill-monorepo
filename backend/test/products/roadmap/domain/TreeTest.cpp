@@ -5,8 +5,7 @@
 
 using namespace wm;
 
-// The colour vocabulary, which every surface that renders a tree reads from here: the wire name
-// a document is stored under, and the hex the server-rendered surfaces paint with.
+// The colour vocabulary: the wire name a document is stored under, and the hex the server-rendered surfaces paint with.
 
 TEST(a_colour_name_survives_the_round_trip_through_the_wire) {
   CHECK_EQ(std::string(toString(NodeColor::terracotta)), std::string("terracotta"));
@@ -23,9 +22,7 @@ TEST(a_colour_name_survives_the_round_trip_through_the_wire) {
 }
 
 TEST(every_hue_renders_to_one_fixed_hex_for_every_server_rendered_surface) {
-  // The gallery card's bar and the reminder mail's step glyphs read the same six literals. In a
-  // mail this is also the safe form: the hex lands inside style="background:…", where the house's
-  // angle-bracket stripping would not have protected a value that came from a person.
+  // In a mail the hex lands inside style="background:…", where the house's angle-bracket stripping would not protect a value that came from a person.
   CHECK_EQ(std::string(nodeColorHex(NodeColor::terracotta)), std::string("#BC6C42"));
   CHECK_EQ(std::string(nodeColorHex(NodeColor::olive)), std::string("#7D8C43"));
   CHECK_EQ(std::string(nodeColorHex(NodeColor::gold)), std::string("#C4972F"));

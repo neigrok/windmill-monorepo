@@ -45,12 +45,11 @@ these query params in the hash (read `location.hash`):
 
 ## States
 
-1. **Not signed in.** `GET {API_URL}/v1/me` (`credentials: 'include'`). On `401`, run the magic-link
-   sign-in, then return to this route with the same params — they live in the URL, so a round-trip
-   through sign-in preserves them.
+1. **Not signed in.** `GET {API_URL}/v1/me`. On `401`, run the magic-link sign-in, then return to
+   this route with the same params — they live in the URL, so the round-trip preserves them.
 
 2. **Signed in — show consent.** Fetch the verified client so no attacker-supplied text is rendered:
-   `GET {API_URL}/v1/oauth/client?client_id=<client_id>` (`credentials: 'include'`).
+   `GET {API_URL}/v1/oauth/client?client_id=<client_id>`.
    - `200` → `{ "client_id", "client_name", "redirect_uris": [...] }`. Display `client_name` and the
      host of `redirect_uri`, and check that `redirect_uri` is one of `redirect_uris`; if not, show an
      error and do not offer Approve. That check is a courtesy to the reader, never the gate: the
@@ -60,7 +59,7 @@ these query params in the hash (read `location.hash`):
    Copy: *"‹client_name› wants to access your Windmill roadmaps as you."* Buttons: **Authorize** /
    **Deny**.
 
-3. **Decision.** `POST {API_URL}/v1/oauth/decision` (`credentials: 'include'`, JSON body):
+3. **Decision.** `POST {API_URL}/v1/oauth/decision`, JSON body:
    ```json
    { "client_id": "...", "redirect_uri": "...", "code_challenge": "...",
      "resource": "...", "scope": "...", "state": "...", "approve": true }
@@ -71,27 +70,18 @@ these query params in the hash (read `location.hash`):
    - `400` → the authorization request expired (codes last ~10 min) or is malformed; show "this
      sign-in request expired — start again from your MCP client" and stop.
 
-## Endpoints the screen calls (all on `{API_URL}`)
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/v1/me` | is the user signed in? |
-| `GET` | `/v1/oauth/client?client_id=…` | verified client name + redirect_uris |
-| `POST`| `/v1/oauth/decision` | approve/deny → `{ redirect }` to navigate to |
-
-All three send the `wm_session` cookie (`credentials: 'include'`); the backend grants credentialed
-CORS to the app origin. The screen does not call `/oauth/authorize`, `/oauth/token`,
-`/oauth/register` or the metadata endpoints — those belong to the MCP client and the backend.
+The screen calls only `/v1/me`, `/v1/oauth/client` and `/v1/oauth/decision`, all with
+`credentials: 'include'`; the backend grants credentialed CORS to the app origin. It does not call
+`/oauth/authorize`, `/oauth/token`, `/oauth/register` or the metadata endpoints — those belong to the
+MCP client and the backend.
 
 ## Rules
 
 - **The server is the boundary, not this screen.** An unregistered or crafted `redirect_uri` is
   refused by `/oauth/authorize` and again by `/v1/oauth/decision`.
 - **Show verified info, never raw params.** Client name and redirect host come from
-  `/v1/oauth/client`. This is what stops a crafted consent link from spoofing a trusted app.
-- **Echo the opaque params back byte-for-byte.** Don't parse or normalize them.
-- **Follow the returned `redirect` exactly** — don't build the client redirect yourself.
-- The whole screen is behind sign-in.
+  `/v1/oauth/client`. That is what stops a crafted consent link from spoofing a trusted app.
+- **Echo the opaque params back byte-for-byte**, and follow the returned `redirect` exactly.
 - No tokens or secrets touch this screen. Handling a `code` or `token` here means something is wrong.
 
 ## Local dev

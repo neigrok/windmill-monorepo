@@ -70,8 +70,7 @@ TEST(tree_document_round_trips_the_order_key) {
   CHECK_EQ(back.nodes[0].order, std::string("a7"));
 }
 
-// A root that parsed but is not an object throws on every keyed read jsoncpp does — the decoder
-// answers the mismatch rather than raising it past the handler as a 500.
+// A root that parsed but is not an object throws on every keyed read jsoncpp does; the decoder answers the mismatch rather than raising it.
 TEST(tree_from_json_refuses_a_non_object_root) {
   CHECK_FALSE(treeFromJson(parse("[]"), TreeId{"t"}).has_value());
   CHECK_FALSE(treeFromJson(parse("\"hello\""), TreeId{"t"}).has_value());
@@ -79,11 +78,7 @@ TEST(tree_from_json_refuses_a_non_object_root) {
   CHECK(treeFromJson(parse("{}"), TreeId{"t"}).has_value());
 }
 
-// The overlay answers as a lattice frame — one stamped register per node — because that is
-// everything a replica needs to join it. Two clocks ride each row and they are not
-// interchangeable: `at` is the stamp the marking replica minted and the only thing that decides
-// what wins, `markedAt` is the server's own receipt instant and the only one a person may be
-// shown (GRAPH_SYNC_DESIGN.md §12).
+// The overlay answers as a lattice frame — one stamped register per node. `at` is the stamp the marking replica minted and decides what wins; `markedAt` is the server's receipt instant and the only one a person may be shown.
 TEST(the_progress_overlay_answers_as_stamped_registers) {
   Progress progress;
   progress.record(nid("a"), ProgressMark{ProgressStatus::complete, at(500, "r_phone"), 1700000000000ull});
@@ -101,9 +96,7 @@ TEST(the_progress_overlay_answers_as_stamped_registers) {
   CHECK_EQ(root["marks"][1]["at"].asString(), std::string("600:0:r_tab"));
 }
 
-// A cleared mark is a VALUE, not an absence: it must ride the wire like any other register, or a
-// replica that cleared a step on another device would never learn of the clear and would keep
-// re-asserting its own stale `complete` forever.
+// A cleared mark is a VALUE, not an absence: it must ride the wire like any other register.
 TEST(a_cleared_register_is_carried_not_omitted) {
   Progress progress;
   progress.record(nid("a"), ProgressMark{ProgressStatus::none, at(700, "r_phone"), 1700000000000ull});
@@ -115,8 +108,7 @@ TEST(a_cleared_register_is_carried_not_omitted) {
   CHECK_EQ(root["marks"][0]["status"].asString(), std::string("none"));
 }
 
-// `record` is the only way into the overlay precisely so the projections cannot drift from the
-// registers. Re-marking a node must move it between the sets, never leave it in two.
+// `record` is the only way into the overlay, so re-marking a node must move it between the sets, never leave it in two.
 TEST(recording_over_a_node_moves_it_between_the_projected_sets) {
   Progress progress;
   progress.record(nid("a"), ProgressMark{ProgressStatus::active, at(500), 1});

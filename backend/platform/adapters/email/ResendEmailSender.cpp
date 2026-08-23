@@ -16,9 +16,7 @@ void ResendEmailSender::sendMagicLink(const Email& to, const std::string& magicL
 void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLinkUrl,
                                      const std::string& sourceTitle, const std::string& sourceMeta,
                                      std::function<void(bool)> done) {
-  // `tree_title` / `tree_meta` are the slot names inside Resend's stored 'magic-link-fork'
-  // template, which only roadmap forks today — a vendor-side contract we bind to, not a fact this
-  // adapter knows about the two strings it is handed.
+  // `tree_title` / `tree_meta` are the slot names inside Resend's stored 'magic-link-fork' template.
   Json::Value variables(Json::objectValue);
   variables["magic_link"] = magicLinkUrl;
   variables["tree_title"] = emailSafeTitle(sourceTitle);
@@ -28,9 +26,8 @@ void ResendEmailSender::sendForkLink(const Email& to, const std::string& magicLi
 
 void ResendEmailSender::sendSignInCode(const Email& to, const std::string& signInCode,
                                        std::function<void(bool)> done) {
-  // `sign_in_code` is the slot inside Resend's stored 'magic-code' template (paste-source:
-  // web/emails/magic-code.html) — server-minted digits, never user text, so raw substitution
-  // holds. The subject lives on the template, deliberately omitted here like the others.
+  // `sign_in_code` is the slot inside Resend's stored 'magic-code' template — server-minted digits,
+  // never user text, so raw substitution holds. The subject lives on the template.
   Json::Value variables(Json::objectValue);
   variables["sign_in_code"] = signInCode;
   client_.send(to, "magic-code", variables, Json::Value(Json::objectValue), std::move(done));

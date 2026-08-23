@@ -59,8 +59,7 @@ int main() {
   const std::vector<ToolModule> modules{{tools, roadmapInstructions()}};
   CompositeToolHost surface(modules);
   McpServer server(surface, windmillServerInfo(surface), roadmapResources());
-  // stdio has no credential to narrow: the process IS the account, configured by env. Said out loud
-  // here for the same reason it is said in main.cpp — the widest reach is never a default.
+  // stdio has no credential to narrow: the process is the account, configured by env.
   const ToolCaller actor{caller, ToolScope::everything()};
 
   // stdout is the protocol channel — everything else goes to stderr.

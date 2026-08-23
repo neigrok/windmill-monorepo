@@ -38,7 +38,6 @@ TreeReadiness readyTree(const char* id, const char* title, std::vector<ReadyStep
   return tree;
 }
 
-// One user who deserves a reminder, wired into a repository that will let it through.
 void planOneSendableUser(FakeReminders& reminders) {
   reminders.due = {due("u1", "sailor@example.com")};
   reminders.lastActive["u1"] = kNow - 14 * kDay;
@@ -103,21 +102,17 @@ TEST(the_mail_carries_the_links_the_counters_and_the_coloured_slots) {
   REQUIRE_EQ(email.sent.size(), std::size_t{1});
   const ReminderMail& mail = email.sent[0].mail;
   CHECK_EQ(mail.treeName, std::string("Learn to sail"));
-  // The OWNER's tree (#/app/:id), never the public share page (/t/:id) — this mail goes to the
-  // person whose plan it is, so it must open their editable tree, not a read-only view of it.
+  // The OWNER's tree (#/app/:id), never the public share page (/t/:id).
   CHECK_EQ(mail.treeUrl, std::string("https://windmill.works/#/app/t_a"));
   // Hash-routed app: a bare /settings is a 404 on the static host.
   CHECK_EQ(mail.settingsUrl, std::string("https://windmill.works/#/settings"));
-  // The secret rides in the fragment so it never reaches our logs, and only the digest of it is
-  // at rest — written once the mail carrying it has actually gone.
+  // The secret rides in the fragment so it never reaches our logs; only its digest is at rest.
   CHECK_EQ(mail.pauseUrl, std::string("https://windmill.works/pause.html#t=s1"));
-  // The same secret as a query on a real endpoint (not a fragment) — the RFC 8058 one-click target
-  // a mail client POSTs. It becomes the List-Unsubscribe header, so the sender can spend the pause.
+  // The same secret as a query on a real endpoint — the RFC 8058 one-click target, which becomes the List-Unsubscribe header.
   CHECK_EQ(mail.unsubscribeUrl, std::string("https://windmill.works/v1/reminders/unsubscribe?t=s1"));
   CHECK_EQ(reminders.pauseDigests["u1"], std::string("d1"));
   CHECK_EQ(mail.done, 5);
   CHECK_EQ(mail.total, 12);
-  // Every counted sentence arrives finished from the pure core; the mailer writes no copy.
   CHECK_EQ(mail.readyPhrase, std::string("2 steps"));
   CHECK_EQ(mail.moreOnTree, std::string(""));
   CHECK_EQ(mail.moreReady, std::string(""));
@@ -193,8 +188,6 @@ TEST(a_week_another_sweep_already_owns_is_dropped_in_silence) {
   CHECK_EQ(report.due, 1);
   CHECK_EQ(report.claimed, 0);
   CHECK_EQ(report.sent, 0);
-  // A lost race is not a skip: that week belongs to the sweep that won it, and counting it here
-  // would report a decision this run never wrote to the ledger.
   CHECK_EQ(report.skipped, 0);
   CHECK_EQ(reminders.claims.size(), std::size_t{1});  // it tried, and lost
   CHECK_EQ(email.sent.size(), std::size_t{0});
@@ -238,15 +231,12 @@ TEST(a_dark_engine_records_an_honest_send_holds_it_and_delivers_nothing) {
   CHECK_EQ(report.claimed, 1);
   CHECK_EQ(report.held, 1);
   CHECK_EQ(report.sent, 0);
-  // The ledger says what we decided, not what the flag allowed — that is what makes the decision
-  // metric readable while the engine is still dark.
+  // The ledger says what we decided, not what the flag allowed.
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::send);
-  // And the week is CLOSED as held, so this row can never be read as a crash between the claim
-  // and the send. Every row of a dark rollout would otherwise look exactly like that.
+  // And the week is CLOSED as held, so this row can never be read as a crash between the claim and the send.
   REQUIRE_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].outcome, WeekOutcome::held);
   CHECK_EQ(email.sent.size(), std::size_t{0});
-  // Nothing left, so last week's pause link — whatever it was — is untouched.
   CHECK_EQ(reminders.pauseDigests.size(), std::size_t{0});
 }
 
@@ -293,8 +283,7 @@ TEST(a_refused_send_is_recorded_never_retried_and_leaves_the_old_pause_link_aliv
   CHECK_EQ(email.sent.size(), std::size_t{0});
   REQUIRE_EQ(reminders.closes.size(), std::size_t{1});
   CHECK_EQ(reminders.closes[0].outcome, WeekOutcome::refused);
-  // The credential rotates only on a mail that actually left. Rotating first would kill a pause
-  // link still sitting in someone's inbox on behalf of a replacement that never arrived.
+  // The credential rotates only on a mail that actually left, or a pause link still in someone's inbox dies for a replacement that never arrived.
   CHECK_EQ(reminders.pauseDigests["u1"], std::string("last-weeks-digest"));
 }
 
@@ -318,9 +307,7 @@ TEST(a_sweep_that_cannot_take_the_fleet_lock_touches_nothing) {
 }
 
 TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
-  // The pointer only advances inside a claim, and dueNow serves the oldest pointer first. A turn
-  // that threw its way past the claim would therefore return at the head of every future batch —
-  // one such user costs a lost week, two hundred and the fleet is never swept again.
+  // The pointer only advances inside a claim and dueNow serves the oldest pointer first, so a turn that threw past the claim would return at the head of every future batch.
   FakeReminders reminders;
   planOneSendableUser(reminders);
   reminders.due.insert(reminders.due.begin(), due("u0", "broken@example.com"));
@@ -343,11 +330,9 @@ TEST(a_user_whose_facts_cannot_be_read_still_claims_the_week_and_moves_on) {
   CHECK_EQ(reminders.claims[0].user, UserId{"u0"});
   CHECK_EQ(reminders.claims[0].slotDate, kSlotDate);
   CHECK_EQ(reminders.claims[0].decision.outcome, ReminderOutcome::skip);
-  // A reason of its own: the week was claimed by a turn that never got as far as deciding.
   CHECK_EQ(reminders.claims[0].decision.reason, SkipReason::loadFailed);
   CHECK_EQ(reminders.claims[1].user, UserId{"u1"});
 
-  // And the rest of the batch is served as if nothing had happened.
   REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"sailor@example.com"});
   CHECK_EQ(reminders.locksReleased, 1);  // and the fleet lock is still handed back

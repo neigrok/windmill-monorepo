@@ -4,9 +4,8 @@
 
 namespace wm {
 
-// Secrets are 32 bytes of OpenSSL randomness, URL-safe base64 (the string that rides in a
-// link or cookie); the digest is their SHA-256 as lowercase hex. Both come from OpenSSL,
-// already linked transitively through Drogon.
+// Secrets are 32 bytes of OpenSSL randomness, URL-safe base64 (the string that rides in a link or
+// cookie); the digest is their SHA-256 as lowercase hex.
 class OpenSslTokenGenerator : public TokenGenerator {
 public:
   MintedToken mint() override;

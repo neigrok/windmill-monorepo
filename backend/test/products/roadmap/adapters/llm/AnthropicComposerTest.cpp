@@ -197,8 +197,6 @@ TEST(stream_parser_handles_a_plain_unchunked_body_too) {
   CHECK(observed.ok);
 }
 
-// The failure that started this: a plan cut off by the token budget refuses cleanly, and used to
-// refuse in total silence — the client saw an open stream say nothing and nothing anywhere went red.
 TEST(stream_parser_names_a_truncated_plan_to_the_operator) {
   ParsedStream observed;
   observed.feedBytewise(
@@ -238,9 +236,7 @@ TEST(stream_parser_stays_quiet_when_the_plan_finishes_cleanly) {
 
 // --- The meter ------------------------------------------------------------------------------
 
-// The two frames the decoder never used to read, and between them they are the entire bill for a
-// streamed compose. message_start is the only frame carrying the input count and both cache
-// counters; message_delta carries the output count, as a SIBLING of `delta` and as a RUNNING TOTAL.
+// message_start is the only frame carrying the input count and both cache counters; message_delta carries the output count, as a SIBLING of `delta` and as a RUNNING TOTAL.
 TEST(stream_parser_counts_the_input_from_message_start_and_the_output_from_message_delta) {
   ParsedStream observed;
   observed.feedBytewise(
@@ -258,8 +254,7 @@ TEST(stream_parser_counts_the_input_from_message_start_and_the_output_from_messa
   CHECK_EQ(tokens.input, 812LL);
   CHECK_EQ(tokens.cacheRead, 9100LL);
   CHECK_EQ(tokens.cacheWrite, 240LL);
-  // The running total, ASSIGNED. The 1 that message_start declared is replaced, not added to — a
-  // += here would have billed 965 for a 964-token plan, and worse on every extra frame.
+  // The running total, ASSIGNED: the 1 that message_start declared is replaced, not added to.
   CHECK_EQ(tokens.output, 964LL);
 }
 
@@ -274,12 +269,10 @@ TEST(stream_parser_takes_the_last_running_output_total_rather_than_summing_them)
                 R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":90}})")) +
       chunk(sse("message_stop", "{}")));
 
-  CHECK_EQ(observed.parser.tokens().output, 90LL);   // not 1 + 40 + 90
+  CHECK_EQ(observed.parser.tokens().output, 90LL);
   CHECK_EQ(observed.parser.tokens().input, 100LL);
 }
 
-// A plan the budget cut off still cost every token it spent getting there, and it is the reply the
-// product throws away — exactly the shape a success-only meter would price at nothing.
 TEST(stream_parser_counts_a_truncated_stream_too) {
   ParsedStream observed;
   observed.feedBytewise(
@@ -303,7 +296,6 @@ TEST(stream_parser_survives_a_message_start_it_cannot_read) {
       chunk(sse("message_delta", R"({"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":12}})")) +
       chunk(sse("message_stop", "{}")));
 
-  // A frame we cannot read costs a token count, never the plan: the reader still got their tree.
   CHECK(observed.ok);
   REQUIRE_EQ(observed.deltas.size(), 1u);
   CHECK_EQ(observed.parser.tokens().input, 0LL);
@@ -318,8 +310,7 @@ TEST(composer_refuses_an_oversized_paste_without_calling_upstream) {
 
   std::optional<std::string> result = std::string("untouched");
   composer.compose(book, [&](std::optional<std::string> plan) { result = std::move(plan); });
-  // Answered synchronously, which is only possible if no socket was opened. The caller's fallback
-  // is the deterministic parser, so the door still works — it is merely less clever.
+  // Answered synchronously, which is only possible if no socket was opened; the caller's fallback is the deterministic parser.
   CHECK(result == std::nullopt);
 
   ParsedStream observed;

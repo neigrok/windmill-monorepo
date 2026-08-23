@@ -15,10 +15,7 @@
 
 namespace wm::fake {
 
-// The reminder database as a script. It records what was asked of it in the order it was asked,
-// which is the whole point: DECIDE → CLAIM → SEND is an ordering guarantee, so a test asserts the
-// order as well as the outcome. Shared by the sweep's tests and the HTTP surface's, because they
-// are two edges onto exactly one set of rows.
+// Records what was asked of it in the order it was asked: DECIDE → CLAIM → SEND is an ordering guarantee.
 struct FakeReminders : ReminderRepository {
   struct Claim {
     UserId user;
@@ -48,8 +45,7 @@ struct FakeReminders : ReminderRepository {
   std::set<std::string> unknownTimezones;      // names Postgres would refuse
   std::map<std::string, std::string> owners;   // address -> user id, the webhook's only way in
 
-  // RAII, so a throwing pass still counts the hand-back — the port hands the lock back before the
-  // throw reaches the caller, and a fake that says otherwise hides the day it stops being true.
+  // RAII, so a throwing pass still counts the hand-back: the port hands the lock back before the throw reaches the caller.
   struct Handback {
     ~Handback() { ++released; }
     int& released;
@@ -96,17 +92,14 @@ struct FakeReminders : ReminderRepository {
     return true;
   }
 
-  // MailSuppression, keyed by address exactly like the real one: a provider event carries nothing
-  // else. An address nobody owns writes nothing and answers false, and the row is created when it
-  // is missing so an account that never opened settings still remembers that its mailbox is gone.
+  // Keyed by address like the real one. An address nobody owns writes nothing and answers false; the row is created when missing.
   bool stopMailing(const Email& address) override {
     auto owner = owners.find(address.value);
     if (owner == owners.end()) return false;
     settings[owner->second].suppressed = true;
     return true;
   }
-  // The inverse by user id, and like the real UPDATE it creates nothing: a row that never existed
-  // has nothing to lift. `enabled` stays exactly as it was.
+  // Like the real UPDATE it creates nothing, and `enabled` stays exactly as it was.
   void liftSuppression(const UserId& user) override {
     auto it = settings.find(user.str());
     if (it != settings.end()) it->second.suppressed = false;
@@ -127,10 +120,7 @@ struct FakeReminders : ReminderRepository {
   }
 };
 
-// The reminder mailer as a fake: the weekly reminder arrives fully rendered, so it keeps the whole
-// mail and the recipient, and the sweep's tests read the deep link, the pause link and the step
-// slots straight back off it. Async like the real sender but resolves inline — failNext makes the
-// next send report false, recording nothing, exactly as a refused provider call would.
+// Async like the real sender but resolves inline; failNext makes the next send report false and record nothing.
 struct FakeReminderMail : ReminderMailSender {
   struct Sent {
     Email to;

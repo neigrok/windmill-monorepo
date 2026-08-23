@@ -20,9 +20,8 @@ namespace wm {
 
 namespace {
 
-// The load-bearing artifact: what the agent is, and the rules it edits under. It edits on
-// behalf of the person whose sentence it is given, so the sentence is the only authority — a
-// point the security section makes non-negotiable, because trees are public and forkable.
+// What the agent is, and the rules it edits under. The person's sentence is the only authority:
+// trees are public and forkable, so node text is untrusted.
 constexpr const char* kSystemPrompt =
     "You are the tending agent for Windmill, an app for building roadmaps as RPG-style skill "
     "trees. A tree is a directed acyclic graph of steps; an edge from A to B means A is a "
@@ -63,18 +62,14 @@ constexpr const char* kSystemPrompt =
     "\"Assumed about 3 evenings a week, starting from scratch\", so the person can correct it with "
     "another sentence.";
 
-// Sonnet, not the sibling composer's Haiku. The composer picks Haiku for latency because a plan
-// lands in the well while you are still looking at it; here the design treats the wait as
-// theatre — the person watches the tree build — so tool-use quality outranks speed. Do not
-// "optimise" this back to Haiku.
+// Sonnet, not the composer's Haiku: tool-use quality outranks latency here.
 constexpr const char* kModel = "claude-sonnet-5";
 constexpr int kMaxTokens = 8000;
 
 // The cap. Hitting it is a failure, not a success (see driveAgent).
 constexpr int kMaxIterations = 12;
 
-// Sonnet plans before it writes and each turn may run several tool calls; the call holds a
-// worker thread, not a request loop, so give it room rather than a snappy web deadline.
+// The call holds a worker thread, not a request loop, so it gets room, not a web deadline.
 constexpr double kRequestTimeoutSeconds = 120.0;
 
 std::string trim(const std::string& text) {
@@ -84,8 +79,7 @@ std::string trim(const std::string& text) {
   return text.substr(begin, end - begin + 1);
 }
 
-// The text a ToolResult carries for the model to read: our results emit a single text block,
-// but concatenate defensively in case a tool ever emits more.
+// The text a ToolResult carries for the model, concatenated over however many blocks it has.
 std::string toolText(const ToolResult& result) {
   std::string out;
   for (const Json::Value& block : result.content) {
@@ -124,12 +118,9 @@ Json::Value ephemeral() {
   return mark;
 }
 
-// A tend loop re-sends its whole context on every one of up to 12 iterations, and that context is
-// dominated by three static things: the 24-tool catalog a tend sees, the system prompt, and the tree the
-// sentence is about. Left uncached this is ~90% of the input bill — the same ~9k tokens paid full
-// price a dozen times. Caching writes them once and reads them at a tenth the price thereafter.
-// The system breakpoint caches tools+system (they render before it); the per-turn message
-// breakpoint (markCachePoint) extends the cached prefix through the tree and the prior turns.
+// The loop re-sends its whole context on every iteration, dominated by three static things: the
+// tool catalog, the system prompt, and the tree. The system breakpoint caches tools+system (they
+// render before it); markCachePoint extends the cached prefix through the tree and prior turns.
 Json::Value messagesRequest(const Json::Value& tools, const Json::Value& messages) {
   Json::Value systemBlock(Json::objectValue);
   systemBlock["type"] = "text";
@@ -147,11 +138,11 @@ Json::Value messagesRequest(const Json::Value& tools, const Json::Value& message
   return body;
 }
 
-// Move the single conversation cache breakpoint to the last block of the newest turn, and clear the
-// prior one, so exactly two breakpoints ride each request (system + here) — under the four-per-
-// request cap however long the loop runs. A turn whose content is a bare string is promoted to one
-// text block so the marker has somewhere to sit; the promotion is stable across iterations, so the
-// bytes it caches never shift underneath the cache.
+// Move the single conversation cache breakpoint to the last block of the newest turn and clear
+// the prior one, so exactly two breakpoints ride each request (system + here), under the
+// four-per-request cap however long the loop runs. A turn whose content is a bare string is
+// promoted to one text block so the marker has somewhere to sit; the promotion is stable across
+// iterations, so the cached bytes never shift.
 void markCachePoint(Json::Value& messages) {
   for (Json::Value& message : messages) {
     Json::Value& content = message["content"];
@@ -232,9 +223,8 @@ Json::Value toolResultBlock(const std::string& toolUseId, const ToolResult& resu
 }
 
 bool mutatesTree(const std::string& toolName) {
-  // Read-only by prefix, EXCEPT describe_kind, which reads like an inspector but "Set a legend
-  // kind's description" — it writes. `describe_` is not a safe read-only prefix; the get_/list_/
-  // find_ family is. Everything unrecognised is treated as a mutation, so a new tool counts.
+  // Read-only prefixes are get_/list_/find_ — NOT describe_, since describe_kind writes. Every
+  // unrecognised name counts as a mutation.
   static const std::array<std::string_view, 3> readOnly = {"get_", "list_", "find_"};
   for (const std::string_view prefix : readOnly) {
     if (toolName.rfind(prefix, 0) == 0) return false;
@@ -247,17 +237,12 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
                         const std::function<void(const AgentStep&)>& onStep,
                         const AgentReporter& report) {
   AgentOutcome outcome;
-  // A tend is the account acting on itself from its own session — there is no third-party credential
-  // to narrow, so the run carries the full grant and the narrowing that matters is the one tree
-  // ScopedToolHost pins it to.
+  // A tend is the account acting on itself, so the run carries the full grant; the narrowing is
+  // the one tree ScopedToolHost pins it to.
   const ToolCaller actor{caller, ToolScope::everything()};
 
-  // Read the tree the sentence is about, so the model plans against real ids and the person's
-  // actual structure rather than a guess. Unreadable tree, no run.
-  //
-  // get_tree answers an agent with a lean projection by default; a tend asks for the whole
-  // document, because it may touch any part of it — it repositions nodes, rewrites annotations,
-  // and reads the legend's briefs to sort what it plants.
+  // Read the tree first, so the model plans against real ids; unreadable tree, no run. A tend
+  // asks for the whole document rather than get_tree's lean default.
   Json::Value treeArgs(Json::objectValue);
   treeArgs["treeId"] = tree.str();
   Json::Value everyNodeField(Json::arrayValue);
@@ -349,8 +334,7 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
     messages.append(userToolResults(results));
   }
 
-  // Cap hit: the loop would not settle. Reporting a half-built tree as done is the worst
-  // outcome available, so this is a failure, never a success.
+  // Cap hit: the loop would not settle, so this is a failure, never a success.
   outcome.error = "hit the 12-iteration cap without the model finishing";
   outcome.edits = edits;
   report("agent.run", outcome.error);
@@ -386,17 +370,17 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     return out;
   }
 
-  // The production model call: one blocking HTTPS round-trip on the private loop thread. run()
-  // is on the worker thread, so it may block on the future while the loop thread answers.
+  // One blocking HTTPS round-trip on the private loop thread; run() is on the worker thread and
+  // blocks on the future.
   const std::string apiKey = apiKey_;
   trantor::EventLoop* loop = loop_.getLoop();
   const MessagesCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
-    // Trantor forbids driving a loop from any thread but its own — and creating the client or
-    // sending the request from this worker thread is a race that intermittently FATALs the whole
-    // process. So marshal EVERY client + loop touch onto the loop thread; the worker only queues
-    // the work and blocks on the future, which the timeout-guaranteed callback always fulfils.
+    // Trantor forbids driving a loop from any thread but its own, and creating the client or
+    // sending the request from this worker thread FATALs the process. Marshal EVERY client + loop
+    // touch onto the loop thread; the worker only queues and blocks on the future, which the
+    // timeout-guaranteed callback always fulfils.
     loop->queueInLoop([apiKey, loop, request, promise]() {
       auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
@@ -407,8 +391,7 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
       req->setBody(Json::writeString(builder, request));
-      // One line per model turn, so a run that took a minute can be read as the four calls it was.
-      // The prompt and the tree it edits are in the request body and reach no log.
+      // One line per model turn; the prompt and the tree are in the body and reach no log.
       VendorCall call("anthropic", "tend");
       client->sendRequest(
           req,
@@ -431,10 +414,9 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
     return future.get();
   };
 
-  // The frame the loop cannot supply. driveAgent has never seen a model name, a product or a clock,
-  // and the raw reply's `usage` — which it discards — only exists inside the call above. So the
-  // metering wraps the call rather than reaching into the loop: one row per turn, one run id across
-  // all twelve of them, so a conversation sums as the single act it was.
+  // The frame the loop cannot supply: driveAgent never sees a model name, a product or a clock.
+  // Metering wraps the call rather than reaching into the loop — one row per turn, one run id
+  // across all of them, so a conversation sums as the single act it was.
   AiSpend frame;
   frame.user = caller;
   frame.product = "roadmap";

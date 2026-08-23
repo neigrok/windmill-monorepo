@@ -16,9 +16,8 @@ Json::Value parse(const std::string& text) {
   Json::CharReaderBuilder builder;
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   std::string errors;
-  // jsoncpp throws (not just returns false) once nesting passes its stack limit, so an
-  // over-nested payload would otherwise escape every caller. Swallow it to a null value —
-  // callers already treat a non-object frame as "ignore".
+  // jsoncpp throws (not just returns false) once nesting passes its stack limit. Swallow it to a
+  // null value — callers already treat a non-object frame as "ignore".
   try {
     reader->parse(text.c_str(), text.c_str() + text.size(), &root, &errors);
   } catch (const std::exception&) {

@@ -118,17 +118,14 @@ TEST(mcp_http_deeply_nested_body_is_a_clean_parse_error_not_a_crash) {
   McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
   McpHttpEndpoint endpoint(server, {});
 
-  // jsoncpp throws once nesting passes its stack limit; the endpoint must answer a parse
-  // error rather than let the exception escape the handler.
+  // jsoncpp throws once nesting passes its stack limit; the endpoint must answer a parse error rather than let it escape.
   std::string bomb(20000, '[');
   drogon::HttpResponsePtr response = sendPost(endpoint, post(bomb));
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK(response->getBody().find("parse error") != std::string::npos);
 }
 
-// The credential is where a grant enters the request, so the transport must carry the scope its
-// composition root wrote and not merely the account — a token that reached the tool as a bare UserId
-// is a token nothing downstream can tell apart from a full one.
+// The transport must carry the scope its composition root wrote and not merely the account.
 TEST(mcp_http_a_credential_carries_its_grant_to_the_tool_not_just_its_account) {
   FakeHost host;
   McpServer server(host, ServerInfo{"windmill", "0.1.0", ""});
@@ -189,6 +186,5 @@ TEST(mcp_http_delete_ends_the_session) {
   endpoint.handleDelete(request, [&](const drogon::HttpResponsePtr& r) { deleted = r; });
   CHECK_EQ(deleted->getStatusCode(), drogon::k200OK);
 
-  // The session is gone, so a follow-up call is rejected.
   CHECK_EQ(sendPost(endpoint, post(kList, session))->getStatusCode(), drogon::k404NotFound);
 }

@@ -15,8 +15,8 @@ namespace wm {
 namespace {
 
 // Howard Hinnant's days-from-civil — pure integer math, so the gap between two pages is identical
-// on a developer's mac and on CI's linux, where a <chrono>/timezone path quietly diverges. Days
-// count from 1970-01-01, but only DIFFERENCES are ever read, so the epoch is arbitrary.
+// on a developer's mac and on CI's linux. Days count from 1970-01-01, but only DIFFERENCES are
+// ever read, so the epoch is arbitrary.
 long dayNumber(const LocalDate& date) {
   const std::string& iso = date.iso();
   long y = std::stol(iso.substr(0, 4));          // LocalDate's ctor already guaranteed the shape
@@ -32,8 +32,7 @@ long dayNumber(const LocalDate& date) {
 
 // The words a nightly journal writes every night. What survives this list is what "low-frequency
 // lexical anchor" means here: a name, a place, a number, a rare content word — something the reader
-// can see in both passages and check for themselves. Short and inline on purpose. A real frequency
-// table would make the rule unreadable and would still be wrong about one person's vocabulary.
+// can see in both passages and check for themselves.
 const std::unordered_set<std::string>& commonWords() {
   static const std::unordered_set<std::string> words{
       // pronouns, articles, determiners
@@ -53,7 +52,7 @@ const std::unordered_set<std::string>& commonWords() {
       "not", "too", "very", "also", "still", "back", "here", "there", "now", "just", "really",
       "even", "only", "ever", "never", "always", "more", "most", "much", "many", "bit", "lot",
       "well", "good", "bad", "better", "best",
-      // the words a journal is made of, which is exactly why they anchor nothing
+      // the words a journal is made of
       "today", "tonight", "yesterday", "tomorrow", "day", "days", "night", "nights", "morning",
       "evening", "week", "month", "year", "time", "times", "feel", "feeling", "felt", "think",
       "thinking", "thought", "know", "knew", "thing", "things",
@@ -87,8 +86,7 @@ std::set<std::string> anchorsOf(const std::string& text) {
 }
 
 // A candidate carrying the two numbers every rule below reads. Cosine over 384 dimensions is the
-// expensive half of the pass, so it is measured once, here, and never recomputed against the
-// trigger again.
+// expensive half of the pass, so it is measured once here and never recomputed.
 struct Judged {
   const Vectored* passage = nullptr;
   float cosine = 0.0f;
@@ -96,8 +94,7 @@ struct Judged {
 };
 
 // The tail every ranking in this file breaks ties on: the OLDER day, then the span id. Without a
-// total order two runs over one corpus could disagree, and an echo set that reshuffles nightly
-// reads as the journal changing its mind about what mattered.
+// total order two runs over one corpus could disagree and the echo set would reshuffle nightly.
 bool olderFirst(const Judged& a, const Judged& b) {
   if (!(a.passage->day == b.passage->day)) return a.passage->day < b.passage->day;
   return a.passage->spanId < b.passage->spanId;
@@ -105,7 +102,7 @@ bool olderFirst(const Judged& a, const Judged& b) {
 
 // The N closest passages retrieval did NOT hand over — younger than `minDayGap`, or beaten inside
 // their own age band. Only the debug door asks for these: they cost one more cosine pass over the
-// whole corpus per trigger, which is the dominant cost of a derivation.
+// whole corpus per trigger.
 void appendNearMisses(const Vectored& trigger, const std::vector<Vectored>& history,
                       const std::vector<Vectored>& retrieved, int wanted, TriggerTrace& trace) {
   std::set<std::int64_t> handedOver;
@@ -226,8 +223,8 @@ const char* fateText(Fate fate) {
 
 std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vectored>& corpus,
                                const SelectionRules& rules) {
-  // The bands as day counts — 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+ — so nothing downstream ever parses
-  // a label, and a raised minDayGap simply empties the first band instead of contradicting it.
+  // The bands as day counts — 7-30d, 1-3mo, 3-12mo, 1-3y, 3y+ — so nothing downstream parses a
+  // label, and a raised minDayGap simply empties the first band.
   static constexpr long bandEnds[] = {30, 91, 365, 1095};
   static constexpr std::size_t bandCount = 5;
 
@@ -244,9 +241,8 @@ std::vector<Vectored> stratify(const Vectored& trigger, const std::vector<Vector
     bands[band].push_back(Judged{&candidate, cosine(trigger.vector, candidate.vector), age});
   }
 
-  // Top-perBand out of EACH band, youngest band first. An old passage competes against its own era;
-  // against a flat top-N on a dense journal it loses every night to last month's prose, and the
-  // curator downstream can only reject — it can never rescue what retrieval never surfaced.
+  // Top-perBand out of EACH band, youngest band first, so an old passage competes against its own
+  // era rather than losing to last month's prose on a flat top-N.
   std::vector<Vectored> retrieved;
   for (std::vector<Judged>& band : bands) {
     std::sort(band.begin(), band.end(), [](const Judged& a, const Judged& b) {
@@ -271,9 +267,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     judged.push_back(Judged{&candidate, cosine(trigger.vector, candidate.vector),
                             std::max(0L, daysBetween(candidate.day, trigger.day))});
 
-  // z against this trigger's OWN retrieved background, taken before any rule narrows it. Measured
-  // top-1 cosine across triggers runs p10 0.594 / p50 0.704 / p90 0.889, so a single global
-  // threshold would mean a different thing on every page of the same journal.
+  // z against this trigger's OWN retrieved background, taken before any rule narrows it: a single
+  // global threshold would mean a different thing on every page of the same journal.
   double mean = 0.0;
   for (const Judged& candidate : judged) mean += candidate.cosine;
   mean /= static_cast<double>(judged.size());
@@ -286,8 +281,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   selection.stddev = stddev;
 
   // Every candidate gets a note before a single rule runs, and each rule below stamps the ones it
-  // took out. That is why the reasons cannot drift from the behaviour: there is no second pass
-  // deciding them, only this one recording what it did.
+  // took out, so the reasons cannot drift from the behaviour.
   std::map<std::int64_t, std::size_t> noteOf;
   selection.notes.reserve(judged.size());
   for (const Judged& candidate : judged) {
@@ -309,7 +303,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
       continue;
     }
     // No shared anchor means no way for the reader to check the pairing from what is on screen,
-    // whatever the cosine says. This is the whole enforcement of rule 1.
+    // whatever the cosine says.
     if (!sharesAnchor(trigger.text, candidate.passage->text, vocabulary)) {
       noted(candidate.passage->spanId).fate = Fate::noAnchor;
       continue;
@@ -341,9 +335,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   std::map<std::size_t, std::vector<std::size_t>> families;
   for (std::size_t i = 0; i < survivors.size(); ++i) families[rootOf(i)].push_back(i);
 
-  // The representative is the OLDEST member — the first time someone wrote a thing is what the
-  // product's own copy is about — and it carries the family size so the ranking can discount a
-  // candidate that is really standing for thirty near-copies.
+  // The representative is the OLDEST member, and it carries the family size so the ranking can
+  // discount a candidate that is really standing for thirty near-copies.
   std::vector<Standing> standings;
   standings.reserve(families.size());
   for (const auto& family : families) {
@@ -405,7 +398,7 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
   }
 
   // Why each representative that did not make it did not: read off the counters the loop exited
-  // with, which are the ones that were standing in its way when it stopped.
+  // with, which are the ones standing in its way when it stopped.
   for (std::size_t i = 0; i < standings.size(); ++i) {
     if (taken[i]) continue;
     CandidateNote& note = noted(standings[i].judged.passage->spanId);
@@ -417,10 +410,8 @@ Selection selectExplained(const Vectored& trigger, const std::vector<Vectored>& 
     else note.fate = Fate::outranked;
   }
 
-  // The oldest qualifying candidate is guaranteed a slot, over the quotas and over the score.
-  // "You may have forgotten you ever planned it" makes the first time the payload, and nothing else
-  // in the ranking protects it — a low z or a full month otherwise drops exactly the passage the
-  // feature exists to surface.
+  // The oldest qualifying candidate is guaranteed a slot, over the quotas and over the score:
+  // nothing else in the ranking protects the first time someone wrote a thing.
   std::size_t eldest = 0;
   for (std::size_t i = 1; i < standings.size(); ++i)
     if (olderFirst(standings[i].judged, standings[eldest].judged)) eldest = i;
@@ -488,9 +479,8 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
     const std::vector<Vectored> retrieved = stratify(trigger, history, rules);
     trace.retrieved = static_cast<int>(retrieved.size());
 
-    // A refrain ("tired again") emits nothing at all: the rule that stops a journal kept nightly
-    // through a hard month handing back ten copies of last week. It is still traced — what it
-    // retrieved and how crowded it was is exactly what someone tuning the gate needs to see.
+    // A refrain ("tired again") emits nothing at all. It is still traced — what it retrieved and how
+    // crowded it was is what someone tuning the gate needs to see.
     if (!trace.refrain) {
       const Selection selection = selectExplained(trigger, retrieved, rules, vocabulary);
       trace.mean = selection.mean;
@@ -523,9 +513,8 @@ PageSelection selectForPage(const std::vector<Vectored>& tonight,
       page.traces[at->second.first].notes[at->second.second].fate = Fate::dismissed;
   }
 
-  // The page-level cap. `selectExplained` bounds one trigger's pairings; this bounds the page,
-  // which is the unit the reader actually sees. Highest-scoring first, so a page with eight
-  // triggering passages carries its ten best rather than eighty of everything.
+  // The page-level cap. `selectExplained` bounds one trigger's pairings; this bounds the page, which
+  // is the unit the reader sees. Highest-scoring first.
   std::sort(proposed.begin(), proposed.end(), [](const Pairing& a, const Pairing& b) {
     if (a.score != b.score) return a.score > b.score;
     if (a.triggerSpanId != b.triggerSpanId) return a.triggerSpanId < b.triggerSpanId;

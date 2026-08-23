@@ -16,7 +16,7 @@ HttpEmbedder::HttpEmbedder(std::string baseUrl) {
   while (!baseUrl.empty() && baseUrl.back() == '/') baseUrl.pop_back();
 
   // drogon dials an origin and ignores everything after it, so a URL carrying a path would silently
-  // post /embed at a door that isn't there. Split it here instead, and keep the prefix.
+  // post /embed at a door that isn't there. Split it here and keep the prefix.
   const std::size_t scheme = baseUrl.find("://");
   const std::size_t path = scheme == std::string::npos ? baseUrl.find('/') : baseUrl.find('/', scheme + 3);
   origin_ = baseUrl.substr(0, path);
@@ -56,8 +56,7 @@ std::string HttpEmbedder::version() const {
   VendorCall call("embedder", "version");
   const std::pair<drogon::ReqResult, drogon::HttpResponsePtr> outcome = client->sendRequest(req, 30.0);
   // The verdict is reported for the operator but is not the answer here: a sidecar still loading its
-  // weights answers 503, and its body already names the version. The stamp is a property of the
-  // configuration, not of readiness.
+  // weights answers 503 and its body already names the version.
   call.succeeded(outcome.first, outcome.second);
   if (!outcome.second) return {};
 
@@ -73,9 +72,8 @@ std::string HttpEmbedder::version() const {
 }
 
 std::vector<std::vector<float>> HttpEmbedder::embed(const std::vector<std::string>& passages) {
-  // Nothing to embed is the caller's business, not a round trip. It returns empty — which this port
-  // reads as failure — so the sweep must never ask; the sidecar refuses an empty batch for the same
-  // reason, rather than answering it in a way indistinguishable from a broken call.
+  // Nothing to embed is the caller's business, not a round trip: an empty result reads as failure on
+  // this port, so the sweep must never ask.
   if (!configured() || passages.empty()) return {};
 
   Json::Value body(Json::objectValue);
@@ -89,8 +87,7 @@ std::vector<std::vector<float>> HttpEmbedder::embed(const std::vector<std::strin
   req->setPath(prefix_ + "/embed");
 
   // The line carries the status and the cost and nothing else — the body on this seam is somebody's
-  // journal. Two minutes because a cold sidecar loads its weights before it answers the first page
-  // of the night, and the sweep would rather wait than write the page down as "nothing found".
+  // journal. Two minutes, because a cold sidecar loads its weights before it answers.
   VendorCall call("embedder", "embed");
   const std::pair<drogon::ReqResult, drogon::HttpResponsePtr> outcome = client->sendRequest(req, 120.0);
   if (!call.succeeded(outcome.first, outcome.second)) return {};
@@ -122,8 +119,8 @@ std::vector<std::vector<float>> HttpEmbedder::embed(const std::vector<std::strin
     embedded.push_back(std::move(values));
   }
 
-  // One short vector would be a truncated reply read as a valid one, and cosine against it is a
-  // number with no meaning. All or nothing, so the page is retried whole.
+  // One short vector would be a truncated reply read as a valid one. All or nothing, so the page is
+  // retried whole.
   for (const std::vector<float>& vector : embedded) {
     if (vector.size() == embedded.front().size()) continue;
     LOG_ERROR << "journal embedder returned vectors of unequal length";

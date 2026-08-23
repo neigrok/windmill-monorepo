@@ -38,7 +38,9 @@ struct SelectionRules {
 
   // A word this many of the writer's OWN passages carry is theirs, not an anchor. AnchorVocabulary's
   // built-in common-word list is English, so without this every word in another language looks rare.
-  double commonShare = 0.40;
+  // Measured: on a real corpus the function words sit at 25-38% and the words that make a pairing
+  // checkable sit far below.
+  double commonShare = 0.25;
   // Below this many passages a corpus cannot say what is common — one word in three pages means
   // nothing — so the vocabulary stays empty and only the English list applies.
   int vocabularyFloor = 8;

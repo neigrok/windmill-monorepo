@@ -32,12 +32,11 @@ public:
 
   void page(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
 
-  // The pure templating boundary (tested directly): splice this tree's unfurl meta between
-  // the index.html sentinels, keeping the sentinels. Returns the shell unchanged if the
-  // fence is absent. `title` is escaped here; `steps` is the node count; `visibility`
-  // decides robots (public indexes, unlisted is noindex); `id` fills the canonical + og:url;
-  // `lineage` adds fork attribution to the description ("A fork of X · N forks"); `hasVideo`
-  // adds the og:video tags for a tree that carries an uploaded loop (the og:image stays the poster).
+  // Splice this tree's unfurl meta between the index.html sentinels, keeping the sentinels;
+  // returns the shell unchanged if the fence is absent. `title` is escaped here; `steps` is the
+  // node count; `visibility` decides robots (public indexes, unlisted is noindex); `id` fills the
+  // canonical + og:url; `lineage` adds fork attribution to the description; `hasVideo` adds the
+  // og:video tags (the og:image stays the poster).
   static std::string renderShell(const std::string& shell, const std::string& title,
                                  std::size_t steps, Visibility visibility, const std::string& id,
                                  const ForkLineage& lineage, bool hasVideo);

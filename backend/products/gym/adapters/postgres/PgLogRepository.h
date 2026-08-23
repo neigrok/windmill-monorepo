@@ -8,25 +8,20 @@
 
 namespace wm::gym {
 
-// The log over Postgres: sessions, their sets, the revisions a correction or a delete leaves
-// behind, and the coach share. Idempotent writes by client-minted id, every query scoped to the
-// owner. Stateless but for the pool — each method borrows a connection for exactly one transaction
-// (platform/adapters/postgres/PgPool.h). The retry story lives in the SQL: insertSession no-ops on
-// ANY unique conflict (the PK replay and the one-open partial index both), insertSet locks the
+// The log over Postgres: sessions, their sets, the revisions a correction or a delete leaves behind,
+// and the coach share. Idempotent writes by client-minted id, every query scoped to the owner.
+// Stateless but for the pool — each method borrows a connection for exactly one transaction
+// (platform/adapters/postgres/PgPool.h).
+// The retry story lives in the SQL: insertSession no-ops on ANY unique conflict, insertSet locks the
 // session row, computes max+1 numbering in the INSERT and reads the stored row back scoped to that
-// session, so a replay returns the original byte-for-byte and a spent id resolves to nothing rather
-// than to another account's set. updateSet and deleteSet are the two that change a stored set, and
-// each writes gym_set_revisions in the SAME statement that moves the row, so there is no instant in
-// which a version is gone and unkept. All three writes that change what a workout holds take the
-// SESSION's row first and its set rows after — one lock order, which is what makes an append racing
-// a delete of the same id decidable and leaves no cycle for two of them to deadlock on. Every pqxx
-// error the store has an answer for is translated here into the port's typed facts; the rest ride
-// to the house 500.
+// session. updateSet and deleteSet each write gym_set_revisions in the SAME statement that moves the
+// row. All three writes that change what a workout holds take the SESSION's row first and its set
+// rows after — one lock order, so two of them cannot deadlock. Every pqxx error the store has an
+// answer for is translated here into the port's typed facts; the rest ride to the house 500.
 //
-// The port seam is not table ownership: the reads here still join gym_exercises and its per-account
-// names (through PgGymRows.h, the one spelling of that join) to print a movement, and insertSet
-// checks a movement against the catalog's own predicate before it lands. The tables this file
-// WRITES are the log's alone.
+// The port seam is not table ownership: the reads join gym_exercises and its per-account names
+// (through PgGymRows.h) to print a movement, and insertSet checks a movement against the catalog's
+// own predicate. The tables this file WRITES are the log's alone.
 class PgLogRepository : public LogRepository {
 public:
   explicit PgLogRepository(std::shared_ptr<PgPool> pool);

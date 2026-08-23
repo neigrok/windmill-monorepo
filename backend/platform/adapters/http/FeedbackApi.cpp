@@ -46,8 +46,7 @@ FeedbackApi::FeedbackApi(std::shared_ptr<FeedbackRepository> feedback, std::shar
     : feedback_(std::move(feedback)), auth_(std::move(auth)) {}
 
 void FeedbackApi::submit(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Parse the envelope, require a non-empty in-bounds message, truncate the optional side
-  // fields, resolve the caller, store. Identity is only ever the session's verdict.
+  // Identity is only ever the session's verdict; a body-supplied one is never read.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   if (!json || !json->isObject()) {
     callback(error(drogon::k400BadRequest, "feedback is {message, email?, context?}"));

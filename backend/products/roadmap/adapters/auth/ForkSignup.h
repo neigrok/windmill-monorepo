@@ -8,13 +8,10 @@
 
 namespace wm {
 
-// The roadmap's answer to the platform SignupFork port: it holds the ForkService and turns the
-// port's opaque source id into a TreeId, so the auth HTTP surface can name and plant a fork
-// without ever seeing a roadmap type. Only this file — living beside the product it forks — ties
-// the platform sign-in flow to roadmap; a journal/gym-only deploy injects nothing and the flow
-// no-ops. It is also where the fork mail's words are written: a tree's step count is roadmap's
-// fact and "12 steps" is roadmap's sentence, so both are rendered here and cross the seam as
-// prose. This adapter also owns the plant's warn/error logging, since it owns the fork call.
+// The roadmap's answer to the platform SignupFork port: it turns the port's opaque source id
+// into a TreeId, so the auth HTTP surface can name and plant a fork without seeing a roadmap
+// type. A deploy that injects nothing no-ops the flow. The fork mail's words are written here
+// too — a step count is roadmap's fact — and cross the seam as prose.
 class ForkSignup : public SignupFork {
 public:
   explicit ForkSignup(ForkService& fork);

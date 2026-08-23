@@ -15,8 +15,7 @@ constexpr std::string_view kSubscriptionColumns =
     "coalesce(to_json(s.scheduled_change_at)#>>'{}', '') AS scheduled_change_at, "
     "coalesce(to_json(s.occurred_at)#>>'{}', '') AS occurred_at";
 
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
-// binding it concretely compiles on one and fails on the other.
+// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
 template <typename Row>
 PaddleSubscription subscriptionFrom(const Row& row) {
   return PaddleSubscription{row["subscription_id"].template as<std::string>(),
@@ -65,9 +64,8 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
   // carries no custom_data) must never erase the binding we already know.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // The trailing WHERE is the staleness guard: a retry of an OLDER event (Paddle retries for days)
-  // must not overwrite state a NEWER one already wrote — that is how a canceled subscription would
-  // spring back to active. A row with no recorded time, or an event carrying none, still applies.
+  // The trailing WHERE is the staleness guard: a retry of an OLDER event must not overwrite state a
+  // NEWER one wrote. A row with no recorded time, or an event carrying none, still applies.
   txn.exec("INSERT INTO paddle_subscriptions "
            "(subscription_id, customer_id, user_id, status, price_id, product_id, "
            "scheduled_change_at, occurred_at) "
@@ -88,8 +86,7 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
 
 std::optional<PaddleSubscription> PgSubscriptionRepository::findFor(const UserId& user,
                                                                     const std::string& email) {
-  // Either binding may match, and an access-granting row wins over a merely newer one — see the
-  // port for why (a planted row must not shadow a real subscription).
+  // Either binding may match, and an access-granting row wins over a merely newer one.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(

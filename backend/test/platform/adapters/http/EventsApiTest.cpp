@@ -247,10 +247,7 @@ TEST(events_empty_batch_is_accepted_with_zero_and_never_touches_the_repo) {
   CHECK_EQ(h.repo->appended.size(), 0u);
 }
 
-// PLATFORM-EDGE-4. The intake is anonymous and unauthenticated, so what one browser session may
-// write in a day is bounded: 20 keep-alive POSTs of a full batch wrote a thousand rows for one
-// ghost session in 0.09s, and nothing stopped the next twenty. Past the ceiling the beacon is told
-// so (429) rather than quietly accepted, and not one row is written.
+// The intake is anonymous and unauthenticated, so what one browser session may write in a day is bounded. Past the ceiling the beacon is told so (429) and not one row is written.
 TEST(events_a_session_past_its_daily_ceiling_is_refused_and_writes_nothing) {
   Harness h;
   h.repo->alreadyToday["browser-abc"] = 2000;
@@ -262,8 +259,6 @@ TEST(events_a_session_past_its_daily_ceiling_is_refused_and_writes_nothing) {
   CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
   CHECK_EQ(h.repo->appended.size(), 0u);
 
-  // The ceiling is that session's alone — another browser is unaffected, which is what keeps one
-  // noisy tab from closing the door on everyone.
   drogon::HttpResponsePtr other = send(h.api, post(batch("browser-xyz", entries)));
   CHECK_EQ(other->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(h.repo->appended.size(), 1u);

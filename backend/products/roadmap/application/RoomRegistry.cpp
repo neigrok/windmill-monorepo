@@ -26,9 +26,9 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
     }
   }
 
-  // Load + replay outside the registry lock so one cold/large tree's open can't freeze every other
-  // tree's room operations. open(id) always runs under strandFor(id), so no second thread builds the
-  // same id concurrently; the re-check below covers the general case.
+  // Load + replay outside the registry lock so one large tree's open can't freeze every other tree's
+  // room operations. open(id) always runs under strandFor(id); the re-check below covers the general
+  // case.
   std::optional<StoredTree> stored = repo_.load(id);
   if (!stored) return nullptr;  // no such tree — a benign absence the caller answers, never a throw
 
@@ -87,16 +87,15 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
       if (now - live.touched >= idleFor) closing.push_back(id);
       else keeping.emplace_back(live.touched, id);
     }
-    // The cap is what makes this a bound rather than a habit: a caller opening trees faster than
-    // they go idle would otherwise grow rooms_ without limit between two sweeps.
+    // A caller opening trees faster than they go idle would otherwise grow rooms_ without limit
+    // between two sweeps.
     if (keeping.size() > kMaxRooms) {
       std::sort(keeping.begin(), keeping.end());
       for (std::size_t i = 0; i + kMaxRooms < keeping.size(); ++i) closing.push_back(keeping[i].second);
     }
   }
-  // Never under the map lock. evict persists (repository I/O) and every caller that touches a room
-  // holds its strand first, so the sweep takes the strand and only then the map — the one lock order
-  // this class ever uses.
+  // Never under the map lock. Every caller that touches a room holds its strand first, so the sweep
+  // takes the strand and only then the map — the one lock order this class ever uses.
   for (const TreeId& id : closing) {
     std::lock_guard<std::mutex> strand(strandFor(id));
     evict(id);
@@ -119,8 +118,8 @@ void RoomRegistry::persist(const TreeId& id) {
     title = room->title();
     head = room->head();
   }
-  // I/O outside the map lock. The caller holds the tree's strand, so the room can neither
-  // take new writes nor be evicted between the export above and the markClean below.
+  // I/O outside the map lock. The caller holds the tree's strand, so no write can slip in between
+  // the export above and the markClean below.
   repo_.save(id, state, legend, title, head);
   room->markClean();
 }
@@ -148,12 +147,11 @@ void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
-    // A just-shared live room's read gate flips immediately, so the freshly-shared tree stops
-    // 404-ing at once — not only after eviction and reload.
+    // The live room's read gate flips immediately, so a freshly-shared tree stops 404-ing at once.
     if (it != rooms_.end()) it->second.room->setVisibility(visibility);
   }
-  // Announced outside the lock, because whoever listens re-decides an access question and may go
-  // back to the repository to do it.
+  // Announced outside the lock: whoever listens re-decides an access question and may go back to the
+  // repository to do it.
   if (accessChanged_) accessChanged_(id);
 }
 

@@ -15,7 +15,7 @@ namespace wm {
 
 namespace {
 // The props were validated + stored as compact JSON text at the edge; parse them back into an
-// object for event_properties. A parse failure just drops the properties, never the event.
+// object for event_properties. A parse failure drops the properties, never the event.
 Json::Value propsObject(const std::string& props) {
   Json::CharReaderBuilder builder;
   const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
@@ -38,8 +38,8 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
 
   Json::Value payload(Json::objectValue);
   payload["api_key"] = apiKey_;
-  // The session key is the device_id; the beacon allows keys as short as one char, below Amplitude's
-  // default 5-char floor, so lower it — else a short key would 400 the whole batch.
+  // The session key is the device_id; the beacon allows keys shorter than Amplitude's default
+  // 5-char floor, so lower it — else a short key would 400 the whole batch.
   payload["options"]["min_id_length"] = 1;
   Json::Value out(Json::arrayValue);
   int index = 0;
@@ -50,8 +50,8 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
     item["event_type"] = event.name;
     item["time"] = static_cast<Json::Int64>(event.clientMs);
     item["event_properties"] = propsObject(event.props);
-    // A stable insert_id lets Amplitude drop a retried batch as a duplicate rather than double-count.
-    // Name + batch index keep two events sharing a session and millisecond from colliding.
+    // A stable insert_id lets Amplitude drop a retried batch as a duplicate. Name + batch index keep
+    // two events sharing a session and a millisecond from colliding.
     item["insert_id"] = sessionKey + ":" + idSeed + ":" + std::to_string(event.clientMs) + ":" +
                         event.name + ":" + std::to_string(index++);
     out.append(std::move(item));
@@ -69,8 +69,7 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
 
-  // Fire and forget: nobody waits on a funnel forward, so reporting the outcome is the only
-  // way a batch quietly stopping arriving is ever noticed.
+  // Fire and forget, so reporting the outcome is the only way a batch that stopped arriving is noticed.
   VendorCall call("amplitude", "forward");
   client->sendRequest(
       req,

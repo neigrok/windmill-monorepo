@@ -10,8 +10,7 @@
 namespace wm {
 
 // One product's answer to "does this account hold anything": the table its rows live in and the
-// column that owns them. Products are named where products are already named — the composition
-// root — so platform learns that a probe is a table, and never which tables a product keeps.
+// column that owns them. Products are named at the composition root, never here.
 struct OwnedTable {
   std::string table;
   std::string ownerColumn;
@@ -21,9 +20,8 @@ struct OwnedTable {
 // costs a single round trip and stops at the first row anything returns.
 class PgAccountFootprint : public AccountFootprint {
 public:
-  // Identifiers cannot be bound as parameters, so they are spliced — and therefore validated here,
-  // at construction, against a plain [a-z_][a-z0-9_]* shape. A malformed probe is a wiring error
-  // and takes the server down at boot rather than reaching a query.
+  // Identifiers cannot be bound as parameters, so they are spliced — and validated here at
+  // construction against [a-z_][a-z0-9_]*. A malformed probe takes the server down at boot.
   PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector<OwnedTable> probes);
 
   bool anyData(const UserId& userId) override;

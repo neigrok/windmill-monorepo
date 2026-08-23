@@ -28,9 +28,7 @@ TreeReadiness tree(const char* id, const char* title, std::uint64_t lastActivity
   return readiness;
 }
 
-// A candidate that passes every gate: the slot just came round, the person has been away a
-// fortnight, the account is months old, and one tree has something waiting. Each test below
-// spoils exactly one of those facts.
+// A candidate that passes every gate. Each test below spoils exactly one of those facts.
 ReminderCandidate sendable() {
   ReminderCandidate candidate;
   candidate.user = UserId{"u1"};
@@ -78,8 +76,7 @@ TEST(a_slot_exactly_at_the_lateness_edge_is_still_served) {
 }
 
 TEST(a_slot_that_has_not_arrived_yet_is_never_late) {
-  // A clock that stepped backwards, or a rehearsal asOf in the past: unsigned lateness must not
-  // wrap into an eternity and abandon everyone.
+  // A clock that stepped backwards, or a rehearsal asOf in the past: unsigned lateness must not wrap into an eternity.
   ReminderCandidate candidate = sendable();
   candidate.slotInstantMs = kNow + 5 * kDay;
 
@@ -160,8 +157,7 @@ TEST(a_user_with_no_trees_at_all_is_skipped_for_emptiness) {
 }
 
 TEST(the_gates_fire_in_order_so_lateness_beats_every_other_reason) {
-  // Simultaneously too late, just-active, brand new and empty. The ledger must record the reason
-  // the sweep actually stopped at, which is the first one.
+  // Simultaneously too late, just-active, brand new and empty: the ledger records the first reason.
   ReminderCandidate candidate;
   candidate.user = UserId{"u1"};
   candidate.slotInstantMs = kNow - 3 * kDay;
@@ -227,8 +223,7 @@ TEST(the_mail_names_at_most_three_steps_and_counts_the_rest) {
 }
 
 TEST(a_withheld_week_still_records_how_much_was_waiting) {
-  // The ledger's sharpest question: how many people who DID have steps ready did we hold back,
-  // and why. It can only be answered if the count is taken before the gates rather than after.
+  // How many people who DID have steps ready were held back, and why — countable only if taken before the gates.
   ReminderCandidate candidate = sendable();
   candidate.trees = {tree("t_a", "Learn to sail", kNow - 20 * kDay,
                           {step("one"), step("two"), step("three"), step("four")})};
@@ -239,7 +234,6 @@ TEST(a_withheld_week_still_records_how_much_was_waiting) {
   CHECK_EQ(decision.outcome, ReminderOutcome::skip);
   CHECK_EQ(decision.reason, SkipReason::recentlyActive);
   CHECK_EQ(decision.content.readyCount, 4);
-  // And nothing else: a skipped week names no tree, because no tree was ever featured in a mail.
   CHECK_EQ(decision.content.treeId, TreeId{});
   CHECK_EQ(decision.content.steps.size(), std::size_t{0});
   CHECK_EQ(decision.content.otherReadyTrees, 0);
@@ -278,8 +272,7 @@ TEST(the_remainder_counts_only_the_steps_the_mail_had_no_room_to_name) {
 }
 
 TEST(the_other_trees_line_names_its_unit_out_loud) {
-  // It counts TREES. The wording it replaced counted trees and read as steps, which is the one
-  // way a quiet line at the foot of an email can be actively misleading.
+  // It counts TREES.
   CHECK_EQ(otherTreesPhrase(0), std::string(""));
   CHECK_EQ(otherTreesPhrase(1), std::string("1 other tree has steps ready"));
   CHECK_EQ(otherTreesPhrase(3), std::string("3 other trees have steps ready"));

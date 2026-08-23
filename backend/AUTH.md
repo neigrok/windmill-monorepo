@@ -78,9 +78,9 @@ then runs the identical `mintSessionFor` tail (find-or-create, revival-in-grace,
 session). Every failure collapses to the one 410 body, so the endpoint cannot be probed for which
 addresses hold pending codes or accounts.
 
-A 6-digit code has only 10⁶ states, so hashing it at rest is hygiene, not the defense. The defense
-is the bound: 15-minute life, single use, 5 attempts per row, and a per-IP bucket on
-`/v1/auth/verify-code` (10/min, burst 10, in `main.cpp`'s sync advice).
+A 6-digit code has 10⁶ states, so the bound is the defense, not the digest at rest: 15-minute life,
+single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (10/min, burst 10, in
+`main.cpp`'s sync advice).
 
 ### `GET /v1/me`
 
@@ -152,9 +152,8 @@ account that already exists. `(provider, subject)` is the primary key, so a prov
 the address behind an account — an Apple relay rotated, a Google primary email moved — still
 resolves to the same user.
 
-Apple is why the subject and not the address is the key: Hide My Email returns
-`<opaque>@privaterelay.appleid.com`, and the name plus the real email arrive exactly once, on the
-first authorization. Every later sign-in carries only `sub`.
+Apple's Hide My Email returns `<opaque>@privaterelay.appleid.com`, and the name plus the real email
+arrive exactly once, on the first authorization. Every later sign-in carries only `sub`.
 
 ### The resolution ladder
 
@@ -169,8 +168,7 @@ One order, both providers. The first step that answers, answers.
 A relay address runs step 2 unchanged: it is stable for this app, so it re-finds the same human and
 collides with no one else. What it cannot do is find the account they already have on the web — so
 the reply carries `privateEmail: true` beside `created`, and those two facts together are what the
-client offers the link door on. The fork is made recoverable, not prevented; there is no honest way
-to guess which existing account a relay belongs to.
+client offers the link door on.
 
 `email_verified == false` never reaches step 2. An unverified provider address resolving onto an
 existing account is an account takeover by anyone who can type an address.
@@ -180,14 +178,12 @@ existing account is an account takeover by anyone who can type an address.
 the *Connect Apple* row in settings, and it is why the app offers *Continue with Apple* as a sign-in
 only while signed out.
 
-### The link door — and why a merge is refused
+### The link door
 
-A relay sign-in can leave a real human holding a brand-new empty account while their log sits under
-another. The remedy is one dismissible line on the app's home — *"Already use Windmill on the web?
-Link this account."* — which runs the ordinary magic-link flow inside the app and posts the token to
-`POST /v1/auth/link` while still holding the new account's session.
-
-The server resolves the token to user A and compares it with caller B:
+The app's home carries one dismissible line — *"Already use Windmill on the web? Link this
+account."* — which runs the ordinary magic-link flow inside the app and posts the token to
+`POST /v1/auth/link` while still holding the new account's session. The server resolves the token to
+user A and compares it with caller B:
 
 | Case | Outcome |
 |---|---|
@@ -195,8 +191,7 @@ The server resolves the token to user A and compares it with caller B:
 | A != B and **B has no data** | every `user_identities` row of B moves to A, B is deleted, a session for A is returned |
 | A != B and B has data | `409 account-not-empty` |
 
-**Merge only while provably empty. Never write a general account merger.** Two accounts each holding
-trees, pages, sets, a subscription and their own OAuth grants have no defensible resolution.
+**Merge only while provably empty. Never write a general account merger.**
 
 `AuthService` asks a platform port and never a table:
 
@@ -208,12 +203,11 @@ struct AccountFootprint {
 };
 ```
 
-There is one implementation, not one per product: every product's answer has the same shape, a
-bounded existence check on a table it owns. `PgAccountFootprint` takes a list of
+There is one implementation for every product. `PgAccountFootprint` takes a list of
 `{table, ownerColumn}` probes and runs them as one `UNION ALL`; the probes are named in `main.cpp`,
-so platform learns that a probe is a table and never which tables a product keeps. Identifiers
-cannot be bound as parameters, so the constructor validates each against `[a-z_][a-z0-9_]*` and
-throws — a malformed probe takes the server down at boot rather than reaching a query.
+so platform never learns which tables a product keeps. Identifiers cannot be bound as parameters, so
+the constructor validates each against `[a-z_][a-z0-9_]*` and throws — a malformed probe takes the
+server down at boot rather than reaching a query.
 
 **A product missing from that probe list reports an account empty that is not, and the link door then
 deletes real data.** The list is the review surface, an empty one is refused at construction, and a
@@ -223,7 +217,7 @@ fourth product adds one line to it.
 
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
   absent, and `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the
-  Keychain and needs no backend change.
+  Keychain.
 - The apps sign in by code: mint with `door: "app"`, post the typed digits to `/v1/auth/verify-code`,
   capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
   (sign-in) or `/v1/auth/link` (the merge above).

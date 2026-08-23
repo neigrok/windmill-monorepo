@@ -65,9 +65,8 @@ public:
   // A within-grace sign-in clears the close before the session is minted: signing in is the undo.
   Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
 
-  // The typed twin of completeLink: resolves the newest live code row for the address, spends one
-  // attempt on a wrong guess, burns the row on a right one, then funnels into the same session
-  // tail. Every non-valid verdict is refused without a session.
+  // Resolves the newest live code row for the address, spends an attempt on a wrong guess and
+  // burns the row on a right one. Every non-valid verdict is refused without a session.
   struct CodeCompletion {
     CodeVerdict verdict;
     std::optional<SignedIn> signedIn;
@@ -117,7 +116,6 @@ public:
   // nullopt is a blank or over-cap name; the updated user otherwise.
   std::optional<User> updateName(const UserId& userId, const std::string& rawName);
 
-  // The user's live sessions, the caller's own flagged `current`.
   std::vector<SessionView> listSessions(const UserId& userId, const std::string& currentSecret);
 
   // `revokedCurrent` tells the edge to also clear the cookie; `notFound` is a foreign or unknown id.

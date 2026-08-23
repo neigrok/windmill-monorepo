@@ -13,9 +13,7 @@
 
 namespace wm::journal {
 
-// The journal product's whole HTTP surface, mounted behind one named seam — the same shape
-// roadmap's registerRoutes has. main.cpp builds the collaborators, bundles them into
-// JournalDeps, and calls this beside the roadmap mount.
+// The journal product's whole HTTP surface, mounted behind one named seam.
 void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
   auto api = std::make_shared<JournalApi>(deps.pageService, deps.authService);
 
@@ -47,8 +45,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
   // The nudge control surface. The two settings verbs ride the ordinary session; pause and
   // unsubscribe carry no credential but the secret from someone's own mail and answer 204 either
   // way, so neither can be asked whose nudges exist — and both are POST-only, out of reach of the
-  // scanners that GET every URL in a mail. The admin sweep is the operator's rehearsal door,
-  // closed unless the deploy set a token.
+  // scanners that GET every URL in a mail. The admin sweep is closed unless the deploy set a token.
   auto nudgeApi = std::make_shared<NudgeApi>(deps.nudges, deps.nudgeSweep, deps.authService,
                                              deps.tokens, deps.clock, deps.nudgeAdminToken);
   app.registerHandler(
@@ -83,10 +80,9 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       {drogon::Post});
 
   // The echo read surface (Windmill One). The sweep derives for everyone and the ENTITLEMENT IS
-  // ASKED HERE: the canon's honest-cut state has to show a non-subscriber that echoes exist, how
-  // many, and the real opening words of the nearest one, none of which survives an empty table.
-  // The admin sweep is the operator's rehearsal of one nightly pass, closed unless the deploy set
-  // a token.
+  // ASKED HERE: the honest-cut state has to show a non-subscriber that echoes exist, how many, and
+  // the real opening words of the nearest one. The admin sweep is closed unless the deploy set a
+  // token.
   auto echoApi = std::make_shared<EchoApi>(deps.echoes, deps.echoSweep, deps.echoExplainer,
                                            deps.authService, deps.entitlements,
                                            deps.echoAdminToken);
@@ -96,16 +92,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         echoApi->listEchoes(req, std::move(cb));
       },
       {drogon::Get});
-  // Three dismissal doors, and the differences are the surface's, not conveniences. "Not useful"
-  // sits on the panel and retires a whole page's echoes; naming both days retires one pairing; both
-  // land on the same content-hash key, so neither can be undone by inserting a sentence. "Not now"
-  // is a different answer entirely — it retires only the OFFER, keeps every echo, and keys on the
-  // day because the offer belongs to the page.
+  // Three dismissal doors. "Not useful" sits on the panel and retires a whole page's echoes; naming
+  // both days retires one pairing; both land on the same content-hash key, so neither can be undone
+  // by inserting a sentence. "Not now" retires only the OFFER, keeps every echo, and keys on the day.
   //
-  // ORDER IS LOAD-BEARING HERE. The offer door must be registered BEFORE the pair door, because
-  // drogon matches these patterns in registration order and `{matchDay}` happily binds the literal
-  // "offer". Swapped, /echoes/2026-07-01/offer/dismiss lands in the pair handler and answers 400
-  // "bad date" — measured against the live server, not reasoned about. Do not sort this block.
+  // ORDER IS LOAD-BEARING: the offer door must be registered BEFORE the pair door, because drogon
+  // matches these patterns in registration order and `{matchDay}` binds the literal "offer".
+  // Swapped, /echoes/2026-07-01/offer/dismiss lands in the pair handler. Do not sort this block.
   app.registerHandler(
       "/v1/journal/echoes/{triggerDay}/offer/dismiss",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -130,8 +123,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
   // The two quality signals, both owner-only and both 204 however many times they are pressed.
   // Three segments each ending in a distinct literal, so neither can be swallowed by the pair
   // dismissal above however this block is ordered. "useful" is the reader saying so; "opened" is
-  // the walk back to the older page, a weaker label and its own kind because of it. Between them
-  // and the dismissal doors, this feature can finally be measured rather than believed.
+  // the walk back to the older page, a weaker label and its own kind because of it.
   app.registerHandler(
       "/v1/journal/echoes/{triggerDay}/{matchDay}/useful",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -147,9 +139,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       },
       {drogon::Post});
   // The tuning door. Under /v1/admin because it takes the admin token and answers with the
-  // pipeline's own internals — but it asks for a signed-in owner too and explains THAT account's
-  // page, never anybody else's. It writes nothing, so running it never settles a page the live
-  // path still owes.
+  // pipeline's own internals, but it asks for a signed-in owner too and explains THAT account's
+  // page. It writes nothing, so running it never settles a page the live path still owes.
   app.registerHandler(
       "/v1/admin/journal/echo/explain/{day}",
       [echoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& day) {
@@ -163,8 +154,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       },
       {drogon::Post});
 
-  // Voice (Windmill One): talk, get text. The Windmill One entitlement is checked before any audio is
-  // touched, and no vendor wired means a plain 503 — the audio never lands anywhere, and no page is made here.
+  // Voice (Windmill One): talk, get text. The entitlement is checked before any audio is touched,
+  // and no vendor wired means a plain 503.
   auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.entitlements, deps.authService);
   app.registerHandler(
       "/v1/journal/transcribe",

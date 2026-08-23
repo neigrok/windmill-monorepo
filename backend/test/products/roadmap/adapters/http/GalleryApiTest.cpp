@@ -15,8 +15,7 @@ using namespace wm::fake;
 
 namespace {
 
-// A minimal wall template: the fenced card block the server fills, with the designed empty state
-// inside the fence and page chrome outside it (which must survive a fill untouched).
+// A minimal wall template: the fenced card block the server fills, with the empty state inside the fence and chrome outside it.
 const std::string SHELL =
     "<!doctype html>\n<html><head><title>Gallery</title></head><body>\n"
     "  <main>\n"
@@ -43,9 +42,6 @@ bool contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
-// The JSON surface's whole stack behind the endpoint: the tree store, the owner-overlay store the
-// wall joins, and the auth boundary that turns a cookie into a reader. No web root — GET
-// /v1/gallery never reads one.
 struct Harness {
   std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
   std::shared_ptr<FakeProgressRepository> progress = std::make_shared<FakeProgressRepository>();
@@ -84,8 +80,6 @@ struct Harness {
 
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 
-  // The owner ticked a step. It lands on the wall row exactly where the lateral join puts it, and
-  // — the whole point — the tree's own structural stamp stays where it was.
   void seedMark(const char* id, std::uint64_t markedAt) { trees->lastMarkedAt[id] = markedAt; }
 };
 
@@ -113,7 +107,7 @@ Json::Value bodyOf(const drogon::HttpResponsePtr& response) { return *response->
 TEST(an_empty_wall_serves_the_templates_own_empty_state) {
   const std::string page = GalleryApi::renderWall(SHELL, {});
 
-  CHECK_EQ(page, SHELL);  // byte-identical — the designed empty state is what ships
+  CHECK_EQ(page, SHELL);
 }
 
 TEST(a_card_is_a_real_anchor_to_the_trees_share_page) {
@@ -124,8 +118,8 @@ TEST(a_card_is_a_real_anchor_to_the_trees_share_page) {
   CHECK(contains(page, ">Learn Rust<"));
   CHECK(contains(page, "3/12 done"));
   CHECK(contains(page, "width:25%"));  // 3 of 12
-  CHECK_FALSE(contains(page, "No trees yet."));  // the empty state is gone
-  CHECK(contains(page, "<footer>Windmill</footer>"));  // chrome outside the fence survives
+  CHECK_FALSE(contains(page, "No trees yet."));
+  CHECK(contains(page, "<footer>Windmill</footer>"));
 }
 
 TEST(a_card_shows_forks_only_once_it_has_them) {
@@ -143,7 +137,6 @@ TEST(a_card_wears_its_trees_dominant_hue) {
   const std::string page = GalleryApi::renderWall(SHELL, {entry("t_a", "A", 0, 5, 0, NodeColor::plum)});
   CHECK(contains(page, "background:#8D4F83"));
 
-  // A tree with no dominant kind (it has none to be dominant) still gets a bar, in the default hue.
   const std::string bare = GalleryApi::renderWall(SHELL, {entry("t_b", "B", 0, 5, 0, std::nullopt)});
   CHECK(contains(bare, "background:#BC6C42"));
 }
@@ -161,7 +154,7 @@ TEST(a_template_missing_its_fence_is_served_untouched) {
 
   const std::string page = GalleryApi::renderWall(fenceless, {entry("t_a", "A", 0, 5, 0)});
 
-  CHECK_EQ(page, fenceless);  // never half-rewritten
+  CHECK_EQ(page, fenceless);
 }
 
 TEST(every_entry_lands_on_the_wall_in_the_order_it_was_given) {
@@ -183,7 +176,6 @@ TEST(a_forked_card_names_the_tree_it_came_from_and_never_the_person) {
   const std::string page = GalleryApi::renderWall(SHELL, {row});
 
   CHECK(contains(page, "A fork of \xE2\x80\x9CLearn Rust\xE2\x80\x9D"));
-  // A card with no lineage says nothing at all about a source.
   CHECK_FALSE(contains(GalleryApi::renderWall(SHELL, {entry("t_own", "Own", 1, 5, 0)}), "A fork of"));
 }
 
@@ -209,9 +201,9 @@ TEST(the_json_index_serves_an_anonymous_caller_the_walls_own_rows) {
 
   const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
 
-  CHECK_EQ(body["count"].asUInt(), 2u);  // never the unlisted or the private tree
+  CHECK_EQ(body["count"].asUInt(), 2u);
   REQUIRE_EQ(body["entries"].size(), 2u);
-  CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_popular"));  // one fork outranks none
+  CHECK_EQ(body["entries"][0]["id"].asString(), std::string("t_popular"));
   CHECK_EQ(body["entries"][0]["title"].asString(), std::string("Popular"));
   CHECK_EQ(body["entries"][0]["total"].asInt(), 5);
   CHECK_EQ(body["entries"][0]["done"].asInt(), 0);
@@ -229,8 +221,6 @@ TEST(the_json_index_tells_a_signed_in_caller_what_is_theirs_and_what_they_took) 
   h.seed("t_mine", "Mine", sam, Visibility::public_, 5, 100);
   h.seed("t_taken", "Taken", other, Visibility::public_, 5, 100);
   h.seed("t_stranger", "Stranger's", other, Visibility::public_, 5, 100);
-  // Sam's own copy of t_taken: private, so it is not itself on the wall — it is only the record
-  // that says he has already taken that plan.
   h.seed("t_samscopy", "Taken (mine)", sam, Visibility::private_, 5, 100);
   h.seedFork("t_samscopy", "t_taken");
 
@@ -247,7 +237,6 @@ TEST(the_json_index_tells_a_signed_in_caller_what_is_theirs_and_what_they_took) 
   CHECK_FALSE(body["entries"][2]["mine"].asBool());
   CHECK_FALSE(body["entries"][2]["forked"].asBool());
 
-  // The same rows to a stranger, with both facts back to false — a session adds facts, never trees.
   const Json::Value anonymous = bodyOf(sendIndex(h.api, galleryReq()));
   CHECK_EQ(anonymous["count"].asUInt(), 3u);
   for (const Json::Value& row : anonymous["entries"]) {
@@ -264,12 +253,11 @@ TEST(a_listed_fork_names_its_source_only_while_that_source_is_public) {
   h.seedFork("t_fork", "t_source");
 
   const Json::Value named = bodyOf(sendIndex(h.api, galleryReq()));
-  CHECK_EQ(named["entries"][0]["id"].asString(), std::string("t_source"));  // the fork it inspired
+  CHECK_EQ(named["entries"][0]["id"].asString(), std::string("t_source"));
   CHECK_FALSE(named["entries"][0].isMember("sourceTitle"));
   CHECK_EQ(named["entries"][1]["id"].asString(), std::string("t_fork"));
   CHECK_EQ(named["entries"][1]["sourceTitle"].asString(), std::string("Learn Rust"));
 
-  // The owner pulls the source back to unlisted: the fork stays on the wall, but stops naming it.
   h.trees->setVisibility(TreeId{"t_source"}, Visibility::unlisted);
   const Json::Value anonymousSource = bodyOf(sendIndex(h.api, galleryReq()));
   CHECK_EQ(anonymousSource["count"].asUInt(), 1u);
@@ -301,7 +289,7 @@ TEST(the_json_index_pages_with_a_cursor_and_never_reshuffles) {
   h.seed("t_c", "C", owner, Visibility::public_, 5, 100);
 
   const Json::Value first = bodyOf(sendIndex(h.api, galleryReq("", "2")));
-  CHECK_EQ(first["count"].asUInt(), 3u);  // the whole index, not this page
+  CHECK_EQ(first["count"].asUInt(), 3u);
   REQUIRE_EQ(first["entries"].size(), 2u);
   CHECK_EQ(first["entries"][0]["id"].asString(), std::string("t_a"));
   CHECK_EQ(first["entries"][1]["id"].asString(), std::string("t_b"));

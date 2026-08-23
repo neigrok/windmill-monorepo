@@ -1,27 +1,14 @@
--- Windmill funnel views — the analyst surface over the event spine + server-truth
--- tables. Deliberately not in schema.sql: the app never reads these, and redefining a
--- metric shouldn't look like a schema migration. Idempotent; re-apply any time with
--- `psql windmill -f db/funnel.sql`. Each view is a plain aggregate, so empty tables
--- yield empty results, never errors.
---
--- Weeks are ISO weeks — date_trunc('week', …) starts Monday — and `week` is that
--- Monday's date. node_progress.user_id is text (the domain's string ids), so joins to
--- users.id go through ::text.
+-- Analyst views; the app never reads them. Idempotent: `psql windmill -f db/funnel.sql`.
+-- Weeks are ISO weeks; `week` is that Monday's date.
 
--- accounts created per ISO week: the cohort denominator every other view slices by.
 create or replace view funnel_weekly_signups as
 select date_trunc('week', created_at)::date as week,
        count(*)                             as signups
 from users
 group by 1;
 
--- per-account activation ledger (the PRODUCT_LOG metric contract): activated = owns a
--- tree with ≥3 present nodes AND completed a node on that tree within 48h of the tree's
--- creation. Soft-deleted trees still count — the behaviour happened; deleting a tree
--- later doesn't retro-deactivate the cohort. node_progress is an LWW register, not a
--- log, so first_completed_at is min(updated_at) over rows still 'complete': a completion
--- later cleared reads as never-happened, a re-completed node reads late — an undercount,
--- never an overcount.
+-- Soft-deleted trees still count as activation. node_progress is an LWW register, so
+-- first_completed_at undercounts: a completion later cleared reads as never-happened.
 create or replace view funnel_activation as
 select
   u.id                          as user_id,
@@ -64,8 +51,7 @@ left join lateral (
   where np.user_id = u.id::text and np.status = 'complete'
 ) first_completion on true;
 
--- the weekly report: signups → planted (≥1 owned tree, ever) → activated, per signup
--- cohort. activation_rate is over the whole cohort, not just planters.
+-- planted = ≥1 owned tree ever. activation_rate is over the whole cohort, not planters.
 create or replace view funnel_weekly_activation as
 select date_trunc('week', signed_up_at)::date            as week,
        count(*)                                          as signups,
@@ -76,10 +62,8 @@ select date_trunc('week', signed_up_at)::date            as week,
 from funnel_activation
 group by 1;
 
--- the share→visit→fork edge. *_beacons columns count client events and undercount
--- (adblock, tabs closed before the flush); forked_trees counts trees.forked_from and is
--- ground truth. fork_attempt carries props.mode — 'instant' (guest fork) vs 'email'
--- (fork rides the magic link).
+-- *_beacons count client events and undercount (adblock, unflushed tabs); forked_trees
+-- is ground truth.
 create or replace view funnel_shares as
 with beacons as (
   select date_trunc('week', ts)::date as week,
@@ -109,10 +93,8 @@ select week,
 from beacons
 full join forks using (week);
 
--- W1 return: of a signup cohort, who did anything in days 7–14 after signup — a
--- node_progress write, an edit to an owned tree (trees.updated_at), or any attributed
--- event. eligible counts only accounts whose day-14 window has closed, and the rate
--- divides by eligible, so a young cohort reads as no-data rather than churn.
+-- W1 return = any activity in days 7–14 after signup. The rate divides by eligible
+-- (day-14 window closed), so a young cohort reads as no-data rather than churn.
 create or replace view funnel_returns as
 select date_trunc('week', u.created_at)::date              as week,
        count(*)                                            as signups,
@@ -140,9 +122,7 @@ cross join lateral (
 ) r
 group by 1;
 
--- the anonymous top of funnel, straight from beacons: landings (and how many arrived
--- signed out), demo opens, tree births, sign-ins. land carries props.signedIn as a json
--- boolean, so the text projection compares against 'false'.
+-- land carries props.signedIn as a json boolean, so the text projection compares 'false'.
 create or replace view funnel_landing as
 select date_trunc('week', ts)::date as week,
        count(*) filter (where name = 'land')                                  as lands,

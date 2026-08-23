@@ -13,7 +13,7 @@ TEST(mint_returns_a_one_time_token_and_a_distinct_id_per_key) {
   McpKeyService svc(repo, tokens, clock);
 
   MintedKey first = svc.mint(UserId{"u1"}, "Laptop");
-  CHECK_EQ(first.token, std::string("s1"));  // the first mint's secret
+  CHECK_EQ(first.token, std::string("s1"));
   CHECK_EQ(first.name, std::string("Laptop"));
   CHECK_EQ(first.id, std::string("key1"));
   CHECK_EQ(first.createdMs, static_cast<long long>(clock.now));
@@ -38,7 +38,6 @@ TEST(mint_defaults_a_blank_name_and_caps_a_long_one) {
   MintedKey capped = svc.mint(UserId{"u1"}, tooLong);
   CHECK_EQ(capped.name, std::string(60, 'x'));  // capped to 60 characters
 
-  // The stored name is the capped one too: list reads it back capped, and never with the token.
   bool found = false;
   for (const McpKeyView& view : svc.list(UserId{"u1"})) {
     if (view.id != capped.id) continue;
@@ -58,18 +57,13 @@ TEST(resolve_key_returns_the_owner_and_refuses_garbage_and_revoked_keys) {
   std::optional<ToolCaller> owner = svc.resolveKey(key.token);
   REQUIRE(owner.has_value());
   CHECK_EQ(owner->user, UserId{"u1"});
-  // The mint endpoint asks for no scope, so a key resolves as the legacy account-wide grant. That is
-  // the door a scope model covering only OAuth would leave standing open.
+  // The mint endpoint asks for no scope, so a key resolves as the legacy account-wide grant.
   CHECK(owner->scope == ToolScope::everything());
-  // And the key is the connection: its public id and the name it was minted under, so a tool can
-  // tell this key's calls from another key's on the same account.
   CHECK((owner->connection == ToolConnection{key.id, "Laptop"}));
 
-  // An unknown or empty secret resolves to nobody.
   CHECK_FALSE(svc.resolveKey("garbage").has_value());
   CHECK_FALSE(svc.resolveKey("").has_value());
 
-  // After revoke the key is inert.
   CHECK(svc.revoke(UserId{"u1"}, key.id));
   CHECK_FALSE(svc.resolveKey(key.token).has_value());
 }
@@ -89,10 +83,9 @@ TEST(list_returns_keys_newest_first_without_the_token_and_reflects_a_touch) {
   CHECK_EQ(keys[0].id, newer.id);  // newest first
   CHECK_EQ(keys[0].name, std::string("Newer"));
   CHECK_EQ(keys[1].id, older.id);
-  CHECK_FALSE(keys[0].lastUsedMs.has_value());  // never used yet
+  CHECK_FALSE(keys[0].lastUsedMs.has_value());
   CHECK_FALSE(keys[1].lastUsedMs.has_value());
 
-  // A resolve stamps last-used; the list reflects it, only for the key that acted.
   clock.now += 1000;
   const long long usedAt = static_cast<long long>(clock.now);
   CHECK(svc.resolveKey(newer.token).has_value());
@@ -102,7 +95,7 @@ TEST(list_returns_keys_newest_first_without_the_token_and_reflects_a_touch) {
   CHECK_EQ(after[0].id, newer.id);
   REQUIRE(after[0].lastUsedMs.has_value());
   CHECK_EQ(*after[0].lastUsedMs, usedAt);
-  CHECK_FALSE(after[1].lastUsedMs.has_value());  // the untouched key stays null
+  CHECK_FALSE(after[1].lastUsedMs.has_value());
 }
 
 TEST(revoke_is_scoped_to_the_owner_and_stops_resolution) {
@@ -113,12 +106,10 @@ TEST(revoke_is_scoped_to_the_owner_and_stops_resolution) {
 
   MintedKey key = svc.mint(UserId{"u1"}, "Laptop");
 
-  // Another user cannot revoke it, and an unknown id is a clean false — the key stays live.
   CHECK_FALSE(svc.revoke(UserId{"u2"}, key.id));
   CHECK_FALSE(svc.revoke(UserId{"u1"}, "key-nope"));
   CHECK(svc.resolveKey(key.token).has_value());
 
-  // The owner revokes it: true once, then it no longer resolves and is gone from the list.
   CHECK(svc.revoke(UserId{"u1"}, key.id));
   CHECK_FALSE(svc.resolveKey(key.token).has_value());
   CHECK_EQ(svc.list(UserId{"u1"}).size(), 0u);

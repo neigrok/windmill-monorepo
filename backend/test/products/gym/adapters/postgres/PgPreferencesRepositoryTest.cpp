@@ -16,12 +16,7 @@
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
-// ---- §I · the settings row, against the real column checks ------------------------------------
-
-// The absence is the fact this store states: a lifter who has never opened the settings screen has
-// no row, and the defaults are given a layer up rather than invented here. The upsert is the whole
-// write — one row per account, last write wins — and RETURNING is what makes the answer the document
-// the store now holds rather than the one the caller sent.
+// A lifter who has never opened the settings screen has no row; the upsert is the whole write and RETURNING answers with what is stored.
 TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -46,8 +41,6 @@ TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
            1);
 }
 
-// One lifter's settings and no other's, the scope every row in this store keeps — and the cascade
-// that takes the row with the account.
 TEST(pg_gym_preferences_are_owner_scoped_and_cascade_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -67,10 +60,7 @@ TEST(pg_gym_preferences_are_owner_scoped_and_cascade_with_the_account) {
   reset();
 }
 
-// The columns carry the same bounds the entity does, so a row the domain would refuse is a row this
-// database will not hold either — which is what makes the read's construction safe. Written against
-// raw SQL on purpose: the entity can never send these, and the check is the only thing standing
-// between a hand-edited row and a read that throws for every later request on that account.
+// The columns carry the same bounds the entity does, written against raw SQL because the entity can never send these.
 TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -92,8 +82,6 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
     }
     CHECK(stopped);
   }
-  // And the defaults on the columns are the defaults in the domain, so a row written by hand with
-  // nothing but an owner reads back as the document a fresh lifter is served.
   {
     wm::PgLease conn{*wm::pgTestPool()};
     pqxx::work txn{*conn};

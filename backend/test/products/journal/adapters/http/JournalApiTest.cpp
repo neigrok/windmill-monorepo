@@ -19,10 +19,6 @@ using namespace wm::fake;
 
 namespace {
 
-// The helpers (uid/ld/hlc) and FakeJournalRepository come from test/products/journal/Fakes.h — the
-// one fake with the SAME strictly-greater LWW guard the domain and the SQL adapter use, so the HTTP
-// test can never quietly disagree with them about who wins or how a range is ordered.
-
 Json::Value pageWrite(const std::string& text) {
   Json::Value body(Json::objectValue);
   body["body"] = text;
@@ -129,7 +125,7 @@ TEST(page_write_clamps_out_of_range_scales_and_reads_an_odd_source_as_typed) {
 
   Page page = parsePageWrite(body, uid(), ld("2026-01-02"));
 
-  CHECK(page.mood == Mood::none);      // a bad value can only narrow, never lie
+  CHECK(page.mood == Mood::none);
   CHECK(page.energy == Energy::none);
   CHECK(page.source == Source::typed);
 }
@@ -243,8 +239,6 @@ TEST(journal_put_of_a_page_past_the_cap_is_413_and_stores_nothing) {
 }
 
 TEST(journal_put_of_a_page_at_the_cap_is_stored) {
-  // The cap is a fuse, not a limit anybody is meant to meet: a whole evening of writing, and the
-  // exact boundary byte, both go through.
   Harness h;
   h.signIn("s-live");
 
@@ -256,8 +250,6 @@ TEST(journal_put_of_a_page_at_the_cap_is_stored) {
 }
 
 TEST(journal_routes_refuse_a_date_the_calendar_does_not_have) {
-  // Not a shape complaint: "2026-02-31" is well formed and impossible, and it used to reach the SQL
-  // cast and 500 with a server_errors row behind it.
   Harness h;
   h.signIn("s-live");
 
@@ -297,5 +289,5 @@ TEST(journal_put_with_a_malformed_stamp_is_400_not_500) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that page"})"));
-  CHECK(h.repo.byKey.empty());   // nothing stored on a rejected write
+  CHECK(h.repo.byKey.empty());
 }

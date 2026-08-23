@@ -11,8 +11,6 @@ using namespace wm;
 
 namespace {
 
-// A product's tools, scripted: a catalog whose access levels the test picks, and a recorder so a
-// refusal can be proved to have stopped BEFORE the product ever saw the call.
 struct FakeProduct : ToolHost {
   struct Call {
     std::string name;
@@ -99,7 +97,6 @@ TEST(composite_lists_every_connected_product_to_an_account_wide_grant) {
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
 }
 
-// The whole point of the gate: an ungranted product is not a shorter answer, it is an absent one.
 TEST(composite_shows_a_grant_only_the_products_it_names) {
   FakeProduct r = roadmap();
   FakeProduct g = gym();
@@ -129,7 +126,7 @@ TEST(composite_refuses_an_out_of_scope_tool_before_the_product_sees_it) {
   CHECK_EQ(message(refused),
            std::string("delete_session: this connection was not granted gym:delete, so it cannot run "
                        "this tool. Reconnect and approve that level."));
-  CHECK_EQ(g.calls.size(), std::size_t{0});  // the destructive call never reached the product
+  CHECK_EQ(g.calls.size(), std::size_t{0});
 }
 
 TEST(composite_runs_a_tool_the_grant_covers_and_passes_the_caller_through) {
@@ -169,9 +166,7 @@ TEST(composite_owns_the_whole_server_answer_for_a_name_nothing_declared) {
   CHECK_EQ(r.calls.size(), std::size_t{0});
 }
 
-// A RETIRED NAME ANSWERS WITH THE PRODUCT'S OWN SENTENCE. The composite resolves names against the
-// catalogs it was built from, so a name a product took away never reached that product — the agent
-// that was told about the replacement read "no such tool", true and unnamed.
+// The composite resolves names against the catalogs it was built from, so a retired name answers with the product's own sentence.
 TEST(composite_answers_a_retired_name_with_the_products_sentence_and_never_calls_it) {
   FakeProduct g = gym();
   g.retired.push_back(ToolRetirement{"save_routine", "log_set",
@@ -183,12 +178,10 @@ TEST(composite_answers_a_retired_name_with_the_products_sentence_and_never_calls
   CHECK(retired.isError);
   CHECK_EQ(message(retired), std::string("save_routine: retired on 2026-08-12. Use log_set instead."));
   CHECK_EQ(g.calls.size(), std::size_t{0});
-  // …and it does not shadow the live catalog or the whole-server answer for a name nothing ever had.
   CHECK_EQ(namesIn(surface.listTools(granted(""))),
            (std::vector<std::string>{"list_sessions", "log_set", "delete_session"}));
   CHECK_EQ(message(surface.callTool("frobnicate", Json::Value(Json::objectValue), granted(""))),
            std::string("frobnicate: no such tool on this server — call tools/list for the whole surface."));
-  // An outer host could nest: the composite hands every module's retirements up as its own.
   const std::vector<ToolRetirement> all = surface.retiredTools();
   REQUIRE_EQ(all.size(), std::size_t{1});
   CHECK_EQ(all[0].name, std::string("save_routine"));
@@ -231,7 +224,6 @@ TEST(composite_refuses_to_construct_when_a_replacement_is_not_a_live_tool) {
                                "as its replacement, and no product declares that tool"));
 }
 
-// Some retirements have no successor, and that is a sentence, not a boot failure.
 TEST(composite_accepts_a_retirement_with_no_replacement) {
   FakeProduct g = gym();
   g.retired.push_back(ToolRetirement{"get_preferences", "", "retired, and nothing replaced it."});
@@ -244,8 +236,6 @@ TEST(composite_accepts_a_retirement_with_no_replacement) {
   CHECK_EQ(g.calls.size(), std::size_t{0});
 }
 
-// A name answered by whichever product happened to register first is a coin flip nobody can debug
-// from a transcript, so it is a boot failure instead.
 TEST(composite_refuses_to_construct_when_two_products_declare_one_name) {
   FakeProduct r = roadmap();
   FakeProduct g = gym();
@@ -264,8 +254,6 @@ TEST(composite_refuses_to_construct_when_two_products_declare_one_name) {
                                "name must answer for exactly one product"));
 }
 
-// The defect this closes cost an entire import's edges: a misnamed key was dropped in silence and
-// the write answered success, under a description promising the batch was atomic.
 TEST(composite_refuses_an_argument_no_schema_declares_and_names_it) {
   FakeProduct r = roadmap();
   CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});
@@ -276,7 +264,7 @@ TEST(composite_refuses_an_argument_no_schema_declares_and_names_it) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("create_node: unknown argument \"edges\". This tool takes: label, treeId."));
-  CHECK_EQ(r.calls.size(), std::size_t{0});  // nothing was written under a name nobody declared
+  CHECK_EQ(r.calls.size(), std::size_t{0});
 }
 
 TEST(composite_lets_every_declared_argument_through_untouched) {
@@ -298,7 +286,6 @@ TEST(composite_checks_the_grant_before_the_schema) {
   bad["nonsense"] = 1;
   const ToolResult refused = surface.callTool("delete_session", bad, granted("gym:read"));
   CHECK(refused.isError);
-  // Not the argument error: a connection that may not call the tool learns that, not how to fix a key.
   CHECK(message(refused).find("was not granted gym:delete") != std::string::npos);
 }
 
@@ -318,9 +305,7 @@ TEST(windmill_server_info_names_the_connected_products_and_carries_their_paragra
   CHECK(info.instructions.find("build") == std::string::npos);
 }
 
-// A session's tools/list outlives a deploy. The handshake dates the catalog — the deployed sha as
-// semver build metadata and one sentence saying what a stale list means — so a reader comparing it
-// against the repo learns "reconnect", not "prod is old".
+// The handshake dates the catalog — the deployed sha as semver build metadata plus one sentence saying what a stale list means.
 TEST(windmill_server_info_dates_the_catalog_with_the_deployed_build) {
   FakeProduct r = roadmap();
   CompositeToolHost surface(std::vector<ToolModule>{{r, ""}});

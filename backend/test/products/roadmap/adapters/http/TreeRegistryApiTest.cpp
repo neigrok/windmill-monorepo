@@ -57,8 +57,6 @@ drogon::HttpResponsePtr create(TreeRegistryApi& api, const drogon::HttpRequestPt
   return captured;
 }
 
-// Delete a tree the way a switcher does, asserting the 204 — the setup step for every case
-// about what an id means AFTER its tree is gone.
 void retire(TreeRegistryApi& api, const std::string& id, const std::string& session) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Delete);
@@ -130,8 +128,8 @@ TEST(create_with_a_client_id_plants_it_empty_and_claimable) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"existed":false,"treeId":"t_0123456789abcdef"})"));
   const StoredTree& stored = h.trees.byId["t_0123456789abcdef"];
   CHECK(stored.owner == std::optional<UserId>(me));
-  CHECK(stored.title == (Lww<std::string>{"Learn woodworking", Hlc{}}));  // the stampless baseline
-  CHECK(stored.state == GraphState{});  // no nodes — the client's CRDT flush brings the lattice
+  CHECK(stored.title == (Lww<std::string>{"Learn woodworking", Hlc{}}));
+  CHECK(stored.state == GraphState{});
   CHECK(stored.legend == Legend::seededDefaults(Hlc{1, 0, "genesis"}).exportState());
 }
 
@@ -146,7 +144,7 @@ TEST(create_with_the_same_id_resumes_idempotently_for_its_owner) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"existed":true,"treeId":"t_0123456789abcdef"})"));
-  CHECK(h.trees.byId["t_0123456789abcdef"] == before);  // the resume never touches the row
+  CHECK(h.trees.byId["t_0123456789abcdef"] == before);
 }
 
 TEST(create_with_an_id_owned_by_another_account_is_refused_as_taken) {
@@ -165,9 +163,7 @@ TEST(create_with_an_id_owned_by_another_account_is_refused_as_taken) {
   CHECK_EQ(h.trees.byId["t_0123456789abcdef"].title.value, std::string("Theirs"));
 }
 
-// The claim path answers `id-taken` by re-planting under a fresh id — right for a stranger's id,
-// catastrophic for your own retired one: it resurrects the tree you just deleted, once per boot,
-// forever. So your own retired id gets its own code, and only you are ever told.
+// The claim path answers `id-taken` by re-planting under a fresh id, which would resurrect your own retired tree — so your own retired id gets its own code, told only to you.
 TEST(create_with_your_own_soft_deleted_id_is_refused_as_retired) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
@@ -182,8 +178,7 @@ TEST(create_with_your_own_soft_deleted_id_is_refused_as_retired) {
            std::string(R"({"code":"id-retired","error":"that id names a roadmap you deleted"})"));
 }
 
-// The other half of the same rule: a retired id still reads as a plain `id-taken` to everybody
-// else, byte-identical to a live stranger's tree. Whether an id is dead is the owner's business.
+// A retired id reads as a plain `id-taken` to everybody else, byte-identical to a live stranger's tree.
 TEST(create_with_another_accounts_soft_deleted_id_is_still_refused_as_taken) {
   Harness h;
   h.signIn("s-owner", "owner@example.com");
@@ -218,7 +213,7 @@ TEST(create_rejects_every_malformed_id_shape_before_any_work) {
     CHECK_EQ(dump(bodyOf(response)),
              std::string(R"({"code":"bad-id","error":"id must be t_ followed by 16 lowercase hex characters"})"));
   }
-  CHECK(h.trees.byId.empty());  // nothing was planted
+  CHECK(h.trees.byId.empty());
 }
 
 TEST(create_with_an_id_still_requires_a_session) {
@@ -236,7 +231,7 @@ TEST(create_with_an_id_still_requires_a_session) {
 TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};  // born private
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
 
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t");
 
@@ -254,12 +249,12 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"error":"visibility must be private, unlisted, or public"})"));
-  CHECK(h.trees.byId["t"].visibility == Visibility::private_);  // untouched
+  CHECK(h.trees.byId["t"].visibility == Visibility::private_);
 }
 
 TEST(patch_visibility_refuses_a_non_owner_with_403) {
   Harness h;
-  h.signIn("s-live", "sam@example.com");  // u1 — not the owner
+  h.signIn("s-live", "sam@example.com");
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner")};
 
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
@@ -303,8 +298,6 @@ TEST(patch_visibility_of_an_absent_tree_is_404) {
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
 }
 
-// Create seeded whatever document it was handed — no node count, no field size, nothing. It is
-// the one route that plants a tree, and it was the one route with no ceiling at all.
 TEST(create_over_the_node_ceiling_is_413_and_plants_nothing) {
   Harness h;
   h.signIn("s-me", "sam@example.com");
@@ -357,9 +350,6 @@ TEST(create_with_a_wrong_typed_field_is_400_not_a_thrown_500) {
   CHECK_EQ(h.trees.byId.size(), std::size_t{0});
 }
 
-// createTree read `id` straight off the root, and patchTree read `title`: a keyed read of an
-// array or a scalar throws inside jsoncpp, and the throw escaped as a 500 with a server_errors
-// row and a Sentry event, for a body that is plainly a 400.
 TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
   Harness h;
   h.signIn("s-me", "sam@example.com");
@@ -386,5 +376,5 @@ TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
     CHECK_EQ(patched->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(*patched->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
   }
-  CHECK_EQ(h.trees.byId.size(), std::size_t{1});  // only the real one
+  CHECK_EQ(h.trees.byId.size(), std::size_t{1});
 }

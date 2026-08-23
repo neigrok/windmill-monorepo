@@ -13,27 +13,17 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::apitest;
 
-// TrainingApi over the fake store: the owner gate, the session lifecycle and its idempotent door,
-// the set writes and their corrections, the instant ceiling, the log reads and their freshness tag,
-// last time, the review and the discard, statistics, the CSV of sets, and the coach share.
+// TrainingApi over the fake store: the owner gate, the session lifecycle, the set writes, the log reads, the share.
 
 namespace {
-// A store that reads fine and refuses to write — a dropped connection, a statement timeout, a
-// deadlock. Its failure is NOT InvalidTraining, and the whole point of the narrowed catch is that
-// this can never come back wearing the client's 400.
+// A store that reads fine and refuses to write. Its failure is NOT InvalidTraining, so it never wears the client's 400.
 struct DownRepository : FakeLogRepository {
   using FakeLogRepository::FakeLogRepository;
   void insertSession(const Session&) override { throw std::runtime_error("storage is down"); }
   SetInsertOutcome insertSet(const Set&) override { throw std::runtime_error("storage is down"); }
 };
 
-// The freshness tag, read off a reply and fed back into the next request. The cases below compare
-// tags to each OTHER rather than to a literal: since W3 the last term is a fold over the sets as
-// they render, so a test that spelled the whole tag out would either be copying the implementation's
-// own output back at it or pinning a digest nobody can read. What an ETag actually promises is
-// exactly what is asserted here — the same bytes while nothing moved, different bytes the moment
-// anything a poll acts on does, and a 304 for whoever echoes one back. The legible half still gets
-// pinned: the tag opens with the session's two instants.
+// The freshness tag, read off a reply and fed back into the next request.
 std::string tagOf(const drogon::HttpResponsePtr& response) { return response->getHeader("ETag"); }
 
 drogon::HttpResponsePtr readSession(TrainingApi& api, const std::string& session,
@@ -60,8 +50,6 @@ Json::Value fixBody(double weightKg, int reps) {
   return body;
 }
 }
-
-// ---- the owner gate -----------------------------------------------------------------------
 
 TEST(gym_routes_without_a_session_are_401) {
   Harness h;
@@ -117,8 +105,7 @@ TEST(gym_routes_without_a_session_are_401) {
 
   CHECK_EQ(exercises->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(exercises)), std::string(R"({"error":"sign in to open your training log"})"));
-  // The picker's meta is a read of somebody's LOG under a catalog-shaped path, so it sits on this
-  // side of the gate with every other read of one.
+  // The picker's meta is a read of somebody's LOG under a catalog-shaped path.
   CHECK_EQ(lastSets->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(start->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(append->getStatusCode(), drogon::k401Unauthorized);
@@ -128,17 +115,14 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK_EQ(createExercise->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(review->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(discard->getStatusCode(), drogon::k401Unauthorized);
-  // The share's two owner-scoped doors and the two long reads sit on this side of the gate with
-  // everything else. Only `GET /v1/gym/shared/{token}` is on the other side, and it is the only
-  // handler in this class that never asks who is calling.
+  // Only `GET /v1/gym/shared/{token}` is on the other side of the gate.
   CHECK_EQ(stats->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(exported->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(share->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(revoke->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(rename->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(record->getStatusCode(), drogon::k401Unauthorized);
-  // The correction's two doors, and the delete answers the gate rather than its own bare 204 —
-  // an unsigned caller must never learn that a set id was accepted, let alone touch one.
+  // The delete answers the gate rather than its own bare 204.
   CHECK_EQ(fix->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(removeSet->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(removeSet)), std::string(R"({"error":"sign in to open your training log"})"));
@@ -149,16 +133,7 @@ TEST(gym_routes_without_a_session_are_401) {
   CHECK(h.repo.db.shares.empty());
 }
 
-// ---- the picker's meta: exercises/last, a read of the log ---------------------------------
-
-// The picker's meta line, for the whole catalog in one read. Four rules are on the wire at once, and
-// each of them is the picker drawing something true: the line is the LAST set of the block and not
-// its heaviest (bench reads the 80 back-off, not the 82.5 that opened it); `at` is the SESSION's
-// start, so "3 days ago" is the day it was trained; a movement only ever warmed up has no line, the
-// same silence as one never touched, which is what `never logged` draws; and today's live session is
-// not a last time. The rows come back keyed by movement id — the key the picker joins them onto its
-// catalog by — which is deliberately NOT the order the list is drawn in: the catalog is sorted by
-// pattern then name, and press sorts before squat there while back-squat sorts first here.
+// The picker's meta line: the LAST set of the block, dated by the SESSION's start, keyed by movement id.
 TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_rest) {
   Harness h;
   h.signIn("s-live");
@@ -181,7 +156,6 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
        postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'300'000), "s-live"),
        "ses_11111111");
 
-  // A later workout that actually squats, so the two lines are dated by two different sessions.
   send(h.training, &TrainingApi::startSession,
        postRequest("/v1/gym/sessions", startBody("ses_22222222", (h.clock.now = 1'700'000'400'000)), "s-live"));
   send(h.training, &TrainingApi::appendSet,
@@ -192,7 +166,6 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
        postRequest("/v1/gym/sessions/ses_22222222/finish", finishBody(1'700'000'700'000), "s-live"),
        "ses_22222222");
 
-  // And today, still running and much heavier: the today list, never a last time.
   send(h.training, &TrainingApi::startSession,
        postRequest("/v1/gym/sessions", startBody("ses_33333333", (h.clock.now = 1'700'001'000'000)), "s-live"));
   send(h.training, &TrainingApi::appendSet,
@@ -211,9 +184,6 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
                        R"("weightKg":80.0}]})"));
 }
 
-// A lifter who has logged nothing has no meta at all, and the key is still there holding an empty
-// list: the picker draws every catalog row `never logged` from the ABSENCE of a line, so it must be
-// able to tell "nothing yet" from a read that failed.
 TEST(gym_exercises_last_is_an_empty_list_before_anything_is_logged) {
   Harness h;
   h.signIn("s-live");
@@ -225,8 +195,6 @@ TEST(gym_exercises_last_is_an_empty_list_before_anything_is_logged) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[]})"));
 }
 
-// One account's picker never draws another's numbers. The meta is a read of the LOG, so it obeys the
-// rule every read of one obeys: absent is byte-identical to forbidden.
 TEST(gym_exercises_last_never_carries_another_accounts_line) {
   Harness h;
   h.signIn("s-live");
@@ -242,8 +210,6 @@ TEST(gym_exercises_last_never_carries_another_accounts_line) {
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[]})"));
 }
-
-// ---- start: the idempotent door -----------------------------------------------------------
 
 TEST(gym_start_round_trips_the_resolved_session) {
   Harness h;
@@ -283,17 +249,14 @@ TEST(gym_start_ahead_of_the_logs_clock_is_400_and_names_the_gap) {
 TEST(gym_start_with_an_id_another_account_already_spent_is_409) {
   Harness h;
   h.signIn("s-live");
-  // The id is taken by a row this caller can never see. The old reply was 200 for a session the
-  // store never accepted — every set into it 404'd, forever, and the client never learned why.
+  // The id is taken by a row this caller can never see.
   h.repo.db.sessions.push_back(Session{sid("ses_11111111"), uid("another-account"), 1'699'000'000'000});
 
   drogon::HttpResponsePtr response =
       send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
-  // The code is the contract the flush queue branches on; the sentence is for a human reading a
-  // log. A client that told the three 409s apart by their wording degraded to "terminal, reason
-  // unknown" the first time one was reworded — and dropped a set it should have re-minted an id for.
+  // The code is the contract the flush queue branches on; the sentence is for a human reading a log.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
   REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
@@ -311,15 +274,13 @@ TEST(gym_start_that_will_not_join_is_409_while_a_session_is_open) {
       send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", backfill, "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
-  // Its own code, because its repair is neither of the other two 409s': a fresh id changes nothing
-  // while a session is open — the open workout has to end first, then the same body is sent again.
+  // Its own code: a fresh id changes nothing while a session is open — that workout has to end first.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"session-already-open","error":"another session is already open"})"));
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
-// Omitted is the join, so every caller written before the field keeps meaning what it meant — and
-// the handoff (§11.3) keeps working: a second device's Start continues the open workout.
+// Omitted is the join, so a caller written before the field keeps meaning what it meant.
 TEST(gym_start_without_the_field_still_joins_the_open_session) {
   Harness h;
   UserId me = h.signIn("s-live");
@@ -335,8 +296,7 @@ TEST(gym_start_without_the_field_still_joins_the_open_session) {
   CHECK_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
 }
 
-// A string where the boolean belongs is a 400, never a guess: the two Starts differ by which sets
-// land in which workout, so the one thing this field may not do is default quietly on a typo.
+// A string where the boolean belongs is a 400, never a guess: the two Starts differ by which sets land where.
 TEST(gym_start_with_a_non_boolean_join_is_400) {
   Harness h;
   h.signIn("s-live");
@@ -375,8 +335,6 @@ TEST(gym_start_without_a_started_instant_is_400) {
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that session"})"));
 }
-
-// ---- append: the durable set write --------------------------------------------------------
 
 TEST(gym_append_round_trips_the_stored_set) {
   Harness h;
@@ -431,10 +389,7 @@ TEST(gym_append_with_an_unknown_kind_is_400_never_a_silent_downgrade) {
   CHECK(h.repo.db.sets.empty());
 }
 
-// The catalog is storage's to know, so this refusal is the store's fact travelling as a VALUE
-// through the port. It used to be a pqxx::foreign_key_violation caught at the wire, which the fake
-// could only imitate by throwing InvalidTraining — so under test the path said "could not read that
-// set" while the live server said "no such exercise", and nothing pinned either sentence.
+// The catalog is storage's to know, so this refusal is the store's fact travelling as a VALUE.
 TEST(gym_append_naming_a_movement_no_catalog_holds_is_400_no_such_exercise) {
   Harness h;
   h.signIn("s-live");
@@ -495,9 +450,7 @@ TEST(gym_append_replayed_into_a_finished_session_returns_the_stored_set) {
        postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
        "ses_11111111");
 
-  // The queue's whole premise: replay in any order, any number of times, converging on one row per
-  // minted id. A set that ALREADY landed must not be told 409 just because the session has since
-  // closed — the 409 answers new ids only, and the queue drops those on purpose.
+  // Replay in any order, any number of times, converging on one row per minted id.
   drogon::HttpResponsePtr replayed =
       send(h.training, &TrainingApi::appendSet,
            postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
@@ -512,9 +465,7 @@ TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
   Harness h;
   UserId user = h.signIn("s-live");
   send(h.training, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody(), "s-live"));
-  // The id belongs to a row outside this session — another account's, or this account's own
-  // earlier workout. Either way the reply used to be 200 carrying THAT row, so a stranger's note
-  // and weight came back and the caller's set was silently dropped.
+  // The id belongs to a row outside this session — another account's, or an earlier workout of this one.
   h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_99999999"), ExerciseId{"bench-press"},
                             1, 142.5, 3, SetKind::working, 9.5, "knee felt off", 1'699'000'000'000});
 
@@ -530,8 +481,6 @@ TEST(gym_append_with_a_set_id_already_spent_elsewhere_is_409) {
   CHECK_EQ(h.repo.db.sets[0].note, std::string("knee felt off"));
   CHECK_EQ(user, h.repo.db.sessions[0].user);
 }
-
-// ---- fix a set: the log moves, the routine does not ----------------------------------------
 
 TEST(gym_fix_round_trips_the_corrected_set_and_a_replay_reads_it_back) {
   Harness h;
@@ -558,8 +507,7 @@ TEST(gym_fix_round_trips_the_corrected_set_and_a_replay_reads_it_back) {
   CHECK_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
 }
 
-// The kind segmented control and the two fields that carry a lifter's own words. `rpe: null` is the
-// one null this write reads as a value: it clears an rpe, which no other field needs a way to do.
+// `rpe: null` is the one null this write reads as a value: it clears an rpe.
 TEST(gym_fix_carries_the_kind_the_note_and_an_rpe_that_can_be_cleared) {
   Harness h;
   h.signIn("s-live");
@@ -591,7 +539,6 @@ TEST(gym_fix_carries_the_kind_the_note_and_an_rpe_that_can_be_cleared) {
   CHECK_EQ(bodyOf(cleared)["kind"].asString(), std::string("warmup"));
 }
 
-// An empty fix is legal and changes nothing, which is what makes the whole write safe to send twice.
 TEST(gym_a_fix_that_names_nothing_answers_the_stored_row_untouched) {
   Harness h;
   h.signIn("s-live");
@@ -609,8 +556,7 @@ TEST(gym_a_fix_that_names_nothing_answers_the_stored_row_untouched) {
   CHECK_EQ(dump(bodyOf(untouched)), dump(bodyOf(logged)));
 }
 
-// Absent, another account's, and this account's set in a DIFFERENT workout are one 404 byte for
-// byte — and it carries the word a flush queue branches on, because its repair is to stop retrying.
+// Absent, another account's, and this account's set in a DIFFERENT workout are one 404, byte for byte.
 TEST(gym_a_fix_of_a_set_this_workout_does_not_hold_is_404_set_not_found) {
   Harness h;
   h.signIn("s-live");
@@ -648,10 +594,7 @@ TEST(gym_a_fix_of_a_set_this_workout_does_not_hold_is_404_set_not_found) {
   CHECK(h.repo.db.kept.empty());
 }
 
-// The three fields a correction refuses by name, and the reason it refuses rather than ignores: a
-// body naming `exerciseId` answered 200 with the movement unchanged is a write doing less than it
-// said, and the client would never learn. A value the store cannot hold wears the same word — both
-// are terminal for the queue and neither retry of these bytes lands.
+// The three fields a correction refuses by name, refused rather than ignored; a value the store cannot hold wears the same word.
 TEST(gym_a_fix_naming_a_field_it_may_not_carry_is_400_fix_unreadable) {
   Harness h;
   h.signIn("s-live");
@@ -683,9 +626,7 @@ TEST(gym_a_fix_naming_a_field_it_may_not_carry_is_400_fix_unreadable) {
   CHECK(h.repo.db.kept.empty());
 }
 
-// The delete: 204 with nothing to say, and 204 again on the retry a lost reply produces. Deleting
-// another account's set is the same 204 and changes nothing — absent stays byte-identical to
-// forbidden, which is exactly what an idempotent delete needs it to be.
+// The delete: 204 with nothing to say, and 204 again on the retry a lost reply produces.
 TEST(gym_deleting_a_set_is_204_and_deleting_it_again_is_204) {
   Harness h;
   h.signIn("s-live");
@@ -717,18 +658,12 @@ TEST(gym_deleting_a_set_is_204_and_deleting_it_again_is_204) {
   CHECK_EQ(stranger->getStatusCode(), drogon::k204NoContent);
   REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sets[0].id, setId("set_22222222"));
-  // One kept row, not two: the retry destroyed nothing and the stranger reached nothing.
   REQUIRE_EQ(h.repo.db.kept.size(), static_cast<std::size_t>(1));
   CHECK(h.repo.db.kept[0].deleted);
   CHECK_EQ(h.repo.db.kept[0].set.id, setId("set_11111111"));
 }
 
-// THE APPEND THAT WOULD UNDO THE DELETE, on the wire where the queue meets it: a POST whose 200 was
-// lost goes again, and the id is free the moment its row leaves gym_sets. `set-deleted` and not
-// `set-id-taken` is the whole of this case — every surface repairs a spent id by minting a fresh one
-// and re-sending, and doing that here would log the deleted set back into the workout under a number
-// the lifter never chose. An unrecognised 409 is terminal on all three queues, so the word lands
-// correctly on a client built before it existed.
+// A replayed append of a deleted set answers `set-deleted` and not `set-id-taken`: a fresh id would log it back in.
 TEST(gym_replaying_the_append_of_a_deleted_set_is_409_set_deleted_and_never_a_re_mint) {
   Harness h;
   h.signIn("s-live");
@@ -751,13 +686,7 @@ TEST(gym_replaying_the_append_of_a_deleted_set_is_409_set_deleted_and_never_a_re
   CHECK(h.repo.db.kept[0].deleted);
 }
 
-// A NOTE THE COLUMN CANNOT HOLD IS THE CLIENT'S FAULT, ANSWERED AS ONE. `text` is UTF-8 end to end,
-// and json is not — jsoncpp copies raw bytes through a string without judging them — so a note
-// carrying a lone surrogate half reached Postgres, which refused it MID-TRANSACTION, and that vendor
-// error left as the house 500. 500 is the one status every queue on every surface is told to retry,
-// so those bytes would have been re-sent forever. The domain refuses them at construction now, where
-// the answer is the terminal 400 the wire promises for a value the store cannot hold — on the
-// correction and on the append alike, because the note is the same field and the rule is stated once.
+// A note the column cannot hold is the CLIENT's fault: `text` is UTF-8 end to end and json is not, so it is a terminal 400.
 TEST(gym_a_note_the_store_could_never_hold_is_400_on_both_writes_and_never_a_retryable_500) {
   Harness h;
   h.signIn("s-live");
@@ -765,7 +694,6 @@ TEST(gym_a_note_the_store_could_never_hold_is_400_on_both_writes_and_never_a_ret
   send(h.training, &TrainingApi::appendSet,
        postRequest("/v1/gym/sessions/ses_11111111/sets", setBody(), "s-live"), "ses_11111111");
 
-  // Written as bytes rather than through the json writer, which would sanitise them on the way out.
   const std::string surrogate = "{\"id\":\"set_22222222\",\"exerciseId\":\"bench-press\","
                                 "\"weightKg\":82.5,\"reps\":8,\"completedAt\":1700000120000,"
                                 "\"note\":\"ok \xED\xA0\x80 bad\"}";
@@ -781,8 +709,7 @@ TEST(gym_a_note_the_store_could_never_hold_is_400_on_both_writes_and_never_a_ret
       send(h.training, &TrainingApi::fixSet, fixing, "ses_11111111", "set_11111111");
 
   CHECK_EQ(logged->getStatusCode(), drogon::k400BadRequest);
-  // "could not read that set" and not "expected json": the body PARSED, and the rule refused it —
-  // which is what makes this a case about the value and not about the reader.
+  // "could not read that set" and not "expected json": the body PARSED, and the rule refused it.
   CHECK_EQ(dump(bodyOf(logged)), std::string(R"({"error":"could not read that set"})"));
   CHECK_EQ(fixed->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(fixed)),
@@ -790,8 +717,6 @@ TEST(gym_a_note_the_store_could_never_hold_is_400_on_both_writes_and_never_a_ret
   REQUIRE_EQ(h.repo.db.sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sets[0].note, std::string(""));
 }
-
-// ---- finish -------------------------------------------------------------------------------
 
 TEST(gym_finish_round_trips_and_replays_keep_the_first_instant) {
   Harness h;
@@ -829,8 +754,7 @@ TEST(gym_finish_at_a_zero_instant_is_400_and_leaves_the_session_open) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that finish"})"));
-  // An unset device clock closed the session permanently at 1970 — first-writer-wins made it
-  // unrepairable. The refusal is the repair: nothing was written.
+  // An unset device clock would close the session at 1970, and close is first-writer-wins.
   REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
@@ -851,8 +775,6 @@ TEST(gym_finish_before_the_session_began_is_400) {
            std::string(R"({"error":"a session cannot finish before it began"})"));
   CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
 }
-
-// ---- the instant ceiling: one rule, all three instants ------------------------------------
 
 TEST(gym_an_instant_past_the_end_of_time_is_400_on_every_write) {
   Harness h;
@@ -877,16 +799,13 @@ TEST(gym_an_instant_past_the_end_of_time_is_400_on_every_write) {
   CHECK_EQ(dump(bodyOf(start)), std::string(R"({"error":"could not read that session"})"));
   CHECK_EQ(append->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(append)), std::string(R"({"error":"could not read that set"})"));
-  // This one used to be the leaked 500: the close ran outside the catch, and the overflow reached
-  // to_timestamp() as an uncaught pqxx error.
+  // The close runs inside the catch, so an overflow reaching to_timestamp() is not a leaked 500.
   CHECK_EQ(finish->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(dump(bodyOf(finish)), std::string(R"({"error":"could not read that finish"})"));
   REQUIRE_EQ(h.repo.db.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(h.repo.db.sessions[0].finishedAtMs, std::optional<std::uint64_t>{});
   CHECK(h.repo.db.sets.empty());
 }
-
-// ---- storage failures wear the server's status, never the client's -------------------------
 
 TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   Harness h;
@@ -898,8 +817,7 @@ TEST(gym_a_storage_failure_on_append_is_never_the_clients_400) {
   auto training = std::make_shared<TrainingService>(down, store.program, h.clock, h.tokens);
   TrainingApi api{training, h.auth, "https://windmill.works"};
 
-  // The house exception handler answers 500 "internal error" — a status the flush queue retries,
-  // where the old 400 told it to drop the lifter's set forever.
+  // The house exception handler answers 500 "internal error" — a status the flush queue retries.
   bool escaped = false;
   drogon::HttpResponsePtr response;
   try {
@@ -937,8 +855,6 @@ TEST(gym_a_storage_failure_on_start_is_never_the_clients_400) {
   CHECK(store.db.sessions.empty());
 }
 
-// ---- the log reads ------------------------------------------------------------------------
-
 TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_estimate) {
   Harness h;
   h.signIn("s-live");
@@ -954,10 +870,7 @@ TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_
       send(h.training, &TrainingApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // The facts §G16 draws a row from: how many sets and how many of those were working, the tonnage
-  // those working sets moved, which movements, the heaviest working set, the domain's estimate for
-  // the session, and whether the four-hour rule ended it — this one is still running, so nothing
-  // did. Both sets are straight work here, so the session's estimate is also the top set's.
+  // The facts a log row is drawn from, and this session is still running, so nothing closed it.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":false,)"
                        R"("exercises":["Back Squat","Bench Press"],"id":"ses_11111111",)"
@@ -967,13 +880,10 @@ TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_
                        R"("workingSetCount":2}]})"));
 }
 
-// The log row G8 draws: `Legs closed on its own` under a session nobody finished, and no top set at
-// all for one holding nothing but a ramp-up. Both are absences with a sentence behind them.
 TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set) {
   Harness h;
   UserId user = h.signIn("s-live");
-  // A session the four-hour rule ended, in the state that rule leaves behind: finished at its last
-  // set's instant exactly. Nothing else writes that, which is why the row can infer it.
+  // A session the four-hour rule ended: finished at its last set's instant exactly, which is what the row infers from.
   h.repo.db.sessions.push_back(
       Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'060'000});
   h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"},
@@ -983,8 +893,7 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
       send(h.training, &TrainingApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // A ramp-up and nothing else: one set held, none of them working, and so no top set, no estimate
-  // over one, and a tonnage of zero — which the screen draws as nothing rather than as `0.0 t`.
+  // A ramp-up and nothing else: no working set, so no top set, no estimate, and a tonnage of zero.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"sessions":[{"closedItself":true,"exercises":["Bench Press"],)"
                        R"("finishedAt":1700000060000,"id":"ses_11111111","record":false,)"
@@ -992,10 +901,7 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
                        R"("startedAt":1700000000000,"tonnageKg":0.0,"workingSetCount":0}]})"));
 }
 
-// The number §G16 puts on the row is the SESSION's e1RM, and this is the session that proves it is
-// not the top set's: 100 × 5 is the heaviest bar, and the three back-offs at 95 × 10 estimate above
-// it. The finish screen has always shown 126.7 here; until 2026-08-12 the log row beside it showed
-// 116.7, and both come off this wire, so no client could have reconciled them.
+// The number on the row is the SESSION's e1RM and not the top set's: three back-offs at 95 × 10 estimate above 100 × 5.
 TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
   Harness h;
   UserId user = h.signIn("s-live");
@@ -1022,7 +928,6 @@ TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
                             R"("setCount":4,)"
                        R"("startedAt":1700000000000,"tonnageKg":3350.0,"topE1rm":126.7,)"
                        R"("topSet":{"reps":5,"weightKg":100.0},"workingSetCount":4}]})"));
-  // The same session read through the other door, on the same wire, saying the same number.
   CHECK_EQ(bodyOf(finish)["stats"]["topE1rm"].asDouble(),
            bodyOf(response)["sessions"][0]["topE1rm"].asDouble());
 }
@@ -1055,9 +960,7 @@ TEST(gym_list_sessions_with_a_malformed_cursor_is_400) {
 TEST(gym_list_sessions_pages_past_a_tied_start_instant_without_losing_one) {
   Harness h;
   UserId user = h.signIn("s-live");
-  // Two workouts that started in the same millisecond — a bulk import's coarse stamps, or an
-  // offline replay. On a bare `started_at <` cursor the tie-mate below the page edge is in no
-  // page, ever; the (startedAt, id) cursor carries both halves, so the walk sees all four.
+  // Two workouts that started in the same millisecond: the (startedAt, id) cursor carries both halves.
   h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa4"), user, 1'700'000'003'000, 1'700'000'004'000});
   h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa3"), user, 1'700'000'002'000, 1'700'000'004'000});
   h.repo.db.sessions.push_back(Session{sid("ses_aaaaaaa2"), user, 1'700'000'002'000, 1'700'000'004'000});
@@ -1101,10 +1004,7 @@ TEST(gym_session_detail_wraps_the_session_and_its_sets) {
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
-// The mirror's freshness tag: stable while the workout is what it was — a replayed read answers the
-// same bytes — and moved by everything a poll acts on. A set landing and the close were the whole
-// list until W3; a CORRECTION is now the third, and it is the one that moves no count, no last
-// instant and no finished_at, which is exactly why the tag folds the sets rather than counting them.
+// The freshness tag is stable while the workout is what it was, and moves on anything a poll acts on, a CORRECTION included.
 TEST(gym_session_detail_etag_is_stable_replayed_and_moved_by_a_set_a_fix_and_the_finish) {
   Harness h;
   h.signIn("s-live");
@@ -1124,9 +1024,7 @@ TEST(gym_session_detail_etag_is_stable_replayed_and_moved_by_a_set_a_fix_and_the
   const std::string grown = tagOf(readSession(h.training, "ses_11111111", "s-live"));
   CHECK(grown != first);
 
-  // The whole reason the tag changed shape: this moves one weight and nothing else about the
-  // session. Under the old (startedAt, count, last completedAt, finished_at) tag it was invisible,
-  // and the mirror would have polled 304 forever over a number the lifter had corrected.
+  // This moves one weight and nothing else about the session, which is why the tag folds the sets.
   send(h.training, &TrainingApi::fixSet,
                patchSetRequest("ses_11111111", "set_22222222", fixBody(87.5, 8), "s-live"),
                "ses_11111111", "set_22222222");
@@ -1141,9 +1039,7 @@ TEST(gym_session_detail_etag_is_stable_replayed_and_moved_by_a_set_a_fix_and_the
   CHECK(closed != fixed);
 }
 
-// The steady state of the poll: a matching If-None-Match answers 304 with no body at all — the tag
-// still rides the reply, per RFC 9110 — and the moment a set lands the same stale tag no longer
-// matches, so the next beat is the full 200 again.
+// A matching If-None-Match answers 304 with no body, and the tag still rides the reply (RFC 9110).
 TEST(gym_session_detail_matching_if_none_match_is_304_and_a_new_set_unmatches_it) {
   Harness h;
   h.signIn("s-live");
@@ -1168,9 +1064,6 @@ TEST(gym_session_detail_matching_if_none_match_is_304_and_a_new_set_unmatches_it
   CHECK_EQ(bodyOf(changed)["sets"].size(), 2u);
 }
 
-// The one a corrected set would have got wrong, asserted on its own because it is the failure this
-// wave could most easily have shipped: the mirror holds a tag, the lifter fixes 82.5 to 80 on the
-// phone, and the very next poll must be a 200 carrying 80 rather than a 304 over a stale screen.
 TEST(gym_session_detail_a_corrected_set_unmatches_the_tag_the_mirror_is_holding) {
   Harness h;
   h.signIn("s-live");
@@ -1189,9 +1082,7 @@ TEST(gym_session_detail_a_corrected_set_unmatches_the_tag_the_mirror_is_holding)
   CHECK_EQ(bodyOf(polled)["sets"][0]["weightKg"].asDouble(), 80.0);
 }
 
-// The forms RFC 9110 §13.1.2 lets a client or a proxy send: the strong-form echo of our weak tag
-// (weak comparison strips W/ from both sides), the tag inside a comma-separated list, and the lone
-// "*" — each earns the 304 — while a list of tags that are all somebody else's earns the full 200.
+// The forms RFC 9110 §13.1.2 allows: the strong-form echo of our weak tag, a comma-separated list, and "*".
 TEST(gym_session_detail_if_none_match_reads_the_rfc_9110_forms) {
   Harness h;
   h.signIn("s-live");
@@ -1222,10 +1113,7 @@ TEST(gym_session_detail_if_none_match_reads_the_rfc_9110_forms) {
   CHECK_EQ(bodyOf(full)["sets"].size(), 1u);
 }
 
-// Why startedAt leads the tag: a workout discarded and recreated under the SAME id with the SAME set
-// replayed into it is a new representation, and every other term — the fold over those sets and the
-// finish instant — is byte-identical to the dead workout's. Without startedAt the recreate would
-// hide behind a 304 and the mirror would keep drawing a workout that no longer exists.
+// startedAt leads the tag: a workout discarded and recreated under the SAME id is a new representation.
 TEST(gym_session_detail_recreated_under_the_same_id_never_echoes_the_dead_workouts_tag) {
   Harness h;
   h.signIn("s-live");
@@ -1250,13 +1138,10 @@ TEST(gym_session_detail_recreated_under_the_same_id_never_echoes_the_dead_workou
 
   CHECK_EQ(recreated->getStatusCode(), drogon::k200OK);
   CHECK_EQ(tagOf(recreated).rfind(R"(W/"1700000030000-1700000180000-)", 0), std::size_t{0});
-  // Past `W/"` and the thirteen digits of startedAt: everything the two tags have left is equal, so
-  // startedAt is provably the only term keeping them apart.
+  // Past `W/"` and the thirteen digits of startedAt the two tags are equal.
   CHECK_EQ(tagOf(recreated).substr(17), dead.substr(17));
 }
 
-// The refusals stay byte-identical to what they always answered: no tag on a session this account
-// cannot read — absent and another's alike — and none on the unsigned 401.
 TEST(gym_session_detail_refusals_carry_no_etag) {
   Harness h;
   h.signIn("s-live");
@@ -1274,8 +1159,6 @@ TEST(gym_session_detail_refusals_carry_no_etag) {
   CHECK_EQ(anonymous->getHeader("ETag"), std::string(""));
 }
 
-// ---- last time: the prefill read ----------------------------------------------------------
-
 TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
   Harness h;
   h.signIn("s-live");
@@ -1285,10 +1168,8 @@ TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
   send(h.training, &TrainingApi::finishSession,
        postRequest("/v1/gym/sessions/ses_11111111/finish", finishBody(1'700'000'100'000), "s-live"),
        "ses_11111111");
-  // The snapshot a start from a routine freezes, placed on the stored row directly so this test
-  // stays about the prefill reply — and it rides that reply as the object it is.
+  // The snapshot a start from a routine freezes, placed on the stored row directly.
   h.repo.db.sessions[0].plan = PlanSnapshot{"Bench day", {}};
-  // Today's live session benches heavier. It is the today list, not last time.
   send(h.training, &TrainingApi::startSession,
        postRequest("/v1/gym/sessions", startBody("ses_22222222", 1'700'000'110'000), "s-live"));
   send(h.training, &TrainingApi::appendSet,
@@ -1301,9 +1182,7 @@ TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
   drogon::HttpResponsePtr response = send(h.training, &TrainingApi::lastTime, request);
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // The movement is echoed so a reply that lands after the lifter has moved on is discardable; the
-  // routine is the name that session was trained under, which is what the card's cross-routine
-  // suffix says out loud.
+  // The movement is echoed so a reply that lands after the lifter has moved on is discardable.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"exerciseId":"bench-press","routine":"Bench day",)"
                        R"("session":{"finishedAt":1700000100000,"id":"ses_11111111",)"
@@ -1314,9 +1193,7 @@ TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
-// An ad-hoc session has no routine to name, and the key is OMITTED rather than sent empty: the card
-// draws its cross-routine suffix from the presence of the word, so an empty string would print a
-// day of the program that never existed.
+// An ad-hoc session has no routine to name, and the key is OMITTED rather than sent empty.
 TEST(gym_last_omits_the_routine_for_a_session_trained_ad_hoc) {
   Harness h;
   h.signIn("s-live");
@@ -1342,9 +1219,7 @@ TEST(gym_last_omits_the_routine_for_a_session_trained_ad_hoc) {
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
-// The prefill is fired on every movement change, so it must not be the thing that ends the workout
-// it is prefilling. A device whose clock runs behind stamps its sets past the auto-close window;
-// the read answers with the session before, leaves the live one open, and the next set still lands.
+// The prefill must not end the workout it is prefilling: it answers with the session before and leaves the live one open.
 TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
   Harness h;
   h.signIn("s-live");
@@ -1379,8 +1254,7 @@ TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
   CHECK_EQ(bodyOf(next)["setNumber"].asInt(), 2);
 }
 
-// A first-ever movement is answered, not refused: 200 naming the movement and nothing else. A 404
-// would say the movement does not exist, which is a different and false thing.
+// A first-ever movement is answered, not refused: 200 naming the movement and nothing else.
 TEST(gym_last_for_a_first_ever_movement_is_a_fact_not_a_fault) {
   Harness h;
   h.signIn("s-live");
@@ -1411,8 +1285,7 @@ TEST(gym_last_of_a_movement_no_catalog_holds_is_400_no_such_exercise) {
   drogon::HttpResponsePtr unnamedReply = send(h.training, &TrainingApi::lastTime, unnamed);
 
   CHECK_EQ(unknownReply->getStatusCode(), drogon::k400BadRequest);
-  // The same fact the write path names, under the same machine word: the movement has to be
-  // resolved against GET /v1/gym/exercises first.
+  // The same fact the write path names, under the same machine word.
   CHECK_EQ(dump(bodyOf(unknownReply)),
            std::string(R"({"code":"unknown-exercise","error":"no such exercise"})"));
   CHECK_EQ(unnamedReply->getStatusCode(), drogon::k400BadRequest);
@@ -1430,8 +1303,6 @@ TEST(gym_last_without_a_session_is_401) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to open your training log"})"));
 }
 
-// ---- start from a routine: the plan is frozen by the server ---------------------------------
-
 TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
   Harness h;
   h.signIn("s-live");
@@ -1446,8 +1317,7 @@ TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
                                         "ses_11111111");
 
   CHECK_EQ(started->getStatusCode(), drogon::k200OK);
-  // The snapshot is the SERVER's copy of the routine, not a body the client composed: it names the
-  // routine as a plain string and carries the plan's numbers, nothing pointing back at the row.
+  // The snapshot is the SERVER's copy: the routine as a plain string and the plan's numbers, no pointer back.
   CHECK_EQ(dump(bodyOf(started)),
            std::string(R"({"id":"ses_11111111",)"
                        R"("plan":{"entries":[{"exerciseId":"bench-press","reps":5,)"
@@ -1474,7 +1344,6 @@ TEST(gym_start_naming_a_routine_this_account_cannot_read_is_404) {
   CHECK_EQ(theirs->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(dump(bodyOf(theirs)), std::string(R"({"error":"no such routine"})"));
   CHECK_EQ(missing->getStatusCode(), drogon::k404NotFound);
-  // Nothing landed either time, so the same body works the moment the routine does exist.
   CHECK(h.repo.db.sessions.empty());
 }
 
@@ -1492,12 +1361,8 @@ TEST(gym_start_with_a_non_string_routine_id_is_400) {
   CHECK(h.repo.db.sessions.empty());
 }
 
-// ---- the finish surface: the review read and the discard --------------------------------------
-
 namespace {
-// A finished session of the Legs day, its sets, and the routine behind it — pushed straight in,
-// because what these cases are about is the bytes the review answers with and not the doors that
-// wrote the rows.
+// A finished session of the Legs day, its sets and the routine behind it, pushed straight in.
 void trained(Harness& h, const wm::UserId& caller, const std::string& session,
              std::uint64_t startedAtMs, double weightKg, int reps) {
   const PlanSnapshot plan{"Legs", {PlanEntry{ExerciseId{"back-squat"}, 5, 5, 100.0, 180}}};
@@ -1530,8 +1395,7 @@ TEST(gym_review_carries_the_three_facts_the_record_and_the_band) {
                        R"("exerciseId":"back-squat","now":{"reps":5,"sets":4,"weightKg":105.0},)"
                        R"("planned":{"reps":5,"sets":5,"weightKg":100.0}}],"routine":"Legs",)"
                        R"("sessionId":"ses_22222222","startedAt":1699000000000},)"
-                       // previousAt is the SESSION that set the mark, not the set inside it: a
-                       // device's clock does not get to date what a lifter reads (domain/Review.h).
+                       // previousAt is the SESSION that set the mark, not the set inside it (domain/Review.h).
                        R"("record":{"exerciseId":"back-squat","kind":"e1rm","previous":120.0,)"
                        R"("previousAt":1699000000000,"reps":5,"value":122.5,"weightKg":105.0},)"
                        R"("slight":false,)"
@@ -1549,7 +1413,6 @@ TEST(gym_review_of_an_ordinary_session_omits_every_line_it_did_not_earn) {
       send(h.training, &TrainingApi::reviewSession,
            getRequest("/v1/gym/sessions/ses_11111111/review", "s-live"), "ses_11111111");
 
-  // No record on a first session, no band without a day of the program — both absent, never null.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"slight":false,)"
                        R"("stats":{"durationMs":3720000,"topE1rm":122.5,"workingSets":4}})"));
@@ -1625,12 +1488,7 @@ TEST(gym_unknown_session_detail_is_404) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such session"})"));
 }
 
-// ---- the statistics engine, which no app screen reads any more ------------------------------
-
-// One point per finished session per movement, Epley over it, the standing bests beside it, and the
-// weekly counts — and nothing else. There is no total, no volume, no streak and no percentage in
-// this body, which is the engine's whole design and not an omission to fill in later. W1c retired
-// the room this fed; these cases guard the route an agent still reads through `get_stats`.
+// One point per finished session per movement, Epley over it, the standing bests, and the weekly counts.
 TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
   Harness h;
   h.signIn("s-live");
@@ -1639,10 +1497,7 @@ TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
   drogon::HttpResponsePtr response = send(h.training, &TrainingApi::stats, getRequest("/v1/gym/stats", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // Every instant in this body is the SESSION's start — the bests, the point they sit on, and the
-  // last-trained line all name one workout. They did not until 2026-08-12: a best was dated by the
-  // set's own clock, so this reply put a PR on 1700000060000 and the point that IS that PR on
-  // 1700000000000, and an evening session crossed midnight between the two (domain/Review.h).
+  // Every instant in this body is the SESSION's start: the bests, the point they sit on, and the last-trained line.
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"movements":[{"bestE1rm":{"at":1700000000000,"e1rm":104.5,)"
                        R"("reps":8,"weightKg":82.5},)"
@@ -1653,8 +1508,7 @@ TEST(gym_stats_answers_a_line_per_movement_and_the_weeks_around_it) {
                        R"("weeks":[{"sessions":1,"startedAt":1699833600000,"workingSets":4}]})"));
 }
 
-// An account with nothing finished yet answers with the two empty lists rather than with a 404 or a
-// zeroed-out skeleton: there is no chart to draw, and saying so is not an error.
+// An account with nothing finished yet answers with the two empty lists rather than a 404 or a zeroed skeleton.
 TEST(gym_stats_of_an_untrained_account_is_two_empty_lists) {
   Harness h;
   h.signIn("s-live");
@@ -1665,11 +1519,7 @@ TEST(gym_stats_of_an_untrained_account_is_two_empty_lists) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"movements":[],"weeks":[]})"));
 }
 
-// ---- the export ------------------------------------------------------------------------------
-
-// The bytes, in full: a header row, CRLF between records, and RFC 4180 quoting where a note holds a
-// comma or a quote of its own. Nothing in a note is edited on the way through — it is the lifter's
-// own words, and an export that rewrote what it exports would not be one.
+// The bytes in full: a header row, CRLF between records, and RFC 4180 quoting; a note is never edited.
 TEST(gym_export_is_a_csv_attachment_and_quotes_only_what_needs_it) {
   Harness h;
   h.signIn("s-live");
@@ -1695,8 +1545,6 @@ TEST(gym_export_is_a_csv_attachment_and_quotes_only_what_needs_it) {
                        "2023-11-14T22:14:20Z\r\n"));
 }
 
-// An account with nothing logged still gets a file, and the file still names its columns: an empty
-// export is an answer, and a client that downloaded zero bytes could not tell it from a failure.
 TEST(gym_export_of_an_empty_log_is_still_a_header_row) {
   Harness h;
   h.signIn("s-live");
@@ -1709,8 +1557,6 @@ TEST(gym_export_of_an_empty_log_is_still_a_header_row) {
            std::string("session_id,started_at,finished_at,routine,set_id,exercise_id,exercise,"
                        "set_number,weight_kg,reps,kind,rpe,note,completed_at\r\n"));
 }
-
-// ---- the coach share ---------------------------------------------------------------------------
 
 TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one) {
   Harness h;
@@ -1736,10 +1582,7 @@ TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one)
   CHECK_EQ(h.repo.db.shares.size(), static_cast<std::size_t>(1));
 }
 
-// The reply carries the LINK, not just the secret, and the link is the browser app's route. It shipped
-// as three strings composed by three surfaces and two of them pasted the JSON route onto a base url,
-// so a lifter sharing from the phone or through an agent handed their coach a page of JSON. The
-// server composes it once now and every surface renders what it was given.
+// The reply carries the LINK, not just the secret, and the server composes it once for every surface.
 TEST(gym_share_answers_the_page_a_coach_opens_and_never_the_json_route) {
   Harness h;
   h.signIn("s-live");
@@ -1756,8 +1599,6 @@ TEST(gym_share_answers_the_page_a_coach_opens_and_never_the_json_route) {
   CHECK(url.find("/v1/") == std::string::npos);
 }
 
-// Sharing is a write to the share table and nowhere else: not one row of the lifter's own log or
-// program changed, and the session a share points at is byte-identical to what it was before.
 TEST(gym_share_adds_a_row_beside_the_session_and_never_touches_it) {
   Harness h;
   h.signIn("s-live");
@@ -1798,9 +1639,7 @@ TEST(gym_share_of_a_missing_or_anothers_session_is_404) {
   CHECK(h.repo.db.shares.empty());
 }
 
-// The one route in gym that resolves no caller: no cookie, no bearer, no account — the token in the
-// path is the whole credential. The body names no account and holds no id at any depth, so nothing
-// in it can be walked to a second session.
+// The one route in gym that resolves no caller: the token in the path is the whole credential.
 TEST(gym_shared_session_needs_no_caller_and_carries_no_id) {
   Harness h;
   h.signIn("s-live");
@@ -1825,8 +1664,7 @@ TEST(gym_shared_session_needs_no_caller_and_carries_no_id) {
                        R"("startedAt":1700000000000})"));
 }
 
-// Revoked, expired and never-minted answer ONE 404, byte for byte, which is what stops a token from
-// being probed for existence — and it is the same body an absent session gives every other read.
+// Revoked, expired and never-minted answer ONE 404, byte for byte, so a token cannot be probed.
 TEST(gym_shared_token_that_is_revoked_expired_or_unknown_is_one_404) {
   Harness h;
   h.signIn("s-live");

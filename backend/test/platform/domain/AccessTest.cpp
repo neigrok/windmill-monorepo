@@ -62,9 +62,7 @@ TEST(can_write_only_when_caller_is_the_owner) {
   CHECK_FALSE(canWrite(none, none));               // neither known
 }
 
-// The whole of this bet in one assertion: the seeded demo tree is owner-NULL and public, so it
-// is readable by the world and writable by nobody — no signed-in account can edit it, and none
-// can take it by writing to it, because there is no visibility that widens a write.
+// The seeded demo tree is owner-NULL and public: readable by the world, writable by nobody.
 TEST(can_write_is_false_for_an_unowned_tree_at_every_visibility) {
   for (Visibility visibility : {Visibility::private_, Visibility::unlisted, Visibility::public_}) {
     CHECK(canRead(some("u1"), none, visibility) == (visibility != Visibility::private_));
@@ -73,9 +71,7 @@ TEST(can_write_is_false_for_an_unowned_tree_at_every_visibility) {
   }
 }
 
-// canWrite is strictly narrower than canRead: everything writable is readable, and the two agree
-// only on a private tree's owner. A call site can therefore never widen access by asking the
-// wrong one, and reading the pair top-to-bottom (canRead then canWrite) is always sound.
+// canWrite is strictly narrower than canRead: everything writable is readable, and the two agree only on a private tree's owner.
 TEST(everything_writable_is_readable) {
   const std::optional<UserId> callers[] = {none, some("u1"), some("u2")};
   const std::optional<UserId> owners[] = {none, some("u1")};
@@ -85,9 +81,7 @@ TEST(everything_writable_is_readable) {
         if (canWrite(caller, owner)) CHECK(canRead(caller, owner, visibility));
 }
 
-// A refused write states one of two truths, and the pair is decided where the gate is: an unowned
-// resource is nobody's, never "another account's". The code is the client's branch and the sentence
-// the human's, and MCP builds its own remedy onto the truth alone.
+// A refused write states one of two truths: an unowned resource is nobody's, never "another account's".
 TEST(write_refusal_is_none_for_the_owner_and_names_the_right_truth_otherwise) {
   CHECK_FALSE(writeRefusalFor(some("u1"), some("u1")).has_value());
   CHECK(writeRefusalFor(some("u2"), some("u1")) == WriteRefusal::notYours);

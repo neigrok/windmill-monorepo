@@ -16,8 +16,7 @@ using namespace wm::fake;
 
 namespace {
 
-// A minimal SPA shell: the fenced unfurl block the server rewrites, a static icon and the
-// module script outside the fence (which must survive a rewrite untouched).
+// A minimal SPA shell: the fenced unfurl block the server rewrites, plus static tags outside the fence.
 const std::string SHELL =
     "<!doctype html>\n<html><head>\n"
     "  <link rel=\"icon\" href=\"/favicon.ico\" />\n"
@@ -56,7 +55,6 @@ struct Harness {
 
   SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, videos, webRoot}; }
 
-  // Record that `forkId` was forked from `sourceId` (the provenance loadForkLineage reads).
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 
   UserId signIn(const std::string& sessionSecret, const std::string& emailAddr = "sam@example.com") {
@@ -111,19 +109,19 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 3 steps."));
   CHECK(has(html, "href=\"https://windmill.works/t/t_abc\""));
   CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));  // per-tree og:image + twitter:image
-  CHECK_FALSE(has(html, "og-image.png"));                   // the generic card is no longer the tag
+  CHECK_FALSE(has(html, "og-image.png"));
   CHECK_FALSE(has(html, "og:video"));                       // no uploaded loop → no video tag, only the poster
   CHECK(has(html, "content=\"noindex\""));                  // unlisted is not indexable
   CHECK(has(html, "content=\"summary_large_image\""));      // large card preserved
-  CHECK_FALSE(has(html, "Windmill root"));                  // the root title is gone
-  CHECK(has(html, "/favicon.ico"));                         // static tags outside the fence survive
+  CHECK_FALSE(has(html, "Windmill root"));
+  CHECK(has(html, "/favicon.ico"));
   CHECK(has(html, "/src/main.jsx"));
 }
 
 TEST(render_shell_emits_the_video_tags_alongside_the_poster_when_a_loop_exists) {
   std::string html = SharePageApi::renderShell(SHELL, "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, true);
 
-  CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));  // the poster stays, unconditional
+  CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));
   CHECK(has(html, "<meta property=\"og:video\" content=\"https://windmill.works/v1/trees/t_abc/og-video\" />"));
   CHECK(has(html, "<meta property=\"og:video:secure_url\" content=\"https://windmill.works/v1/trees/t_abc/og-video\" />"));
   CHECK(has(html, "<meta property=\"og:video:type\" content=\"video/mp4\" />"));
@@ -217,12 +215,12 @@ TEST(page_of_a_fork_hides_an_unlisted_source_title) {
 
   std::string body{sendPage(api, "", "t_fork")->getBody()};
   CHECK(has(body, "A forked Windmill skill tree \xE2\x80\x94 2 steps."));
-  CHECK_FALSE(has(body, "Someone's private-ish plan"));  // an unlisted source is never named
+  CHECK_FALSE(has(body, "Someone's private-ish plan"));
 }
 
 TEST(page_private_denial_is_byte_identical_to_absent_and_to_the_raw_shell) {
   Harness h;
-  h.signIn("s-other", "other@example.com");  // a signed-in non-owner
+  h.signIn("s-other", "other@example.com");
   h.seed("t_priv", "Secret", UserId{"owner"}, Visibility::private_, 2);
   SharePageApi api = h.make(makeWebRoot(SHELL));
 
@@ -232,8 +230,8 @@ TEST(page_private_denial_is_byte_identical_to_absent_and_to_the_raw_shell) {
 
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
   CHECK_EQ(absent->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(anon->getBody(), SHELL);  // verbatim — no tree meta spliced in
-  CHECK_EQ(anon->getBody(), absent->getBody());       // private == absent
+  CHECK_EQ(anon->getBody(), SHELL);
+  CHECK_EQ(anon->getBody(), absent->getBody());
   CHECK_EQ(nonOwner->getBody(), absent->getBody());
   CHECK_FALSE(has(anon->getBody(), "Secret"));
 }
@@ -262,15 +260,15 @@ TEST(page_advertises_og_video_only_when_the_tree_carries_an_uploaded_loop) {
   std::string noVideo{sendPage(api, "", "t_novideo")->getBody()};
 
   CHECK(has(withVideo, "<meta property=\"og:video\" content=\"https://windmill.works/v1/trees/t_withvideo/og-video\" />"));
-  CHECK(has(withVideo, "content=\"https://windmill.works/og/t_withvideo.png\""));  // the poster stays alongside it
-  CHECK_FALSE(has(noVideo, "og:video"));                                           // no loop → no video tag
-  CHECK(has(noVideo, "content=\"https://windmill.works/og/t_novideo.png\""));      // but the poster is unconditional
+  CHECK(has(withVideo, "content=\"https://windmill.works/og/t_withvideo.png\""));
+  CHECK_FALSE(has(noVideo, "og:video"));
+  CHECK(has(noVideo, "content=\"https://windmill.works/og/t_novideo.png\""));
 }
 
 TEST(page_falls_back_to_a_hash_redirect_when_the_web_root_is_missing) {
   Harness h;
   h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted, 2);
-  SharePageApi api = h.make("");  // no web root configured
+  SharePageApi api = h.make("");
 
   drogon::HttpResponsePtr resp = sendPage(api, "", "t_shared");
 

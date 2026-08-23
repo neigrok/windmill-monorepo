@@ -2,9 +2,7 @@
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 
-// The in-memory twin is included for its three EXPORT renderings alone: the fake states what
-// `to_char(… AT TIME ZONE 'UTC')` and a `::text` cast off a fixed-scale numeric produce, and the
-// export case below asserts both against each other so neither can drift on its own.
+// The in-memory twin is included for its three EXPORT renderings alone, asserted against each other.
 #include "test/products/gym/Fakes.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
@@ -20,9 +18,7 @@
 #include <utility>
 #include <vector>
 
-// The log's store against a real server: the session lifecycle, the set writes and their races,
-// the log pages and the marks standing before them, last time, the finish read, corrections and
-// their revisions, statistics, the export, the coach share and the record read.
+// The log's store against a real server: the lifecycle, the set writes and their races, and every read.
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
@@ -92,9 +88,7 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
   CHECK_EQ(repo.lastActivity(SessionId{"ses_pg000009"}), std::optional<std::uint64_t>());
 }
 
-// The read-back is scoped to the session, so a set id already spent elsewhere resolves to NOTHING
-// — never to the other row. Whether that row belongs to a stranger or to the caller's own earlier
-// session, the answer is byte-identical: the id is taken.
+// The read-back is scoped to the session, so an id already spent elsewhere resolves to NOTHING.
 TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -117,8 +111,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000002"}), std::vector<Set>{});
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*mine.set});
 
-  // The same lifter reusing one of their own spent ids in a later session: the same refusal, and
-  // the first row is untouched — no silent move, no silent drop reported as a success.
+  // The same lifter reusing one of their own spent ids in a later session: the same refusal.
   repo.close(SessionId{"ses_pg000001"}, t1 + 3'000, ClosedBy::finish);
   repo.insertSession(sessionAt("ses_pg000003", t1 + 4'000));
   SetInsertOutcome reused = repo.insertSet(
@@ -131,11 +124,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"}), mine.set);
 }
 
-// The catalog is the store's own fact, and it leaves the store as a VALUE. It is not a caught
-// exception any more: the statement asks the question outright, inside the transaction that already
-// holds the session's lock, because an FK cannot tell an id nobody has from an id that belongs to
-// somebody else — and those are one answer to the caller and two to the store. The HTTP edge says
-// "no such exercise" either way, without ever including a database header.
+// The catalog refusal leaves the store as a VALUE: the statement asks outright, inside the session's lock.
 TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -152,19 +141,14 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   CHECK_EQ(unknown.set, std::optional<Set>());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 
-  // The rolled-back transaction is the refused write's alone: the connection is reusable and the
-  // next append lands normally, numbered as if the refusal had never happened.
+  // The rolled-back transaction is the refused write's alone: the next append lands normally.
   SetInsertOutcome after = repo.insertSet(benchSet("set_pg000003", 85.0, t1 + 3'000));
   CHECK(after.error == SetInsertError::none);
   CHECK_EQ(after.set->setNumber, 2);
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), (std::vector<Set>{*landed.set, *after.set}));
 }
 
-// A set may not NAME a movement this account cannot see. The foreign key alone is happy with
-// another lifter's custom row — it exists — and a set pointing at it would print their movement
-// name in this account's log, its CSV export and any workout it hands a coach, with no way for the
-// owner to take it back. The write carries the catalog read's own predicate, resolved in the owner
-// the locked session row names.
+// A set may not NAME a movement this account cannot see: the write carries the catalog read's predicate.
 TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -192,10 +176,7 @@ TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
             .error == SetInsertError::none);
 }
 
-// The finish boundary is held HERE, by the lock, because the lock is the only reader that cannot be
-// raced: the service checks the session it loaded, and a close landing between that read and this
-// insert would otherwise let a set that never landed land after the workout ended — the one loss
-// §3.3 says is impossible. A set that DID land still replays; this is the one that never did.
+// The finish boundary is held HERE by the lock: a close landing between the service's read and this insert is caught.
 TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -212,9 +193,7 @@ TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 }
 
-// The one door through the finished boundary: a set continuing a STALE-closed workout lands and
-// moves finished_at forward in the same transaction; after the lifter's own finish nothing does,
-// and a legacy close (closed_by NULL) reads as a finish.
+// A set continuing a STALE close lands and moves finished_at forward; a legacy close (closed_by NULL) reads as a finish.
 TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -235,8 +214,7 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   CHECK(extended->closedBy == std::optional<ClosedBy>(ClosedBy::stale));
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());   // extended, not reopened
 
-  // The lifter's finish onto the stale close: within the window it moves the end and the word;
-  // hours later only the word.
+  // The lifter's finish onto the stale close: inside the window it moves the end and the word, later only the word.
   repo.close(SessionId{"ses_pg000001"}, t1 + 700'000, ClosedBy::finish);
   std::optional<Session> upgraded = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
   CHECK_EQ(upgraded->finishedAtMs, std::optional<std::uint64_t>(t1 + 700'000));
@@ -252,8 +230,7 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   CHECK(afterFinish.error == SetInsertError::finished);
 }
 
-// max+1 numbering under parallel appends: every append to one session serializes behind the
-// session row, so six flushed at once mint six distinct numbers rather than four "set 1"s.
+// max+1 under parallel appends: each append serializes behind the session row, so six mint six numbers.
 TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -306,8 +283,7 @@ TEST(pg_gym_log_pages_newest_first_with_counts_and_names) {
   CHECK_EQ(older[0].session.id.str(), std::string("ses_pg000001"));
 }
 
-// Two sessions started in the same millisecond, with the tie straddling a page edge: on a cursor
-// of the instant alone the tie-mate is in no page, ever. The pair cursor walks all four.
+// Two sessions started in the same millisecond, the tie straddling a page edge: the pair cursor walks all four.
 TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -339,11 +315,7 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   CHECK(third.empty());
 }
 
-// The log row's two other facts, against the real statement. topSet is a lateral over the WORKING
-// sets — heaviest, ties to more reps — so a heavier warmup is not what the row says the session was,
-// and a session holding no working set has no top set at all. closedItself is the four-hour rule's
-// own signature: finished_at at the last set's instant exactly, or at started_at for a session that
-// holds none. A finish a lifter tapped lands wherever their device said, and reads as false.
+// topSet is a lateral over the WORKING sets; closedItself is the four-hour rule's signature — finished_at at the last set's instant, or at started_at.
 TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -384,8 +356,7 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_EQ(listed[3].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100, 8}));
   CHECK_FALSE(listed[3].closedItself);
 
-  // A row closed before closed_by existed reads the four-hour rule's own signature: finished_at at
-  // the last set's instant is the rule's work, an hour later is a tap.
+  // A row closed before closed_by existed reads the four-hour rule's own signature.
   {
     wm::PgLease conn{*wm::pgTestPool()};
     pqxx::work txn{*conn};
@@ -397,12 +368,7 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_FALSE(legacy[3].closedItself);
 }
 
-// The aggregate's two counts and its tonnage, against the real statement. Both counts come off ONE
-// GROUP BY so they cannot disagree about which sets a session held, and the tonnage filters to the
-// same working rows the top set is picked from. `greatest(weight_kg, 0)` is the load-bearing clamp:
-// gym_sets stores a NEGATIVE kg for band-assisted work (§2.3), and an unclamped sum would let an
-// assisted pull-up subtract from a week somebody trained. A session whose working sets are all
-// unloaded sums to zero, which is a real answer and not an absence.
+// Both counts come off ONE GROUP BY, and `greatest(weight_kg, 0)` keeps a NEGATIVE assisted load from subtracting.
 TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_tonnage) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -432,11 +398,7 @@ TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_
   CHECK_EQ(listed[1].tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the assisted set adds none
 }
 
-// The load ladder against the real statement: one row per distinct WORKING load, carrying the best
-// reps done at it, heaviest first. It is what the log row's e1RM is computed from, and it has to be
-// the loads rather than the top set — the heaviest set here is 100 × 5 and the session's estimate
-// belongs to the 95 × 10 back-offs. The warmup is not in it, and a load at or below zero rides along
-// unfiltered because which loads Epley is defined for is the domain's rule, stated in one place.
+// One row per distinct WORKING load carrying the best reps at it, heaviest first; a load at or below zero rides along unfiltered.
 TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -455,10 +417,7 @@ TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 100'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
-  // One row per (movement, load) with the best reps at it, heaviest first — the projection both of
-  // the row's rules read, and the one the domain's record walk is handed. Every one of them is
-  // dated by the SESSION and not by the set that hit those reps: a mark belongs to the workout that
-  // set it, which is the day every surface prints beside it (domain/Review.h).
+  // One row per (movement, load) with the best reps at it, dated by the SESSION and not by the set (domain/Review.h).
   CHECK_EQ(listed[0].workingMarks,
            (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
                                    PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1},
@@ -468,8 +427,7 @@ TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
 }
 
-// The summary's movements are framed by the rows they come back in, so a display name holding
-// whatever separator a hand-rolled aggregate would have used is still ONE movement.
+// The movements are framed by the rows they come back in, so a name holding a separator is still ONE movement.
 TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -496,10 +454,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
   CHECK_EQ(listed[0].exerciseNames, (std::vector<std::string>{"Bench Press", "Zercher\nSquat"}));
 }
 
-// The prefill read, against the real index. What has to hold: the most recent FINISHED session
-// wins (the live one never does), warmups are not history, the block comes back in set_number
-// order, the routine name is the one frozen in the session's own plan snapshot, and another
-// account's identical movement is invisible.
+// The prefill read: the most recent FINISHED session wins, warmups are not history, the block is in set_number order.
 TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -579,16 +534,12 @@ TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is
   CHECK_EQ(onlyWarmed.lastTime, std::optional<LastTime>());
   CHECK(unknown.error == LastTimeError::unknownExercise);
   CHECK_EQ(unknown.lastTime, std::optional<LastTime>());
-  // Owner-scoped exactly like the catalog read: another account's custom movement is unknown here,
-  // never merely unlogged, so absent stays byte-identical to forbidden.
+  // Owner-scoped exactly like the catalog read: another account's custom movement is unknown here.
   CHECK(anothersCustom.error == LastTimeError::unknownExercise);
   CHECK_EQ(anothersCustom.lastTime, std::optional<LastTime>());
 }
 
-// Last time is the newest SESSION, not the newest set instant. completed_at is the device's wall
-// clock (§2.2) and nothing ties it to the session holding it, so a single future-stamped set would
-// otherwise pin the prefill to a week-old session while the log listed a fresher one above it —
-// and with no cutoff on how far last time reaches, it would answer for the next thirty days.
+// Last time is the newest SESSION, not the newest set instant: completed_at is the device's own wall clock.
 TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -614,9 +565,7 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   CHECK_EQ(listed[0].session.id, last.lastTime->session.id);
 }
 
-// The one read whose session lookup used to be scoped only transitively — through the invariant
-// that insertSet copies its session's owner. One mis-owned set row is all it took to hand back a
-// stranger's session and the whole frozen plan inside it, while every sibling read refused.
+// The session lookup is owner-scoped here rather than transitively through the set row's owner.
 TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -627,8 +576,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   repo.insertSet(benchSet("set_pg000001", 142.5, t1 + 1'000));
   repo.close(SessionId{"ses_pg000001"}, t1 + 2'000, ClosedBy::finish);
   {
-    // A set row inside the owner's session carrying ANOTHER account's user_id. No API path mints
-    // one today; the read must not depend on that staying true.
+    // A set row inside the owner's session carrying ANOTHER account's user_id.
     wm::PgLease c{*wm::pgTestPool()};
     pqxx::work w{*c};
     w.exec_params("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, "
@@ -645,8 +593,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK(theirs.error == LastTimeError::none);
   CHECK_EQ(theirs.lastTime, std::optional<LastTime>());
   CHECK_EQ(repo.session(wm::UserId{kOther}, SessionId{"ses_pg000001"}), std::optional<Session>());
-  // And the owner's own answer holds only the rows that are theirs — a located session always has
-  // a block, so the locator's probe filters exactly what the block read filters.
+  // The locator's probe filters exactly what the block read filters.
   CHECK(ours.error == LastTimeError::none);
   CHECK_EQ(ours.lastTime->session.id, SessionId{"ses_pg000001"});
   CHECK_EQ(ours.lastTime->routineName, std::string("A private routine"));
@@ -654,11 +601,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(ours.lastTime->sets[0].id, SetId{"set_pg000001"});
 }
 
-// Against real jsonb, with the blob written STRAIGHT INTO the column: the snapshot is a typed value
-// now, so no writer in this module can produce any of these — which is exactly why the read is
-// still pinned. `->>` renders an object, an array or a number as TEXT, and that text would be
-// printed verbatim as the prefill card's cross-routine suffix. Only a string is a routine name, and
-// a plan that is not an object is no plan at all.
+// Against real jsonb, with the blob written STRAIGHT INTO the column: only a string is a routine name.
 TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   const std::vector<std::pair<std::string, std::string>> snapshots{
@@ -696,11 +639,7 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
   }
 }
 
-// The picker's meta, against the real DISTINCT ON. It claims to be the read above run over every
-// movement at once, so the case asserts the claim rather than trusting it: the row it hands back
-// for bench is the LAST set of lastTime's own block, dated by that block's session, and every rule
-// the locator keeps is kept here too. A warmup-only movement yields no row, an open session is not
-// a last time however heavy it is, and another account's log is not in this answer at all.
+// The picker's meta against the real DISTINCT ON: the LAST set of lastTime's block, dated by that block's session.
 TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -745,9 +684,7 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   CHECK_EQ(ours[0].atMs, block.lastTime->session.startedAtMs);
 }
 
-// One row per movement, keyed by movement id — the key a picker joins these onto its catalog by, and
-// not the order it draws them in. A lifter with two movements gets two rows and neither is the
-// other's; a lifter with none gets nothing, which is every catalog row reading `never logged`.
+// One row per movement, keyed by movement id — the key a picker joins onto its catalog, not the draw order.
 TEST(pg_gym_last_sets_carries_one_row_per_movement_ordered_by_id) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -771,9 +708,7 @@ TEST(pg_gym_last_sets_carries_one_row_per_movement_ordered_by_id) {
                                  LastSet{ExerciseId{"bench-press"}, 82.5, 8, t1}}));
 }
 
-// The plan is the one shape written at BOTH edges — jsonb here, an object on the wire — and it goes
-// through the same codec, so a session read back holds exactly what was frozen onto it. The name
-// stays a plain string at the top level, which is what the prefill's type check looks for.
+// The plan goes through one codec at both edges, and the name stays a plain string at the top level.
 TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -785,8 +720,7 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
       {PlanEntry{ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
        PlanEntry{ExerciseId{"back-squat"}, 3, 8, std::nullopt, std::nullopt}}};
 
-  // The routine has to exist for the session to point at it: routine_id is a real foreign key, and
-  // it is the snapshot beside it — not the pointer — that the log reads its plan out of.
+  // routine_id is a real foreign key, and it is the snapshot beside it that the log reads its plan out of.
   inserted(program, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
   repo.insertSession(Session{SessionId{"ses_pg000001"}, wm::UserId{kUser}, t1, std::nullopt,
                              RoutineId{"rt_pg000001"}, frozen});
@@ -807,13 +741,7 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
            std::optional<PlanSnapshot>());
 }
 
-// ---- the finish read: the marks, the session it stands against, and the discard ---------------
-
-// One row per (movement, load) carrying the BEST reps ever done at it — the projection all three
-// record rules are answered from, which is what keeps Epley out of SQL. Restricted to the movements
-// this session works, taken only from FINISHED sessions that started earlier, and dated by the
-// EARLIEST SESSION to hit those reps — the workout, never the set's own device stamp, which is what
-// puts one date under a record wherever it is read (domain/Review.h).
+// One row per (movement, load) carrying the BEST reps ever done at it, dated by the EARLIEST SESSION to hit them (domain/Review.h).
 TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -834,8 +762,7 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   repo.insertSession(sessionAt("ses_pg000003", t1));
   repo.insertSet(squatSet("set_pg000010", "ses_pg000003", 105, 5, t1 + 60'000));
   repo.close(SessionId{"ses_pg000003"}, t1 + 3'600'000, ClosedBy::finish);
-  // Inserted last, because the one-open index allows exactly one of these at a time: a session
-  // nobody ever closed, holding the heaviest squat in the log.
+  // Inserted last, because the one-open index allows exactly one open session at a time.
   repo.insertSession(sessionAt("ses_pg000002", t1 - week));
   repo.insertSet(squatSet("set_pg000007", "ses_pg000002", 200, 5, t1 - week + 60'000));
 
@@ -865,8 +792,7 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
                              std::nullopt, RoutineId{"rt_pg000001"}, pushA()});
   repo.insertSet(squatSet("set_pg000001", "ses_pg000001", 95, 5, t1 - 2 * week + 60'000));
   repo.close(SessionId{"ses_pg000001"}, t1 - 2 * week + 3'600'000, ClosedBy::finish);
-  // The same movement a week later, with no day of the program behind it: not what this stands
-  // against, however recent.
+  // The same movement a week later with no day of the program behind it: not what this stands against.
   repo.insertSession(sessionAt("ses_pg000002", t1 - week));
   repo.insertSet(squatSet("set_pg000002", "ses_pg000002", 100, 5, t1 - week + 60'000));
   repo.close(SessionId{"ses_pg000002"}, t1 - week + 3'600'000, ClosedBy::finish);
@@ -879,15 +805,13 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
   REQUIRE(reviewed.has_value());
   SessionHistory history = repo.historyFor(wm::UserId{kUser}, *reviewed);
 
-  // The window compares the PAIR (started_at, id), so the session under review is never its own
-  // history — and without that a review read after the finish would find every set tying itself.
+  // The window compares the PAIR (started_at, id), so the session under review is never its own history.
   REQUIRE(history.previous.has_value());
   CHECK_EQ(history.previous->id.str(), std::string("ses_pg000001"));
   CHECK_EQ(history.previous->plan, std::optional<PlanSnapshot>(pushA()));
   REQUIRE_EQ(history.previousSets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.previousSets[0].weightKg, 95.0);
-  // Each mark dated by the session it was set in — two sessions here, two dates, and neither of
-  // them the instant a set carried.
+  // Each mark dated by the session it was set in, never by the instant a set carried.
   const std::vector<PriorMark> marks{PriorMark{ExerciseId{"back-squat"}, 95, 5, t1 - 2 * week},
                                      PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 - week}};
   CHECK_EQ(history.marks, marks);
@@ -918,11 +842,7 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
   }
 }
 
-// ---- fix a set: the SQL half of "the log moves, the routine does not" ------------------------
-
-// The correction, against a real server: the row in gym_sets is rewritten in place and the version
-// it replaced lands in gym_set_revisions unmarked. Both halves are asserted off the tables rather
-// than off the reply, because the reply cannot show what a second statement did.
+// The row is rewritten in place and the version it replaced lands in gym_set_revisions unmarked.
 TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -967,14 +887,8 @@ TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
   }
 }
 
-// The reason the lock is its own statement, driven rather than argued. Six corrections land on one
-// set at once; each one keeps whatever stood before it, so the versions kept plus the one still
-// standing are EXACTLY the seven values that ever existed — the original and the six. Dropping the
-// `FOR UPDATE` statement from `updateSet` fails this case every run (checked, before and after the
-// lock moved to the session row): two corrections then copy the same pre-existing row, because a
-// data-modifying CTE reads the snapshot its statement began with and that snapshot is taken before
-// the lock is granted — so a value a lifter saw on screen leaves the log with nothing keeping it,
-// which is the one outcome §2.7 exists to prevent.
+// The lock is its OWN statement: a data-modifying CTE reads the snapshot its statement began with, taken
+// before the lock is granted, so without it two corrections copy the same pre-existing row.
 TEST(pg_gym_parallel_corrections_of_one_set_keep_every_version_that_ever_stood) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1009,8 +923,7 @@ TEST(pg_gym_parallel_corrections_of_one_set_keep_every_version_that_ever_stood) 
   CHECK_EQ(stood, (std::vector<double>{82.5, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0}));
 }
 
-// The scope, on the statements that carry it: another account's set and this account's set in a
-// different workout are both simply not there, and neither leaves a revision behind.
+// The scope on those statements: another account's set, and this account's in another workout, are not there.
 TEST(pg_gym_a_correction_reaches_no_set_outside_the_workout_or_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1038,9 +951,8 @@ TEST(pg_gym_a_correction_reaches_no_set_outside_the_workout_or_the_account) {
   }
 }
 
-// The delete moves the row WHOLE and marks it, in one statement, and it is silent whether or not
-// anything was there — the retry a lost reply produces keeps no second copy. Numbers are not closed
-// up behind it: max+1 keeps minting, so no set ever inherits a number another one wore.
+// The delete moves the row WHOLE and marks it, in one statement, and is silent whether or not anything was there.
+// Numbers are not closed up behind it: max+1 keeps minting, so no set inherits a number another one wore.
 TEST(pg_gym_a_delete_moves_the_row_into_the_revisions_and_never_reuses_its_number) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1076,12 +988,7 @@ TEST(pg_gym_a_delete_moves_the_row_into_the_revisions_and_never_reuses_its_numbe
   }
 }
 
-// THE SET A LIFTER DELETED DOES NOT COME BACK, and the append that would bring it is the ordinary
-// one: a POST whose 200 was lost stays on the device's queue and is re-sent, or a claim replays the
-// device's own log. The primary key cannot answer it — the row is gone from gym_sets, so the id is
-// free — which is why the insert asks the revisions instead. `deleted` and not `idTaken`: every
-// queue repairs a spent id by minting a fresh one, and that repair is exactly how the deletion would
-// undo itself, under a number nobody chose.
+// A replayed append of a deleted set asks the revisions rather than the primary key, and answers `deleted`, not `idTaken`.
 TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bring_it_back) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1111,16 +1018,12 @@ TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bri
     CHECK_EQ(w.exec_params("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", kUser).size(),
              static_cast<std::size_t>(1));
   }
-  // A closed workout does not change the answer, and does not get to answer FIRST: `session-finished`
-  // would tell a queue the set never reached the log, and this one reached it and was taken out.
+  // A closed workout does not change the answer, and does not get to answer FIRST.
   repo.close(SessionId{"ses_pg000001"}, t1 + 5'000, ClosedBy::finish);
   CHECK(repo.insertSet(benchSet("set_pg000002", 82.5, t1 + 2'000)).error == SetInsertError::deleted);
 }
 
-// The scope on that refusal, which is the scope every read in this store keeps: another account's
-// deleted id is not a fact this caller may learn, and it is not a log a replay here could put a set
-// back into. Their own id stays spent whichever workout replays it — a session is not a fresh
-// namespace for an id they have already used and removed.
+// Another account's deleted id is not a fact this caller may learn, and their own id stays spent in any workout.
 TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1149,12 +1052,8 @@ TEST(pg_gym_a_deleted_id_is_spent_for_its_own_account_alone) {
   CHECK_EQ(landed.set->weightKg, 60.0);
 }
 
-// THE RACE, driven rather than argued: a queue re-sending a set's POST while the lifter deletes it
-// on another surface. Both orders are legal and both end the same way — the append lands and the
-// delete removes it, or the delete commits and the append is refused — because all three writes take
-// the SESSION's row first. A delete that took no lock of its own would leave a third outcome
-// reachable: the append reads the revisions before the delete commits and inserts after it, and the
-// set is back.
+// A queue re-sending a set's POST while the lifter deletes it: all three writes take the SESSION's row first,
+// so either the append lands and the delete removes it, or the delete commits and the append is refused.
 TEST(pg_gym_an_append_racing_a_delete_of_the_same_set_always_ends_deleted) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1182,21 +1081,14 @@ TEST(pg_gym_an_append_racing_a_delete_of_the_same_set_always_ends_deleted) {
     });
     deleting.join();
     appending.join();
-    // Not merely a right answer — an answer at all. Taken in the other order these two are a cycle
-    // (the append holds the session and wants the set row, the delete holds the set row and wants
-    // the session for its copy's foreign key), and Postgres breaks a cycle by aborting one of them.
+    // Taken in the other order these two are a cycle, and Postgres breaks a cycle by aborting one of them.
     CHECK_EQ(raised.load(), 0);
     CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{id}), std::optional<Set>());
   }
 }
 
-// THE OTHER HALF OF THE ONE LOCK ORDER, and it is the half that would fail LOUDLY rather than
-// quietly. `gym_set_revisions` carries a foreign key to `gym_sessions`, so both of these writes ask
-// that session row for a KEY SHARE as they take their copy. Let the delete skip the session lock and
-// the two run in opposite orders — the correction holds the session and wants the set row, the
-// delete holds the set row and wants the session — which is a cycle, and Postgres breaks a cycle by
-// aborting one of them: a `deadlock detected` out of a lifter's ordinary tap. Both take the session
-// first, so there is no cycle to break.
+// One lock order: the correction and the delete both take the SESSION row first (gym_set_revisions carries an
+// FK to gym_sessions), so there is no cycle to deadlock on.
 TEST(pg_gym_a_correction_racing_a_delete_of_the_same_set_never_deadlocks) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1227,17 +1119,12 @@ TEST(pg_gym_a_correction_racing_a_delete_of_the_same_set_never_deadlocks) {
     correcting.join();
     deleting.join();
     CHECK_EQ(raised.load(), 0);
-    // Whichever went first, the delete is the last word: a correction that ran after it finds no
-    // row, and one that ran before it is the version the delete then carried into the revisions.
+    // Whichever went first, the delete is the last word.
     CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{id}), std::optional<Set>());
   }
 }
 
-// A CORRECTION THAT MOVED NOTHING KEPT NOTHING. `{}` is a legal fix and the reply to a lost one is
-// the same bytes sent again, so an unconditional copy would grow a version of the row per retry —
-// rows kept forever, in a table nothing reads, standing for a change nobody made. The guard is on
-// the values, not on the request: a fix that names every field and changes none of them is the same
-// no-op, and a fix that moves one field keeps the whole row it replaced.
+// The guard is on the VALUES: a fix that changes nothing keeps no version, and one that moves a field keeps the whole row.
 TEST(pg_gym_a_correction_that_moves_nothing_keeps_no_revision) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1285,9 +1172,7 @@ TEST(pg_gym_a_correction_that_moves_nothing_keeps_no_revision) {
   }
 }
 
-// *Push A keeps its own numbers*, proved where it could actually be broken — against the real SQL,
-// on a session started from a routine. Neither write goes near gym_sessions.plan or a routine entry,
-// and the reads that stand on the live rows move exactly as far as the correction did.
+// Neither write goes near gym_sessions.plan or a routine entry, and the live reads move exactly as far as the fix did.
 TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_untouched) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1316,7 +1201,6 @@ TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_unto
   REQUIRE(plan.has_value());
   CHECK_EQ(plan->entries, std::vector<RoutineEntry>{entryAt(1, "bench-press")});
   CHECK_EQ(plan->name, std::string("Push A"));
-  // and the live rows are what every read is computed from, so the log row moved with the fix
   std::vector<SessionSummary> rows = pageOf(repo, wm::UserId{kUser}, page(t1 + 10'000, 10));
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
   CHECK_EQ(rows[0].setCount, 1);
@@ -1324,8 +1208,7 @@ TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_unto
   CHECK_EQ(rows[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{60, 3}));
 }
 
-// The discard's own promise — "permanent, and nothing keeps a copy" — reaches the revisions too,
-// which is the whole reason session_id carries a cascading foreign key and set_id carries none.
+// The discard reaches the revisions too: session_id carries a cascading foreign key and set_id carries none.
 TEST(pg_gym_discarding_a_session_takes_its_revisions_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1357,8 +1240,7 @@ TEST(pg_gym_discarding_a_session_takes_its_revisions_with_it) {
            static_cast<std::size_t>(0));
 }
 
-// A row written before the instant band was enforced still reads: it is clamped into the band
-// rather than failing the conversion, so one poisoned row cannot take down the whole log.
+// A row written before the instant band was enforced is clamped into the band rather than failing the conversion.
 TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1384,12 +1266,7 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
            static_cast<std::uint64_t>(1));
 }
 
-// ---- the statistics read -------------------------------------------------------------------
-
-// The three projections, proved against a real planner: one point per (movement, session) under
-// TopSet's rule, one mark per (movement, load) under the review's, and the weekly counts. No Epley
-// is computed anywhere in the SQL — the numbers below are loads and reps, and the estimate over
-// them is the domain's.
+// One point per (movement, session), one mark per (movement, load), and the weekly counts. No Epley in the SQL.
 TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_counts) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1408,25 +1285,21 @@ TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_count
 
   TrainingLog log = repo.trainingLog(wm::UserId{kUser});
 
-  // The heaviest working set, ties to more reps — and the warmup counts toward nothing, here as
-  // everywhere else the product aggregates.
+  // The heaviest working set, ties to more reps; the warmup counts toward nothing.
   CHECK_EQ(log.tops, (std::vector<MovementTop>{MovementTop{ExerciseId{"back-squat"}, t1, 110, 2},
                                                MovementTop{ExerciseId{"back-squat"}, t1 + week,
                                                            105, 5}}));
-  // A mark carries the START of the session it was set in, which is the instant its point above
-  // carries too: the standing best and the point that IS that best cannot land on two days.
+  // A mark carries the START of the session it was set in, the same instant its point above carries.
   CHECK_EQ(log.marks, (std::vector<PriorMark>{
                           PriorMark{ExerciseId{"back-squat"}, 100, 5, t1},
                           PriorMark{ExerciseId{"back-squat"}, 105, 5, t1 + week},
                           PriorMark{ExerciseId{"back-squat"}, 110, 2, t1}}));
-  // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'` so the buckets do not move with the server's
-  // own zone — 1699833600000 is 2023-11-13, the Monday of the week t1 falls in.
+  // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'`: 1699833600000 is 2023-11-13.
   CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 2},
                                                  TrainingWeek{1'699'833'600'000 + week, 1, 1}}));
 }
 
-// generate_series fills the run, so a week nobody trained is a zero and not a missing row: the gap
-// is the fact, and a client filling it in would be doing calendar arithmetic in a second place.
+// generate_series fills the run, so a week nobody trained is a zero and not a missing row.
 TEST(pg_gym_statistics_weeks_are_contiguous_across_a_week_nobody_trained) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1468,10 +1341,7 @@ TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
   CHECK(log.weeks.empty());
 }
 
-// ---- the export ------------------------------------------------------------------------------
-
-// Every cell is rendered by Postgres and the exact bytes are pinned here, because the in-memory
-// fake states the same three renderings — this case is what keeps the two from drifting apart.
+// Every cell is rendered by Postgres and the exact bytes are pinned, beside the in-memory twin's.
 TEST(pg_gym_export_renders_instants_as_iso_utc_and_numerics_at_their_column_scale) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1507,8 +1377,6 @@ TEST(pg_gym_export_never_reaches_another_accounts_sets) {
   CHECK(repo.exportedSets(wm::UserId{kUser}).empty());
   CHECK_EQ(repo.exportedSets(wm::UserId{kOther}).size(), static_cast<std::size_t>(1));
 }
-
-// ---- the coach share ---------------------------------------------------------------------------
 
 TEST(pg_gym_share_is_idempotent_on_the_session_and_replaces_one_that_has_ended) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -1598,8 +1466,7 @@ TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
   CHECK_FALSE(repo.sharedSession("pg-tok-live", now + 1));
 }
 
-// The share goes with the workout: `on delete cascade` means a discard leaves no live link behind
-// pointing at a session that is gone.
+// The share goes with the workout: `on delete cascade` leaves no live link to a session that is gone.
 TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1617,13 +1484,7 @@ TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   CHECK_FALSE(repo.sharedSession("pg-tok-doomed", now + 1));
 }
 
-// ---- the marks that stand before a page ------------------------------------------------------
-
-// The marks standing BEFORE a page, against the real statement. A page is judged against the
-// history in front of it, and page two has history page two cannot see — so the read hands over the
-// same projection with the window moved to "every finished session older than this page's last row",
-// narrowed to the movements the page trains. The first page stands on the older session's marks;
-// paging past it leaves nothing standing at all.
+// The marks standing BEFORE a page: every finished session older than the page's last row, narrowed to its movements.
 TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1642,8 +1503,7 @@ TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
   const LogPage newest = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 1));
   const LogPage whole = repo.log(wm::UserId{kUser}, page(t1 + 2 * day, 50));
 
-  // One row on the page, and the squat mark it has to beat comes back beside it. The BENCH mark
-  // does not: the page does not train it, so it is not history this page needs.
+  // The squat mark this page has to beat comes back beside it; the BENCH mark does not.
   REQUIRE_EQ(newest.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(newest.standing,
            (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1}}));
@@ -1652,11 +1512,7 @@ TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
   CHECK_EQ(whole.standing, std::vector<PriorMark>{});
 }
 
-// The two windows this read applies are DIFFERENT on purpose, and the difference is what the domain
-// has to be told about: a page carries the OPEN workout as a row like any other, while the marks
-// standing before it count FINISHED sessions alone. Filtering the page here instead would drop the
-// open row off the log; folding its marks in the domain would judge the row above it against
-// history that session's own finish screen cannot see.
+// The two windows differ on purpose: a page carries the OPEN workout as a row, while the standing marks count FINISHED sessions alone.
 TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_page) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1686,11 +1542,7 @@ TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_p
   CHECK_EQ(whole.standing, std::vector<PriorMark>{});
 }
 
-// ---- the record read ------------------------------------------------------------------------
-
-// The record read against the real statements: one ladder per FINISHED session oldest first, the
-// routines that name the movement NAMED once each, and the last training days with their sets in
-// the order they were performed. The open session and another account's are nowhere in it.
+// One ladder per FINISHED session oldest first, the routines naming the movement once each, then the recent days.
 TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_the_recent_days) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1719,8 +1571,7 @@ TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_t
   REQUIRE_EQ(history.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.sessions[0].session, SessionId{"ses_pg000001"});
   CHECK_EQ(history.sessions[0].startedAtMs, t1);   // the SESSION's start, never a set's stamp
-  // And the ladder's own rows carry that same instant, so the bar, the tile and the record line the
-  // page computes off them cannot land on three days.
+  // The ladder's rows carry that same instant, so the bar, the tile and the record line cannot land on three days.
   CHECK_EQ(history.sessions[0].loads,
            (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
                                    PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1}}));
@@ -1733,8 +1584,7 @@ TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_t
   CHECK_EQ(history.recent[0].sets[1].weightKg, 95.0);
 }
 
-// A movement this account's catalog does not hold answers with nothing at all, and the three reads
-// behind the first never fire. Another lifter's private movement is that same one fact.
+// A movement this account's catalog does not hold answers with nothing at all, as does another lifter's private one.
 TEST(pg_gym_movement_history_of_a_movement_this_account_cannot_see_is_empty) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

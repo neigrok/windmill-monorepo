@@ -11,11 +11,7 @@
 #include <string>
 #include <thread>
 
-// Opt-in integration test: it needs a live local Postgres with the schema applied. It runs only
-// when WM_PG_TEST is set — otherwise every case here reports `skip`, which the run summary counts
-// as skipped and never as passed (RUNNING.md §7 has the invocation). It seeds its own user
-// row so it is fully self-contained. This is the one test that proves the SQL half — the LWW guard,
-// the revision capture, the round-trip mapping — against a real server rather than a fake.
+// Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own user row.
 using namespace wm;
 
 namespace {
@@ -32,8 +28,7 @@ void reset() {
   w.exec("DELETE FROM journal_page_revision WHERE user_id = '" + kUser + "'");
   w.commit();
 }
-// March 1st onward, day by day, so a test that needs eighty distinct pages can name them without
-// inventing a calendar — LocalDate refuses an impossible one.
+// March 1st onward, day by day, so a test that needs eighty distinct pages can name them; LocalDate refuses an impossible one.
 std::string dayOfMarchOnwards(int index) {
   static constexpr int lengths[] = {31, 30, 31};   // March, April, May 2026
   int month = 3;
@@ -101,8 +96,6 @@ TEST(pg_journal_lww_and_revision_trail) {
   CHECK_EQ(revisions, 1);   // only 'first light' was superseded; the ignored 'stale' wrote nothing
 }
 
-// The trail is append-only and nothing else in the product deletes from it, so the write that adds
-// to it is the write that has to bound it. Ten supersessions of one day, and the oldest go.
 TEST(pg_journal_revision_trail_keeps_only_a_days_last_few) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -117,26 +110,21 @@ TEST(pg_journal_revision_trail_keeps_only_a_days_last_few) {
   CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
                    "'")[0].as<int>(),
            10);
-  // The fourteen bodies that were ever current, minus the four oldest: "body 1" is gone and
-  // "body 14" (superseded by the fifteenth write) is still here.
   CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
                    "' AND body = 'body 1'")[0].as<int>(),
            0);
   CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
                    "' AND body = 'body 14'")[0].as<int>(),
            1);
-  // And the CURRENT page is never what a bound takes.
   CHECK_EQ(repo.load(UserId{kUser}, LocalDate{"2026-07-27"})->body, std::string("body 15"));
 }
 
-// A day is not the unit an attacker uses — every date is addressable, so the account is bounded too.
 TEST(pg_journal_revision_trail_is_bounded_per_user_by_bytes) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
   const std::string big(kMaxPageBytes, 'x');   // the largest page the write boundary will accept
 
-  // Eighty distinct days, each superseded once: 10 MB of trail asked for, against an 8 MB ceiling.
   for (int index = 0; index < 80; ++index) {
     Page first{UserId{kUser}, LocalDate{dayOfMarchOnwards(index)}};
     first.body = big;
@@ -156,7 +144,6 @@ TEST(pg_journal_revision_trail_is_bounded_per_user_by_bytes) {
   CHECK(bytes > 7LL * 1024 * 1024);   // it keeps what it can, rather than emptying the trail
 }
 
-// The "Prunable by age" the schema promised for two years and never had.
 TEST(pg_journal_revision_trail_forgets_what_is_older_than_the_retention) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -171,7 +158,6 @@ TEST(pg_journal_revision_trail_forgets_what_is_older_than_the_retention) {
     w.commit();
   }
 
-  // Any later supersession by this account is what prunes it — the writer, not a cron.
   repo.save(page("newest body", Mood::m1, Energy::e1, Source::typed, Hlc{300, 0, "devA"}));
 
   PgLease c{*pgTestPool()};
@@ -184,10 +170,6 @@ TEST(pg_journal_revision_trail_forgets_what_is_older_than_the_retention) {
            std::string("newer body"));
 }
 
-// The exact combination the server runs and no other test covers: PageService calling
-// PgJournalRepository through the JournalRepository& port (a virtual call), then reading the
-// returned page. This is where the live server was losing the body — reproducing it here, with no
-// drogon in the picture, localises whether the fault is the call chain itself or the HTTP runtime.
 TEST(pg_journal_through_pageservice_keeps_the_body) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -201,10 +183,7 @@ TEST(pg_journal_through_pageservice_keeps_the_body) {
   CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
 }
 
-// The server serves every request on a drogon WORKER THREAD, never the main thread, and a
-// repository borrows its connection from a pool shared across all of them. This runs the same read
-// on a fresh worker thread — if the live server loses the body but this keeps it, the fault is the
-// HTTP runtime, not the storage.
+// The server serves every request on a drogon WORKER THREAD; this runs the same read on a fresh worker thread.
 TEST(pg_journal_through_pageservice_on_a_worker_thread) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

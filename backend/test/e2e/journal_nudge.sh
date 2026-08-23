@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Journal Wave 2 — nudges, end-to-end against the LIVE local stack. It drives the whole heartbeat
-# through the admin sweep at the REAL clock — the device pushes a knock time in the past, so nothing
-# waits for a real due instant — and asserts
-# the DECISION LEDGER per-user via psql (deterministic on a shared dev db, unlike the fleet-wide
-# report counts). The device's job — materialising next_due_at — is played by PATCHing a past instant.
+# Journal Wave 2 — nudges, end-to-end against the LIVE local stack. It drives the heartbeat through
+# the admin sweep at the REAL clock (the device pushes a knock time in the past) and asserts the
+# decision ledger per-user via psql, which is deterministic on a shared dev db.
 #
 # Prereqs: schema applied; server running with the admin token AND armed for the e2e user — the
-# settings PATCH below is refused for anyone the arming gate does not name, so a dark server fails
-# the first check. Run it once to mint the user, then:
+# settings PATCH below is refused for anyone the arming gate does not name. Run it once to mint the
+# user, then:
 #   U=$(psql windmill -tAc "select id from users where email='journal-nudge-e2e@example.com'")
 #   set -a && . ./.env && set +a && JOURNAL_NUDGE_ENABLED=true JOURNAL_NUDGE_ALLOWLIST=$U \
 #     JOURNAL_NUDGE_ADMIN_TOKEN=e2e-admin ./build/windmill_server
@@ -73,12 +71,9 @@ DRY="$(psql "$DB" -tAc "select count(*) from journal_nudge_day where user_id='$U
 check "$DRY" "0" "a dry run claims nothing"
 
 # ── a wet time-travelling sweep: refused while armed, forced dry while dark ──────────────────────
-# asOfMs used to run WET here, which against an armed deploy mails the allowlist early and eats the
-# genuine knock it claims on the way. TWO rules replaced that and which one answers depends on how
-# this server was started, so each is asserted by its own evidence — an unclaimed day is what both
-# look like, and checking only that proves neither. The prereq above arms the server, so a normal
-# run takes the 409 branch; the dry branch is what a dark server (with a seeded row) answers, and
-# is also pinned in NudgeApiTest.
+# Which rule answers depends on how the server was started, so each is asserted by its own evidence:
+# the prereq above arms the server, so a normal run takes the 409 branch, while the dry branch is
+# what a dark server (with a seeded row) answers.
 ARMED="$(j "$BASE/v1/journal/nudge" | field "['armed']")"
 TRAVEL_BODY="$(mktemp)"
 TRAVEL="$(curl -s -o "$TRAVEL_BODY" -w '%{http_code}' -H "X-Admin-Token: $ADMIN" -X POST \

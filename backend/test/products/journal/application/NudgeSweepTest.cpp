@@ -16,8 +16,7 @@ constexpr std::uint64_t kNow = 1'700'000'000'000;
 constexpr std::uint64_t kDay = 24ull * 60 * 60 * 1000;
 const std::string kSlotDay = "2026-07-27";
 
-// One user the sweep will find due, armed into a repository that will let the send through: an
-// enabled, materialised schedule whose instant arrived a minute ago, and no page yet for the day.
+// One user the sweep will find due: an enabled, materialised schedule whose instant arrived a minute ago, and no page yet for the day.
 void armSendableUser(FakeNudgeRepository& nudges) {
   nudges.armDue(uid("u1"), Email{"writer@example.com"}, ld(kSlotDay), kNow - 60'000);
 }
@@ -44,14 +43,12 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
   CHECK_EQ(report.wouldSend, 0);
   CHECK_EQ(report.errors, 0);
 
-  // DECIDE → CLAIM → SEND: the day is claimed with the send decision it will act on.
   REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].user, uid("u1"));
   CHECK(nudges.claims[0].slotDay == ld(kSlotDay));
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::send);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::none);
 
-  // One nudge mail, carrying the three links the mailer only binds.
   REQUIRE_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(email.sent[0].to, Email{"writer@example.com"});
   const JournalNudgeMail& mail = email.sent[0].mail;
@@ -60,7 +57,6 @@ TEST(a_due_writer_who_has_not_written_is_nudged_once_and_the_day_is_closed_deliv
   CHECK_EQ(mail.unsubscribeUrl,
            std::string("https://windmill.works/v1/journal/nudge/unsubscribe?t=s1"));
 
-  // The pause credential rotates only on a mail that actually left, and the day is closed delivered.
   CHECK_EQ(nudges.pauseDigests[uid("u1").str()], std::string("d1"));
   REQUIRE_EQ(nudges.closes.size(), std::size_t{1});
   CHECK_EQ(nudges.closes[0].user, uid("u1"));
@@ -85,7 +81,6 @@ TEST(a_writer_who_already_wrote_today_is_skipped_with_no_mail) {
   CHECK_EQ(report.failed, 0);
   CHECK_EQ(email.sent.size(), std::size_t{0});
 
-  // The day is still claimed so the decision is recorded, but a skip closes no outcome row.
   REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::skip);
   CHECK_EQ(nudges.claims[0].decision.reason, NudgeSkipReason::alreadyWrote);
@@ -131,12 +126,11 @@ TEST(a_writer_off_the_allowlist_has_the_send_held_and_the_day_closed_held) {
   CHECK_EQ(report.failed, 0);
   CHECK_EQ(email.sent.size(), std::size_t{0});
 
-  // The ledger says what we DECIDED, not what the flag allowed — a send, then closed held.
+  // The ledger says what we DECIDED, not what the flag allowed.
   REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].decision.outcome, NudgeOutcome::send);
   REQUIRE_EQ(nudges.closes.size(), std::size_t{1});
   CHECK_EQ(nudges.closes[0].outcome, DayOutcome::held);
-  // Nothing left, so no pause credential was rotated.
   CHECK_EQ(nudges.pauseDigests.size(), std::size_t{0});
 }
 
@@ -152,7 +146,6 @@ TEST(two_sweeps_of_the_same_day_send_only_once) {
   const MailSweepReport second = sweep.run(kNow, false);
 
   CHECK_EQ(first.sent, 1);
-  // The claim cleared next_due_at, so the day is no longer due — the mutex, from the outside.
   CHECK_EQ(second.sent, 0);
   CHECK_EQ(email.sent.size(), std::size_t{1});
   CHECK_EQ(nudges.claims.size(), std::size_t{1});
@@ -184,9 +177,6 @@ TEST(a_rehearsal_claims_and_sends_nothing) {
 }
 
 TEST(a_writer_whose_facts_cannot_be_read_costs_only_their_own_turn) {
-  // The per-user guard the sweep gained when its skeleton moved to the platform: before it, one
-  // throwing load aborted the whole pass and everyone behind the broken row went unnudged. Now the
-  // throw is counted, logged, and the next writer is served as if nothing had happened.
   FakeNudgeRepository nudges;
   nudges.armDue(uid("u0"), Email{"broken@example.com"}, ld(kSlotDay), kNow - 120'000);
   nudges.unreadable.insert(uid("u0").str());
@@ -207,8 +197,7 @@ TEST(a_writer_whose_facts_cannot_be_read_costs_only_their_own_turn) {
   CHECK_EQ(report.held, 0);
   CHECK_EQ(report.failed, 0);
 
-  // Nudges stamp no load-failed reason, so the broken day is not claimed — the throw came before
-  // the claim, and the day is still due to the next pass — while u1's day is claimed and served.
+  // Nudges stamp no load-failed reason, so the broken day is not claimed and is still due to the next pass.
   REQUIRE_EQ(nudges.claims.size(), std::size_t{1});
   CHECK_EQ(nudges.claims[0].user, uid("u1"));
   REQUIRE_EQ(email.sent.size(), std::size_t{1});

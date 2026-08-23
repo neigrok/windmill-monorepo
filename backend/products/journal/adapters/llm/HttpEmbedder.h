@@ -10,19 +10,15 @@
 
 namespace wm {
 
-// bge-small-en-v1.5, q8, mean-pooled and L2-normalised — run by the Node sidecar in services/embedder
-// over the very model files the web app serves, and reached over plain HTTP from here.
+// bge-small-en-v1.5, q8, mean-pooled and L2-normalised — run by the Node sidecar in
+// services/embedder over the very model files the web app serves, and reached over plain HTTP.
 //
-// The sidecar exists because the vectors this port produces are compared against vectors the browser
-// produced: the same model runs on-device for journal search. Reimplementing its tokenizer, pooling
-// and normalisation in C++ would put that identity in the hands of a subtle bug that raises no error
-// and never fails a test — it would simply make retrieval quietly worse forever. Running the same
-// library over the same bytes makes the identity structural instead of hoped-for, and it is measured:
-// services/embedder/check/browser.mjs puts five sentences through the shipped browser worker in real
-// Chrome and compares them against the sidecar's own committed vectors.
+// The sidecar exists so that these vectors and the ones the browser produces for journal search
+// come from the same library over the same bytes; services/embedder/check/browser.mjs measures
+// that against the shipped browser worker in real Chrome.
 //
 // Unconfigured (no JOURNAL_EMBEDDER_URL) is a resting state, not a failure: configured() answers
-// false and the whole echo sweep is a quiet no-op, exactly as with the NullEmbedder.
+// false and the whole echo sweep is a quiet no-op.
 class HttpEmbedder : public Embedder {
 public:
   explicit HttpEmbedder(std::string baseUrl);

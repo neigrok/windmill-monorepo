@@ -71,9 +71,8 @@ inline std::optional<NodeColor> parseColor(std::string_view name) {
 }
 
 // The six hues as hex, straight from the design tokens (src/skilltree/theme.js → tokens/colors.css).
-// Every server-rendered surface reads the palette from here. Also the safe form for a mail: a
-// colour is one of these six literals and never a string that came from a person, which matters
-// where it lands in a style attribute.
+// Also the safe form for a mail: a colour is one of these six literals and never a string that came
+// from a person, which matters where it lands in a style attribute.
 inline const char* nodeColorHex(NodeColor color) {
   switch (color) {
     case NodeColor::terracotta: return "#BC6C42";
@@ -124,7 +123,7 @@ struct Link {
 
 // The wire/persist shape of a node: `from -> id` edges live as `prerequisites`. `status` is an
 // opaque authoring-time seed the server round-trips but never acts on — runtime status is the
-// per-user Progress overlay. `description` and `links` are the node's free annotation.
+// per-user Progress overlay.
 struct NodeSpec {
   NodeId id;
   std::string label;
@@ -138,8 +137,8 @@ struct NodeSpec {
   std::vector<Link> links;
 };
 
-// A legend entry: a named, described hue. A node's `color` field *is* its kind, so there is no
-// node→kind foreign key. The legend names and orders the hues; order is generation priority.
+// A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and
+// orders the hues; order is generation priority.
 struct Kind {
   KindId id;
   NodeColor hue = NodeColor::terracotta;
@@ -154,18 +153,16 @@ struct TreeData {
   std::vector<Kind> kinds;
 };
 
-// One node's mark as the overlay holds it. `at` is the stamp that won this register, and the only
-// thing that decides what wins. `markedAt` is when the SERVER recorded it, on the server's own
-// clock, and is the only one of the two that may be shown to a person.
+// `at` is the stamp that won this register, and the only thing that decides what wins. `markedAt`
+// is when the SERVER recorded it, and is the only one of the two that may be shown to a person.
 struct ProgressMark {
   ProgressStatus status = ProgressStatus::none;
   Hlc at;
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
 };
 
-// A user's private progress over one tree: a last-writer-wins register per node, plus the three id
-// sets every reader asks for. `record` is the only way in, so the sets can never drift from the
-// registers they project. `none` is a VALUE here, not a deletion.
+// `record` is the only way in, so the id sets can never drift from the registers they project.
+// `none` is a VALUE here, not a deletion.
 struct Progress {
   std::map<NodeId, ProgressMark> marks;
   std::set<NodeId> completed;

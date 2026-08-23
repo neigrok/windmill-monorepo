@@ -7,8 +7,7 @@ namespace wm {
 ForkSignup::ForkSignup(ForkService& fork) : fork_(fork) {}
 
 std::optional<ForkDescription> ForkSignup::describe(const std::string& source) {
-  // The source's live face, rendered here into the two strings the mail prints — an unreadable
-  // source stays undescribed so the mail promises no tree it can't name.
+  // An unreadable source stays undescribed, so the mail promises no tree it cannot name.
   std::optional<ForkService::Description> described = fork_.describe(TreeId{source});
   if (!described) return std::nullopt;
   const std::string meta =
@@ -17,8 +16,7 @@ std::optional<ForkDescription> ForkSignup::describe(const std::string& source) {
 }
 
 std::optional<std::string> ForkSignup::plant(const std::string& source, const UserId& user) {
-  // Plant the pending fork into the new user's account. The link is already spent, so a drop is
-  // unrecoverable and must leave a trace: a missing source or taken id warns, an exception errors.
+  // The link is already spent, so a dropped plant is unrecoverable and must leave a trace.
   try {
     ForkService::Result r = fork_.fork(TreeId{source}, "", "", user);
     if (r.outcome == ForkService::Outcome::forked) return r.data.id.str();

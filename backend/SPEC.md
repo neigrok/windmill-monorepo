@@ -18,11 +18,13 @@ rejected for structure. Validity is a read model, not a gate.
   `ElementSet` per `(from, to)`.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
-  true when cycles, dangling and self-edges are all empty. Smell thresholds: label > 256 bytes,
-  in-degree > 4.
-- `SkillTree` — the validated projection, constructible only from a clean graph. Indexes ranks,
-  ancestry and the render model.
-- `Legend` — up to 6 kinds per tree, one per hue.
+  true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
+  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4).
+- `SkillTree` — the validated projection, constructible only from a clean graph; it throws
+  `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
+  order, ancestry and the render model.
+- `Legend` — up to 6 kinds per tree, one per hue, sorted by `rank` then id. A tree created with no
+  kinds is seeded with three: build · learn · milestone.
 
 Derived read models:
 
@@ -51,10 +53,14 @@ converges across devices and a stale mark cannot resurrect it. `markedAt` is the
 the moment the mark was recorded and is the only instant a reader may date a step by; the HLC
 beside it orders writes and is never served back as a time.
 
+One status per node is structural. "Complete only when every prerequisite is complete" is
+advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
+can warn. Progress therefore never depends on the tree being a valid DAG.
+
 ## Convergence
 
-All traffic flows through the server. No offline peer-to-peer merge, no version-vector partition
-handling — one convergent lattice per tree with the room as sequencer.
+All traffic flows through the server: one convergent lattice per tree, with the room as sequencer.
+Replicas never merge with each other.
 
 - **LWW register** (`Lww<T>`) — highest HLC wins. HLC text is `physicalMs:counter:actor`; the
   empty string is unset.
@@ -85,7 +91,9 @@ full frontier as coverage.
 
 `TreeRoom::joinSubgraph` dedupes on `frameId`, folds the frame's stamps into the room clock,
 joins graph + legend + title, assigns the next `seq`, logs a headline deed, and broadcasts the
-frame verbatim. Duplicates return no seq.
+frame to subscribers. Duplicates return no seq. A broadcast carries the room's `seq` and always
+states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
+subscriber treat it as a re-baselining graft.
 
 ### Commands
 
@@ -129,8 +137,9 @@ malformed}, reason}`; an HTTP door answers 413 for `tooLarge` and 400 for `malfo
 asked against what the graph would **hold** once the arrival lands, joined not estimated.
 
 The redundant-edge pass (`redundantEdges`, and `TreeHealth`'s `redundant`) walks a transitive
-closure whose cost is a sum of squared degrees. `withinReachabilityBudget(nodes, edges)` bounds
-nodes, edges and their product; over budget the pass is skipped and reports nothing.
+closure whose cost is a sum of squared degrees. `withinReachabilityBudget(nodes, edges)` allows
+1500 nodes, 6000 edges and a product of 3,000,000; over budget the pass is skipped and reports
+nothing — tidy finds no edge to drop, health reports 0 redundant.
 
 ## Runtime
 
@@ -140,10 +149,13 @@ opens rooms on demand, hands out `strandFor(treeId)`, persists (`persist`) and e
 
 Rules:
 
-- Never hold a room's strand across a Postgres call.
+- Never hold a room's strand across a Postgres call, and never hold two strands at once — the
+  strands are a fixed stripe array shared by unrelated tree ids.
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
 - Persist before acking, so an ack attests durability.
+- `open()` loads the stored lattice and then replays the op-log tail past the stored head, so the
+  room reaches the true state and head and new writes never collide on `seq`.
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
   ordered and the actor tiebreak is moot.
 - Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`. `replay()`
@@ -191,8 +203,8 @@ Registered in `products/roadmap/routes.cpp`.
 | GET | `/t/{id}` |
 | GET | `/og/{id}.png` |
 
-Structural edits have no REST endpoint — they ride the socket. Inbound models are suffixed
-`Request`, outbound `Response`.
+Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}` takes a whole
+document and joins it as one write. Inbound models are suffixed `Request`, outbound `Response`.
 
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
@@ -212,13 +224,14 @@ a minute, and a revoked session narrows to a guest in place. Visibility is re-as
 Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`) ·
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
-Server → client: `pong` · a `delta` subgraph carrying `seq` (the subscribe answer) · `progress`
-(intent `graft` on subscribe, echo otherwise) · `subgraphAck {treeId, frameId, seq?}` ·
-`progressAck` · `skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason}` ·
-`presence` · `peer`.
+Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` as the subscribe answer,
+intent `live` for a peer's broadcast) · `progress` (intent `graft` on subscribe, echo otherwise) ·
+`subgraphAck {treeId, frameId, seq?}` · `progressAck` · `skew {treeId, frameId, serverNow}` ·
+`reject {treeId, code, reason}` · `presence` · `peer`.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
-`no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame`.
+`no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
+`not-yours` · `nobodys-tree` (the last two from `writeRefusalFor`, on the write lane).
 
 Limits and rules:
 
@@ -240,7 +253,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 
 | Table | Holds |
 | --- | --- |
-| `trees` | title (LWW: `title_hlc` plus the `title_ms`/`title_counter` numeric split), `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, and the legacy `document` jsonb |
+| `trees` | title (LWW: `title_hlc` plus the `title_ms`/`title_counter` numeric split), `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present` |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp |
@@ -253,10 +266,10 @@ Rules:
 - The lattice is entry-grow-only. A save upserts only the rows it touched and deletes nothing; a
   delete is a tombstone stamp. Stamps are canonical HLC text and are never compared in SQL —
   `present` is computed by the writer for read-side projections.
-- `trees.document` is the legacy whole-tree blob, read as a fallback for trees whose rows are not
-  yet backfilled. Nothing new should depend on it.
-- `tree_ops` is history: the activity feed projects it, and nothing replays it to reconstruct
-  state. It scales with edits, not nodes.
+- `trees.document` is the whole-tree jsonb blob, read only as a fallback for trees whose per-entry
+  rows are not yet backfilled. Nothing new depends on it.
+- `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it, and `open()` replays its
+  tail past the stored head to bring a room up to date.
 - The og-image and og-video rows carry no FK to `trees`: they are addressed by tree id and read
   behind the tree's own visibility gate, so a stray row is simply unreachable.
 
@@ -266,10 +279,6 @@ Indexes that exist because their query runs on every render: `trees_owner` (the 
 
 ## Open items
 
-- Cyclic layout: the client must break back-edges for layout only, lay out the resulting DAG, and
-  draw the removed back-edges in the error style.
-- Inert-edge accumulation — a tombstoned node's edges are retained for resurrection, so the
-  lattice needs a compaction pass beyond the undo horizon.
+- A tombstoned node's edges are retained for resurrection and nothing compacts them, so the
+  lattice grows monotonically.
 - `label` is LWW, so a concurrent rename drops the loser.
-- `RepositionNode` is high-frequency; log the final position of a drag, not every frame.
-- Whether a fork tracks its source's later changes is undecided.

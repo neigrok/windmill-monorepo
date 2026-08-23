@@ -36,11 +36,7 @@ inline Exercise backSquat() {
 }
 inline RoutineId rtId(std::string value = "rt_00000001") { return RoutineId{std::move(value)}; }
 
-// The export's three renderings, which the SQL does with `to_char(… AT TIME ZONE 'UTC')` and two
-// `::text` casts off numeric columns of a fixed scale. They are mirrored here rather than
-// approximated, because a fake that framed a cell differently from the live store would let a
-// column drift with every test still green — and PgLogRepositoryTest pins the two together by
-// asserting these exact strings against a real Postgres.
+// The export's three renderings, mirroring the SQL's `to_char(… AT TIME ZONE 'UTC')` and `::text` casts.
 inline std::string isoUtc(std::uint64_t instantMs) {
   const std::time_t seconds = static_cast<std::time_t>(instantMs / 1000);
   std::tm parts{};
@@ -57,10 +53,7 @@ inline std::string scaled(double value, int decimals) {
   return text;
 }
 
-// Monday 00:00 UTC, which is what `date_trunc('week', ts AT TIME ZONE 'UTC')` answers. The epoch
-// itself was a Thursday, so the walk is shifted three days before it is floored and shifted back —
-// and the result is clamped exactly as the adapter's instantFrom clamps it, so the first week of
-// 1970 cannot come back as a negative instant on either side.
+// Monday 00:00 UTC, as `date_trunc('week', ts AT TIME ZONE 'UTC')` answers, clamped like the adapter.
 inline std::uint64_t weekStartMs(std::uint64_t instantMs) {
   const long long kWeek = 604'800'000;
   const long long kEpochToMonday = 259'200'000;
@@ -77,35 +70,9 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
   return Routine{rtId(std::move(id)), uid(), "Push A", 0, std::move(entries)};
 }
 
-// An in-memory gym store that applies the SAME rules as the SQL — the PK no-op on a
-// duplicate id, the one-open-session refusal that makes a second insert a no-op, max+1-per-
-// exercise numbering, the owner scope on every read, the read-back scoped to the session (a set id
-// spent elsewhere resolves to NOTHING, never to that row), the revisions read that makes a DELETED
-// id spent for good so a replayed append cannot resurrect it, the copy taken only where a correction
-// actually moves the row, the owner-scoped predicate that refuses a
-// set or a routine entry naming a movement this account cannot see, the closed session that refuses
-// a set which never landed, the routine name read off the session's own frozen snapshot, the
-// derived last-trained instant the routines list sorts on, the cascade that nulls a deleted
-// routine's id on every session that ran it, the cascade that takes a discarded session's sets with
-// it, the (startedAt, id) window that keeps a session out of its own history, and the IS NULL guard
-// that makes close first-writer-wins. Lift's proposal-apply bug survived precisely as long as its
-// mock didn't model the persistence boundary, so this fidelity is an architecture requirement: the
-// service tests can never quietly disagree with the adapter about what a replay returns — and a
-// fake that mirrors a leak hides it behind green.
-//
-// IT IS SHAPED THE WAY POSTGRES IS: one database, five repositories over it. FakeGymStore is the
-// tables, plus every rule that reads across more than one aggregate — the catalog projection a set
-// write and a routine write both check a movement against, the name this account calls a movement
-// under, whose session a set is in, the last-trained instant a routine derives from the log — so
-// each rule is written once and both fakes that need it read the same one. The five Fake…Repository
-// classes are the ports, each holding a reference to the store and owning only the helpers that
-// exactly one of them uses. The schema's cascades therefore read as one fake mutating rows another
-// fake serves — deleteRoutine nulling sessions, deleteThread unlinking proposals — which is what a
-// cascade IS, and the store is where that is visible. FakeGym bundles the six for a test harness.
+// An in-memory gym store applying the SAME rules as the SQL; the five Fake…Repositories are its ports.
 struct FakeGymStore {
-  // gym_set_revisions: what a correction replaced, and what a delete took out of the log. The
-  // product reads it NOWHERE — there is no trash and no recovery door — so it is here for the one
-  // thing that must be provable: a test can assert that nothing a lifter logged was destroyed.
+  // gym_set_revisions: what a correction replaced and what a delete took out of the log.
   struct KeptSet {
     Set set;
     bool deleted;
@@ -119,20 +86,15 @@ struct FakeGymStore {
   std::vector<Set> sets;              // one row per set that currently stands
   std::vector<KeptSet> kept;          // what corrections replaced, and what deletes took
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
-  // gym_proposals + gym_proposal_changes, as one value because the rows are one document: the diff
-  // and the run it describes are the same rows read two ways (domain/Proposal.h).
+  // gym_proposals + gym_proposal_changes as one value: the rows are one document (domain/Proposal.h).
   std::vector<RoutineProposal> proposalRows;
   std::vector<AskThread> threadRows;   // Ask's conversations; `minted` is derived on every read
   bool loseThreadRace = false;         // stage the concurrent-mint race `openThread` explains
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
-  // gym_exercise_names: what one account calls one SEED. Keyed (owner, movement) like the table's
-  // own primary key, and every read of a display name coalesces it over the seed's — a fake that
-  // resolved names off the catalog row alone would let the global-rename hazard ship behind green.
+  // gym_exercise_names: what one account calls one SEED, keyed (owner, movement) and coalesced over it.
   std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
-  // gym_exercise_aliases: what one account USED to call one movement, seeds and its own alike. `at`
-  // stands in for created_at — the rename order, which is the order the read hands them back in —
-  // and the row set is capped by the rename exactly as the SQL caps it.
+  // gym_exercise_aliases: what one account USED to call a movement; `at` stands in for created_at.
   struct Alias {
     std::string user;
     std::string exercise;
@@ -140,8 +102,7 @@ struct FakeGymStore {
     std::uint64_t at;
   };
   std::vector<Alias> aliasRows;
-  // gym_routines' three creation columns, which the entity deliberately does not carry: they are
-  // facts about the WRITE and not about the document, so a replace cannot rewrite them.
+  // gym_routines' three creation columns, which the entity does not carry: facts about the WRITE.
   struct Created {
     std::uint64_t atMs;
     std::optional<ProposalDoor> door;
@@ -155,10 +116,7 @@ struct FakeGymStore {
     customs.push_back({owner.str(), exercise});
   }
 
-  // Seeds under the name THIS account calls them, then the account's own movements — and the sort
-  // is on the resolved name, exactly as the SQL orders by the coalesce rather than by the column.
-  // It is on the store rather than on the catalog fake alone because it is also the predicate every
-  // write that names a movement checks against (visibleTo below).
+  // Seeds under the name THIS account calls them, then its own movements, sorted on the resolved name.
   std::vector<Exercise> catalogOf(const UserId& user) const {
     std::vector<Exercise> out;
     for (const Exercise& row : seeds)
@@ -174,19 +132,14 @@ struct FakeGymStore {
     return out;
   }
 
-  // The catalog read's predicate, applied where a WRITE names a movement: a seed, or one this
-  // account created. It is the twin of nameOf, which stays unscoped on purpose — that one renders a
-  // row the store already holds, this one decides whether an account may point at it at all.
+  // The catalog read's predicate where a WRITE names a movement: a seed, or one this account created.
   bool visibleTo(const UserId& owner, const ExerciseId& exercise) const {
     for (const Exercise& known : catalogOf(owner))
       if (known.id == exercise) return true;
     return false;
   }
 
-  // What THIS account calls a movement: its own line over the seed's name, the seed's name where
-  // there is none, and a created movement's own row. The account is a parameter because a seed row
-  // is global — the whole reason gym_exercise_names exists — so "the name" is not a property of the
-  // catalog row alone.
+  // What THIS account calls a movement: its own line over the seed's name. A seed row is global.
   std::optional<std::string> nameOf(const UserId& user, const ExerciseId& id) const {
     for (const auto& [key, name] : displayNames)
       if (key.first == user.str() && key.second == id.str()) return name;
@@ -197,18 +150,14 @@ struct FakeGymStore {
     return std::nullopt;
   }
 
-  // The owner scope the two set writes carry in their WHERE clause: a set is this caller's when the
-  // workout holding it is. It is a session lookup rather than the set's own user_id because that is
-  // what the SQL joins on, and a fake that trusted a copy of the owner could disagree with it.
+  // A set is this caller's when the workout holding it is — the join the SQL scopes on.
   bool ownsSession(const UserId& user, const SessionId& id) const {
     for (const Session& ran : sessions)
       if (ran.id == id && ran.user == user) return true;
     return false;
   }
 
-  // Every routine read carries the store's derived answer, never the value a caller happened to
-  // construct with: the newest session this account started under it, which is what the list sorts
-  // on and what the routines screen prints as "trained {when}".
+  // lastTrainedAtMs is derived on every read: the newest session this account started under the routine.
   Routine readRoutine(const Routine& stored) const {
     std::optional<std::uint64_t> lastTrained;
     for (const Session& session : sessions) {
@@ -219,8 +168,7 @@ struct FakeGymStore {
                    stored.entries, lastTrained, stored.revision};
   }
 
-  // What this account used to call a movement, newest rename first — the order the SQL's
-  // `ORDER BY created_at DESC, name ASC` hands back.
+  // What this account used to call a movement, newest rename first.
   std::vector<std::string> aliasesOf(const UserId& user, const ExerciseId& id) const {
     std::vector<Alias> held;
     for (const Alias& row : aliasRows)
@@ -273,9 +221,7 @@ public:
   }
 
   void insertSession(const Session& incoming) override {
-    // routine_id is a real foreign key, and it is NOT owner-scoped: a session may point only at a
-    // routine that exists, and a broken pointer is a storage failure rather than a refusal — the
-    // service loads the routine, owner-scoped, before it ever builds this row.
+    // routine_id is a real foreign key and is NOT owner-scoped: a broken pointer is a storage failure.
     bool plannedExists = !incoming.routine;
     for (const Routine& routine : db.routineRows)
       if (incoming.routine == routine.id) plannedExists = true;
@@ -288,9 +234,7 @@ public:
   }
 
   void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
-    // The SQL's two doors: an open row takes the instant and the word; a stale-closed row takes a
-    // FINISH as an upgrade (the instant finishAfterStaleClose says, the word becomes finish); nothing
-    // lands over a finish.
+    // An open row takes the instant and the word; a stale close upgrades to a FINISH; nothing lands over a finish.
     for (Session& session : db.sessions) {
       if (!(session.id == id)) continue;
       if (!session.finishedAtMs) {
@@ -306,33 +250,21 @@ public:
   }
 
   SetInsertOutcome insertSet(const Set& incoming) override {
-    // The lock statement, which READS the state it locks: whose session this is and whether it has
-    // already been closed. Both refusals come off it before anything is written, exactly as they do
-    // in the SQL. Without a session row the real INSERT..SELECT selects nothing, so nothing lands
-    // and the read-back finds nothing — the same answer as a spent id, and TrainingService loads the
-    // session before it ever gets here. A CLOSED one refuses outright: a set that never landed may
-    // not land after the finish, and only the locked row can say so without a race.
+    // The lock statement READS the state it locks: whose session this is, and whether it is closed.
     std::optional<Session> ran;
     for (const Session& session : db.sessions)
       if (session.id == incoming.session) ran = session;
     if (!ran) return {std::nullopt, SetInsertError::idTaken};
-    // The revisions read, under the same lock and in the same place the SQL asks it: an id this
-    // account holds as DELETED is spent for good, so a replayed append cannot hand back a set the
-    // lifter took out of the log. Asked before the closed-session refusal, exactly as the SQL asks
-    // it, so the two implementations answer a deleted set in a finished workout with the same word.
+    // The revisions read under the same lock: a DELETED id is spent for good, asked before the closed refusal.
     for (const FakeGymStore::KeptSet& row : db.kept) {
       if (!row.deleted || !(row.set.id == incoming.id)) continue;
       if (db.ownsSession(ran->user, row.set.session))
         return {std::nullopt, SetInsertError::deleted};
     }
-    // The one door through the finished boundary, the same one the SQL opens: a set continuing a
-    // STALE-closed workout lands and moves the finish forward to it (below), never a set after the
-    // lifter's own finish.
+    // The one door through the finished boundary: a set continuing a STALE close lands and moves the finish forward.
     const bool continuesStaleClose = ran->finishedAtMs && lateSetLands(*ran, incoming.completedAtMs);
     if (ran->finishedAtMs && !continuesStaleClose) return {std::nullopt, SetInsertError::finished};
-    // Scoped on the SESSION's owner, the way the write is scoped in SQL. A foreign key alone would
-    // admit another lifter's private movement, and their movement name would then be printed by
-    // this account's log, its export and its coach share.
+    // Scoped on the SESSION's owner: a foreign key alone would admit another lifter's private movement.
     if (!db.visibleTo(ran->user, incoming.exercise))
       return {std::nullopt, SetInsertError::unknownExercise};
     // The read-back, scoped to (id, session_id) and taken last, as the statement order has it.
@@ -356,17 +288,12 @@ public:
     return {stored, SetInsertError::none};
   }
 
-  // The correction, scoped (id, session, owner) exactly as the SQL's two statements are: a set id
-  // that resolves under this account but in another workout is not this session's to correct, and
-  // another account's is not there at all. What it replaces is kept BEFORE the row is rewritten —
-  // a fake that skipped that would let the whole promise of §1 ship behind green.
+  // The correction, scoped (id, session, owner); what it replaces is kept BEFORE the row is rewritten.
   std::optional<Set> updateSet(const UserId& user, const Set& corrected) override {
     for (Set& set : db.sets) {
       if (!(set.id == corrected.id) || !(set.session == corrected.session)) continue;
       if (!db.ownsSession(user, set.session)) return std::nullopt;
-      // Kept only where the row actually MOVES, the SQL's own `IS DISTINCT FROM` guard: `{}` is a
-      // legal fix and a resent one is what a client does with a lost reply, so an unconditional copy
-      // grows a version per retry standing for a change nobody made.
+      // Kept only where the row actually MOVES, the SQL's `IS DISTINCT FROM` guard: `{}` is a legal fix.
       if (!(set == corrected)) db.kept.push_back(FakeGymStore::KeptSet{set, false});
       set = corrected;
       return set;
@@ -374,9 +301,7 @@ public:
     return std::nullopt;
   }
 
-  // The delete, and the same scope. The row moves whole into the kept list marked deleted — it is
-  // never simply dropped — and nothing is answered, because a set that was never here does not stand
-  // either. Set numbers are left alone: the SQL closes no gaps and neither does this.
+  // The delete, same scope: the row moves whole into the kept list marked deleted, and numbers are left alone.
   void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override {
     for (auto row = db.sets.begin(); row != db.sets.end(); ++row) {
       if (!(row->id == id) || !(row->session == session)) continue;
@@ -388,8 +313,7 @@ public:
   }
 
   LogPage log(const UserId& user, const LogCursor& cursor) override {
-    // The same unique sort key the SQL uses: (startedAt, id) descending, the whole pair compared
-    // against the whole cursor, so a tie at a page edge cannot swallow a session.
+    // The SQL's unique sort key: (startedAt, id) descending, the whole pair compared against the cursor.
     const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
     std::vector<Session> page;
     for (const Session& session : db.sessions) {
@@ -421,26 +345,17 @@ public:
         held.push_back(set);
         if (set.kind != SetKind::working) continue;
         ++working;
-        // The aggregate's `greatest(weight_kg, 0) * reps`: an assisted set logs a negative load and
-        // moved no external weight, so it adds nothing rather than subtracting.
+        // `greatest(weight_kg, 0) * reps`: an assisted set moved no external weight, so it adds nothing.
         tonnage += std::max(set.weightKg, 0.0) * set.reps;
-        // The lateral's ORDER BY weight_kg DESC, reps DESC over the WORKING sets, and the same rule
-        // stated once in TopWorkingSet: heaviest, ties to more reps, never volume.
+        // Heaviest working set, ties to more reps, never volume (TopWorkingSet).
         if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
           continue;
         top = TopWorkingSet{set.weightKg, set.reps};
       }
-      // The marks statement: the domain's own projection of this session's working sets, ordered
-      // the way `DISTINCT ON (session, movement, load) … ORDER BY movement, load DESC` hands them
-      // back. It goes through marksOf rather than being re-derived here, because a fake that made
-      // the projection its own way could agree with the rule while disagreeing with the store.
-      // Then dated by the SESSION, which is what every mark a STORE hands over carries
-      // (domain/Review.h) — marksOf dates by the set because it is used where a session's own sets
-      // are in hand, and a fake that skipped this would hand back a vector the SQL never would.
+      // The marks statement, through marksOf and then dated by the SESSION (domain/Review.h).
       std::vector<PriorMark> marks = ordered(marksOf(held));
       for (PriorMark& one : marks) one.atMs = session.startedAtMs;
-      // The SQL reads closed_by when the row carries it, and falls back to the four-hour rule's own
-      // signature (`finished_at = coalesce(max(completed_at), started_at)`) for a legacy row.
+      // closed_by when the row carries it, else the four-hour rule's own signature for a legacy row.
       const bool closedItself =
           session.closedBy ? session.closedBy == ClosedBy::stale
                            : session.finishedAtMs &&
@@ -451,11 +366,7 @@ public:
     }
     if (out.sessions.empty()) return out;
 
-    // The standing statement: the same projection over this account's FINISHED sessions strictly
-    // older than the page's last row, narrowed to the movements the page trains. The window is the
-    // pair (startedAt, id), the unique key every read here compares on. Each set is carried over
-    // stamped with its SESSION's start, so folding them gives the mark the SQL's DISTINCT ON keeps
-    // — the best reps, dated by the earliest workout that hit them.
+    // The standing statement: FINISHED sessions strictly older than the page's last row, on (startedAt, id).
     const Session& oldest = out.sessions.back().session;
     std::vector<Set> before;
     for (const Set& prior : db.sets) {
@@ -489,10 +400,7 @@ public:
     return out;
   }
 
-  // The same walk the SQL does: this account's finished sessions newest first on (startedAt, id),
-  // stopping at the first that holds a non-warmup set of the movement. The open session is stepped
-  // over — today's sets are today's, not last time — and another account's is invisible, so nothing
-  // here can answer with a session the caller may not read.
+  // Finished sessions newest first on (startedAt, id), stopping at the first holding a non-warmup set.
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override {
     std::optional<Session> newest;
     for (const Session& session : db.sessions) {
@@ -508,8 +416,7 @@ public:
       }
     }
     if (!newest) {
-      // Scoped exactly like the catalog read the adapter checks against: another account's custom
-      // movement is unknown here, never merely unlogged.
+      // Scoped like the catalog read: another account's custom movement is unknown, never merely unlogged.
       for (const Exercise& known : db.catalogOf(user))
         if (known.id == exercise) return {std::nullopt, LastTimeError::none};
       return {std::nullopt, LastTimeError::unknownExercise};
@@ -520,24 +427,12 @@ public:
         block.push_back(set);
     std::sort(block.begin(), block.end(),
               [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
-    // The name comes off the session's own frozen snapshot — never off a side map a test author
-    // fills in, which is how a fake comes to agree with an answer the real store cannot produce.
-    // The snapshot is typed now, so "the name is a string or there is no name" is a fact of the
-    // type; what the adapter's `jsonb_typeof(plan->'routine') = 'string'` guard still defends
-    // against is a raw blob no writer of ours can lay down (PgLogRepositoryTest pins that).
+    // The name comes off the session's own frozen snapshot.
     return {LastTime{*newest, newest->plan ? newest->plan->routineName : "", block},
             LastTimeError::none};
   }
 
-  // The picker's meta, and it is written as what it is: lastTime run over every movement this
-  // account's sets name, projected to the LAST row of each block and dated by that block's session.
-  // Composing it out of lastTime is the point rather than a shortcut — the SQL's DISTINCT ON claims
-  // to be that same locator, and a fake that re-derived the rule by hand could agree with a green
-  // suite while the two reads disagreed about which set you did last.
-  //
-  // The walk starts at the SETS, exactly as the statement's FROM does, so a movement this account
-  // has never worked yields nothing and the vector stays sparse. Ordered by movement id, which is
-  // the DISTINCT ON key and the key the caller joins on.
+  // lastTime run over every movement this account's sets name, projected to the LAST row of each block.
   std::vector<LastSet> lastSets(const UserId& user) override {
     std::vector<ExerciseId> touched;
     for (const Set& set : db.sets) {
@@ -557,12 +452,7 @@ public:
     return out;
   }
 
-  // The same three answers the SQL gives, under the same rules. The marks are DISTINCT ON in a
-  // vector: the qualifying prior working sets ordered by (movement, load, most reps, earliest
-  // instant), keeping the first of each pair — so a mark carries the best reps ever done at that
-  // load and is dated the day they were first hit. Both windows compare the PAIR (startedAt, id),
-  // which is what keeps this session out of its own history: without it a review re-read after the
-  // finish would find every set tying itself and would report no record at all.
+  // Both windows compare the PAIR (startedAt, id), which keeps this session out of its own history.
   SessionHistory historyFor(const UserId& user, const Session& session) override {
     SessionHistory history;
     std::vector<Set> priorWorking;
@@ -582,8 +472,7 @@ public:
             today.kind == SetKind::working)
           workedToday = true;
       if (!workedToday) continue;
-      // Carried over stamped with its SESSION's start: a mark the store hands back is dated by the
-      // workout that set it, so the fold below dates it by the earliest workout to hit those reps.
+      // Carried over stamped with its SESSION's start, so the fold dates a mark by the earliest workout.
       Set dated = prior;
       dated.completedAtMs = ranIn->startedAtMs;
       priorWorking.push_back(dated);
@@ -620,10 +509,7 @@ public:
     for (auto row = db.sessions.begin(); row != db.sessions.end(); ++row) {
       if (!(row->id == id) || !(row->user == user)) continue;
       db.sessions.erase(row);
-      // `on delete cascade`: the sets go with the session, so nothing is left pointing at a row
-      // that is gone — and a fake that kept them would hide exactly that leak behind green. The
-      // revisions cascade too, which is what keeps a discard's own promise true: it is permanent,
-      // and nothing keeps a copy of a workout that was thrown away.
+      // `on delete cascade`: the sets go with the session, and the revisions with them.
       std::erase_if(db.sets, [&](const Set& set) { return set.session == id; });
       std::erase_if(db.kept,
                     [&](const FakeGymStore::KeptSet& held) { return held.set.session == id; });
@@ -632,18 +518,14 @@ public:
     return false;   // absent and another account's are the same fact
   }
 
-  // The record read: the catalog's own predicate first — no row means this account holds no such
-  // movement and nothing else is loaded — then the routines that name it, then one ladder per
-  // FINISHED session oldest first, then the last kRecentDays days of non-warmup sets. Every number
-  // the page prints is computed from these by the pure rule; nothing here estimates anything.
+  // The record read: the catalog predicate first, then the routines naming it, the sessions, the recent days.
   MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override {
     MovementHistory history;
     for (const Exercise& known : db.catalogOf(user))
       if (known.id == exercise) history.exercise = known;
     if (!history.exercise) return history;
 
-    // DISTINCT and in the lifter's own program order, which is what the SQL's ORDER BY says: a
-    // routine naming the movement twice is still one day, and the sheet prints the days by name.
+    // DISTINCT and in the lifter's own program order: a routine naming the movement twice is still one day.
     std::vector<Routine> naming;
     for (const Routine& routine : db.routineRows) {
       if (!(routine.user == user)) continue;
@@ -687,13 +569,7 @@ public:
     return history;
   }
 
-  // The same three answers the SQL gives. The series is `DISTINCT ON (movement, session)` keeping
-  // the heaviest set with the most reps and then the earliest — TopSet's rule, made by the store
-  // because it is an ordering — and every point carries the SESSION's start, never a set's device
-  // stamp. The marks are historyFor's projection with both of its windows removed. The weeks are
-  // Monday-to-Monday in UTC and CONTIGUOUS: generate_series fills the gaps there, so a week nobody
-  // trained is a zero here rather than a row that is simply missing. No e1RM is computed anywhere
-  // in this method, because none is computed anywhere in the query it mirrors.
+  // The series is DISTINCT ON (movement, session) dated by the SESSION; weeks are contiguous Monday-to-Monday UTC.
   TrainingLog trainingLog(const UserId& user) override {
     TrainingLog log;
     std::vector<std::pair<Session, Set>> lived = workingSetsOfFinished(user);
@@ -755,10 +631,7 @@ public:
     return log;
   }
 
-  // Every set this account holds, the OPEN session included, in the order the workouts were lived.
-  // The join onto the catalog is an INNER one in the SQL, so a set naming a movement no catalog
-  // holds is not in the file at all — it cannot exist behind the foreign key, and a fake that
-  // emitted it with a blank name would be inventing a row the live store cannot produce.
+  // Every set this account holds, the OPEN session included; the catalog join is an INNER one.
   std::vector<ExportedSet> exportedSets(const UserId& user) override {
     std::vector<std::pair<Session, Set>> lived;
     for (const Set& set : db.sets)
@@ -795,11 +668,7 @@ public:
     return out;
   }
 
-  // The INSERT..SELECT off the caller's own session row: a session that is absent or another
-  // account's selects nothing, so nothing lands, nothing conflicts, and the owner-scoped read-back
-  // finds nothing — one answer for all three, and no branch here that could be got wrong. The
-  // conflict is on the SESSION, so a live share answers with itself (the mint is idempotent) while
-  // one that has already ended is replaced, which is the DO UPDATE's guard exactly.
+  // The INSERT..SELECT off the caller's own session row; the conflict is on the SESSION, so a live share replays.
   std::optional<SessionShare> insertShare(const SessionShare& incoming,
                                           std::uint64_t nowMs) override {
     bool owned = false;
@@ -825,10 +694,7 @@ public:
     return false;   // absent and another account's are the same fact here too
   }
 
-  // Revoked (no row), expired (a row the predicate rejects) and never-minted (no row) leave this
-  // with nothing to return — one value, so nothing above can tell them apart. The sets carry their
-  // movement's display name and no id at all, and the routine name comes off the session's own
-  // frozen snapshot rather than off a routine as it is called today.
+  // Revoked, expired and never-minted are one value here, so nothing above can tell them apart.
   std::optional<SharedSession> sharedSession(const std::string& token,
                                              std::uint64_t nowMs) override {
     for (const SessionShare& held : db.shares) {
@@ -850,9 +716,7 @@ public:
   }
 
 private:
-  // The join both statistics projections are taken over: this account's working sets, in its
-  // FINISHED sessions only, each carrying the session it was lived in. An open workout is today's
-  // screen and not history — the same reason lastTime and historyFor step over it.
+  // This account's working sets in its FINISHED sessions only, each carrying the session it was lived in.
   std::vector<std::pair<Session, Set>> workingSetsOfFinished(const UserId& user) const {
     std::vector<std::pair<Session, Set>> lived;
     for (const Set& set : db.sets) {
@@ -880,8 +744,7 @@ public:
 
   FakeGymStore& db;
 
-  // The store's projection, which is also the predicate every write that names a movement checks
-  // against (FakeGymStore::visibleTo).
+  // The store's projection, which is also the predicate every write naming a movement checks (visibleTo).
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
 
   ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override {
@@ -897,12 +760,8 @@ public:
     return {incoming, ExerciseInsertError::none};
   }
 
-  // The rename, under the SAME split the SQL makes and for the same reason: a movement this account
-  // created is its own row and renames in place, a SEED is a global row shared by every account on
-  // the server and takes a per-account display name instead. Renaming a seed back to its own name
-  // deletes that line rather than storing a copy of it. The renamed entity is CONSTRUCTED before
-  // either write, so a name the store could not hold is refused before anything moves — a fake that
-  // skipped the construction would let an unstorable name pass every service test.
+  // A movement this account created renames in place; a SEED is global and takes a per-account name.
+  // Renaming a seed back to its own name deletes that line rather than storing a copy.
   std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
                                          const std::string& name) override {
     for (const Exercise& row : db.seeds) {
@@ -933,10 +792,7 @@ public:
   }
 
 private:
-  // The rename's three alias statements, in the SQL's own order and for the SQL's own reasons: the
-  // name this account was using becomes one it USED to use, the name it is using now stops being
-  // one — which is what a rename BACK needs, or the old name would shadow the truth in the picker —
-  // and only the newest kMaxAliases are kept. Renaming to the same name adds nothing.
+  // The old name becomes one this account USED to use, the new one stops being one, newest kMaxAliases kept.
   void keepOldName(const UserId& user, const ExerciseId& id, const std::string& was,
                    const std::string& now) {
     if (was != now) {
@@ -968,8 +824,7 @@ public:
     std::vector<Routine> out;
     for (const Routine& routine : db.routineRows)
       if (routine.user == user) out.push_back(db.readRoutine(routine));
-    // The routines screen's order, and the SQL's: most recently trained first, the never-trained
-    // after them rather than above them, ties broken by (position, id) so the walk is deterministic.
+    // Most recently trained first, the never-trained after them, ties broken by (position, id).
     std::sort(out.begin(), out.end(), [](const Routine& a, const Routine& b) {
       if (a.lastTrainedAtMs != b.lastTrainedAtMs) {
         if (!a.lastTrainedAtMs) return false;
@@ -987,10 +842,7 @@ public:
     return std::nullopt;   // another account's routine is the same fact as no routine at all
   }
 
-  // The routine's dated ledger: its proposals newest first, bounded, then its creation row — which
-  // is always last and never counts against the bound, because it is the sentence a lifter reads to
-  // learn where the day came from. A routine that is absent or another account's has no history at
-  // all, which is the same one fact every read here gives.
+  // Proposals newest first, bounded, then the creation row — always last and never against the bound.
   std::vector<RoutineEvent> routineHistory(const UserId& user, const RoutineId& id) override {
     std::vector<RoutineEvent> history;
     if (!routine(user, id)) return history;
@@ -1001,9 +853,7 @@ public:
                        head});
     }
     const auto made = db.createdRoutines.find(id.str());
-    // A row seeded straight into routineRows by a test never went through the create, so it carries
-    // no creation columns. Zero is not an instant the domain accepts anywhere, so it cannot be read
-    // as a date; the live store always has one, because the column has always been NOT NULL.
+    // A row seeded straight into routineRows carries no creation columns, and zero is not an instant.
     if (made == db.createdRoutines.end())
       history.push_back(
           RoutineEvent{RoutineEventKind::created, 0, std::nullopt, std::nullopt, std::nullopt});
@@ -1013,9 +863,7 @@ public:
     return history;
   }
 
-  // The creation row of the history is written by the winner of the id and by nobody else, exactly
-  // as the SQL's ON CONFLICT DO NOTHING decides it: a replay writes nothing, so the day a lifter
-  // built on Sunday is not re-dated to whenever a queue got its reply through.
+  // The creation row is written by the winner of the id and by nobody else (ON CONFLICT DO NOTHING).
   RoutineWriteOutcome insertRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent,
                                     std::uint64_t nowMs) override {
     for (const Routine& routine : db.routineRows) {
@@ -1024,9 +872,7 @@ public:
         return {db.readRoutine(routine), RoutineWriteError::none};   // the PK no-op: a replay reads back stored
       return {std::nullopt, RoutineWriteError::idTaken};   // the id is spent by an account we can't see
     }
-    // Every line names a movement this account may see, under the write's own scope rather than the
-    // foreign key's — another lifter's private movement is unknown here, not merely someone else's.
-    // The whole document is one transaction there, so a refused line leaves NO row behind.
+    // Every line names a movement this account may see; one transaction, so a refused line leaves no row.
     for (const RoutineEntry& entry : incoming.entries)
       if (!db.visibleTo(incoming.user, entry.exercise))
         return {std::nullopt, RoutineWriteError::unknownExercise};
@@ -1036,15 +882,7 @@ public:
     return {db.readRoutine(incoming), RoutineWriteError::none};
   }
 
-  // The lifter's own hand, and the two facts that make the ledger safe beside it: the revision
-  // moves, and every proposal still pending on this routine is superseded in the same write. A fake
-  // that skipped either would let a proposal be applied over a base the lifter had already replaced,
-  // behind a green suite — which is precisely the bug Lift's own proposal-apply shipped.
-  //
-  // Both turn on the document or the NAME having moved, exactly as the SQL asks it: a PUT that lands
-  // the bytes already standing — an editor saving on close, a logger writing the whole document back
-  // to change one weight, a drag up the routines screen — settles nothing, because it destroyed no
-  // base.
+  // A write moving the document or the NAME bumps the revision and supersedes every pending proposal on it.
   RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
                                      std::optional<int> expectedRevision) override {
     for (Routine& routine : db.routineRows) {
@@ -1070,20 +908,16 @@ public:
       if (!(row->id == id) || !(row->user == user)) continue;
       db.routineRows.erase(row);
       db.createdRoutines.erase(id.str());   // the row is gone, and its creation columns with it
-      // `on delete set null`: the sessions trained under it keep their frozen snapshots and lose
-      // only the pointer, so the log still says which day of the program each one was.
+      // `on delete set null`: the sessions keep their frozen snapshots and lose only the pointer.
       for (Session& session : db.sessions)
         if (session.routine == id) session.routine = std::nullopt;
-      // `on delete cascade`: the proposals on a routine go with it, settled ones included. A day
-      // that has left the program has no editor to draw a History section in.
+      // `on delete cascade`: the proposals on a routine go with it, settled ones included.
       std::erase_if(db.proposalRows,
                     [&](const RoutineProposal& held) { return held.head.routine == id; });
       return true;
     }
     return false;
   }
-
-  // ── The proposal ledger, under the same rules the SQL keeps ──
 
   std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) override {
     std::vector<ProposalHead> out;
@@ -1108,15 +942,7 @@ public:
     return std::nullopt;   // another account's is the same fact as no proposal at all
   }
 
-  // The mint's four steps in the order the SQL takes them: the routine resolved under the caller's
-  // own scope, the spent id answered before anything is written, the prior pending one from the same
-  // door superseded, then the row. Getting that order wrong is how a REFUSED mint settles the card
-  // its caller could still see, and how a replayed mint supersedes the proposal it was replaying.
-  //
-  // The spent id splits three ways here as it does in SQL, and the split is the domain's own rule
-  // (`isReplayOf`): another account's is taken, the caller's own carrying the same document is the
-  // replay, and the caller's own carrying a different one is refused rather than answered with a
-  // proposal it does not describe.
+  // The mint's steps in the SQL's order: resolve the routine, answer a spent id, supersede the door's pending, then insert.
   ProposalMintOutcome insertProposal(const RoutineProposal& incoming) override {
     std::optional<Routine> base = routine(incoming.head.user, incoming.head.routine);
     if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
@@ -1128,9 +954,7 @@ public:
         return {withLoggedSets(held, incoming.head.user), ProposalMintError::none};
       return {std::nullopt, ProposalMintError::idReused};
     }
-    // Every line names a movement this account may see, under the write's own scope rather than a
-    // foreign key's — and refused HERE, at the mint, so a proposal a lifter could not apply never
-    // reaches their screen.
+    // Every line names a movement this account may see, refused HERE at the mint.
     for (const RoutineChange& change : incoming.changes)
       if (!db.visibleTo(incoming.head.user, change.exercise))
         return {std::nullopt, ProposalMintError::unknownExercise};
@@ -1163,8 +987,7 @@ public:
     }
     held->head.state = ProposalState::applied;
     held->head.settledAtMs = nowMs;
-    // The routine just moved, so every other proposal waiting on it is now against a base that is
-    // gone — an apply settles them exactly as the lifter's own write does.
+    // The routine just moved, so every other proposal waiting on it is superseded.
     supersedeOnRoutine(user, becomes.id, id, nowMs);
     return {withLoggedSets(*held, user), routine(user, becomes.id), ProposalSettleError::none};
   }
@@ -1217,9 +1040,7 @@ private:
     return nullptr;
   }
 
-  // The `loggedSets` pass, which the SQL does with a LEFT JOIN onto gym_sets at READ time. It is
-  // counted here rather than stored for the reason it is counted there: §D14's *41 logged sets kept*
-  // has to be true when a lifter reads it.
+  // The `loggedSets` pass, which the SQL does with a LEFT JOIN onto gym_sets at READ time.
   RoutineProposal withLoggedSets(RoutineProposal held, const UserId& user) const {
     for (RoutineChange& change : held.changes) {
       if (change.kind != ChangeKind::removed) continue;
@@ -1231,9 +1052,7 @@ private:
     return held;
   }
 
-  // What every pending proposal on a routine becomes the moment that routine MOVES — every door's,
-  // because the base they were all minted against is gone. Not a delete: a superseded proposal drops
-  // into the routine's dated history.
+  // What every pending proposal on a routine becomes when that routine MOVES — every door's, and not a delete.
   void supersedeOnRoutine(const UserId& user, const RoutineId& routine, const ProposalId& except,
                           std::uint64_t nowMs) {
     for (RoutineProposal& held : db.proposalRows) {
@@ -1244,18 +1063,14 @@ private:
     }
   }
 
-  // The narrower rule the partial unique index keys on: ONE PENDING PROPOSAL PER (routine, door,
-  // connection). A mint replaces only what its own door had waiting; another door's stands, because
-  // the lifter has two things to decide and losing one because the other spoke second would be the
-  // ledger deciding for them.
+  // The partial unique index's rule: ONE PENDING PROPOSAL PER (routine, door, connection).
   void supersedeFromDoor(const RoutineProposal& incoming) {
     for (RoutineProposal& held : db.proposalRows) {
       if (!(held.head.user == incoming.head.user) ||
           !(held.head.routine == incoming.head.routine))
         continue;
       if (held.head.state != ProposalState::pending || held.head.id == incoming.head.id) continue;
-      // The partial unique index's own key, (routine, door, connection) — not the whole source, so
-      // the fake supersedes exactly what the SQL would otherwise refuse and nothing more.
+      // Keyed on (routine, door, connection), not the whole source.
       if (held.head.source.door != incoming.head.source.door ||
           held.head.source.connection != incoming.head.source.connection)
         continue;
@@ -1271,11 +1086,7 @@ public:
 
   FakeGymStore& db;
 
-  // ── Ask's threads ────────────────────────────────────────────────────────────────────────────
-  //
-  // The turns are stored on the row and `minted` is DERIVED on every read from the proposal ledger,
-  // exactly as the SQL derives it from a join — so a fake that stored an outcome could never drift
-  // from one, because there is no outcome stored on either side.
+  // The turns are stored on the row; `minted` is DERIVED on every read from the proposal ledger.
   std::vector<AskThread> threads(const UserId& user) override {
     std::vector<AskThread> out;
     for (const AskThread& held : db.threadRows)
@@ -1287,8 +1098,7 @@ public:
     return out;
   }
 
-  // The archive's read: every row, no ceiling, oldest first — the shape the export stamps outcomes
-  // from, and the reason it is separate from the list is that a screen's ceiling is not an archive's.
+  // The archive's read: every row, no ceiling, oldest first.
   std::vector<AskThread> allThreads(const UserId& user) override {
     std::vector<AskThread> out;
     for (const AskThread& held : db.threadRows)
@@ -1307,9 +1117,7 @@ public:
 
   ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title,
                                std::uint64_t nowMs) override {
-    // The store's race, made reachable: two accounts mint one id at once, the loser's global probe
-    // finds it free, its insert loses to ON CONFLICT DO NOTHING, and its owner-scoped read back comes
-    // home empty — no thread and no named error. Only a flag can stage that deterministically.
+    // The store's race, made reachable: the loser's insert loses to ON CONFLICT DO NOTHING and reads back empty.
     if (db.loseThreadRace) return {std::nullopt, ThreadOpenError::none};
     for (const AskThread& held : db.threadRows) {
       if (!(held.id == id)) continue;
@@ -1342,9 +1150,7 @@ public:
     std::erase_if(db.threadRows,
                   [&](const AskThread& held) { return held.id == id && held.user == user; });
     if (db.threadRows.size() == before) return false;
-    // `on delete set null`: THE CONVERSATION GOES AND THE CONSEQUENCE STAYS. Every proposal it
-    // minted keeps its row, its state and its place in the routine's history, and loses only the
-    // link back to a conversation that no longer exists.
+    // `on delete set null`: every proposal the conversation minted keeps its row and loses only the link.
     for (RoutineProposal& held : db.proposalRows)
       if (held.head.source.thread == id) held.head.source.thread.reset();
     return true;
@@ -1359,9 +1165,7 @@ public:
     });
     std::vector<ExportedThreadTurn> out;
     for (const AskThread& row : held) {
-      // A thread that holds no turns is still a row, with the turn columns empty — the store's LEFT
-      // JOIN, said in the fake so both sides of the port answer alike. Such a thread is real for the
-      // whole of every in-flight ask, and it is listed on screen.
+      // A thread that holds no turns is still a row, with the turn columns empty (the store's LEFT JOIN).
       if (row.turns.empty()) {
         out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
                                          isoUtc(row.createdAtMs), "", "", "", ""});
@@ -1370,8 +1174,7 @@ public:
       int position = 0;
       for (const ThreadTurn& turn : row.turns) {
         ++position;
-        // The outcome columns come back EMPTY: that ladder is the domain's, and ThreadService stamps
-        // it on — the same split the SQL keeps.
+        // The outcome columns come back EMPTY: ThreadService stamps that ladder on.
         out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
                                          isoUtc(row.createdAtMs), std::to_string(position),
                                          turn.fromLifter ? "lifter" : "ask", turn.text,
@@ -1382,8 +1185,7 @@ public:
   }
 
 private:
-  // The join the list read makes: what this conversation minted, in mint order, each carrying the
-  // routine's name AS IT NOW STANDS — a day renamed since has to be findable under the name it has.
+  // What this conversation minted, in mint order, each carrying the routine's name AS IT NOW STANDS.
   AskThread withMinted(const AskThread& held, bool withTurns) const {
     AskThread out = held;
     if (!withTurns) out.turns.clear();
@@ -1400,8 +1202,7 @@ private:
                        std::pair(b->head.createdAtMs, b->head.id.str());
               });
     for (const RoutineProposal* proposal : minted) {
-      // The SQL joins gym_routines, so a proposal whose routine is gone is off this list on both
-      // sides — the routine's deletion took the proposal with it anyway.
+      // The SQL joins gym_routines, so a proposal whose routine is gone is off this list.
       std::string name;
       bool found = false;
       for (const Routine& routine : db.routineRows)
@@ -1424,11 +1225,7 @@ public:
 
   FakeGymStore& db;
 
-  // The settings row, under the primary key's own rule: at most one per account, and a lifter who
-  // has never written holds NONE — the absence is the fact, and the defaults are given a layer up
-  // (PreferencesService), never invented here. The write is a whole-document upsert and last write wins,
-  // which is the same ordering the claim replay leans on when a signed-in account meets the
-  // settings an anonymous device just touched.
+  // At most one row per account; a lifter who never wrote holds NONE, and the defaults are a layer up.
   std::optional<GymPreferences> preferences(const UserId& user) override {
     for (const GymPreferences& row : db.preferenceRows)
       if (row.user == user) return row;
@@ -1446,8 +1243,7 @@ public:
   }
 };
 
-// The whole store and its five doors, in the shape a harness holds them: `FakeGym repo;` then
-// `repo.db.sessions` for the rows and `repo.log`, `repo.program`, … for the ports a service takes.
+// The whole store and its five doors, in the shape a harness holds them.
 struct FakeGym {
   FakeGymStore db;
   FakeLogRepository log{db};

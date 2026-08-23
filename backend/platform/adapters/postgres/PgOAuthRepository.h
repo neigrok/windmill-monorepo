@@ -10,8 +10,7 @@ namespace wm {
 
 // OAuth clients, authorization codes, and tokens in Postgres. A code is redeemed with
 // DELETE ... RETURNING and a refresh token with UPDATE ... RETURNING, so either way exactly one
-// caller spends a row; the refresh row stays behind as a tombstone so its reuse is recognisable. A per-thread connection
-// (PgConnection) backs every call, like the other repositories.
+// caller spends a row; the refresh row stays behind as a tombstone so its reuse is recognisable.
 class PgOAuthRepository : public OAuthRepository {
 public:
   explicit PgOAuthRepository(std::shared_ptr<PgPool> pool);

@@ -17,10 +17,7 @@ TEST(mint_code_is_always_exactly_six_decimal_digits) {
 }
 
 TEST(mint_code_favours_no_digit) {
-  // 256 % 10 != 0, so a plain byte % 10 would over-produce 0-5 and starve 6-9 by ~2.3% — small
-  // enough to ship unnoticed, which is why the shape is pinned. The sampler rejects 250-255 and
-  // resamples; over 4000 codes (24000 digits) each digit is expected 2400 times, and the 1800
-  // floor sits ~13 sigma below that — a bound only a biased or broken map can cross.
+  // 256 % 10 != 0, so a plain byte % 10 would over-produce 0-5. The sampler rejects 250-255 and resamples; over 24000 digits each is expected 2400 times, and the 1800 floor sits ~13 sigma below.
   OpenSslTokenGenerator tokens;
   int seen[10] = {0};
   for (int i = 0; i < 4000; ++i)

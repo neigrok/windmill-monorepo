@@ -15,7 +15,7 @@ using namespace wm;
 
 namespace {
 
-const PipelineVersions kPipeline{"segmenter-v1", "embedder-v1"};
+const PipelineVersions kPipeline{"segmenter-v1", "embedder-v1", "judge-v1"};
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kMine = "22222222-2222-2222-2222-222222222222";
@@ -219,17 +219,26 @@ TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 
   // A new segmenter: the page reports as a moved body — it has to be cut again.
-  const PipelineVersions recut{"segmenter-v2", "embedder-v1"};
+  const PipelineVersions recut{"segmenter-v2", "embedder-v1", "judge-v1"};
   std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, recut);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, true);
   CHECK_EQ(repo.duePages(UserId{kMine}, 9, recut).size(), std::size_t{1});
 
   // A new embedder alone: the units still stand, so the page is owed a pass but not a re-cut.
-  const PipelineVersions reembed{"segmenter-v1", "embedder-v2"};
+  const PipelineVersions reembed{"segmenter-v1", "embedder-v2", "judge-v1"};
   owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, reembed);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->bodyMoved, false);
+
+  // A new judge — the curator's prompt, or a selection threshold — is the third way, and it is the
+  // one that was missing: two false positives were fixed, the fix deployed, and every page kept
+  // carrying them because nothing about a verdict makes a page due. It re-cuts nothing.
+  const PipelineVersions rejudge{"segmenter-v1", "embedder-v1", "judge-v2"};
+  owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, rejudge);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->bodyMoved, false);
+  CHECK_EQ(repo.duePages(UserId{kMine}, 9, rejudge).size(), std::size_t{1});
 }
 
 TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {
@@ -243,7 +252,7 @@ TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {
 
   CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
   CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10,
-                     PipelineVersions{"segmenter-v2", "embedder-v1"})
+                     PipelineVersions{"segmenter-v2", "embedder-v1", "judge-v1"})
             .has_value());
 }
 

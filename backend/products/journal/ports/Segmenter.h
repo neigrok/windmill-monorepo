@@ -27,8 +27,7 @@ struct Segmenter {
   virtual ~Segmenter() = default;
   virtual bool configured() const = 0;
 
-  // Not stamped on any row yet (see ECHOES.md, "Segmentation"): a page is due on its body or its
-  // corpus moving, never on the segmenter changing. Clearing journal_page_curation re-derives all.
+  // Stamped on the page's curation row; a page whose stored segment_version differs is due again.
   virtual std::string version() const = 0;
 
   // `user` attributes the call's spend to an account.

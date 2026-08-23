@@ -8,10 +8,10 @@
 
 namespace wm::gym {
 
-// Ask's threads over Postgres (§O): the conversation row and its turns. Owner-scoped like every gym
-// read, and openThread is the one write here that must tell absent from another account's — it
-// says why at ThreadOpenError. Stateless but for the pool — each method borrows a connection for
-// exactly one transaction (platform/adapters/postgres/PgPool.h).
+// Ask's threads over Postgres: the conversation row and its turns. Owner-scoped like every gym read,
+// and openThread is the one write here that must tell absent from another account's (ThreadOpenError
+// says why). Stateless but for the pool — each method borrows a connection for exactly one
+// transaction (platform/adapters/postgres/PgPool.h).
 //
 // The port seam is not table ownership: a thread's `minted` is read off gym_proposals joined to
 // gym_routines as they stand today, and a deleted thread leaves its proposals standing with

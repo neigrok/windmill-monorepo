@@ -19,8 +19,8 @@ drogon::HttpResponsePtr forbidden(WriteRefusal refusal) {
 }
 }
 
-// No billing gate here: setting a tree private is free (the paid line is tending, not privacy), so
-// the registry needs only the tree store and the auth boundary.
+// No billing gate here: setting a tree private is free, so the registry needs only the tree
+// store and the auth boundary.
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
     : registry_(std::move(registry)), auth_(std::move(auth)) {}
 
@@ -32,8 +32,7 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
   }
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   // A root that parsed but is not an object — `[]`, `"hello"`, `5` — is refused before anything
-  // reads a key off it: jsoncpp throws on a keyed read of an array or a scalar, and that throw
-  // escaped as a 500 with a server_errors row and a Sentry event, for what is plainly a 400.
+  // reads a key off it: jsoncpp throws on a keyed read of an array or a scalar.
   if (json && !json->isObject()) {
     callback(error(drogon::k400BadRequest, "invalid json body"));
     return;
@@ -53,9 +52,7 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
   TreeData initial = *std::move(parsed);
-  // Create used to check nothing at all about the document it seeded — not a node count, not one
-  // field size — so the caps the command path enforces (domain/Command.h) were simply absent from
-  // the one route that plants a tree. Same rule, same voice, before a byte is persisted.
+  // The same caps the command path enforces (domain/Command.h), before a byte is persisted.
   if (std::optional<Admission> refusal = admit(initial)) {
     const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
     callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
@@ -75,9 +72,9 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k409Conflict, "that id already names another tree", "id-taken"));
     return;
   }
-  // The caller's own retired id. Told apart from `id-taken` so the claim path can honour the
-  // delete (drop the device's leftovers) instead of re-planting the tree under a fresh id. Only
-  // ever sent to the account that owned it, so it reveals nothing about anyone else's ids.
+  // The caller's own retired id, told apart from `id-taken` so the claim path drops the device's
+  // leftovers instead of re-planting under a fresh id. Only ever sent to the account that owned
+  // it.
   if (outcome == TreeRegistry::Creation::retired) {
     callback(error(drogon::k409Conflict, "that id names a roadmap you deleted", "id-retired"));
     return;

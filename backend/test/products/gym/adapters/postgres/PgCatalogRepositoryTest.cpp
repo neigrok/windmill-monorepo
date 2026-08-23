@@ -14,8 +14,7 @@
 #include <utility>
 #include <vector>
 
-// The catalog's store against a real server: the 64-row seed, the one create, and the rename that
-// leaves a per-account name and an alias behind.
+// The catalog's store against a real server: the 64-row seed, the one create, and the rename.
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
@@ -32,8 +31,6 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
   CHECK_EQ(catalog.back(), Exercise(ExerciseId{"walking-lunge"}, "Walking Lunge", Pattern::squat,
                                     Equipment::dumbbell, 2.0, false));
 }
-
-// ---- the catalog's one write ---------------------------------------------------------------
 
 TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -65,7 +62,6 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   // It is theirs alone: 64 seeds plus this one for the owner, 64 flat for everybody else.
   CHECK_EQ(repo.catalog(wm::UserId{kUser}).size(), static_cast<std::size_t>(65));
   CHECK_EQ(repo.catalog(wm::UserId{kOther}).size(), static_cast<std::size_t>(64));
-  // And a created movement is a movement: a set may name it, and a plan may hold it.
   log.insertSession(sessionAt("ses_pg000001", 1'700'000'000'123));
   CHECK(log.insertSet(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"},
                            ExerciseId{"pg-zercher-squat"}, 0, 60.0, 8, SetKind::working,
@@ -75,10 +71,7 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
             .error == RoutineWriteError::none);
 }
 
-// The domain's step band is the column's band, and this is where that claim is checked rather than
-// asserted: 99.99 and 0.01 store and read back unchanged, and a step outside them never reaches
-// here because the Exercise constructor refuses it — which is what keeps a numeric overflow from
-// leaving the repository as the house 500 the ladder documents as retryable.
+// The domain's step band is the column's band: 99.99 and 0.01 store and read back unchanged.
 TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -96,8 +89,7 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
   CHECK_EQ(top.exercise->stepKg, 99.99);
   CHECK(fine.error == ExerciseInsertError::none);
   CHECK_EQ(fine.exercise->stepKg, 0.01);
-  // And what the domain refuses is what the column would have raised on: proved by the statement
-  // the repository would have run, so the constructor's bound is the column's and not a guess.
+  // What the domain refuses is what the column would have raised on, proved by the statement itself.
   {
     wm::PgLease c{*wm::pgTestPool()};
     pqxx::work w{*c};
@@ -113,12 +105,7 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
   }
 }
 
-// ---- the rename -----------------------------------------------------------------------------
-
-// THE HAZARD, against the real table: the 64 seeds are GLOBAL rows, so a rename that touched
-// gym_exercises would rename Back Squat for every lifter on this server. This case is what stops
-// that statement from ever being written — it asserts the OTHER account's catalog, and the row
-// itself, are untouched.
+// The 64 seeds are GLOBAL rows, so a rename may not touch gym_exercises: the other account is untouched.
 TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_untouched) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -139,7 +126,6 @@ TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_unto
     if (row.id == ExerciseId{"back-squat"} && row.name == "Back Squat") theirs = true;
   CHECK(mine);
   CHECK(theirs);
-  // And the global row itself still says what the seed says.
   wm::PgLease conn{*wm::pgTestPool()};
   pqxx::work txn{*conn};
   CHECK_EQ(txn.exec_params("SELECT name FROM gym_exercises WHERE id = 'back-squat'")[0][0]
@@ -147,9 +133,7 @@ TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_unto
            std::string("Back Squat"));
 }
 
-// A movement the caller CREATED is their own row and renames in place — no line beside it, because
-// there is no global row to protect. Renaming a seed back to its own name clears the line instead
-// of storing a copy of it.
+// A movement the caller CREATED is their own row and renames in place — no line beside it.
 TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_drops_the_line) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -161,9 +145,7 @@ TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_d
   const std::optional<Exercise> own =
       repo.renameExercise(wm::UserId{kUser}, ExerciseId{"ex_pg000001"}, "Zercher");
   repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Low-bar Squat");
-  // Typed back with the stray space a keyboard leaves: the entity trims before anything compares,
-  // so this is the seed's own name and clears the line rather than pinning a copy that differs from
-  // it by one byte.
+  // Typed back with a stray space: the entity trims before anything compares, so this is the seed's own name.
   const std::optional<Exercise> restored =
       repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, " Back Squat ");
 
@@ -178,18 +160,13 @@ TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_clearing_a_seeds_name_d
                            kUser)[0][0]
                .as<int>(),
            0);
-  // The rename edited the caller's own row and nobody else's: another account cannot see it at all.
   CHECK_EQ(repo.renameExercise(wm::UserId{kOther}, ExerciseId{"ex_pg000001"}, "Mine"),
            std::optional<Exercise>());
   CHECK_EQ(repo.renameExercise(wm::UserId{kUser}, ExerciseId{"no-such"}, "Mine"),
            std::optional<Exercise>());
 }
 
-// §N32's *old name searchable as an alias*, against the real table — seeds and a lifter's own
-// movements alike, which is the whole reason it is a row and not a column beside the display name
-// (a created movement has no line there to hang one off). Three rules in one write: the old name is
-// kept, renaming BACK takes the name back off the list rather than leaving it to shadow the truth
-// in the picker, and the list is capped so the catalog read stays the size it was.
+// The old name is kept as an alias, renaming BACK takes it off the list, and the list is capped.
 TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_off) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -207,19 +184,16 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
   CHECK_EQ(renamed->aliases, std::vector<std::string>{"Back Squat"});
   REQUIRE(own.has_value());
   CHECK_EQ(own->aliases, std::vector<std::string>{"Hammer row"});
-  // It is the PICKER's read that has to carry it, because that is where the searching happens.
   for (const Exercise& row : repo.catalog(wm::UserId{kUser})) {
     if (row.id == ExerciseId{"back-squat"})
       CHECK_EQ(row.aliases, std::vector<std::string>{"Back Squat"});
     if (row.id == ExerciseId{"ex_pg000001"})
       CHECK_EQ(row.aliases, std::vector<std::string>{"Hammer row"});
   }
-  // Per account, like the display name it remembers: another lifter's picker never heard of it.
   for (const Exercise& row : repo.catalog(wm::UserId{kOther}))
     if (row.id == ExerciseId{"back-squat"}) CHECK(row.aliases.empty());
 
-  // Renamed BACK: `Back Squat` is what the movement IS again, so it is no longer a memory of one —
-  // and the name it wore in between is.
+  // Renamed BACK: `Back Squat` is what the movement IS again, and the name it wore in between is the memory.
   const std::optional<Exercise> back =
       repo.renameExercise(wm::UserId{kUser}, ExerciseId{"back-squat"}, "Back Squat");
   REQUIRE(back.has_value());
@@ -235,10 +209,7 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
            (std::vector<std::string>{"Seven", "Six", "Five", "Four", "Three"}));
 }
 
-// Every read that prints a movement name reads the CALLER's name for it — the catalog, the log
-// row's movement list, the export, and the coach share (which resolves against the OWNER of the
-// workout, the one account a token's reader has). A read that missed the coalesce would print the
-// seed name to the one lifter who renamed it.
+// Every read that prints a movement name reads the CALLER's name for it, the coach share resolving against the workout's OWNER.
 TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

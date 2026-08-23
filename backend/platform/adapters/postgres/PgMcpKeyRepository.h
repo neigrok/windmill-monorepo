@@ -9,8 +9,7 @@
 namespace wm {
 
 // Postgres-backed personal MCP API keys. Times the domain owns are stored as epoch-millisecond
-// bigints and passed through untouched; the token digest is the row's primary key. A per-thread
-// connection (PgConnection) backs every call, like the other repositories.
+// bigints and passed through untouched; the token digest is the row's primary key.
 class PgMcpKeyRepository : public McpKeyRepository {
 public:
   explicit PgMcpKeyRepository(std::shared_ptr<PgPool> pool);

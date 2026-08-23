@@ -14,13 +14,10 @@ namespace wm::gym {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// ASK'S THREADS (§O) OVER REST, AND THEY LIVE HERE AND NOT ON ASK'S API. AskApi is the ask DOOR —
-// one question into one thread — and a deployment with no vendor key registers no `POST
-// /v1/gym/ask` at all; the conversations a lifter already had are still theirs to read, to export
-// and to delete. A thread is somebody's own words, not a feature of the model that answered them.
-// One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the status ladder
-// they all share; routes.cpp is the one mount). It needs the thread service and the auth seam and
-// nothing else.
+// Ask's threads over REST, here and NOT on AskApi: a deployment with no vendor key registers no
+// `POST /v1/gym/ask` at all, and the conversations a lifter already had stay theirs to read, export
+// and delete. One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the
+// status ladder they all share; routes.cpp is the one mount).
 class ThreadsApi {
 public:
   ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<AuthService> auth);

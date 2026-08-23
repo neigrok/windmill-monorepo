@@ -345,8 +345,7 @@ TEST(admit_names_the_node_whose_field_is_over_its_cap) {
   CHECK_EQ(refusal->reason, std::string("node \"hull\": description is 4001 characters, max 4000"));
 }
 
-// A title is counted in codepoints, exactly as the rename path truncates it — a byte cap would
-// refuse a hundred perfectly legal CJK characters that a rename keeps.
+// A title is counted in codepoints, exactly as the rename path truncates it.
 TEST(admit_counts_a_title_in_codepoints_not_bytes) {
   TreeData wide;
   for (std::size_t i = 0; i < kMaxTitleChars; ++i) wide.title += "学";  // 200 characters, 600 bytes
@@ -359,8 +358,7 @@ TEST(admit_counts_a_title_in_codepoints_not_bytes) {
   CHECK_EQ(refusal->reason, std::string("the title is 201 characters, max 200"));
 }
 
-// A graft is judged on what the tree would HOLD: an id already present is an upsert and costs
-// nothing, so a re-import of the whole tree is admitted while one new node over the top is not.
+// A graft is judged on what the tree would HOLD: an id already present is an upsert and costs nothing.
 TEST(admit_of_a_graft_counts_the_resulting_tree_not_the_batch) {
   LooseGraph graph;
   TreeData batch;
@@ -382,8 +380,7 @@ TEST(admit_of_a_graft_counts_the_resulting_tree_not_the_batch) {
                        "or delete what it has outgrown"));
 }
 
-// The lattice arrival: a frame's own tombstone lowers the count it is judged against, so an
-// account at the ceiling can still trade a node for a node.
+// A frame's own tombstone lowers the count it is judged against, so an account at the ceiling can trade a node for a node.
 TEST(admit_of_a_frame_lets_a_tombstone_pay_for_a_new_node) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
@@ -421,8 +418,6 @@ TEST(admit_of_a_frame_refuses_a_node_field_over_its_cap) {
   CHECK_EQ(refusal->reason, std::string("node \"hull\": label is 201 characters, max 200"));
 }
 
-// A 20KB id is the thing being refused; echoing it back would make the refusal as expensive as
-// the request that earned it.
 TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
   TreeData data;
   NodeSpec node;
@@ -434,8 +429,7 @@ TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
   CHECK_EQ(refusal->reason, std::string("a node id is 20000 characters, max 128"));
 }
 
-// A ceiling refuses growth, not size. Trees already past the caps exist — this very gap built
-// them — and a rule that froze one would leave its owner unable to rename, retire or thin it.
+// A ceiling refuses growth, not size: trees already past the caps must stay renameable and thinnable.
 TEST(admit_still_lets_an_over_cap_tree_be_edited_and_thinned) {
   LooseGraph graph;
   for (std::size_t i = 0; i <= kMaxNodes; ++i)  // 10001 present nodes: already past the ceiling
@@ -461,10 +455,7 @@ TEST(admit_still_lets_an_over_cap_tree_be_edited_and_thinned) {
                        "or delete what it has outgrown"));
 }
 
-// The join is PERFORMED, not estimated. A frame whose entry looks like a tombstone on its own
-// face — deletedAt beating createdAt WITHIN the entry — still loses to the stamp the graph holds,
-// so it lowers nothing. Read as an estimate, each such entry bought one node of headroom, and a
-// tree at the ceiling walked from 10000 to 13600 over 45 acked frames.
+// The join is PERFORMED, not estimated: a frame entry whose deletedAt beats its own createdAt still loses to the stamp the graph holds, so it lowers nothing.
 TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
@@ -472,7 +463,7 @@ TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
                      Hlc{1, 0, "genesis"});
 
   GraphState frame;
-  NodeStateEntry forged;  // the reviewer's shape: 1:0:A created, 1:0:a deleted, graph holds 1:0:genesis
+  NodeStateEntry forged;
   forged.id = nid("n0");
   forged.createdAt = Hlc{1, 0, "A"};
   forged.deletedAt = Hlc{1, 0, "a"};
@@ -490,8 +481,7 @@ TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
                        "or delete what it has outgrown"));
 }
 
-// One key moves the count by at most one, however many times the frame names it — so repeating an
-// id cannot drive the estimate down a step per repetition.
+// One key moves the count by at most one, however many times the frame names it.
 TEST(admit_counts_a_repeated_id_once_however_often_a_frame_names_it) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
@@ -519,8 +509,7 @@ TEST(admit_counts_a_repeated_id_once_however_often_a_frame_names_it) {
                        "or delete what it has outgrown"));
 }
 
-// An edge is one edge however often the batch asks for it: counting the repetitions refused legal
-// documents, with a sentence stating a number the tree would never have held.
+// An edge is one edge however often the batch asks for it.
 TEST(admit_counts_a_repeated_prerequisite_once) {
   LooseGraph graph;
   TreeData batch;
@@ -535,8 +524,7 @@ TEST(admit_counts_a_repeated_prerequisite_once) {
   CHECK_FALSE(admit(graph, batch).has_value());  // 30001 prerequisites, one edge
 }
 
-// The legend rides the same frame the graph does. Its ceiling is the growth rule too, so a full
-// legend can still be edited and a kind traded for a kind.
+// The legend rides the same frame the graph does, under the same growth rule.
 TEST(admit_bounds_the_legend_a_frame_would_leave_behind) {
   Legend legend = Legend::seededDefaults(at(1));
   LegendState arriving;

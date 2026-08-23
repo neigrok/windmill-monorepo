@@ -9,8 +9,7 @@
 namespace wm {
 
 namespace {
-// A quarter hour: close enough to a slot's local time, small enough to be a rounding error on the
-// database.
+// A quarter hour: close to a slot's local time, small enough to be a rounding error on the database.
 constexpr double kTickSeconds = 900.0;
 // The first tick's window past boot, jittered so a crash-looping process cannot hammer the sweep.
 constexpr int kFirstTickFloorSeconds = 30;
@@ -41,8 +40,7 @@ void ReminderSweep::start() {
 void ReminderSweep::runAsync(std::uint64_t nowMs, bool dryRun,
                              std::function<void(MailSweepReport)> done) {
   heartbeat_.queue([this, nowMs, dryRun, done = std::move(done)] {
-    // `done` fires on every path: the caller is waiting on a promise it cannot fulfil itself, and an
-    // empty report reads as "nothing ran".
+    // `done` fires on every path: the caller is waiting on a promise it cannot fulfil itself.
     try {
       done(run(nowMs, dryRun));
     } catch (const std::exception& error) {
@@ -103,22 +101,20 @@ void ReminderSweep::send(const DueUser& due, const ReminderDecision& decision,
   // The OWNER's own tree at #/app/:id — NOT the public /t/:id share page.
   mail.treeUrl = appBaseUrl_ + "/#/app/" + content.treeId.str();
   mail.settingsUrl = appBaseUrl_ + "/#/settings";  // the app is hash-routed; a bare /settings is a 404
-  // The token rides in the FRAGMENT, so the secret never reaches OUR logs, and the page it lands on
-  // pauses only from a button the reader presses — a bare GET must never pause anyone, because
-  // corporate link scanners and Outlook prefetch every URL in an email.
+  // The token rides in the FRAGMENT, so the secret never reaches OUR logs, and the page pauses only
+  // from a button the reader presses — a bare GET must never pause anyone, because corporate link
+  // scanners and Outlook prefetch every URL in an email.
   mail.pauseUrl = appBaseUrl_ + "/pause.html#t=" + pauseSecret;
-  // The same secret on the one-click machine door: a mail client POSTs this itself, so it cannot
-  // ride a fragment — it goes in the query of a real endpoint, registered POST-only so a scanner's
-  // GET can never unsubscribe anyone. Gmail and Yahoo require a List-Unsubscribe one-click on bulk
-  // mail, so a reminder that lacks it lands in spam.
+  // The same secret on the machine door: a mail client POSTs this itself, so it cannot ride a
+  // fragment — it goes in the query of a real endpoint, registered POST-only so a scanner's GET can
+  // never unsubscribe anyone. Gmail and Yahoo require List-Unsubscribe one-click on bulk mail.
   mail.unsubscribeUrl = appBaseUrl_ + "/v1/reminders/unsubscribe?t=" + pauseSecret;
   mail.done = content.done;
   mail.total = content.total;
   mail.readyPhrase = readyPhrase(content.readyCount);
   mail.moreOnTree = remainderPhrase(content.readyCount);
   mail.moreReady = otherTreesPhrase(content.otherReadyTrees);
-  // decide() never names more than kMaxSteps and the mail has exactly that many slots, so this is a
-  // plain copy.
+  // decide() never names more than kMaxSteps and the mail has exactly that many slots.
   for (std::size_t slot = 0; slot < content.steps.size(); ++slot) {
     mail.steps[slot].label = content.steps[slot].label;
     mail.steps[slot].colorHex = nodeColorHex(content.steps[slot].color);

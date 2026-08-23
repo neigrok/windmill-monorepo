@@ -13,15 +13,7 @@
 #include <string>
 #include <vector>
 
-// The Paddle webhook's HTTP edge. The signature scheme itself is pinned elsewhere, against a vector
-// computed outside this codebase (adapters/paddle/PaddleSignatureTest.cpp) — this file is about what
-// the handler does with a delivery it has already accepted.
-//
-// The case it exists for is `isUuid`. `custom_data` rides in from a checkout anyone can open, so the
-// account id in a delivery is untrusted input on its way to a `$3::uuid` bind. A value that is not a
-// UUID makes that bind throw, the handler answers non-2xx, and Paddle redelivers the same poison
-// payload until its retry budget is gone — taking every later event for that destination with it. An
-// unusable id has to read as no binding at all, and nothing else in the repo says so.
+// The signature scheme itself is pinned in adapters/paddle/PaddleSignatureTest.cpp; this file is about what the handler does with an accepted delivery.
 using namespace wm;
 using namespace wm::fake;
 
@@ -31,9 +23,7 @@ const std::string kSecret = "pdl_ntfset_windmill_test_secret";
 const std::string kTimestamp = "1700000000";  // the FakeClock's own second
 const std::string kAccount = "44444444-4444-4444-4444-444444444444";
 
-// Every write the edge made, in order — the shared FakeSubscriptionRepository keys on the user id,
-// which is precisely the field under test, so a rejected binding would land on top of an accepted
-// one and the assertion would be testing the fake.
+// Every write the edge made, in order — the shared FakeSubscriptionRepository keys on the user id, the field under test.
 struct RecordingSubscriptions : SubscriptionRepository {
   std::vector<PaddleCustomer> customers;
   std::vector<PaddleSubscription> subscriptions;
@@ -91,7 +81,6 @@ struct Harness {
   }
 };
 
-// A subscription.created exactly as Paddle shapes it, with whatever custom_data the case is about.
 std::string subscriptionEvent(const std::string& customData,
                               const std::string& status = "active",
                               const std::string& occurredAt = "2026-05-01T10:00:00.000Z") {
@@ -154,10 +143,7 @@ TEST(billing_webhook_binds_the_account_our_checkout_stamped_on_the_transaction) 
   CHECK_EQ(row.occurredAt, std::string("2026-05-01T10:00:00.000Z"));
 }
 
-// The whole point of the hand-rolled check. Every one of these would reach a `::uuid` bind, throw,
-// and cost the destination a retry — and then another, and another, until Paddle gives up on the
-// endpoint entirely and every LATER event is lost with it. So the delivery is acknowledged and the
-// unusable id is simply dropped: the subscription still lands, bound by email instead.
+// Every one of these would reach a `::uuid` bind and throw, costing the destination a retry. The delivery is acknowledged and the unusable id dropped: the subscription lands bound by email.
 TEST(billing_webhook_a_custom_data_user_id_that_is_not_a_uuid_is_no_binding_and_still_a_200) {
   for (const std::string& claimed :
        {std::string(""),                                       // absent in all but name
@@ -181,9 +167,6 @@ TEST(billing_webhook_a_custom_data_user_id_that_is_not_a_uuid_is_no_binding_and_
   }
 }
 
-// Hex is hex in either case, and Paddle is not the only thing that can put a value in custom_data —
-// an id typed in upper case is still the account it names, and refusing it would strand a real
-// subscription with no binding at all.
 TEST(billing_webhook_an_upper_case_uuid_is_the_same_account) {
   Harness h;
   const std::string upper = "44444444-4444-4444-4444-44444444ABCD";
@@ -194,8 +177,7 @@ TEST(billing_webhook_an_upper_case_uuid_is_the_same_account) {
   CHECK_EQ(h.subscriptions.subscriptions[0].userId, upper);
 }
 
-// custom_data is whatever the checkout put there, which is not necessarily an object with a string
-// in it. jsoncpp throws on a lookup into a non-object, and a throw here is a 500 and a retry.
+// custom_data is whatever the checkout put there; jsoncpp throws on a lookup into a non-object.
 TEST(billing_webhook_a_custom_data_of_any_other_shape_is_no_binding_and_still_a_200) {
   for (const std::string& custom : {std::string("null"), std::string("7"), std::string("\"u1\""),
                                     std::string("[]"), std::string("{}"),
@@ -225,8 +207,6 @@ TEST(billing_webhook_a_customer_event_mirrors_the_email_that_bridges_to_an_accou
   CHECK(h.subscriptions.subscriptions.empty());
 }
 
-// A forged or unsigned delivery must reach no write at all — this endpoint is otherwise a way for
-// anyone on the internet to tell us their own subscription is active.
 TEST(billing_webhook_an_unverified_delivery_is_refused_and_writes_nothing) {
   Harness h;
   const std::string body = subscriptionEvent(boundTo(kAccount));
@@ -236,12 +216,10 @@ TEST(billing_webhook_an_unverified_delivery_is_refused_and_writes_nothing) {
                 [&](const drogon::HttpResponsePtr& r) { captured = r; });
   CHECK_EQ(captured->getStatusCode(), drogon::k401Unauthorized);
 
-  // A genuine signature over a body that was then edited — the digest covers the exact bytes.
   h.api.webhook(delivery(subscriptionEvent(boundTo(kAccount), "canceled"), sign(body, kTimestamp)),
                 [&](const drogon::HttpResponsePtr& r) { captured = r; });
   CHECK_EQ(captured->getStatusCode(), drogon::k401Unauthorized);
 
-  // No header at all, and no body at all, are each a 400 before the verifier is even reached.
   h.api.webhook(delivery(body, ""), [&](const drogon::HttpResponsePtr& r) { captured = r; });
   CHECK_EQ(captured->getStatusCode(), drogon::k400BadRequest);
   h.api.webhook(delivery("", sign("", kTimestamp)),
@@ -252,8 +230,6 @@ TEST(billing_webhook_an_unverified_delivery_is_refused_and_writes_nothing) {
   CHECK(h.subscriptions.customers.empty());
 }
 
-// An unconfigured secret must refuse everything rather than accept everything: an endpoint that
-// verified nothing would be strictly worse than no endpoint at all.
 TEST(billing_webhook_an_unconfigured_secret_refuses_every_delivery) {
   Harness h;
   BillingApi dark{h.subscriptions, h.auth, *h.clock, ""};
@@ -267,8 +243,6 @@ TEST(billing_webhook_an_unconfigured_secret_refuses_every_delivery) {
   CHECK(h.subscriptions.subscriptions.empty());
 }
 
-// Only a 2xx marks an event delivered, so a state change we failed to record must ask for the
-// redelivery rather than acknowledge a write that never happened.
 TEST(billing_webhook_a_write_that_throws_asks_paddle_to_deliver_it_again) {
   Harness h;
   h.subscriptions.dead = true;
@@ -279,8 +253,6 @@ TEST(billing_webhook_a_write_that_throws_asks_paddle_to_deliver_it_again) {
   CHECK_EQ((*response->getJsonObject())["error"].asString(), std::string("not recorded"));
 }
 
-// A shape we merely do not recognise is acknowledged, never retried — and a verified body that is
-// not an event at all still has to be a decision rather than an exception out of the handler.
 TEST(billing_webhook_a_shape_we_do_not_mirror_is_acknowledged_and_never_retried) {
   Harness h;
 
@@ -291,14 +263,11 @@ TEST(billing_webhook_a_shape_we_do_not_mirror_is_acknowledged_and_never_retried)
   CHECK(h.subscriptions.subscriptions.empty());
   CHECK(h.subscriptions.customers.empty());
 
-  // Not JSON at all is a 400 — there is nothing to acknowledge.
   CHECK_EQ(post(h, "not json at all")->getStatusCode(), drogon::k400BadRequest);
   CHECK_EQ(post(h, "[1,2,3]")->getStatusCode(), drogon::k400BadRequest);
   CHECK(h.subscriptions.subscriptions.empty());
 }
 
-// Every `subscription.*` verb mirrors, because the status is the whole of what we read — a handler
-// listing the verbs it knew would silently stop mirroring the day Paddle added one.
 TEST(billing_webhook_every_subscription_verb_mirrors_the_status_it_carries) {
   Harness h;
 
@@ -321,8 +290,6 @@ TEST(billing_the_read_needs_a_signed_in_caller) {
   CHECK_EQ((*read(h, "")->getJsonObject())["error"].asString(), std::string("sign in first"));
 }
 
-// Every account before its first checkout. "none" is a status the UI can render; an absent key or a
-// 404 would each make the caller guess.
 TEST(billing_an_account_with_no_paddle_customer_reads_as_none_and_inactive) {
   Harness h;
   h.signIn("s-live");
@@ -334,9 +301,6 @@ TEST(billing_an_account_with_no_paddle_customer_reads_as_none_and_inactive) {
   CHECK_FALSE(body.isMember("scheduledChangeAt"));
 }
 
-// The read reports Paddle's own vocabulary verbatim AND our verdict on it, separately — a client
-// that only saw a boolean could not say "cancels on the 12th", and one that only saw the word would
-// have to re-implement the access rule.
 TEST(billing_the_read_reports_paddle_s_word_and_our_verdict_on_it_separately) {
   Harness h;
   const UserId user = h.signIn("s-live");
@@ -351,7 +315,7 @@ TEST(billing_the_read_reports_paddle_s_word_and_our_verdict_on_it_separately) {
   CHECK_EQ(body["productId"].asString(), std::string("pro_1"));
   CHECK_EQ(body["scheduledChangeAt"].asString(), std::string("2026-06-01T00:00:00Z"));
 
-  // Nothing pending: the key is absent rather than empty, so the UI tests it once.
+  // Nothing pending: the key is absent rather than empty.
   h.subscriptions.subscriptions[0].scheduledChangeAt.clear();
   h.subscriptions.subscriptions[0].status = "canceled";
   const Json::Value ended = *read(h, "s-live")->getJsonObject();
@@ -360,8 +324,6 @@ TEST(billing_the_read_reports_paddle_s_word_and_our_verdict_on_it_separately) {
   CHECK_FALSE(ended.isMember("scheduledChangeAt"));
 }
 
-// The checkout opens from the session alone — there is no field to mistype and no way to open one
-// for anyone else — and a deployment with no Paddle credentials says so plainly rather than 500ing.
 TEST(billing_a_checkout_needs_a_signed_in_caller_and_a_configured_paddle) {
   Harness h;
 

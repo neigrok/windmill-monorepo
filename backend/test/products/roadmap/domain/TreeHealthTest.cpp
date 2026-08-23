@@ -51,8 +51,7 @@ TEST(health_of_clean_chain_scores_full) {
   CHECK_EQ(health.score, 100);
 }
 
-// Health's redundant count rides the same work budget as tidy's pass: a tree wide in edges is
-// the expensive one, and the node ceiling alone never saw it. Skipped means 0, as it always did.
+// Health's redundant count rides the same work budget as tidy's pass; skipped means 0.
 TEST(health_skips_the_redundant_pass_when_the_edges_blow_the_budget) {
   TreeData data;
   data.id = TreeId{std::string("t")};
@@ -67,5 +66,5 @@ TEST(health_skips_the_redundant_pass_when_the_edges_blow_the_budget) {
   Health health = TreeHealth::assess(tree);
   CHECK_EQ(health.nodeCount, 200);
   CHECK_EQ(health.edgeCount, 19900);
-  CHECK_EQ(health.redundant, 0);  // not computed — the same shape the node ceiling always gave
+  CHECK_EQ(health.redundant, 0);
 }

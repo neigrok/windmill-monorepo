@@ -21,7 +21,6 @@ struct Harness {
   RoomRegistry rooms{trees, ops, bus};
   ForkService service{rooms, trees, tokens};
 
-  // A shared (unlisted) source, forkable by anyone with the id — the everyday fork scenario.
   void seedSource(const char* id, const char* title) {
     seedSource(id, title, uid("owner"), Visibility::unlisted);
   }
@@ -69,7 +68,6 @@ TEST(fork_clears_the_source_status_seeds) {
     CHECK_FALSE(node.status.has_value());
     CHECK_FALSE(node.statusAt.isSet());
   }
-  // The source keeps its seed untouched.
   bool sourceSeedSurvives = false;
   for (const NodeStateEntry& node : h.trees.byId["t_src"].state.nodes) {
     if (node.status.has_value() && *node.status == "complete") sourceSeedSurvives = true;
@@ -95,7 +93,7 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_taken) {
 
   ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_taken", "", uid("me"));
   CHECK(result.outcome == ForkService::Outcome::conflict);
-  CHECK_EQ(h.trees.byId["t_taken"].title.value, std::string("Already here"));  // untouched
+  CHECK_EQ(h.trees.byId["t_taken"].title.value, std::string("Already here"));
   CHECK(h.trees.forkedFrom.count("t_taken") == 0);
 }
 
@@ -105,7 +103,6 @@ TEST(fork_reports_a_conflict_when_the_requested_id_is_soft_deleted) {
   h.seedSource("t_gone", "Retired");
   h.trees.softDelete(TreeId{"t_gone"});
 
-  // load can't see the deleted row, so the insert runs — the unique index refuses it.
   ForkService::Result result = h.service.fork(TreeId{"t_src"}, "t_gone", "", uid("me"));
   CHECK(result.outcome == ForkService::Outcome::conflict);
   CHECK(h.trees.forkedFrom.count("t_gone") == 0);
@@ -122,11 +119,10 @@ TEST(fork_of_a_private_source_you_dont_own_is_a_missing_source) {
   Harness h;
   h.seedSource("t_priv", "Someone's private plan", uid("owner"), Visibility::private_);
 
-  // Copying the whole document is a read; a private source you can't read is 404, byte-for-byte
-  // indistinguishable from a source that isn't there — no id enumeration.
+  // Copying the whole document is a read: a private source you can't read is 404, byte-for-byte indistinguishable from a source that isn't there.
   ForkService::Result result = h.service.fork(TreeId{"t_priv"}, "", "", uid("me"));
   CHECK(result.outcome == ForkService::Outcome::noSource);
-  CHECK(h.trees.byId.size() == 1u);  // only the source — nothing was forked
+  CHECK(h.trees.byId.size() == 1u);
   CHECK(h.trees.forkedFrom.empty());
 }
 
@@ -150,10 +146,7 @@ TEST(fork_of_an_unlisted_source_by_a_stranger_succeeds) {
   CHECK(*h.trees.byId["t_d1"].owner == uid("stranger"));
 }
 
-// The demo tree's exact shape — owner NULL, visibility public — and the one thing a visitor is
-// meant to do with it. Forking is a READ of the source plus an insert of a new row owned by the
-// forker, so making the demo unwritable must not make it unforkable: the copy is born owned, the
-// source is left exactly as it was, and it stays nobody's.
+// The demo tree's exact shape — owner NULL, visibility public. Forking is a READ plus an insert owned by the forker, so unwritable must not mean unforkable.
 TEST(fork_of_an_unowned_public_source_gives_the_forker_a_copy_and_leaves_the_source_alone) {
   Harness h;
   h.seedSource("t_demo", "Learn to sail", uid("placeholder"), Visibility::public_);
@@ -189,14 +182,11 @@ TEST(describe_declines_a_vanished_source) {
 TEST(describe_declines_a_private_source_so_it_never_names_a_strangers_tree) {
   Harness h;
   h.seedSource("t_priv", "Secret plan", uid("owner"), Visibility::private_);
-  // The fork-invite mail is unauthenticated: a private source stays undescribed so its title
-  // and step count never ride an email addressed by someone who can't read it.
+  // The fork-invite mail is unauthenticated, so a private source stays undescribed.
   CHECK_FALSE(h.service.describe(TreeId{"t_priv"}).has_value());
 }
 
-// ForkSignup is the platform seam's roadmap side, and the words on the fork mail's meta line are
-// written HERE — the platform forwards whatever string it is handed, so if a tree of one step ever
-// reads "1 steps" it is this file's fault and nowhere else's.
+// ForkSignup is roadmap's side of the platform seam, and the words on the fork mail's meta line are written HERE.
 TEST(the_signup_seam_renders_the_step_count_as_the_mail_prints_it) {
   Harness h;
   h.seedSource("t_src", "Learn to sail");

@@ -12,9 +12,8 @@ namespace wm {
 // Stateless but for the connection string — each method opens a pqxx::work on the thread-local
 // connection (platform/adapters/postgres/PgConnection.h). The LWW guard lives in the upsert's
 // trailing WHERE (EXCLUDED.stamp > stored.stamp); a superseded non-empty body is copied into
-// journal_page_revision in the same transaction, and that trail is BOUNDED in the same transaction
-// too (kRevisionsPerDay / kRevisionsPerUser / kRevisionBytesPerUser / kRevisionRetentionDays in the
-// .cpp) — an append-only table nothing prunes is a table any account can fill.
+// journal_page_revision in the same transaction, and that trail is bounded in the same transaction
+// too (kRevisionsPerDay / kRevisionsPerUser / kRevisionBytesPerUser / kRevisionRetentionDays).
 class PgJournalRepository : public JournalRepository {
 public:
   explicit PgJournalRepository(std::shared_ptr<PgPool> pool);

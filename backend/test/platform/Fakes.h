@@ -21,20 +21,16 @@
 
 namespace wm::fake {
 
-// A clock the test drives by hand. Starts at a fixed, comfortably-past-epoch instant so
-// the 90-day window arithmetic never underflows.
+// Starts at a fixed, comfortably-past-epoch instant so the 90-day window arithmetic never underflows.
 struct FakeClock : Clock {
   UnixMs now = 1'700'000'000'000;
   std::uint64_t nowMs() override { return now; }
 };
 
-// Deterministic tokens: the n-th mint is secret "s{n}" with digest "d{n}", and digestOf
-// maps any "s{n}" back to "d{n}" — so a test can present a minted secret and have it
-// resolve to the same stored digest.
+// The n-th mint is secret "s{n}" with digest "d{n}", and digestOf maps any "s{n}" back to "d{n}".
 struct FakeTokens : TokenGenerator {
   int counter = 0;
-  // Codes count from 100001 so they are always six digits and digestOf maps them into their own
-  // namespace ("100001" → "d00001"), never colliding with a token's "d1".
+  // Codes count from 100001 so they are always six digits, and digestOf maps them into their own namespace ("100001" → "d00001").
   int codeCounter = 100000;
   MintedToken mint() override {
     ++counter;
@@ -73,9 +69,7 @@ struct FakeEmail : EmailSender {
                       std::function<void(bool)> done) override {
     deliver({to, "", "magic-code", "", "", code}, std::move(done));
   }
-  // Async like the real sender, but resolves inline: a failed send records nothing and
-  // reports false (the caller inserted the link row already, so it survives the failure),
-  // a good one records the mail and reports true.
+  // Async like the real sender but resolves inline: a failed send records nothing and reports false.
   void deliver(Sent mail, std::function<void(bool)> done) {
     if (failNext) {
       failNext = false;
@@ -97,8 +91,6 @@ struct FakeAuthRepository : AuthRepository {
     std::string codeDigest;  // the 6-digit twin's digest; empty models code_hash NULL
     int attempts = 0;
   };
-  // A session row as the real table carries it: keyed by its digest, with the public id, the
-  // device metadata, and the recency stamps the §5 list reads.
   struct SessionRecord {
     std::string id;
     UserId user;
@@ -112,8 +104,7 @@ struct FakeAuthRepository : AuthRepository {
   std::map<std::string, SessionRecord> sessions;    // digest -> record
   std::map<std::string, User> usersByEmail;         // email  -> user
   std::map<std::string, User> usersById;            // id     -> user
-  // (provider, subject) -> user, exactly the real table's primary key — so the fake cannot hold a
-  // different opinion about what "one door opens one account" means.
+  // (provider, subject) -> user, exactly the real table's primary key.
   std::map<std::pair<std::string, std::string>, UserId> identities;
   int nextUserId = 0;
   int nextSessionId = 0;
@@ -147,8 +138,6 @@ struct FakeAuthRepository : AuthRepository {
     if (it == usersById.end()) return;
     usersByEmail.erase(it->second.email.value);
     usersById.erase(it);
-    // The real row cascades; the fake models it, or a merged-away account's sessions would keep
-    // resolving here and the suite would be green over a live credential.
     revokeAllSessions(userId);
     for (auto row = identities.begin(); row != identities.end();) {
       if (row->second == userId) row = identities.erase(row);
@@ -189,7 +178,6 @@ struct FakeAuthRepository : AuthRepository {
   }
   std::optional<StoredSignInCode> findLiveCode(const Email& email, UnixMs now,
                                                int maxAttempts) override {
-    // Newest live row wins, exactly as the SQL orders it: unspent, unexpired, under the cap.
     const std::string* bestDigest = nullptr;
     const LinkRow* best = nullptr;
     for (const auto& [digest, row] : links) {
@@ -276,16 +264,13 @@ struct FakeAuthRepository : AuthRepository {
   }
 };
 
-// The link door's precondition, as a set the test fills by hand: every account named here holds
-// something a merge would destroy. The real one is a UNION of per-product existence probes.
+// Every account named here holds something a merge would destroy. The real one is a UNION of per-product existence probes.
 struct FakeAccountFootprint : AccountFootprint {
   std::set<std::string> withData;
   bool anyData(const UserId& userId) override { return withData.count(userId.str()) > 0; }
 };
 
-// Personal MCP API keys as a fake: the digest→row map the real table keys on, plus the public
-// id. findActiveKey models just the digest→(user, scope, id, name) + expiry gate (the real deleted_at JOIN is
-// SQL-only); touchUsed and revoke mirror the throttled last-used write and the owner-scoped delete.
+// findActiveKey models the digest→(user, scope, id, name) + expiry gate; the real deleted_at JOIN is SQL-only.
 struct FakeMcpKeyRepository : McpKeyRepository {
   struct KeyRow {
     std::string id;
@@ -336,8 +321,6 @@ struct FakeMcpKeyRepository : McpKeyRepository {
   }
 };
 
-// The OAuth repository as a fake, shared by the OAuth service tests and the account-close
-// tests. Grants live apart from the rotation-prone token rows, exactly as the real table does.
 struct FakeOAuthRepository : OAuthRepository {
   std::map<std::string, OAuthClient> clients;
   std::map<std::string, StoredCode> codes;
@@ -388,8 +371,6 @@ struct FakeOAuthRepository : OAuthRepository {
     if (it == access.end()) return std::nullopt;
     return it->second;
   }
-  // Spending a refresh token leaves the row behind, marked — exactly as the table does, so a
-  // second presentation is recognisable as reuse rather than as a string nobody has seen.
   RefreshRotation rotateRefreshToken(const std::string& digest, UnixMs now) override {
     auto it = refresh.find(digest);
     if (it == refresh.end()) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
@@ -464,9 +445,7 @@ struct FakeOAuthRepository : OAuthRepository {
   }
 };
 
-// The billing mirror every access gate reads: one row per user, whatever status the test plants.
-// Nothing here knows the access rule — that is Entitlements' alone. `subscribe` defaults to the
-// live status, so a test that only needs "this account pays" says so in one word.
+// One row per user, whatever status the test plants. `subscribe` defaults to the live status.
 struct FakeSubscriptionRepository : SubscriptionRepository {
   std::map<std::string, PaddleSubscription> byUser;
 
@@ -487,11 +466,7 @@ struct FakeSubscriptionRepository : SubscriptionRepository {
   }
 };
 
-// The AI ledger, planted rather than accumulated: a test says what a product has already cost this
-// account and reads what the gate then does about it. `spentByProduct[""]` is the every-product
-// total the user's own ceiling is measured against, and a named key is one product's bucket — the
-// same two questions Entitlements asks. `asked` keeps every window the caller requested, which is
-// how the rolling-30-days floor is checked at all.
+// Planted rather than accumulated. `spentByProduct[""]` is the every-product total, a named key is one product's bucket, and `asked` keeps every window the caller requested.
 struct FakeAiUsageRepository : AiUsageRepository {
   struct Query {
     UserId user;

@@ -11,15 +11,14 @@ namespace wm {
 
 namespace {
 // Every read returns the same shape. day and updated_at are pushed through ::text / an epoch cast so
-// no timestamptz or calendar parsing ever happens in C++ — the pqxx date/time readers differ between
-// the macOS and CI Linux builds, and this keeps both off that path.
+// no timestamptz or calendar parsing happens in C++: the pqxx date/time readers differ between the
+// macOS and CI Linux builds.
 constexpr std::string_view kPageColumns =
     "user_id, day::text AS day, body, mood, energy, source, "
     "stamp_ms, stamp_counter, stamp_actor, "
     "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms";
 
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build, so
-// binding it concretely compiles on one and fails on the other.
+// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
 template <typename Row>
 Page pageFrom(const Row& row) {
   return Page{
@@ -35,27 +34,21 @@ Page pageFrom(const Row& row) {
       row["updated_ms"].template as<std::uint64_t>()};
 }
 
-// WHAT THE REVISION TRAIL MAY COST. It is append-only, nothing else in the product deletes from it,
-// and until these bounds existed four 3 MB PUTs to a single day left 9 MB of rows the writer could
-// not remove and no pass pruned — across the ~3.65 million dates a client may address, from any
-// signed-in account. Three bounds, because none of them alone holds:
+// What the revision trail may cost. It is append-only and nothing else in the product deletes from
+// it, so three bounds, because none of them alone holds:
 //
 //   per (user, day) — a day edited all afternoon keeps its ten most recent supersessions, so one day
 //     cannot evict every other day's history;
 //   per user — five hundred rows OR 8 MB, whichever binds first: bytes bound a few large pages, rows
-//     bound a flood of one-byte ones, and a trail is storage either way;
-//   by age — ninety days, which is the "Prunable by age" db/schema.sql promised and never had.
-//
-// The trail is a safety net for the one lossy case LWW admits (the same day edited on two offline
-// devices), and a net that big has caught anything it was ever going to catch.
+//     bound a flood of one-byte ones;
+//   by age — ninety days.
 constexpr int kRevisionsPerDay = 10;
 constexpr int kRevisionsPerUser = 500;
 constexpr long long kRevisionBytesPerUser = 8 * 1024 * 1024;
 constexpr int kRevisionRetentionDays = 90;
 
 // Runs in the SAME transaction as the insert it follows, so the trail is never observed above its
-// ceiling and a rolled-back write prunes nothing. Ordered newest first and cut from the tail: what a
-// bound drops is always the oldest thing under it.
+// ceiling and a rolled-back write prunes nothing. Ordered newest first and cut from the tail.
 void pruneRevisions(pqxx::work& txn, const UserId& user, const LocalDate& day) {
   txn.exec_params(
       "DELETE FROM journal_page_revision WHERE user_id = $1::uuid AND ctid IN ("
@@ -87,8 +80,7 @@ PgJournalRepository::PgJournalRepository(std::shared_ptr<PgPool> pool) : pool_(s
 
 std::optional<Page> PgJournalRepository::load(const UserId& user, const LocalDate& day) {
   // The page is mapped into a named result and the pqxx handles are released in their own scope
-  // BEFORE the return, so what leaves this function is a plain NRVO of a fully-formed local — never
-  // an optional materialised in the same expression a transaction is being torn down in.
+  // BEFORE the return, so what leaves this function is a plain NRVO of a fully-formed local.
   std::optional<Page> found;
   {
     PgLease conn{*pool_};
@@ -118,10 +110,9 @@ std::vector<Page> PgJournalRepository::range(const UserId& user, const LocalDate
 
 std::vector<Page> PgJournalRepository::since(const UserId& user, const Hlc& cursor, int limit) {
   // The cursor advances on the FULL Hlc — (stamp_ms, stamp_counter, stamp_actor) — the same three
-  // fields the domain spaceship and the fake compare on. A two-field compare would treat two devices'
-  // (ms, counter) collision as equal and drop whichever page fell past a page boundary from the feed
-  // forever (it feeds sync AND the on-device search index). The actor tiebreak makes the order total
-  // and deterministic across pages.
+  // fields the domain spaceship and the fake compare on. A two-field compare would treat two
+  // devices' (ms, counter) collision as equal and drop a page from the feed forever. The actor
+  // tiebreak makes the order total and deterministic across pages.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
@@ -181,18 +172,16 @@ PageWrite PgJournalRepository::save(const Page& incoming) {
 
   // The one convergence rule, shared verbatim with the fake and the domain: incoming wins iff it
   // STRICTLY dominates the stored stamp via the Hlc spaceship — a tie keeps what is stored. A stale
-  // write that loses is NOT itself trailed: it never held the day, its author's device still has the
-  // text (the service hands the winning body back to reconcile against), and trailing every stale
-  // replay would grow the revision table without preserving anything that was ever the current page.
+  // write that loses is NOT itself trailed: it never held the day, and its author's device still has
+  // the text, since the service hands the winning body back to reconcile against.
   if (!(existingStamp < incoming.stamp)) {
     txn.commit();
     return PageWrite::ignoredStale;
   }
 
   // Incoming supersedes. A non-empty losing body is appended to the invisible revision trail under
-  // its own stamp before the row is overwritten — and the trail is pruned to its bounds in the same
-  // breath. "Nothing written is ever withdrawn" is now the honest sentence it can be: the CURRENT
-  // page is never touched, and the trail behind it keeps the recent past rather than all of it.
+  // its own stamp before the row is overwritten, and the trail is pruned to its bounds in the same
+  // breath.
   std::string existingBody = row["body"].as<std::string>();
   if (!existingBody.empty()) {
     txn.exec_params(

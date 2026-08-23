@@ -104,9 +104,8 @@
 #include <thread>
 
 namespace {
-// A retention window from the environment, in days. An unset or unreadable value keeps the built-in
-// default rather than inventing one, and a value of 0 or less is an operator saying "keep it all" —
-// which the sweep honours by skipping that table whole.
+// A retention window in days. Unset or unreadable keeps the built-in default; 0 or less means keep
+// forever, which the sweep honours by skipping that table.
 int envDays(const char* name, int fallback) {
   const char* value = std::getenv(name);
   if (!value || !*value) return fallback;
@@ -121,16 +120,8 @@ int envDays(const char* name, int fallback) {
 int main() {
   using namespace wm;
 
-  // One IO thread per core, and never fewer than four. Four flat was a single number for every
-  // machine, and four slow requests froze the whole API for everyone including anonymous visitors
-  // (COMPUTE-3): a public page went unserved for over two minutes while a handful of roadmap
-  // analysis calls held the pool. Following the machine buys headroom proportional to the box and
-  // nothing more — it does NOT fix the finding, which is that super-linear analysis runs on the
-  // request thread at all; that work belongs on a bounded background worker with a time ceiling.
-  //
-  // Decided here, before anything is built, because it also sizes the database pool: every IO
-  // thread can be inside a handler holding a connection at once, and a pool ceiling below the
-  // thread count turns into 30-second waits and 500s rather than into queueing.
+  // Also sizes the database pool: every IO thread can hold a connection at once, and a pool ceiling
+  // below the thread count turns into waits and 500s rather than queueing.
   const unsigned int ioThreads = std::max(4u, std::thread::hardware_concurrency());
 
   const char* url = std::getenv("DATABASE_URL");
@@ -142,15 +133,12 @@ int main() {
   auto progress = std::make_shared<PgProgressRepository>(pool);
   auto progressService = std::make_shared<ProgressService>(*progress);
 
-  // Rooms are the authority; HTTP reads and socket edits both go through them (Phase 2).
   auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto presence = std::make_shared<PresenceHub>();
 
-  // Passwordless auth (guidelines/auth.md). The magic link points at the app; the session
-  // rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment. The
-  // service is built first because the socket and the REST API both resolve callers with it.
+  // The session rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment.
   const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
   std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
   const char* resendKey = std::getenv("RESEND_API_KEY");
@@ -160,100 +148,59 @@ int main() {
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
   auto authRepo = std::make_shared<PgAuthRepository>(pool);
-  // One Resend transport, shared by every mail: the neutral client owns the single outbound loop
-  // and the api key, and each mail sender (platform sign-in, roadmap reminder, journal nudge) is
-  // just a thin variable-binding over it. Kept alive here for the whole process, so every sender
-  // holding a reference to it outlives nothing.
   auto resendClient = std::make_shared<ResendClient>(
       resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
   auto emailSender = std::make_shared<ResendEmailSender>(*resendClient);
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
 
-  // OAuth is built first: closing an account (AuthService) delegates tool teardown to it, so
-  // the auth service holds a reference to it. This API host is the issuer; the consent screen
-  // is a frontend route the /authorize redirect hands off to.
+  // Built before AuthService, which holds a reference to it for account close.
   const char* apiUrlEnv = std::getenv("WINDMILL_API_URL");
   std::string apiBaseUrl = apiUrlEnv ? apiUrlEnv : "http://localhost:8088";
   auto oauthRepo = std::make_shared<PgOAuthRepository>(pool);
   auto oauthService = std::make_shared<OAuthService>(*oauthRepo, *tokens, *systemClock);
 
-  // Personal MCP API keys: the OAuth-less static-token fallback. The same token generator mints
-  // and digests them (no prefix — consistent with sessions/oauth), so a leaked digest can neither
-  // resurrect a key nor act as one.
   auto mcpKeyRepo = std::make_shared<PgMcpKeyRepository>(pool);
   auto mcpKeyService = std::make_shared<McpKeyService>(*mcpKeyRepo, *tokens, *systemClock);
 
-  // "Does this account hold anything?" — the one precondition on the link door (backend/AUTH.md).
-  // Products are named HERE, in the composition root that composes them anyway, so platform never
-  // learns a product's schema and a probe stays one table plus the column that owns its rows.
-  // EVERY product must appear: one missing from this list reports an account empty that is not,
-  // and the link door would then delete real data.
+  // The one precondition on the link door: does this account hold anything. EVERY product must
+  // appear — one missing reports an account empty that is not, and the door then deletes real data.
   auto accountFootprint = std::make_shared<PgAccountFootprint>(
       pool, std::vector<OwnedTable>{
                 {"trees", "owner_id"},                // roadmap
                 {"journal_page", "user_id"},          // journal
-                {"gym_sessions", "user_id"},          // gym — a workout with no sets is still a workout
+                {"gym_sessions", "user_id"},          // gym
                 {"gym_sets", "user_id"},              // gym
-                // gym — a set someone corrected or deleted is still what they lifted. Its session
-                // outlives it, so this row never decides the answer on its own today; it is listed
-                // because this list is about what an account OWNS, and a table left off it is how
-                // the door comes to delete real data the day that stops being true.
-                {"gym_set_revisions", "user_id"},
+                {"gym_set_revisions", "user_id"},     // gym
                 {"gym_routines", "user_id"},          // gym
-                // gym — an agent's proposal is the lifter's data: it is what somebody suggested for
-                // their program and what they decided about it, kept as a dated record on the
-                // routine. Its change rows cascade from it AND from the account, so they never
-                // decide the answer on their own today; they are listed for the reason above the
-                // set revisions are — this list is about what an account OWNS, and a table left off
-                // it is how the door comes to delete real data the day that stops being true.
-                {"gym_proposals", "user_id"},
-                {"gym_proposal_changes", "user_id"},
-                {"gym_session_shares", "user_id"},    // gym — a live coach link is data too
-                // gym — a conversation with Ask is the lifter's OWN WORDS, which is as much their
-                // data as a logged set is: the question they typed, kept because it is worth more in
-                // six weeks than it was that evening. Its turns cascade from it AND from the
-                // account, so they never decide the answer on their own today; they are listed for
-                // the reason the proposal rows are.
-                {"gym_ask_threads", "user_id"},
-                {"gym_ask_turns", "user_id"},
-                // gym — a movement someone created is their data, and an account holding one and
-                // nothing else is not empty. The column is created_by rather than user_id BECAUSE
-                // the 64 catalog seeds carry it NULL: a probe matching the seeds would report every
-                // account on the server non-empty and break this door the other way round.
+                {"gym_proposals", "user_id"},         // gym
+                {"gym_proposal_changes", "user_id"},  // gym
+                {"gym_session_shares", "user_id"},    // gym
+                {"gym_ask_threads", "user_id"},       // gym
+                {"gym_ask_turns", "user_id"},         // gym
+                // gym — created_by, not user_id: the catalog seeds carry it NULL, and a probe that
+                // matched them would report every account on the server non-empty.
                 {"gym_exercises", "created_by"},
-                {"gym_exercise_names", "user_id"},    // gym — a movement someone RENAMED, likewise
-                // gym — and what they called it BEFORE that rename, which is the same fact one
-                // step back: an account whose only gym row is an alias renamed something.
-                {"gym_exercise_aliases", "user_id"},
-                // gym_preferences is DELIBERATELY ABSENT, and the reason is the sentence above read
-                // the other way round: this list decides whether the link door may delete an
-                // account, so a table on it must be data the account HOLDS. Settings are how a room
-                // is set up, never the artifact in it — a lifter who opened the gym settings screen,
-                // armed the rest timer and left has nothing to lose, and the door should still be able
-                // to fold that account away. Listing it would also break the door the way
-                // gym_exercises' seeds nearly did: a client that writes the document on first paint
-                // would make every account on the server report non-empty forever.
-                {"paddle_subscriptions", "user_id"},  // platform — never fold away a payer
+                {"gym_exercise_names", "user_id"},    // gym
+                {"gym_exercise_aliases", "user_id"},  // gym
+                // gym_preferences is deliberately absent: settings are not data an account holds,
+                // and a client that writes them on first paint would make every account non-empty.
+                {"paddle_subscriptions", "user_id"},  // platform
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
             });
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
                                                    *oauthService, *accountFootprint, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
-  // Google sign-in (second door onto wm_session). Empty client id/secret → configured() is false and
-  // the routes bounce to the app, so the feature is dark until GOOGLE_CLIENT_ID/SECRET are set. The
-  // redirect URI must be registered verbatim in the Google Cloud console.
+  // Empty client id/secret leaves configured() false and the routes bounce to the app. The redirect
+  // URI must be registered verbatim in the Google Cloud console.
   const char* googleClientId = std::getenv("GOOGLE_CLIENT_ID");
   const char* googleClientSecret = std::getenv("GOOGLE_CLIENT_SECRET");
   auto googleClient = std::make_shared<GoogleOAuthClient>(googleClientId ? googleClientId : "",
                                                           googleClientSecret ? googleClientSecret : "",
                                                           apiBaseUrl + "/v1/auth/google/callback");
-  // The auth surface is product-neutral; the one product-shaped thing sign-in does — planting a
-  // fork when a fork link is followed — rides in behind the SignupFork port. Roadmap injects its
-  // ForkService here; a journal/gym-only deploy would pass nullptr and the fork steps no-op.
-  // Apple sign-in (the native door). Dark until all four land — the bundle id the app ships, the
-  // team, the key id, and the .p8 key itself as PEM — and then the route 404s rather than half-works.
+  // Apple sign-in: dark until all four land — the bundle id the app ships, the team, the key id,
+  // and the .p8 key itself as PEM.
   const char* appleClientId = std::getenv("APPLE_CLIENT_ID");
   const char* appleTeamId = std::getenv("APPLE_TEAM_ID");
   const char* appleKeyId = std::getenv("APPLE_KEY_ID");
@@ -268,76 +215,38 @@ int main() {
 
 
 
-  // Per-tree unfurl cards (og-tree-cards): the owner PUTs their tree's rendered 1200×630 PNG,
-  // and GET /og/:id.png serves it (canRead-gated) as the share link's og:image — with the
-  // generic card as the fallback whenever a tree has no image or can't be read.
   auto ogImages = std::make_shared<PgOgImageRepository>(pool);
 
-  // Per-tree share videos (og-share-video): the owner PUTs their tree's rendered mp4/webm loop,
-  // and GET /v1/trees/:id/og-video serves it (canRead-gated) as the share link's og:video — the
-  // og:image card above stays the poster fallback, so a tree with no video is a plain 404 there,
-  // never a broken tag. Built before the share page so it can advertise og:video only for a tree
-  // that actually carries one (a cheap `has` on render).
+  // Built before the share page, which advertises og:video only for a tree that carries one.
   auto ogVideos = std::make_shared<PgOgVideoRepository>(pool);
 
-  // The real share path (path-share-pages): GET /t/:id serves the SPA shell with a shared
-  // tree's own unfurl meta spliced in, so the link unfurls as itself for social scrapers. It
-  // reads the built index.html from WINDMILL_WEB_ROOT (the same host dir Caddy serves); a
-  // private or absent tree gets the shell verbatim, so it stays indistinguishable from absent.
+  // The share page reads the built index.html from here. A private or absent tree gets the shell
+  // verbatim, so the two stay indistinguishable.
   const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
 
-  // The public gallery (public-gallery), on its two surfaces over one index: GET /gallery renders
-  // every LISTED tree as a real anchor in the served HTML — the path that was missing, since a
-  // public tree's share page has always been indexable but nothing linked to it — and GET
-  // /v1/gallery hands the same ranked index to the in-product shelf and /browse as JSON, with two
-  // extra facts per row for a signed-in reader (is it mine, have I forked it).
-
-  // The per-user tree registry (create + list + rename + delete). Reads are repo-direct;
-  // rename goes through RoomRegistry so a live room's title stays coherent with the column.
+  // Rename goes through RoomRegistry so a live room's title stays coherent with the column.
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
-  // The local mirror of Paddle billing state. Private trees are free (the paid line is tending, not
-  // privacy), so nothing gates visibility on it — it feeds the /v1/subscription read and the
-  // tending allowance's free-vs-Pro plan lookup.
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
-  // What the model costs us, counted once and read twice. Every Anthropic seam writes here through
-  // the write-only UsageSink half; the rate limits read the same rows back. Spend is LOOKED at in
-  // Amplitude (see the sink below) rather than in a dashboard of our own — but the ledger stays the
-  // truth, because a ceiling has to be answerable synchronously before a call, which no analytics
-  // vendor can do, and because money must never be reconciled from a fire-and-forget mirror.
+  // The spend ledger the ceilings read back; the Amplitude mirror below is only the eyes.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
-  // The fuse the ledger cannot be: one in-process trailing-hour ceiling over EVERY vendor call,
-  // holding no database. Per-account budgets bound what a person spends and are structurally blind
-  // to what a machine spends — a retry storm, a loop whose termination breaks, a cron that overlaps
-  // itself. That is the shape that empties an account overnight, and it is also the shape that
-  // arrives exactly when Postgres is down and the ledger has stopped both recording and enforcing.
+  // One in-process trailing-hour ceiling over every vendor call, holding no database, so it still
+  // bounds spend when Postgres is down and the ledger has stopped enforcing.
   auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
 
-  // Windmill One, asked as a domain question. Every paid feature — Talk, echoes, the tending Pro
-  // plan — gates through this one seam instead of re-deriving the rule over the Paddle mirror, so
-  // "what grants access" lives in exactly one place (platform/application/Entitlements). It now
-  // also answers the AI ceiling, which its own header promised would land here rather than beside.
-  // The people building this, from WINDMILL_OWNER_EMAILS — a variable that had existed since
-  // 2026-08-09 and that nothing in the repo read. They hold Windmill One, because nothing can be
-  // bought (paidPlansOpen() is hardcoded false and BillingApi 503s), which otherwise makes the
-  // team the one group guaranteed never to see the surfaces it ships. Unset → nobody is an owner
-  // and every gate behaves exactly as it did before.
+  // Every paid feature gates through this one seam. WINDMILL_OWNER_EMAILS is a comma-separated
+  // list of addresses that hold Windmill One; unset means nobody is an owner.
   const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
   auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
                                                      ownerEmailsEnv ? ownerEmailsEnv : "");
 
-  // Funnel telemetry (event-spine): ghosts and signed-in users alike beacon here; the
-  // general per-IP apiLimiter below covers this route like every other. Accepted events also
-  // forward to Amplitude — with the session-resolved user_id — when AMPLITUDE_API_KEY is set.
-  // AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for an EU project); default is US.
+  // Accepted funnel events forward to Amplitude with the session-resolved user_id when
+  // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
   const char* amplitudeKey = std::getenv("AMPLITUDE_API_KEY");
   const char* amplitudeHost = std::getenv("AMPLITUDE_HOST");
   auto amplitude = std::make_shared<AmplitudeClient>(
       amplitudeKey ? amplitudeKey : "",
       (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com");  // set-but-empty → default
-  // What every LLM adapter is handed: the ledger, mirrored to Amplitude. The ledger is the truth and
-  // is written first — the rate limits read it, and a chart vendor cannot answer "has this account
-  // spent too much" before a call is made. Amplitude is the eyes, and is where the spend is actually
-  // looked at, so we keep no dashboard of our own to keep true.
+  // What every LLM adapter is handed: the ledger, written first, mirrored to Amplitude.
   std::shared_ptr<UsageSink> aiSpendSink =
       std::make_shared<AmplitudeUsageSink>(aiUsageRepo, amplitude);
 
@@ -345,14 +254,11 @@ int main() {
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude);
 
 
-  // The feedback door: one-click notes from anyone, signed-in or ghost. Same shape as the
-  // event-spine — anon-allowed, caller resolved server-side, one row per note.
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
-  // Paddle billing: verified webhooks upsert the local mirror of customers + subscriptions, and the
-  // browser reads its own subscription from that mirror. An empty PADDLE_WEBHOOK_SECRET refuses
-  // every delivery (they retry), so billing is dark rather than forgeable until the secret lands.
+  // An empty PADDLE_WEBHOOK_SECRET refuses every delivery (Paddle retries), so billing is dark
+  // rather than forgeable until the secret lands.
   const char* paddleWebhookSecret = std::getenv("PADDLE_WEBHOOK_SECRET");
   const char* paddleApiKey = std::getenv("PADDLE_API_KEY");
   const char* paddleEnv = std::getenv("PADDLE_ENV");
@@ -363,33 +269,22 @@ int main() {
                                                  paddleWebhookSecret ? paddleWebhookSecret : "",
                                                  paddleClient, paddlePriceId ? paddlePriceId : "");
 
-  // The uncaught-exception safety net: the drogon exception handler (registered below) persists
-  // whatever escaped a request handler, so a broken endpoint surfaces in server_errors instead of
-  // only in a stdout LOG_ERROR no one can see. It also ships the same exception to Sentry when
-  // SENTRY_DSN is set (empty → a no-op client, mirroring the Resend/Anthropic key guards).
+  // An empty SENTRY_DSN leaves a no-op client.
   auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
   const char* sentryDsn = std::getenv("SENTRY_DSN");
-  // The environment is a variable, not a constant, and logs are why it had to become one: exceptions
-  // were rare enough that a laptop run with the DSN set was a curiosity, whereas a laptop teeing
-  // every log line into the production environment would bury the thing it is there to surface.
   const char* sentryEnv = std::getenv("SENTRY_ENVIRONMENT");
   const char* sentryRelease = std::getenv("SENTRY_RELEASE");
   auto sentry = std::make_shared<SentryClient>(sentryDsn ? sentryDsn : "",
                                                sentryEnv ? sentryEnv : "production",
                                                sentryRelease ? sentryRelease : "");
 
-  // The other half of the same project: every LOG_* line, ours and drogon's, teed to Sentry as a
-  // structured log. It goes in HERE, before anything else logs, so a failure during the rest of this
-  // composition is already on the wire rather than only in a stdout nobody tails. stdout is
-  // untouched either way; SENTRY_LOG_LEVEL (default info) is the volume knob.
+  // Every LOG_* line teed to Sentry, installed before anything else logs so a failure during the
+  // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
 
-  // The one sweep that DELETES. Telemetry, feedback and uncaught errors are written by anyone who
-  // can reach this server and grew forever (PLATFORM-EDGE-4); expired OAuth codes and tokens kept
-  // their digests at rest long past the moment anything could be done with them (OAUTH-4). Windows
-  // are read here so an operator can change one without a deploy, and 0 (or less) on any of them
-  // means KEEP FOREVER — the escape hatch for the first run, which is the run that deletes a
-  // backlog. RetentionSweep::start() logs what it read. No product table is reachable from it.
+  // The one sweep that deletes. Windows are read from the environment so an operator can change
+  // one without a deploy; 0 or less on any of them means keep forever. No product table is
+  // reachable from it.
   RetentionWindows retention;
   retention.eventDays = envDays("WINDMILL_EVENTS_RETENTION_DAYS", retention.eventDays);
   retention.feedbackDays = envDays("WINDMILL_FEEDBACK_RETENTION_DAYS", retention.feedbackDays);
@@ -401,18 +296,12 @@ int main() {
       std::make_shared<RetentionSweep>(*retentionStore, *retentionLock, *systemClock, retention);
   retentionSweep->start();
 
-  // Paste-import escalation (F3): the model rewrites arbitrary prose into the paste grammar
-  // and the client re-parses it deterministically — text in, text out, never a door into the
-  // tree. No ANTHROPIC_API_KEY → the route answers 503 and the client hides the handle.
+  // No ANTHROPIC_API_KEY leaves /v1/compose answering 503.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
   auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
 
-  // MCP (Streamable-HTTP) mounted in this same process — the whole point of this change: agent
-  // edits run through the very same RoomRegistry as REST and the socket, so a tree has exactly
-  // one live room (one head/seq, no cross-process collisions) and every MCP edit fans out to WS
-  // subscribers through the shared WsPresenceBus. The resource server validates the OAuth access
-  // tokens this host issues, audience-bound to the MCP resource URL (still served under DOMAIN_MCP
-  // via Caddy). Defaults keep it working with no extra env: the audience falls back to this host.
+  // MCP runs in this process, so agent edits go through the same RoomRegistry as REST and the
+  // socket. Tokens are audience-bound to the MCP resource URL, which defaults to this host.
   const char* mcpPathEnv = std::getenv("WINDMILL_MCP_PATH");
   const std::string mcpPath = mcpPathEnv ? mcpPathEnv : "/mcp";
   const char* mcpUserEnv = std::getenv("WINDMILL_MCP_USER");
@@ -428,18 +317,12 @@ int main() {
 
   auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus);
 
-  // Tending (durable half): a sentence starts a server-side agent run over the very same tools MCP
-  // drives (*mcpTools), so an agent's edits land through the rooms exactly as a person's do. The
-  // agent is the AnthropicAgent loop on the same ANTHROPIC_API_KEY the composer uses. Shipped DARK
-  // by default — the designed first face is "not turned on" — so TENDING_ENABLED must be an explicit
-  // "true"/"1" to arm it, AND the agent must actually be configured (a key present). Enabling the
-  // flag with no key keeps the quiet "not-enabled" face rather than emitting a stream of failed runs.
+  // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
+  // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
   const char* tendingEnabledEnv = std::getenv("TENDING_ENABLED");
   const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
   auto tendRuns = std::make_shared<PgTendRunRepository>(pool);
-  // Reap runs a previous process left mid-flight: this boots before the server accepts traffic, so
-  // every `running` row is orphaned and safe to settle to `failed` — a returning phone then reads a
-  // finished run rather than polling a `running` row that will never move.
+  // Runs before the server accepts traffic, so every `running` row is orphaned and safe to fail.
   if (const int reaped = tendRuns->failOrphanedRuns(); reaped > 0)
     LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
   auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
@@ -449,13 +332,9 @@ int main() {
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
 
-  // Weekly reminders (domain/Reminders.h). The heartbeat is a dedicated thread of the sweep's
-  // own — never a drogon request loop, which must not block on libpqxx — and it carries no
-  // schedule state, so this restart loses nothing: within one tick it asks the database who is
-  // due. Shipped DARK twice over: REMINDERS_ENABLED must say so AND the user must be named in
-  // REMINDERS_ALLOWLIST, which is how the whole engine runs against one account for a month
-  // before anyone else can receive anything. Both gates are read at send time, so the decision
-  // ledger keeps recording honest weeks while nothing goes out.
+  // Weekly reminders, on a dedicated thread — never a drogon request loop, which must not block on
+  // libpqxx. Dark twice over: REMINDERS_ENABLED must say so AND the user be named in
+  // REMINDERS_ALLOWLIST. Both gates are read at send time, so the ledger keeps recording.
   const char* remindersEnabledEnv = std::getenv("REMINDERS_ENABLED");
   const std::string remindersEnabledFlag = remindersEnabledEnv ? remindersEnabledEnv : "";
   const char* remindersAllowlistEnv = std::getenv("REMINDERS_ALLOWLIST");
@@ -468,15 +347,8 @@ int main() {
                                                        *systemClock, reminderArming, appBaseUrl);
   reminderSweep->start();
 
-  // The gym product's core (products/gym/routes.h mounts its HTTP half further down, beside the
-  // other two products'). It is built HERE because its tools are part of the MCP surface below and
-  // the composite is constructed once, before the server takes traffic. `*tokens` is the one
-  // collaborator gym did not have at phase 0 and it is here for exactly one thing — minting a coach
-  // share's secret, from the same mint that makes a session cookie, so the one unguessable string
-  // gym hands out is the platform's and not gym's own. It is handed appBaseUrl and NOT apiBaseUrl,
-  // and the difference is the whole point: a share becomes a link a human opens in the browser app,
-  // not a call into the JSON API. One origin answers both in production, which is exactly why
-  // passing the wrong one went unnoticed until a coach was handed a page of JSON.
+  // Built here because its tools are part of the MCP surface below, constructed once before the
+  // server takes traffic. It takes appBaseUrl and NOT apiBaseUrl: a share is a link a human opens.
   auto gymLog = std::make_shared<gym::PgLogRepository>(pool);
   auto gymCatalog = std::make_shared<gym::PgCatalogRepository>(pool);
   auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
@@ -491,51 +363,36 @@ int main() {
   auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
                                                   *gymProgramService, appBaseUrl);
 
-  // ASK — the SECOND door onto the very tools built above, for a lifter who has no agent of their
-  // own. Same key as the roadmap composer and the tend agent: one Anthropic account, one credential,
-  // three products asking it different questions. Dark when unconfigured, and dark here means
-  // ABSENT: with no key there is no AskService, so gym::registerRoutes never mounts the path and
-  // every client hides the door on the 404. The narrowing that makes this safe is not here and it is
-  // not the ToolScope either — gym's host does not gate, so naming gym's three levels keeps out no
-  // gym tool. It is `AskTools` (AskService.h), which hands the model gym's reads and the two tools
-  // that mint a proposal, refuses everything that would change what a lifter logged, and checks the
-  // caller's grant on the way past so a narrower scope would take tools away for real.
+  // With no ANTHROPIC_API_KEY there is no AskService, so gym::registerRoutes never mounts the path.
+  // The narrowing that makes this safe is AskTools (AskService.h), not the ToolScope.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
   std::shared_ptr<gym::AskService> gymAsk;
   if (gymAskAgent->configured())
     gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreadService, *gymAskAgent,
                                                *gymTools, *entitlements);
 
-  // The tool surface a connected client sees: every product's module behind one host, filtered by
-  // the grant its credential carries. Roadmap and gym are wired today; adding one is a line here,
-  // and a duplicate tool name across two products refuses to boot rather than answering at random.
-  // Tending is deliberately NOT given this host — it keeps *mcpTools directly, so an agent reading
-  // attacker-controlled node text can never reach another product's tools.
+  // Every product's module behind one host, filtered by the grant the credential carries. A
+  // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
+  // host — it keeps *mcpTools directly, so an agent reading node text cannot reach another product.
   const std::vector<ToolModule> mcpModules{{*mcpTools, roadmapInstructions()},
                                            {*gymTools, gym::gymInstructions()}};
   auto mcpComposite = std::make_shared<CompositeToolHost>(mcpModules);
 
-  // The shared bearer and the no-auth local door carry the account-wide grant, said out loud: the
-  // widest reach in the system is a line someone chose, not a default that reads as an omission.
+  // The shared bearer and the no-auth local door carry the account-wide grant.
   McpAuth mcpAuth{oauthService.get(), mcpResource,     mcpResourceMetadataUrl,   mcpToken,
                   mcpFallbackUser,    mcpKeyService.get(), ToolScope::everything()};
-  // The deployed sha the release already carries, said in the MCP handshake too — the same stamp,
-  // one source, so a session's catalog can be dated against the repo without asking Sentry.
   auto mcpServer = std::make_shared<McpServer>(
       *mcpComposite, windmillServerInfo(*mcpComposite, sentryRelease ? sentryRelease : ""),
       roadmapResources());
   auto mcpEndpoint = std::make_shared<McpHttpEndpoint>(*mcpServer, mcpOrigins, mcpAuth);
 
-  // The authorization server advertises exactly the scopes the tool surface honours, derived from the
-  // composite rather than written down a second time — which is why it is built here and not up with
-  // the other APIs: a `scopes_supported` naming a product no tool serves is a promise to a client that
-  // nothing keeps.
+  // Built here, after the composite, so `scopes_supported` is derived from the tool surface rather
+  // than written down a second time.
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
                                              "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
-  // The origins allowed to send credentialed (cookie-bearing) requests. The app itself is
-  // always trusted; WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets
-  // no CORS grant, so a hostile page cannot drive /v1/auth/verify with the victim's cookies.
+  // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
+  // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
   std::set<std::string> allowedOrigins;
   std::string appOrigin = appBaseUrl;
   while (!appOrigin.empty() && appOrigin.back() == '/') appOrigin.pop_back();
@@ -558,23 +415,16 @@ int main() {
 
   auto& app = drogon::app();
 
-  // One line per request — every route this server serves, writes included — from the two advice
-  // hooks rather than from any handler, because the hooks see them all and a handler should not have
-  // to remember. Registered first so it wraps everything registered after it.
+  // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
 
-  // Safety net for uncaught exceptions: setExceptionHandler replaces ONLY drogon's default
-  // uncaught-exception path — a handler that already catches its own error (EventsApi, McpKeyApi,
-  // FeedbackApi) and every successful response are untouched. Anything that escaped a handler lands
-  // a row in server_errors and gets a clean generic 500. The insert is fully guarded — if the DB is
-  // the very thing that's down, the handler must never throw again — and e.what() never reaches the
-  // body (it can carry internals); the stdout LOG_ERROR signal is kept too.
+  // Every sink here is guarded — this handler must never throw — and e.what() never reaches the
+  // body, which can carry internals.
   app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
                                                  std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
     const std::string method = loggableField(req->getMethodString());
-    // The same hygiene the access line gets, and for sharper reasons: this path reaches stdout, a
-    // RETAINED server_errors column, and Sentry's transaction and request.url. A 500 on
-    // /v1/gym/shared/{token} would have filed the live coach credential in all three.
+    // Redacted: this path reaches stdout, a retained server_errors column, and Sentry — and a path
+    // like /v1/gym/shared/{token} carries a live credential.
     const std::string path = loggableField(redactedPath(req->getPath()));
     std::string message = e.what();
     if (message.size() > 500) {                            // bound the column, cutting on a UTF-8 boundary
@@ -600,10 +450,7 @@ int main() {
     callback(resp);
   });
 
-  // One CORS policy for every response the server mints early. The session cookie is credentialed,
-  // so Allow-Credentials only ever rides an allow-listed Origin — never a reflect-any-origin, which
-  // would let a hostile page drive a credentialed /v1/auth/verify with the victim's cookies.
-  // Unlisted origins get no grant, so the browser drops their cross-site reads.
+  // Allow-Credentials only ever rides an allow-listed Origin, never a reflected one.
   auto writeCors = [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
     const std::string& origin = req->getHeader("origin");
     if (!origin.empty() && allowedOrigins.count(origin)) {
@@ -613,11 +460,9 @@ int main() {
     resp->addHeader("Vary", "Origin");
   };
 
-  // CORS preflight, answered at the sync join point — the earliest hook, ahead of routing and of
-  // Drogon's built-in "is OPTIONS? -> 200" responder (which would otherwise reply first, reflecting
-  // any origin and advertising only OPTIONS in Allow-Methods, so the browser refuses the real POST).
-  // It must be a *sync* advice: only that hook short-circuits on its return value. A pre-routing
-  // lambda of this shape binds to the void(req) observer overload instead, so its response is dropped.
+  // CORS preflight must be answered at the sync join point: it is ahead of Drogon's own OPTIONS
+  // responder, and only that hook short-circuits on its return value — a pre-routing lambda of this
+  // shape binds to the void(req) observer overload and its response is dropped.
   app.registerSyncAdvice([writeCors, mcpPath](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
     if (req->method() != drogon::Options) return nullptr;  // real requests are dressed on the way out
     if (req->path() == mcpPath) return nullptr;            // the MCP endpoint answers its own preflight
@@ -630,24 +475,14 @@ int main() {
     return resp;
   });
 
-  // Abuse ceilings, enforced at the sync join point so the 429 actually short-circuits — a
-  // pre-routing advice returning a response binds to the observer overload and is dropped (see
-  // CORS above). The limiter keys on the real visitor IP (CF-Connecting-IP behind Cloudflare, see
-  // clientIp); internal traffic (no proxy header) is never limited. The magic-link path adds a
-  // per-client bucket loose enough for shared NAT, plus a global send ceiling — the real guard on
-  // the Resend quota — that no single client can lift. Verify-code gets its own tight per-IP
-  // bucket: a 6-digit code is worth exactly its guessing rate, and the row's 5-attempt bound is
-  // the inner wall this outer one protects. Compose gets the same pair of buckets: the
-  // per-IP one keeps a single paster honest, the global one is the real guard on the LLM spend.
+  // Enforced at the sync join point so the 429 short-circuits. Keyed on the real visitor IP
+  // (clientIp); internal traffic with no proxy header is never limited.
   auto apiLimiter = std::make_shared<RateLimiter>(25.0, 50.0);          // ~25 req/s/client, burst 50
   auto magicPerIp = std::make_shared<RateLimiter>(30.0 / 600.0, 30.0);  // ~30 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
   auto codePerIp = std::make_shared<RateLimiter>(10.0 / 60.0, 10.0);    // ~10 code tries / min / client
   auto composePerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 5.0);  // ~10 plans / 10 min / client
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
-  // Tending starts a whole agent loop — many model turns and many tool calls — so it is far more
-  // expensive than one compose and gets its own, tighter pair. The per-user allowance in
-  // TendingService is the real per-account brake; these buckets guard the fleet against a single IP.
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
   app.registerSyncAdvice(
@@ -656,19 +491,14 @@ int main() {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
-        // Per-IP before global, so a hammering client is denied out of its own bucket and
-        // never drains the shared ceiling for everyone else. Drogon ROUTES paths
-        // case-insensitively while path() preserves the request's casing — compare
-        // lowercased, or /V1/Compose walks straight past the spend ceilings.
+        // Per-IP before global, so a hammering client never drains the shared ceiling. Drogon routes
+        // case-insensitively while path() preserves casing, so compare lowercased or /V1/Compose
+        // walks past the spend ceilings.
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        // The vendor webhooks authenticate every byte by HMAC before they do anything, and both
-        // vendors deliver a whole event burst from a small egress pool — which collapses onto ONE
-        // bucket here. A 429 is a failed delivery that burns one of the vendor's retries, so
-        // shedding an event to rate-limit a door that already verifies its own signature is a bad
-        // trade twice over: a billing burst and a bounce burst are both exactly the traffic you
-        // must not drop. An unsigned flood costs a signature check and nothing else.
+        // The vendor webhooks verify an HMAC before doing anything, and both deliver bursts from a
+        // small egress pool that collapses onto one bucket here — a 429 would burn a vendor retry.
         if (path == "/v1/paddle/webhook" || path == "/v1/resend/webhook") return nullptr;
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
@@ -676,8 +506,7 @@ int main() {
         if (ok && path == "/v1/auth/verify-code") ok = codePerIp->allow(ip);
         if (ok && path == "/v1/compose")
           ok = composePerIp->allow(ip) && composeGlobal->allow("global");
-        // Only the POST that STARTS a run (/v1/trees/{id}/tend) carries the agent cost; the GET
-        // catch-up (/v1/tend/{runId}) is a plain row read the general apiLimiter already covers.
+        // Only the POST that starts a run carries the agent cost; the GET catch-up is a plain read.
         if (ok && path.rfind("/v1/trees/", 0) == 0 && path.size() >= 5 &&
             path.compare(path.size() - 5, 5, "/tend") == 0)
           ok = tendPerIp->allow(ip) && tendGlobal->allow("global");
@@ -692,17 +521,13 @@ int main() {
       });
 
 
-  // Real responses carry the credentialed grant on the way out; preflight is answered above at
-  // the sync join point, so no per-route OPTIONS handler is needed anywhere.
   app.registerPostHandlingAdvice(
       [writeCors, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
         if (req->path() == mcpPath) return;  // MCP responses carry their own origin policy (below)
         writeCors(req, resp);
       });
 
-  // MCP CORS for browser-based clients: reflect an allowed Origin and expose the session-id header
-  // the transport mints. Non-browser clients (the common case) send no Origin and are gated only by
-  // the endpoint's own DNS-rebind Origin check — token auth, not cookies, so no Allow-Credentials.
+  // Token auth, not cookies, so no Allow-Credentials.
   app.registerPostHandlingAdvice(
       [mcpOrigins, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
         if (req->path() != mcpPath) return;
@@ -732,8 +557,6 @@ int main() {
         authApi->verifyCode(req, std::move(cb));
       },
       {drogon::Post});
-  // Paddle billing: the webhook Paddle delivers to (signature-verified, no session), and the
-  // signed-in browser's own subscription read.
   app.registerHandler(
       "/v1/paddle/webhook",
       [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -753,7 +576,7 @@ int main() {
       },
       {drogon::Get});
 
-  // Google sign-in: two top-level browser navigations (no CORS — these are redirects, not fetches).
+  // Redirects, not fetches, so no CORS.
   app.registerHandler(
       "/v1/auth/google/start",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -766,13 +589,12 @@ int main() {
         authApi->googleCallback(req, std::move(cb));
       },
       {drogon::Get});
-  // Apple sign-in: one POST, no redirect — the native app ran the authorization itself. Signed in
-  // already, the same call attaches the door instead of resolving an account.
+  // Called while already signed in, this attaches the door instead of resolving an account.
   app.registerHandler(
       "/v1/auth/apple",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->apple(req, std::move(cb)); },
       {drogon::Post});
-  // The link door: fold this (empty) account into the one the magic link names.
+  // Folds this (empty) account into the one the magic link names.
   app.registerHandler(
       "/v1/auth/link",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->link(req, std::move(cb)); },
@@ -788,7 +610,6 @@ int main() {
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
       {drogon::Get});
 
-  // Settings §5 account surface: profile edit, sessions & devices, and the §4 soft close.
   app.registerHandler(
       "/v1/me",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->patchMe(req, std::move(cb)); },
@@ -812,7 +633,7 @@ int main() {
       },
       {drogon::Delete});
 
-  // Settings: personal MCP API keys — mint (the secret shown once), list (metadata only), revoke.
+  // Mint returns the secret once; list is metadata only.
   app.registerHandler(
       "/v1/mcp-keys",
       [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpKeyApi->createKey(req, std::move(cb)); },
@@ -828,14 +649,9 @@ int main() {
       },
       {drogon::Delete});
 
-  // OAuth authorization server. Discovery/register/authorize/token are driven by the MCP client;
-  // the consent-facing endpoints (client info + decision) are called by the app, and their
-  // preflight is covered by the shared CORS policy above.
-  // The bare RFC 8414 URL, plus the shapes real MCP clients probe before it: the path-aware
-  // variant (some clients wrongly append the resource path) and OpenID Connect's
-  // openid-configuration (with and without the path). Serve the same authorization-server
-  // metadata at each — a client that tries one of these FIRST must get JSON, not the SPA's
-  // index.html falling through Caddy (which a client reads as "no authorization support").
+  // The bare RFC 8414 URL plus the shapes MCP clients probe before it (the path-aware variant and
+  // openid-configuration, with and without the path). Each must answer JSON, or a client that tries
+  // one first gets the SPA's index.html through Caddy and reads it as "no authorization support".
   for (const char* asMetadataPath : {"/.well-known/oauth-authorization-server",
                                      "/.well-known/oauth-authorization-server/mcp",
                                      "/.well-known/openid-configuration",
@@ -866,8 +682,7 @@ int main() {
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
       {drogon::Post});
 
-  // Settings §2 connected tools: list a user's OAuth grants and disconnect one — separate
-  // from the browser-session list above, so pulling a tool never signs a device out.
+  // Separate from the session list above, so pulling a tool never signs a device out.
   app.registerHandler(
       "/v1/oauth/grants",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->listGrants(req, std::move(cb)); },
@@ -888,17 +703,14 @@ int main() {
       {drogon::Post});
 
 
-  // The feedback door: anonymous allowed (a frustrated logged-out user is the point); the
-  // shared per-IP apiLimiter covers this route like every other.
+  // Anonymous allowed.
   app.registerHandler(
       "/v1/feedback",
       [feedbackApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { feedbackApi->submit(req, std::move(cb)); },
       {drogon::Post});
 
 
-  // MCP Streamable-HTTP transport: one path, three verbs (POST a JSON-RPC message, GET a would-be
-  // SSE stream — 405 here, DELETE ends a session), plus its own OPTIONS preflight advertising the
-  // MCP headers the generic API preflight above deliberately skips.
+  // Its own preflight, advertising the MCP headers the generic one skips.
   app.registerHandler(
       mcpPath,
       [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handlePost(req, std::move(cb)); },
@@ -924,10 +736,8 @@ int main() {
       },
       {drogon::Options});
 
-  // OAuth Protected Resource Metadata (RFC 9728): where an MCP client discovers this host's
-  // authorization server after a 401 challenge. Public, unauthenticated. Served at both the bare
-  // URL (which the 401's WWW-Authenticate points at) and the path-aware variant that RFC 9728 §3.1
-  // derives for the resource https://…/mcp — the one MCP 2025-06-18 clients probe FIRST.
+  // RFC 9728. Public, unauthenticated. Served at both the bare URL the 401 challenge points at and
+  // the path-aware variant §3.1 derives, which is the one MCP 2025-06-18 clients probe first.
   auto protectedResourceMetadata = [mcpResource, apiBaseUrl](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
     Json::Value metadata(Json::objectValue);
     metadata["resource"] = mcpResource;
@@ -942,9 +752,6 @@ int main() {
   app.registerHandler("/.well-known/oauth-protected-resource", protectedResourceMetadata, {drogon::Get});
   app.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
 
-  // The roadmap product's whole surface, mounted behind one seam (products/roadmap/routes.h): the
-  // collab socket, its presence flush, and every roadmap HTTP route. Platform routes and the shared
-  // MCP endpoint were registered above; a future product mirrors this call with its own Deps.
   RoadmapDeps roadmapDeps{
       .registry = registry, .trees = trees, .progress = progress, .progressService = progressService,
       .oplog = oplog, .bus = bus, .presence = presence, .genesis = genesis,
@@ -956,19 +763,12 @@ int main() {
       .allowedOrigins = allowedOrigins};
   registerRoutes(app, roadmapDeps);
 
-  // The journal product — the second room — mounted behind its own seam (products/journal/routes.h),
-  // in namespace wm::journal so its registerRoutes never collides with roadmap's. Wave 1 is the
-  // pages canvas: durable, owner-scoped, offline-convergent. It reads platform auth like roadmap and
-  // owns no public surface.
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
-  // PageService is built further down, after the echo stack: a save is what triggers a derivation,
-  // so the write path needs the thing that receives one, and building it here would mean handing it
-  // a listener later — a two-step construction nobody would find on their way through.
-  // Wave 2 nudges: a daily heartbeat on its own thread, shipped DARK behind an arming allowlist
-  // exactly like the reminder engine — JOURNAL_NUDGE_ENABLED must say so AND the user be named in
-  // JOURNAL_NUDGE_ALLOWLIST before any mail leaves; both gates are read at send time, so the ledger
-  // records honest days while nothing goes out. The knock time is the device's, so the server holds
-  // no rhythm and needs no timezone.
+  // PageService is built below, after the echo stack: a save triggers a derivation, so the write
+  // path needs the thing that receives one.
+  // JOURNAL_NUDGE_ENABLED must say so AND the user be named in JOURNAL_NUDGE_ALLOWLIST before any
+  // mail leaves; both gates are read at send time. The knock time is the device's, so the server
+  // holds no rhythm and needs no timezone.
   const char* journalNudgeEnabledEnv = std::getenv("JOURNAL_NUDGE_ENABLED");
   const std::string journalNudgeEnabledFlag = journalNudgeEnabledEnv ? journalNudgeEnabledEnv : "";
   const char* journalNudgeAllowlistEnv = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
@@ -980,15 +780,10 @@ int main() {
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
   journalNudgeSweep->start();
-  // Echoes: the reaching-back, derived on the writer's own save (ECHOES.md, "Delivery"). Two
-  // boundaries, and either one unwired makes any pass — live or repair —
-  // a quiet no-op — NullEmbedder and NullCurator both answer configured() false. The sweep itself
-  // is deliberately ENTITLEMENT-BLIND: it derives for every user, and EchoApi decides how much of
-  // a passage a given reader is served, because the honest-cut surface has to show a non-subscriber
-  // that echoes exist at all.
-  // The sidecar runs the same bge-small weights the browser downloads, so a server vector and an
-  // on-device one are interchangeable — measured at 0.999978 cosine, against a float32 ceiling of
-  // 0.9999995. Unset URL means unwired, which means the whole pass no-ops.
+  // Either boundary unwired makes any echo pass a no-op: NullEmbedder and NullCurator both answer
+  // configured() false. The sweep is entitlement-blind — it derives for every user, and EchoApi
+  // decides how much of a passage a reader is served. The sidecar runs the same bge-small weights
+  // the browser downloads, so a server vector and an on-device one are interchangeable.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
   if (embedderUrlEnv && *embedderUrlEnv)
@@ -996,8 +791,6 @@ int main() {
   else
     journalEmbedder = std::make_shared<NullEmbedder>();
 
-  // Same key as the roadmap composer — one Anthropic account, one credential, two products asking
-  // it different questions.
   const char* anthropicKeyEnv = std::getenv("ANTHROPIC_API_KEY");
   std::shared_ptr<Curator> journalCurator;
   if (anthropicKeyEnv && *anthropicKeyEnv)
@@ -1006,9 +799,8 @@ int main() {
         aiFuse, aiSpendSink);
   else
     journalCurator = std::make_shared<NullCurator>();
-  // Step 1, bought rather than ruled since 2026-08-23: the page is cut into idea units by the same
-  // Anthropic key the curator uses. Without that key it falls back to the line-and-sentence rule,
-  // which is honest for a deploy where the curator is dark anyway and no echo can arrive.
+  // The page is cut into idea units by the same Anthropic key the curator uses; without it, the
+  // line-and-sentence rule.
   std::shared_ptr<Segmenter> journalSegmenter;
   if (anthropicKeyEnv && *anthropicKeyEnv)
     journalSegmenter = std::make_shared<AnthropicSegmenter>(
@@ -1017,11 +809,8 @@ int main() {
   else
     journalSegmenter = std::make_shared<RuleSegmenter>();
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
-  // One warm corpus in front of storage, shared by every door: the live path, the repair pass and
-  // the read layer all hold this one object, so none of them has to know the corpus is cached and
-  // none of them can hold a second, staler copy. Loading a user's whole vector corpus was the
-  // entire cost of a pass, and a save-triggered derivation asks for it far more often than a
-  // six-hourly ticker did.
+  // One warm corpus in front of storage: the live path, the repair pass and the read layer hold
+  // this one object, so none of them can hold a second, staler copy.
   auto journalEchoes = std::make_shared<WarmEchoRepository>(*journalSpans, *systemClock);
   const char* journalEchoAdminEnv = std::getenv("JOURNAL_ECHO_ADMIN_TOKEN");
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter,
@@ -1029,26 +818,20 @@ int main() {
                                                       *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   journalEchoSweep->start();
-  // And the delivery path: a page saved is a page derived, seconds later, on this object's own
-  // thread. It is the PageWatcher the write path announces to — never the request thread, of which
-  // drogon has one per core and a curator call is seconds long.
+  // The PageWatcher the write path announces to, deriving on its own thread — never a request
+  // thread, of which drogon has one per core and a curator call is seconds long.
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
   auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get());
-  // The tuning door's engine: one page's derivation run for its REASONS, writing nothing. It holds
-  // the same corpus, embedder and curator the live path does, so what it explains is what a save
-  // would decide — and it has its own thread for the same reason the sweep does.
+  // Writes nothing. It holds the same corpus, embedder and curator the live path does, so what it
+  // explains is what a save would decide.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
-  // Voice (Windmill One): bought from OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, and
-  // unwired otherwise (NullTranscriber ⇒ the endpoint answers 503 and the client hides Talk). Either
-  // way it gates through the same Windmill One entitlement seam as echoes and tending.
+  // Voice: OpenAI's gpt-4o-transcribe when OPENAI_API_KEY is set, NullTranscriber otherwise, which
+  // makes the endpoint answer 503. Either way it gates on the same Windmill One entitlement.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
-  // The fuse and the spend sink are handed over exactly as the curator's are, twelve lines up: a
-  // vendor call this process cannot see the cost of is one it cannot stop. Until 2026-08-22 voice
-  // was the one paid seam that asked neither, so an entitled account's uploads were unmetered.
   if (openaiKeyEnv && *openaiKeyEnv)
     journalTranscriber =
         std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink);
@@ -1063,12 +846,8 @@ int main() {
                                    .transcriber = journalTranscriber, .entitlements = entitlements};
   journal::registerRoutes(app, journalDeps);
 
-  // The gym product — the third room — mounted behind its own seam (products/gym/routes.h). The
-  // durable set write is still the heart of it: owner-scoped, idempotent by client-minted id,
-  // auto-close applied lazily by the service. No arming flags and no sweeps; the one vendor key it
-  // reads is ANTHROPIC_API_KEY, and only Ask reads it — every other route below exists whether or
-  // not it is set. Its collaborators were built up with the MCP surface, because gym's tools ride
-  // the same services these routes do — one core, two doors, and no second copy of a rule.
+  // Its collaborators were built above with the MCP surface, because gym's tools ride the same
+  // services these routes do.
   gym::GymDeps gymDeps{.trainingService = gymTrainingService,
                        .catalogService = gymCatalogService,
                        .programService = gymProgramService,
@@ -1079,20 +858,9 @@ int main() {
                        .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 
-  // Resend's delivery webhook, mounted LAST because it is the one door that speaks for all of them.
-  // There is one Resend account, so one signing secret and one stream of feedback about every mail
-  // this brand sends — and a permanent bounce is a fact about a MAILBOX, not about a product. The
-  // platform receiver verifies the Svix signature, parses, and makes the one pure verdict
-  // (platform/domain/Mail.h); each product says what IT stops, and one bounce writes them all.
-  //
-  // EVERY product that sends mail must appear in this list — the same rule as the account-footprint
-  // tables above, and the same failure if it is broken: one missing keeps mailing an address the
-  // provider has already called dead, spending the deliverability the magic link depends on. Gym
-  // sends nothing today and so contributes nothing, which is the honest entry for it.
-  //
-  // Empty secret refuses every delivery (Svix retries), so the door is dark rather than forgeable
-  // until the secret lands — mirroring PADDLE_WEBHOOK_SECRET exactly. Set the secret FIRST, then
-  // register the endpoint in Resend, or every genuine delivery is refused and burns a retry.
+  // EVERY product that sends mail must appear in this list, or it keeps mailing an address the
+  // provider has already called dead. An empty secret refuses every delivery (Svix retries): set
+  // the secret FIRST, then register the endpoint in Resend, or every genuine delivery burns a retry.
   const char* resendWebhookSecretEnv = std::getenv("RESEND_WEBHOOK_SECRET");
   auto resendWebhookApi = std::make_shared<ResendWebhookApi>(
       std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges}},

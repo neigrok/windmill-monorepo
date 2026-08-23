@@ -25,15 +25,12 @@ TEST(email_safe_title_preserves_multibyte_utf8) {
 }
 
 TEST(email_safe_title_strips_control_characters_because_a_title_now_reaches_a_subject) {
-  // A tree title carries no length or charset validation anywhere in the system, and the weekly
-  // reminder's subject is "{{{ready_phrase}}} ready · {{{tree_name}}}" — the first time a person's
-  // own words reach a HEADER rather than a body, where a CR or an LF is not a stray character but
-  // the end of the header. Whether a given provider would honour that is not ours to find out.
+  // A tree title reaches a HEADER here, where a CR or an LF ends the header rather than being a stray character.
   CHECK(emailSafeTitle("Sail\r\nBcc: someone@evil.test") == "SailBcc: someone@evil.test");
   CHECK(emailSafeTitle(std::string("Sail\0plan", 9)) == "Sailplan");
   CHECK(emailSafeTitle("Tabs\tand\vwhitespace") == "Tabsandwhitespace");
   CHECK(emailSafeTitle("delete\x7f") == "delete");
-  // And the bytes above 0x7F are left alone, because that is where UTF-8 lives.
+  // Bytes above 0x7F are left alone, because that is where UTF-8 lives.
   CHECK(emailSafeTitle("\r\n日本語\r\n") == "日本語");
 }
 
@@ -50,9 +47,7 @@ TEST(resend_email_body_carries_the_template_and_recipient) {
 }
 
 TEST(resend_email_body_carries_the_sign_in_code_for_the_magic_code_template) {
-  // The app door's wire bytes: template id 'magic-code', the digits under sign_in_code, no
-  // subject (it lives on the stored template) and no headers (transactional, no unsubscribe).
-  // The stored template is vendor-side — these bytes are the whole local half of that contract.
+  // The app door's wire bytes: template id 'magic-code', the digits under sign_in_code, no subject (it lives on the stored template) and no headers.
   Json::Value vars(Json::objectValue);
   vars["sign_in_code"] = "483201";
   const Json::Value body = resendEmailBody("Windmill <hi@windmill.works>", "you@example.com",
@@ -66,16 +61,14 @@ TEST(resend_email_body_carries_the_sign_in_code_for_the_magic_code_template) {
 }
 
 TEST(resend_email_body_omits_headers_when_there_are_none) {
-  // A sign-in link is transactional and carries no unsubscribe, so the field must be absent rather
-  // than an empty object a provider might read as an empty header set.
+  // A sign-in link is transactional and carries no unsubscribe, so the field must be absent rather than an empty object.
   const Json::Value body = resendEmailBody("from", "to", "magic-link",
                                            Json::Value(Json::objectValue), Json::Value(Json::objectValue));
   CHECK_FALSE(body.isMember("headers"));
 }
 
 TEST(reminder_unsubscribe_headers_are_the_rfc_8058_one_click_pair) {
-  // The exact header shape the reminder send builds from its unsubscribe URL: the URL in angle
-  // brackets (RFC 2369) and the one-click marker (RFC 8058) that tells the client to POST, not GET.
+  // The URL in angle brackets (RFC 2369) and the one-click marker (RFC 8058) that tells the client to POST, not GET.
   const Json::Value headers =
       reminderUnsubscribeHeaders("https://windmill.works/v1/reminders/unsubscribe?t=s1");
   CHECK_EQ(headers["List-Unsubscribe"].asString(),
@@ -84,7 +77,6 @@ TEST(reminder_unsubscribe_headers_are_the_rfc_8058_one_click_pair) {
 }
 
 TEST(resend_email_body_embeds_the_reminder_headers_it_is_given) {
-  // And the header object the reminder builds lands under `headers` in the wire body Resend receives.
   const Json::Value body =
       resendEmailBody("from", "to", "reminder", Json::Value(Json::objectValue),
                       reminderUnsubscribeHeaders("https://windmill.works/v1/reminders/unsubscribe?t=s1"));

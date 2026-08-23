@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # Journal Wave 1 — end-to-end against the LIVE local stack (windmill_server on :$PORT + Postgres).
 #
-# It mints a real session the way the app does (magic-link row → /v1/auth/verify → wm_session
-# cookie), then drives the journal REST surface and asserts the behaviour that only shows up when
-# the SQL, the HTTP layer and the wire boundary run together: LWW convergence across two "devices",
-# the invisible revision trail, the delta feed, export, and the owner-only 401.
-#
 # Prereqs: schema applied (psql windmill -f db/schema.sql) and the server running with .env:
 #   set -a && . ./.env && set +a && ./build/windmill_server
 # Run:  bash test/e2e/journal.sh

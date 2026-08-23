@@ -22,12 +22,11 @@ struct EchoSweepReport {
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
-  // Units a segmenter proposed that are NOT in the page's body and were discarded rather than
-  // stored. Above zero on a normal night means the model is rewriting rather than cutting.
+  // Units a segmenter proposed that are NOT in the page's body and were discarded. Above zero on a
+  // normal night means the model is rewriting rather than cutting.
   int unitsDiscarded = 0;
   // Pages the vendor declined to judge. Its own counter rather than a share of `pagesFailed`: a
-  // failure is work still owed, this is work that will never be done and is no longer owed. It
-  // stays a count — which pages, and what was in them, is not something this feature looks at.
+  // failure is work still owed, this is work no longer owed. It stays a count.
   int pagesRefused = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
@@ -35,14 +34,13 @@ struct EchoSweepReport {
 };
 
 // What one night is allowed to cost a single user. A large cleanup pass cascades into every page
-// holding an echo into the pages it touched; draining that over several nights costs the same as
-// billing it in one.
+// holding an echo into the pages it touched.
 struct SweepBudget {
   int pagesPerUser = 40;
   int inboundPerPage = 20;
 
-  // The page-level cap; nothing else sees a whole page. `SelectionRules::shown` bounds one
-  // TRIGGER's pairings, so without this a page with eight triggering passages carries eighty.
+  // The page-level cap; nothing else sees a whole page. `SelectionRules::shown` bounds one TRIGGER's
+  // pairings, so without this a page with eight triggering passages carries eighty.
   int echoesPerPage = 10;
 };
 
@@ -51,28 +49,19 @@ struct SweepBudget {
 //
 //   segment -> embed -> reconcile -> retrieve -> select -> curate -> persist
 //
-// Step 1 is a VENDOR call (ports/Segmenter.h), asked only when the page's BODY moved — a corpus
-// that moved under unchanged text changes what the page reaches, never what it says, so those
-// passes read the units back out of storage and cost nothing.
+// Step 1 is a VENDOR call (ports/Segmenter.h), asked only when the page's BODY moved; a corpus that
+// moved under unchanged text reads its units back out of storage instead.
 //
-// `derivePage` is the DELIVERY path — one page, the one a writer just saved (EchoDerivations owns
-// the when). `run` is the REPAIR path: inbound reverse edges, corpus-stamp backfill, pages a
-// vendor blip failed, and the per-user budget drain. Both share every step below; they differ only
-// in what they are handed and what they are allowed to chase.
+// `derivePage` is the DELIVERY path — the page a writer just saved (EchoDerivations owns the when).
+// `run` is the REPAIR path: inbound reverse edges, corpus-stamp backfill, pages a vendor blip
+// failed, and the per-user budget drain.
 //
-// Three properties hold the whole thing together, all three about failure. A page's derivation
-// stamps advance ONLY when the pass SETTLED, so a vendor blip costs that page a night rather than
-// its echoes forever. "The curator found nothing" is a different outcome from "the curator call
-// failed". And a REFUSAL settles the page though it failed (ports/EchoRepository.h, isSettled);
-// only an edit to the body reopens it.
+// A page's derivation stamps advance ONLY when the pass SETTLED, and a REFUSAL settles the page
+// though it failed (ports/EchoRepository.h, isSettled); only an edit to the body reopens it.
 //
-// The sweep is entitlement-blind about WHAT it derives: it derives for everyone, and the read layer
-// decides how much of a passage a given reader is served.
-//
-// It is not blind about what it SPENDS. Entitlements answers one question — has this account's
-// BACKGROUND bucket run dry — asked once per user and answered from that bucket alone, never the
-// account's own. Over it the user is SKIPPED, not failed: their pages' stamps never advance, so the
-// work is deferred rather than lost. The live path asks the identical question.
+// Entitlement-blind about WHAT it derives — the read layer cuts the passage — but not about what it
+// SPENDS: the account's BACKGROUND bucket is asked once per user, and over it the user is SKIPPED,
+// not failed, so no stamp advances and the work is deferred.
 class EchoSweep {
 public:
   EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
@@ -80,21 +69,18 @@ public:
 
   void start();
 
-  // `sinceMs` is the only instant a pass has an opinion about: which users have touched a page
-  // recently enough to be worth scanning. Everything after that is decided by stamps the corpus
-  // carries, never by the wall, so the sweep cannot drift against one.
+  // `sinceMs` is the only instant a pass has an opinion about: which users to scan. Everything after
+  // that is decided by stamps the corpus carries, so the sweep cannot drift against a clock.
   EchoSweepReport run(std::uint64_t sinceMs);
 
-  // The same pass, queued onto this sweep's own loop and answered there — what the admin door uses,
-  // so a repair pass of minutes does not sit on a drogon IO thread holding a pooled connection.
+  // The same pass, queued onto this sweep's own loop, so a repair pass of minutes does not sit on a
+  // drogon IO thread holding a pooled connection.
   void runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done);
 
-  // One page, because its writer just saved it. The counters mean the same things, counting to one:
-  // `usersOverAiBudget` is the skip and `pagesFailed` is the vendor blip, and both leave the page's
-  // stamps where they were, so the repair pass still owes it. `pagesRefused` does not come back.
-  //
-  // It does NOT walk the reverse edge — that walk is unbounded and belongs to the budgeted pass.
-  // The live path answers one question: what does tonight's page reach back to.
+  // One page, because its writer just saved it. `usersOverAiBudget` is the skip and `pagesFailed` is
+  // the vendor blip, and both leave the page's stamps where they were; `pagesRefused` does not come
+  // back. It does NOT walk the reverse edge — that walk is unbounded and belongs to the budgeted
+  // pass.
   EchoSweepReport derivePage(const UserId& user, const LocalDate& day);
 
 private:
@@ -102,8 +88,7 @@ private:
   CurationOutcome derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
                          EchoSweepReport& report);
 
-  // What this build would produce, asked of both vendors at the front of every pass. A page recorded
-  // under anything else is stale in a way its body and its corpus cannot reveal.
+  // What this build would produce, asked of both vendors at the front of every pass.
   PipelineVersions versions() const;
 
   EchoRepository& echoes_;

@@ -72,7 +72,6 @@ PriorMark markFrom(const Row& row) {
                    instantFrom(row["at_ms"])};
 }
 
-// One row of the log summary's aggregate: a session, one movement it holds, its sets and tonnage.
 struct Tally {
   int setCount = 0;
   int workingSetCount = 0;

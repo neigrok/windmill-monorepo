@@ -10,7 +10,7 @@ PgServerErrorRepository::PgServerErrorRepository(std::shared_ptr<PgPool> pool) :
 
 void PgServerErrorRepository::insert(const std::string& method, const std::string& path, int status,
                                      const std::string& message) {
-  // One row in one txn. actor is left null in v1 — the exception handler can't resolve a caller.
+  // One row in one txn. actor is left null — the exception handler can't resolve a caller.
   pqxx::params params;
   params.append(method);
   params.append(path);

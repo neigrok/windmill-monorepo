@@ -5,9 +5,7 @@
 using namespace wm;
 using namespace wm::fake;
 
-// A single chain r -> a: node "a" has "r" as its one prerequisite, node "r" has none.
-// The advisory check reads only these prerequisite lists, so a bare vector stands in for
-// a whole tree — and works even where a SkillTree could not be built (a cyclic graph).
+// A single chain r -> a. The advisory check reads only these prerequisite lists, so a bare vector stands in for a whole tree, even a cyclic one.
 namespace {
 const std::vector<NodeId> noPrereqs{};
 const std::vector<NodeId> aPrereqs{nid("r")};
@@ -59,8 +57,7 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
   CHECK_EQ(entry->second.status, ProgressStatus::none);
   CHECK_EQ(entry->second.at, at(2));
 
-  // And the tombstone is VISIBLE on load — a client's reconcile must be able to tell
-  // "cleared" from "never marked", or it resurrects the clear with a stale local mark.
+  // The tombstone is VISIBLE on load: a client's reconcile must tell "cleared" from "never marked".
   Progress loaded = repo.load(tid(), uid());
   CHECK(loaded.completed.empty());
   CHECK(loaded.inProgress.empty());

@@ -21,8 +21,7 @@ using namespace wm::fake;
 
 namespace {
 
-// The durable store, thread-safe because start() writes the `running` row on the calling thread
-// and the worker writes the terminal row on its own — the same two-writer shape as production.
+// Thread-safe: start() writes the `running` row on the calling thread and the worker writes the terminal row on its own.
 struct FakeTendRunRepository : TendRunRepository {
   mutable std::mutex mutex;
   std::map<std::string, TendRun> byId;
@@ -68,7 +67,6 @@ struct FakeTendRunRepository : TendRunRepository {
   }
 };
 
-// The op-log seam the service reads the seq footprint through: get_tree answers with the head.
 struct FakeToolHost : ToolHost {
   std::uint64_t seq = 0;
   bool getTreeErrors = false;
@@ -83,8 +81,6 @@ struct FakeToolHost : ToolHost {
   }
 };
 
-// The agent loop stands in for the parallel work: it records the call, runs an optional side
-// effect (to advance the fake head), and either returns a scripted outcome or throws.
 struct FakePlanAgent : PlanAgent {
   bool isConfigured = true;
   AgentOutcome outcome;
@@ -116,7 +112,6 @@ struct Harness {
   Entitlements entitlements{subs, usage};
 };
 
-// The worker finishes asynchronously; spin on the durable row until it leaves `running`.
 TendRun awaitTerminal(FakeTendRunRepository& runs, const std::string& id) {
   for (int i = 0; i < 3000; ++i) {
     std::optional<TendRun> run = runs.find(id);
@@ -135,8 +130,7 @@ AgentOutcome ok(const std::string& summary, int edits) {
   return outcome;
 }
 
-// Seed `count` already-finished runs this month, so the next start sees a partly- or fully-spent
-// allowance. A summary rides on `id` so newest-first ordering in the ledger is checkable.
+// Seed `count` already-finished runs this month. A summary rides on `id` so newest-first ordering is checkable.
 void seedDoneRuns(FakeTendRunRepository& runs, const UserId& user, int count, std::uint64_t at) {
   for (int i = 0; i < count; ++i) {
     TendRun seeded;
@@ -159,7 +153,7 @@ TEST(a_refusal_never_starts_work_and_is_persisted) {
 
   CHECK_EQ(run.status, TendStatus::refused);
   CHECK_EQ(run.refusal, TendRefusal::notEnabled);
-  CHECK_EQ(h.agent.calls.load(), 0);  // the worker was never handed the run
+  CHECK_EQ(h.agent.calls.load(), 0);
   std::optional<TendRun> stored = h.runs.find(run.id);
   REQUIRE(stored.has_value());
   CHECK_EQ(stored->status, TendStatus::refused);
@@ -196,7 +190,7 @@ TEST(an_over_length_prompt_refuses_without_work) {
 
 TEST(a_spent_free_allowance_refuses_without_work) {
   Harness h;
-  seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);  // 30 this month, no subscription
+  seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun run = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
@@ -210,15 +204,13 @@ TEST(pro_gets_a_larger_allowance_than_free) {
   Harness h;
   h.subs.subscribe(UserId{"u"});
   h.agent.outcome = ok("grew it", 1);
-  // The 30 that would exhaust a Free account leave a Pro account with room to spare.
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun allowed = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "one more please");
-  CHECK_EQ(allowed.status, TendStatus::running);  // Pro's 300 is nowhere near spent at 30
+  CHECK_EQ(allowed.status, TendStatus::running);
   CHECK_EQ(awaitTerminal(h.runs, allowed.id).status, TendStatus::done);
 
-  // Fill the rest of Pro's 300 and the next one is refused just like Free's was.
   seedDoneRuns(h.runs, UserId{"u"}, kProMonthlyTendings, h.clock.now);
   TendRun refused = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com", "and another");
   CHECK_EQ(refused.status, TendStatus::refused);
@@ -237,14 +229,14 @@ TEST(the_summary_reports_the_plan_budget_reset_and_recent_receipts) {
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   const TendingSummary free = service.summaryFor(UserId{"u"}, "u@example.com");
-  CHECK(free.enabled);  // this service was built armed; the summary carries the arming signal through
+  CHECK(free.enabled);
   CHECK_EQ(free.allowance.plan, Plan::free);
   CHECK_EQ(free.allowance.limit, 30);
   CHECK_EQ(free.allowance.used, 3);
   CHECK_EQ(free.allowance.remaining(), 27);
   CHECK_EQ(free.resetAtMs, nextMonthStartMsUtc(h.clock.now));
   REQUIRE_EQ(free.recent.size(), static_cast<std::size_t>(3));
-  CHECK_EQ(free.recent.front().summary, std::string("receipt 2"));  // newest first
+  CHECK_EQ(free.recent.front().summary, std::string("receipt 2"));
 
   h.subs.subscribe(UserId{"u"});
   const TendingSummary pro = service.summaryFor(UserId{"u"}, "u@example.com");
@@ -259,7 +251,7 @@ TEST(a_successful_run_persists_done_summary_and_edits) {
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
   TendRun started = service.start(TreeId{"t"}, UserId{"u"}, "u@example.com","add a testing branch under backend");
-  CHECK_EQ(started.status, TendStatus::running);  // the request is answered while the loop runs on
+  CHECK_EQ(started.status, TendStatus::running);
 
   TendRun done = awaitTerminal(h.runs, started.id);
   CHECK_EQ(done.status, TendStatus::done);
@@ -281,8 +273,8 @@ TEST(a_throwing_agent_yields_failed_not_a_crash) {
   TendRun failed = awaitTerminal(h.runs, started.id);
 
   CHECK_EQ(failed.status, TendStatus::failed);
-  CHECK_EQ(failed.detail, std::string("the model would not settle"));  // the diagnostic, kept for triage
-  CHECK_EQ(failed.summary, std::string(""));                            // no receipt on a failure
+  CHECK_EQ(failed.detail, std::string("the model would not settle"));
+  CHECK_EQ(failed.summary, std::string(""));
   CHECK_EQ(h.agent.calls.load(), 1);
 }
 
@@ -317,13 +309,13 @@ TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {
   runs.save(done);
   runs.save(refused);
 
-  CHECK_EQ(runs.failOrphanedRuns(), 1);  // only the orphaned running one is reaped
+  CHECK_EQ(runs.failOrphanedRuns(), 1);
   CHECK_EQ(runs.find("tr_a")->status, TendStatus::failed);
-  CHECK_FALSE(runs.find("tr_a")->detail.empty());              // reaped runs carry a diagnostic
-  CHECK_EQ(runs.find("tr_b")->status, TendStatus::done);       // a finished run is untouched
+  CHECK_FALSE(runs.find("tr_a")->detail.empty());
+  CHECK_EQ(runs.find("tr_b")->status, TendStatus::done);
   CHECK_EQ(runs.find("tr_b")->summary, std::string("Added 3 steps"));
-  CHECK_EQ(runs.find("tr_c")->status, TendStatus::refused);    // a refusal is untouched
-  CHECK_EQ(runs.failOrphanedRuns(), 0);                        // idempotent — nothing left running
+  CHECK_EQ(runs.find("tr_c")->status, TendStatus::refused);
+  CHECK_EQ(runs.failOrphanedRuns(), 0);
 }
 
 TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
@@ -331,8 +323,7 @@ TEST(the_worker_pool_completes_more_runs_than_it_has_threads) {
   h.agent.outcome = ok("grew it", 1);
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
-  // Eight runs against a four-thread pool: the excess must queue and still finish, never deadlock
-  // or drop. Distinct users so the per-account allowance never trips.
+  // Eight runs against a four-thread pool: the excess must queue and still finish. Distinct users so the per-account allowance never trips.
   std::vector<std::string> ids;
   for (int i = 0; i < 8; ++i)
     ids.push_back(service.start(TreeId{"t"}, UserId{"u" + std::to_string(i)}, "", "grow it").id);
@@ -357,8 +348,6 @@ TEST(an_account_over_its_ai_budget_refuses_without_work) {
 
 TEST(the_run_allowance_is_still_its_own_ceiling_and_answers_first) {
   Harness h;
-  // Both ceilings are spent. The one the pricing page promises — 30 runs — is what the person is
-  // told, because it is the only one they were ever given a number for.
   seedDoneRuns(h.runs, UserId{"u"}, kFreeMonthlyTendings, h.clock.now);
   h.usage.spentByProduct[""] = kFreeMonthlyAiNanos;
   TendingService service(h.runs, h.agent, h.tools, h.clock, h.tokens, h.entitlements, /*enabled=*/true);

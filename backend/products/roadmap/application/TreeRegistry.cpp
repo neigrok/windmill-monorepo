@@ -39,10 +39,9 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
   try {
     trees_.create(id, state, legend, initial.title, owner);
   } catch (const DuplicateTree&) {
-    // Lost a cross-process insert race (the standalone MCP binary shares this DB), or the id names
-    // a soft-deleted tree — its row outlives the delete, invisible to load. Reload to classify: only
-    // a live row the caller owns reads as a resume, and a retired row of the caller's own reads as
-    // `retired` rather than as a stranger's id.
+    // Lost a cross-process insert race, or the id names a soft-deleted tree whose row outlives the
+    // delete, invisible to load. Reload to classify: only a live row the caller owns reads as a resume,
+    // and a retired row of the caller's own reads as `retired` rather than as a stranger's id.
     std::optional<StoredTree> raced = trees_.load(id);
     if (raced && raced->owner && *raced->owner == owner) return Creation::existedYours;
     if (trees_.retiredOwner(id) == std::optional<UserId>(owner)) return Creation::retired;
@@ -73,9 +72,8 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
 }
 
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
-  // The strand serializes the retirement against the tree's socket frames: the owner check, the
-  // row's retirement and the room's form one uninterrupted step, so no concurrent open() can reload
-  // the tree between the delete and the drop.
+  // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
+  // can reload the tree between the delete and the drop.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return Removal::notFound;
@@ -84,8 +82,8 @@ TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& cal
   if (!canRead(caller, stored->owner, stored->visibility)) return Removal::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Removal::nobodysTree : Removal::notYours;
-  // The row first, then the live room — in that order, because retire announces the change and
-  // whoever listens re-decides the access question against the repository.
+  // The row first, then the live room: retire announces the change and whoever listens re-decides
+  // the access question against the repository.
   trees_.softDelete(tree);
   rooms_.retire(tree);
   return Removal::deleted;
@@ -97,9 +95,8 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (start == std::string::npos) return Renaming::blankTitle;
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
 
-  // A name, not a payload: an 8MB body would otherwise ride every broadcast, save, and listing.
-  // Truncate — never reject — to kMaxTitleChars (domain/Command.h), counted as UTF-8 codepoints so
-  // the cut can never split a sequence.
+  // A name, not a payload. Truncate — never reject — to kMaxTitleChars (domain/Command.h), counted
+  // as UTF-8 codepoints so the cut can never split a sequence.
   std::size_t seen = 0;
   for (std::size_t i = 0; i < trimmed.size(); ++i) {
     if ((static_cast<unsigned char>(trimmed[i]) & 0xC0) == 0x80) continue;  // continuation byte
@@ -110,8 +107,8 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
     ++seen;
   }
 
-  // The strand serializes the rename against the tree's socket frames, so the owner check,
-  // the room's title op, and its persist form one uninterrupted step.
+  // The strand serializes the rename against the tree's socket frames, so the owner check, the title
+  // op and the persist form one uninterrupted step.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return Renaming::notFound;
@@ -123,8 +120,7 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
 
 TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, const UserId& caller,
                                                            Visibility visibility) {
-  // The strand serializes the reshare against the tree's socket frames, so the owner check and the
-  // visibility flip form one uninterrupted step.
+  // The strand serializes the reshare against the tree's socket frames.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return VisibilityChange::notFound;

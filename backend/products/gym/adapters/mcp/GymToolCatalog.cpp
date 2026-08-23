@@ -22,8 +22,8 @@ Json::Value str(const char* description) {
   return property;
 }
 
-// A string with a published cap. The cap exists either way — the domain refuses past it — and a
-// client can only pre-validate what the schema states, so it is stated.
+// A string with a published cap: the domain refuses past it either way, and a client can only
+// pre-validate what the schema states.
 Json::Value cappedStr(const char* description, std::size_t limit) {
   Json::Value property = str(description);
   property["maxLength"] = static_cast<Json::UInt64>(limit);
@@ -37,9 +37,8 @@ Json::Value num(const char* description) {
   return property;
 }
 
-// A field the READS put on an object, declared on a write that takes the same object back. It is
-// ignored on the way in and it is here so that `additionalProperties: false` refuses typos rather
-// than the document we ourselves emitted (see create_routine).
+// A field the READS put on an object, declared on a write that takes the same object back so
+// `additionalProperties: false` refuses typos rather than the document we emitted. Ignored on input.
 Json::Value ignoredObject(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "object";
@@ -71,8 +70,8 @@ Json::Value boundedInt(const char* description, int smallest, int largest) {
   return property;
 }
 
-// Every instant on this surface is epoch milliseconds inside (0, kMaxInstantMs] — the band the
-// domain accepts — so a unit-confused caller reads the unit off the schema instead of off a refusal.
+// Every instant on this surface is epoch milliseconds inside (0, kMaxInstantMs], the band the
+// domain accepts.
 Json::Value instant(const char* description) {
   Json::Value property(Json::objectValue);
   property["type"] = "integer";
@@ -82,8 +81,7 @@ Json::Value instant(const char* description) {
   return property;
 }
 
-// The three handles, canonical wherever a tool names something that already exists. Written once so
-// two tools cannot describe the same id differently and send an agent looking in two places.
+// The three handles, canonical wherever a tool names something that already exists.
 Json::Value sessionHandle() {
   return str("The workout's id — list_sessions answers with it.");
 }
@@ -96,12 +94,9 @@ Json::Value routineHandle() {
   return str("The routine's id — list_routines answers with it.");
 }
 
-// One line of a routine, as the two tools that carry a document take it. It is an array of objects
-// and the schema says so down to each field: an agent cannot look at an example and recover the way
-// a person reading docs can, so what one entry requires is published rather than discovered by a
-// refusal. Every bound here is the DOMAIN's own (products/gym/domain/Routine.cpp) — a schema
-// advertising a wider band than the entity accepts refuses the whole document over a value it
-// invited, which is the most expensive refusal this surface can make.
+// One line of a routine, as the two tools that carry a document take it. Every bound here must be
+// the DOMAIN's own (products/gym/domain/Routine.cpp): a schema advertising a wider band than the
+// entity accepts invites a value it then refuses the whole document over.
 Json::Value entryArray() {
   Json::Value fields(Json::objectValue);
   fields["exerciseId"] = exerciseHandle();
@@ -117,26 +112,18 @@ Json::Value entryArray() {
       boundedInt("Rest between sets, 15–900. Omit to fall back to the global rest target they set "
                  "in the app, and to no timer at all when they have set none.",
                  15, 900);
-  // Declared so the round trip these tools PRESCRIBE survives their own schema: list_routines writes
-  // a position on every line, and an agent doing exactly what propose_routine_change's description
-  // says — read it, change what you mean, send all of it back — would otherwise be refused for
-  // handing back a field we gave it. It is ignored on the way in; the run is renumbered from the
-  // order.
+  // list_routines writes a position on every line, so a document read and sent back carries it.
+  // Ignored on the way in; the run is renumbered from the order.
   fields["position"] = boundedInt("Ignored — the order these arrive in IS the order.", 1, 10000);
 
   Json::Value entry(Json::objectValue);
   entry["type"] = "object";
   entry["properties"] = fields;
-  // The movement is the only thing a line cannot do without. targetSets left this list in W10, when
-  // a routine became savable while incomplete: an agent copying a program out of a lifter's
-  // notebook can now write the day down before it knows every number in it, and a schema that still
-  // demanded one would have made it invent them.
+  // The movement is the only thing a line cannot do without: a routine is savable while incomplete.
   Json::Value required(Json::arrayValue);
   required.append("exerciseId");
   entry["required"] = required;
-  // The refusal every tool publishes on its own arguments, said again for the line — because the
-  // parser refuses a misspelled field inside an entry now, and a schema that stayed silent about it
-  // would let an agent spend a whole write discovering the rule.
+  // The parser refuses a misspelled field inside an entry, so the schema says so.
   entry["additionalProperties"] = false;
 
   Json::Value property(Json::objectValue);
@@ -150,18 +137,11 @@ Json::Value entryArray() {
   return property;
 }
 
-// Each tool names the grant level that reaches it beside the sentence describing what it does, so a
-// client cannot be told one thing and gated on another. The three split like this: `read` answers
-// questions, `write` RECORDS what happened and PROPOSES changes to the program (and mints a coach
-// link, which creates a capability without destroying anything), and `delete` takes away something a
-// lifter LIVED — a workout or a link they handed to a coach — and PROPOSES the destruction of a day
-// of their program. `delete` is never implied by `write`: a connection that was not handed that
-// level does not so much as see these three.
-//
-// The levels are a grant VOCABULARY and not a risk dial, which is why proposing a routine change
-// stays at `write` after this wave rather than being re-levelled: a lifter approving `gym:write`
-// approved "this may plan with me", and a proposal is the narrower thing that used to be a write,
-// not a new kind of reach.
+// Each tool names the grant level that reaches it beside its description, so a client cannot be told
+// one thing and gated on another. `read` answers questions; `write` RECORDS what happened, PROPOSES
+// changes to the program and mints a coach link; `delete` takes away something a lifter LIVED and
+// proposes the destruction of a day of their program. `delete` is never implied by `write`: a
+// connection without that level does not so much as see those three.
 ToolDeclaration tool(const char* name, Access access, const char* description, Json::Value properties,
                      std::vector<const char*> required) {
   Json::Value schema(Json::objectValue);
@@ -181,25 +161,16 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
 
 }  // namespace
 
-// Reads, then writes, then deletes — so a narrower grant sees a PREFIX of this list rather than a
-// list with holes in it, and two connections at different levels read the same surface in the same
-// order. Seventeen tools against roadmap's twenty-seven, and the smallness is on purpose:
-// tools/list is the biggest fixed cost of a connection, so a tool that a parameter on another tool
-// could have served does not get a slot (routines list and read are one; the finish readout rides
-// on the session read; pending proposals ride on list_routines rather than minting a list and a get
-// of their own).
+// Reads, then writes, then deletes, so a narrower grant sees a PREFIX of this list rather than a
+// list with holes in it. tools/list is the biggest fixed cost of a connection, so a tool a parameter
+// on another tool could serve does not get a slot: routines list and read are one, the finish
+// readout rides on the session read, and pending proposals ride on list_routines.
 //
-// Six of the sixteen are reads, which is the shape this product wants: an agent here is a reader
-// of one lifter's log that occasionally writes into it. The verbs reserved for the HAND have no tool
-// at any level — editing a logged set, saying what a gym owns, and, since W6 (2026-08-12), APPLYING
-// A PROPOSAL. Apply is not a capability; it is a human act.
-//
-// W6 IS WHY THE ROUTINE TOOLS READ THE WAY THEY DO. `save_routine` and `delete_routine` are gone.
-// What replaced them is the split the whole product turns on: a write that RECORDS something that
-// already happened lands immediately, and a write that CHANGES something that will happen mints a
-// proposal and lands nothing. So `create_routine` writes (a day that did not exist takes nothing
-// away), while `propose_routine_change` and `propose_routine_removal` write nothing at all — they
-// hand the lifter a typed diff and wait. The names say which, because agent authors read names.
+// Three verbs have no tool at any level: editing a logged set, saying what a gym owns, and APPLYING
+// A PROPOSAL. Apply is a human act, not a capability.
+// A write that RECORDS something that already happened lands immediately, so `create_routine`
+// writes; a write that CHANGES something that already stands mints a proposal and lands nothing, so
+// `propose_routine_change` and `propose_routine_removal` write nothing at all.
 std::vector<ToolDeclaration> gymToolCatalog() {
   std::vector<ToolDeclaration> tools;
 
@@ -326,11 +297,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["id"] = str("The id YOU mint for this NEW routine (`rt_` + hex is the house shape).");
     p["name"] = cappedStr("What this day of the program is called.", kMaxNameLength);
     p["position"] = boundedInt("Where it sits in the program, from 0.", 0, 10000);
-    // THE THREE FIELDS list_routines PUTS ON A ROUTINE, declared here for one reason: duplicating a
-    // day is reading one and sending it back under a fresh id, and a schema that refuses the
-    // document we ourselves emitted turns our own printed instruction into an outage. Every one of
-    // them is the STORE's answer rather than anybody's input — ignored on the way in, recomputed on
-    // the way out — and every one of them is on a routine an agent reads today.
+    // The three fields list_routines puts on a routine, declared so a document read and sent back
+    // under a fresh id is not refused. All three are the STORE's answer: ignored on the way in.
     p["lastTrainedAt"] = num("Ignored — the log decides when a routine was last trained.");
     p["revision"] = num("Ignored — the store moves a routine's revision; a client reads it, never "
                         "sends it.");
@@ -444,11 +412,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   return tools;
 }
 
-// The paragraph every client reads at connect, before it has called anything. The second half is
-// W6's whole contract, said once here so no tool has to say it twice — and the third is the
-// retirement, said BEFORE any call so an agent written against the old catalog is not surprised on
-// its first turn; the call itself is answered by GymTools::retiredTools() through whichever host is
-// above.
+// The paragraph every client reads at connect, before it has called anything. The retirements are
+// named here as well as by GymTools::retiredTools(), so an agent reads them before its first call.
 std::string gymInstructions() {
   return "gym is a training log: workouts of sets, a program of routines, and a catalog of "
          "movements. Every write is idempotent by an id YOU mint — send the same id again, carrying the "

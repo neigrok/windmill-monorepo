@@ -100,8 +100,9 @@ other caps. Nothing else in the product deletes from that table.
 
 The device owns the histogram, the learning and the confidence. It computes one scalar — the next
 knock instant — and PATCHes it as `next_due_at` plus the local day it belongs to (`slot_day`). The
-server stores that instant and fires at it, and needs no timezone for journal at all. Below 7 days
-of data the device sends `adaptive=false` and no `next_due_at`; the partial index excludes the row.
+server stores that instant and fires at it, and needs no timezone for journal at all. A row with no
+`next_due_at` sits outside the sweep's partial index, so "unknown means never send" needs no special
+case; the `adaptive` field in the settings read is simply whether an instant is stored.
 
 `domain/NudgePlan.h` is the pure decision — gates in order: `paused` → `tooLate`
 (`kNudgeTooLateMs`, six hours) → `alreadyWrote` → send. There is no lapse or streak branch, and the
@@ -121,8 +122,9 @@ Rules:
 - `claimDay` re-checks eligibility inside its own transaction and clears `next_due_at` in the same
   breath, so the served instant cannot fire twice.
 - The sweep runs on its own `trantor` loop, never a drogon request loop.
-- Mail leaves only when `JOURNAL_NUDGE_ENABLED` says so AND the user is named in
-  `JOURNAL_NUDGE_ALLOWLIST`; both are read at send time.
+- Mail leaves only when `JOURNAL_NUDGE_ENABLED` is on AND the user is named in
+  `JOURNAL_NUDGE_ALLOWLIST` (empty means nobody). The gate is consulted at SEND time, never at
+  decide time, so the ledger keeps recording while nobody can receive.
 
 The only channel is transactional email (`EmailSender::sendJournalNudge`, Resend). The `channel`
 column carries the choice; web push has no port.
@@ -139,10 +141,10 @@ What belongs here:
   A `WarmEchoRepository` keeps the second derivation of an evening from re-loading the corpus.
 - `EchoSweep` runs every six hours as the **repair** path: inbound reverse edges, corpus-stamp
   backfill, failed pages, deferred derivations. Nobody receives an echo through it.
-- The **entitlement is asked in the read**, not in the sweep. The honest-cut state has to show a
-  non-subscriber that echoes exist, how many, how far back and the real opening words of the
-  nearest passage — none of which survives an empty table. So the sweep derives for everyone and
-  `EchoApi` decides how much of a passage a reader is handed.
+- The **entitlement is asked in the read**, not in the sweep: the sweep derives for everyone and
+  `EchoApi` decides how much of a passage a reader is handed. A non-subscriber is still served that
+  echoes exist, how many, how far back, and the opening words of the nearest passage — none of which
+  a gated sweep could answer.
 - `HttpEmbedder` talks to the self-hosted `services/embedder` sidecar, running the same bge-small
   weights the browser downloads for on-device search. Page text does not leave for an embedding.
   It does leave for the curator, which is Anthropic's — that call needs the zero-retention,
@@ -183,7 +185,7 @@ only what the client cannot do itself.
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/useful` | the reader's explicit positive answer | owner |
 | `POST /v1/journal/echoes/:triggerDay/:matchDay/opened` | the weaker "Read it" signal | owner |
 | `GET /v1/journal/export` | every page, JSON (the client renders markdown) | owner |
-| `GET/PATCH /v1/journal/nudge` | settings; PATCH is where the device pushes `nextDueAt`/`slotDay` | owner |
+| `GET/PATCH /v1/journal/nudge` | settings. GET answers `{ enabled, channel, adaptive, nextDueAt?, armed, suppressed }`; PATCH takes `{ enabled?, channel?, nextDueAt?, slotDay?, pausedUntil? }` and is where the device pushes the instant it computed | owner |
 | `POST /v1/journal/nudge/pause` · `/unsubscribe` | the credential is the secret in the user's mail; POST-only; 204 either way | mail secret |
 | `POST /v1/admin/journal/nudge/sweep` | operator rehearsal (`dryRun`/`asOfMs`) | `JOURNAL_NUDGE_ADMIN_TOKEN` |
 | `GET /v1/admin/journal/echo/explain/:day` | one page's derivation run for its reasons, writing nothing; explains the signed-in caller's own page | admin token + owner |
@@ -253,7 +255,8 @@ file says in one place:
   a drogon request loop.
 - Every vendor edge is chosen there and nowhere else, on the presence of an environment variable:
   `HttpEmbedder` (`JOURNAL_EMBEDDER_URL`) or `NullEmbedder`, `AnthropicCurator` or `NullCurator`,
-  `AnthropicSegmenter`, `OpenAiTranscriber` or `NullTranscriber`. An unwired boundary is a quiet
+  `AnthropicSegmenter` or `RuleSegmenter`, `OpenAiTranscriber` or `NullTranscriber`. The curator and
+  the segmenter share `ANTHROPIC_API_KEY`. An unwired boundary is a quiet
   no-op, never an error: the echo pass writes nothing and `POST /transcribe` answers 503.
 - `JOURNAL_NUDGE_ADMIN_TOKEN` and `JOURNAL_ECHO_ADMIN_TOKEN` each close one rehearsal door. Unset
   means 403 to everyone.
@@ -273,5 +276,3 @@ file says in one place:
 - Web push: no `WebPush` port and no `push_subscription` table. The `channel` column reserves the
   choice.
 - Streaming voice (live captions) has no port and no route.
-- The canon lists voice under "Free, forever"; it is a Windmill One feature. `pricing.md` and the
-  surface copy need the correction.

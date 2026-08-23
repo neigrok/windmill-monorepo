@@ -11,9 +11,6 @@
 #include <thread>
 #include <vector>
 
-// The pure half of the meter: what a reply says it used, what that costs, and the two fuses that
-// read those numbers. Everything here is arithmetic, so everything here is provable without a
-// database, a vendor or a clock.
 using namespace wm;
 
 namespace {
@@ -29,7 +26,6 @@ Json::Value parse(const std::string& text) {
 
 }
 
-// The shape a real non-streaming reply carries, cache fields and all.
 TEST(ai_usage_tokens_come_off_a_real_reply_in_all_four_buckets) {
   const Json::Value reply = parse(R"({
     "id": "msg_01",
@@ -50,8 +46,6 @@ TEST(ai_usage_tokens_come_off_a_real_reply_in_all_four_buckets) {
   CHECK_EQ(tokens.cacheWrite, 2048);
 }
 
-// A reply we cannot count is still a reply we must return. Every one of these is a shape a vendor
-// or a proxy has produced at some point, and not one of them may throw.
 TEST(ai_usage_an_unreadable_usage_object_counts_zero_and_never_throws) {
   const TokenUse absent = tokensFrom(Json::Value{});
   CHECK_EQ(absent.input, 0);
@@ -67,7 +61,6 @@ TEST(ai_usage_an_unreadable_usage_object_counts_zero_and_never_throws) {
   CHECK_EQ(notAnObject.input, 0);
   CHECK_EQ(notAnObject.output, 0);
 
-  // Present, an object, and every field the wrong kind or missing.
   const TokenUse garbage = tokensFrom(parse(R"({
     "input_tokens": "many", "output_tokens": null, "cache_read_input_tokens": {"a": 1}
   })"));
@@ -76,7 +69,6 @@ TEST(ai_usage_an_unreadable_usage_object_counts_zero_and_never_throws) {
   CHECK_EQ(garbage.cacheRead, 0);
   CHECK_EQ(garbage.cacheWrite, 0);
 
-  // A partial object still yields the halves it does carry.
   const TokenUse partial = tokensFrom(parse(R"({"input_tokens": 30})"));
   CHECK_EQ(partial.input, 30);
   CHECK_EQ(partial.output, 0);
@@ -84,8 +76,7 @@ TEST(ai_usage_an_unreadable_usage_object_counts_zero_and_never_throws) {
   CHECK_EQ(partial.cacheWrite, 0);
 }
 
-// Each family, priced from fresh input and output alone: $5/$25, $10/$50, $3/$15, $1/$5 per MTok,
-// which is 5000/25000, 10000/50000, 3000/15000 and 1000/5000 nanos a token.
+// Each family, priced from fresh input and output alone: $5/$25, $10/$50, $3/$15, $1/$5 per MTok — 5000/25000, 10000/50000, 3000/15000 and 1000/5000 nanos a token.
 TEST(ai_usage_each_model_family_prices_from_its_own_rate) {
   const TokenUse tokens{1000, 1000, 0, 0};
 
@@ -101,8 +92,7 @@ TEST(ai_usage_each_model_family_prices_from_its_own_rate) {
   CHECK_EQ(costNanos("claude-haiku-4-5-20251001", tokens), std::optional<long long>(6'000'000));
 }
 
-// The modifiers ride on the model's INPUT rate: a read is a tenth of it, a 5m ephemeral write a
-// quarter more. Both as integer maths — a double here would be a rounding error in money.
+// The modifiers ride on the model's INPUT rate: a read is a tenth of it, a 5m ephemeral write a quarter more. Integer maths — a double here would be a rounding error in money.
 TEST(ai_usage_cache_reads_and_writes_price_off_the_input_rate) {
   // sonnet input is 3000 nanos a token, so a read is 300 and a write 3750.
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{0, 0, 10'000, 0}),
@@ -110,7 +100,6 @@ TEST(ai_usage_cache_reads_and_writes_price_off_the_input_rate) {
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{0, 0, 0, 10'000}),
            std::optional<long long>(37'500'000));
 
-  // All four buckets at once, which is what an actual cached call looks like.
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{400, 1000, 8000, 2000}),
            std::optional<long long>(400 * 3000 + 1000 * 15000 + 8000 * 300 + 2000 * 3750));
 
@@ -118,8 +107,6 @@ TEST(ai_usage_cache_reads_and_writes_price_off_the_input_rate) {
   CHECK_EQ(costNanos("claude-opus-5", TokenUse{0, 0, 0, 4}), std::optional<long long>(25'000));
 }
 
-// Seams pin an alias; a deploy can pin the dated snapshot behind it. Both are the same billed model,
-// and calling the dated one unpriced would blind the meter to a whole product overnight.
 TEST(ai_usage_a_dated_snapshot_resolves_to_the_alias_it_pins) {
   const TokenUse tokens{1000, 1000, 0, 0};
   CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens), std::optional<long long>(18'000'000));
@@ -127,8 +114,7 @@ TEST(ai_usage_a_dated_snapshot_resolves_to_the_alias_it_pins) {
   CHECK_EQ(costNanos("claude-haiku-4-5-20251001", tokens), std::optional<long long>(6'000'000));
 }
 
-// Unpriced must be LOUD. A model we have never priced returns nothing at all, so the row stores null
-// and every total it lands in is marked a floor — rather than quietly counting as free.
+// Unpriced returns nothing at all, so the row stores null and every total it lands in is marked a floor.
 TEST(ai_usage_a_model_we_cannot_price_returns_nothing_rather_than_zero) {
   const TokenUse tokens{1000, 1000, 0, 0};
   CHECK_FALSE(costNanos("gpt-4o", tokens).has_value());
@@ -138,10 +124,7 @@ TEST(ai_usage_a_model_we_cannot_price_returns_nothing_rather_than_zero) {
   CHECK_FALSE(costNanos("laude-opus-5", tokens).has_value());
 }
 
-// The whole reason the unit is nanos. In micro-dollars haiku input is 1 per 1000 tokens, so a
-// 300-token compose truncates to ZERO — and a cache read at a tenth of that is ten times worse. The
-// unit would have systematically zeroed exactly the cheap high-volume calls the meter exists to
-// count, and the meter would have reported our cheapest product as costing nothing.
+// The whole reason the unit is nanos: in micro-dollars haiku input is 1 per 1000 tokens, so a 300-token compose truncates to ZERO.
 TEST(ai_usage_a_three_hundred_token_haiku_call_does_not_round_to_zero) {
   const std::optional<long long> input = costNanos("claude-haiku-4-5", TokenUse{300, 0, 0, 0});
   REQUIRE(input.has_value());
@@ -152,8 +135,7 @@ TEST(ai_usage_a_three_hundred_token_haiku_call_does_not_round_to_zero) {
   CHECK_EQ(*cached, 30'000);
 }
 
-// The allowance is TendingAllowance's twin: at the limit the door is shut, and remaining never goes
-// negative, because "you are 4 cents past your budget" is not a number anyone should have to render.
+// At the limit the door is shut, and remaining never goes negative.
 TEST(ai_usage_the_allowance_answers_under_at_and_over_the_limit) {
   const AiAllowance under{kFreeMonthlyAiNanos, 1'000'000'000};
   CHECK(under.allows());
@@ -177,8 +159,7 @@ TEST(ai_usage_the_allowance_answers_under_at_and_over_the_limit) {
   CHECK_EQ(kHourlyFuseNanos, 20'000'000'000);
 }
 
-// The window is trailing, not cumulative: spend that has aged out stops counting, or the fuse would
-// blow once and stay blown for the life of the process.
+// The window is trailing, not cumulative: spend that has aged out stops counting.
 TEST(ai_fuse_spend_older_than_the_window_stops_counting) {
   AiFuse fuse{1000, 100};
 
@@ -190,15 +171,12 @@ TEST(ai_fuse_spend_older_than_the_window_stops_counting) {
   CHECK_EQ(fuse.trailingNanos(1'050), 800);
   CHECK(fuse.allows(1'050));
 
-  // At exactly one window past the first sample, that sample is gone and the second is not.
   CHECK_EQ(fuse.trailingNanos(1'100), 400);
-  // ...and one window past the second, nothing is left.
   CHECK_EQ(fuse.trailingNanos(1'150), 0);
   CHECK(fuse.allows(1'150));
 }
 
-// Over the ceiling it refuses, and it remembers that it refused — so the alert is sent once instead
-// of on every blocked call in the storm that tripped it.
+// Over the ceiling it refuses, and it remembers that it refused, so the alert is sent once.
 TEST(ai_fuse_refuses_over_the_ceiling_and_recovers_when_the_window_passes) {
   AiFuse fuse{1000, 100};
   CHECK(fuse.allows(1'000));
@@ -219,8 +197,7 @@ TEST(ai_fuse_refuses_over_the_ceiling_and_recovers_when_the_window_passes) {
   CHECK(fuse.tripped());  // still true: it HAS refused, and that is what the flag says
 }
 
-// Five event-loop threads is the real deployment, so the accumulator has to be exact under all of
-// them at once — a lost add is a dollar the fuse never sees.
+// Five event-loop threads is the real deployment, so the accumulator has to be exact under all of them at once.
 TEST(ai_fuse_counts_every_concurrent_add_exactly) {
   AiFuse fuse{1'000'000'000, 1'000'000};
 
@@ -241,38 +218,30 @@ TEST(ai_fuse_counts_every_concurrent_add_exactly) {
   CHECK_FALSE(fuse.tripped());
 }
 
-// THE LATCH. allows() used to read the running total without pruning, and spent() — the only other
-// pruner — is reached only on a call this gate lets through. So one bad hour refused every seam for
-// the life of the process: no call, no spend, no prune, no recovery, and the alert already sent. The
-// old tests missed it because every one of them spent before it asked, which pruned for free.
+// allows() must prune: spent() is reached only on a call this gate lets through, so without pruning here one bad hour refuses every seam for the life of the process.
 TEST(ai_fuse_recovers_on_its_own_when_nothing_spends_again) {
   AiFuse fuse{1000, 100};
 
   fuse.spent(1000, 1'000);
   CHECK_FALSE(fuse.allows(1'000));
 
-  // Nothing spends after this point, because nothing CAN — every seam is refusing. The window must
-  // still clear on the strength of the clock alone.
+  // Nothing spends after this point, because nothing CAN. The window must still clear on the strength of the clock alone.
   CHECK_FALSE(fuse.allows(1'050));
   CHECK(fuse.allows(1'101));
   CHECK_EQ(fuse.trailingNanos(1'101), 0);
 }
 
-// An unpriced model is charged the dearest rate we know, not nothing. Charging it zero is what let
-// fifty calls of a model we forgot to price move a $25 ceiling by $0.00 while spending real money.
+// An unpriced model is charged the dearest rate we know, not nothing.
 TEST(ai_usage_a_model_we_cannot_price_is_charged_the_dearest_rate_rather_than_nothing) {
   const TokenUse tokens{1'000'000, 0, 0, 0};
 
   CHECK_FALSE(costNanos("claude-unknown-9", tokens).has_value());
   // fable/mythos input is the dearest at $10/MTok, so a million input tokens floors at $10.
   CHECK_EQ(floorCostNanos("claude-unknown-9", tokens), 10'000'000'000LL);
-  // A model we CAN price is charged exactly what it costs, never the floor.
   CHECK_EQ(floorCostNanos("claude-haiku-4-5", tokens), 1'000'000'000LL);
 }
 
-// Longest-prefix matching exists for dated snapshots and must not adopt a differently-priced sibling:
-// a rule that cannot tell "-20260114" from "-mini" silently bills a new model at a neighbour's rate
-// and never lights the unpriced badge, which is the one signal that says look at this.
+// Longest-prefix matching exists for dated snapshots and must not adopt a differently-priced sibling.
 TEST(ai_usage_a_prefix_match_takes_a_dated_snapshot_and_refuses_anything_else) {
   const TokenUse tokens{1'000'000, 0, 0, 0};
 

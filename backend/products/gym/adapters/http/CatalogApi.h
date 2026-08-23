@@ -17,16 +17,13 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The catalog of movements over REST — the seeds plus this lifter's own, and a movement's record.
 // One of five HTTP adapters mirroring the five aggregate ports (TrainingApi holds the status ladder
-// they all share; routes.cpp is the one mount). It needs the log service and the auth seam and
-// nothing else: no share, so no app origin. It holds TWO services and the second is for one
-// route — a movement's record is a read of the LOG, so `exerciseRecord` goes through
-// TrainingService, the same object the log's own reads do.
+// they all share; routes.cpp is the one mount). It holds TWO services: a movement's record is a read
+// of the LOG, so `exerciseRecord` goes through TrainingService.
 //
-// Every read is owner-scoped like the rest of gym — the catalog serves the seeds plus the caller's
-// own rows and never another account's — and the one code this file mints is `exercise-id-taken`:
-// a seed's slug or another lifter's custom id, repaired by minting a fresh id and sending again.
-// `GET /v1/gym/exercises/last`, the picker's meta beside this catalog, is a read of the LOG and so
-// lives on TrainingApi even though it hangs off the catalog's path.
+// Every read is owner-scoped — the seeds plus the caller's own rows and never another account's —
+// and the one code this file mints is `exercise-id-taken`, repaired by minting a fresh id.
+// `GET /v1/gym/exercises/last` is a read of the LOG and lives on TrainingApi even though it hangs
+// off the catalog's path.
 class CatalogApi {
 public:
   CatalogApi(std::shared_ptr<CatalogService> catalog, std::shared_ptr<TrainingService> training,

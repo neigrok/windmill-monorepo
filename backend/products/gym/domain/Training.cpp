@@ -104,7 +104,7 @@ bool wellFormedId(std::string_view id) {
 
 // One pass, reading the lead byte for the length and every continuation for its shape, refusing an
 // overlong encoding and a surrogate half by the code point they decode to — the same well-formedness
-// Postgres applies when it takes the parameter, applied here where the answer is still a 400.
+// Postgres applies, applied here where the answer is still a 400.
 bool storableText(std::string_view text) {
   for (std::size_t at = 0; at < text.size();) {
     const unsigned char lead = static_cast<unsigned char>(text[at]);
@@ -157,24 +157,15 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
       equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
-  // Trimmed first, so a name of nothing but blanks is refused here rather than stored as a movement
-  // whose header, picker row and log row all render empty — and so renaming a seed back to its own
-  // name with a stray space still clears the override instead of pinning a copy of it.
+  // Trimmed first, so a name of nothing but blanks is refused here, and so renaming a seed back to
+  // its own name with a stray space still clears the override.
   if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
-  // The same eighty a routine's name lives under, and for a sharper reason: the catalog read hands
-  // back EVERY movement this account can see, on every open of the movement picker, so a name with
-  // no ceiling is a name that ships forever on the product's most-fired read.
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
-  // The one text rule, and the display name is the second piece of free text that reaches a text
-  // column (the set note was the first). A NUL truncates a name to its own head; bytes that are not
-  // UTF-8 are refused by Postgres mid-transaction, which would leave as a retryable 500 for a name
-  // that can never land.
+  // A NUL truncates a name to its own head; non-UTF-8 bytes are refused by Postgres mid-transaction,
+  // which would leave as a retryable 500 for a name that can never land.
   if (!storableText(this->name)) throw InvalidTraining("an exercise name must be storable text");
-  // step_kg is numeric(4,2), and both ends of that column are refused here rather than by Postgres
-  // mid-transaction: a step of 100 raises a numeric overflow, which leaves as the house 500 — the
-  // status the ladder documents as retryable, so a queue would resend an unstorable body forever —
-  // and a step under 0.01 rounds to 0.00 in the column, so the row this write stored is the row the
-  // next read refuses.
+  // step_kg is numeric(4,2): a step of 100 overflows the column and a step under 0.01 rounds to 0.00
+  // in it, so both ends are refused here rather than mid-transaction as a retryable 500.
   if (stepKg < kMinStepKg || stepKg > kMaxStepKg) throw InvalidTraining("step out of range");
 }
 
@@ -206,15 +197,14 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
   if (rpe && (*rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
   if (this->note.size() > 4000) throw InvalidTraining("note too long");
-  // Refuse what storage cannot hold rather than shorten a lifter's words in silence, or hand a
-  // correction queue a 500 it would retry forever over bytes no column will ever take.
+  // Refuse what storage cannot hold rather than shortening a lifter's words in silence.
   if (!storableText(this->note)) throw InvalidTraining("a note must be storable text");
   if (completedAtMs == 0 || completedAtMs > kMaxInstantMs)
     throw InvalidTraining("a set completes at an instant");
 }
 
-// Written as one construction rather than a run of assignments, so the fields a correction may NOT
-// move are visibly copied across from the stored row and cannot be forgotten into a default.
+// One construction rather than a run of assignments, so the fields a correction may NOT move are
+// visibly copied from the stored row.
 Set corrected(const Set& stored, const SetFix& fix) {
   return Set{stored.id,
              stored.session,

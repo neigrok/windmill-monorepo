@@ -12,8 +12,7 @@
 namespace wm {
 
 namespace {
-// An IANA name is short by construction ("America/Argentina/Buenos_Aires" is 30); anything
-// longer is not a timezone, and refusing it here keeps junk out of the column and off the probe.
+// An IANA name is short by construction; anything longer is not a timezone.
 constexpr std::size_t kMaxTimezoneBytes = 64;
 
 drogon::HttpResponsePtr noContent() {
@@ -22,13 +21,8 @@ drogon::HttpResponsePtr noContent() {
   return response;
 }
 
-// `armed` is whether the engine can reach THIS CALLER — the feature flag AND their place on the
-// allowlist — while `enabled` is what they asked for. Answering the caller's question with the
-// feature's would advertise the switch to the whole fleet during a rollout whose entire point is
-// that one account is reachable: every stranger would turn it on, be told when we send, and get
-// nothing for a month by design. The section renders nothing while the engine cannot reach you,
-// which is how the tending meter already behaves; a 404 would have been a small lie told to a
-// signed-in caller whose settings do exist.
+// `armed` is whether the engine can reach THIS CALLER — the flag AND the allowlist — while
+// `enabled` is what they asked for.
 Json::Value toJson(const ReminderSettings& settings, bool armed) {
   Json::Value body(Json::objectValue);
   body["armed"] = armed;
@@ -74,8 +68,7 @@ void RemindersApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&&
     callback(error(drogon::k401Unauthorized, "sign in to read your reminders"));
     return;
   }
-  // No row yet is not an error: it is the honest "off, and we don't know where you are", which is
-  // exactly what the defaults say.
+  // No row yet is not an error: the defaults say "off, and we don't know where you are".
   callback(jsonResponse(toJson(reminders_->settingsFor(*caller).value_or(ReminderSettings{}),
                                sweep_->arming().allows(*caller))));
 }
@@ -92,10 +85,8 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
     return;
   }
 
-  // A patch edits what is there: an absent field means "leave it alone", so turning reminders on
-  // and moving timezone are independent acts that can also arrive together. A field that IS there
-  // must be the type it claims: jsoncpp throws on a conversion it cannot make, and an exception
-  // escaping this handler would be an anonymous 500 plus a Sentry event per request.
+  // An absent field means "leave it alone"; a present one must be the type it claims, since
+  // jsoncpp throws on a conversion it cannot make.
   ReminderSettings settings = reminders_->settingsFor(*caller).value_or(ReminderSettings{});
   if (json->isMember("enabled")) {
     if (!(*json)["enabled"].isBool()) {
@@ -116,42 +107,33 @@ void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;
   }
-  // Without a zone there is no hour to send at, and defaulting to UTC would mail US users at 4am.
-  // So enabling without one is refused rather than silently accepted into permanent silence.
+  // Without a zone there is no hour to send at, so enabling without one is refused.
   if (settings.enabled && settings.timezone.empty()) {
     callback(error(drogon::k400BadRequest, "reminders need your timezone"));
     return;
   }
-  // And nobody the engine cannot reach may switch themselves on. A row saying "on" for someone
-  // outside the allowlist is a promise the sweep will not keep — it would decide their week
-  // honestly every Tuesday and withhold every one of them.
+  // Nobody the engine cannot reach may switch themselves on: a row saying "on" for someone
+  // outside the allowlist is a promise the sweep will not keep.
   if (settings.enabled && !sweep_->arming().allows(*caller)) {
     callback(error(drogon::k403Forbidden, "reminders aren't switched on for this account yet"));
     return;
   }
-  // A PATCH that itself says enabled:true, landing on a row the provider suppressed, is the owner
-  // saying "this address works now" — the one deliberate act that lifts that verdict, made with
-  // their own hand on a session-authenticated route. Only that PATCH does it: one that leaves
-  // reminders off, or only moves the timezone over a row already on, leaves the flag as the
-  // provider left it. Being wrong costs exactly one more bounce, which suppresses again. The web
-  // refetches after the 204 and the ordinary face returns.
+  // A PATCH that itself says enabled:true, over a row the provider suppressed, is the one act
+  // that lifts that verdict; any other PATCH leaves the flag as the provider left it.
   const bool turningOn = json->isMember("enabled") && settings.enabled;
   if (!reminders_->upsertSettings(*caller, settings.enabled, settings.timezone)) {
     callback(error(drogon::k400BadRequest, "that doesn't look like a timezone"));
     return;
   }
-  // Lifted only once the settings themselves landed: a refused timezone must not discard the
-  // provider's verdict on the way to a 400.
+  // Lifted only once the settings landed: a refused timezone must not discard the provider's
+  // verdict on the way to a 400.
   if (turningOn && settings.suppressed) reminders_->liftSuppression(*caller);
   callback(noContent());
 }
 
 void RemindersApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Deliberately uncredentialed, and deliberately incapable of saying no. The secret came from
-  // the reader's own mail; a token that matches nothing gets the same 204 as one that matches, so
-  // this door can never be used to discover whose reminders exist.
-  // The token is read only once it is known to BE a string: `{"token": []}` would otherwise throw
-  // out of an uncredentialed handler and turn this door into an anonymous 500 generator.
+  // Uncredentialed and incapable of saying no: a token matching nothing gets the same 204, so
+  // this door discovers nothing. The token is read only once it is known to BE a string.
   std::shared_ptr<Json::Value> json = req->getJsonObject();
   const std::string secret =
       json && (*json)["token"].isString() ? (*json)["token"].asString() : std::string();
@@ -163,12 +145,10 @@ void RemindersApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& callb
 }
 
 void RemindersApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // RFC 8058 one-click. A mail client POSTs this itself when the reader presses "unsubscribe", so
-  // the credential is the same secret pause carries — carried in the query of the List-Unsubscribe
-  // URL (a fragment would never reach us). Like pause it is uncredentialed and incapable of saying
-  // no: a secret that matches nothing gets the same answer as one that matches, so this door is no
-  // oracle either. Registered POST-only, so the prefetchers and scanners that GET every URL in a
-  // mail can never unsubscribe anyone. A 200 with no body is what a one-click client expects back.
+  // RFC 8058 one-click: the credential is the same secret pause carries, in the QUERY of the
+  // List-Unsubscribe URL (a fragment would never reach us). Uncredentialed and no oracle, like
+  // pause, and POST-only so a scanner's GET unsubscribes nobody. A one-click client expects a 200
+  // with no body.
   const std::string secret = req->getParameter("t");
   if (!secret.empty()) {
     if (std::optional<UserId> user = reminders_->userByPauseDigest(tokens_->digestOf(secret)))
@@ -178,9 +158,8 @@ void RemindersApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&&
 }
 
 void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // The operator's door, and it is closed unless REMINDERS_ADMIN_TOKEN says otherwise. An absent
-  // token and a wrong one answer identically, so the route never advertises that it is there, and
-  // the compare is constant-time so a wrong one cannot be guessed a byte at a time.
+  // Closed unless REMINDERS_ADMIN_TOKEN says otherwise. An absent token and a wrong one answer
+  // identically, and the compare is constant-time.
   if (adminToken_.empty() || !secretEqual(bearerOf(req), adminToken_)) {
     callback(error(drogon::k404NotFound, "no such endpoint"));
     return;
@@ -191,31 +170,25 @@ void RemindersApi::sweep(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     return;
   }
   // isUInt64 rather than isNumeric: asUInt64() throws on a negative or fractional number just as
-  // readily as on a string, and every one of those throws is the same anonymous 500.
+  // readily as on a string.
   if (json && json->isMember("asOfMs") && !(*json)["asOfMs"].isUInt64()) {
     callback(error(drogon::k400BadRequest, "asOfMs must be a millisecond timestamp"));
     return;
   }
   const std::uint64_t asOfMs = json ? json->get("asOfMs", Json::Value::UInt64(0)).asUInt64() : 0;
 
-  // Time travel is a rehearsal tool: without it every iteration of a weekly feature costs seven
-  // real days. With the FEATURE armed it would let one request mail the fleet a week early, so it
-  // is refused outright rather than quietly ignored.
+  // With the FEATURE armed, time travel would mail the fleet a week early: refuse it outright.
   if (asOfMs != 0 && sweep_->arming().enabled) {
     callback(error(drogon::k409Conflict, "asOfMs is refused while reminders are enabled"));
     return;
   }
-  // And a time-travelling sweep is ALWAYS a rehearsal. The pointer advance computes next week
-  // from SQL now(), not from asOfMs, so a real run against a future clock would claim the whole
-  // fleet's week and push every pointer forward against real time — one mistyped rehearsal
-  // costing everybody their next reminder.
+  // A time-travelling sweep is ALWAYS a rehearsal: the pointer advance computes next week from
+  // SQL now(), so a real run against a future clock would claim the whole fleet's week.
   const bool dryRun = asOfMs != 0 || (json && json->get("dryRun", false).asBool());
 
-  // Never on this thread. A drogon IO thread serves every other request in flight; a full batch is
-  // up to 200 users' worth of database round trips and provider calls, and parking one here would
-  // hold one of the server's handful of IO threads — and the pooled database connection it is
-  // carrying — for as long as that takes. The sweep answers from its
-  // own loop, which also serialises this run behind the heartbeat's rather than racing it.
+  // Never on this thread: a full batch is hundreds of database round trips and provider calls,
+  // and parking it here would hold one of the server's few IO threads and its pooled connection.
+  // The sweep's own loop also serialises this run behind the heartbeat's rather than racing it.
   sweep_->runAsync(asOfMs != 0 ? asOfMs : clock_->nowMs(), dryRun,
                    [callback = std::move(callback)](MailSweepReport report) {
                      callback(jsonResponse(toJson(report)));

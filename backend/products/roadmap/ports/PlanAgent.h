@@ -9,11 +9,8 @@
 namespace wm {
 
 // The agent loop: a sentence and a tree in, a sequence of tool calls out, until the model stops
-// asking for tools. ToolHost is the hands — the same tools an external MCP client drives, executed
-// as the same caller, through the same rooms and the same op log.
-//
-// `run` BLOCKS until the loop settles. It is called from the tending worker's own thread, never
-// from a request loop.
+// asking for tools. `run` BLOCKS until the loop settles, and is called from the tending worker's own
+// thread, never from a request loop.
 
 struct AgentStep {
   std::string tool;
@@ -34,8 +31,7 @@ struct PlanAgent {
   virtual ~PlanAgent() = default;
   virtual bool configured() const = 0;
 
-  // `onStep` fires as each tool call lands, so the caller can stamp progress somewhere durable
-  // rather than holding it in memory that a disconnect would take with it.
+  // `onStep` fires as each tool call lands, so the caller can stamp progress somewhere durable.
   virtual AgentOutcome run(const std::string& prompt, const TreeId& tree, const UserId& caller,
                            ToolHost& tools,
                            const std::function<void(const AgentStep&)>& onStep) = 0;

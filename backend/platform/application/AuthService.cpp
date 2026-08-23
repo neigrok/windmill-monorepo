@@ -24,19 +24,17 @@ void AuthService::requestLink(const std::string& rawEmail, const std::string& fo
     return;
   }
 
-  // One mint, one row, both credentials: the link token and its 6-digit code twin, minted here in
-  // the synchronous half so both are at rest before any send is deferred.
+  // Both credentials are minted in the synchronous half, so both are at rest before any send is
+  // deferred.
   const MintedToken link = tokens_.mint();
   const std::string code = tokens_.mintCode();
   repo_.insertLink(link.digest, tokens_.digestOf(code), *email, now, linkExpiry(now), forkSource);
 
-  // The row is already persisted; only the slow send is deferred. Its outcome is the last
-  // verdict — a 2xx is sent, a failure is unreachable — but the row stands either way, so an
-  // unreachable send is still a usable credential the user can reach on a retry.
+  // The row is already persisted; only the slow send is deferred, and the row stands either way.
   auto resolve = [done = std::move(done)](bool ok) {
     done(ok ? RequestResult::sent : RequestResult::unreachable);
   };
-  // The app door asked to type rather than tap: its mail carries the code and never the link.
+  // The app door's mail carries the code and never the link.
   if (door == "app") {
     email_.sendSignInCode(*email, code, std::move(resolve));
     return;
@@ -58,8 +56,7 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret,
                                          link ? link->expiresAt : 0, now);
   if (verdict != LinkVerdict::valid) return {verdict, std::nullopt, ""};
 
-  // Spend it atomically before minting anything. If a concurrent verify already won the
-  // row, we lost the race — treat it exactly as an already-used link, no session.
+  // Spend it atomically before minting anything: losing the race is an already-used link.
   if (!repo_.consumeLink(digest, now)) return {LinkVerdict::alreadyUsed, std::nullopt, ""};
 
   return {verdict, mintSessionFor(link->email, nameFromEmail(link->email), ctx, now), link->forkSource};
@@ -72,21 +69,20 @@ AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmai
   if (!email) return {CodeVerdict::noLiveCode, std::nullopt, ""};
   const UnixMs now = clock_.nowMs();
 
-  // The newest live row is THE code for this address — a resend supersedes the one before it.
+  // The newest live row is the code for this address: a resend supersedes the one before it.
   const std::optional<StoredSignInCode> stored =
       repo_.findLiveCode(*email, now, AuthPolicy::maxCodeAttempts);
   const CodeVerdict verdict =
       verifyCode(stored.has_value(), stored && tokens_.digestOf(code) == stored->codeDigest);
   if (verdict == CodeVerdict::wrongCode) {
-    // The attempt bound is the code's real defense (a million states): one gated increment, and
-    // at maxCodeAttempts the lookup above stops finding the row — dead for good, resend to retry.
+    // The attempt bound is the code's real defense: at maxCodeAttempts the lookup above stops
+    // finding the row.
     repo_.spendCodeAttempt(stored->linkDigest, AuthPolicy::maxCodeAttempts);
     return {verdict, std::nullopt, ""};
   }
   if (verdict != CodeVerdict::valid) return {verdict, std::nullopt, ""};
 
-  // Either credential burns the one row. A concurrent verify — link or code — that already spent
-  // it won the race: no session for us, and the same opaque refusal at the edge.
+  // Either credential burns the one row; losing the race means no session and the same refusal.
   if (!repo_.consumeLink(stored->linkDigest, now)) return {CodeVerdict::noLiveCode, std::nullopt, ""};
 
   return {verdict, mintSessionFor(*email, nameFromEmail(*email), ctx, now), stored->forkSource};
@@ -100,8 +96,8 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
   const UnixMs now = clock_.nowMs();
   const bool privateEmail = trust == AddressTrust::appOnly;
 
-  // Step one, and the only step that can answer on its own: the subject IS the identity. Whatever
-  // address the provider is sending today, a bound door opens the account it was bound to.
+  // The subject is the identity: whatever address the provider sends today, a bound door opens
+  // the account it was bound to.
   if (const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject)) {
     if (const std::optional<User> user = repo_.findUserById(*bound)) {
       LOG_INFO << "auth: provider sign-in by bound door provider=" << toString(identity.provider)
@@ -110,20 +106,18 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
     }
   }
 
-  // Step two: no door is bound, so the verified address gets to find an account exactly as a magic
-  // link would — and binding the door here is what backfills the table for every account that
-  // predates it, since no provider subject was ever stored to migrate. A relay address runs the
-  // same path and is just as safe: it is stable for this app, so it re-finds the same human and
-  // can collide with no one else. What it cannot do is find the account they have on the web, and
-  // that is what `privateEmail` sends the client to the link door for.
-  // A provider's name is unvetted text and only ever seeds a NEW account, so it goes through the
-  // same gate the settings rename does — cap and all — rather than reaching a row unchecked.
+  // No door is bound, so the verified address finds an account exactly as a magic link would, and
+  // binding the door here is what fills the table in. A relay address runs the same path: stable
+  // for this app, so it re-finds the same human, but it can never find their account on the web —
+  // which is what `privateEmail` sends the client to the link door for.
+  // A provider's name is unvetted text and only seeds a NEW account, through the same gate the
+  // settings rename uses.
   const bool created = !repo_.findUserByEmail(identity.email).has_value();
   const std::optional<std::string> offered = parseName(identity.name);
   const SignedIn signedIn =
       mintSessionFor(identity.email, offered ? *offered : nameFromEmail(identity.email), ctx, now);
   repo_.bindIdentity(identity.provider, identity.subject, signedIn.user.id, identity.email.value);
-  // The address, never the subject: a subject is an opaque provider id, an address is the person.
+  // The address, never the subject: a subject is an opaque provider id.
   LOG_INFO << "auth: provider sign-in bound a door provider=" << toString(identity.provider)
            << " user=" << signedIn.user.id.str() << " created=" << (created ? "yes" : "no")
            << " relay=" << (privateEmail ? "yes" : "no");
@@ -155,28 +149,26 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
       LinkVerdict::valid)
     return {LinkOutcome::badLink, std::nullopt};
 
-  // The link names the account that survives. Resolved before it is spent, because two of the three
-  // answers below cost the caller nothing and must not burn a single-use credential to reach.
+  // The link names the account that survives. Resolved before it is spent, so the refusals below
+  // do not burn a single-use credential.
   const std::optional<User> target = repo_.findUserByEmail(link->email);
   const bool linkingToSelf = target && target->id == caller;
 
-  // The one precondition, and the reason no account merger exists: the caller's row must hold
-  // nothing, so folding it away destroys nothing and nothing has to be reconciled. Checked BEFORE
-  // the link is spent — it is a permanent refusal, and a human who meets it would otherwise have to
-  // request a fresh link to be told the same thing again.
+  // The one precondition: the caller's row must hold nothing, so folding it away destroys nothing.
+  // Checked BEFORE the link is spent, since it is a permanent refusal.
   if (!linkingToSelf && footprint_.anyData(caller)) return {LinkOutcome::notEmpty, std::nullopt};
 
-  // Spend it. A concurrent verify that won the row means this one never held a valid link at all.
+  // A concurrent verify that won the row means this one never held a valid link at all.
   if (!repo_.consumeLink(digest, now)) return {LinkOutcome::badLink, std::nullopt};
   if (linkingToSelf) return {LinkOutcome::sameAccount, std::nullopt};
 
-  // Created here when the address has never signed in, so linking to it is still a link and not a
-  // dead end — and only now, once the link is proven spendable and the caller proven empty.
+  // Created here when the address has never signed in, and only once the link is proven spendable
+  // and the caller proven empty.
   const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
   repo_.moveIdentities(caller, surviving.id);
   repo_.deleteUser(caller);  // empty by proof; the cascade takes the caller's own session with it
-  // The only path that deletes an account as a side effect of a sign-in. Both ids, because
-  // afterwards one of them names nothing and this line is the only place the pair was ever true.
+  // Log both ids: afterwards one of them names nothing, and this is the only place the pair was
+  // ever true.
   LOG_INFO << "auth: empty account folded into another folded=" << caller.str()
            << " surviving=" << surviving.id.str();
   return {LinkOutcome::linked, mintSession(surviving, ctx, now)};
@@ -190,8 +182,7 @@ AuthService::SignedIn AuthService::mintSessionFor(const Email& email, const std:
 }
 
 User AuthService::revived(User user) {
-  // Signing in is the undo: a within-grace closed account revives before the session is minted,
-  // so the door reopens onto exactly the trees and grants the close left in place.
+  // Signing in is the undo: a within-grace closed account revives before the session is minted.
   if (!user.deletedAt) return user;
   repo_.reviveUser(user.id);
   user.deletedAt = std::nullopt;
@@ -258,18 +249,17 @@ AuthService::RevokeOutcome AuthService::revokeSession(const UserId& userId, cons
 
 void AuthService::signOutEverywhere(const UserId& userId, const std::string& currentSecret) {
   repo_.revokeSessionsExcept(userId, tokens_.digestOf(currentSecret));
-  // What a stolen-laptop panic looks like from the server: worth being able to find afterwards.
+  // Worth being able to find afterwards.
   LOG_INFO << "auth: signed out everywhere user=" << userId.str();
 }
 
 UnixMs AuthService::closeAccount(const UserId& userId) {
   const UnixMs now = clock_.nowMs();
-  // The most destructive write this server does, and the one whose absence from a log is least
-  // forgivable: after the grace window there is nothing left to ask what happened.
+  // After the grace window there is nothing left to ask what happened, so log it.
   LOG_INFO << "auth: account closed user=" << userId.str();
-  // Tear down every credential BEFORE stamping the close, so "deleted ⇒ no live access" holds
-  // with no window: the MCP token path has no deletedAt guard of its own, and stamping first
-  // would let a token resolve for an already-closed account until disconnectAll landed.
+  // Tear down every credential BEFORE stamping the close: the MCP token path has no deletedAt
+  // guard of its own, so stamping first leaves a window where a token resolves for a closed
+  // account.
   repo_.revokeAllSessions(userId);     // every device signed out
   oauth_.disconnectAll(userId);        // every connected tool disconnected (drops its tokens)
   repo_.markUserDeleted(userId, now);  // the grace starts now; the trees are left untouched

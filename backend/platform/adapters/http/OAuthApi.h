@@ -16,10 +16,9 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The OAuth 2.1 authorization server that fronts the MCP resource server (MCP Authorization
-// spec). It lives on the API host — reusing the magic-link session for the human consent
-// step — and hands the consent screen off to a frontend route, which posts the decision
-// back here. Discovery, dynamic client registration, and the token endpoint round it out.
+// The OAuth 2.1 authorization server fronting the MCP resource server. It lives on the API host —
+// reusing the magic-link session for the human consent step — and hands the consent screen off to a
+// frontend route, which posts the decision back here.
 class OAuthApi {
 public:
   OAuthApi(std::shared_ptr<OAuthService> oauth, std::shared_ptr<AuthService> auth,
@@ -45,8 +44,7 @@ private:
   std::string appBaseUrl_;   // the app's public base, for the consent redirect
   std::string consentPath_;  // e.g. /#/oauth/authorize
   // Every scope token the tool surface honours, handed in by the composition root that knows which
-  // products are actually connected — a discovery document is a promise, and this is the only place
-  // that can keep it.
+  // products are actually connected.
   std::vector<std::string> scopesSupported_;
 };
 
