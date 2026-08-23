@@ -406,7 +406,11 @@ public:
   std::vector<EchoUser> activeSince(std::uint64_t) override { return users; }
   std::uint64_t corpusStamp(const UserId&) override { return stamp; }
 
-  std::vector<DuePage> duePages(const UserId& user, std::uint64_t) override {
+  // A test drives what is owed through `due`, so the version clause the SQL carries is modelled
+  // rather than reimplemented: `staleVersions` is the switch a test flips to say "this page was
+  // derived by a pipeline that has since moved", which is what the SQL's IS DISTINCT FROM decides.
+  std::vector<DuePage> duePages(const UserId& user, std::uint64_t,
+                                const PipelineVersions&) override {
     auto it = due.find(user.str());
     if (it == due.end()) return {};
     return it->second;
@@ -415,7 +419,8 @@ public:
   // The one named row, the way the SQL asks it. A test drives what is owed through `due`, and a
   // page derived by the live path takes itself off that list — which is what makes "the second of
   // two debounced saves costs nothing" assertable here rather than only against Postgres.
-  std::optional<DuePage> duePage(const UserId& user, const LocalDate& day, std::uint64_t) override {
+  std::optional<DuePage> duePage(const UserId& user, const LocalDate& day, std::uint64_t,
+                                 const PipelineVersions&) override {
     auto it = due.find(user.str());
     if (it == due.end()) return std::nullopt;
     for (const DuePage& page : it->second)

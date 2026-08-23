@@ -1049,6 +1049,14 @@ create table if not exists journal_page_curation (
   updated_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
+-- WHICH PIPELINE DERIVED THE PAGE. Added 2026-08-23, and the empty default is what makes the
+-- migration work: every row already written reads as derived by a segmenter and an embedder that
+-- are not the current ones, so the archive is re-cut and re-embedded over the following passes
+-- rather than keeping units nobody would produce again. Before this, a prompt change or a model
+-- swap reached only pages written after it — neither the body nor the corpus moves when the
+-- PIPELINE does, so nothing made an existing page due and the change was silent.
+alter table journal_page_curation add column if not exists segment_version text not null default '';
+alter table journal_page_curation add column if not exists embed_version   text not null default '';
 
 -- ── Gym (products/gym) ───────────────────────────────────────────────────────────────────────
 -- The third room in the superapp: a training log whose one load-bearing feature is the durable

@@ -100,12 +100,14 @@ std::vector<EchoUser> WarmEchoRepository::activeSince(std::uint64_t sinceMs) {
 std::uint64_t WarmEchoRepository::corpusStamp(const UserId& user) {
   return storage_.corpusStamp(user);
 }
-std::vector<DuePage> WarmEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp) {
-  return storage_.duePages(user, corpusStamp);
+std::vector<DuePage> WarmEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp,
+                                                  const PipelineVersions& versions) {
+  return storage_.duePages(user, corpusStamp, versions);
 }
 std::optional<DuePage> WarmEchoRepository::duePage(const UserId& user, const LocalDate& day,
-                                                   std::uint64_t corpusStamp) {
-  return storage_.duePage(user, day, corpusStamp);
+                                                   std::uint64_t corpusStamp,
+                                                   const PipelineVersions& versions) {
+  return storage_.duePage(user, day, corpusStamp, versions);
 }
 std::optional<DuePage> WarmEchoRepository::pageAt(const UserId& user, const LocalDate& day) {
   return storage_.pageAt(user, day);

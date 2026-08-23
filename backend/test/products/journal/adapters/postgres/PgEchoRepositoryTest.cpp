@@ -24,6 +24,11 @@
 using namespace wm;
 
 namespace {
+
+// What the running build would produce. Every case below records it and asks with it, so the
+// version clause stays out of the way of what they are actually about — except the one case that
+// is about it.
+const PipelineVersions kPipeline{"segmenter-v1", "embedder-v1"};
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kMine = "22222222-2222-2222-2222-222222222222";
@@ -202,7 +207,7 @@ TEST(pg_echo_pages_written_counts_pages_with_words_on_them) {
 // The live path's opening move, against the real three-way condition. A page nobody has derived is
 // owed one; the page the writer just saved is owed one; a page already derived against this body
 // and this corpus is owed nothing, and that last answer is what makes a debounced second save free.
-TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_three_conditions_the_shelf_is) {
+TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_conditions_the_shelf_is) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const std::string day = "2026-05-01";
@@ -217,22 +222,74 @@ TEST(pg_echo_one_named_page_is_owed_a_derivation_on_the_same_three_conditions_th
   }
 
   // Never derived.
-  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 0);
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 0, kPipeline);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->body, std::string("wrote a little."));
   CHECK_EQ(owed->bodyStampMs, std::uint64_t{500});
   CHECK_EQ(owed->attempts, 0);
 
   // Derived against this body and this corpus: nothing owed.
-  repo.recordCuration(UserId{kMine}, LocalDate{day}, CurationOutcome{CurationStatus::ok, 500, 9, ""});
-  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
+  repo.recordCuration(UserId{kMine}, LocalDate{day}, CurationOutcome{CurationStatus::ok, 500, 9, "", kPipeline});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 
   // The corpus moved under it — the backfill case, and the reason the repair pass still exists.
-  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10).has_value());
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
 
   // A day nobody has written on is not a page, and another account's day is not this one's.
-  CHECK(!repo.duePage(UserId{kMine}, LocalDate{"2026-05-02"}, 0).has_value());
-  CHECK(!repo.duePage(UserId{kTheirs}, LocalDate{day}, 0).has_value());
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{"2026-05-02"}, 0, kPipeline).has_value());
+  CHECK(!repo.duePage(UserId{kTheirs}, LocalDate{day}, 0, kPipeline).has_value());
+}
+
+// A PIPELINE that moved under a page nobody touched. Neither the body nor the corpus moves when the
+// segmenter's prompt or the embedder's model changes, so before 2026-08-23 nothing made an existing
+// page due and a pipeline change reached only pages written after it — silently, for as long as the
+// writer left their archive alone.
+TEST(pg_echo_a_page_derived_by_an_older_pipeline_is_owed_a_pass) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "wrote a little.");
+  PgEchoRepository repo{pgTestPool()};
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::ok, 0, 9, "", kPipeline});
+
+  // Same pipeline, same body, same corpus: nothing owed.
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+
+  // A new segmenter: the page has to be CUT again, so it reports as a moved body and the sweep
+  // buys a fresh cut for it.
+  const PipelineVersions recut{"segmenter-v2", "embedder-v1"};
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, recut);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->bodyMoved, true);
+  CHECK_EQ(repo.duePages(UserId{kMine}, 9, recut).size(), std::size_t{1});
+
+  // A new embedder alone: the units still stand, so the page is owed a pass but NOT a re-cut —
+  // which is the whole reason the two versions travel as two strings rather than one stamp.
+  const PipelineVersions reembed{"segmenter-v1", "embedder-v2"};
+  owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, reembed);
+  REQUIRE(owed.has_value());
+  CHECK_EQ(owed->bodyMoved, false);
+}
+
+// A REFUSED page is the one thing a corpus that moves cannot reopen — but a pipeline that moves
+// must, because a body cut into different units is a different question from the one the vendor
+// declined. Any other reading leaves a page refused forever on a prompt nobody runs any more.
+TEST(pg_echo_a_pipeline_change_reopens_even_a_refused_page) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string day = "2026-05-01";
+  writePage(kMine, day, "wrote a little.");
+  PgEchoRepository repo{pgTestPool()};
+  repo.recordCuration(UserId{kMine}, LocalDate{day},
+                      CurationOutcome{CurationStatus::refused, 0, 9, "refused", kPipeline});
+
+  // The corpus moving does not reopen it, which is the rule *A refusal is final* states.
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
+  // A different segmenter does.
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 10,
+                     PipelineVersions{"segmenter-v2", "embedder-v1"})
+            .has_value());
 }
 
 // A failed curate leaves both stamps where they were, so the page comes back as owed — the one rule
@@ -245,8 +302,8 @@ TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
   PgEchoRepository repo{pgTestPool()};
 
   repo.recordCuration(UserId{kMine}, LocalDate{day},
-                      CurationOutcome{CurationStatus::rateLimited, 500, 9, "rate_limited"});
-  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9);
+                      CurationOutcome{CurationStatus::rateLimited, 500, 9, "rate_limited", kPipeline});
+  std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->attempts, 1);
 }
@@ -268,9 +325,9 @@ TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reop
   }
 
   repo.recordCuration(UserId{kMine}, LocalDate{day},
-                      CurationOutcome{CurationStatus::refused, 500, 9, "refused"});
-  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
-  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10).has_value());
+                      CurationOutcome{CurationStatus::refused, 500, 9, "refused", kPipeline});
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
+  CHECK(!repo.duePage(UserId{kMine}, LocalDate{day}, 10, kPipeline).has_value());
 
   // The row still says what happened, and says it without counting a retry that will never come.
   {
@@ -294,7 +351,7 @@ TEST(pg_echo_a_refused_curate_settles_the_page_and_a_moving_corpus_does_not_reop
                   kMine, day);
     w.commit();
   }
-  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 9).has_value());
+  CHECK(repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline).has_value());
 }
 
 // Storage hands back what it stored, minted identities and all. This is what a warm corpus splices

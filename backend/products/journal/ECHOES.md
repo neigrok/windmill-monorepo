@@ -271,12 +271,24 @@ price, and with the risk of a different cut churning every span id on the page.
 rule (`segment`, `SegmentRules{minWords = 6, maxSentences = 3}`, still pure and still tested). That
 deploy has no curator either, so no echo can arrive from it in any case.
 
-**Known gap: nothing stamps the segmenter version on a row.** A page is due on its body or its
-corpus moving, never on the segmenter changing, so a new prompt reaches old pages only when they
-are next edited. The operator's lever until that is fixed is clearing `journal_page_curation`,
-which makes every page never-derived and re-cuts the archive over the following passes. The same
-gap exists for `embed_version` and bites harder there — a model swap silently freezes every
-already-derived page — and both want the same fix: a version column the due-ness queries read.
+**A page is due when the PIPELINE moves, not only its body or its corpus** — closed the same day it
+was opened, because without it this change would have reached only pages written after it. Neither
+the body nor the corpus moves when a prompt or a model does, so nothing made an existing page due
+and an archive kept its old units and old vectors until somebody edited it, silently.
+
+`journal_page_curation` records `segment_version` and `embed_version` on every settled pass, and
+both due-ness queries compare them against what the running build would produce (`PipelineVersions`,
+asked of the two vendors at the top of each pass). The two are separate strings because they are
+stale in different ways and cost different money: **a moved segmenter means the page must be CUT
+again**, so it reports as `bodyMoved` and buys a vendor call; **a moved embedder means the units
+still stand** and only their vectors are worthless, so the page is re-embedded and never re-cut.
+
+The columns default to empty, which is the migration: every row written before this reads as
+derived by a pipeline that is not the current one, so the whole archive re-derives over the
+following passes at the ordinary 40-pages-per-user budget. And a pipeline change is the one thing
+besides an edit that reopens a **refused** page — a body cut into different units is a different
+question from the one the vendor declined, and any other reading leaves that page refused forever
+on a prompt nobody runs any more.
 
 **Designed, not built — a spoken page is cut exactly like a typed one.** The intent was to segment
 `source = 'spoken'` pages on ASR pause boundaries. There are no pause boundaries to read
@@ -393,6 +405,9 @@ weakens the redaction guarantee.
 ## Data model
 
 ```sql
+-- journal_page_curation additionally carries `segment_version` and `embed_version` since
+-- 2026-08-23: what derived the page, so a pipeline that moves makes it due. See *Segmentation*.
+
 create table journal_span (
   user_id       uuid not null references users(id) on delete cascade,
   span_id       bigint not null,        -- stable identity, carried across re-derivation

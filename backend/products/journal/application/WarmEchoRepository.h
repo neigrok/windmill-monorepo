@@ -59,9 +59,11 @@ public:
 
   std::vector<EchoUser> activeSince(std::uint64_t sinceMs) override;
   std::uint64_t corpusStamp(const UserId& user) override;
-  std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp) override;
+  std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp,
+                                const PipelineVersions& versions) override;
   std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
-                                 std::uint64_t corpusStamp) override;
+                                 std::uint64_t corpusStamp,
+                                 const PipelineVersions& versions) override;
   std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override;
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
   std::vector<SpanPair> dismissalsOn(const UserId& user, const LocalDate& triggerDay) override;

@@ -40,6 +40,22 @@ struct DuePage {
   bool bodyMoved = true;
 };
 
+// WHICH PIPELINE DERIVED A PAGE, and therefore whether what is stored is still what this build
+// would produce. Both halves are asked at the front of every pass, because a page derived by an
+// older segmenter or an older embedder is stale in a way its own body and its own corpus can never
+// reveal: neither moved, so none of duePages' three questions notices, and the page keeps its old
+// units and its old vectors until somebody edits it. Before 2026-08-23 that was exactly what
+// happened — a prompt change or a model swap reached only pages written after it, silently.
+//
+// The two are stale in different ways and cost different money, which is why they travel as two
+// strings rather than one stamp. A segmenter that moved means the page has to be CUT again, which
+// is a vendor call. An embedder that moved means the same units are still right and only their
+// vectors are worthless, so the page is re-embedded and never re-cut.
+struct PipelineVersions {
+  std::string segment;
+  std::string embed;
+};
+
 // A passage on its way to storage. `spanId` of 0 means reconcile found no survivor for this text
 // and storage mints a fresh identity; anything else is an identity the caller decided to carry
 // forward, and storage only records that decision. `passage` is exactly what segmentation
@@ -112,6 +128,9 @@ struct CurationOutcome {
   std::uint64_t bodyStampMs = 0;
   std::uint64_t corpusStamp = 0;
   std::string error;
+  // What derived it, recorded on a SETTLED pass beside the stamps and read back by the two due-ness
+  // queries. A failed pass leaves these where they were along with everything else.
+  PipelineVersions versions;
 };
 
 // One echo as the reader's page receives it. Both passages travel as TEXT: the client re-locates
@@ -209,15 +228,17 @@ struct EchoRepository {
   // carried through it: a page derived halfway through would otherwise record a stamp covering
   // spans it never saw, and would never re-run against them.
   virtual std::uint64_t corpusStamp(const UserId& user) = 0;
-  virtual std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp) = 0;
+  virtual std::vector<DuePage> duePages(const UserId& user, std::uint64_t corpusStamp,
+                                        const PipelineVersions& versions) = 0;
 
   // One named page, if it is owed anything — the live path's whole opening move. It asks the same
-  // three questions duePages asks (never derived · body moved · corpus moved) of one row instead of
+  // questions duePages asks (never derived · body moved · corpus moved · pipeline moved) of one row instead of
   // the user's shelf, because a writer's save names its own page and scanning the rest of the
   // journal to find it back would make the cheap trigger the expensive one. Nothing owed reads as
   // nullopt, which is how a debounced second save costs nothing at all.
   virtual std::optional<DuePage> duePage(const UserId& user, const LocalDate& day,
-                                         std::uint64_t corpusStamp) = 0;
+                                         std::uint64_t corpusStamp,
+                                         const PipelineVersions& versions) = 0;
 
   // Ordered by ord — reconcile matches duplicated text within a page in document order, so the
   // order this returns in is part of the contract, not a convenience.

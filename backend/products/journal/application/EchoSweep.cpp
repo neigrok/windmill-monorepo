@@ -89,6 +89,10 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
   });
 }
 
+PipelineVersions EchoSweep::versions() const {
+  return PipelineVersions{segmenter_.version(), embedder_.version()};
+}
+
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
   EchoSweepReport report;
   // Any boundary missing is the same quiet no-op it is on the repair path: no row is written and
@@ -102,7 +106,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
   }
 
   const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
-  const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp);
+  const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
   // Nothing owed. The ordinary case for the second of two debounced saves that carried no new text,
   // and the reason a coalesced burst cannot bill twice even when it fires twice.
   if (!page) return report;
@@ -135,7 +139,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
     // otherwise record a stamp covering spans it never saw, and would never re-run against them.
     const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
 
-    std::vector<DuePage> pages = echoes_.duePages(user, corpusStamp);
+    std::vector<DuePage> pages = echoes_.duePages(user, corpusStamp, versions());
     if (static_cast<int>(pages.size()) > budget_.pagesPerUser) {
       report.pagesOverBudget += static_cast<int>(pages.size()) - budget_.pagesPerUser;
       pages.erase(pages.begin() + budget_.pagesPerUser, pages.end());
@@ -183,6 +187,9 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   CurationOutcome outcome;
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
+  // Recorded on every settled pass, so the next build can tell what derived this page and re-derive
+  // it when that stops being what this build would produce.
+  outcome.versions = versions();
 
   // 1 — cut the page into idea units. A vendor call, so it is made only when the BODY moved: a
   // corpus that moved under unchanged text changes what this page REACHES, never what it SAYS, and

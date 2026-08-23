@@ -123,6 +123,10 @@ private:
   CurationOutcome derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
                          EchoSweepReport& report);
 
+  // What this build would produce, asked of both vendors at the front of every pass. A page
+  // recorded under anything else is stale in a way its body and its corpus cannot reveal.
+  PipelineVersions versions() const;
+
   EchoRepository& echoes_;
   Segmenter& segmenter_;
   Embedder& embedder_;

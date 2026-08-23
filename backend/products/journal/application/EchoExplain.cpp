@@ -61,7 +61,11 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.bodyStampMs = page->updatedAtMs;
 
   const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
-  explained.due = echoes_.duePage(user, request.day, corpusStamp).has_value();
+  explained.due =
+      echoes_
+          .duePage(user, request.day, corpusStamp,
+                   PipelineVersions{segmenter_.version(), embedder_.version()})
+          .has_value();
 
   // 1 — the idea units. Read back from storage by default, because what the page reaches today was
   // decided by the units it actually carries; `recut=true` buys a fresh cut, which is how a prompt

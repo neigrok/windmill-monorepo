@@ -137,7 +137,7 @@ TEST(the_per_page_daily_cap_defers_to_the_repair_pass_rather_than_spending) {
   }
   CHECK_EQ(stack.curator.calls, 4);
   // Still owed: the deferred round left the page on the repair pass's list, untouched.
-  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
 
   // A day later the window has rolled and the page can be derived live again.
   stack.clock.now += 24ull * 60 * 60 * 1000;
@@ -168,9 +168,9 @@ TEST(an_account_may_hold_only_a_few_pages_in_the_queue_at_once) {
   CHECK_EQ(report.queueFull, 3);   // and the three it refused to hold
   CHECK_EQ(stack.echoes.derived.size(), std::size_t{5});
   // Refused is not lost: those three pages never had a stamp advanced, so the repair pass owes them.
-  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-06"), 0).has_value());
-  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-07"), 0).has_value());
-  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-08"), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-06"), 0, PipelineVersions{}).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-07"), 0, PipelineVersions{}).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld("2026-06-08"), 0, PipelineVersions{}).has_value());
 }
 
 // The measured harm was one account's flood delaying another writer's echo by twenty seconds,
@@ -246,7 +246,7 @@ TEST(a_user_over_the_background_ai_budget_is_skipped_with_the_page_still_due) {
   CHECK_EQ(report.failed, 0);
   CHECK_EQ(stack.curator.calls, 0);
   CHECK_EQ(stack.echoes.outcomes.size(), std::size_t{0});   // no stamp moved
-  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
 
   // And it did not count against the page's daily cap: nothing was bought to count.
   stack.spend(0);
@@ -271,7 +271,7 @@ TEST(a_failed_curate_leaves_the_page_still_due) {
   REQUIRE_EQ(stack.echoes.outcomes.size(), std::size_t{1});
   CHECK(stack.echoes.outcomes[0].status == CurationStatus::rateLimited);
   CHECK(!isSuccess(stack.echoes.outcomes[0].status));
-  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0).has_value());
+  CHECK(stack.echoes.duePage(uid("u1"), ld(kNewDay), 0, PipelineVersions{}).has_value());
   CHECK_EQ(stack.echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
 }
 

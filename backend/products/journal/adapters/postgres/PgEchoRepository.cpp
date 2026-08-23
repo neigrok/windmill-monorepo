@@ -158,9 +158,10 @@ std::uint64_t PgEchoRepository::corpusStamp(const UserId& user) {
   return rows.empty() ? 0 : rows[0]["stamp"].as<std::uint64_t>();
 }
 
-std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp) {
-  // Three ways to be owed a pass: never derived, a body that moved past the derivation, or a
-  // corpus that moved past it. The third is what makes a backfill work — write "i like c++" in May,
+std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_t corpusStamp,
+                                                const PipelineVersions& versions) {
+  // Four ways to be owed a pass: never derived, a body that moved past the derivation, a
+  // corpus that moved past it, or a PIPELINE that moved under it. The third is what makes a backfill work — write "i like c++" in May,
   // add the January page in July, and the May page has to learn January exists even though its own
   // body never changed.
   //
@@ -174,14 +175,23 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms) AS body_moved "
+      // A page whose SEGMENTER moved has to be cut again, which is the same work a moved body
+      // needs — so it reports as moved and the sweep buys a fresh cut for it. A moved embedder
+      // does not: those units still stand and only their vectors are worthless.
+      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      "     OR c.segment_version IS DISTINCT FROM $3) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid "
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
-      "     OR (c.corpus_stamp < $2 AND c.status <> 'refused')) "
+      "     OR (c.corpus_stamp < $2 AND c.status <> 'refused') "
+      // A pipeline change reopens even a REFUSED page: the refusal was an answer about text this
+      // build no longer asks the same question about, and a body cut into different units is a
+      // different question. It is the one thing besides an edit that reopens one.
+      "     OR c.segment_version IS DISTINCT FROM $3 "
+      "     OR c.embed_version IS DISTINCT FROM $4) "
       "ORDER BY p.day",
-      user.str(), static_cast<long long>(corpusStamp));
+      user.str(), static_cast<long long>(corpusStamp), versions.segment, versions.embed);
 
   std::vector<DuePage> pages;
   pages.reserve(rows.size());
@@ -195,7 +205,8 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
 }
 
 std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const LocalDate& day,
-                                                 std::uint64_t corpusStamp) {
+                                                 std::uint64_t corpusStamp,
+                                                 const PipelineVersions& versions) {
   // The same conditions duePages asks, asked of one named row — including the refusal clause, so a
   // refused body is not re-derived by the live path either. The live path calls this the moment a
   // writer stops typing, so it is also the guard that makes a debounced second save free: a page
@@ -204,13 +215,17 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts, "
-      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms) AS body_moved "
+      "(c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
+      "     OR c.segment_version IS DISTINCT FROM $4) AS body_moved "
       "FROM journal_page p "
       "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
       "WHERE p.user_id = $1::uuid AND p.day = $2::date "
       "AND (c.day IS NULL OR c.body_stamp_ms < p.stamp_ms "
-      "     OR (c.corpus_stamp < $3 AND c.status <> 'refused'))",
-      user.str(), day.iso(), static_cast<long long>(corpusStamp));
+      "     OR (c.corpus_stamp < $3 AND c.status <> 'refused') "
+      "     OR c.segment_version IS DISTINCT FROM $4 "
+      "     OR c.embed_version IS DISTINCT FROM $5)",
+      user.str(), day.iso(), static_cast<long long>(corpusStamp), versions.segment,
+      versions.embed);
 
   if (rows.empty()) return std::nullopt;
   return DuePage{LocalDate{rows[0]["day"].as<std::string>()}, rows[0]["body"].as<std::string>(),
@@ -519,13 +534,17 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
   // the row is the only place the answer exists.
   txn.exec_params(
       "INSERT INTO journal_page_curation "
-      "(user_id, day, body_stamp_ms, corpus_stamp, status, attempts, last_error, updated_at) "
-      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, $6, now()) "
+      "(user_id, day, body_stamp_ms, corpus_stamp, status, attempts, last_error, "
+      " segment_version, embed_version, updated_at) "
+      "VALUES ($1::uuid, $2::date, $3, $4, $5, 0, $6, $7, $8, now()) "
       "ON CONFLICT (user_id, day) DO UPDATE "
       "SET body_stamp_ms = EXCLUDED.body_stamp_ms, corpus_stamp = EXCLUDED.corpus_stamp, "
-      "status = EXCLUDED.status, attempts = 0, last_error = EXCLUDED.last_error, updated_at = now()",
+      "status = EXCLUDED.status, attempts = 0, last_error = EXCLUDED.last_error, "
+      "segment_version = EXCLUDED.segment_version, embed_version = EXCLUDED.embed_version, "
+      "updated_at = now()",
       user.str(), day.iso(), static_cast<long long>(outcome.bodyStampMs),
-      static_cast<long long>(outcome.corpusStamp), statusText(outcome.status), outcome.error);
+      static_cast<long long>(outcome.corpusStamp), statusText(outcome.status), outcome.error,
+      outcome.versions.segment, outcome.versions.embed);
   txn.commit();
 }
 
