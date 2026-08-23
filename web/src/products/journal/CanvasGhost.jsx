@@ -9,8 +9,11 @@ const COLUMN = { width: 'min(640px, 100% - 44px)', margin: '0 auto', padding: '3
 // .journal-prose is 16/28, so a 10px bar on an 18px gap keeps the arriving prose's rhythm.
 const LINE_WIDTHS = ['100%', '94%', '88%', '40%'];
 
-const MOOD_STEPS = [1, 2, 3, 4, 5];
-const ENERGY_HEIGHTS = [6, 10, 14];
+// The strip: two labelled rows, [label][track][numeral] on a 54 / 1fr / 30 grid, 10px between them.
+// The track is 24px tall on a 6px bed; the heads are mood's 14px circle and energy's 6x16 capsule,
+// resting at the left inset because a ghost of an unwritten day has no value to show.
+const ROW = { display: 'grid', gridTemplateColumns: '54px 1fr 30px', columnGap: 10, alignItems: 'center' };
+const HEADS = { mood: { width: 14, height: 14, radius: 'var(--radius-full)' }, energy: { width: 6, height: 16, radius: '3px' } };
 
 export function CanvasGhost() {
   return (
@@ -27,23 +30,21 @@ export function CanvasGhost() {
             </div>
           </div>
         ))}
-        {/* The strip: five mood dots (13px on 26px targets), the hairline, three rising ticks. */}
-        <div style={{ display: 'flex', alignItems: 'center', marginTop: 16 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {MOOD_STEPS.map((step) => (
-              <span key={step} style={{ width: 26, display: 'inline-flex', justifyContent: 'center' }}>
-                <GhostBar width={13} height={13} tone="var(--neutral-200)" radius="var(--radius-full)" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
+          {['mood', 'energy'].map((field) => (
+            <div key={field} style={ROW}>
+              <GhostBar width={34} height={10} tone="var(--neutral-200)" />
+              <div style={{ position: 'relative', height: 24, display: 'flex', alignItems: 'center' }}>
+                <GhostBar width="100%" height={6} radius="var(--radius-full)" />
+                <span style={{ position: 'absolute', left: 0, display: 'inline-flex' }}>
+                  <GhostBar {...HEADS[field]} tone="var(--neutral-200)" />
+                </span>
+              </div>
+              <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <GhostBar width={12} height={2} tone="var(--neutral-200)" />
               </span>
-            ))}
-          </div>
-          <span style={{ width: 1, height: 14, margin: '0 10px', background: 'var(--neutral-200)' }} />
-          <div style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 3, height: 26, paddingBottom: 6 }}>
-            {ENERGY_HEIGHTS.map((height) => (
-              <span key={height} style={{ width: 14, display: 'inline-flex', justifyContent: 'center', alignItems: 'flex-end' }}>
-                <GhostBar width={5} height={height} tone="var(--neutral-200)" radius="2px" />
-              </span>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </Ghost>

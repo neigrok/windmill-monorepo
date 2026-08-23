@@ -145,6 +145,10 @@
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  /* The canvas holds its own position while it opens (Canvas.jsx). Scroll anchoring would hold a
+     second one — a line of prose near the top of the viewport — and the two fight over every reflow
+     a cold load makes. Only one of them knows the canvas opens at the foot. */
+  overflow-anchor: none;
 }
 
 .journal-column {

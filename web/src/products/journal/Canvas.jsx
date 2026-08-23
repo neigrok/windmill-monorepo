@@ -5,11 +5,15 @@ import { usePages } from './usePages.js';
 import { DayMarker } from './DayMarker.jsx';
 import { ScaleStrip } from './ScaleStrip.jsx';
 import { PageEchoes } from './echoes/PageEchoes.jsx';
+import { writerTookTheScroll } from './openingGesture.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
 const SETTLE_FRAMES = 6;   // how long a flight keeps correcting while the canvas grows under it
+
+// Every way a writer can take the scroll off the opening canvas. A scroll event is not one of them.
+const GESTURES = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
 
 function wordCount(body) {
   const trimmed = body.trim();
@@ -41,8 +45,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   bodyRef.current = body;
   const columnRef = useRef(null);
   const openingRef = useRef(true);   // the canvas is still opening — the position is ours to take
-  const placedRef = useRef(0);       // where we last put it, so a scroll that is not ours is visible
   const focusedRef = useRef(false);
+  const widthRef = useRef(0);        // the composer's last measured width, so a re-wrap is visible
   const bornSet = useRef(null); // the dates present at first paint — these never animate
   const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
   const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
@@ -89,23 +93,27 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => clearTimeout(timer);
   }, [why]);
 
-  // Grow the composer to its content before the restore below measures the bottom.
-  useLayoutEffect(() => {
+  // Grow the composer to its content before the position below measures the bottom — on a change of
+  // WIDTH as well as of text. The echo gutter opening at 1240px re-wraps every line the field holds,
+  // and lines a field is too short to show are lines the foot is measured short by.
+  const sizeToContent = () => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = `${ta.scrollHeight}px`;
-  }, [body]);
+    widthRef.current = ta.clientWidth;
+  };
+  useLayoutEffect(sizeToContent, [body]);
 
   // Taken in a layout effect before paint, and again on every resize: a cold load lays out several times
-  // and a position taken while the scroller has no overflow does nothing. Ends when the writer scrolls.
+  // and a position taken while the scroller has no overflow does nothing. Ends when the writer makes a
+  // gesture — see openingGesture.js for why a scroll event cannot be the one that ends it.
   const takePosition = () => {
     const scroller = scrollRef.current;
     if (!openingRef.current || !scroller) return;
     const landed = focusDate ? dayElement(focusDate) : null;
     if (landed) landed.scrollIntoView({ block: 'start' });
     else scroller.scrollTop = scroller.scrollHeight;
-    placedRef.current = scroller.scrollTop;
   };
   const takeRef = useRef(takePosition);
   takeRef.current = takePosition;
@@ -123,19 +131,26 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => takeRef.current());
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      const ta = textareaRef.current;
+      if (ta && ta.clientWidth !== widthRef.current) sizeToContent();
+      takeRef.current();
+    });
+    // The scroller's own box never changes as days stream in; the column's and the composer's do.
     observer?.observe(scroller);
     if (columnRef.current) observer?.observe(columnRef.current);
-    // The scroll that is not ours ends the opening: ours always lands where `placedRef` says.
-    const onScroll = () => {
-      if (openingRef.current && Math.abs(scroller.scrollTop - placedRef.current) > 8) {
+    if (textareaRef.current) observer?.observe(textareaRef.current);
+    const taken = (event) => {
+      if (!openingRef.current) return;
+      const insideField = textareaRef.current?.contains(event.target) === true;
+      if (writerTookTheScroll({ type: event.type, key: event.key ?? null, insideField })) {
         openingRef.current = false;
       }
     };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
+    for (const type of GESTURES) scroller.addEventListener(type, taken, { passive: true });
     return () => {
       observer?.disconnect();
-      scroller.removeEventListener('scroll', onScroll);
+      for (const type of GESTURES) scroller.removeEventListener(type, taken);
     };
   }, []);
 

@@ -40,7 +40,8 @@ const { CanvasGhost } = await import('../../src/products/journal/CanvasGhost.jsx
 const { RoutinesGhost } = await import('../../src/products/gym/RoutinesGhost.jsx');
 
 test('both product ghosts render their ground and their marks', () => {
-  // journal: three days of (one marker + four prose bars), five mood dots, three ticks.
+  // journal: three days of (one marker + four prose bars), then two scale rows of
+  // (label + bed + head + numeral).
   // gym: three cards of (the card itself + one title bar + two line bars).
   for (const [name, Composition, bars] of [['journal', CanvasGhost, 23], ['gym', RoutinesGhost, 12]]) {
     const html = renderToStaticMarkup(React.createElement(Composition));
