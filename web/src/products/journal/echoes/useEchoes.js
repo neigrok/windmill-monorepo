@@ -107,6 +107,18 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   pagesRef.current = pages;
   const bodies = useRef(new Map());                    // match day -> live body, fetched once for re-location
   const verifying = useRef(new Set());                 // pages whose bodies are already on the way
+  // ONLY THE MOUNT'S FIRST COMPLETED READ MAY CLEAR THE GUTTER LATCH. Any read may SET it — an echo
+  // arriving mid-session should reserve the space for next time — but a 15-second poll is not the
+  // authoritative answer a single mount read was. A successful-but-empty reply happens for reasons
+  // that are not "this writer has no echoes": a poll landing mid-sweep sees a page whose rows are
+  // between deletion and rewrite, `pagesWritten` can read under the floor for a beat, a degraded
+  // answer is still a 200. Clearing on one of those costs the reader the ~150px slide the reserved
+  // gutter exists to kill — on their NEXT load, where nothing connects it to the cause.
+  //
+  // The asymmetry is the whole argument: keeping the space one load too long is invisible, and
+  // taking it away wrongly is the bug. (windmill-4b caught this; the fix before it moved the clear
+  // into the polled path and only deferred the original defect by one reload.)
+  const mayClear = useRef(true);
 
   // The read, as a function rather than only as a mount effect. Echoes arrive SECONDS after a save —
   // the segmenter, the embedder and the curator take 10-17 of them — and until this was callable the
@@ -121,12 +133,15 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
             && typeof reply.pagesWritten === 'number' && reply.pagesWritten < PAGE_FLOOR) {
           setFloored(true);
           setPages(new Map());
-          keepGutter(account, false);
+          if (mayClear.current) keepGutter(account, false);
+          mayClear.current = false;
           return;
         }
         setFloored(false);
         const found = (reply.pages || []).filter((page) => page.matches?.length);
-        keepGutter(account, found.length > 0);
+        if (found.length) keepGutter(account, true);
+        else if (mayClear.current) keepGutter(account, false);
+        mayClear.current = false;
         if (found.length) setHasGutter(true);
         setPages((current) => new Map(found.map((page) => [page.day, {
           day: page.day,
@@ -155,6 +170,7 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
     setHasGutter(storedGutter(account));
     bodies.current = new Map();
     verifying.current = new Set();
+    mayClear.current = true;
     return load();
   }, [today, account, load]);
 
