@@ -184,7 +184,7 @@ function ApprovedBloom({ clientName }) {
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 4px' }}>
-        <span className={`wm-oc-check ${reduced() ? '' : 'wm-oc-wake'}`}>
+        <span className="wm-oc-check wm-oc-wake">
           <Icon name="check" size={20} color="#fff" strokeWidth={3} />
         </span>
       </div>
@@ -367,8 +367,13 @@ const GLYPH_CSS = `
   .wm-oc-check { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px;
                  border-radius:50%; background:#7D8C43; border:2.5px solid #616E33;
                  box-shadow:0 0 0 4px rgba(125,140,67,.28), 0 0 26px 6px rgba(125,140,67,.28); }
+  /* Worn unconditionally: the reduced-motion redefinition below takes the scale and leaves the
+     arrival, so no caller has to know about the preference. */
   .wm-oc-wake { animation:wm-oc-wake 480ms var(--ease-soft) 1; }
   @keyframes wm-oc-wake { 0% { transform:scale(.82); opacity:0; } 55% { transform:scale(1.04); opacity:1; } 100% { transform:scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes wm-oc-wake { 0% { opacity:0; } 55%, 100% { opacity:1; } }
+  }
   .wm-oc-btn { flex:1; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
                font-family:var(--font-body); font-size:var(--text-sm); font-weight:700; padding:10px 16px;
                border-radius:var(--radius-md); border:1.5px solid var(--border-default);
