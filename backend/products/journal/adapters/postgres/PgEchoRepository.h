@@ -30,6 +30,7 @@ public:
                                  const PipelineVersions& versions) override;
 
   std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) override;
+  std::vector<DuePage> allPages(const UserId& user) override;
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override;
   std::vector<Vectored> replaceSpans(const UserId& user, const LocalDate& day,
                                      const std::vector<SpanWrite>& spans,

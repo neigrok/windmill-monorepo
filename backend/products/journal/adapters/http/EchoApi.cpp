@@ -479,9 +479,14 @@ void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
   // Off this thread: a repair pass is minutes of embedder and curator calls, and the IO thread that
   // took this request also serves every other route.
-  sweep_->runAsync(sinceMs, [cb = std::move(cb)](const EchoSweepReport& report) {
-    cb(jsonResponse(toJson(report)));
-  });
+  // `rejudge=1` takes every page rather than the ones the stamps owe. The lever for a change to the
+  // selection algorithm itself, which moves no version string and therefore reopens nothing.
+  const bool rejudgeAll =
+      req->getParameter("rejudge") == "1" || req->getParameter("rejudge") == "true";
+  sweep_->runAsync(
+      sinceMs,
+      [cb = std::move(cb)](const EchoSweepReport& report) { cb(jsonResponse(toJson(report))); },
+      rejudgeAll);
 }
 
 void EchoApi::explainPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,

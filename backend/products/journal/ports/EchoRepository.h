@@ -187,6 +187,16 @@ struct EchoRepository {
   // exists. Nullopt is a day the writer has no page on.
   virtual std::optional<DuePage> pageAt(const UserId& user, const LocalDate& day) = 0;
 
+  // EVERY page this writer has, owed anything or not — the operator's re-judge. The three version
+  // strings reopen an archive when a prompt, a model or a knob moves, and nothing reopens one when
+  // the selection ALGORITHM itself changes: no string moves for a code change. That is not a
+  // hypothetical. A retraction rule shipped, no page was due, and the false positives it existed to
+  // remove stayed on the page until this door existed.
+  //
+  // `bodyMoved` is false throughout: a re-judge asks what tonight REACHES, never what it says, so
+  // no page is cut again and the expensive vendor call is not re-bought.
+  virtual std::vector<DuePage> allPages(const UserId& user) = 0;
+
   virtual std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) = 0;
 
   // Hands back exactly what it stored, minted ids and all, so a warm corpus can be UPDATED rather

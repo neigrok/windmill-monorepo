@@ -71,11 +71,17 @@ public:
 
   // `sinceMs` is the only instant a pass has an opinion about: which users to scan. Everything after
   // that is decided by stamps the corpus carries, so the sweep cannot drift against a clock.
-  EchoSweepReport run(std::uint64_t sinceMs);
+  // `rejudgeAll` is the operator's door: take EVERY page of every scanned writer rather than the
+  // ones the stamps say are owed. It exists because a change to the selection ALGORITHM moves none
+  // of the three version strings, so nothing reopens an archive when the code that judges it
+  // changes. It re-cuts nothing — `allPages` reports every page as body-unmoved — so the cost is
+  // the embedder and the curator, never the segmenter.
+  EchoSweepReport run(std::uint64_t sinceMs, bool rejudgeAll = false);
 
   // The same pass, queued onto this sweep's own loop, so a repair pass of minutes does not sit on a
   // drogon IO thread holding a pooled connection.
-  void runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done);
+  void runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done,
+                bool rejudgeAll = false);
 
   // One page, because its writer just saved it. `usersOverAiBudget` is the skip and `pagesFailed` is
   // the vendor blip, and both leave the page's stamps where they were; `pagesRefused` does not come

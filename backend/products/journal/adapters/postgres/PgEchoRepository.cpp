@@ -235,6 +235,25 @@ std::optional<DuePage> PgEchoRepository::pageAt(const UserId& user, const LocalD
                  rows[0]["attempts"].as<int>(), false};
 }
 
+std::vector<DuePage> PgEchoRepository::allPages(const UserId& user) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(
+      "SELECT p.day::text AS day, p.body, p.stamp_ms, coalesce(c.attempts, 0) AS attempts "
+      "FROM journal_page p "
+      "LEFT JOIN journal_page_curation c ON c.user_id = p.user_id AND c.day = p.day "
+      "WHERE p.user_id = $1::uuid ORDER BY p.day",
+      user.str());
+
+  std::vector<DuePage> pages;
+  pages.reserve(rows.size());
+  for (const auto& row : rows)
+    pages.push_back(DuePage{LocalDate{row["day"].as<std::string>()},
+                            row["body"].as<std::string>(),
+                            row["stamp_ms"].as<std::uint64_t>(), row["attempts"].as<int>(), false});
+  return pages;
+}
+
 std::vector<KnownSpan> PgEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   // Ordered by ord because reconciliation matches duplicated text within a page in document order:
   // two identical lines have to keep two stable, distinct identities.

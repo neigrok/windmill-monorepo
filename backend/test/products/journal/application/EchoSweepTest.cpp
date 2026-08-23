@@ -505,3 +505,39 @@ TEST(a_pairing_this_pass_never_asked_about_survives_it) {
   REQUIRE_EQ(after.size(), std::size_t{1});
   CHECK_EQ(after[0].matchSpanId, std::int64_t{77});
 }
+
+// The operator's re-judge. Three version strings reopen an archive when a prompt, a model or a knob
+// moves; nothing reopens one when the code that judges it changes, and a retraction rule that
+// nothing re-runs removes nothing.
+TEST(a_rejudge_takes_every_page_and_re_cuts_none_of_them) {
+  FakeEchoRepository echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  // armReachingBack plants January's PASSAGE but not its page body; a re-judge reads bodies, so the
+  // older page has to exist as a page for this to be the two-page account it describes.
+  echoes.plantPage(uid("u1"), ld(kOldDay), kOldLine);
+
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  sweep.run(kNow - kDay);
+  REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
+
+  // Nothing is owed now: an ordinary pass does nothing at all, which is exactly the state a
+  // deployed algorithm change leaves behind.
+  const EchoSweepReport quiet = sweep.run(kNow - kDay);
+  CHECK_EQ(quiet.pagesDerived, 0);
+
+  const int cuts = segmenter.calls;
+  curator.keepEverything = false;
+  const EchoSweepReport forced = sweep.run(kNow - kDay, true);
+
+  // Every page of this account, taken whether or not the stamps owed them.
+  CHECK_EQ(forced.pagesDerived, 2);
+  // And re-cut none of them: a re-judge asks what a page reaches, never what it says.
+  CHECK_EQ(segmenter.calls, cuts);
+  // Which is what finally retracts the pairing the curator now refuses.
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
+}

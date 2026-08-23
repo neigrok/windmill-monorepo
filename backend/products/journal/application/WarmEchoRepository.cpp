@@ -107,6 +107,10 @@ std::optional<DuePage> WarmEchoRepository::pageAt(const UserId& user, const Loca
   return storage_.pageAt(user, day);
 }
 
+std::vector<DuePage> WarmEchoRepository::allPages(const UserId& user) {
+  return storage_.allPages(user);
+}
+
 std::vector<KnownSpan> WarmEchoRepository::spansOf(const UserId& user, const LocalDate& day) {
   return storage_.spansOf(user, day);
 }

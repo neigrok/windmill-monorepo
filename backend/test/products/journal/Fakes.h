@@ -403,6 +403,15 @@ public:
     return DuePage{day, it->second, stamp, 0, false};
   }
 
+  std::vector<DuePage> allPages(const UserId& user) override {
+    std::vector<DuePage> pages;
+    for (const auto& [key, body] : bodies) {
+      if (key.rfind(user.str() + "|", 0) != 0) continue;
+      pages.push_back(DuePage{ld(key.substr(user.str().size() + 1)), body, stamp, 0, false});
+    }
+    return pages;
+  }
+
   std::vector<KnownSpan> spansOf(const UserId& user, const LocalDate& day) override {
     std::vector<KnownSpan> known;
     auto it = spans.find(user.str());

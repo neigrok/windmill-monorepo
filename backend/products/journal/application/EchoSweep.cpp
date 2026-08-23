@@ -96,11 +96,12 @@ void EchoSweep::start() {
            << ")";
 }
 
-void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done) {
-  heartbeat_.queue([this, sinceMs, done = std::move(done)] {
+void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepReport)> done,
+                         bool rejudgeAll) {
+  heartbeat_.queue([this, sinceMs, rejudgeAll, done = std::move(done)] {
     // `done` fires on every path: the operator is waiting on a promise it cannot fulfil itself.
     try {
-      done(run(sinceMs));
+      done(run(sinceMs, rejudgeAll));
     } catch (const std::exception& error) {
       LOG_ERROR << "journal echo sweep failed: " << error.what();
       done(EchoSweepReport{});
@@ -143,7 +144,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
   return report;
 }
 
-EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
+EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
   EchoSweepReport report;
   // Any boundary missing makes the whole pass a quiet no-op rather than an error: no user is
   // scanned and no row is written.
@@ -164,7 +165,8 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs) {
     // stamp covering spans it never saw.
     const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
 
-    std::vector<DuePage> pages = echoes_.duePages(user, corpusStamp, versions());
+    std::vector<DuePage> pages =
+        rejudgeAll ? echoes_.allPages(user) : echoes_.duePages(user, corpusStamp, versions());
     if (static_cast<int>(pages.size()) > budget_.pagesPerUser) {
       report.pagesOverBudget += static_cast<int>(pages.size()) - budget_.pagesPerUser;
       pages.erase(pages.begin() + budget_.pagesPerUser, pages.end());

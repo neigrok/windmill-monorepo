@@ -174,8 +174,12 @@ question from the one the vendor declined.
 `judge_version` arrived hours after the other two, and was found the way these always are: two false
 positives were fixed, the fix deployed, and every page went on carrying them, because nothing about a
 verdict or a threshold made a page due. **Add a knob to `SelectionRules` and add it to `rulesTag`, or
-that knob ships silently.** What still needs the operator's lever — clearing `journal_page_curation`
-— is a change to the selection ALGORITHM rather than to its knobs: no string moves for that.
+that knob ships silently.** What no string covers is a change to the selection ALGORITHM rather than to its knobs — code moves,
+no version does. That is what `POST /v1/admin/journal/echo/sweep?rejudge=1` is for: it takes every
+page of every scanned writer instead of the ones the stamps owe. It re-cuts nothing (every page
+reports as body-unmoved), so it costs the embedder and the curator and never the segmenter. It was
+built the day a retraction rule shipped, nothing was due, and the false positives it existed to
+remove stayed on the page.
 
 A spoken page is cut exactly like a typed one — `ports/Transcriber.h` hands back a finished
 `Transcript` with no pause boundaries, and `DuePage` carries no `source` field.
