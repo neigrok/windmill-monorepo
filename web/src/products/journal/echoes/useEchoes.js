@@ -108,16 +108,10 @@ export function useEchoes({ today = localDay(), account = null, onFly = () => {}
   const bodies = useRef(new Map());                    // match day -> live body, fetched once for re-location
   const verifying = useRef(new Set());                 // pages whose bodies are already on the way
   // ONLY THE MOUNT'S FIRST COMPLETED READ MAY CLEAR THE GUTTER LATCH. Any read may SET it — an echo
-  // arriving mid-session should reserve the space for next time — but a 15-second poll is not the
-  // authoritative answer a single mount read was. A successful-but-empty reply happens for reasons
-  // that are not "this writer has no echoes": a poll landing mid-sweep sees a page whose rows are
-  // between deletion and rewrite, `pagesWritten` can read under the floor for a beat, a degraded
-  // answer is still a 200. Clearing on one of those costs the reader the ~150px slide the reserved
-  // gutter exists to kill — on their NEXT load, where nothing connects it to the cause.
-  //
-  // The asymmetry is the whole argument: keeping the space one load too long is invisible, and
-  // taking it away wrongly is the bug. (windmill-4b caught this; the fix before it moved the clear
-  // into the polled path and only deferred the original defect by one reload.)
+  // arriving mid-session should reserve the space for next time — but a successful-but-empty reply is
+  // not the fact a mount's single read was: a poll can land mid-sweep on a page between deletion and
+  // rewrite, and `pagesWritten` can read under the floor for a beat. Holding the space one load too
+  // long is invisible; taking it away wrongly is the slide the reserved gutter exists to kill.
   const mayClear = useRef(true);
 
   // The read, as a function rather than only as a mount effect. Echoes arrive SECONDS after a save —
