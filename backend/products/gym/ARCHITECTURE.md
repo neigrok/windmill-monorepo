@@ -991,8 +991,9 @@ API and the MCP tools write through the same services.
 
 ### 11.2 The mirror
 
-Web renders the live session as it happens (`web/src/products/gym/Today.jsx`) off the
-shared read hook's poll (`useTrainingLog.js`). With no session open the slot says so in words —
+Web renders the live session as it happens, in a band at the head of **Routines home**, off the
+shared read hook's poll (`useTrainingLog.js`). Routines is home on every surface, and it is already
+the screen that says whether anything is running. With no session open the band says so in words —
 *"Not training now."* over *"Workouts start on your phone."* — never a greyed-out control. It carries no
 install door: neither phone room has a store listing. **The mirror never says "resting"**: the rest
 target is device-local, so the server cannot know whether 1:47 is a rest running or a rest over, and
@@ -1081,10 +1082,18 @@ The undo window is 9000 ms on every surface. Copy may change; the verdict codes 
 `ports/AskAgent.h` · `application/AskService` · `adapters/llm/AnthropicAsk` · `adapters/http/AskApi` ·
 `domain/ReadReceipt` · `domain/Thread` · `platform/adapters/llm/AgentLoop.h`
 
-A lifter with an agent of their own connects it over MCP; a lifter without one opens **Ask**, which
+A lifter with an agent of their own connects it over MCP; a lifter without one opens **Coach**, which
 asks the same questions of the same tools. Two doors, one core, differing in transport, prompt and who
-pays. **The word *coach* appears on no surface a lifter reads** — the coach *share* is a different
-object and keeps its name.
+pays. The room is named for what the paid-line copy has always called it (`terms.html:94`,
+`privacy.html:103`, `YouScreen.swift:41`). **The word names the room and nothing else** — the share a
+lifter hands to a human coach is *"Share this workout"*, because *session* already names an auth
+session and one visit to the gym.
+
+The identifiers below still spell it `Ask` — `AskService`, `AskApi`, `gym_ask_threads`, `/v1/gym/ask`.
+That is deliberate: renaming a route and four tables buys nothing a lifter can see. The **strings** are
+what change, including the four this file's own `AskApi` sends to all three clients verbatim, since a
+client must never rewrite server text. Tracked as `gym-coach-rename` in the dogfood tree; the design
+canon is `docs/design/gym/briefs/09-coach.md`.
 
 ### 12.1 The narrowing
 
@@ -1111,7 +1120,7 @@ model asked. The check is written twice, once per door.
 | Bound | Value | Why |
 |---|---|---|
 | Grant | `gym:read` + the two proposal mints | it answers questions and proposes; it changes nothing |
-| Reach | the whole log | Ask is reached from Today and from a proposal card, not from one workout |
+| Reach | the whole log | Coach is a tab and is reached from a proposal card, not from one workout |
 | Never mid-session | `409 ask-session-open`, checked on the server | three clients each remembering it is three chances to forget |
 | Iterations | 8, and hitting it is a **failure** | an unfinished answer is worse than "Ask didn't answer" |
 | Turns | `kMaxThreadTurns` (8) per thread, `kMaxAskTurnBytes` (1000) each | the server assembles the prompt from the stored thread, so the cap bounds the side that pays. It bites on the PAIR an ask would add, so a conversation is never capped halfway through answering; the refusal is `409 ask-thread-full` |

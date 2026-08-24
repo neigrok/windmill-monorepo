@@ -29,7 +29,7 @@ right one." False per F1.
 `apps/ios/WindmillKit/Sources/WindmillJournal/JournalSkin.swift:31`, which paints
 `canvas: 0xFBF6EA`, so the phone's day sheet is warmer than the web's.
 
-**F4 · `gym.css:132`'s "3.4:1" does not reproduce at any ground** → re-measure.
+**F4 · `gym.css:67`'s "3.4:1" does not reproduce at any ground** → re-measure.
 Recomputed for `--pr-ink`: 3.19 on the tinted record card, 2.83 on the tinted canvas, 3.73
 untinted. The companion "3.6 on the family cream" matches the untinted cream (3.69), so the
 original measurement was taken against the wrong ground and its conclusion needs re-checking.
