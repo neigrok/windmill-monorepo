@@ -690,3 +690,13 @@ room reserves the display face for instruments and sets its prose headings in th
 be right — a 22pt heading is not a "big number" — but it is currently a divergence nobody decided,
 and the Coach wave's boards inherited it. Either `brand-foundations.md` narrows the display role to
 numerals inside gym, or gym's titles take Baloo 2.
+
+**1z · one logged set feels like two different things on the two phones** → pick one sensation.
+iOS confirms a set with `UIImpactFeedbackGenerator(style: .medium)` (`GymConfirm.swift:19`); Android
+confirms the same act with `HapticFeedbackType.LongPress` (`GymConfirm.kt:20`). A long-press and a
+medium impact are not the same feeling, and a logged set should not feel like a long-press — it is a
+confirmation, not a held gesture. Both are gated on the same `confirmHaptic` preference, so the
+divergence is in the sensation only. Worth settling before the gesture wave adds a second and a third
+haptic, because a vocabulary that starts inconsistent stays inconsistent: gym ships exactly ONE
+haptic today, and the *light on a swipe · medium on a save · success on a finish* vocabulary is
+Lift's design recorded on `gym-native-shell`, not something this room has.
