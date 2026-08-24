@@ -46,9 +46,14 @@ dimmed, because a token whose mechanism does not exist in a mode should not carr
 Android takes a staged version: its skin is a compile-time object read at ~560 sites,
 `LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
 
-**F6 · `--focus-ring` is terracotta inside gym** → re-point in the gym palette block.
-`shadows.css` dark sets `--focus-ring: 0 0 0 4px rgba(208,138,94,0.4)` — accent-terracotta-400 —
-and neither the gym block in `palettes.css` nor `gym.css` re-points it. journal does. Latent today.
+**F6 · `--focus-ring` is terracotta inside gym** → re-point in the gym palette block, **both skins**.
+`shadows.css:14` (light) sets `0 0 0 4px var(--accent-terracotta-100)` and `:23` (dark) sets
+`0 0 0 4px rgba(208,138,94,0.4)`; `palettes.css:190` re-points it only for journal, and neither the
+gym block (`palettes.css:199-206`) nor `gym.css` touches it. Gym's brand is iris. **It stops being
+latent in the Coach wave**: it is latent only because every design-system component that reads the
+token — `Button.jsx:60`, `Input.jsx:17`, `IconButton.jsx:34` — is barely used in gym today, and the
+wave rules those replace the hand-rolled twins. After that every focused control rings terracotta on
+pietra beside iris — a second accent that appears only on focus.
 
 **F7 · gym asks JetBrains Mono 700/800; only 400/500/600 are loaded** → load the faces or restyle.
 `fonts.js` self-hosts three weights. Gym rules ask 700 or 800 on `--font-mono`, so the browser
@@ -620,3 +625,11 @@ the render. `Log.jsx:281` prints it, `FixSheet.jsx:44-64` edits weight, reps and
 already accepts it, and the prompt forbids the model estimating one. The Coach wave adds a set-note
 field to the fix sheet and rules the same must happen for RPE, or the render goes: a set row never
 prints a number the lifter cannot touch on any surface.
+
+**1t · three hardcoded black shadows in `gym.css` are tuned for basalt** → move them to the per-skin
+tokens. `gym.css:596` (`0 14px 34px rgba(0,0,0,0.55)`, the toast), `:652`
+(`0 -18px 40px rgba(0,0,0,0.55)`, the sheet) and `:1490` (`0 12px 30px rgba(0,0,0,0.45)`, a dragging
+routine entry). On pietra (`--surface-canvas: #EBE7E3`) a 55%-black drop reads as soot. `shadows.css`
+already carries per-skin `--shadow-lg` and `--shadow-md`. Once the gym room takes the design system's
+`Toast` and `Dialog` the first two inherit the right shadow for free; `:1490` needs a hand. Latent
+until Daylight renders — see F5.
