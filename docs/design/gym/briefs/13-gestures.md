@@ -21,6 +21,11 @@ declared again as a custom accessibility action, by hand, on every row.
 
 Every Android board drawing a swipe says so on the board.
 
+**And the law is a per-row test, not a blanket cost.** A row that already carries an overflow control
+has a real, screen-reader-reachable button, and a swipe on that row satisfies this law for free by
+putting the same actions in the overflow. The routine row is in that position today; the set row is
+not, and has to declare its action by hand. Check the row, not the platform.
+
 ### 2 · A gesture that destroys needs an undo, not a confirmation.
 
 A confirmation on a swipe defeats the swipe: you swiped to be quick, and a dialog puts back the tap
@@ -93,6 +98,12 @@ thumb away:**
 > — Android's withheld-delete generalises cleanly — and until it does, those rows keep their drawn
 > buttons. A gesture is not worth an unrecoverable loss.
 
+**And leaving commits.** Navigating away from the session settles the withheld delete immediately,
+and nothing on screen says so. Behind a two-tap trip through a sheet that is survivable; behind a
+swipe it means *swipe, then press back* — a completely ordinary pair of actions — destroys the row
+while the undo is still nominally on screen. Either leaving keeps the window, or the act of leaving
+says what it just did.
+
 **And the undo has one slot.** A second delete *settles* the first rather than replacing it. That is
 tolerable behind a two-tap trip through a sheet and dangerous behind a swipe, where two rows can be
 gone in a second. Either the window holds more than one, or the second swipe is **refused with the
@@ -102,13 +113,19 @@ reason said plainly** — which is how this room already handles a refusal it ca
 
 Ordered by what each one takes off the screen.
 
-**The set row, past session** — **leading swipe gives *Fix*, trailing swipe gives *Delete*.** One
-action per direction, not two on one side. At full reveal two trailing actions eat about half a
-353-point row and push the set's own number and load off the leading edge, so the lifter cannot see
-*which* set they are deciding about at the moment they choose. Splitting them keeps the row readable
-and matches the platform's own grammar: benign leading, destructive trailing. Removes the delete
-button buried inside the fix sheet, and on one platform a pressed-state hint that literally reads
-"tap to fix". The only ready row.
+**The set row, past session** — **one action, and it is *Delete*.** Trailing swipe, nothing on the
+leading edge.
+
+*Fix* was in the first draft and comes out, because it **removes nothing**: tapping the row already
+opens the fix sheet on both platforms. Law 4 counts controls that come off, and Fix comes off
+nothing. Dropping it solves two more problems at once — two trailing actions ate about half a
+353-point row and pushed the set's own number and load off the leading edge, so a lifter could not
+see *which* set they were deciding about; and on Android a parked two-action lane is not something
+`SwipeToDismissBox` can hold at all, since it carries one background and dismisses at its own
+threshold. One action that genuinely dismisses is exactly what that component is for.
+
+So: **tap to fix, swipe to delete.** It removes the delete button buried inside the fix sheet, and on
+one platform a pressed-state hint that literally reads "tap to fix". The only ready row.
 
 **No full-swipe.** A swipe carried all the way through, triggering without lifting, is off until the
 undo window holds more than one delete — otherwise the fastest possible gesture is the one most
@@ -137,6 +154,14 @@ Three collisions, all knowable: the today-column is a nested vertical scroll, so
 horizontal-dominance threshold; the title is a full-width tap target, so the stroke must be attached
 above it; and **leaving a movement can raise a sheet, guarded by a check that was written for taps and
 must be re-verified at swipe velocity.**
+
+**And a fourth on Android, which is the opposite of what this brief first said.** Mid-workout the room
+hands back to the platform — its handler is enabled only when a session is *not* live — so an edge
+stroke during a workout is plain system back and **it leaves the room.** The logger is therefore the
+*most* exposed screen to an edge-started horizontal gesture, not the safest. A predictive back handler
+on the live logger is a **prerequisite** of this gesture, not a nicety. What Android is genuinely
+clear of is the *shell's* claim: it has no shell chrome, so there is no go-home swipe layered
+underneath as a simultaneous gesture. That is the iOS risk, and it does not exist here.
 
 ## What does not ship, and why
 
