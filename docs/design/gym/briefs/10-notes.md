@@ -21,7 +21,7 @@ as a confession.
 
 Two lines, and they are not decoration — each one is there because the alternative is a quiet lie.
 
-> **"Coach reads everything on this screen, and nothing else you have set."**
+> **"Coach reads every note here, and nothing else you have set."**
 
 The tidy version of this rule is *preferences are dials, notes are context*. That distinction is real
 to us and invisible to a lifter: it is drawn on **which box the sentence was typed into**, not on what
@@ -60,8 +60,16 @@ Notes are welded into the **first user turn**, beside the log document.
 
 ## Where it lives
 
-**Gym settings, as asked — in the product zone.** The section is registered as a `main` section, not
-a `data` one. That is one word, and it is the difference between the context that makes Coach good
+**Notes is its own screen**, reached from a row in gym settings and from a door in Coach's top
+chrome. It is not a section sitting between the Units toggle and the rest timer.
+
+That is not tidiness. The honesty line says *"Coach reads every note here, and nothing else you have
+set"* — and on a screen that also holds the dials, **"here" would be a lie**, because Coach reads
+none of them. A rule that is only true when you squint is worse than no rule. Giving Notes its own
+screen makes the sentence literally true, and it gives the Coach door somewhere to land.
+
+**The settings row lives in the product zone.** It is registered as a `main` section, not a `data`
+one. That is one word, and it is the difference between the context that makes Coach good
 sitting with the product's own settings, and it sitting at the bottom of the account page beside the
 button that closes your account.
 
