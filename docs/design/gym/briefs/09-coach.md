@@ -64,8 +64,16 @@ kicker, in the treatment a Coach turn gets, visually separate from the counted r
 puts two kinds of truth under one pair of buttons.
 
 **Three exits, not two.** Closing the sheet — swipe, scrim, back — **decides nothing**: the proposal
-stays pending and the card reads *still waiting*. **Dismiss is the destructive slot**, reads **"Turn
-this down"**, settles permanently with no path back, and is confirmed before it settles.
+stays pending and the card reads *still waiting*.
+
+**The band holds one button, and it is Apply.** Turning a proposal down is a **plain text row beneath
+it**, not the left half of a pair. A pair puts the one irreversible act exactly where a lifter's hand
+expects *cancel*, and colour does not undo position — someone reaching for "not now" would settle
+something permanently. "Not now" already exists and costs nothing: close the sheet. So the pinned
+band is a single primary, which is also what the reach law asks for; two full-strength buttons of the
+same weight is a failure to decide.
+
+**"Turn this down"** stays destructive and stays confirmed.
 
 **And the product currently says otherwise, which is a defect and not a disagreement.** One surface
 tells a lifter a dismissed proposal *"stays in the routine's history in case you want it back"*

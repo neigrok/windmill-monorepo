@@ -60,8 +60,15 @@ Notes are welded into the **first user turn**, beside the log document.
 
 ## Where it lives
 
-**Notes is its own screen**, and **Coach's room is its front door.** Settings carries a row to the
-same place, but that row is the secondary way in — a line reading *"Notes · 2 notes ›"* in a settings
+**The two honesty lines head the screen.** They go **above** the list, not beneath it. A rule you read
+after you have written is not a rule; and on a screen that scrolls, a footer is a promise below the
+fold.
+
+**Notes is its own screen**, and **Coach's room is its front door — as a row, never a third icon in
+the top bar.** An icon beside the thread implies Coach owns the notes, which is the exact opposite of
+what the second honesty line exists to say, and a third action crowds a phone top bar that already
+carries a two-line title. Settings carries a row to the same place, but that row is the secondary way
+in — a line reading *"Notes · 2 notes ›"* in a settings
 list reads like account admin, which is exactly what these are not. A lifter thinks about what Coach
 knows while they are talking to Coach, so that is where the door belongs.
 
