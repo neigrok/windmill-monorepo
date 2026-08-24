@@ -8,34 +8,40 @@ are chasing.
 
 Under the heading, one line, and the wording is load-bearing:
 
-> **what you write for Coach · yours to change**
+> **what you write for Coach**
 
-Not *what Coach reads about you*. A note is not something the product noticed about a lifter — it is
+Not *what Coach reads about you*, and no longer *· yours to change* either — an editable field is
+obviously yours to change, and the budget does not pay for words a control already says. A note is not something the product noticed about a lifter — it is
 an instruction they addressed to their own instrument. The "about you" phrasing implies an
 accumulating profile, which is the thing this feature is not, and it quietly contradicts the honesty
 lines below it. It also weakens them: if these are things you wrote deliberately, *any agent you
 connect can read these* is a fact you can act on; if they were things the product noticed, it reads
 as a confession.
 
-## What the screen says out loud
+## What the screen says out loud — one line
 
-Two lines, and they are not decoration — each one is there because the alternative is a quiet lie.
+**One.** Not four.
 
-> **"Coach reads every note here, and nothing else you have set."**
+> **"Any agent you connect can read these too."**
 
-The tidy version of this rule is *preferences are dials, notes are context*. That distinction is real
-to us and invisible to a lifter: it is drawn on **which box the sentence was typed into**, not on what
-the sentence says. Someone who sets rest to 3:00 *and* writes "I rest three minutes on squats" has
-told Coach the same fact twice and cannot predict which one it sees. So the screen states the
-verifiable thing, and the abstraction stays in our heads.
+That is the only genuinely surprising fact on the screen, and alone it lands. Coach's tool set can
+only *narrow* the catalogue every connected agent already sees, and the MCP grant is a name prefix —
+so a notes read is served to **every agent holding the gym read scope**. Unsaid, this feature ships
+the most personal free text in the product readable by every agent the lifter ever connected. The
+word *too* carries the rest: it says Coach reads them without a second sentence saying so.
 
-> **"Coach and any agent you connect can read these."**
+**Three lines that used to be here, and where they went.**
 
-This is the line that nearly did not get written. Coach's tool set can only **narrow** the catalogue
-every connected agent already sees, and the MCP grant is a name prefix — so a notes read declared for
-Coach is served to **every agent holding the gym read scope**. Unsaid, this feature would ship the
-most personal free text in the product, readable by every agent the lifter has ever connected, with
-nothing on screen admitting it.
+- *"…and nothing else you have set"* answers a question you ask **in settings, looking at the dials**.
+  It moved there. On this screen it was answering a question nobody was asking.
+- *"Ten notes, 500 bytes each"* moved to **the moment it bites**. A lifter with two notes does not
+  need the ceiling.
+- *"Drag to reorder"* was **structure explaining itself**, under a drag handle. Only the part a handle
+  cannot show survives: **"Top note wins."**
+
+Four true sentences in a column is not four times as honest as one. It is a paragraph, a paragraph is
+not read, and stacking them made the product **less** honest — see `../../guidelines/text-budget.md`,
+which this screen is the worked example for.
 
 The read is a **declared tool call**, never a silent injection into the prompt. So the step line can
 say *"read your notes"*, and the read receipt keeps its promise that every answer states what it read.
