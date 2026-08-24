@@ -4,6 +4,19 @@ A gym-only section in gym settings: **title-and-text pairs the lifter writes and
 holds anything from *keep your tone blunt* to the exact programme they are running and the goal they
 are chasing.
 
+## The section's own line
+
+Under the heading, one line, and the wording is load-bearing:
+
+> **what you write for Coach · yours to change**
+
+Not *what Coach reads about you*. A note is not something the product noticed about a lifter — it is
+an instruction they addressed to their own instrument. The "about you" phrasing implies an
+accumulating profile, which is the thing this feature is not, and it quietly contradicts the honesty
+lines below it. It also weakens them: if these are things you wrote deliberately, *any agent you
+connect can read these* is a fact you can act on; if they were things the product noticed, it reads
+as a confession.
+
 ## What the screen says out loud
 
 Two lines, and they are not decoration — each one is there because the alternative is a quiet lie.
