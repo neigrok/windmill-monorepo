@@ -33,8 +33,12 @@ the other's backup.
 
 **Words cost.** Read `guidelines/text-budget.md` before writing a caption. A screen's chrome gets
 **40 words** before the decision window closes, and a screen where half the words are read at all is
-under **111**. Content — the thing they came for — is not on the budget. And the rule that decides
-most cases: *a permanent caption is a confession that the design did not carry its own meaning.*
+under **111**. Content — the thing they came for — is not on the budget.
+
+Two rules from it decide most cases. *A permanent caption is a confession that the design did not
+carry its own meaning.* And **cutting is not the first move**: making the one fact that matters
+salient outperformed cutting 40% of the words by 2.7× in the largest trial on this, so make it
+impossible to miss and say it concretely before you shorten anything.
 
 **Phone reach.** Read `guidelines/thumb-reach.md` before drawing any phone screen: controls at the
 bottom, guidance centred in the middle band, identity on top. Never leave a top-anchored stack with

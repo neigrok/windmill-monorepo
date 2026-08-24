@@ -24,8 +24,9 @@ Windmill · Design System Figma file, and the shipped values are `web/src/styles
 - **Emoji**: not used. The metaphor is carried by icons and glow, not emoji.
 - **How much**: `guidelines/text-budget.md` is canon for how many words an element may spend. The
   short of it — budget the chrome, never the content; a permanent caption is a design failure wearing
-  a sentence; and a long true notice is *less* honest than a short true one, because almost nobody
-  reads it.
+  a sentence; a long true notice is *less* honest than a short true one, because almost nobody reads
+  it; and **salience and concreteness beat brevity**, so make the one fact that matters impossible to
+  miss before you start cutting.
 - **Sentence length**: short. One idea per sentence in UI copy; marketing copy allows one
   longer sentence per paragraph, max two clauses.
 

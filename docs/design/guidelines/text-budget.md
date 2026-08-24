@@ -54,10 +54,46 @@ Typed, because the three kinds carry different weight. **FINDING** is measured r
 
 The rows without a type are ours, set to fit the ones that have one.
 
-**The strongest single number:** in the cleanest experiment on this, **halving the word count
-improved measured usability by 58%** — and concise, scannable and neutral together by 124%, against a
-promotional control. It is 1997 desktop web with n=51 and a composite score, so quote it with those
-caveats. Nothing since supersedes it.
+## Cutting words is a lever. It is not the lever.
+
+This is the part most brevity advice gets wrong, and the evidence against it is far larger than the
+evidence for it.
+
+- **Salience beats brevity, by 2.7×.** A regulator's randomised trial on **~200,000 real letters**
+  across 128 cells: cutting 40% of the text roughly doubled response (+1.4 points on a 1.5% base).
+  Making the key information **salient** added **+3.8 points**. Doing both together returned *less
+  than the sum* — they partly substitute.
+- **Concrete beats short.** A central bank's trial, n=2,275: halving a letter from 1,069 to 535 words
+  was **not significantly better**. A 407-word version that was **relatable** — concrete, second
+  person, tied to the reader's own life — beat everything by **+42%**, and helped disengaged readers
+  most.
+- **Cutting padding helps; cutting structure-bearing words hurts.** In the classic jury-instruction
+  work, comprehension *rose* while readability scores got *worse*, because the researchers **added**
+  words to make relationships explicit.
+- The plain-language standard itself spends only about **7%** of its guidance on word choice.
+
+So the order of operations is: **make the one thing that matters impossible to miss, say it
+concretely and in the second person, and only then cut.** A short screen where the important fact is
+not salient has bought very little.
+
+*(The often-quoted 1997 finding that halving word count improved usability 58% is real but is n=51,
+desktop web, and a composite score against a deliberately promotional control. It is the weakest
+evidence here, not the strongest. And the famous "calls fell from 1,110 to 200 after a plain-language
+rewrite" is **not a measured result** — five counsellors estimated it a year apart and kept no log.
+Do not cite it.)*
+
+## Two things not to chase
+
+**Reading grade.** Four versions of the same material at grades 8, 10, 12 and 14, n=2,639: **no
+difference in knowledge, ease or trust.** Six grade levels, nothing. The best-known formula was
+calibrated on 531 Navy enlisted men reading Navy manuals in 1975, uses only sentence length and
+syllable count, and breaks entirely on lists and UI strings — a good screen may contain no complete
+prose sentence at all.
+
+**"Fewer words" as a label rule.** A government team's own A/B tests: *"Finish"* beat *"Give
+feedback"* six to one — by matching intent, not by being shorter — and the **longer** *"find contact
+details"* beat *"start now"* by 30% on mobile. The defensible rule for a label is **name what will
+actually happen**.
 
 ## Disclosures — where honesty and brevity meet
 
@@ -84,7 +120,30 @@ Three things follow, and the second is the one that gets forgotten:
 
 And two warnings from the same work: **naive layering trades comprehension for speed** — hiding a
 thing behind a control is not free — and **improved readability scores did not translate to improved
-performance**, so a readability score is not the goal.
+performance**.
+
+**How badly layering can fail, measured at national scale:** a government site put a plain list of
+phone numbers behind one question — a single layer over the exact information people had come for —
+and **half of roughly 800,000 monthly users never reached any output page at all.**
+
+### The easiness effect — the one that should worry a product like this
+
+Making a text plainer raises a reader's **confidence in their own understanding faster than it raises
+the understanding**. It also makes the source seem more credible and **reduces the felt need to check
+with someone who knows more**. Replicated for video in 2025 (n=179); a debiasing attempt did not fix
+it. The central-bank study independently warned that participants "frequently overestimate their
+understanding".
+
+For a product whose whole position is that it tells people the truth, that is a real hazard rather
+than a curiosity: **a beautifully plain disclosure can leave someone more confident and less curious
+without leaving them better informed.**
+
+> **So "it reads clearly" is not evidence a disclosure landed. Test recall, or test behaviour.**
+
+The mitigation that fits this brand: keep the surprising part **concrete and second-person** — *"any
+agent you connect can read these too"*, not *"notes may be accessible to connected integrations"* —
+because concreteness is the property that actually moved comprehension in the trial above, and it is
+the one that survives being short.
 
 ## The exception, stated once so nobody re-argues it
 
