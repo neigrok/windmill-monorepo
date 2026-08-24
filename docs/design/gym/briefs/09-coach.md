@@ -136,6 +136,29 @@ weaker answer. The thread ceiling is **four questions** — the copy must say fo
 counts a question and its answer as two turns against a ceiling of eight. Hitting the internal
 iteration cap is a **failure**, not a truncation to be dressed up.
 
+## The two stances, blessed
+
+Both were authored by the build and pinned in tests without a copy owner ever adopting them, and both
+diverge between the phones. They are settled here.
+
+**Signed out** — the room needs an account because it reads an account's log.
+
+> **Coach reads your log, so it needs you signed in.**
+
+One sentence, and it gives the reason rather than the rule. The longer variant on one phone — *"reads
+your account’s log … before it has anything to read"* — explains a mechanism nobody asked about.
+
+**This deployment does not carry Coach** — not an outage, and the difference matters.
+
+> **Coach isn’t part of this Windmill. Your log is still yours to read.**
+
+*Part of* rather than *available on*: nothing is broken and nothing is coming back later, so a word
+that implies a temporary fault would be a small lie. The second sentence is the useful fact — the
+thing the lifter actually came for still works.
+
+**The apostrophe is the typographic one** (’), everywhere, on every surface. One phone ships a
+straight quote in this exact string today.
+
 ## Threads
 
 **The title is the first message, verbatim**, written once. Nothing in this product summarises what a

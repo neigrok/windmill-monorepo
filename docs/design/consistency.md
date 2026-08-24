@@ -253,11 +253,17 @@ ruling avoids. Drawn on the Boards page, section "The Coach wave · web".
 
 **0u · Ask is a tab the boards never drew as one** → **superseded by the Coach wave**, owed a
 build. Ask is renamed **Coach** and its tab-root form is drawn on all three surface pages. The two
-build-authored stances — signed-out and deployment-absent — are drawn but still **not blessed**:
-they remain the build's own authorship, pinned in tests, and this wave did not adopt them. They
-need a copy owner. Note the same wave found the server sends four strings saying "Ask" verbatim to
-all three clients (`AskApi.cpp:33-38`); a client must never rewrite server text, so those change
-too and are unassigned.
+build-authored stances are **blessed and de-diverged** in `gym/briefs/09-coach.md`: signed-out is
+*"Coach reads your log, so it needs you signed in."* (iOS's shorter wording wins over Android's
+`AskScreen.kt:208`, which explains a mechanism nobody asked about), and deployment-absent is
+*"Coach isn’t part of this Windmill. Your log is still yours to read."* (Android's wording wins —
+`Ask.kt:75` — because *part of* says nothing is broken, where iOS's *available on*
+(`Ask.swift:178`) implies an outage that will pass). Both surfaces owe the change, and `AskTests`
+pins the old strings. **The apostrophe is the typographic one everywhere**: `Ask.kt:75` ships a
+straight quote in this exact string while `Ask.swift:178` ships a curly one. Note the same wave
+found the server sends four strings saying "Ask" verbatim to all three clients
+(`AskApi.cpp:33-38`); a client must never rewrite server text, so those change too and are
+unassigned.
 
 **0v · the gym app boards disagree with the built routine-first IA** → one redraw pass.
 Each line below was ruled for the build and is owed a redraw:
