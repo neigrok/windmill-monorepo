@@ -21,3 +21,22 @@ it. Log new friction here as you hit it; delete an entry when it ships.
 - [tending] The unknown-argument refusal lives on the MCP wire, in
   CompositeToolHost::callTool. A tend runs ScopedToolHost → RoadmapTools directly, so a tending
   agent's misnamed argument is still dropped in silence.
+
+## 2026-08-25 · annotate_node / create_node — the 4000-char description cap is a blind retry loop
+
+Writing a wave node's description (the Live Activity ruling, with its verified API facts and the
+latent bug it uncovered) took FOUR round trips: 5181 → 4058 → 4279 → 4150 → fit. Each refusal says
+"description is N characters, max 4000" — which is the length I sent, not the length I may send in
+the part that matters, and not which field overflowed when several are long.
+
+Two cheap fixes, either would have made this one trip:
+1. **Say the overage, not just the size** — "1181 over" is directly actionable where "5181, max 4000"
+   makes me estimate and undershoot, which is what happened twice.
+2. **Accept and truncate at a word boundary, returning `truncated: true` and the kept length**, the
+   way `summary` already truncates a description for reads. A node annotation is prose; losing the
+   tail is almost always better than losing the write, and the caller can decide whether to re-send.
+
+Worth noting the cap itself is the real problem for this use: a node that records a ruling, its
+evidence at file:line, and what it supersedes does not fit in 4000 characters, and the alternative —
+splitting one decision across two nodes — makes the tree worse. `create_node` shares the limit, so a
+node cannot even be born with its reasoning attached.
