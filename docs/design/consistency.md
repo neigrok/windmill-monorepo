@@ -700,3 +700,21 @@ divergence is in the sensation only. Worth settling before the gesture wave adds
 haptic, because a vocabulary that starts inconsistent stays inconsistent: gym ships exactly ONE
 haptic today, and the *light on a swipe · medium on a save · success on a finish* vocabulary is
 Lift's design recorded on `gym-native-shell`, not something this room has.
+
+**2a · the architecture says the phone owns the wake lock, and one phone does not** → build it or
+correct the table. `ARCHITECTURE.md:989` lists "wake lock" among the things the phone owns in the
+two-surface split. Android does it — `GymRoom.kt:281-282` adds `FLAG_KEEP_SCREEN_ON` while a workout
+is running and clears it on dispose. **iOS does not: `isIdleTimerDisabled` appears nowhere in
+`apps/ios`.** So on an iPhone the screen sleeps mid-set, on the one surface the split says is the
+capture device. Found while designing the Live Activity, which makes the gap *less* painful — the
+lock screen becomes readable — without closing it. Belongs to `gym-native-shell`.
+
+**2b · the rest clock will read two ways on one device** → ruled, and owed a build.
+The Live Activity counts **up** — time since the last set, the same reading the web prints — and
+names the rest target on its bar. The room's rest row counts **down** to zero and then flips to
+`+0:12`. Two readings of one clock on one device is the drift this wave exists to stop.
+**Ruling (`14-live-activity.md`): the room adopts the count-up reading and keeps the bar.** It removes
+a mode rather than adding one — the existing flip to `+0:12` is already an admission that
+past-the-target matters and that counting up is its natural expression. The optional sound at the
+target still fires; that is the event, and it stays opt-in. After this all three surfaces read one
+clock the same way.
