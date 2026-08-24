@@ -129,6 +129,17 @@ Appearance control at all. This wave provides that flag from the system and conv
 accessor pattern the token file already uses; the three-value Appearance control is a named follow-up,
 not an assumption.
 
+**Dynamic colour is off, and it is a refusal rather than an omission.** In this room colour is
+meaning, not decoration: the accent says *the agent proposed this*, olive says *logged*, gold says
+*a record*, brick says *this destroys something*. A wallpaper-derived palette would recolour every
+proposal edge into whatever hue a home screen happens to hold, and would collide the "done" green
+with a generated tertiary. Material You recolours brands; it cannot recolour a legend. It would also
+make a third mode nobody can draw a board for and nobody can review, and it would make every measured
+contrast ratio in the room unassertable — which the house rule against unverified claims forbids.
+
+The honest cost, said here so it is not discovered later: an Android user who expects Material You
+does not get it in this app.
+
 **And the status bar must follow the resolved skin.** The Android theme pins the status icons light
 and nothing enables edge-to-edge, so turning the room to a light ground would make the clock, the
 battery and the signal disappear. That is a one-line change and a real bug if it is missed.
