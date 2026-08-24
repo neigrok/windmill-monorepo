@@ -674,6 +674,14 @@ out they share a denominator. Raised while drawing the web review dialog, where 
 recomposed to make the label true. Three surfaces counting differently is precisely what this wave
 exists to stop, so the definition belongs in the domain beside `countedChanges`, not in each client.
 
+**The boards answer it, and the answer is the row.** All three surfaces now draw four changes as
+*added · removed · retargeted · renamed* — one card each — and the retargeted card legitimately
+carries two field moves (`sets 5 × 5 → 5 × 3`, `weight 82.5 → 90`) inside that one change. So a
+**change is a row of the document**, a **line** is an entry of the routine, and a renamed routine is
+one change with no entry at all. That reading makes "Apply all 4" and "and 7 lines unchanged" two true
+statements about the same eleven-entry document, and it is the one the build should pin. What remains
+owed is the pinning: the domain says it, the clients read it, and no surface counts for itself.
+
 **1y · gym's screen titles are Nunito where the brand says Baloo 2 is the display face** → a
 designer call, one way or the other. `brand-foundations.md` gives Baloo 2 the display role — "page
 headers, big numbers" — and gym honours the second half only: `Gym/Weight` and `Gym/Reps` are Baloo 2
