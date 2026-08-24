@@ -23,13 +23,18 @@ the other's backup.
 | `consistency.md` | The drift ledger — canon-vs-code disagreements. Start here for consistency work. |
 | `brand-foundations.md` | Brand direction, voice, visual foundations, iconography, and the standing font and logo policies. |
 | `brand-identity-brief.html` | The logo brief. No logo has been drawn; every mark is the Baloo wordmark. |
-| `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the four-layer system architecture, thumb reach. |
+| `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the four-layer system architecture, thumb reach, **the text budget**. |
 | `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
 | `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |
 | `gym/briefs/` | Creation briefs for the gym room. |
 | `marketing/` | The landing-family briefs, the pricing story, the transactional-email spec. |
 
 ## Rules for drawing a screen
+
+**Words cost.** Read `guidelines/text-budget.md` before writing a caption. A screen's chrome gets
+**40 words** before the decision window closes, and a screen where half the words are read at all is
+under **111**. Content — the thing they came for — is not on the budget. And the rule that decides
+most cases: *a permanent caption is a confession that the design did not carry its own meaning.*
 
 **Phone reach.** Read `guidelines/thumb-reach.md` before drawing any phone screen: controls at the
 bottom, guidance centred in the middle band, identity on top. Never leave a top-anchored stack with
