@@ -22,6 +22,10 @@ Windmill · Design System Figma file, and the shipped values are `web/src/styles
 - **Casing**: sentence case everywhere — headings, buttons, nav. No ALL-CAPS except tiny
   badge/eyebrow labels, which use small-caps-style letter-spacing instead of visual shouting.
 - **Emoji**: not used. The metaphor is carried by icons and glow, not emoji.
+- **How much**: `guidelines/text-budget.md` is canon for how many words an element may spend. The
+  short of it — budget the chrome, never the content; a permanent caption is a design failure wearing
+  a sentence; and a long true notice is *less* honest than a short true one, because almost nobody
+  reads it.
 - **Sentence length**: short. One idea per sentence in UI copy; marketing copy allows one
   longer sentence per paragraph, max two clauses.
 
