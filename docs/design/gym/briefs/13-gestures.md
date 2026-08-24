@@ -61,6 +61,16 @@ have a way back.
 > owns** — an Android snackbar, an iOS bottom transient — which carries the action AND the fact that
 > a window is open, and retires itself when the window closes.
 
+**And the undo lives there on every surface, not only where a swipe displaced it.** The session
+screen draws its undo as an inline row today and the logger draws a button in the row; after this
+both are the transient. Three reasons: it is one pattern instead of two; the inline row **can scroll
+out of view**, so the way back disappears while the window is still open; and a transient retires
+itself when the window closes, which is the only honest way to show that a way back has expired.
+
+The transient **floats above the reach band rather than growing the bottom inset** — the screen must
+not jump twice for every set logged. It sits over the controls beneath it while the window runs,
+which is a real cost and is drawn rather than hidden.
+
 That is better than both alternatives: the row loses its button, and the closing of the window
 becomes visible for the first time. Note gym has **no snackbar at all** today on Android — one
 mono status line above the rail is the whole messaging system — so this and the native-idiom brief
@@ -126,6 +136,13 @@ threshold. One action that genuinely dismisses is exactly what that component is
 
 So: **tap to fix, swipe to delete.** It removes the delete button buried inside the fix sheet, and on
 one platform a pressed-state hint that literally reads "tap to fix". The only ready row.
+
+**And the two directions do not cost the same, which is why one action settles it.** A trailing
+action pushes the row's leading edge under itself: the set's ordinal disappears and the load is
+clipped to its tail. A leading action moves the row the other way and the ordinal survives whole.
+With **two** actions revealed that mattered — a lifter was being asked to choose between them while
+the row was unreadable. With **one**, there is nothing to choose between: the swipe *is* the choice,
+and the row is under the thumb that swiped it.
 
 **No full-swipe.** A swipe carried all the way through, triggering without lifting, is off until the
 undo window holds more than one delete — otherwise the fastest possible gesture is the one most
