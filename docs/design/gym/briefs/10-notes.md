@@ -60,8 +60,12 @@ Notes are welded into the **first user turn**, beside the log document.
 
 ## Where it lives
 
-**Notes is its own screen**, reached from a row in gym settings and from a door in Coach's top
-chrome. It is not a section sitting between the Units toggle and the rest timer.
+**Notes is its own screen**, and **Coach's room is its front door.** Settings carries a row to the
+same place, but that row is the secondary way in — a line reading *"Notes · 2 notes ›"* in a settings
+list reads like account admin, which is exactly what these are not. A lifter thinks about what Coach
+knows while they are talking to Coach, so that is where the door belongs.
+
+It is not a section sitting between the Units toggle and the rest timer.
 
 That is not tidiness. The honesty line says *"Coach reads every note here, and nothing else you have
 set"* — and on a screen that also holds the dials, **"here" would be a lie**, because Coach reads

@@ -639,3 +639,27 @@ routine entry). On pietra (`--surface-canvas: #EBE7E3`) a 55%-black drop reads a
 already carries per-skin `--shadow-lg` and `--shadow-md`. Once the gym room takes the design system's
 `Toast` and `Dialog` the first two inherit the right shadow for free; `:1490` needs a hand. Latent
 until Daylight renders — see F5.
+
+**1u · one surface promises a dismissed proposal can come back, and the wire has no way** → fix the
+copy toward the wire. `Proposal.swift:292` reads *"Dismissed {when}. No reason asked for, nothing
+changed, and it stays in the routine's history in case you want it back."* The web states the
+opposite and is right — `proposals.js:13`, *"Every other state is settled and stays settled; the wire
+has no path back"* — and `ProgramApi.cpp` carries apply and dismiss and nothing that reopens one.
+So the phone promises a recovery the product cannot perform. It stays in the routine's history **as a
+record**, not as something you can take back. Found while drawing the Coach wave's review sheet,
+where it decides whether turning a proposal down deserves a confirmation: once the line is true, it
+does.
+
+**1v · the gym tab bar carries its entire selected state in two colours that barely differ** → a
+token decision. `brand/base` `#9a90be` against `gym/ink-faint` `#8d8896` is roughly **1.15:1 between
+them** in Instrument. A native iOS tab bar signals selection with tint plus a filled symbol, so the
+symbol carries some of it — but the **labels** are colour-only, and at that separation a lifter
+cannot tell which tab they are on. Either the selected tint moves away from the faint ink, or the
+unselected ink drops further from it. Recorded on the `iOS Tab Bar` component description.
+
+**1w · `glow/set-done` still carries a Daylight value** → delete it from the light mode. F5's ruling
+says a token whose mechanism does not exist in a mode should not be given a value in that mode, and
+emitted light does not exist on pietra. The shared `Gym · Colour` collection still resolves
+`#7d8c4366` in Daylight, and `gym.css`'s light block still declares `--set-done-glow`. No board in
+the Coach wave uses it in either mode, so nothing depends on it today — which is exactly when to
+remove it.

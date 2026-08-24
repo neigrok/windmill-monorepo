@@ -67,9 +67,21 @@ puts two kinds of truth under one pair of buttons.
 stays pending and the card reads *still waiting*. **Dismiss is the destructive slot**, reads **"Turn
 this down"**, settles permanently with no path back, and is confirmed before it settles.
 
+**And the product currently says otherwise, which is a defect and not a disagreement.** One surface
+tells a lifter a dismissed proposal *"stays in the routine's history in case you want it back"*
+(`Proposal.swift:292`) while the web states the truth — *"every other state is settled and stays
+settled; the wire has no path back"* (`proposals.js:13`) — and no route reopens one. The wire is the
+truth, so the copy changes: a turned-down proposal stays in the routine's history **as a record**,
+not as something you can take back. Once that line is true, the confirmation is honest rather than
+ceremony: it guards an act that really is irreversible.
+
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
-mid-workout changes nothing about the workout in progress. While a session is open the sheet carries,
-above Apply: *"Coach changes next time's plan, not this workout."*
+mid-workout changes nothing about the workout in progress. While a session is open the sheet carries
+*"Coach changes next time's plan, not this workout."*
+
+That line sits **above the diff, never inside the pinned band.** A line that appears and disappears
+inside the band moves the Apply button, so the same tap lands somewhere different depending on
+whether a workout is running. The band's height is constant; the caveat is content.
 
 ### Three · the apply
 
@@ -124,6 +136,10 @@ The raw tool trace under every answer comes off. It is developer output on a lif
 **The read receipt stays.** *"read 214 sets · 6 weeks · 18 sessions"* is an honesty mechanism, not
 chrome: it is how a lifter knows what the answer stands on. The step list collapses behind it and
 opens on one tap.
+
+The honesty claim rests on the **receipt**, which is always visible, and not on the step list, which
+is detail for whoever wants it. A collapsed control is not a check on anything, so it must never be
+the only thing standing between a lifter and knowing what Coach read.
 
 The four rules under it do not move: counts are by identity, so one workout read twice is one
 workout; a summary claims only what it named; a refused read counts nothing; and a reply that served
