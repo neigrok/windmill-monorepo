@@ -42,7 +42,17 @@ than a session series, not less.
 So:
 
 > **A dot per measurement, on a truncated and labelled y-axis** — the series' own minimum and maximum
-> plus padding. **Gaps left visibly empty.** **No segment drawn across a gap longer than N days.**
+> plus padding. **Gaps left visibly empty.** **No segment drawn across a gap longer than seven days**,
+> and the gap carries its own label — *"no weigh-in · 7 Jul – 4 Aug"*.
+
+Seven, because a lifter who weighs in two or three mornings a week has ordinary gaps of two to four
+days, and the line should break on a **missed week** — that is the thing worth seeing. A longer
+threshold buys smoothness by implying a fortnight of measurements that do not exist.
+
+A connecting segment is still a connection and not data, so the chart **says so on itself**: *"no
+line is drawn across a gap longer than seven days"*, beside the window it is showing. A reader who
+knows the rule can read the line correctly; a reader who does not would be misled by it, which is
+why the sentence is part of the chart rather than part of a spec.
 
 The rule about lines is honoured by refusing to connect across a gap, not by pretending bars fit. And
 the window the chart shows is **stated**, not silent: "the whole series" needs a scroll or a range
@@ -95,8 +105,6 @@ the same reason Coach cannot log a set.
 - **The wire shape.** `{ dateLocal, weightKg }`, one write per local date, is greenfield — there is no
   table, no column and no route today. It needs a backend contract before a board becomes a build, and
   it needs a place in the sign-in claim replay like every other local-first object.
-- **How long a gap breaks the line.** N is unset. It should be short enough that a fortnight's silence
-  reads as silence.
 - **Whether a trend belongs here at all.** Day-to-day bodyweight moves a kilo or two on water, so a
   raw series shows some noise. A labelled average over a named window, drawn *over* visible points,
   would be arithmetic on numbers we have; a smoothed line drawn *instead of* the points would be a
