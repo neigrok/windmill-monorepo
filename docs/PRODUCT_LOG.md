@@ -19,7 +19,7 @@ Paddle price id configured. Where the predicate is read:
 | journal Talk (`VoiceApi.cpp`) | hard refusal |
 | journal echoes (`EchoApi.cpp`) | passage truncated to eight words, never refused |
 | roadmap tending (`TendingService.cpp`) | monthly run allowance; the feature is off unless `TENDING_ENABLED` is set |
-| gym Ask (`AskService.cpp`) | nothing — the only read is `aiAllowanceFor`, the monthly AI spend ceiling |
+| gym Coach (`AskService.cpp`) | nothing — the only read is `aiAllowanceFor`, the monthly AI spend ceiling |
 
 Products do not define their own paid axis; they contribute surfaces to the one Windmill One
 funnel. No bet's success is defined by revenue this cycle.
@@ -139,10 +139,10 @@ guidance. Every cut below follows from this.
 **Your training log is an endpoint your own agent can use** — not a fifth in-app chatbot. Gym's
 tools ride the OAuth 2.1 MCP server at `windmill.works/mcp` beside roadmap's, filtered per
 connection by the grant its credential holds — read, write and delete per product, approved one at
-a time, and a level nobody approved is a tool the connection cannot see. **Ask** is the same engine
+a time, and a level nobody approved is a tool the connection cannot see. **Coach** is the same engine
 behind a second door, for a lifter with no agent of their own.
 
-Gym gates nothing on the plan: the connected log is free, Ask is free behind a stated cap, and no
+Gym gates nothing on the plan: the connected log is free, Coach is free behind a stated cap, and no
 surface may sell the connected log.
 
 **The write split is the whole MCP contract.** Recording something that already happened lands
@@ -162,6 +162,37 @@ number being right before you touch it.
 dip unlocks weighted dip unlocks muscle-up. The rule that keeps it legal: **gym publishes, gym never
 imports.** Gym emits an achievement, or exports a paste-grammar tree that roadmap's `paste-import`
 plants. No product-to-product dependency; the coupling is the account and the user's own hand.
+
+## The room
+
+Three tabs on every surface — **Routines · The log · Coach** — and the same three on the web, which
+has no separate Today. The live-session mirror sits at the head of Routines home, because that is
+already where the product says whether anything is running.
+
+**Coach is a loop, not a hand-off.** It answers, and if it minted something a card follows carrying
+one affordance: Review. Review opens the diff *over* the conversation, Apply is atomic, and a receipt
+line lands back in the thread saying what changed. Closing the sheet decides nothing; turning a
+proposal down is a separate, confirmed act. Coach may propose three things — change a routine, remove
+one, edit a note — and may never log a set, fix one, finish a workout, or write a bodyweight.
+
+**Coach cannot create a routine**, and that is a domain fact rather than a policy: a proposal is
+anchored to a routine that exists and to a revision it is atomic against. The lifter taps New routine
+and Coach fills it.
+
+**Notes** are the one place a lifter instructs their own instrument — title-and-text pairs Coach
+reads, bounded and ordered by precedence. Windmill authors no personality; the lifter may author one.
+The screen states what is true rather than what is tidy: *Coach reads everything on this screen, and
+nothing else you have set*, and *Coach and any agent you connect can read these* — because the tool
+grant can only narrow a catalogue every connected agent already sees.
+
+**Bodyweight** reads at the head of the log and writes from the reach band. A dot per measurement on
+a truncated axis, gaps left empty, and no goal line, projection or estimate over a number nobody gave
+us.
+
+**Native beats house style.** Where the platform has a control, the platform's control wins; where it
+does not, Windmill's vocabulary is identical everywhere. The two phones have been one custom drawing
+at two sizes, and after this they differ on purpose. Gym also stops being dark-only — a room that
+ignores the system Appearance is not a native room.
 
 ## What gym gets from the platform
 
@@ -232,14 +263,15 @@ decisions behind it.
 
 ## Cut, retired, parked
 
-- **BYO API keys, provider pickers, on-device inference — cut.** Ask is hosted-only, on one model we
+- **BYO API keys, provider pickers, on-device inference — cut.** Coach is hosted-only, on one model we
   choose.
 - **StoreKit and IAP — cut.** Paddle is the rail.
 - **Supersets, circuits, EMOM/AMRAP — cut.** Grouping is a modelling decision worth making once, on
   evidence.
 - **Cardio, distance, duration, bodyweight-only movements — cut.** Strictly weight × reps; a plank
   logs 0 kg and contributes nothing.
-- **Body weight, measurements, progress photos — parked** until the set logger is boring.
+- **Bodyweight — building.** An input and a graph, in the log, because a weigh-in is something that
+  happened. **Measurements and progress photos stay cut.**
 - **Muscle-group volume — cut.** If it returns, tags live on the catalog, weighted
   primary/secondary, windowed — never read from live templates.
 - **Streaks — cut.** The PR line is the celebration that earns its place.
@@ -248,10 +280,10 @@ decisions behind it.
 - **Ambient sound — cut**, with two functional exceptions: the set-saved confirmation and the
   rest-done alert.
 - **Social, leaderboards, human coaching — cut.**
-- **Dark chrome — cut at the brand level.** A night look would be scoped inside `.gym-root`, from
-  canon, never touching the global theme.
-- **Streaming Ask, proposal chrome, and any chat not attached to one workout that already happened —
-  cut.**
+- **Dark chrome — cut at the brand level**, and gym is the exception that proves it: the room ships
+  both skins, scoped inside `.gym-root`, and owns its palette but never the choice of scheme. That
+  is chosen once for the whole app, in Appearance.
+- **Streaming Coach — cut.** So is any chat not attached to a log that already exists.
 
 ## Risks carried
 
