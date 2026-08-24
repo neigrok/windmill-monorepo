@@ -138,12 +138,37 @@ battery and the signal disappear. That is a one-line change and a real bug if it
 Both phones hard-code point sizes, so **Dynamic Type and font scale do nothing on either.** That is
 the largest accessibility gap in the room and the least visible one.
 
-The type ramp becomes the platform's, with one exception: the big numerals — the weight readout, the
-reps tail, the correction figure — are **instruments**, sized to be read at arm's length across a
-rack. They scale, but they scale on their own curve and they have a floor and a ceiling, and the
-floor is legibility from two metres rather than a body-text ratio.
+**Everything that is prose takes the platform's text styles** and scales with them. Nothing on a
+board is specified in points again; each role is a named text style plus a design and a weight —
+a screen title, a sheet title, a row title, prose, an action label, a secondary row, a fact, a meta
+line, an eyebrow. Facts and meta lines take the monospaced design, and tabular digits ride on every
+role that shows a number, so a running rest clock and a changing weight do not jitter.
 
-Everything that is prose takes the platform's text styles and scales with them.
+The uppercase eyebrows keep their uppercasing and **lose their hand-set tracking**. Fixed tracking on
+a scaling face breaks at accessibility sizes; let the face do it.
+
+**The big numerals are instruments, and they scale differently.** The weight readout, the reps tail
+and the correction figure are sized to be read across a rack with a bar in your hands, so:
+
+1. They scale against the **largest title style, not body**. Body grows about three times to the
+   largest accessibility size; a title grows about half as much. Tying a hero numeral to body would
+   ask for three hundred points.
+2. They are **capped**. Past the cap a numeral is not more legible, it is clipped — a four-glyph load
+   plus a unit has to fit the content width.
+3. **Above the cap the layout re-flows instead of the type growing.** At accessibility sizes the
+   value block goes vertical: the numeral takes its own full-width line and the unit and rep count
+   drop underneath at fact size. Someone who needs that setting needs the *labels* bigger; the
+   numeral is already six times body size.
+4. A minimum scale factor stays as the last-resort guard for a five-digit load. It is a guard, never
+   the mechanism.
+
+**Every screen carrying a numeral is drawn three times** — default, large, and the largest
+accessibility size. That last one is where every hand-set fixed-width column in the room breaks, and
+those columns become grids.
+
+The exact point values at the largest accessibility sizes must be **checked in the simulator's
+accessibility inspector before a board is signed off**. Published defaults are reliable at the
+default size; the accessibility column is not something to take from memory.
 
 ## Where divergence is still legal
 
