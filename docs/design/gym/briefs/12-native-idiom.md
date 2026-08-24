@@ -69,6 +69,18 @@ So: **navigation chrome returns to where the platform puts it, and committing ac
 reach band.** Apply, Save, Log set and Finish live in an iOS bottom safe-area inset or bottom toolbar,
 and in an Android scaffold's bottom bar. Same law, platform spelling.
 
+**What earns the reach band, when two actions want it.** The Routines screen wants both *"start
+logging"* and *"make a new routine"*, and only one can be the primary. The tie-breaker is not
+importance, it is **posture**:
+
+> The reach band holds what a lifter does **with a bar in their hands**. Planning work — creating a
+> routine, editing targets, opening settings — goes to the platform's own top chrome, because nobody
+> plans a training block one-handed at the rack.
+
+So `Just start logging` is the primary in the band and `New routine` is a toolbar action. That also
+keeps the narrowed top-corner rule honest: a top corner may hold an action the lifter is sitting down
+to take, and may never hold one they need mid-set.
+
 The restated rule, true on all three surfaces:
 
 > **Every screen has one primary action, and it is reachable without changing grip. Navigation
