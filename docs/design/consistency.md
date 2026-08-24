@@ -663,3 +663,22 @@ emitted light does not exist on pietra. The shared `Gym · Colour` collection st
 `#7d8c4366` in Daylight, and `gym.css`'s light block still declares `--set-done-glow`. No board in
 the Coach wave uses it in either mode, so nothing depends on it today — which is exactly when to
 remove it.
+
+**1x · "Apply all N" has no defined unit, and three surfaces could count differently** → define it,
+then pin it. `applyLabel` generates the string, and nothing says whether a *change* is a moved **row**
+or a moved **field**. A proposal that retargets one movement's sets, weight and rest is one row and
+three fields — "Apply all 1" or "Apply all 3", and both are defensible readings of the same diff. The
+receipt inherits the ambiguity (*"Applied · Push A · 4 changes"*), and the sheet already mixes two
+nouns for one list: **four changes**, **seven lines unchanged**, eleven entries — a reader has to work
+out they share a denominator. Raised while drawing the web review dialog, where a diff had to be
+recomposed to make the label true. Three surfaces counting differently is precisely what this wave
+exists to stop, so the definition belongs in the domain beside `countedChanges`, not in each client.
+
+**1y · gym's screen titles are Nunito where the brand says Baloo 2 is the display face** → a
+designer call, one way or the other. `brand-foundations.md` gives Baloo 2 the display role — "page
+headers, big numbers" — and gym honours the second half only: `Gym/Weight` and `Gym/Reps` are Baloo 2
+ExtraBold, while `Gym/Title` is **Nunito Bold 22** and every shipped gym board titles with it. So the
+room reserves the display face for instruments and sets its prose headings in the body face. That may
+be right — a 22pt heading is not a "big number" — but it is currently a divergence nobody decided,
+and the Coach wave's boards inherited it. Either `brand-foundations.md` narrows the display role to
+numerals inside gym, or gym's titles take Baloo 2.

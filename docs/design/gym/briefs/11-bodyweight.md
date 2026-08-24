@@ -80,6 +80,11 @@ do not have. A goal line is a number the lifter never gave us.
 Three verbs, and they belong to the lifter: a weigh-in can be **entered for any date, corrected, and
 deleted** — from the chart, by tapping a point. One sheet, reused from the fix sheet.
 
+**Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
+the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a
+date — defaulting to today, changeable — or "entered for any date" is a verb with no door. That sheet
+is not drawn in this wave and it is the smallest remaining gap in the feature.
+
 Without them a fat-fingered 182 for 82 is permanent and rescales the chart forever. That would be out
 of character: gym gives a whole backfill door to a missed session and a fix sheet with an undo to a
 mistyped set, precisely because it accepts that people log late and log wrong.
