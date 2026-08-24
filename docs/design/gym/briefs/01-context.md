@@ -21,9 +21,10 @@ The training log is an endpoint the lifter's own Claude or ChatGPT reads over MC
 their last twelve weeks of squats, drafts next block's progression, and the change arrives in gym as
 a typed diff they tap to apply. **The model proposes, the human applies.**
 
-`Ask` is a second door onto the same engine, for a lifter with no agent of their own. It reads and
+`Coach` is a second door onto the same engine, for a lifter with no agent of their own. It reads and
 proposes, never writes: it cannot touch a logged set or a frozen plan snapshot, it has no
-personality, no encouragement, no streaks, and it does not speak first.
+personality, no encouragement, no streaks, and it does not speak first. Approving a proposal happens
+over the conversation and returns to it — the four beats are in `09-coach.md`.
 
 ## The two surfaces
 
@@ -58,9 +59,19 @@ on the client, with the reason said plainly — never as a server error the lift
 - **plan snapshot** — what the routine said at the moment the session started. Frozen.
 - **e1RM** — estimated one-rep max, Epley: `weight × (1 + reps / 30)`.
 - **set kind** — warmup · working · drop · failure. Only working sets count toward anything.
+- **note** — a title and a body a lifter writes *for* Coach. Not a set's note, and not a preference.
+- **bodyweight** — a lifter's own weight on a day. Never a load; loads are signed, bodyweights are not.
 
-Do not use: workout *template* (it is a routine), *tracker*, *fitness*, *coach* (there is no coach —
-there is your agent), XP, levels, badges, streaks.
+Do not use: workout *template* (it is a routine), *tracker*, *fitness*, XP, levels, badges, streaks.
+
+**On the word *coach*.** It names exactly one thing: the room. The link a lifter hands to a *human*
+coach is **"Share this workout"** and carries the word nowhere. Two meanings of one word on one
+surface is a confusion this room does not ship — and *session* could not take the job either, since
+Windmill already ships a user-facing session in the account, and this file uses the word for one
+visit to the gym.
+
+Naming the room Coach buys it no personality: no encouragement, no grade, no streak, and it does not
+speak first. `09-coach.md` holds what Coach is and what it refuses.
 
 ## The feeling
 

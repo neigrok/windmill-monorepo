@@ -34,10 +34,17 @@ Recomputed for `--pr-ink`: 3.19 on the tinted record card, 2.83 on the tinted ca
 untinted. The companion "3.6 on the family cream" matches the untinted cream (3.69), so the
 original measurement was taken against the wrong ground and its conclusion needs re-checking.
 
-**F5 · gym's Daylight skin has no producer** → decide: build it or delete it.
-`routes.js` pins `scope: { theme: 'dark' }` and `GymApp.jsx` hardcodes `data-theme="dark"`, so
-`.gym-root[data-theme="light"]` (`gym.css:107-145`) never renders. Its own comment leaves a known
-contrast miss standing because of it.
+**F5 · gym's Daylight skin has no producer** → **ruled 2026-08-24: build it**, owed a build.
+`routes.js` pins `theme: 'dark'` and `GymApp.jsx` hardcodes `data-theme="dark"`, so the light block
+in `gym.css` has never rendered. The Coach wave rules that gym stops being dark-only, because a room
+that ignores the system Appearance is not native and `superapp-shell.md:80-83` already says a room
+owns its palette and never the choice. Three things the ruling found and that the build owes:
+fourteen of the light declarations are byte-identical aliases onto tokens that already flip per
+theme, so only four are real light decisions; `--set-done-glow` is **deleted** in light rather than
+dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it; and
+`--pr-ink` must be re-measured first — see F4, which says its stated 3.4:1 reproduces at no ground.
+Android takes a staged version: its skin is a compile-time object read at ~560 sites,
+`LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
 
 **F6 · `--focus-ring` is terracotta inside gym** → re-point in the gym palette block.
 `shadows.css` dark sets `--focus-ring: 0 0 0 4px rgba(208,138,94,0.4)` — accent-terracotta-400 —
@@ -230,20 +237,22 @@ App: "No password. What you make on this device is claimed by your account when 
 Web: "…and some rooms only open once you have an account" (`SignInDialog.jsx` — true on the web,
 where the gym log and mirror need an account). Per-surface truth, or one sentence everywhere?
 
-**0t · web's mirror home is Today; mobile has no Today** → a designer call.
-On the phones, home is the routine list and the tabs are Routines · The log · Ask. Web keeps Today
-as the mirror charter — the desk drawing the phone's open workout (§11.2) — and keeps Ask as a room
-off Today. Either that difference is the product speaking and the boards should say so, or web's IA
-converges on Routines-home. Direction of fix: the gym web board, with §11.
+**0t · web's mirror home is Today; mobile has no Today** → **ruled 2026-08-24: web converges**,
+owed a build. One product does not get two homes. Web's tabs become Routines · The log · Coach,
+matching the phones; Today is deleted as a tab; the live-session mirror moves to the head of
+Routines home, which is already the surface that says whether anything is running. The mirror keeps
+its charter whole — it never offers a Finish, it says "Not training now." over "Workouts start on
+your phone." in words rather than as a greyed control, and it never says "resting". The Log's head
+carries the bodyweight reading line instead, because two heads on one screen is the crowding this
+ruling avoids. Drawn on the Boards page, section "The Coach wave · web".
 
-**0u · Ask is a tab the boards never drew as one** → a design ask.
-The app board seats Ask third on every rail, but its tab-root form is undrawn — screens 26/27/33
-still show a back chevron and no rail — and the programs board's §L still says "Not a fourth tab"
-and "Reached from Today's bottom band". The build ships the rail in place of the back bar, the
-threads door kept in the header, plus two stances a tab needs: signed-out — "Ask reads your log, so
-it needs you signed in." with Sign in → You — and deployment-absent — "Ask isn't available on this
-Windmill." Both strings are the build's own authorship, pinned in tests, and need a copy owner's
-blessing or replacement. Direction of fix: §L redrawn with the tab-root form and the two stances.
+**0u · Ask is a tab the boards never drew as one** → **superseded by the Coach wave**, owed a
+build. Ask is renamed **Coach** and its tab-root form is drawn on all three surface pages. The two
+build-authored stances — signed-out and deployment-absent — are drawn but still **not blessed**:
+they remain the build's own authorship, pinned in tests, and this wave did not adopt them. They
+need a copy owner. Note the same wave found the server sends four strings saying "Ask" verbatim to
+all three clients (`AskApi.cpp:33-38`); a client must never rewrite server text, so those change
+too and are unassigned.
 
 **0v · the gym app boards disagree with the built routine-first IA** → one redraw pass.
 Each line below was ruled for the build and is owed a redraw:
@@ -545,3 +554,69 @@ that never reached the server, so "bump the version key so every device drops it
 would delete unsent diary pages. Both clients now migrate every v1 store forward onto the 0..10
 scales — the unscoped blob, the quarantine and the scoped cache — rather than dropping any of
 them. §8.5's sentence and its instruction both need to take that.
+
+**1k · the shell owns the iOS leading edge, and a native NavigationStack wants it too** → a shell
+change, prototyped before the boards ship. `Shell.swift:167-185` attaches the go-home swipe to the
+leading 20pt as a `.simultaneousGesture` — the modifier whose meaning is *do not require
+exclusivity* — and its own comment at `:148` says a hidden navigation bar is what disables the
+system pop. Every `NavigationStack` in the app today lives inside a sheet, outside that subtree, so
+the two gestures have never met. The Coach wave rules the edge is arbitrated by **depth**: the shell
+applies its home swipe only at stack depth 0, and one push deep the edge is the room's back. That
+scopes `superapp-shell.md:21` and `:155` ("two gestures, and nothing else") rather than deleting
+them, and §2.3/§5/§10 take the amendment. Until it is proven on a simulator, every iOS board in the
+wave rests on an untested assumption.
+
+**1l · the You seat has no slot in a native tab bar** → canon amendment, owed a build.
+`superapp-shell.md:22-23` and `:157` put the You seat "last in every app's own bar, past a
+hairline", and both phones do exactly that (`GymRoom.swift:240`, `GymRoom.kt:711`). At the iOS 17
+floor a native `TabView` has no non-tab trailing slot and an M3 `NavigationBar` has none either, so
+the Coach wave moves both shell seats into the room's own **top** chrome — capsule leading, You
+trailing, on each stack root; on Android the avatar is the top app bar's single action slot. The
+canon line becomes "the trailing slot of the room's own top bar", and `thumb-reach.md:31` narrows to
+what it means: no primary or destructive action in a top corner — a destination is not an action.
+
+**1m · the reach law is written in absolute pixels on one frame and applied to three** → restate in
+units. `thumb-reach.md:12-21` gives the bands as pixels on 402 × 874 (top "→ ~120px", bottom "last
+~230px"), while boards are drawn at 393 × 852 and 412 × 915. Carried literally the same numbers give
+a 61pt reading lane on iOS and 96dp on Android for one rule. The Coach wave restates it as anatomy:
+**the reach band is the 230pt above the bottom safe inset, the top band is safe top + 60**, and 46%
+stays the one fraction on the full frame. The compliance frame becomes the **smallest** supported
+device, and no frame is called brand-neutral — 402 × 874 is a specific iPhone.
+
+**1n · `superapp-shell.md:160` still gives a room its own dark default** → fix toward `:78-83`.
+The constants block reads "APP OWNS … its skin incl. dark default", which contradicts the same file's
+rule that Appearance is chosen once for the whole app and a room owns its palette but never the
+choice. It is the line gym has been obeying while pinning dark. It becomes "its palette in both
+schemes · never the scheme itself."
+
+**1o · the proposal's kept rows are drawn on one surface and dropped on two** → one shape, owed a
+build. Web renders them (`proposals.js:180-183`, whose header states why: "The change rows ARE the
+document as well as the diff"); iOS drops them (`ProposalScreen.swift:114-115`, `case .kept:
+EmptyView()`) and so does Android (`Proposal.kt:151`). The wire carries them deliberately, and the
+system prompt tells the model "a line you leave out is a line you are proposing to remove". The
+Coach wave rules one shape everywhere: changed rows at full weight, **kept rows as a collapsed
+count** — "and 7 lines unchanged" — tappable to expand.
+
+**1p · `AnthropicAsk.cpp:29-30` tells the model it can read the gym's settings** → already false,
+fix now. `get_preferences` was retired and nothing replaced it (`GymTools.cpp:440-444`), so the
+prompt promises a read that cannot happen. The Coach wave's Notes feature makes the line actively
+misleading, since the distinction it ships is precisely that Coach reads notes and **not** settings.
+
+**1q · four server strings say "Ask" to all three clients** → owed a build, unassigned.
+`AskApi.cpp:33-38` sends "this conversation is as long as Ask holds", "Ask reads a log that has
+stopped moving", "that's Ask for now" and "Ask isn't available right now" verbatim. A client must
+never rewrite server text, so the rename reaches them. Related copy in the same sweep:
+`ConnectedLog.swift:114` ("Not a coach in a chat tab") would have gym insulting its own room and is
+rewritten to contrast on scope rather than quality; `ConnectedLog.swift:151` and four
+marketing/head strings (`landingHead.js:7`, `:26`, `:35`, `GymLanding.jsx:368`) carry the old share
+name into the search index.
+
+**1r · the thread cap is four questions and the copy says eight** → fix the copy.
+`ask.js:66-70` computes `answered * 2 + 1 > MAX_TURNS` against a ceiling of 8 turns, so a lifter gets
+**four** questions. Every surface that states the ceiling should say four.
+
+**1s · `set.rpe` is drawn on every surface and enterable on none** → give it a control or delete
+the render. `Log.jsx:281` prints it, `FixSheet.jsx:44-64` edits weight, reps and kind only, the wire
+already accepts it, and the prompt forbids the model estimating one. The Coach wave adds a set-note
+field to the fix sheet and rules the same must happen for RPE, or the render goes: a set row never
+prints a number the lifter cannot touch on any surface.
