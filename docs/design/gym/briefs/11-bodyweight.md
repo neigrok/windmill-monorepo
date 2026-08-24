@@ -26,6 +26,14 @@ scrolls away exactly when you reach for it, and the Log tab would carry two top-
 nothing in the reach band at all. Pinned, the Log tab has exactly one primary action, in the band, at
 every scroll position.
 
+**One door, not two.** The chip on the log is the only place a weigh-in is entered. The chart screen
+carries no second input — it is where you go to *look* and to *repair*, and a field there would be
+two doors onto one value and two code paths behind it. Someone standing on the chart who wants to add
+today's number is one back-gesture from the chip.
+
+The chart screen does carry the repair path, because that is a different verb and it belongs where
+the mistake is visible.
+
 ## The chart is a new primitive
 
 Neither shape gym already owns will do, and this is worth saying plainly because reaching for the
