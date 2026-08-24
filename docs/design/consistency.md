@@ -718,3 +718,10 @@ a mode rather than adding one — the existing flip to `+0:12` is already an adm
 past-the-target matters and that counting up is its natural expression. The optional sound at the
 target still fires; that is the event, and it stays opt-in. After this all three surfaces read one
 clock the same way.
+
+**2c · the iOS Session board prints `w` where the product prints a numeral** → board fix.
+`iOS · Session` (`16:120`) draws `w` in the set-number column for a warmup. `Performed.movements`
+always prints a numeral there; the `w` index exists only in the **live logger's** today column, which
+is a different surface. Found while cloning that board's session row for the gesture boards, and left
+untouched rather than edited, because it is a record of what ships and the fix belongs to whoever owns
+that board.

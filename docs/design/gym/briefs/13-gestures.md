@@ -40,11 +40,26 @@ back**, a swipe down on a sheet dismisses it, a pull at the top of a scroll refr
 invents starts **away from the edge**, and any screen wanting a horizontal gesture in its body must
 say what happens when the stroke begins in the edge strip.
 
-### 4 · A gesture earns its place by removing something, and the something is counted.
+### 4 · A gesture earns its place by removing something — but count the STATE, not just the control.
 
-A swipe that adds capability but removes no drawn control has not made the screen cleaner — only less
+A swipe that adds capability but removes no drawn control has not made the screen cleaner, only less
 discoverable. Every gesture below names the control that comes off. Where the answer is "none", it is
 a convenience and it sits at the bottom of the list.
+
+**And the law as first written was wrong in a way worth keeping visible.** It counted the control
+that disappears and not the *state that control was carrying*. Removing the drawn "Undo" from the
+logger's set row takes away the only on-screen signal that the nine-second window is open at all —
+the undoable row becomes identical to the settled one, and the lifter cannot tell whether they still
+have a way back.
+
+> **So when an action leaves a row, its state goes to the transient surface the platform already
+> owns** — an Android snackbar, an iOS bottom transient — which carries the action AND the fact that
+> a window is open, and retires itself when the window closes.
+
+That is better than both alternatives: the row loses its button, and the closing of the window
+becomes visible for the first time. Note gym has **no snackbar at all** today on Android — one
+mono status line above the rail is the whole messaging system — so this and the native-idiom brief
+are asking for the same thing.
 
 ### 5 · Haptics are the gesture's receipt.
 
@@ -87,9 +102,17 @@ reason said plainly** — which is how this room already handles a refusal it ca
 
 Ordered by what each one takes off the screen.
 
-**The set row, past session** — trailing swipe gives *Fix* and *Delete*. Removes the delete button
-buried inside the fix sheet, and on one platform a pressed-state hint that literally reads "tap to
-fix". The only ready row.
+**The set row, past session** — **leading swipe gives *Fix*, trailing swipe gives *Delete*.** One
+action per direction, not two on one side. At full reveal two trailing actions eat about half a
+353-point row and push the set's own number and load off the leading edge, so the lifter cannot see
+*which* set they are deciding about at the moment they choose. Splitting them keeps the row readable
+and matches the platform's own grammar: benign leading, destructive trailing. Removes the delete
+button buried inside the fix sheet, and on one platform a pressed-state hint that literally reads
+"tap to fix". The only ready row.
+
+**No full-swipe.** A swipe carried all the way through, triggering without lifting, is off until the
+undo window holds more than one delete — otherwise the fastest possible gesture is the one most
+likely to settle a previous delete the lifter has not noticed yet.
 
 **The routine row** — trailing swipe gives *Duplicate* and *Delete*, once the withheld delete exists.
 Removes both buttons from the editor's foot, which today sit **three screens deep**: Routines → the
@@ -159,6 +182,11 @@ There is no context menu anywhere in gym on either platform. The highest-value o
 duplicate of a swipe — it is the **session row in the log**, which today has exactly one action.
 *Share this workout* currently lives only inside the session, and discarding one lives only on the
 finish screen. A long-press puts both on the row without drawing anything.
+
+**But the menu ships with *Share this workout* alone.** Discarding a session is exactly the
+unrecoverable delete the gate above withholds a gesture from, and a menu item is a tap that reaches
+it in one — so it waits for the withheld delete like everything else. A confirmation would not rescue
+it: Law 2 refuses a dialog on a gesture, and a menu item is already a tap.
 
 After that: the routine row (*Start · Duplicate · Delete*), which would put **Start** on the row
 where it does not exist today; and the set row, as the discoverable twin of its swipe — which is Law
