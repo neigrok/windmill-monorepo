@@ -32,8 +32,15 @@ word *too* carries the rest: it says Coach reads them without a second sentence 
 
 **Three lines that used to be here, and where they went.**
 
-- *"…and nothing else you have set"* answers a question you ask **in settings, looking at the dials**.
-  It moved there. On this screen it was answering a question nobody was asking.
+- *"…and nothing else you have set"* answers a question you ask **in settings, looking at the dials**,
+  so it moved there and became six words beside them:
+
+  > **Coach reads your notes, not these.**
+
+  On the Notes screen it was answering a question nobody was asking; next to the units toggle and the
+  rest timer it is the answer to the obvious one. That is the guideline's *moment of consequence*
+  move, and it is also the salience finding — the same fact placed where it is surprising, rather
+  than where it is merely true.
 - *"Ten notes, 500 bytes each"* moved to **the moment it bites**. A lifter with two notes does not
   need the ceiling.
 - *"Drag to reorder"* was **structure explaining itself**, under a drag handle. Only the part a handle
