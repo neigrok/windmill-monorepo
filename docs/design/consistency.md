@@ -725,3 +725,26 @@ always prints a numeral there; the `w` index exists only in the **live logger's*
 is a different surface. Found while cloning that board's session row for the gesture boards, and left
 untouched rather than edited, because it is a record of what ships and the fix belongs to whoever owns
 that board.
+
+**2d · the proposal footnote on the boards no longer matches any shipped string** → owed a build.
+All three codebases ship two sentences — *"Nothing changes until you tap Apply on the diff. Your
+logged sets are never part of a proposal."* (`ask.js:58`, `Ask.swift:194`, `Ask.kt:65`), pinned by
+`ask.test.js:220` and `AskTests.swift:278`. The Coach wave boards keep only the second sentence.
+**The cut is deliberate and it stands:** the inert-until-you-act promise belongs at the moment of
+consequence, and the review sheet already carries it — *"All four or none. Nothing is applied until
+you tap."* On a card whose only affordance is **Review**, saying it twice is the stacking the text
+budget forbids. So the strings and their tests change; the boards are ahead of the build, not wrong.
+
+**2e · `empty · tap to write` is on the phones and not on web** → ruled: **keep it, and web adds it.**
+Web's argument was good — an italic muted title beside a live chevron is structure explaining itself,
+and dropping it saves four words. It loses to one thing: the seeded titles are **placeholders that
+look like content**. *"How I want to be talked to"* in italic could be read as a note somebody already
+wrote. Four words to say a row is empty is cheap next to a lifter thinking the product wrote them a
+note. Recorded here so it stops being an accident.
+
+**2f · web draws the note byte counter at 14% of the bound; canon says the last fifth** → fix the
+board or label it. `10-notes.md` rules the counter *"appears only in the last fifth, so a short note
+carries no chrome at all"*. The four `W8 · Note editor` boards draw `70 of 500 bytes`, which is what
+the web **ships** today. The phones now draw the decided rule. A wave board should draw canon and let
+a legacy board record what ships — so the counter comes off `W8` and a `W8b · near the bound` twin
+carries it.
