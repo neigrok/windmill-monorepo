@@ -13,6 +13,7 @@ Read `01-context.md` first.
 | `13-gestures.md` | What the platform already knows how to do — and the one row where a swipe-to-delete is safe today. |
 | `14-live-activity.md` | The lock screen — a second window onto the same queue, and the one act worth doing from it. |
 | `15-the-routine.md` | Building, changing and starting a routine — the heaviest screen, and five of the ten cuts. |
+| `16-the-workout.md` | The live logger, the finish, the session read back — and why the keypad stays at the rack. |
 
 ## Scope
 
