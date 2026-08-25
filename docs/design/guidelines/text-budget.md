@@ -192,6 +192,43 @@ review sheet, a refusal, a first run, a chart they came to read.
 This distinction was missing from the first draft, and it made three settings screens look like
 failures for being settings screens.
 
+## A board's numbers are a fixture, not a decoration
+
+Pinning the **words** of a wave is not enough, and this project learned it the expensive way: a wave
+that pinned 163 strings still drew nine classes of impossible screen, because nobody pinned the
+**data**.
+
+Every surface invented its own example session. Each one looked plausible alone. None of them
+survived arithmetic:
+
+- a session header claiming twelve working sets above five drawn ones,
+- a tonnage that is not the sum of the sets beneath it,
+- a note reading *three short* over a load that also missed its target, when the code returns the
+  load branch first and can never print both,
+- a fix sheet naming *set 3* of a movement the session does not contain,
+- a caption naming a routine on a screen whose own title says there is none,
+- a queue showing set 3 landed while set 2 is still owed, in a lane the store forbids skipping.
+
+Every one of those is a number that had to agree with another number and did not.
+
+> **A wave draws from ONE fixture: a single example — a session, a routine, a log — written down
+> before anything is drawn, with every derived value computed from it.**
+
+The fixture carries the raw facts and the things derived from them: the sets, and then the working
+count, the tonnage, the top estimate, the set numbers, the plan snapshot and the note each set earns
+against it. **Derived values are computed by the rules the product uses, not chosen to look right.**
+
+Two properties make it worth the effort:
+
+1. **A reviewer can check arithmetic.** "Does the header equal the sum of the rows" is a question
+   with an answer, unlike "does this look like a plausible session".
+2. **Three surfaces drawing the same fixture agree by construction**, instead of agreeing only where
+   somebody remembered to compare them.
+
+**Where a board needs a state the fixture does not contain** — an early finish, an empty log, a
+refusal — it extends the fixture explicitly and says so, rather than quietly inventing a second
+session that contradicts the first.
+
 ## Checking
 
 On a decision surface, count the chrome words on first paint. Over forty, something is doing a job the
