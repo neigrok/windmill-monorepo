@@ -808,7 +808,7 @@ Nothing in `Routine.cpp:17` picks between them; it only refuses the shape at the
 belongs in the brief, beside the open question it already carries about whether clearing sets should
 warn before it cascades.
 
-**2h · the undo window is 9000 ms on the phones and 5000 on the web** → pick one, and correct the
+**2m · the undo window is 9000 ms on the phones and 5000 on the web** → pick one, and correct the
 architecture. `ARCHITECTURE.md:1078` states *"The undo window is 9000 ms on every surface"* as a
 cross-surface invariant. It is not one: `SetQueue.swift:48` and `SetQueue.kt:51` both declare
 `undoWindowMs = 9_000`, while `fix.js:9` declares `UNDO_MS = 5000` and `useTrainingLog.js:16` pins the
