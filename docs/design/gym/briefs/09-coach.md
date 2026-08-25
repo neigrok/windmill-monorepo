@@ -162,6 +162,19 @@ draws the cap being hit, **and not only on the empty state.** A lifter who has a
 still in the room; putting the promise only where there is nothing to read means it is seen once,
 by someone who has not yet spent any of it, which is the least useful moment of all.
 
+**And it sits immediately above the composer, on every surface.** The composer is where a question is
+spent, so that is where the allowance belongs — the same *moment of consequence* logic that put the
+ceiling on the Add row. Not in the head, which is where the room's standing facts live, and not below
+the composer, which reads as a footnote to the keyboard.
+
+**The cap-reached state says what to do next, not the rule again:**
+
+> **The next question frees up in a couple of hours.**
+
+That is true rather than approximate: the allowance is ten a day on a bucket that refills steadily, so
+a question comes back roughly every two and a half hours. It carries the same *connect your own agent*
+door the empty room does, because that is the one path that is not rationed.
+
 Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
 says what to do next rather than restating the rule. A wave that removes the paragraph and draws
 neither has not trimmed the cap, it has deleted it. The thread ceiling is **four questions** — the copy must say four, because the code

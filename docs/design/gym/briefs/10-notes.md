@@ -68,8 +68,15 @@ bites" is not a location:
 - **The byte ceiling** is a live counter in the note editor — *"70 of 500 bytes"* — and it appears
   only in the last fifth, so a short note carries no chrome at all.
 - **The note ceiling** is the *Add a note* row: at ten it stops offering and says so, in these words
-  on every surface — **"10 of 10 notes. Delete one to add another."** Numerals, not words, because the
-  brand sets count readouts in the mono face and a scanned list wants a figure.
+  on every surface — **"10 of 10 notes. Delete one to add another."**
+
+  Numerals rather than words, because a figure is read at a glance where *"ten of ten"* has to be
+  parsed. **Not** because of the mono face: the brand reserves that for a bare count readout or an id,
+  never for prose, and this line is a sentence with a number in it. It is set in the body face on
+  every surface, like any other sentence.
+
+  *(An earlier draft of this brief justified the numerals by the mono face. That was wrong — the
+  string is right for the other reason.)*
 
 Neither is drawn today on the phones — the byte counter exists only on web — so both are **owed**, and
 this brief says owed rather than moved.
