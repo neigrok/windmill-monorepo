@@ -148,17 +148,23 @@ and the row is under the thumb that swiped it.
 undo window holds more than one delete — otherwise the fastest possible gesture is the one most
 likely to settle a previous delete the lifter has not noticed yet.
 
-**The routine row** — trailing swipe gives *Duplicate* and *Delete*, once the withheld delete exists.
-Removes both buttons from the editor's foot, which today sit **three screens deep**: Routines → the
-routine → Edit → scroll to the bottom.
+**The routine row** — **trailing swipe gives *Delete***, once the withheld delete exists.
+**Duplicate goes to the overflow, not the swipe** — for the same reason Fix left the set row's: two
+trailing actions hide the row's own name behind them, and a lifter cannot see *which* routine they
+are deciding about while they decide. It also costs nothing to put it there, because that row already
+carries an overflow control, which satisfies Law 1 for free. Between them the two removes both buttons
+from the editor's foot, which today sit **three screens deep**: Routines → the routine → Edit → scroll
+to the bottom.
 
 **The thread row** — trailing swipe gives *Delete*, once the withheld delete exists. Removes the
 delete block and its caption from inside the conversation. Note the constraint it trades against: the
 list is deliberately re-read from the server rather than crossed out locally, so an optimistic swipe
 needs the round trip or the undo pattern above.
 
-**The logger's today-set row** — leading swipe gives *Undo*. Removes the "Undo" text button drawn
-inside the row on the busiest screen in the product.
+**The logger's today-set row** — **no swipe at all.** The drawn "Undo" text button comes off the
+busiest screen in the product, and the transient takes both the action and the state, per Law 4. A
+swipe here would be a second path to something already one tap away on a surface that is already
+showing — it removes nothing, so Law 4 leaves it out.
 
 **The refusal row** — swipe to dismiss. Removes its "Dismiss" button. Safe: it discards a notice, not
 data.
