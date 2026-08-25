@@ -229,6 +229,17 @@ Two properties make it worth the effort:
 refusal — it extends the fixture explicitly and says so, rather than quietly inventing a second
 session that contradicts the first.
 
+**It works.** Applied to a wave that had nine classes of impossible screen, one fixture took it to
+three, and every surviving defect is a **counting** error rather than a **contradiction**: a column
+drawing two rows where the code holds three, a block drawing none where the code produces three. Those
+are visible to anyone who counts. A tonnage that disagrees with its own rows is not.
+
+**And the audit that follows a fixture asks a different question.** Not *is this plausible* but
+*report both numbers*. That is what turned "the header says 10" into "the header says 10 and the rows
+sum to 10" — and it is why the one board where the header legitimately disagrees with its rows was
+passed rather than flagged: the phones read a server summary that has not yet been told about a
+withheld delete, so **4.4 t drawn under a 4.8 t header is correct**, and the fixture predicted it.
+
 ## Checking
 
 On a decision surface, count the chrome words on first paint. Over forty, something is doing a job the
