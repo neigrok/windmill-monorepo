@@ -748,3 +748,9 @@ carries no chrome at all"*. The four `W8 · Note editor` boards draw `70 of 500 
 the web **ships** today. The phones now draw the decided rule. A wave board should draw canon and let
 a legacy board record what ships — so the counter comes off `W8` and a `W8b · near the bound` twin
 carries it.
+
+**2g · `Routine.h` says a client never sends `revision`; the wire accepts it and the web sends it** →
+fix the comment. `Routine.h:41-44` reads *"It is the STORE's to move; a client reads it and never
+sends it"*, while `TrainingJson.cpp:190-198` parses a client-supplied `revision` and the web routine
+editor sends one — which is how a stale-write 409 is possible at all. The header comment is the stale
+half, and it is the half a reader trusts, because it sits on the type.

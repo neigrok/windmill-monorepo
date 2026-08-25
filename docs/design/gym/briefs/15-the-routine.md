@@ -107,6 +107,65 @@ the page stay.**
 long-press menu as well — the only place it exists twice on purpose, because it is the verb this whole
 screen is for.
 
+## The strings, pinned
+
+Three surfaces drew this wave in parallel and invented **seven different strings for four new states**,
+because the rulings were pinned and the words were not. Every new state a wave creates needs its words
+decided before anything is drawn, or each surface will decide them separately and all three will be
+defensible.
+
+**The typed field's refusals** — these were the custom keypad's, and removing it left them homeless on
+all three surfaces. They live inline under the field, one at a time:
+
+| when | the words |
+|---|---|
+| a second decimal point | **One decimal point only.** |
+| the entry is not yet a number | **That is not a number yet.** |
+| a load beyond the stored range | **Over 500 kg — check the number.** |
+| reps outside the domain's band | **Whole reps, 1 to 100.** |
+| sets outside the domain's band | **Sets, 1 to 20.** |
+| a typed zero | **A zero target is no target — clear the field instead.** |
+
+The field takes **a comma or a point**, and the screen says so once beside it rather than refusing:
+*comma or point, both read as a decimal.* Refusing a comma would be refusing how most of the world
+writes a number.
+
+**Clearing sets while reps or weight hold values:**
+
+> **Clear reps and weight first — an open line names neither.**
+
+**Save with no name** keeps the two strings the product already ships, shown one at a time, not
+concatenated: *Name it to save it.* then *A routine is at least one movement.*
+
+**The open line** keeps its sentence on every surface, not just one:
+*You decide the numbers at the rack.*
+
+**The sign control is `±`, everywhere.** A standalone `−` reads as *decrement* in this product — that
+is what it means in the stepper on the adjacent sheet — and it cannot express "back to positive".
+
+**The picker's placeholder is `Search {n} movements`**, and `n` is the catalogue's real size. The seed
+is 64. No board invents a larger number to look busy.
+
+**An empty query shows the six and then the whole catalogue.** The six are a shortcut, not a
+replacement for browsing, and a picker that shows only six has removed the ability to find the
+seventh.
+
+**The name cap stays at the shipped 60 characters.** A design wave does not change a shipped bound
+because it found the store would tolerate more; that is a product decision with no reason attached
+yet.
+
+## What removing a control obliges you to do
+
+The text budget already says *a move is not done until the destination is drawn*. This wave found the
+companion rule the hard way, for the third time in this project:
+
+> **When a wave removes a control, it inherits that control's refusals — and they are assigned to a
+> named board on a named surface before drawing starts.**
+
+All three agents noticed the keypad's four refusals had nowhere to go. All three said so in an
+annotation. **None drew them**, because the brief had not made them anyone's job. A capability that
+every reviewer flags and no board owns is still a capability that was deleted.
+
 ## Open
 
 - **Whether the editor needs a Save at all.** The note editor saves as you leave it, and a routine is
