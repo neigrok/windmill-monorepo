@@ -754,3 +754,69 @@ fix the comment. `Routine.h:41-44` reads *"It is the STORE's to move; a client r
 sends it"*, while `TrainingJson.cpp:190-198` parses a client-supplied `revision` and the web routine
 editor sends one — which is how a stale-write 409 is possible at all. The header comment is the stale
 half, and it is the half a reader trusts, because it sits on the type.
+
+**2h · `That is not a number yet.` is the one pinned refusal that does not name a way out** → fix the
+brief. `../guidelines/text-budget.md` budgets a refusal at *"≤ 12 words, **and it names the way out**"*.
+Five of the six refusals pinned in `gym/briefs/15-the-routine.md` do: *One decimal point only.*,
+*Over 500 kg — check the number.*, *Whole reps, 1 to 100.*, *Sets, 1 to 20.* and *A zero target is no
+target — clear the field instead.* The sixth states the fault and stops. It is drawn as pinned on
+`Web · Target sheet — what the field refuses` rather than rewritten on one surface, because a wave that
+pins words exists to stop three surfaces inventing seven of them. The fix belongs in the brief, and it
+has to land in one place for all three.
+
+**2i · web's shipped refusal strings are not the pinned ones, and one of them is the wrong band** →
+build it. `web/src/products/gym/logger/entry.js:50` ships *"One decimal point only — 72,5 or 72.5"*,
+`:54` *"Not a number yet — 72,5 reads as 72.5"*, `:57` *"Over 500 kg — check the number"* and `:61`
+*"Whole reps, 1 to 99"*. The first three are the pinned strings with an example or a full stop
+appended, and the pin wins. The fourth is a different fact: 1–99 is the **live logger's** band, while a
+**routine target** is 1–100 (`backend/products/gym/domain/Routine.cpp:23`). The two fields are on two
+screens and only one of them is drawn by this wave, so the pinned *Whole reps, 1 to 100.* is right for
+the target sheet and `entry.js` is right for the set logger — but neither file says which band it is
+enforcing, which is how they drifted.
+
+**2j · the picker's seven-row cap is what blocks the empty-query ruling, on every surface** → build it.
+`15-the-routine.md` pins *"An empty query shows the six and then the whole catalogue."* Web has no six
+at all and answers an empty query with the first seven catalogue rows (`logger/movements.js:3, 33-41`).
+Both phones draw the six, and then follow them with seven rows, not a catalogue
+(`PickerOptions.shown = 7`, `apps/ios/.../MovementPicker.swift:7`; `apps/android/.../MovementPicker.kt:50, 112`).
+So no surface implements the ruling today. The cap has to be lifted for the empty query and kept for a
+typed one — the wave-two `R4` board draws the ruling rather than the current code, and its annotation says so.
+
+**2k · the Coach-wave boards draw a date shape and a row meta the web cannot produce** → fix the
+boards. On the `Windmill · Gym` Boards page, the Coach section draws `7 movements · last run Sat 16
+August` (nodes `125:276`, `126:55`) and `Sat 16 August · 71 min`, `Thu 14 August · 64 min`,
+`Tue 12 August · 58 min` (`128:412`, `128:425`, `128:432`). No formatter in the product makes that
+shape: `web/src/products/gym/log.js:113` gives `Sat 16 Aug` and `:119` gives `16 Aug`, both with an
+abbreviated month, and the only full month names live in `ask/threads.js:4-7`, used alone as a thread
+heading (`:64`) and never beside a day. `last run` is a string no surface ships either — the routine
+row meta is `routineMetaLabel` (`log.js:308-313`), which reads `{n} movements · trained {ago}` and
+`agoLabel` produces only `today`, `yesterday` and `{n} days ago`. The same three-date defect was
+carried into the wave-two `R2` board and has been corrected there to `built 16 Aug · 5 movements`,
+`18 Aug · applied 2 changes from Ask` and `16 Aug · created by you · 5 movements`; the Coach boards
+belong to another wave and were not touched.
+
+**2l · iOS and Android draw the clear-refusal at two different moments of the same keystroke** →
+decide it once. `15-the-routine.md` pins the words — *Clear reps and weight first — an open line names
+neither.* — and both surfaces draw them verbatim, so the string is not the drift. The frame is. On
+`Windmill · Gym` → Android, `state · Sets refuses to clear while reps or weight hold a value`
+(`260:296`) draws the sets field **already emptied**, caret in an empty box: the character came out and
+the commit is what was pushed back. The new iOS board 9, `iOS · Target sheet — sets refuses to clear`
+(`296:2`), draws the field **still holding its `4`** with the caret behind it: the keystroke itself
+never landed. Those are two different behaviours wearing one sentence, and a lifter who uses both
+phones would feel it — on one the number is gone until they retype it, on the other it never left.
+Nothing in `Routine.cpp:17` picks between them; it only refuses the shape at the boundary. The choice
+belongs in the brief, beside the open question it already carries about whether clearing sets should
+warn before it cascades.
+
+**2h · the undo window is 9000 ms on the phones and 5000 on the web** → pick one, and correct the
+architecture. `ARCHITECTURE.md:1078` states *"The undo window is 9000 ms on every surface"* as a
+cross-surface invariant. It is not one: `SetQueue.swift:48` and `SetQueue.kt:51` both declare
+`undoWindowMs = 9_000`, while `fix.js:9` declares `UNDO_MS = 5000` and `useTrainingLog.js:16` pins the
+toast to it by comment — *"Must equal UNDO_MS (fix.js): the Undo offer and the window it is true in
+are the same span."* So the web is internally consistent and four seconds short of what every
+document promises.
+
+Found by a design agent while drawing the web row-`×` transient, which had to state a duration. It
+matters beyond a number: `13-gestures.md` gates every swipe-to-delete on *an undo already exists*, and
+that gate silently means something weaker on one surface. The brief has been corrected to say so;
+the architecture line and one of the two values still need to move.

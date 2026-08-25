@@ -31,8 +31,17 @@ not, and has to declare its action by hand. Check the row, not the platform.
 A confirmation on a swipe defeats the swipe: you swiped to be quick, and a dialog puts back the tap
 you just saved.
 
-Gym already has the mechanism — **a 9000 ms window, declared once per platform** and threaded
-through both stores. So the shape is swipe → gone → *"Deleted · Undo"* → really gone.
+Gym already has the mechanism — a window, declared once per platform. So the shape is swipe → gone →
+*"Deleted · Undo"* → really gone.
+
+**But it is not one window, and this brief said it was.** The phones hold a delete for **9000 ms**
+(`SetQueue.swift:48`, `SetQueue.kt:51`); the **web holds it for 5000** (`fix.js:9`, `UNDO_MS`, with
+`useTrainingLog.js:16` pinning the toast to the same span by comment). `ARCHITECTURE.md:1078` states
+*"The undo window is 9000 ms on every surface"*, and that has never been true.
+
+It matters here more than it looks: the gate above says a swipe ships only where an undo already
+exists, and on the web a lifter gets **four fewer seconds** than every document in this project
+promises them. **Reconciling the two is a prerequisite of any web swipe, not a detail of it.**
 
 **The corollary is the load-bearing half: an act with no undo path may never be a gesture.** Turning
 a proposal down settles permanently and the wire has no way back, which is exactly why closing the
