@@ -74,7 +74,9 @@ test('watchLocalDay — the timer turns the canvas over at midnight and keeps wa
 
   assert.deepEqual(clock.said, [localDay()]);
   assert.equal(clock.pending().length, 1, 'the next midnight is already being waited on');
-  assert.equal(clock.pending()[0].delay, msUntilNextDay());
+  // The code read the clock a moment before this line does; a tick between the two is not a defect.
+  const drift = clock.pending()[0].delay - msUntilNextDay();
+  assert.ok(drift >= 0 && drift <= 50, `the timer waits for the next midnight (drift ${drift} ms)`);
   clock.stop();
 });
 
