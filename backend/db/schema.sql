@@ -1066,6 +1066,25 @@ alter table gym_proposals add column if not exists thread_id text
   references gym_ask_threads(id) on delete set null;
 create index if not exists gym_proposals_thread on gym_proposals (thread_id);
 
+-- The notes a lifter writes FOR Coach: title-and-body pairs, stored verbatim, read by every agent
+-- holding the gym read scope. Ten per account, a title of 1..60 characters, a body of at most 500
+-- bytes — the same three numbers products/gym/domain/Note.h refuses against and `list_notes`
+-- describes. `position` is precedence (the top note wins where two disagree) and is dense 0..n-1:
+-- a delete closes the gap, a reorder is a whole-list replace. The unique is DEFERRED so a reorder
+-- can move every row inside one transaction without walking through a collision. Its own table,
+-- never a column on gym_preferences: that document is a whole-row replace, and two screens open at
+-- once would silently discard somebody's text.
+create table if not exists gym_notes (
+  id          text primary key,                   -- client-minted 'note_<hex>', the idempotency key
+  user_id     uuid not null references users(id) on delete cascade,
+  position    int  not null check (position between 0 and 9),
+  title       text not null check (char_length(title) between 1 and 60),
+  body        text not null check (octet_length(body) <= 500),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (user_id, position) deferrable initially deferred
+);
+
 -- The catalog seed. step_kg by equipment, in kg: barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5,
 -- bodyweight 2.5, kettlebell 4.0. ON CONFLICT DO NOTHING so a redeploy never clobbers a rename.
 insert into gym_exercises (id, name, pattern, equipment, step_kg) values

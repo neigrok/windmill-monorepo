@@ -134,7 +134,7 @@ struct SessionShare {
   bool operator==(const SessionShare&) const = default;
 };
 
-// What a coach sees: no account, no ids, no frozen plan; the movement travels as its display name.
+// What the holder of a share link sees: no account, no ids, no frozen plan; the movement travels as its display name.
 struct SharedSet {
   std::string exercise;
   int setNumber;
@@ -157,7 +157,7 @@ struct SharedSession {
   bool operator==(const SharedSession&) const = default;
 };
 
-// Sessions, their sets, what corrections left behind, and the coach share, which goes with the
+// Sessions, their sets, what corrections left behind, and the workout share, which goes with the
 // session. Every read and write is owner-scoped by the UserId it carries; absent is byte-identical
 // to forbidden. insertSession and insertSet are idempotent by client-minted id: they no-op on
 // conflict and answer with the row that is stored, and one open session per user is a partial unique

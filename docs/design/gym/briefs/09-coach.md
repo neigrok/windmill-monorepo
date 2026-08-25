@@ -73,15 +73,16 @@ something permanently. "Not now" already exists and costs nothing: close the she
 band is a single primary, which is also what the reach law asks for; two full-strength buttons of the
 same weight is a failure to decide.
 
-**"Turn this down"** stays destructive and stays confirmed.
+**"Turn this down"** stays destructive and stays confirmed, and the confirmation's words are pinned
+on every surface: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
+record.* / **Turn down** (destructive) · **Keep it**.
 
-**And the product currently says otherwise, which is a defect and not a disagreement.** One surface
-tells a lifter a dismissed proposal *"stays in the routine's history in case you want it back"*
-(`Proposal.swift:292`) while the web states the truth — *"every other state is settled and stays
-settled; the wire has no path back"* (`proposals.js:13`) — and no route reopens one. The wire is the
-truth, so the copy changes: a turned-down proposal stays in the routine's history **as a record**,
-not as something you can take back. Once that line is true, the confirmation is honest rather than
-ceremony: it guards an act that really is irreversible.
+**One word for one act.** Wherever a lifter reads the settled state of a turned-down proposal it is
+*turned down* — the chip *Turned down*, the history line *turned down N changes from …*, the thread
+outcome *N changes turned down*, and the settled sentence *"Turned down {when}. Nothing changed, and
+it stays in the routine’s history as a record."* — on all three surfaces. No route reopens a settled
+proposal, so the copy promises no way back, and the confirmation guards an act that really is
+irreversible. The wire state `dismissed` and the route `/dismiss` are machine tokens and stay.
 
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
 mid-workout changes nothing about the workout in progress. While a session is open the sheet carries
@@ -134,16 +135,19 @@ proposal — previewed as an all-green diff. Nothing in the domain moves.
 **Never proposable, at any grant level, this wave or later:** logging a set, fixing a set, deleting a
 set, finishing a workout, discarding a session, writing a bodyweight.
 
-**A verb does not ship without a phrase.** The step line's lookup falls back to printing the raw tool
-name, so a new verb would ship the exact defect this wave closes below. The fallback prints nothing.
+**A verb does not ship without a phrase.** A tool the step line has no phrase for prints nothing, on
+every surface, and the receipt stays — so a verb shipped without its words is a step the lifter never
+sees. The three phrase tables (`coach.js` `TOOL_PHRASE`, `Ask.swift` `Ask.phrase`, `Ask.kt`
+`Ask.phrases`) carry the same words and travel with the tool.
 
-## What the room stops printing
+## What the room does not print
 
-The raw tool trace under every answer comes off. It is developer output on a lifter's surface.
+The raw tool trace. It is developer output on a lifter's surface, and no surface draws it.
 
-**The read receipt stays.** *"read 214 sets · 6 weeks · 18 sessions"* is an honesty mechanism, not
-chrome: it is how a lifter knows what the answer stands on. The step list collapses behind it and
-opens on one tap.
+**The read receipt is always visible.** *"read 214 sets · 6 weeks · 18 sessions"* is an honesty
+mechanism, not chrome: it is how a lifter knows what the answer stands on. The step list sits
+collapsed behind it and opens on one tap; every answer carries at least one step, because the notes
+read — *read your notes* — opens every conversation.
 
 The honesty claim rests on the **receipt**, which is always visible, and not on the step list, which
 is detail for whoever wants it. A collapsed control is not a check on anything, so it must never be
@@ -176,22 +180,32 @@ a question comes back roughly every two and a half hours. It carries the same *c
 door the empty room does, because that is the one path that is not rationed.
 
 Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
-says what to do next rather than restating the rule. A wave that removes the paragraph and draws
-neither has not trimmed the cap, it has deleted it. The thread ceiling is **four questions** — the copy must say four, because the code
-counts a question and its answer as two turns against a ceiling of eight. Hitting the internal
-iteration cap is a **failure**, not a truncation to be dressed up.
+says what to do next rather than restating the rule. A room that drew neither would not have trimmed
+the cap, it would have deleted it.
 
-## The two stances, blessed
+**There is no clock on the cap-reached state.** It replaces the composer's input and send control for
+the rest of that visit to the room, with the allowance line still drawn above it so the promise and
+the moment sit together, and it carries an *Ask something new* door: the composer returns when the
+lifter opens a new conversation or re-enters the room, and a question sent while still capped meets
+the 429 again. The sentence is never on one screen twice — the exchange's own refusal card is not
+drawn while the state is.
 
-Both were authored by the build and pinned in tests without a copy owner ever adopting them, and both
-diverge between the phones. They are settled here.
+The thread ceiling is **four questions** — the copy says four, because the code counts a question
+and its answer as two turns against a ceiling of eight. The server's 409 sentence is shown verbatim;
+when it arrives without one, every surface falls back to *"This conversation holds four questions.
+Start a new one."* Nothing a lifter reads says eight. Hitting the internal iteration cap is a
+**failure**, not a truncation to be dressed up.
+
+## The two stances, pinned
+
+Every surface draws these bytes, and the suites pin them.
 
 **Signed out** — the room needs an account because it reads an account's log.
 
 > **Coach reads your log, so it needs you signed in.**
 
-One sentence, and it gives the reason rather than the rule. The longer variant on one phone — *"reads
-your account’s log … before it has anything to read"* — explains a mechanism nobody asked about.
+One sentence, and it gives the reason rather than the rule. On the web the room sits behind the gym's
+own sign-in door, so this sentence is the mid-room 401 stance rather than a screen.
 
 **This deployment does not carry Coach** — not an outage, and the difference matters.
 
@@ -199,10 +213,10 @@ your account’s log … before it has anything to read"* — explains a mechani
 
 *Part of* rather than *available on*: nothing is broken and nothing is coming back later, so a word
 that implies a temporary fault would be a small lie. The second sentence is the useful fact — the
-thing the lifter actually came for still works.
+thing the lifter actually came for still works. The Notes door stays drawn in this stance, because a
+connected agent reads notes whether or not this Windmill carries Coach.
 
-**The apostrophe is the typographic one** (’), everywhere, on every surface. One phone ships a
-straight quote in this exact string today.
+**The apostrophe is the typographic one** (’), everywhere, on every surface — the server included.
 
 ## Threads
 
@@ -217,7 +231,3 @@ still says it came from Coach.
   nowhere to put it. Worth deciding whether the refusal should offer to hold the question for after
   the session rather than closing the door — and it should name the rack-side controls that *do*
   work, rather than only refusing.
-- **Two stances carry build-authored copy** — signed-out and deployment-absent — pinned in tests with
-  no copy owner having blessed them. This brief does not bless them either.
-- **The server's own strings still say Ask** and reach all three clients verbatim. A client must
-  never rewrite server text, so they change in this wave; who owns that change is unassigned.

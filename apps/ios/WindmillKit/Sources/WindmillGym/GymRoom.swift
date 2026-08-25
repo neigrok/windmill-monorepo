@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WindmillPlatform
 
 // The room's state dies when you leave it, which is why the queue is on disk after every tap and why leaving flushes.
@@ -21,7 +22,7 @@ public struct GymRoom: View {
     // "Later" means exactly this visit: the room holds it, never disk.
     @State private var setAside: Set<String> = []
     @State private var conversation = AskConversation()
-    // A server with no Anthropic key answers the Ask route's 404, and the entry goes for the rest of the visit.
+    // A server with no Anthropic key answers the Coach route's 404, and the entry goes for the rest of the visit.
     @State private var askOnThisDeployment = true
     // `unknown` asserts nothing.
     @State private var connected: ConnectedLogState = .unknown
@@ -33,7 +34,7 @@ public struct GymRoom: View {
     private enum Tab: String, CaseIterable, Identifiable {
         case routines = "Routines"
         case log = "The log"
-        case ask = "Ask"
+        case ask = "Coach"
 
         var id: String { rawValue }
     }
@@ -45,6 +46,7 @@ public struct GymRoom: View {
         case proposal(String)
         case threads
         case thread(String)
+        case notes
         case settings
         case connect
         case routine(String)
@@ -57,6 +59,7 @@ public struct GymRoom: View {
             case .proposal: return "Proposal"
             case .threads: return AskThreads.title
             case .thread: return "Conversation"
+            case .notes: return Notes.title
             case .settings: return "Gym"
             case .connect: return "Connected log"
             case .routine: return "Routine"
@@ -99,13 +102,21 @@ public struct GymRoom: View {
             connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
         }
         .onChange(of: scenePhase) { _, phase in
+            WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
             if phase != .active { Task { await store.flushPendingSets() } }
             // `onChange` never fires for the value the scene launched at.
             if phase == .active, account.isSignedIn {
                 Task { connected = await ConnectedLog.read(with: account.api) }
             }
         }
-        .onDisappear { Task { await store.flushPendingSets(force: true) } }
+        // Held while the room holds an open session, whichever way it opened or closed: finish, discard, a start, a connect.
+        .onChange(of: store.session != nil, initial: true) { _, open in
+            WakeLock.hold(WakeLock.wanted(sessionIsOpen: open, phase: scenePhase))
+        }
+        .onDisappear {
+            WakeLock.hold(false)
+            Task { await store.flushPendingSets(force: true) }
+        }
     }
 
     // A live session outranks every tab and every away screen.
@@ -141,9 +152,16 @@ public struct GymRoom: View {
                 ThreadsScreen(doors: threadDoors)
             case .thread(let threadId):
                 ThreadScreen(threadId: threadId, doors: threadDoors, onDeleted: back)
+            case .notes:
+                if account.isSignedIn {
+                    NotesScreen(doors: notesDoors)
+                } else {
+                    NotesSignedOutStance(onSignIn: { shell.openYou() })
+                }
             case .settings:
                 SettingsScreen(store: store, web: account.api.baseURL, connected: connected,
-                               onConnectedLog: { look(at: .connect) }, say: { note = $0 })
+                               onConnectedLog: { look(at: .connect) }, onNotes: { look(at: .notes) },
+                               say: { note = $0 })
             case .connect:
                 ConnectScreen(state: connected, isSignedIn: account.isSignedIn,
                               web: account.api.baseURL, onConnect: openConnect)
@@ -195,7 +213,7 @@ public struct GymRoom: View {
                 if !account.isSignedIn {
                     AskSignedOutStance(onSignIn: { shell.openYou() })
                 } else if !askOnThisDeployment {
-                    AskAbsentStance()
+                    AskAbsentStance(onNotes: { look(at: .notes) })
                 } else {
                     AskScreen(store: store, conversation: $conversation, doors: askDoors)
                 }
@@ -286,12 +304,39 @@ public struct GymRoom: View {
                 catch { return .failure(AskRefusal(error)) }
             },
             openThreads: { look(at: .threads) },
+            openNotes: { look(at: .notes) },
             connect: { look(at: .connect) },
             openProposal: { look(at: .proposal($0)) },
             absent: { askOnThisDeployment = false })
     }
 
-    // The thread routes answer even where Ask itself is not mounted, so nothing here checks `askOnThisDeployment`.
+    // Account-only, straight to the log: no device copy, no claim slot.
+    private var notesDoors: NotesDoors {
+        let gym = GymApi(api: account.api)
+        return NotesDoors(
+            list: {
+                do { return .success(try await gym.notes()) }
+                catch { return .failure(NotesRefusal(error)) }
+            },
+            write: { id, write in
+                do { return .success(try await gym.writeNote(id, write)) }
+                catch { return .failure(NotesRefusal(error)) }
+            },
+            delete: { id in
+                do {
+                    try await gym.deleteNote(id)
+                    return nil
+                } catch {
+                    return NotesRefusal(error).line
+                }
+            },
+            reorder: { order in
+                do { return .success(try await gym.reorderNotes(order)) }
+                catch { return .failure(NotesRefusal(error)) }
+            })
+    }
+
+    // The thread routes answer even where Coach itself is not mounted, so nothing here checks `askOnThisDeployment`.
     private var threadDoors: ThreadDoors {
         let gym = GymApi(api: account.api)
         return ThreadDoors(
@@ -428,5 +473,18 @@ public struct GymRoom: View {
             return
         }
         keptRoutine = true
+    }
+}
+
+// The phone owns the open session, so the screen stays awake for it; released on every way out of the room.
+enum WakeLock {
+    static func wanted(sessionIsOpen: Bool, phase: ScenePhase) -> Bool {
+        sessionIsOpen && phase == .active
+    }
+
+    @MainActor
+    static func hold(_ held: Bool) {
+        guard UIApplication.shared.isIdleTimerDisabled != held else { return }
+        UIApplication.shared.isIdleTimerDisabled = held
     }
 }

@@ -770,6 +770,41 @@ std::optional<PlanSnapshot> planFrom(const Json::Value& stored) {
   return plan;
 }
 
+// The title and the body are the whole write; the id comes off the path and the owner off the
+// caller. Anything else on the body — a row read back and sent whole — is ignored, and a missing or
+// non-string half is the one sentence every unreadable note gets.
+Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user) {
+  if (!body.isObject() || !body["title"].isString() || !body["body"].isString())
+    throw InvalidTraining("could not read that note");
+  return Note{id, user, body["title"].asString(), body["body"].asString()};
+}
+
+std::vector<NoteId> parseNotesOrder(const Json::Value& body) {
+  if (!body.isObject() || !body["order"].isArray())
+    throw InvalidTraining("could not read that order");
+  std::vector<NoteId> order;
+  for (const Json::Value& id : body["order"]) {
+    if (!id.isString()) throw InvalidTraining("could not read that order");
+    order.push_back(NoteId{id.asString()});
+  }
+  return order;
+}
+
+Json::Value toJson(const Note& note) {
+  Json::Value body(Json::objectValue);
+  body["id"] = note.id.str();
+  body["position"] = note.position;
+  body["title"] = note.title;
+  body["body"] = note.body;
+  body["updatedAt"] = Json::Value::UInt64(note.updatedAtMs);
+  return body;
+}
+
+Json::Value toJson(const std::vector<Note>& notes) {
+  Json::Value out(Json::arrayValue);
+  for (const Note& note : notes) out.append(toJson(note));
+  return out;
+}
 
 std::string shareUrl(const std::string& appBaseUrl, const std::string& token) {
   return appBaseUrl + "/#/gym/shared/" + token;

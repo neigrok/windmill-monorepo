@@ -2,6 +2,7 @@
 
 #include "products/gym/adapters/http/AskApi.h"
 #include "products/gym/adapters/http/CatalogApi.h"
+#include "products/gym/adapters/http/NotesApi.h"
 #include "products/gym/adapters/http/PreferencesApi.h"
 #include "products/gym/adapters/http/ProgramApi.h"
 #include "products/gym/adapters/http/ThreadsApi.h"
@@ -17,11 +18,11 @@ namespace wm::gym {
 
 // The gym product's whole HTTP surface, mounted behind one named seam — the same shape roadmap's
 // and journal's registerRoutes have. main.cpp builds the collaborators, bundles them into GymDeps,
-// and calls this beside the other two mounts. The handlers live on five adapters that mirror the
-// five aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
-// PreferencesApi, ThreadsApi — and this file is the ONE place the paths are named, so a route's
+// and calls this beside the other two mounts. The handlers live on six adapters that mirror the
+// six aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
+// PreferencesApi, ThreadsApi, NotesApi — and this file is the ONE place the paths are named, so a route's
 // method, its path and the reason it hangs where it does are read in one column. Every path below is
-// owner-scoped but the coach share's read, which is the only unauthenticated route in the product.
+// owner-scoped but the workout share's read, which is the only unauthenticated route in the product.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   auto training =
       std::make_shared<TrainingApi>(deps.trainingService, deps.authService, deps.appBaseUrl);
@@ -30,6 +31,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   auto program = std::make_shared<ProgramApi>(deps.programService, deps.authService);
   auto preferences = std::make_shared<PreferencesApi>(deps.preferencesService, deps.authService);
   auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService);
+  auto notes = std::make_shared<NotesApi>(deps.notesService, deps.authService);
 
   app.registerHandler(
       "/v1/gym/exercises",
@@ -222,6 +224,35 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         preferences->savePreferences(req, std::move(cb));
       },
       {drogon::Put});
+  // THE NOTES a lifter writes for Coach (§3.9): their own resource and never a field on the
+  // preferences document, which is a whole-row replace that would discard one of two open screens.
+  // The id is the client's to mint, the write is an upsert on it, and the list's order is
+  // precedence — replaced whole by the PUT on the collection, never nudged one row at a time.
+  // Coach and every connected agent read these through `list_notes`; nothing writes them but a hand.
+  app.registerHandler(
+      "/v1/gym/notes",
+      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        notes->listNotes(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/notes",
+      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        notes->reorderNotes(req, std::move(cb));
+      },
+      {drogon::Put});
+  app.registerHandler(
+      "/v1/gym/notes/{id}",
+      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        notes->saveNote(req, std::move(cb), id);
+      },
+      {drogon::Put});
+  app.registerHandler(
+      "/v1/gym/notes/{id}",
+      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        notes->deleteNote(req, std::move(cb), id);
+      },
+      {drogon::Delete});
   app.registerHandler(
       "/v1/gym/stats",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -241,6 +272,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       "/v1/gym/export/threads",
       [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         threads->exportThreads(req, std::move(cb));
+      },
+      {drogon::Get});
+  // The third file: the notes are the lifter's, so they leave with everything else.
+  app.registerHandler(
+      "/v1/gym/export/notes",
+      [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        notes->exportNotes(req, std::move(cb));
       },
       {drogon::Get});
   // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only
@@ -268,7 +306,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         threads->deleteThread(req, std::move(cb), id);
       },
       {drogon::Delete});
-  // The coach share's two owner-scoped doors. They hang off the session's path because that is what
+  // The workout share's two owner-scoped doors. They hang off the session's path because that is what
   // a share is about — one workout — and neither of them touches the session's own row.
   app.registerHandler(
       "/v1/gym/sessions/{id}/share",

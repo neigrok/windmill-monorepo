@@ -181,6 +181,16 @@ final class ConnectedLogTests: XCTestCase {
         }
     }
 
+    // The word coach names the room and nothing else; the pitch contrasts on where the log lives, not on quality.
+    func testTheConnectPitchNeverSaysCoach() {
+        for line in Self.everyLine {
+            XCTAssertFalse(line.lowercased().contains("coach"), line)
+        }
+        XCTAssertEqual(ConnectedLog.sub,
+                       "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the assistant you already use.")
+        XCTAssertTrue(ConnectedLog.free.contains("the workout share and the CSV"), ConnectedLog.free)
+    }
+
     func testNothingClaimsAFreshnessThisSurfaceCannotObserve() {
         for line in Self.everyLine {
             XCTAssertFalse(line.contains("read 2h"), line)

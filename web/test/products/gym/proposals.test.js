@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   applyLabel, atomicLine, changeLabel, diffRows, documentLine, historyLabel, intentLine, isPending,
   conversationOf, CONVERSATION_VERB,
-  logKeptLabel, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, UNNAMED_AGENT,
+  logKeptLabel, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM,
+  UNNAMED_AGENT,
 } from '../../../src/products/gym/proposals.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -263,12 +264,28 @@ test('logKeptLabel — what a removed line takes with it, which is nothing', () 
 test('stateChip — every state the wire has says its own word', () => {
   assert.equal(stateChip(proposal()), 'Pending');
   assert.equal(stateChip(proposal({ state: 'applied' })), 'Applied');
-  assert.equal(stateChip(proposal({ state: 'dismissed' })), 'Dismissed');
+  assert.equal(stateChip(proposal({ state: 'dismissed' })), 'Turned down');
   assert.equal(stateChip(proposal({ state: 'superseded' })), 'Superseded');
   assert.equal(stateChip({}), null);
   assert.equal(isPending(proposal()), true);
   assert.equal(isPending(proposal({ state: 'applied' })), false);
   assert.equal(isPending(proposal({ state: 'superseded' })), false);
+});
+
+test('one word for one act: a lifter reads turned down, never the wire’s dismissed', () => {
+  assert.deepEqual(TURN_DOWN_CONFIRM, {
+    title: 'Turn this down?',
+    body: 'Nothing changes, and it stays in the routine’s history as a record.',
+    confirm: 'Turn down',
+    keep: 'Keep it',
+  });
+  const read = [
+    stateChip(proposal({ state: 'dismissed' })),
+    historyLabel(proposal({ state: 'dismissed', settledAt: SETTLED_AT })),
+    settledLine(proposal({ state: 'dismissed', settledAt: SETTLED_AT }), READ_AT),
+    ...Object.values(TURN_DOWN_CONFIRM),
+  ];
+  for (const line of read) assert.doesNotMatch(line, /dismiss/i, line);
 });
 
 test('settledLine — applied, dismissed and superseded each say what happened and that it stays', () => {
@@ -278,7 +295,7 @@ test('settledLine — applied, dismissed and superseded each say what happened a
   );
   assert.equal(
     settledLine(proposal({ state: 'dismissed', settledAt: SETTLED_AT }), READ_AT),
-    'Dismissed today at 07:12. No reason asked for, nothing changed, and it stays in the routine’s history in case you want it back.',
+    'Turned down today at 07:12. Nothing changed, and it stays in the routine’s history as a record.',
   );
   assert.equal(
     settledLine(proposal({ state: 'superseded', settledAt: SETTLED_AT }), READ_AT),
@@ -295,7 +312,7 @@ test('sourceLabel — who wrote it, and never a blank where a name should be', (
   assert.equal(sourceLabel({ door: 'mcp', agent: 'Claude Code' }), 'Claude Code');
   assert.equal(sourceLabel({ door: 'mcp' }), UNNAMED_AGENT);
   assert.equal(sourceLabel({ door: 'mcp', agent: '' }), UNNAMED_AGENT);
-  assert.equal(sourceLabel({ door: 'ask' }), 'Ask');
+  assert.equal(sourceLabel({ door: 'ask' }), 'Coach');
   assert.equal(sourceLabel(undefined), UNNAMED_AGENT);
   assert.equal(UNNAMED_AGENT, 'your connected agent');
 });
@@ -305,7 +322,7 @@ test('conversationOf — the thread behind a diff, and nothing at all when there
   assert.equal(conversationOf({ door: 'ask' }), null);
   assert.equal(conversationOf({ door: 'mcp', agent: 'Claude Code' }), null);
   assert.equal(conversationOf(undefined), null);
-  assert.equal(sourceLabel({ door: 'ask' }), 'Ask');
+  assert.equal(sourceLabel({ door: 'ask' }), 'Coach');
   assert.equal(CONVERSATION_VERB, 'Open the conversation');
 });
 
@@ -345,7 +362,7 @@ test('historyLabel — one dated row per proposal, whatever became of it', () =>
   );
   assert.equal(
     historyLabel(proposal({ state: 'dismissed', settledAt: SETTLED_AT, source: { door: 'mcp', agent: 'Claude Code' } })),
-    '3 Aug · dismissed 4 changes from Claude Code',
+    '3 Aug · turned down 4 changes from Claude Code',
   );
   assert.equal(
     historyLabel(proposal({ state: 'superseded', settledAt: SETTLED_AT })),
@@ -357,6 +374,6 @@ test('historyLabel — one dated row per proposal, whatever became of it', () =>
   );
   assert.equal(
     historyLabel(proposal({ intent: 'remove', state: 'dismissed', settledAt: SETTLED_AT, changeCount: 1 })),
-    '3 Aug · dismissed a removal from your connected agent',
+    '3 Aug · turned down a removal from your connected agent',
   );
 });

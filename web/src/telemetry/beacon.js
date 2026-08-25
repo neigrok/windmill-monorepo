@@ -39,7 +39,7 @@ export function reportError(error, kind = 'error') {
 
 // Secrets ride in the fragment (#/auth?token=…, #/gym/shared/<token>, #/oauth/authorize?…), so a
 // route is cut to its FAMILY before it leaves the page: the query is dropped whole, and the two
-// segments that ARE capabilities — a coach-share token and the tree id in a #/t/ link — become `*`.
+// segments that ARE capabilities — a shared-workout token and the tree id in a #/t/ link — become `*`.
 // An id the server still guards for its owner (#/app/<treeId>) is kept.
 export function routeFamily(route) {
   const path = String(route).split('?')[0].slice(0, 120);

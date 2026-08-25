@@ -21,7 +21,7 @@ const OUTCOME_CHIPS = {
   applied: 'applied',
   'read-only': 'read only',
   proposed: 'proposed',
-  dismissed: 'dismissed',
+  dismissed: 'turned down',
   superseded: 'superseded',
 };
 
@@ -36,7 +36,7 @@ export function outcomeLine(outcome) {
   if (outcome.kind === 'applied' && outcome.routine) return `${changes} → ${outcome.routine}`;
   if (outcome.kind === 'applied') return changes;
   if (outcome.kind === 'proposed') return `${changes} waiting`;
-  if (outcome.kind === 'dismissed') return `${changes} dismissed`;
+  if (outcome.kind === 'dismissed') return `${changes} turned down`;
   if (outcome.kind === 'superseded') return `${changes} superseded`;
   return null;
 }

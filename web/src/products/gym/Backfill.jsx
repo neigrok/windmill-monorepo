@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Back } from './Back.jsx';
 import {
   dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL,
   overlapWith, saveLabel, saveNote, saveReport, startedAtOf, withLineAdded, withLineChanged,
@@ -73,9 +73,7 @@ export function Backfill({ log }) {
 
   return (
     <>
-      <a className="gym-back" href="#/gym/log">
-        <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log
-      </a>
+      <Back href="#/gym/log">The log</Back>
       <h1 className="gym-title">Add a past workout</h1>
       <p className="gym-quiet">For the session that never made it into the log.</p>
 

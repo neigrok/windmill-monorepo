@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
-import { isNameOverCap, NAME_MAX, nameCountLabel, recordHref } from './log.js';
+import { isNameOverCap, NAME_MAX, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
 import { useGymRead } from './useGymRead.js';
 
-const BACK = '#/gym';
+// A movement is reached from every room; back lands on the home, which is Routines.
+const BACK = ROUTINES_HREF;
 
 export function MovementRecord({ id, log }) {
   if (id == null) return <MovementChooser log={log} />;
@@ -36,7 +37,7 @@ function OneMovement({ id, log }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href={BACK}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Today</a>
+        <Back href={BACK}>Routines</Back>
         <p className="gym-quiet">This movement isn’t in your catalog.</p>
       </>
     );
@@ -44,7 +45,7 @@ function OneMovement({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href={BACK}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Today</a>
+        <Back href={BACK}>Routines</Back>
         <p className="gym-read-failed">
           The movement didn’t load.
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -57,7 +58,7 @@ function OneMovement({ id, log }) {
   return (
     <section className="gym-record-screen">
       <header className="gym-record-head">
-        <a className="gym-back" href={BACK}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Today</a>
+        <Back href={BACK}>Routines</Back>
         <button type="button" className="gym-record-rename" onClick={() => setRenaming(true)}>Rename</button>
       </header>
       <h1 className="gym-record-name">{model.name}</h1>
@@ -182,9 +183,11 @@ function RenameSheet({ name, record, onClose, onSave }) {
             onChange={(event) => setTyped(event.target.value)}
             autoFocus
           />
-          <span className={isNameOverCap(typed) ? 'gym-name-count is-over' : 'gym-name-count'}>
-            {nameCountLabel(typed)}
-          </span>
+          {showsNameCount(typed) && (
+            <span className={isNameOverCap(typed) ? 'gym-name-count is-over' : 'gym-name-count'}>
+              {nameCountLabel(typed)}
+            </span>
+          )}
         </div>
         <section className="gym-follows">
           <p className="gym-follows-head">

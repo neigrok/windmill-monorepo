@@ -8,7 +8,8 @@ export function expiryLine(expiresAtMs) {
   return `Expires ${dayLabel(expiresAtMs)}.`;
 }
 
-export const SHARE_OFFER = 'Share with a coach';
+// The link a lifter hands to a person. It never carries the word coach — that names the room.
+export const SHARE_OFFER = 'Share this workout';
 export const SHARE_OFFER_LINE = 'A link to this one workout. It expires, you can revoke it here, and sharing again hands back the same link rather than a second one.';
 
 export const SHARE_TERMS = [

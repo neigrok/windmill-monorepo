@@ -4,6 +4,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,18 +16,35 @@ class AskTests {
 
 
     @Test
-    fun theDailyLimitIsStatedInTheOpeningChromeAndNotOnlyInTheRefusal() {
-        assertEquals(
-            "It answers about ten questions a day, three back to back — the cap that keeps Ask " +
-                "open to everyone. There is nothing to buy here.",
-            Ask.dailyCap,
-        )
+    fun theAllowanceIsOneLineAboveTheComposerAndTheCapReachedMomentSaysWhatToDoNext() {
+        assertEquals("Ten questions a day, three back to back.", Ask.allowance)
+        assertEquals("The next question frees up in a couple of hours.", Ask.capReached)
+        assertEquals("the ceiling says four, never eight",
+            "This conversation holds four questions. Start a new one.", Ask.threadFull)
+    }
+
+    @Test
+    fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
+        assertEquals("Coach", Ask.title)
+        assertEquals("reads your log · proposes only", Ask.subtitle)
+        assertEquals("Coach reads your log, so it needs you signed in.", Ask.signedOut)
+        assertEquals("Coach isn’t part of this Windmill. Your log is still yours to read.", Ask.notHere)
+        assertEquals("the apostrophe is the typographic one everywhere",
+            emptyList<String>(),
+            (listOf(Ask.whatItIs, Ask.freeDoor, Ask.interrupted, Ask.notHere) + Ask.openers)
+                .filter { it.contains('\'') })
+    }
+
+    @Test
+    fun theFreeDoorContrastsOnScopeNeverOnQuality() {
+        assertTrue(Ask.freeDoor.contains("It’s free, and it reaches what Coach can’t: it knows the rest of your life."))
+        assertFalse("the contrast is scope, never quality", Ask.freeDoor.contains("better"))
     }
 
     @Test
     fun theDoorIsShutOnABlankQuestionAndOnOneOverTheCeiling() {
         assertFalse(Ask.sendable("   "))
-        assertTrue(Ask.sendable("what's stalled?"))
+        assertTrue(Ask.sendable("what’s stalled?"))
         assertTrue(Ask.sendable("x".repeat(Ask.maxTurnBytes)))
         assertFalse(Ask.sendable("x".repeat(Ask.maxTurnBytes + 1)))
         assertEquals("the ceiling is bytes, not characters",
@@ -51,9 +69,25 @@ class AskTests {
     }
 
     @Test
-    fun aStepIsNamedAsTheCatalogNamesItAndAFailedOneSaysSo() {
-        assertEquals("list_sessions", AskStep("list_sessions").line)
-        assertEquals("get_stats · no answer", AskStep("get_stats", failed = true).line)
+    fun aStepIsSaidInTheLiftersWordsAndAFailedOneSaysSo() {
+        assertEquals("read your recent workouts", AskStep("list_sessions").phrase)
+        assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase)
+        assertEquals("read your notes", AskStep("list_notes").phrase)
+    }
+
+    @Test
+    fun aToolThisBuildCannotNamePrintsNothingAndTheRestStillDo() {
+        assertNull(AskStep("get_preferences").phrase)
+        assertNull(AskStep("get_preferences", failed = true).phrase)
+        assertEquals(
+            listOf("read your program", "read your movement history"),
+            Ask.steps(listOf(AskStep("list_routines"), AskStep("summon_lightning"),
+                AskStep("get_stats"), AskStep("list_routines"))),
+        )
+        assertEquals("the same table the web draws from, plus the notes read",
+            setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines",
+                "get_stats", "list_notes", "propose_routine_change", "propose_routine_removal"),
+            Ask.phrases.keys)
     }
 
     @Test

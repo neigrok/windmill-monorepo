@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
 import { deletedLine, deleteFailure, fixFailure, movesAfterRead, setsAfter, UNDO_MS } from './fix.js';
@@ -10,7 +10,7 @@ import {
   planFrozenLabel, planReadingOf, recordHref, routineNameOf, sessionDetailMeta, sessionHref,
   setLoadLabel, setNoteOf, tonnageLabel, weeksOf, workingLabel,
 } from './log.js';
-import { CoachShare } from './share/CoachShare.jsx';
+import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 
 export function LogNotOpen({ log, onSignIn }) {
@@ -212,7 +212,7 @@ export function SessionDetail({ id, log }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
+        <Back href="#/gym/log">The log</Back>
         <p className="gym-quiet">This session isn’t in your log.</p>
       </>
     );
@@ -220,7 +220,7 @@ export function SessionDetail({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
+        <Back href="#/gym/log">The log</Back>
         <p className="gym-read-failed">
           The session didn’t load.
           <button type="button" className="gym-retry" onClick={reread}>Retry</button>
@@ -237,7 +237,7 @@ export function SessionDetail({ id, log }) {
   return (
     <>
       <header className="gym-detail-head">
-        <a className="gym-back" href="#/gym/log"><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> The log</a>
+        <Back href="#/gym/log">The log</Back>
         <h1 className="gym-title">{routineNameOf(session) ?? NO_ROUTINE}</h1>
         <p className="gym-detail-when">{sessionDetailMeta(session, sets)}</p>
         {frozen && (
@@ -292,7 +292,7 @@ export function SessionDetail({ id, log }) {
           </section>
         );
       })}
-      <CoachShare sessionId={id} />
+      <ShareWorkout sessionId={id} />
       {fixing && (
         <FixSheet
           key={fixing.id}

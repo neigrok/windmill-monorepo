@@ -23,6 +23,8 @@ import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.LiveOrder
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
@@ -197,14 +199,16 @@ class TrainingStore(
 
         const val proposalsWantAnAccount = "a proposal needs your account — sign in first"
 
-        const val askWantsAnAccount = "Ask reads your account's log — sign in first"
+        const val askWantsAnAccount = "Coach reads your log — sign in first"
+
+        const val notesWantAnAccount = "Notes live with your account — sign in first"
 
         // Absent, another account's and deleted are one sentence: three answers a stranger could tell
         // apart would say whether a conversation exists on somebody else's log.
         const val noSuchThread = "that conversation is no longer on the log"
 
         const val liveSlotTaken =
-            "finish the workout you're in first — the one this phone kept needs the slot"
+            "finish the workout you’re in first — the one this phone kept needs the slot"
 
         const val quarantineWantsAnAccount =
             "sign in first — this can only be added to an account, and only you can say it is yours"
@@ -932,6 +936,7 @@ class TrainingStore(
         } catch (refusing: Exception) {
             when (val verdict = AskVerdict.refusing(RefusalFacts(refusing))) {
                 is AskVerdict.Said -> AskOutcome.Refused(verdict.said)
+                is AskVerdict.Capped -> AskOutcome.Capped(verdict.said)
                 is AskVerdict.Again -> AskOutcome.Failed(verdict.said)
                 is AskVerdict.Fresh -> AskOutcome.Fresh(verdict.said)
                 AskVerdict.Absent -> AskOutcome.Absent
@@ -979,6 +984,54 @@ class TrainingStore(
         } catch (refusing: Exception) {
             if (RefusalFacts(refusing).status == 404) GymResult.Ok(Unit)
             else GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // Notes are the account's and this phone holds none: every screen reads on the way in, and a
+    // refusal arrives in the log's own words — the ten cap and the two bounds are its to state.
+    suspend fun notes(): GymResult<List<Note>> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
+        return try {
+            GymResult.Ok(log.notes())
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
+        return try {
+            GymResult.Ok(log.writeNote(id, write))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
+        }
+    }
+
+    // A 404 answers as success: the note is gone either way.
+    suspend fun deleteNote(id: String): WriteFailure? {
+        val log = gym ?: return WriteFailure.Refused(notesWantAnAccount)
+        return try {
+            log.deleteNote(id)
+            null
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            if (RefusalFacts(refusing).status == 404) null else WriteFailure(refusing)
+        }
+    }
+
+    suspend fun reorderNotes(order: List<String>): GymResult<List<Note>> {
+        val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
+        return try {
+            GymResult.Ok(log.reorderNotes(order))
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            GymResult.Failed(WriteFailure(refusing))
         }
     }
 
@@ -1595,12 +1648,14 @@ sealed interface ProposalOutcome {
 }
 
 // `Answered` carries the reply whole and the screen draws it without adding to it. `Refused` is the
-// log answering in its own words, which a retry cannot change; `Failed` is the log going quiet, which
-// is worth another tap. `Absent` is the deployment having no Ask. `Fresh` is the conversation being
+// log answering in its own words, which a retry cannot change; `Capped` is the one refusal that takes
+// the composer down, since the next question is hours away; `Failed` is the log going quiet, which
+// is worth another tap. `Absent` is the deployment having no Coach. `Fresh` is the conversation being
 // full or another account's: the QUESTION is fine, so asking it again opens a new thread.
 sealed interface AskOutcome {
     data class Answered(val answer: AskAnswer) : AskOutcome
     data class Refused(val said: String) : AskOutcome
+    data class Capped(val said: String) : AskOutcome
     data class Failed(val said: String) : AskOutcome
     data class Fresh(val said: String) : AskOutcome
     data object Absent : AskOutcome

@@ -209,7 +209,7 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
            (std::vector<std::string>{"Seven", "Six", "Five", "Four", "Three"}));
 }
 
-// Every read that prints a movement name reads the CALLER's name for it, the coach share resolving against the workout's OWNER.
+// Every read that prints a movement name reads the CALLER's name for it, the workout share resolving against the workout's OWNER.
 TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

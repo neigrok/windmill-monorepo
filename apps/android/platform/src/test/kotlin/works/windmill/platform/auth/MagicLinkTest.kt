@@ -57,7 +57,7 @@ class MagicLinkTest {
 
     @Test
     fun onlyAnOfflineFailureEscapesTheExpiredSentence() {
-        assertEquals("Can't reach windmill.works", MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline))
+        assertEquals("Can’t reach windmill.works", MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline))
         assertEquals(MagicLink.expired, MagicLink.refusal(MagicLink.unreadable))
         assertEquals(MagicLink.expired, MagicLink.refusal(IllegalStateException("anything else")))
     }
@@ -70,7 +70,7 @@ class MagicLinkTest {
             MagicLink.expiredCode,
         )
         assertEquals(
-            "Can't reach windmill.works",
+            "Can’t reach windmill.works",
             MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline, ofCode = true),
         )
     }

@@ -57,13 +57,20 @@ final class AskThreadWireTests: XCTestCase {
         XCTAssertEqual(read.proposals, [])
     }
 
-    func testATurnInAVoiceThisBuildDoesNotKnowIsNotDrawn() {
+    func testATurnInAVoiceThisBuildDoesNotKnowIsNotDrawnAndTheRestOfTheThreadStillIs() throws {
         let wire = """
         {"id":"thr_1","title":"q","createdAt":1,"askedAt":1,
          "outcome":{"kind":"read-only","changes":0},
-         "turns":[{"from":"assistant","text":"hello","at":1}]}
+         "turns":[{"from":"lifter","text":"q","at":1},
+                  {"from":"assistant","text":"hello","at":2},
+                  {"text":"no voice at all","at":3},
+                  {"from":3,"text":"not even a word","at":4},
+                  {"from":null,"text":"null","at":5}]}
         """
-        XCTAssertThrowsError(try JSONDecoder().decode(AskThread.self, from: Data(wire.utf8)))
+        let read = try JSONDecoder().decode(AskThread.self, from: Data(wire.utf8))
+
+        XCTAssertEqual(read.turns?.map(\.from), [.lifter, .unknown, .unknown, .unknown, .unknown])
+        XCTAssertEqual(read.turns?.filter(\.isDrawn), [AskTurn(from: .lifter, text: "q", atMs: 1)])
     }
 
     func testTheTitleIsTheLiftersOwnWordsUntouched() throws {
@@ -102,7 +109,7 @@ final class ThreadOutcomeTests: XCTestCase {
                        "4 changes → Push A")
         XCTAssertEqual(thread(.readOnly).outcome.line, "no changes proposed")
         XCTAssertEqual(thread(.proposed, changes: 2).outcome.line, "2 changes waiting")
-        XCTAssertEqual(thread(.dismissed, changes: 4).outcome.line, "4 changes dismissed")
+        XCTAssertEqual(thread(.dismissed, changes: 4).outcome.line, "4 changes turned down")
         XCTAssertEqual(thread(.superseded, changes: 6).outcome.line, "6 changes set aside")
     }
 
@@ -114,7 +121,7 @@ final class ThreadOutcomeTests: XCTestCase {
     func testOneChangeIsSpelledInTheSingular() {
         XCTAssertEqual(ThreadOutcome(kind: .applied, changes: 1, routineId: "rt_1",
                                      routine: "Legs").line, "1 change → Legs")
-        XCTAssertEqual(ThreadOutcome(kind: .dismissed, changes: 1).line, "1 change dismissed")
+        XCTAssertEqual(ThreadOutcome(kind: .dismissed, changes: 1).line, "1 change turned down")
         XCTAssertEqual(Readout.changeCount(1), "1 change")
         XCTAssertEqual(Readout.changeCount(0), "0 changes")
     }
@@ -138,7 +145,7 @@ final class ThreadOutcomeTests: XCTestCase {
     func testTheChipAndTheLineAgreeAndOnlyAnAppliedRowIsLit() {
         XCTAssertEqual(ThreadOutcome(kind: .applied, changes: 4).word, "applied")
         XCTAssertEqual(ThreadOutcome(kind: .readOnly).word, "read only")
-        XCTAssertEqual(ThreadOutcome(kind: .dismissed, changes: 4).word, "dismissed")
+        XCTAssertEqual(ThreadOutcome(kind: .dismissed, changes: 4).word, "turned down")
         XCTAssertEqual(ThreadOutcome(kind: .proposed, changes: 4).word, "waiting")
         XCTAssertEqual(ThreadOutcome(kind: .superseded, changes: 4).word, "set aside")
 
@@ -165,6 +172,24 @@ final class ThreadOutcomeTests: XCTestCase {
         XCTAssertEqual(outcome.word, "set aside")
         XCTAssertEqual(minted.line, "3 changes to Push A · Set aside")
         XCTAssertEqual(ProposalState.superseded.word, "Set aside")
+    }
+
+    // One word for one act: the wire says `dismissed`, the lifter reads turned down everywhere.
+    func testTheWholeSurfaceSpellsATurnedDownProposalOneWay() {
+        let outcome = ThreadOutcome(kind: .dismissed, changes: 3, routineId: "rt_1", routine: "Push A")
+        let minted = ThreadProposal(id: "prop_1", state: .dismissed, changeCount: 3,
+                                    routineId: "rt_1", routine: "Push A", createdAtMs: 1_000)
+        let head = ProposalHead(id: "prop_1", routineId: "rt_1", state: .dismissed, changeCount: 3,
+                                createdAtMs: 0, settledAtMs: 0, source: ProposalSource(door: "ask"))
+
+        XCTAssertEqual(outcome.line, "3 changes turned down")
+        XCTAssertEqual(outcome.word, "turned down")
+        XCTAssertEqual(minted.line, "3 changes to Push A · Turned down")
+        XCTAssertEqual(ProposalState.dismissed.word, "Turned down")
+        XCTAssertEqual(head.historyLine(now: 0), "today · turned down 3 changes from Coach")
+        for said in [outcome.line, outcome.word ?? "", minted.line, head.historyLine(now: 0)] {
+            XCTAssertFalse(said.lowercased().contains("dismiss"), said)
+        }
     }
 }
 
@@ -222,7 +247,6 @@ final class ThreadListTests: XCTestCase {
     func testTheEmptyStateDescribesTheSurfaceRatherThanOpeningTheConversation() {
         XCTAssertTrue(AskThreads.empty.contains("in your own words"))
         XCTAssertTrue(AskThreads.empty.contains("with what came of it"))
-        XCTAssertFalse(AskThreads.empty.lowercased().contains("coach"))
         XCTAssertFalse(AskThreads.empty.contains("?"))
     }
 
@@ -247,7 +271,7 @@ final class ThreadTrailTests: XCTestCase {
 
         XCTAssertEqual(minted.source.door, "ask")
         XCTAssertEqual(minted.source.thread, "thr_0a1b2c3d")
-        XCTAssertEqual(minted.source.agentName, "Ask")
+        XCTAssertEqual(minted.source.agentName, "Coach")
     }
 
     func testDeletingTheConversationLeavesTheChangeAndTakesOnlyTheDoorOntoIt() throws {
@@ -258,7 +282,7 @@ final class ThreadTrailTests: XCTestCase {
         XCTAssertEqual(orphaned.state, .applied)
         XCTAssertEqual(orphaned.changeCount, 4)
         XCTAssertEqual(orphaned.historyLine(now: 1_754_600_000_000),
-                       "today · applied 4 changes from Ask")
+                       "today · applied 4 changes from Coach")
     }
 
     func testAChangeThroughTheMcpDoorCarriesNoConversation() throws {

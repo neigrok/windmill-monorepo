@@ -59,7 +59,7 @@ fun ProposalScreen(
     store: TrainingStore,
     backLabel: String,
     onBack: () -> Unit,
-    // Null where Ask is not offered. Nothing on the wire says whether a deployment has Ask, so the
+    // Null where Coach is not offered. Nothing on the wire says whether a deployment has Coach, so the
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
     onAsk: ((String) -> Unit)? = null,
 ) {
@@ -153,7 +153,7 @@ fun ProposalScreen(
                             .heightIn(min = GymTap.minimum)
                             .clickable { ask(proposal.routineName) },
                     ) {
-                        Text("Ask about this", style = GymType.numeral(12), color = GymSkin.accent)
+                        Text("Ask Coach about this", style = GymType.numeral(12), color = GymSkin.accent)
                         Text("›", style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.accent)
                     }
                 }
@@ -204,7 +204,7 @@ private fun StateChip(state: ProposalState) {
     val label = when (state) {
         ProposalState.Pending -> "Pending"
         ProposalState.Applied -> "Applied"
-        ProposalState.Dismissed -> "Dismissed"
+        ProposalState.Dismissed -> "Turned down"
         ProposalState.Superseded -> "Set aside"
     }
     Text(
@@ -365,16 +365,30 @@ private fun Foot(
     ) {
         said?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim, maxLines = 2) }
         if (!decidable) return@Column
+        var turningDown by remember { mutableStateOf(false) }
+        if (turningDown) {
+            ConfirmDialog(
+                title = Proposal.turnDownAsk,
+                body = Proposal.turnDownBody,
+                confirm = Proposal.turnDown,
+                destructive = true,
+                onConfirm = {
+                    turningDown = false
+                    onDecide(false)
+                },
+                onKeep = { turningDown = false },
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2), modifier = Modifier.fillMaxWidth()) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .heightIn(min = GymTap.primary - 8.dp)
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = !deciding) { onDecide(false) }
+                    .clickable(enabled = !deciding) { turningDown = true }
                     .padding(horizontal = WindmillSpace.x5),
             ) {
-                Text("Dismiss", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+                Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
             }
             Box(
                 contentAlignment = Alignment.Center,

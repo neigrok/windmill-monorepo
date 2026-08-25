@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
+import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Units
 import works.windmill.gym.store.LocalLog
@@ -58,6 +59,7 @@ fun SettingsScreen(
     origin: String,
     backLabel: String,
     onBack: () -> Unit,
+    onNotes: () -> Unit,
     say: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -96,6 +98,9 @@ fun SettingsScreen(
             onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
             onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
         )
+        // One caption for the three dials: it answers the question a lifter asks here, looking at them.
+        Caption(Notes.settingsLine)
+        NotesRow(onNotes)
         ConnectedLogRow(isSignedIn, origin)
         UnattributedRow(store, isSignedIn, say)
         ClosingNote()
@@ -132,7 +137,7 @@ private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
                     val picked = entry == units
                     Box(
                         Modifier
-                            .heightIn(min = 38.dp)
+                            .heightIn(min = GymTap.minimum)
                             .clip(RoundedCornerShape(WindmillRadius.full))
                             .background(if (picked) GymSkin.accent else Color.Transparent)
                             .clickable { onPick(entry) }
@@ -209,6 +214,24 @@ private fun ConfirmRow(
     }
 }
 
+// The secondary door to the notes; the front door is a row in Coach's own room.
+@Composable
+private fun NotesRow(onNotes: () -> Unit) {
+    SettingCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .clickable(onClick = onNotes),
+        ) {
+            Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+            Spacer(Modifier.weight(1f))
+            Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+        }
+    }
+}
+
 // The door goes to the CONNECTIONS LIST and not the setup page: that list is the shell's, in account
 // settings, since a grant belongs to the account rather than to one product.
 @Composable
@@ -280,7 +303,7 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
         Text("Saved on this phone, unclaimed", style = WindmillFont.body(15, FontWeight.Bold),
             color = GymSkin.ink)
         Caption("This phone was holding training that was never signed in to any account, from " +
-            "before this version. It is nobody's until you say it is yours — it has not been " +
+            "before this version. It is nobody’s until you say it is yours — it has not been " +
             "added to any log and it will not be, on its own.")
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(heldLine(held, live), style = GymType.numeral(13), color = GymSkin.inkDim)

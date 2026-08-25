@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
-  EXPORT_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError, UNCHANGED,
+  EXPORT_HREF, EXPORT_NOTES_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError, UNCHANGED,
 } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
@@ -851,7 +851,7 @@ test('renameExercise — one field, and the id it answers with is the id it was 
   assert.equal(failureReason(refused), 'the log wouldn’t take it as written');
 });
 
-test('shareSession — the coach link, minted on a tap, with no document to send', async () => {
+test('shareSession — the share link, minted on a tap, with no document to send', async () => {
   serve(ok({ token: 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0', expiresAt: 1_911_600_000_000 }));
   assert.deepEqual(await gymApi.shareSession('ses_1'), {
     token: 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0',
@@ -1437,11 +1437,12 @@ test('ask — one question into one thread, and the answer with its receipt, ste
 
 test('ask — every refusal arrives with the machine word the room reads it by', async () => {
   const refusals = [
-    [409, 'finish your workout first', 'ask-session-open'],
-    [409, 'that conversation is full', 'ask-thread-full'],
-    [409, 'that conversation id is taken', 'ask-thread-taken'],
-    [429, 'that’s Ask for now', 'ask-daily-limit'],
-    [429, 'this account has reached its AI ceiling', 'ask-out-of-budget'],
+    [409, 'finish your workout first — Coach reads a log that has stopped moving', 'ask-session-open'],
+    [409, 'this conversation holds four questions — start a new one', 'ask-thread-full'],
+    [409, 'that conversation id is already in use — start a new one', 'ask-thread-taken'],
+    [429, 'the next question frees up in a couple of hours', 'ask-daily-limit'],
+    [429, 'this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on', 'ask-out-of-budget'],
+    [503, 'Coach isn’t part of this Windmill. Your log is still yours to read.', 'ask-not-configured'],
   ];
   for (const [status, sentence, code] of refusals) {
     serve(refusal(status, sentence, code));
@@ -1532,4 +1533,70 @@ test('deleteThread — 204 and nothing back, for a conversation deleted twice as
 test('EXPORT_THREADS_HREF — the conversations as their own file, on the same origin', () => {
   assert.equal(EXPORT_THREADS_HREF, `${API_BASE}/v1/gym/export/threads`);
   assert.notEqual(EXPORT_THREADS_HREF, EXPORT_HREF);
+});
+
+test('EXPORT_NOTES_HREF — the third CSV, the notes as their own file, on the same origin', () => {
+  assert.equal(EXPORT_NOTES_HREF, `${API_BASE}/v1/gym/export/notes`);
+  assert.equal(new Set([EXPORT_HREF, EXPORT_THREADS_HREF, EXPORT_NOTES_HREF]).size, 3);
+});
+
+test('notes — the list is the store’s order, and an account with none is an empty list', async () => {
+  serve(ok({ notes: [{ id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1 }] }));
+  assert.deepEqual(await gymApi.notes(), [{ id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1 }]);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/notes', method: 'GET', credentials: 'include', contentType: 'application/json', body: undefined,
+  });
+  serve(ok({ notes: [] }));
+  assert.deepEqual(await gymApi.notes(), []);
+});
+
+test('saveNote — an upsert on the client-minted id, title and body only, the stored note back', async () => {
+  serve(ok({ note: { id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1 } }));
+  assert.deepEqual(await gymApi.saveNote('note_a', { title: 'Tone', body: 'Blunt.' }), {
+    id: 'note_a', position: 0, title: 'Tone', body: 'Blunt.', updatedAt: 1,
+  });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/notes/note_a', method: 'PUT', credentials: 'include', contentType: 'application/json',
+    body: '{"title":"Tone","body":"Blunt."}',
+  });
+});
+
+test('saveNote — the store’s refusals arrive with their sentence and their code', async () => {
+  serve(refusal(409, '10 of 10 notes. Delete one to add another.', 'notes-full'));
+  await assert.rejects(gymApi.saveNote('note_k', { title: 'Eleventh', body: '' }), (error) => {
+    assert.equal(error.status, 409);
+    assert.equal(error.detail, '10 of 10 notes. Delete one to add another.');
+    assert.equal(error.code, 'notes-full');
+    assert.equal(error.terminal, true);
+    return true;
+  });
+  serve(refusal(400, 'a note runs to 500 bytes'));
+  await assert.rejects(gymApi.saveNote('note_a', { title: 'Tone', body: 'x' }), (error) => {
+    assert.equal(error.status, 400);
+    assert.equal(error.detail, 'a note runs to 500 bytes');
+    return true;
+  });
+});
+
+test('deleteNote — a 204 whether the note was there or already gone', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.deleteNote('note_a'), null);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/notes/note_a', method: 'DELETE', credentials: 'include', contentType: 'application/json', body: undefined,
+  });
+});
+
+test('reorderNotes — the whole order in one write, the renumbered list back', async () => {
+  serve(ok({ notes: [{ id: 'note_b', position: 0, title: 'B', body: '', updatedAt: 1 }, { id: 'note_a', position: 1, title: 'A', body: '', updatedAt: 1 }] }));
+  const notes = await gymApi.reorderNotes(['note_b', 'note_a']);
+  assert.deepEqual(notes.map((note) => [note.id, note.position]), [['note_b', 0], ['note_a', 1]]);
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/notes', method: 'PUT', credentials: 'include', contentType: 'application/json',
+    body: '{"order":["note_b","note_a"]}',
+  });
+  serve(refusal(400, 'that order does not name every note', 'notes-order-mismatch'));
+  await assert.rejects(gymApi.reorderNotes(['note_b']), (error) => {
+    assert.equal(error.code, 'notes-order-mismatch');
+    return true;
+  });
 });

@@ -105,7 +105,7 @@ test('the two sheets that stand over a converted reading say what the other nume
   assert.equal(read('Backfill.jsx').includes('alsoReadsLabel'), false);
 });
 
-test('the coach’s shared page spells kilograms itself, in the render that prints the numbers', () => {
+test('the shared workout’s page spells kilograms itself, in the render that prints the numbers', () => {
   const source = read('share/SharedSession.jsx');
   const set = source.indexOf('spellWeightsIn(KG);');
   assert.equal(set > 0, true);

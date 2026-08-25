@@ -166,6 +166,17 @@ final class FinishTests: XCTestCase {
     }
 }
 
+final class DiscardTests: XCTestCase {
+    func testDiscardIsAskedBeforeItRunsAndTheAskingSaysWhatItDeletes() {
+        XCTAssertEqual(Finish.Discard.action, "Discard session")
+        XCTAssertEqual(Finish.Discard.title, "Discard this session?")
+        XCTAssertEqual(Finish.Discard.body,
+                       "Discarding deletes the session and its sets. There is no undoing it.")
+        XCTAssertEqual(Finish.Discard.confirm, "Discard")
+        XCTAssertEqual(Finish.Discard.keep, "Keep it")
+    }
+}
+
 final class FinishedSessionTests: XCTestCase {
     private func session(routineId: String?) -> Session {
         Session(id: "ses_1", startedAtMs: 1_000, finishedAtMs: 900_000, routineId: routineId)

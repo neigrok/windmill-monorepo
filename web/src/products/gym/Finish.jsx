@@ -1,12 +1,13 @@
 import React, { useRef, useState } from 'react';
+import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
   entryLabel, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref, weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
-import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
+import { comparison, DISCARD_CONFIRM, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { routineFromSession } from './routines.js';
-import { CoachShare } from './share/CoachShare.jsx';
+import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 
 export function FinishScreen({ id, log }) {
@@ -24,8 +25,8 @@ export function FinishScreen({ id, log }) {
   if (view.phase === 'absent') {
     return (
       <>
+        <Back href="#/gym/log">The log</Back>
         <p className="gym-quiet">That session isn’t in your log.</p>
-        <a className="gym-back" href="#/gym">Today</a>
       </>
     );
   }
@@ -36,7 +37,7 @@ export function FinishScreen({ id, log }) {
           The session is saved, but this didn’t load.
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
         </p>
-        <a className="gym-back" href={sessionHref(id)}>Session detail</a>
+        <Back href={sessionHref(id)}>Session detail</Back>
       </>
     );
   }
@@ -96,7 +97,7 @@ export function FinishScreen({ id, log }) {
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} log={log} />
       )}
 
-      {!review.slight && <CoachShare sessionId={id} />}
+      {!review.slight && <ShareWorkout sessionId={id} />}
 
       {!review.slight && (
         <div className="gym-finish-foot">
@@ -108,33 +109,48 @@ export function FinishScreen({ id, log }) {
   );
 }
 
+// A discard is the one unrecoverable delete of a whole workout on this surface: it is confirmed,
+// and the confirmation says what goes.
 function ShortSession({ id, log }) {
+  const [confirming, setConfirming] = useState(false);
   const [dropping, setDropping] = useState(false);
+
+  const discard = async () => {
+    if (dropping) return;
+    setDropping(true);
+    try {
+      await gymApi.discardSession(id);
+      log.reloadLog();
+      log.say('That session is out of your log.');
+      window.location.hash = '#/gym';
+    } catch (error) {
+      setDropping(false);
+      setConfirming(false);
+      log.say(`That session wasn’t discarded — ${failureReason(error)}.`);
+    }
+  };
+
   return (
     <section className="gym-short">
       <p className="gym-short-line">Keep it in the log, or drop it?</p>
-      <div className="gym-finish-foot">
-        <a className="gym-short-keep" href="#/gym">Keep it</a>
-        <button
-          type="button"
-          className="gym-short-discard"
-          onClick={async () => {
-            if (dropping) return;
-            setDropping(true);
-            try {
-              await gymApi.discardSession(id);
-              log.reloadLog();
-              log.say('That session is out of your log.');
-              window.location.hash = '#/gym';
-            } catch (error) {
-              setDropping(false);
-              log.say(`That session wasn’t discarded — ${failureReason(error)}.`);
-            }
-          }}
-        >
-          Discard session
-        </button>
-      </div>
+      {!confirming && (
+        <div className="gym-finish-foot">
+          <a className="gym-short-keep" href="#/gym">Keep it</a>
+          <button type="button" className="gym-short-discard" onClick={() => setConfirming(true)}>
+            Discard session
+          </button>
+        </div>
+      )}
+      {confirming && (
+        <section className="gym-confirm">
+          <p className="gym-confirm-title">{DISCARD_CONFIRM.title}</p>
+          <p className="gym-confirm-body">{DISCARD_CONFIRM.body}</p>
+          <div className="gym-finish-foot">
+            <button type="button" className="gym-confirm-keep" onClick={() => setConfirming(false)}>{DISCARD_CONFIRM.keep}</button>
+            <button type="button" className="gym-confirm-do" onClick={discard} aria-busy={dropping}>{DISCARD_CONFIRM.confirm}</button>
+          </div>
+        </section>
+      )}
     </section>
   );
 }

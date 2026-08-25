@@ -6,8 +6,8 @@ object ConnectedLog {
 
     const val head = "Your training log, inside your own Claude."
     const val sub =
-        "Not a coach in a chat tab. The training you have already logged, read by the assistant you " +
-            "already use."
+        "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the " +
+            "assistant you already use."
 
     const val sundayLabel = "Sunday, in your own Claude"
     const val sundayLine =
@@ -36,7 +36,7 @@ object ConnectedLog {
     const val connect = "Connect my log"
 
     const val onTheWeb =
-        "Opens the setup page in your browser — which line to paste where. Your tool's first call " +
+        "Opens the setup page in your browser — which line to paste where. Your tool’s first call " +
             "opens the approval screen itself."
 
     const val free = "Connecting your log is free. So is everything else in gym — there is nothing to buy here."
@@ -44,9 +44,9 @@ object ConnectedLog {
     const val canDoHead = "What it can do"
 
     const val canDo =
-        "Read your sets, sessions, routines and records. Record what happened — open a workout, log " +
+        "Read your sets, sessions, routines, records and notes. Record what happened — open a workout, log " +
             "sets, add a movement, write a day of the program that did not exist. Propose a change " +
-            "to a day that already stands. Mint a coach link to one workout — anybody holding that " +
+            "to a day that already stands. Mint a share link to one workout — anybody holding that " +
             "link reads that one workout without signing in, for thirty days unless you end it " +
             "sooner."
 
@@ -60,12 +60,12 @@ object ConnectedLog {
     const val deleteLevel =
         "Delete is its own level and is never implied by write — the consent screen gives it a line " +
             "of its own. It lets a tool discard a whole workout, permanently and its sets with it, " +
-            "end a coach link you have already handed out, and propose taking a day out of your " +
+            "end a share link you have already handed out, and propose taking a day out of your " +
             "program."
 
     const val whereItLives =
         "Every tool you have connected is listed in your Windmill account settings on the web — what " +
-            "each may do, and the Disconnect beside it. Disconnecting stops that tool's reads at " +
+            "each may do, and the Disconnect beside it. Disconnecting stops that tool’s reads at " +
             "once and keeps every proposal it already made."
 
     const val notNamedHere = "This phone does not read that list, so it names no tool of its own."

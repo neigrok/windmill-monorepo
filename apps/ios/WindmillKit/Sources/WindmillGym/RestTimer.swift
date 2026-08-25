@@ -28,9 +28,8 @@ public enum Rest {
         return min(1, max(0, elapsed / Double(targetSeconds)))
     }
 
-    public static func reading(targetSeconds: Int, startedAtMs: Int64, now: Int64) -> String {
-        let left = Int64(targetSeconds) - (now - startedAtMs) / 1000
-        guard left < 0 else { return Readout.clock(left * 1000) }
-        return "+" + Readout.clock(-left * 1000)
+    // Time since the last set, counting up throughout: the bar and the chime carry the target, the numeral never flips.
+    public static func reading(startedAtMs: Int64, now: Int64) -> String {
+        Readout.clock(max(0, now - startedAtMs))
     }
 }

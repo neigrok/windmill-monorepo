@@ -142,7 +142,7 @@ test('index.html still carries both unfurl sentinels', () => {
 });
 
 // A room is a PREFIX: /app/journal/2026-07-20 is a day in the canvas and /app/gym/shared/<token> is
-// somebody's coach link, and both are still that room. The bare /app and the account surfaces are
+// somebody's shared workout, and both are still that room. The bare /app and the account surfaces are
 // nobody's product, so they wear the family clay.
 test('a room claims its own deep paths, and only those', () => {
   assert.equal(boot('/app/journal').attributes['data-brand'], 'journal');

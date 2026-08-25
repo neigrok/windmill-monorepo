@@ -20,7 +20,7 @@ public enum ProposalState: String, Decodable, Sendable {
         switch self {
         case .pending: return "Pending"
         case .applied: return "Applied"
-        case .dismissed: return "Dismissed"
+        case .dismissed: return "Turned down"
         case .superseded: return "Set aside"
         }
     }
@@ -43,7 +43,7 @@ public struct ProposalSource: Equatable, Decodable, Sendable {
     }
 
     public var agentName: String {
-        guard let agent, !agent.isEmpty else { return door == "ask" ? "Ask" : "your connected agent" }
+        guard let agent, !agent.isEmpty else { return door == "ask" ? "Coach" : "your connected agent" }
         return agent
     }
 }
@@ -102,7 +102,7 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         switch state {
         case .pending: return "\(when) · \(what) from \(source.agentName), waiting"
         case .applied: return "\(when) · applied \(what) from \(source.agentName)"
-        case .dismissed: return "\(when) · dismissed \(what) from \(source.agentName)"
+        case .dismissed: return "\(when) · turned down \(what) from \(source.agentName)"
         case .superseded: return "\(when) · set aside \(what) from \(source.agentName)"
         }
     }
@@ -267,6 +267,13 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     }
 
     // The server's count, never the rows this build drew: apply is atomic against the whole document.
+    // Turning down is settled for good, so it is asked before it runs; closing the screen decides nothing.
+    public static let turnDown = "Turn this down"
+    public static let turnDownTitle = "Turn this down?"
+    public static let turnDownBody = "Nothing changes, and it stays in the routine’s history as a record."
+    public static let turnDownConfirm = "Turn down"
+    public static let turnDownKeep = "Keep it"
+
     public var applyLabel: String {
         guard intent == .revise else { return "Remove \(baseName)" }
         return "Apply all \(head.changeCount)"
@@ -289,7 +296,7 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
         case .applied:
             return "Applied to \(baseName) \(when). Kept on the routine as a dated record — the program’s history, not a toast that disappears."
         case .dismissed:
-            return "Dismissed \(when). No reason asked for, nothing changed, and it stays in the routine’s history in case you want it back."
+            return "Turned down \(when). Nothing changed, and it stays in the routine’s history as a record."
         case .superseded:
             return "\(baseName) changed after this was written, so it was set aside \(when). None of it was applied, and it stays in the routine’s history."
         }

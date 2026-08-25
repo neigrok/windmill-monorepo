@@ -4,6 +4,7 @@ import WindmillPlatform
 struct AskDoors {
     let send: (_ thread: String, _ question: String) async -> Result<AskAnswer, AskRefusal>
     let openThreads: () -> Void
+    let openNotes: () -> Void
     let connect: () -> Void
     let openProposal: (String) -> Void
     let absent: () -> Void
@@ -18,10 +19,13 @@ struct AskScreen: View {
     @State private var question = ""
     @State private var sending = false
     @State private var minted: [String: Proposal] = [:]
+    // Exchanges whose step list is open; the receipt above it is drawn either way.
+    @State private var opened: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
             head
+            NotesDoorRow(action: doors.openNotes)
             ScrollView {
                 VStack(alignment: .leading, spacing: WindmillSpace.x5) {
                     if conversation.exchanges.isEmpty { opening }
@@ -74,32 +78,32 @@ struct AskScreen: View {
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(Ask.dailyLimit)
+            connectDoor
+        }
+    }
+
+    // The one path that is not rationed: the empty room offers it, and the cap-reached moment offers it again.
+    private var connectDoor: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            Text(Ask.freeDoor)
                 .font(GymType.numeral(12.5))
                 .foregroundStyle(skin.inkFaint)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                Text(Ask.freeDoor)
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkFaint)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(action: doors.connect) {
-                    Text(Ask.connect)
-                        .font(WindmillFont.body(15, .semibold))
-                        .foregroundStyle(skin.accent)
-                        .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                            .strokeBorder(skin.lineStrong, lineWidth: 1))
-                }
+            Button(action: doors.connect) {
+                Text(Ask.connect)
+                    .font(WindmillFont.body(15, .semibold))
+                    .foregroundStyle(skin.accent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                        .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
-            .padding(WindmillSpace.x4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                .strokeBorder(skin.line, lineWidth: 1))
         }
+        .padding(WindmillSpace.x4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
+        .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+            .strokeBorder(skin.line, lineWidth: 1))
     }
 
     private func asked(_ text: String) -> some View {
@@ -126,33 +130,56 @@ struct AskScreen: View {
                 .font(GymType.numeral(12.5))
                 .foregroundStyle(skin.inkFaint)
         case .answered(let answer):
-            answered(answer)
+            answered(answer, of: exchange)
+        case .refused(let why) where why.capReached:
+            // Said once, by the cap-reached state under the thread — never as a card as well.
+            EmptyView()
         case .refused(let why):
             refused(why, of: exchange)
         }
     }
 
-    private func answered(_ answer: AskAnswer) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+    // The receipt is always visible; the steps sit behind it and open on one tap.
+    private func answered(_ answer: AskAnswer, of exchange: AskExchange) -> some View {
+        let lines = Ask.stepLines(answer.steps)
+        let open = opened.contains(exchange.id)
+        return VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             Text(answer.answer)
                 .font(WindmillFont.body(14.5))
                 .foregroundStyle(skin.ink)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-            if !answer.steps.isEmpty { steps(answer.steps) }
             ForEach(answer.proposals, id: \.self) { id in proposal(id) }
-            Text(answer.read.line)
-                .font(GymType.numeral(11))
-                .foregroundStyle(skin.inkFaint)
+            Button {
+                if open { opened.remove(exchange.id) } else { opened.insert(exchange.id) }
+            } label: {
+                HStack(spacing: WindmillSpace.x1) {
+                    Text(answer.read.line)
+                        .font(GymType.numeral(11))
+                        .foregroundStyle(skin.inkFaint)
+                    if !lines.isEmpty {
+                        Image(systemName: open ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+                }
+                .frame(minHeight: GymTap.minimum - 18)
+                .contentShape(Rectangle())
+            }
+            .disabled(lines.isEmpty)
+            .accessibilityLabel(answer.read.line)
+            .accessibilityHint(lines.isEmpty ? "" : (open ? "Hides what it read" : "Shows what it read"))
+            if open, !lines.isEmpty { steps(lines) }
         }
     }
 
-    private func steps(_ called: [AskStep]) -> some View {
+    private func steps(_ lines: [String]) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(called.enumerated()), id: \.offset) { _, step in
-                Text(step.line)
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line)
                     .font(GymType.numeral(12))
-                    .foregroundStyle(step.failed ? skin.alarmInk : skin.inkDim)
+                    .foregroundStyle(skin.inkDim)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(WindmillSpace.x3)
@@ -245,7 +272,44 @@ struct AskScreen: View {
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
     }
 
+    // No clock: the state stands for this visit, and the way back is a new conversation (which meets the 429 again while capped).
+    // It takes the place of the input and the send control only; the allowance line above them stays.
+    private var capReachedState: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+            Text(Ask.capReached)
+                .font(WindmillFont.body(15))
+                .foregroundStyle(skin.inkDim)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                conversation = AskConversation()
+                opened = []
+            } label: {
+                Text(AskThreads.askSomethingNew)
+                    .font(WindmillFont.body(15, .semibold))
+                    .foregroundStyle(skin.accent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                        .strokeBorder(skin.lineStrong, lineWidth: 1))
+            }
+            connectDoor
+        }
+    }
+
+    // The promise is always drawn; below it stands the input, or the cap-reached moment that replaces it.
     private var composer: some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+            Text(Ask.allowance)
+                .font(GymType.numeral(11.5))
+                .foregroundStyle(skin.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            if conversation.capReached { capReachedState } else { input }
+        }
+        .padding(.horizontal, WindmillSpace.x4)
+        .padding(.top, WindmillSpace.x3)
+    }
+
+    private var input: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             HStack(spacing: WindmillSpace.x2) {
                 TextField(Ask.placeholder, text: $question, axis: .vertical)
@@ -275,8 +339,6 @@ struct AskScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, WindmillSpace.x4)
-        .padding(.top, WindmillSpace.x3)
     }
 
     private var canSend: Bool {
@@ -361,7 +423,10 @@ struct AskSignedOutStance: View {
     }
 }
 
+// Notes stay reachable here: a connected agent reads them whether or not this Windmill carries Coach.
 struct AskAbsentStance: View {
+    let onNotes: () -> Void
+
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
@@ -372,10 +437,36 @@ struct AskAbsentStance: View {
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
+            NotesDoorRow(action: onNotes)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, WindmillSpace.x4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// A row, never a third icon in the top bar: the notes are the lifter's, not Coach's.
+struct NotesDoorRow: View {
+    let action: () -> Void
+
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: WindmillSpace.x3) {
+                Text(Ask.notesDoor)
+                    .font(WindmillFont.body(14.5, .semibold))
+                    .foregroundStyle(skin.ink)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(skin.inkFaint)
+            }
+            .padding(.horizontal, WindmillSpace.x4)
+            .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(skin.line).frame(height: 1) }
     }
 }
 

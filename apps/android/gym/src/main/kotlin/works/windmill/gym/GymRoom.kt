@@ -51,6 +51,8 @@ import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
@@ -74,6 +76,8 @@ import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
+import works.windmill.gym.ui.NoteEditorScreen
+import works.windmill.gym.ui.NotesScreen
 import works.windmill.gym.ui.ProposalScreen
 import works.windmill.gym.ui.RecordScreen
 import works.windmill.gym.ui.RoutineBuilder
@@ -107,7 +111,7 @@ class GymModule : ProductModule {
 internal enum class Tab(val title: String) {
     Routines("Routines"),
     Log("The log"),
-    Ask("Ask"),
+    Coach("Coach"),
 }
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
@@ -117,19 +121,22 @@ internal fun restoredTab(saved: Any?): Tab =
 
 internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::restoredTab)
 
-// A session travels as the ROW the list already holds, which carries facts no other read gives back.
-// A movement, routine, proposal and thread travel as IDS, because what they say changes under them;
-// a proposal carries the routine the diff was written against. `Ask` carries a DRAFT, never the
-// thread — the thread is hoisted into the room below so it outlives this stack.
+// A session travels as the ROW the list already holds, which carries facts no other read gives back;
+// so does a note, which the list just read and the editor edits whole. A movement, routine, proposal
+// and thread travel as IDS, because what they say changes under them; a proposal carries the routine
+// the diff was written against. `Coach` carries a DRAFT, never the thread — the thread is hoisted
+// into the room below so it outlives this stack.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
     data class Program(val routineId: String) : Away
     data class Proposal(val proposalId: String, val routineId: String) : Away
-    data class Ask(val seed: String = "") : Away
+    data class Coach(val seed: String = "") : Away
     data object Threads : Away
     data class Thread(val threadId: String) : Away
     data object Settings : Away
+    data object Notes : Away
+    data class NoteEditor(val note: Note?, val seedTitle: String) : Away
 }
 
 // The three tabs, the live session, the finish screen, and the screens a tab can push. The shell
@@ -189,8 +196,12 @@ fun GymRoom(account: Account) {
     // Whether this room has met the lifter. NOT saved: `account.user` is null until /v1/me answers,
     // so the first frame of every launch looks like nobody signed in.
     var seatRead by remember { mutableStateOf(account.user != null) }
-    // This deployment has no Ask: a bare 404 from the route. Not remembered past the room's life.
+    // This deployment has no Coach: a bare 404 from the route. Not remembered past the room's life.
     var askAbsent by remember { mutableStateOf(false) }
+    // The daily allowance ran out: the composer is down until the room is entered again, and the
+    // log is the one that says whether the bucket has refilled. Saved: a recreation is not a re-entry,
+    // so it must not hand the composer back mid-cap.
+    var capped by rememberSaveable { mutableStateOf(false) }
 
     // The note is about the screen you are ON, so every move between destinations clears it.
     fun look(at: Away) {
@@ -361,6 +372,10 @@ fun GymRoom(account: Account) {
                         conversation = from + AskExchange(question = asked, answer = outcome.answer)
                     is AskOutcome.Refused ->
                         conversation = from + AskExchange(question = asked, trouble = outcome.said)
+                    is AskOutcome.Capped -> {
+                        conversation = from + AskExchange(question = asked, trouble = outcome.said)
+                        capped = true
+                    }
                     is AskOutcome.Failed ->
                         conversation = from + AskExchange(
                             question = asked, trouble = outcome.said, again = true)
@@ -386,8 +401,9 @@ fun GymRoom(account: Account) {
     fun askSomethingNew() {
         conversation = emptyList()
         conversationId = ""
+        capped = false
         away = emptyList()
-        tab = Tab.Ask
+        tab = Tab.Coach
     }
 
     // The save lives here rather than on the builder: the builder's composition dies the moment the
@@ -458,11 +474,13 @@ fun GymRoom(account: Account) {
             is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
             is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
             is Away.Proposal -> "Proposal"
-            is Away.Ask -> "Ask"
+            is Away.Coach -> Ask.title
             Away.Threads -> Threads.title
             // The noun, not the thread's title: a title is the lifter's first message verbatim.
             is Away.Thread -> Threads.conversation
             Away.Settings -> "Gym"
+            Away.Notes -> Notes.title
+            is Away.NoteEditor -> Notes.title
             null -> tab.title
         }
 
@@ -528,7 +546,27 @@ fun GymRoom(account: Account) {
                     origin = origin,
                     backLabel = beneath,
                     onBack = { back() },
+                    onNotes = { look(Away.Notes) },
                     say = { note = it },
+                )
+                standing is Away.Notes -> NotesScreen(
+                    store = store,
+                    isSignedIn = account.isSignedIn,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
+                    onSignIn = LocalShellActions.current.openYou,
+                    say = { note = it },
+                )
+                // The list beneath reads itself again on the way back: a saved note is on the list
+                // because the log says so.
+                standing is Away.NoteEditor -> NoteEditorScreen(
+                    note = standing.note,
+                    seedTitle = standing.seedTitle,
+                    store = store,
+                    backLabel = beneath,
+                    onBack = { back() },
+                    onDone = { back() },
                 )
                 standing is Away.Session -> SessionScreen(
                     summary = standing.summary,
@@ -558,25 +596,28 @@ fun GymRoom(account: Account) {
                     store = store,
                     backLabel = beneath,
                     onBack = { back() },
-                    // Offered only where Ask itself is: an account, and a deployment that has one.
+                    // Offered only where Coach itself is: an account, and a deployment that has one.
                     onAsk = if (account.isSignedIn && !askAbsent) {
-                        { about -> look(Away.Ask("What would this change to $about do?")) }
+                        { about -> look(Away.Coach("What would this change to $about do?")) }
                     } else {
                         null
                     },
                 )
-                standing is Away.Ask -> AskScreen(
+                standing is Away.Coach -> AskScreen(
                     store = store,
                     thread = conversation,
                     asking = asking,
+                    capped = capped,
                     onAsk = { asked -> ask(conversation, asked) },
                     // Only the newest question is ever asked again: a retry further up would drop
                     // everything asked since.
                     onRetry = {
                         conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
                     },
+                    onAskNew = { askSomethingNew() },
                     seed = standing.seed,
                     onThreads = { look(Away.Threads) },
+                    onNotes = { look(Away.Notes) },
                     origin = origin,
                     backLabel = beneath,
                     onBack = { back() },
@@ -601,21 +642,24 @@ fun GymRoom(account: Account) {
                     say = { note = it },
                 )
                 tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
-                // A tab cannot be absent the way a door can, so signed out and no-Ask each draw a
+                // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                 // designed stance rather than a 401.
-                tab == Tab.Ask && !account.isSignedIn ->
+                tab == Tab.Coach && !account.isSignedIn ->
                     AskSignedOutStance(onSignIn = LocalShellActions.current.openYou)
-                tab == Tab.Ask && askAbsent -> AskAbsentStance()
-                tab == Tab.Ask -> AskScreen(
+                tab == Tab.Coach && askAbsent -> AskAbsentStance()
+                tab == Tab.Coach -> AskScreen(
                     store = store,
                     thread = conversation,
                     asking = asking,
+                    capped = capped,
                     onAsk = { asked -> ask(conversation, asked) },
                     onRetry = {
                         conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question) }
                     },
+                    onAskNew = { askSomethingNew() },
                     seed = "",
                     onThreads = { look(Away.Threads) },
+                    onNotes = { look(Away.Notes) },
                     origin = origin,
                     backLabel = null,
                     onBack = null,
@@ -659,6 +703,9 @@ fun GymRoom(account: Account) {
                 current = tab,
                 onPick = { picked ->
                     note = null
+                    // Entering Coach again offers the composer; whether the allowance is back is
+                    // the log's to say.
+                    if (picked != tab) capped = false
                     tab = picked
                 },
                 initial = account.user?.email?.take(1) ?: "",

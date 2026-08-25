@@ -8,6 +8,7 @@ struct SettingsScreen: View {
     let web: URL
     let connected: ConnectedLogState
     let onConnectedLog: () -> Void
+    let onNotes: () -> Void
     let say: (String?) -> Void
 
     @Environment(\.gymSkin) private var skin
@@ -18,6 +19,9 @@ struct SettingsScreen: View {
                 units
                 restTimer
                 confirmation
+                caption(Settings.coachReads)
+                    .padding(.horizontal, WindmillSpace.x1)
+                    .padding(.vertical, WindmillSpace.x2)
                 doors
             }
             .padding(.horizontal, WindmillSpace.x4)
@@ -121,8 +125,14 @@ struct SettingsScreen: View {
 
     private var doors: some View {
         VStack(alignment: .leading, spacing: 9) {
+            Button(action: onNotes) {
+                door(title: Notes.title, line: Notes.purpose, lit: false, away: false)
+            }
             Link(destination: page("/#/settings")) {
-                door(title: "Export", line: "every set as CSV · yours, always", lit: false, away: true)
+                door(title: "Export", line: "sets and notes as CSV · yours, always", lit: false, away: true)
+            }
+            Link(destination: page("/#/gym/coach/threads")) {
+                door(title: "Export conversations", line: "every Coach conversation as CSV", lit: false, away: true)
             }
             Button(action: onConnectedLog) {
                 door(title: ConnectedLog.stateTitle,
@@ -198,4 +208,9 @@ struct SettingsScreen: View {
             say(why.line("that setting is on this device, not on the log"))
         }
     }
+}
+
+enum Settings {
+    // Beside the dials, naming what Coach excludes rather than pointing at it.
+    static let coachReads = "Coach reads your notes, not your settings."
 }

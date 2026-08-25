@@ -97,13 +97,13 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
     // A name gym retired answers with what replaced it, on this door as over MCP.
     if (std::optional<ToolRetirement> retired = inner_.retirement(name))
       return ToolResult::failure(name + ": " + retired->sentence);
-    return ToolResult::failure(name + ": no such tool — call tools/list for what Ask may do.");
+    return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
   }
   if (declared->access != Access::read && !mintsProposal(name))
     // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
     // every grant.
     return ToolResult::failure(name +
-                               ": Ask reads the log and proposes; it cannot change what a lifter "
+                               ": Coach reads the log and proposes; it cannot change what a lifter "
                                "logged. Tell them that one is theirs to change, and name the workout "
                                "and the movement so they can find it.");
   // The grant, checked where the CALL is and not only where the catalog is.
@@ -113,6 +113,13 @@ ToolResult AskTools::callTool(const std::string& name, const Json::Value& argume
   if (std::optional<std::string> unknown =
           unknownArgument(declared->descriptor["inputSchema"], arguments))
     return ToolResult::failure(name + ": " + *unknown);
+  // One proposal per turn, judged off `mintsProposal` and off what this run already minted — never
+  // off a list of names. A second mint on the same routine would supersede the first before the
+  // model's answer even named it, so the refusal lands BEFORE the inner call, in a sentence the
+  // model can act on.
+  if (mintsProposal(name) && !proposals_.empty())
+    return ToolResult::failure(name + ": you already wrote a proposal this turn; fold both into "
+                                      "one document");
 
   const ToolResult outcome = inner_.callTool(
       name, arguments, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);

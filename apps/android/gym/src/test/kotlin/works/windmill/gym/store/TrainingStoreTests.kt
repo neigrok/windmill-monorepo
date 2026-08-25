@@ -29,6 +29,8 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
@@ -2281,7 +2283,7 @@ class TrainingStoreTests {
         val store = makeStore(sync = server)
         store.connect(account(signedIn = false))
 
-        assertEquals(AskOutcome.Refused("Ask reads your account's log — sign in first"),
+        assertEquals(AskOutcome.Refused("Coach reads your log — sign in first"),
             store.ask("thr_1", "what's stalled?"))
         assertFalse(server.calls.contains("ask"))
     }
@@ -2325,8 +2327,11 @@ class TrainingStoreTests {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = true))
-        server.refuseAsk = refusal(429, code = "ask-daily-limit", message = "that's Ask for now")
-        assertEquals(AskOutcome.Refused("that's Ask for now"), store.ask("thr_1", "what's stalled?"))
+        server.refuseAsk = refusal(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours")
+        assertEquals("the daily cap takes the composer down",
+            AskOutcome.Capped("the next question frees up in a couple of hours"), store.ask("thr_1", "what's stalled?"))
+        server.refuseAsk = refusal(429, code = "ask-out-of-budget", message = "this account has reached its AI ceiling")
+        assertEquals(AskOutcome.Refused("this account has reached its AI ceiling"), store.ask("thr_1", "what's stalled?"))
 
         server.refuseAsk = storageFailure
         assertEquals(AskOutcome.Failed("internal error"), store.ask("thr_1", "what's stalled?"))
@@ -2414,11 +2419,75 @@ class TrainingStoreTests {
     }
 
     @Test
+    fun testNotesAreTheAccountsAndNeverReachTheLogSignedOut() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = false))
+        val signIn = WriteFailure.Refused("Notes live with your account — sign in first")
+
+        assertEquals(GymResult.Failed(signIn), store.notes())
+        assertEquals(GymResult.Failed(signIn), store.saveNote("note_1", NoteWrite("Tone", "blunt")))
+        assertEquals(signIn, store.deleteNote("note_1"))
+        assertEquals(GymResult.Failed(signIn), store.reorderNotes(listOf("note_1")))
+        assertTrue(server.calls.none { it in listOf("notes", "writeNote", "deleteNote", "reorderNotes") })
+    }
+
+    @Test
+    fun testANoteIsSavedEditedReorderedAndDeletedInTheLogsOwnOrder() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+
+        val first = store.saveNote("note_a", NoteWrite("How I want to be talked to", "Blunt."))
+        val second = store.saveNote("note_b", NoteWrite("What I am training for", "A 140 squat."))
+        assertEquals(GymResult.Ok(Note("note_a", 0, "How I want to be talked to", "Blunt.", 7_000)), first)
+        assertEquals(GymResult.Ok(Note("note_b", 1, "What I am training for", "A 140 squat.", 7_000)), second)
+
+        assertEquals("a spent id edits in place and keeps its position",
+            GymResult.Ok(Note("note_a", 0, "How I want to be talked to", "Blunt, no cheering.", 7_000)),
+            store.saveNote("note_a", NoteWrite("How I want to be talked to", "Blunt, no cheering.")))
+
+        val reordered = store.reorderNotes(listOf("note_b", "note_a"))
+        assertEquals(GymResult.Ok(listOf(
+            Note("note_b", 0, "What I am training for", "A 140 squat.", 7_000),
+            Note("note_a", 1, "How I want to be talked to", "Blunt, no cheering.", 7_000),
+        )), reordered)
+
+        assertNull(store.deleteNote("note_b"))
+        assertNull("a note already gone is gone", store.deleteNote("note_b"))
+        assertEquals(GymResult.Ok(listOf(
+            Note("note_a", 0, "How I want to be talked to", "Blunt, no cheering.", 7_000),
+        )), store.notes())
+    }
+
+    @Test
+    fun testTheLogsRefusalsReachTheScreenInTheLogsOwnWords() = runTest {
+        val server = FakeTraining()
+        val store = makeStore(sync = server)
+        store.connect(account(signedIn = true))
+        repeat(10) { store.saveNote("note_$it", NoteWrite("note $it", "")) }
+
+        assertEquals(GymResult.Failed(WriteFailure.Refused("10 of 10 notes. Delete one to add another.")),
+            store.saveNote("note_more", NoteWrite("eleven", "")))
+        assertEquals(GymResult.Failed(WriteFailure.Refused("a note runs to 500 bytes")),
+            store.saveNote("note_0", NoteWrite("note 0", "x".repeat(501))))
+        assertEquals(GymResult.Failed(WriteFailure.Refused("a title runs to 60 characters")),
+            store.saveNote("note_0", NoteWrite("t".repeat(61), "")))
+        assertEquals(GymResult.Failed(WriteFailure.Refused("that order does not name every note")),
+            store.reorderNotes(listOf("note_0")))
+
+        server.refuseNotes = storageFailure
+        assertEquals("a quiet log is not an empty notebook",
+            GymResult.Failed(WriteFailure.Refused("internal error")), store.notes())
+        assertEquals(WriteFailure.Refused("internal error"), store.deleteNote("note_0"))
+    }
+
+    @Test
     fun testTheThreadDoorsNeverReachTheLogSignedOut() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
         store.connect(account(signedIn = false))
-        val signIn = WriteFailure.Refused("Ask reads your account's log — sign in first")
+        val signIn = WriteFailure.Refused("Coach reads your log — sign in first")
 
         assertEquals(GymResult.Failed(signIn), store.threads())
         assertEquals(GymResult.Failed(signIn), store.thread("thr_1"))

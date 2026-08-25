@@ -13,6 +13,7 @@ function preferencesStore(initial) {
     api: {
       async preferences() { return initial; },
       async sessions() { return []; },
+      async notes() { return []; },
       savePreferences(document) {
         return new Promise((resolve, reject) => {
           puts.push({

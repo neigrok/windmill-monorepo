@@ -46,8 +46,10 @@ export const gymRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importGymApp,
+  // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
+  // beside the account's close.
   settingsSections: {
-    data: [GymSettingsSection],
+    main: [GymSettingsSection],
   },
   landing: {
     head: gymLandingHead,
@@ -62,8 +64,8 @@ export const gymRoutes = {
     // The module the boot preloads this room from (scripts/appBoot.js); checked by test/shell-boundaries.
     module: 'src/products/gym/GymApp.jsx',
     scope: { theme: 'dark', brand: 'gym' },
-    // The coach's link must never be upgraded into the room: whoever opens it may have no account, so
-    // the app's rail and a Sign in seat may not be drawn around it.
+    // A shared workout's link must never be upgraded into the room: whoever opens it may have no
+    // account, so the app's rail and a Sign in seat may not be drawn around it.
     bare: (hash) => sharedTokenOf(hash) != null,
     // Every surface derives gym's state from this word; nothing outside this line spells it by hand.
     status: 'open',

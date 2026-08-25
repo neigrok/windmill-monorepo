@@ -4,8 +4,9 @@ import { listMcpKeys } from '../../../shell/auth/McpKeyClient.js';
 import { listGrants } from '../../../shell/auth/OAuthClient.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { connectedLabel, connectionsToTheLog, NOTHING_CONNECTED } from '../connect/connect.js';
-import { EXPORT_HREF, gymApi } from '../gymApi.js';
-import { CONNECT_HREF } from '../log.js';
+import { EXPORT_HREF, EXPORT_NOTES_HREF, gymApi } from '../gymApi.js';
+import { CONNECT_HREF, NOTES_HREF } from '../log.js';
+import { EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, SETTINGS_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
 import {
   preferenceRefusal, preferencesWrite, readPreferences, REST_CHOICES, restLabel,
@@ -14,6 +15,7 @@ import {
 export function GymSettingsSection({ api = gymApi } = {}) {
   const [preferences, setPreferences] = useState(null);
   const [hasLog, setHasLog] = useState(false);
+  const [hasNotes, setHasNotes] = useState(false);
   const [refused, setRefused] = useState('');
   // The document the store last confirmed; a ref, so a reverting reply cannot close over a stale copy.
   const stored = useRef(null);
@@ -34,6 +36,9 @@ export function GymSettingsSection({ api = gymApi } = {}) {
       .catch(() => {});
     api.sessions({ limit: 1 })
       .then((sessions) => { if (live) setHasLog(sessions.length > 0); })
+      .catch(() => {});
+    api.notes()
+      .then((notes) => { if (live) setHasNotes(notes.length > 0); })
       .catch(() => {});
     return () => { live = false; };
   }, [api]);
@@ -106,11 +111,30 @@ export function GymSettingsSection({ api = gymApi } = {}) {
         buzzes or beeps either way; the switch records what you want, it does not act here.
       </Row>
 
+      {/* The line names what Coach does not read, so it is true wherever it sits on the page. */}
+      <a href={NOTES_HREF} style={look.door}>
+        <span style={look.doorMain}>
+          <span style={styles.primaryText}>Notes</span>
+          <span style={styles.metaText}>{SETTINGS_LINE}</span>
+        </span>
+        <span aria-hidden="true" style={look.chevron}>›</span>
+      </a>
+
       {hasLog && (
         <a href={EXPORT_HREF} style={look.door}>
           <span style={look.doorMain}>
             <span style={styles.primaryText}>Export</span>
             <span style={styles.metaText}>every set as CSV · yours, always</span>
+          </span>
+          <span aria-hidden="true" style={look.chevron}>›</span>
+        </a>
+      )}
+
+      {hasNotes && (
+        <a href={EXPORT_NOTES_HREF} style={look.door}>
+          <span style={look.doorMain}>
+            <span style={styles.primaryText}>{EXPORT_NOTES_VERB}</span>
+            <span style={styles.metaText}>{EXPORT_NOTES_LINE}</span>
           </span>
           <span aria-hidden="true" style={look.chevron}>›</span>
         </a>

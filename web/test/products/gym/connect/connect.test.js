@@ -74,7 +74,7 @@ test('connectedLabel says when a tool was connected, and claims no read it canno
 });
 
 test('the level lines name the writes that land, not only the ones that wait', () => {
-  assert.equal(LEVEL_LINES.read.startsWith('Read your log'), true);
+  assert.equal(LEVEL_LINES.read, 'Read your log — sets, workouts, routines, records, notes and how your gym is set up');
   for (const lands of ['Record what happened', 'add a new day or a new movement', 'share one workout by link']) {
     assert.equal(LEVEL_LINES.write.includes(lands), true, lands);
   }
@@ -98,8 +98,6 @@ test('no sentence on this surface says an agent writes nothing, or deletes nothi
   }
   assert.equal(PITCH_POINTS.some((point) => point.includes('waits for your tap')), true);
   assert.equal(PITCH_POINTS.some((point) => point.includes('lands right away')), true);
-  assert.equal(connect.INVITATION_LINE.includes('a new day lands'), true);
-  assert.equal(connect.INVITATION_LINE.includes('waits for your tap'), true);
   assert.equal(APPROVE_WITH_CARE.includes('permanently, with no undo'), true);
 });
 

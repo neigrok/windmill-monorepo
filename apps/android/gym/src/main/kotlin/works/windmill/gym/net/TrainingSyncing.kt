@@ -9,6 +9,8 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.Review
@@ -103,4 +105,17 @@ interface TrainingSyncing {
     suspend fun thread(id: String): AskThread?
 
     suspend fun deleteThread(id: String)
+
+    // In precedence order, ten at most. Account-only: nothing on this phone keeps a copy.
+    suspend fun notes(): List<Note>
+
+    // Upsert by the client-minted id: a new id lands last, a spent id edits. Past ten notes or past
+    // the title and body bounds the log refuses in its own words, and the screen shows those.
+    suspend fun writeNote(id: String, write: NoteWrite): Note
+
+    // 204 for a note that is already gone.
+    suspend fun deleteNote(id: String)
+
+    // Whole-order replace, naming every note of the account exactly once.
+    suspend fun reorderNotes(order: List<String>): List<Note>
 }

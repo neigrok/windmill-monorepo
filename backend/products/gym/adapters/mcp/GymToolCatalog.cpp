@@ -1,5 +1,6 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
+#include "products/gym/domain/Note.h"
 #include "products/gym/domain/Proposal.h"
 #include "products/gym/domain/Routine.h"
 #include "products/gym/domain/Training.h"
@@ -209,7 +210,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "rep target this product can express and a zero could not. `revision` is the routine's "
         "version; read it and never send it. `pendingProposal` is present ONLY while a change is "
         "waiting for the lifter to tap Apply — the newest one, from any connection or from the app's "
-        "own Ask; its `source` says whose. Read it before you propose anything: a new proposal of "
+        "own Coach; its `source` says whose. Read it before you propose anything: a new proposal of "
         "yours on that routine replaces the one YOU already have waiting there and leaves another "
         "agent's standing.",
         p, {}));
@@ -224,6 +225,18 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is "
         "no volume, no score and no streak here — every number is a fact with a direction.",
         p, {}));
+  }
+  {
+    // The bounds are the entity's (domain/Note.h) and the schema's; the sentence states them.
+    tools.push_back(tool("list_notes", Access::read,
+        "The notes the lifter wrote FOR the agent reading their log — at most ten, each a title of "
+        "up to 60 characters and a body of up to 500 bytes, stored exactly as typed. They are the "
+        "lifter's own standing instructions to you (how to talk to them, what they are training "
+        "for, the programme they run), and the order is precedence: the top note wins where two "
+        "disagree. Follow them. A set's `note` is a record of that set and not one of these. "
+        "Answers {notes: [{position, title, body}]} and carries no `read` block: a note is not a "
+        "log row. Takes no arguments.",
+        Json::Value(Json::objectValue), {}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -342,7 +355,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["sessionId"] = sessionHandle();
     tools.push_back(tool("share_session", Access::write,
-        "Mint a link to ONE workout for a coach. Answers {url, token, expiresAt}: hand over the "
+        "Mint a link to ONE workout for a person you choose. Answers {url, token, expiresAt}: hand over the "
         "URL EXACTLY as given — it opens the workout as a readable page in a browser, and anyone "
         "holding it can read that workout and its sets without signing in. Do not build a link from "
         "the token yourself. It reaches no other workout and names no account, it expires (30 days), and "
@@ -382,7 +395,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["sessionId"] = sessionHandle();
     tools.push_back(tool("revoke_share", Access::del,
-        "End a coach link now. The url stops resolving immediately, and a link that was revoked, has "
+        "End a workout link now. The url stops resolving immediately, and a link that was revoked, has "
         "expired, or never existed are one answer to whoever holds it.",
         p, {"sessionId"}));
   }

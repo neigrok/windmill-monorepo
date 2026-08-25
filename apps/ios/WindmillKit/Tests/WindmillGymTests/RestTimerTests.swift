@@ -47,18 +47,24 @@ final class RestTests: XCTestCase {
                                    now: 1_000_000 + 600_000), 0.5)
     }
 
-    func testTheNumeralTellsOneOverrunFromAnother() {
-        XCTAssertEqual(Rest.reading(targetSeconds: 180, startedAtMs: 0, now: 49_000), "2:11")
-        XCTAssertEqual(Rest.reading(targetSeconds: 180, startedAtMs: 0, now: 180_000), "0:00")
-        XCTAssertEqual(Rest.reading(targetSeconds: 180, startedAtMs: 0, now: 187_000), "+0:07")
-        XCTAssertEqual(Rest.reading(targetSeconds: 180, startedAtMs: 0, now: 1_380_000), "+20:00")
+    // One clock, read one way on every surface: time since the last set, and it never flips at the target.
+    func testTheNumeralCountsUpThroughoutAndTellsOneOverrunFromAnother() {
+        XCTAssertEqual(Rest.reading(startedAtMs: 0, now: 0), "0:00")
+        XCTAssertEqual(Rest.reading(startedAtMs: 0, now: 49_000), "0:49")
+        XCTAssertEqual(Rest.reading(startedAtMs: 0, now: 180_000), "3:00")
+        XCTAssertEqual(Rest.reading(startedAtMs: 0, now: 187_000), "3:07")
+        XCTAssertEqual(Rest.reading(startedAtMs: 0, now: 1_380_000), "23:00")
+        XCTAssertFalse(Rest.reading(startedAtMs: 0, now: 187_000).contains("+"))
         XCTAssertEqual(Rest.filled(targetSeconds: 180, startedAtMs: 0, now: 187_000),
                        Rest.filled(targetSeconds: 180, startedAtMs: 0, now: 1_380_000),
                        "the rule cannot tell those two apart, which is the whole argument")
     }
 
+    func testAClockReadBeforeItsOwnStartReadsZeroRatherThanNegative() {
+        XCTAssertEqual(Rest.reading(startedAtMs: 90_000, now: 0), "0:00")
+    }
+
     func testThePocketedPhoneComesBackToTheRealNumeral() {
-        XCTAssertEqual(Rest.reading(targetSeconds: 120, startedAtMs: 1_000_000,
-                                    now: 1_000_000 + 600_000), "+8:00")
+        XCTAssertEqual(Rest.reading(startedAtMs: 1_000_000, now: 1_000_000 + 600_000), "10:00")
     }
 }

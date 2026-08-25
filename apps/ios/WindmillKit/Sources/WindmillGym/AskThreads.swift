@@ -1,10 +1,11 @@
 import Foundation
 
-// The wire's two voices are `lifter` and `ask`, and the enum has no lenient default.
+// The wire's two voices are `lifter` and `ask`; any other `from` — a new word, absent, not even a string — decodes as `unknown` and is not drawn.
 public struct AskTurn: Equatable, Decodable, Sendable {
-    public enum Voice: String, Decodable, Sendable {
+    public enum Voice: String, Sendable {
         case lifter
         case ask
+        case unknown
     }
 
     public let from: Voice
@@ -24,10 +25,13 @@ public struct AskTurn: Equatable, Decodable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: CodingKeys.self)
-        from = try fields.decode(Voice.self, forKey: .from)
+        let voice = (try? fields.decodeIfPresent(String.self, forKey: .from)).flatMap { $0 }
+        from = voice.flatMap(Voice.init(rawValue:)) ?? .unknown
         text = try fields.decode(String.self, forKey: .text)
         atMs = try fields.decodeIfPresent(Int64.self, forKey: .atMs) ?? 0
     }
+
+    public var isDrawn: Bool { from != .unknown }
 }
 
 public struct ThreadOutcome: Equatable, Decodable, Sendable {
@@ -63,7 +67,7 @@ public struct ThreadOutcome: Equatable, Decodable, Sendable {
         case .proposed:
             return "\(Readout.changeCount(changes)) waiting"
         case .dismissed:
-            return "\(Readout.changeCount(changes)) dismissed"
+            return "\(Readout.changeCount(changes)) turned down"
         case .superseded:
             return "\(Readout.changeCount(changes)) set aside"
         case .unknown:
@@ -76,7 +80,7 @@ public struct ThreadOutcome: Equatable, Decodable, Sendable {
         case .readOnly: return "read only"
         case .proposed: return "waiting"
         case .applied: return "applied"
-        case .dismissed: return "dismissed"
+        case .dismissed: return "turned down"
         case .superseded: return "set aside"
         case .unknown: return nil
         }

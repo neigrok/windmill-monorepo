@@ -10,9 +10,10 @@ Everything here obeys three documents already written: `12-native-idiom.md`,
 
 ## The naming step dies
 
-Creating a routine currently opens a **full-screen interstitial** asking what to call it, with
-suggestion chips and a character counter, before the editor is ever seen. It exists only when the id
-is `new`.
+On the web, creating a routine opens a **full-screen interstitial** asking what to call it, with
+suggestion chips and a character counter, before the editor is ever seen; it exists only when the id
+is `new`. Neither phone has one — both open the editor with the name field focused — though iOS
+still draws suggestion chips while the name is empty.
 
 > **The name is the editor's first field.** Tapping *New routine* opens the editor with an empty name
 > field already focused and the keyboard up.
@@ -67,9 +68,11 @@ want; you do not step to it.
 
 ## Which kills the third overlay
 
-The editor opens the target sheet, and the target sheet opened a **custom numeric keypad** — three
-layers deep, and both files carry a comment saying the layering is fragile and is worked around by
-placing the keypad as a DOM sibling rather than fixing it.
+The editor opens the target sheet, and on the web and Android the target sheet opens a **custom
+numeric keypad** — three layers deep; on the web both the target sheet and the fix sheet carry a
+comment saying the layering is fragile and is worked around by placing the keypad as a DOM sibling
+rather than fixing it. iOS has no typed target field at all — its keypad sheet belongs to the logger
+— so there the six refusals below are new work rather than a move.
 
 With typed fields, the third layer is **the platform's own decimal keyboard**. Two layers, no
 workaround, and the comment can be deleted rather than inherited.

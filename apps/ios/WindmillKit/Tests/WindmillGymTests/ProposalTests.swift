@@ -69,7 +69,7 @@ final class ProposalReadingTests: XCTestCase {
 
     func testAnUnnamedAgentIsCalledWhatItHonestlyIs() {
         XCTAssertEqual(ProposalSource(door: "mcp").agentName, "your connected agent")
-        XCTAssertEqual(ProposalSource(door: "ask").agentName, "Ask")
+        XCTAssertEqual(ProposalSource(door: "ask").agentName, "Coach")
         XCTAssertEqual(ProposalSource(door: "").agentName, "your connected agent")
         XCTAssertEqual(ProposalSource(door: "mcp", agent: "Claude").agentName, "Claude")
     }
@@ -211,9 +211,25 @@ final class ProposalDiffTests: XCTestCase {
         XCTAssertEqual(applied.settledNote(now: day),
                        "Applied to Push A today at \(Readout.time(day)). Kept on the routine as a dated record — the program’s history, not a toast that disappears.")
         XCTAssertEqual(dismissed.settledNote(now: day),
-                       "Dismissed today at \(Readout.time(day)). No reason asked for, nothing changed, and it stays in the routine’s history in case you want it back.")
+                       "Turned down today at \(Readout.time(day)). Nothing changed, and it stays in the routine’s history as a record.")
         XCTAssertEqual(asideNote,
                        "Push A changed after this was written, so it was set aside today at \(Readout.time(day)). None of it was applied, and it stays in the routine’s history.")
+    }
+
+    // The wire has no path back from a turned-down proposal, so nothing here may suggest one.
+    func testTurningDownIsSaidAsARecordAndNeverAsSomethingToTakeBack() {
+        let day = Int64(1_700_000_000_000)
+        let dismissed = proposal([], changeCount: 3, state: .dismissed, settledAtMs: day)
+            .settledNote(now: day) ?? ""
+        for promise in ["want it back", "take it back", "reopen", "undo", "restore"] {
+            XCTAssertFalse(dismissed.lowercased().contains(promise), dismissed)
+        }
+        XCTAssertEqual(Proposal.turnDown, "Turn this down")
+        XCTAssertEqual(Proposal.turnDownTitle, "Turn this down?")
+        XCTAssertEqual(Proposal.turnDownBody,
+                       "Nothing changes, and it stays in the routine’s history as a record.")
+        XCTAssertEqual(Proposal.turnDownConfirm, "Turn down")
+        XCTAssertEqual(Proposal.turnDownKeep, "Keep it")
     }
 
     func testAHistoryRowNamesTheDayTheDecisionWasTakenAndWhoWroteIt() {
@@ -225,7 +241,7 @@ final class ProposalDiffTests: XCTestCase {
         }
 
         XCTAssertEqual(head(.applied, 3).historyLine(now: now), "today · applied 3 changes from Claude")
-        XCTAssertEqual(head(.dismissed, 1).historyLine(now: now), "today · dismissed 1 change from Claude")
+        XCTAssertEqual(head(.dismissed, 1).historyLine(now: now), "today · turned down 1 change from Claude")
         XCTAssertEqual(head(.superseded, 3).historyLine(now: now), "today · set aside 3 changes from Claude")
     }
 

@@ -28,6 +28,15 @@ public enum Finish {
         public let rows: [Row]
     }
 
+    // Discard is the only unrecoverable destruction of a whole workout, so it is asked before it runs.
+    public enum Discard {
+        public static let action = "Discard session"
+        public static let title = "Discard this session?"
+        public static let body = "Discarding deletes the session and its sets. There is no undoing it."
+        public static let confirm = "Discard"
+        public static let keep = "Keep it"
+    }
+
     public static func head(startedAtMs: Int64, finishedAtMs: Int64, routine: String?,
                             slight: Bool, first: Bool) -> Head {
         Head(title: slight ? "Ended early" : "Session finished",
@@ -217,6 +226,7 @@ struct FinishScreen: View {
 
     @Environment(\.gymSkin) private var skin
     @State private var routineName = ""
+    @State private var confirmingDiscard = false
 
     var body: some View {
         let head = Finish.head(startedAtMs: finished.session.startedAtMs,
@@ -251,6 +261,12 @@ struct FinishScreen: View {
             .padding(.bottom, WindmillSpace.x12)
         }
         .task { routineName = Readout.weekday(finished.session.startedAtMs) }
+        .confirmationDialog(Finish.Discard.title, isPresented: $confirmingDiscard, titleVisibility: .visible) {
+            Button(Finish.Discard.confirm, role: .destructive, action: onDiscard)
+            Button(Finish.Discard.keep, role: .cancel) {}
+        } message: {
+            Text(Finish.Discard.body)
+        }
     }
 
     private var keepAsRoutine: some View {
@@ -325,15 +341,10 @@ struct FinishScreen: View {
                     .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                     .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
 
-                Button("Discard session", action: onDiscard)
+                Button(Finish.Discard.action) { confirmingDiscard = true }
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.alarmInk)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
-
-                Text("Discarding deletes the session and its sets. There is no undoing it.")
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkFaint)
-                    .multilineTextAlignment(.center)
             }
         } else if !finished.offersRoutine || kept {
             Button("Done", action: onDone)

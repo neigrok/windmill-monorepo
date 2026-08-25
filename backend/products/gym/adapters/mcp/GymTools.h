@@ -2,6 +2,7 @@
 
 #include "platform/ports/ToolHost.h"
 #include "products/gym/application/CatalogService.h"
+#include "products/gym/application/NotesService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/domain/ReadReceipt.h"
@@ -15,7 +16,7 @@ namespace wm::gym {
 class GymTools : public ToolHost {
 public:
   GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-           std::string appBaseUrl);
+           NotesService& notes, std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
   // The hosts above consult these after a name misses their catalog; nothing here dispatches them.
@@ -35,6 +36,7 @@ private:
   TrainingService& training_;
   CatalogService& catalog_;
   ProgramService& program_;
+  NotesService& notes_;
   std::string appBaseUrl_;
 };
 

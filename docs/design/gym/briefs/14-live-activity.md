@@ -60,13 +60,10 @@ wave exists to stop.
 
 > **Ruling: the room adopts the count-up reading and keeps the bar.**
 
-It costs less than it looks. The room today counts **down** to zero and then switches to **`+0:12`** —
-so it already flips mode mid-rest, and the flip is an admission that past-the-target matters and that
-counting up is its natural expression. Counting up throughout removes a mode rather than adding one.
-The optional sound at the target still fires: that is the event, and it stays opt-in.
-
-After this, all three surfaces read one clock the same way, and gym has one sentence about rest
-instead of two.
+Built on all three surfaces: the room's rest row counts up throughout — time since the last set —
+and keeps the bar against the target, with no flip at the target. The optional sound at the target
+still fires: that is the event, and it stays opt-in. All three surfaces read one clock the same way,
+and gym has one sentence about rest instead of two.
 
 ## The one button
 

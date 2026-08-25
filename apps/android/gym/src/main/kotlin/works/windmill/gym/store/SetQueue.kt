@@ -5,6 +5,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Session
@@ -393,6 +394,7 @@ sealed class ProposalVerdict {
 // configured, and the room takes the door down for it.
 sealed class AskVerdict {
     data class Said(val said: String) : AskVerdict()   // the answer is the sentence, and it will not change on a retry
+    data class Capped(val said: String) : AskVerdict() // 429 ask-daily-limit — the composer comes down until the bucket refills
     data class Again(val said: String) : AskVerdict()  // 5xx, no reply at all — the one worth offering a retry on
     data class Fresh(val said: String) : AskVerdict()  // 409 — this conversation cannot take the question; the next one opens a new thread
     data object Absent : AskVerdict()                  // 404 — this deployment has no Ask
@@ -403,14 +405,15 @@ sealed class AskVerdict {
             if (facts.offline || facts.malformed || status == null) return Again(noAnswer)
             if (status == 404) return Absent
             if (status >= 500) return Again(facts.sentence ?: noAnswer)
+            if (facts.code == "ask-daily-limit") return Capped(facts.sentence ?: Ask.capReached)
             // Both are answered by opening a new thread; nothing is re-sent on its own.
             if (facts.code == "ask-thread-full" || facts.code == "ask-thread-taken") {
-                return Fresh(facts.sentence ?: "that conversation is full — ask again to start a new one")
+                return Fresh(facts.sentence ?: Ask.threadFull)
             }
-            return Said(facts.sentence ?: "Ask couldn't take that one")
+            return Said(facts.sentence ?: "Coach couldn’t take that one")
         }
 
-        private const val noAnswer = "Ask didn't answer. Try again in a moment"
+        private const val noAnswer = "Coach didn’t answer. Try again in a moment"
     }
 }
 

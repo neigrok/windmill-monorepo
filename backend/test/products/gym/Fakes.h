@@ -1,8 +1,10 @@
 #pragma once
 
+#include "products/gym/ports/AskAgent.h"
 #include "products/gym/ports/AskThreadRepository.h"
 #include "products/gym/ports/CatalogRepository.h"
 #include "products/gym/ports/LogRepository.h"
+#include "products/gym/ports/NotesRepository.h"
 #include "products/gym/ports/PreferencesRepository.h"
 #include "products/gym/ports/ProgramRepository.h"
 
@@ -70,7 +72,7 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
   return Routine{rtId(std::move(id)), uid(), "Push A", 0, std::move(entries)};
 }
 
-// An in-memory gym store applying the SAME rules as the SQL; the five Fake…Repositories are its ports.
+// An in-memory gym store applying the SAME rules as the SQL; the six Fake…Repositories are its ports.
 struct FakeGymStore {
   // gym_set_revisions: what a correction replaced and what a delete took out of the log.
   struct KeptSet {
@@ -92,6 +94,7 @@ struct FakeGymStore {
   bool loseThreadRace = false;         // stage the concurrent-mint race `openThread` explains
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
+  std::vector<Note> noteRows;                   // gym_notes: dense on position per account
   // gym_exercise_names: what one account calls one SEED, keyed (owner, movement) and coalesced over it.
   std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
   // gym_exercise_aliases: what one account USED to call a movement; `at` stands in for created_at.
@@ -1177,7 +1180,7 @@ public:
         // The outcome columns come back EMPTY: ThreadService stamps that ladder on.
         out.push_back(ExportedThreadTurn{row.id.str(), row.title, "", "", "",
                                          isoUtc(row.createdAtMs), std::to_string(position),
-                                         turn.fromLifter ? "lifter" : "ask", turn.text,
+                                         turn.fromLifter ? "lifter" : "coach", turn.text,
                                          isoUtc(turn.atMs)});
       }
     }
@@ -1243,7 +1246,73 @@ public:
   }
 };
 
-// The whole store and its five doors, in the shape a harness holds them.
+class FakeNotesRepository : public NotesRepository {
+public:
+  explicit FakeNotesRepository(FakeGymStore& db) : db(db) {}
+
+  FakeGymStore& db;
+
+  // Owner-scoped, position ascending — the SQL's ORDER BY.
+  std::vector<Note> notes(const UserId& user) override {
+    std::vector<Note> out;
+    for (const Note& note : db.noteRows)
+      if (note.user == user) out.push_back(note);
+    std::sort(out.begin(), out.end(),
+              [](const Note& a, const Note& b) { return a.position < b.position; });
+    return out;
+  }
+
+  // The store's steps in the SQL's order: the id asked globally, a replay read back untouched, an
+  // edit stamped, else the cap and an append at position n.
+  NoteWriteOutcome saveNote(const Note& incoming, std::uint64_t nowMs) override {
+    for (Note& held : db.noteRows) {
+      if (!(held.id == incoming.id)) continue;
+      if (!(held.user == incoming.user)) return {std::nullopt, NoteWriteError::idTaken};
+      if (held.title == incoming.title && held.body == incoming.body)
+        return {held, NoteWriteError::none};
+      held = Note{held.id, held.user, incoming.title, incoming.body, held.position, nowMs};
+      return {held, NoteWriteError::none};
+    }
+    const std::vector<Note> standing = notes(incoming.user);
+    if (standing.size() >= kMaxNotes) return {std::nullopt, NoteWriteError::full};
+    db.noteRows.push_back(Note{incoming.id, incoming.user, incoming.title, incoming.body,
+                               static_cast<int>(standing.size()), nowMs});
+    return {db.noteRows.back(), NoteWriteError::none};
+  }
+
+  // Absent and another account's are one no-op; the rows after the gap move up one.
+  void deleteNote(const UserId& user, const NoteId& id) override {
+    for (auto row = db.noteRows.begin(); row != db.noteRows.end(); ++row) {
+      if (!(row->id == id) || !(row->user == user)) continue;
+      const int gap = row->position;
+      db.noteRows.erase(row);
+      for (Note& held : db.noteRows)
+        if (held.user == user && held.position > gap) --held.position;
+      return;
+    }
+  }
+
+  // Precedence is not the note's text: `updatedAtMs` stays where it was.
+  NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order) override {
+    if (!namesEveryNoteOnce(notes(user), order)) return {{}, NotesOrderError::mismatch};
+    for (Note& held : db.noteRows) {
+      if (!(held.user == user)) continue;
+      held.position =
+          static_cast<int>(std::find(order.begin(), order.end(), held.id) - order.begin());
+    }
+    return {notes(user), NotesOrderError::none};
+  }
+
+  std::vector<ExportedNote> exportedNotes(const UserId& user) override {
+    std::vector<ExportedNote> out;
+    for (const Note& note : notes(user))
+      out.push_back(ExportedNote{std::to_string(note.position), note.title, note.body,
+                                 isoUtc(note.updatedAtMs)});
+    return out;
+  }
+};
+
+// The whole store and its six doors, in the shape a harness holds them.
 struct FakeGym {
   FakeGymStore db;
   FakeLogRepository log{db};
@@ -1251,6 +1320,46 @@ struct FakeGym {
   FakeProgramRepository program{db};
   FakeAskThreadRepository threads{db};
   FakePreferencesRepository preferences{db};
+  FakeNotesRepository notes{db};
+};
+
+// An AskAgent that never leaves the process: it records what it was handed, runs its plan, answers.
+struct FakeAsk : AskAgent {
+  bool wired = true;
+  bool answers = true;
+  // Metered vendor round trips this run completed; zero is a run that reached nobody.
+  int turnsSpent = 1;
+  bool throwsUp = false;
+  int runs = 0;
+  ToolScope grantedScope;
+  Json::Value seenCatalog{Json::arrayValue};
+  std::vector<AskTurn> seenTurns;
+  // What the "model" reaches for, in order.
+  std::vector<std::pair<std::string, Json::Value>> plan;
+
+  bool configured() const override { return wired; }
+
+  AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
+                   ToolHost& tools) override {
+    ++runs;
+    if (throwsUp) throw std::runtime_error("the vendor sent a document nobody can read");
+    grantedScope = caller.scope;
+    seenCatalog = tools.listTools(caller);
+    seenTurns = turns;
+    AskAnswer out;
+    out.modelTurns = turnsSpent;
+    for (const std::pair<std::string, Json::Value>& step : plan) {
+      const ToolResult result = tools.callTool(step.first, step.second, caller);
+      out.steps.push_back(AskStep{step.first, result.isError});
+    }
+    out.ok = answers;
+    if (!answers) {
+      out.error = "the upstream never answered";
+      return out;
+    }
+    out.answer = "You squatted 100 for five.";
+    return out;
+  }
 };
 
 }

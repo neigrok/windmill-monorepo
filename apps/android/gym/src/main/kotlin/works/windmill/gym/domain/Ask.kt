@@ -3,11 +3,18 @@ package works.windmill.gym.domain
 import kotlinx.serialization.Serializable
 
 // POST /v1/gym/ask, owner-scoped: { thread, question } → { answer, steps, read, proposals, thread }.
+// The wire still says `ask` and its verdict codes stay `ask-*`; the room a lifter sees is Coach.
 // No outgoing field may carry a default: encodeDefaults is off, so a defaulted field travels absent.
 
+// A step is drawn in the lifter's words or not at all: a tool this build cannot name prints NOTHING,
+// and the receipt beside the list still says what was read.
 @Serializable
 data class AskStep(val tool: String, val failed: Boolean = false) {
-    val line: String get() = if (failed) "$tool · no answer" else tool
+    val phrase: String?
+        get() {
+            val said = Ask.phrases[tool] ?: return null
+            return if (failed) "$said (nothing came back)" else said
+        }
 }
 
 // Server-counted. Nothing on this phone may compute, sum or infer it.
@@ -36,7 +43,7 @@ data class AskExchange(
 }
 
 object Ask {
-    const val title = "Ask"
+    const val title = "Coach"
     const val subtitle = "reads your log · proposes only"
     const val placeholder = "Ask about your training"
 
@@ -46,21 +53,27 @@ object Ask {
     const val fromLifter = "lifter"
 
     const val whatItIs =
-        "Ask reads the log you already keep and answers questions about it. It can propose a change " +
-            "to a routine — you decide on the diff. It cannot edit or delete a set you logged: that " +
-            "one is yours."
+        "Coach reads the log you already keep and answers questions about it. It can propose a " +
+            "change to a routine — you decide on the diff. It cannot edit or delete a set you " +
+            "logged: that one is yours."
 
-    const val dailyCap =
-        "It answers about ten questions a day, three back to back — the cap that keeps Ask open to " +
-            "everyone. There is nothing to buy here."
+    // The promise, immediately above the composer and always drawn; `capReached` is the moment the
+    // promise runs out, and it replaces the composer rather than restating the rule.
+    const val allowance = "Ten questions a day, three back to back."
+    const val capReached = "The next question frees up in a couple of hours."
+
+    // The ceiling is four questions: the server counts a question and its answer as two turns.
+    const val threadFull = "This conversation holds four questions. Start a new one."
 
     const val kept = "Every conversation is kept so you can read it back, and yours to delete."
 
     const val freeDoor =
         "If you already use Claude — or Cursor, Codex, any tool of yours that speaks MCP — connect " +
-            "it instead: it's free, and it's better, because it knows the rest of your life."
+            "it instead. It’s free, and it reaches what Coach can’t: it knows the rest of your life."
 
     const val connect = "Connect your own"
+
+    const val notesDoor = "Notes"
 
     const val promise =
         "Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal."
@@ -68,13 +81,32 @@ object Ask {
     const val waiting = "reading your log…"
 
     const val interrupted =
-        "Ask didn't finish that one. The log heard the question, so it may have counted against " +
-            "today's — and anything it proposed is on the routine either way. If it did answer, " +
+        "Coach didn’t finish that one. The log heard the question, so it may have counted against " +
+            "today’s — and anything it proposed is on the routine either way. If it did answer, " +
             "the conversation is in Threads."
 
-    const val notHere = "Ask isn't part of this Windmill. Your log is still yours to read."
+    const val signedOut = "Coach reads your log, so it needs you signed in."
 
-    val openers = listOf("What's stalled?", "Which lifts are moving?", "Is my week too light?")
+    const val notHere = "Coach isn’t part of this Windmill. Your log is still yours to read."
+
+    val openers = listOf("What’s stalled?", "Which lifts are moving?", "Is my week too light?")
+
+    // One phrase per tool the catalog offers Coach, in the lifter's words — the same table the web
+    // draws from. A tool absent here is dropped from the step list, never printed by name.
+    val phrases = mapOf(
+        "list_sessions" to "read your recent workouts",
+        "get_session" to "read one workout",
+        "last_time" to "read the last time you trained a movement",
+        "list_exercises" to "read your movement list",
+        "list_routines" to "read your program",
+        "get_stats" to "read your movement history",
+        "list_notes" to "read your notes",
+        "propose_routine_change" to "wrote a proposal for one of your routines",
+        "propose_routine_removal" to "wrote a proposal to remove a routine",
+    )
+
+    // In call order, each phrase once, the nameless dropped.
+    fun steps(steps: List<AskStep>): List<String> = steps.mapNotNull { it.phrase }.distinct()
 
     // Run on the way in: a pending exchange was in flight when the room went down.
     fun settled(thread: List<AskExchange>): List<AskExchange> {

@@ -451,7 +451,7 @@ fun RoutineScreen(
     }
 }
 
-// Newest first, the creation row always last and not a door. The `Ask ›` door is drawn only where the
+// Newest first, the creation row always last and not a door. The `Coach ›` door is drawn only where the
 // source carries a thread, and a history that could not be read is not an empty one.
 @Composable
 private fun History(
@@ -472,7 +472,7 @@ private fun History(
         Text("History", style = GymType.numeral(11), color = GymSkin.inkFaint)
         if (unread) {
             Text(
-                "the log didn’t answer — this routine's history is out of reach",
+                "the log didn’t answer — this routine’s history is out of reach",
                 style = GymType.numeral(12),
                 color = GymSkin.inkDim,
             )
@@ -505,7 +505,7 @@ private fun History(
                             .padding(horizontal = WindmillSpace.x2),
                     ) {
                         Text(
-                            "Ask ›",
+                            "Coach ›",
                             style = GymType.numeral(11, FontWeight.Bold),
                             color = GymSkin.accent,
                             maxLines = 1,

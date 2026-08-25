@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Back } from '../Back.jsx';
 import { EXPORT_THREADS_HREF, gymApi } from '../gymApi.js';
-import { ASK_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
+import { COACH_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
 import { changeLabel, stateChip } from '../proposals.js';
 import { useGymRead } from '../useGymRead.js';
+import { COACH_TITLE } from './coach.js';
 import {
   askedLabel, conversationsLine, DELETE_CONFIRM, DELETE_FAILED, DELETE_NOTE, DELETE_VERB,
   EXPORT_THREADS_LINE, EXPORT_THREADS_VERB, monthsOf, NEW_THREAD_VERB, NO_THREADS, outcomeChip,
@@ -17,7 +18,7 @@ export function ThreadsList() {
   if (view.phase === 'failed') {
     return (
       <>
-        <BackToAsk />
+        <Back href={COACH_HREF}>{COACH_TITLE}</Back>
         <p className="gym-read-failed">
           {THREADS_FAILED}
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -30,7 +31,7 @@ export function ThreadsList() {
 
   return (
     <section className="gym-threads">
-      <BackToAsk />
+      <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-threads-head">
         <h1 className="gym-title">{THREADS_TITLE}</h1>
         {threads.length > 0 && <p className="gym-threads-count">{conversationsLine(threads.length)}</p>}
@@ -47,7 +48,7 @@ export function ThreadsList() {
         </section>
       ))}
 
-      <a className="gym-threads-new" href={ASK_HREF}>{NEW_THREAD_VERB}</a>
+      <a className="gym-threads-new" href={COACH_HREF}>{NEW_THREAD_VERB}</a>
 
       {threads.length > 0 && (
         <a className="gym-threads-export" href={EXPORT_THREADS_HREF}>
@@ -75,14 +76,6 @@ function ThreadRow({ thread }) {
   );
 }
 
-function BackToAsk() {
-  return (
-    <a className="gym-back" href={ASK_HREF}>
-      <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Ask
-    </a>
-  );
-}
-
 export function ThreadDetail({ id }) {
   const view = useGymRead(() => gymApi.thread(id), [id]);
 
@@ -90,7 +83,7 @@ export function ThreadDetail({ id }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <BackToThreads />
+        <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
         <p className="gym-quiet">{THREAD_ABSENT}</p>
       </>
     );
@@ -98,7 +91,7 @@ export function ThreadDetail({ id }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <BackToThreads />
+        <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
         <p className="gym-read-failed">
           {THREAD_FAILED}
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -110,19 +103,20 @@ export function ThreadDetail({ id }) {
   const thread = view.data;
   return (
     <section className="gym-thread">
-      <BackToThreads />
+      <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
       <header className="gym-thread-head">
         <h1 className="gym-thread-name">{thread.title}</h1>
         <Outcome outcome={thread.outcome} />
       </header>
 
-      <ol className="gym-ask-thread">
+      <ol className="gym-coach-thread">
+        {/* `from` is the wire's enum; anything that is not the lifter is drawn as the room's turn. */}
         {thread.turns?.map((turn, index) => (
           <li
-            className={turn.from === 'lifter' ? 'gym-ask-turn is-lifter' : 'gym-ask-turn is-ask'}
+            className={turn.from === 'lifter' ? 'gym-coach-turn is-lifter' : 'gym-coach-turn is-coach'}
             key={`${turn.from}-${index}`}
           >
-            <p className="gym-ask-text">{turn.text}</p>
+            <p className="gym-coach-text">{turn.text}</p>
             <p className="gym-thread-said">{whenLabel(turn.at)}</p>
           </li>
         ))}
@@ -189,15 +183,7 @@ function DeleteThread({ id }) {
       <button type="button" className={confirming ? 'gym-thread-delete-verb is-armed' : 'gym-thread-delete-verb'} onClick={remove}>
         {confirming ? DELETE_CONFIRM : DELETE_VERB}
       </button>
-      {note && <p className="gym-ask-note">{note}</p>}
+      {note && <p className="gym-coach-note">{note}</p>}
     </section>
-  );
-}
-
-function BackToThreads() {
-  return (
-    <a className="gym-back" href={THREADS_HREF}>
-      <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> {THREADS_TITLE}
-    </a>
   );
 }

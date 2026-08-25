@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { ConnectInvitation } from './connect/ConnectLog.jsx';
+import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  arrivedLabel, ASK_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF,
+  arrivedLabel, COACH_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF,
   threadHref,
 } from './log.js';
 import {
   applyLabel, atomicLine, conversationOf, CONVERSATION_VERB, diffRows, documentLine, intentLine,
-  isPending, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine,
+  isPending, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
 
-export function PendingProposals() {
-  const view = useGymRead(() => gymApi.routines(), []);
-  if (view.phase !== 'ready') return null;
-  const waiting = view.data.filter((routine) => routine.pendingProposal);
+// The standing surface for a proposal with no conversation to appear in — one minted over MCP —
+// drawn at the head of the routines home off the list's own read.
+export function PendingProposals({ routines }) {
+  const waiting = (routines ?? []).filter((routine) => routine.pendingProposal);
   if (waiting.length === 0) return null;
   return (
     <section className="gym-proposals">
@@ -61,12 +60,13 @@ export function ProposalDiff({ id, log }) {
   // The settle reply carries the newer proposal; it replaces the read.
   const [settled, setSettled] = useState(null);
   const [deciding, setDeciding] = useState(false);
+  const [turningDown, setTurningDown] = useState(false);
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the proposal…</p>;
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+        <Back href={ROUTINES_HREF}>Routines</Back>
         <p className="gym-quiet">That proposal isn’t in your program.</p>
       </>
     );
@@ -74,7 +74,7 @@ export function ProposalDiff({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+        <Back href={ROUTINES_HREF}>Routines</Back>
         <p className="gym-read-failed">
           The proposal didn’t load.
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -117,16 +117,15 @@ export function ProposalDiff({ id, log }) {
       if (error.proposalSuperseded) reread(`${proposal.baseName} changed after this was written. Nothing from it was applied.`);
       else if (error.proposalSettled) reread('That proposal was already decided somewhere else.');
       else if (error.status === 404) reread('That proposal isn’t in your program any more.');
-      else log.say(`That wasn’t ${verb === 'apply' ? 'applied' : 'dismissed'} — ${failureReason(error)}.`);
+      else log.say(`That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
     }
     setDeciding(false);
+    setTurningDown(false);
   };
 
   return (
     <>
-      <a className="gym-back" href={routineHref(proposal.routineId)}>
-        <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> {proposal.baseName}
-      </a>
+      <Back href={routineHref(proposal.routineId)}>{proposal.baseName}</Back>
       <header className="gym-proposal-head">
         <div className="gym-proposal-titles">
           <h1 className="gym-title">{`Proposal · ${proposal.baseName}`}</h1>
@@ -156,15 +155,15 @@ export function ProposalDiff({ id, log }) {
 
       {!isPending(proposal) && <p className="gym-proposal-settled">{settledLine(proposal)}</p>}
 
-      {isPending(proposal) && (
+      {isPending(proposal) && !turningDown && (
         <div className="gym-proposal-decide">
           <div className="gym-proposal-verbs">
             <button
               type="button"
               className={deciding ? 'gym-proposal-dismiss is-inert' : 'gym-proposal-dismiss'}
-              onClick={() => settle('dismiss')}
+              onClick={() => setTurningDown(true)}
             >
-              Dismiss
+              Turn this down
             </button>
             <button
               type="button"
@@ -178,9 +177,25 @@ export function ProposalDiff({ id, log }) {
         </div>
       )}
 
-      {!log.session && <a className="gym-ask-aside" href={ASK_HREF}>Ask about your training ›</a>}
+      {/* Turning down is settled for good, so it is confirmed; the confirmation says so. */}
+      {isPending(proposal) && turningDown && (
+        <section className="gym-confirm">
+          <p className="gym-confirm-title">{TURN_DOWN_CONFIRM.title}</p>
+          <p className="gym-confirm-body">{TURN_DOWN_CONFIRM.body}</p>
+          <div className="gym-finish-foot">
+            <button type="button" className="gym-confirm-keep" onClick={() => setTurningDown(false)}>{TURN_DOWN_CONFIRM.keep}</button>
+            <button
+              type="button"
+              className={deciding ? 'gym-confirm-do is-inert' : 'gym-confirm-do'}
+              onClick={() => settle('dismiss')}
+            >
+              {TURN_DOWN_CONFIRM.confirm}
+            </button>
+          </div>
+        </section>
+      )}
 
-      <ConnectInvitation training={log.session != null} />
+      {!log.session && <a className="gym-coach-aside" href={COACH_HREF}>Open Coach ›</a>}
     </>
   );
 }

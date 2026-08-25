@@ -581,6 +581,8 @@ object Ids {
     // The one id here that is not a replay key: a fresh one opens a thread, the same one continues it.
     fun thread(): String = mint("thr_")
     fun exercise(): String = mint("ex_")
+    // Minted once per editor, so a save whose reply was lost replays as the same note.
+    fun note(): String = mint("note_")
 
     private fun mint(prefix: String): String {
         val bytes = ByteArray(8)

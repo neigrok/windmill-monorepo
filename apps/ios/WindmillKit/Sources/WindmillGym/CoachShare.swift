@@ -24,6 +24,9 @@ public struct SessionShare: Equatable, Codable, Sendable {
 }
 
 public enum Coach {
+    // The word coach names the room and nothing else; the link handed to a person is a workout.
+    public static let shareTitle = "Share this workout"
+
     public static let offer = """
         A link to this one workout — every set, load and rep in it, and nothing else about your \
         account. Anyone who has the link can read it. It expires, and you can revoke it whenever \
@@ -86,10 +89,10 @@ public enum Coach {
     public static func card(_ state: State, base: URL) -> Card {
         switch state {
         case .closed(let note):
-            return Card(title: "Share with a coach", body: offer, link: nil,
+            return Card(title: shareTitle, body: offer, link: nil,
                         action: note == nil ? "Get a link" : "Try again", revoke: nil, note: note)
         case .working:
-            return Card(title: "Share with a coach", body: offer, link: nil,
+            return Card(title: shareTitle, body: offer, link: nil,
                         action: "…", revoke: nil, note: nil)
         case .live(let share, let copied, let note):
             return Card(

@@ -221,7 +221,7 @@ std::vector<ExportedThreadTurn> PgAskThreadRepository::exportedThreadTurns(const
       // `n.from_lifter IS NULL` is asked first: a plain CASE sends a NULL down the ELSE branch, so an
       // absent turn would export as one Ask had said.
       "       CASE WHEN n.from_lifter IS NULL THEN '' "
-      "            WHEN n.from_lifter THEN 'lifter' ELSE 'ask' END AS turn_from, "
+      "            WHEN n.from_lifter THEN 'lifter' ELSE 'coach' END AS turn_from, "
       "       coalesce(n.text, '') AS text, "
       "       coalesce(to_char(n.said_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), '') "
       "         AS said_at "

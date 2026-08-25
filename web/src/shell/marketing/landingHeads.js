@@ -51,7 +51,7 @@ const BRAND_ROOT = {
           'name': 'How much does Windmill cost?',
           'acceptedAnswer': {
             '@type': 'Answer',
-            'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. Nothing is on sale today: Windmill One is not open, and no card is asked for anywhere in Windmill. What it will cover when it opens is the AI doing the work for you: tending in the roadmap, Talk and echoes in the journal — one plan at $12 a month. Gym is outside it: its log, its connected log and its Ask chat all cost nothing. Tending itself is not switched on yet. Nothing that is free today moves behind the paywall.',
+            'text': 'Windmill is free — building, sharing, exporting, and keeping a tree private cost nothing, and no account is needed to start. Nothing is on sale today: Windmill One is not open, and no card is asked for anywhere in Windmill. What it will cover when it opens is the AI doing the work for you: tending in the roadmap, Talk and echoes in the journal — one plan at $12 a month. In Gym, the log, the connected log and Coach — ten questions a day — cost nothing; a plan only raises the AI ceiling behind Coach. Tending itself is not switched on yet. Nothing that is free today moves behind the paywall.',
           },
         },
         {

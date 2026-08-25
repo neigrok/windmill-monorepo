@@ -88,7 +88,7 @@ test('the delete says which set left, in the log’s own spelling, and promises 
   assert.equal(deletedLine(SET), '47.5 × 4 is out of the log.');
   assert.equal(deletedLine({ ...SET, weightKg: 0, reps: 9 }), 'bodyweight × 9 is out of the log.');
   assert.equal(deletedLine({ ...SET, weightKg: -20, reps: 6 }), '−20 × 6 is out of the log.');
-  assert.equal(UNDO_MS, 5000);
+  assert.equal(UNDO_MS, 9000);
 });
 
 test('a refused fix is spoken by its code, and the missing set is not blamed on the network', () => {

@@ -25,7 +25,8 @@ export function routineHref(id) {
   return `#/gym/routines/${id}`;
 }
 
-export const ROUTINES_HREF = '#/gym/routines';
+// `#/gym` IS the routines home; `#/gym/routines` is an alias that still resolves to it.
+export const ROUTINES_HREF = '#/gym';
 
 // The blank editor's id — a mint can never produce it, every real one being `rt_` and sixteen hex.
 export const NEW_ROUTINE_ID = 'new';
@@ -41,18 +42,21 @@ export function finishHref(id) {
 
 export const BACKFILL_HREF = '#/gym/backfill';
 
-export const ASK_HREF = '#/gym/ask';
+// The room is Coach; `#/gym/ask/…` is the older spelling and resolves to the same screens.
+export const COACH_HREF = '#/gym/coach';
 
-export const THREADS_HREF = '#/gym/ask/threads';
+export const THREADS_HREF = '#/gym/coach/threads';
 
 export function threadIdOf(hash) {
-  const match = /^#\/gym\/ask\/threads\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  const match = /^#\/gym\/(?:coach|ask)\/threads\/([A-Za-z0-9_-]+)/.exec(hash || '');
   return match ? match[1] : null;
 }
 
 export function threadHref(id) {
-  return `#/gym/ask/threads/${id}`;
+  return `#/gym/coach/threads/${id}`;
 }
+
+export const NOTES_HREF = '#/gym/notes';
 
 export const CONNECT_HREF = '#/gym/connect';
 
@@ -89,22 +93,23 @@ export function sharedHref(token) {
   return `#/gym/shared/${token}`;
 }
 
-// Longest first: a routine id is also a routines URL. Anything else under #/gym is Today.
+// Longest first: a routine id is also a routines URL. Anything else under #/gym is the routines
+// home, which is what `#/gym` itself names.
 export function screenOf(hash) {
   if (sharedTokenOf(hash)) return 'shared';
   if (sessionIdOf(hash)) return 'session';
   if (finishIdOf(hash)) return 'finish';
   if (proposalIdOf(hash)) return 'proposal';
   if (routineIdOf(hash)) return 'routine';
-  if (/^#\/gym\/routines(\/|$|\?)/.test(hash || '')) return 'routines';
   if (/^#\/gym\/backfill(\/|$|\?)/.test(hash || '')) return 'backfill';
   if (threadIdOf(hash)) return 'thread';
-  if (/^#\/gym\/ask\/threads(\/|$|\?)/.test(hash || '')) return 'threads';
-  if (/^#\/gym\/ask(\/|$|\?)/.test(hash || '')) return 'ask';
+  if (/^#\/gym\/(coach|ask)\/threads(\/|$|\?)/.test(hash || '')) return 'threads';
+  if (/^#\/gym\/(coach|ask)(\/|$|\?)/.test(hash || '')) return 'coach';
+  if (/^#\/gym\/notes(\/|$|\?)/.test(hash || '')) return 'notes';
   if (/^#\/gym\/connect(\/|$|\?)/.test(hash || '')) return 'connect';
   if (/^#\/gym\/(movement|stats)(\/|$|\?)/.test(hash || '')) return 'record';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
-  return 'today';
+  return 'routines';
 }
 
 // Never localised: a reordered locale would make the prefill card and the log row disagree.
@@ -369,6 +374,14 @@ export function nameOfMovement(catalog, exerciseId) {
 
 // Tighter than the store's eighty-BYTE ceiling, and counted in UTF-16 units like `maxLength`.
 export const NAME_MAX = 60;
+
+// The counter is chrome a short name does not need: it is drawn from the last fifth of the bound,
+// the same rule the note editor's byte counter reads (notes/notes.js).
+export const NAME_COUNT_FROM = 48;
+
+export function showsNameCount(typed) {
+  return (typed ?? '').length >= NAME_COUNT_FROM;
+}
 
 export function nameCountLabel(typed) {
   return `${(typed ?? '').length}/${NAME_MAX}`;

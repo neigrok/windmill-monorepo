@@ -23,7 +23,7 @@ constexpr char kNoSession[] = "no workout of yours has that id. Call list_sessio
 constexpr char kNoRoutine[] = "no routine of yours has that id. Call list_routines for the ids you own.";
 constexpr char kNoExercise[] = "no movement has that id. Call list_exercises for the catalog, or "
                                "create_exercise to add one.";
-constexpr char kNoShare[] = "there is no live coach link on that workout, so there is nothing to "
+constexpr char kNoShare[] = "there is no live share link on that workout, so there is nothing to "
                             "revoke — revoked, expired and never-minted are one answer here.";
 
 std::string typeName(const Json::Value& value) {
@@ -181,6 +181,22 @@ ToolResult getStats(TrainingService& training, const UserId& caller, const Json:
     std::erase_if(stats.movements,
                   [&](const MovementProgress& line) { return line.exercise.str() != only; });
   return ToolResult::json(toJson(stats));
+}
+
+// Precedence order, the wire's shape minus the id and the instant an agent has no use for. No
+// receipt: a note is the lifter's instruction, not a log row, and the tally claims log rows only.
+ToolResult listNotes(NotesService& notes, const UserId& caller) {
+  Json::Value rows(Json::arrayValue);
+  for (const Note& note : notes.notes(caller)) {
+    Json::Value row(Json::objectValue);
+    row["position"] = note.position;
+    row["title"] = note.title;
+    row["body"] = note.body;
+    rows.append(row);
+  }
+  Json::Value out(Json::objectValue);
+  out["notes"] = rows;
+  return ToolResult::json(out);
 }
 
 // --- The writes ------------------------------------------------------------------------------
@@ -422,8 +438,8 @@ ToolResult revokeShare(TrainingService& training, const UserId& caller, const Js
 }  // namespace
 
 GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-                   std::string appBaseUrl)
-    : training_(training), catalog_(catalog), program_(program),
+                   NotesService& notes, std::string appBaseUrl)
+    : training_(training), catalog_(catalog), program_(program), notes_(notes),
       appBaseUrl_(std::move(appBaseUrl)) {}
 
 std::vector<ToolRetirement> GymTools::retiredTools() const {
@@ -499,6 +515,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "last_time")       return lastTime(training_, caller, arguments, served);
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
   if (name == "get_stats")       return getStats(training_, caller, arguments, served);
+  if (name == "list_notes")      return listNotes(notes_, caller);
 
   if (name == "start_session")   return startSession(training_, caller, arguments);
   if (name == "log_set")         return logSet(training_, caller, arguments);

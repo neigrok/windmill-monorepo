@@ -83,10 +83,12 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/adapters/postgres/PgCatalogRepository.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
+#include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/CatalogService.h"
+#include "products/gym/application/NotesService.h"
 #include "products/gym/application/PreferencesService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
@@ -177,6 +179,7 @@ int main() {
                 {"gym_session_shares", "user_id"},    // gym
                 {"gym_ask_threads", "user_id"},       // gym
                 {"gym_ask_turns", "user_id"},         // gym
+                {"gym_notes", "user_id"},             // gym
                 // created_by is null on the catalog seeds, so they match no account.
                 {"gym_exercises", "created_by"},
                 {"gym_exercise_names", "user_id"},    // gym
@@ -350,14 +353,16 @@ int main() {
   auto gymProgram = std::make_shared<gym::PgProgramRepository>(pool);
   auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
   auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
+  auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymTrainingService =
       std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens);
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog);
   auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock);
   auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock);
   auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
+  auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *systemClock);
   auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
-                                                  *gymProgramService, appBaseUrl);
+                                                  *gymProgramService, *gymNotesService, appBaseUrl);
 
   // With no ANTHROPIC_API_KEY there is no AskService, so gym::registerRoutes never mounts the path.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
@@ -840,6 +845,7 @@ int main() {
                        .programService = gymProgramService,
                        .preferencesService = gymPreferencesService,
                        .threadService = gymThreadService,
+                       .notesService = gymNotesService,
                        .authService = authService,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl};

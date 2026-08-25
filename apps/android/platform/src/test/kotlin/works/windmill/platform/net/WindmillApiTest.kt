@@ -95,7 +95,7 @@ class WindmillApiTest {
         } catch (refused: WindmillApiException.Refused) {
             assertEquals(500, refused.status)
             assertEquals(Refusal(null, null, null), refused.refusal)
-            assertEquals("That didn't go through", refused.line)
+            assertEquals("That didn’t go through", refused.line)
         }
     }
 
@@ -109,7 +109,7 @@ class WindmillApiTest {
             WindmillApi(base, { null }).get<Wire>("/v1/anything")
             fail("expected offline")
         } catch (offline: WindmillApiException.Offline) {
-            assertEquals("Can't reach windmill.works", offline.line)
+            assertEquals("Can’t reach windmill.works", offline.line)
         }
     }
 
@@ -120,7 +120,7 @@ class WindmillApiTest {
             api().get<Wire>("/v1/echo")
             fail("expected malformed")
         } catch (broken: WindmillApiException.Malformed) {
-            assertEquals("That didn't go through", broken.line)
+            assertEquals("That didn’t go through", broken.line)
         }
     }
 

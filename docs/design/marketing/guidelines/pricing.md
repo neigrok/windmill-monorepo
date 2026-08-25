@@ -26,7 +26,7 @@ not a setting.
 Everything except the AI doing the work: unlimited trees and steps, **unlimited hand
 editing**, **private by default**, share and fork, all nine quests, export, every device, the
 MCP server and an API key. The whole journal canvas and its on-device search. The whole gym —
-its log, its connected log over MCP, and Ask. Plus **30 tendings every month, free**.
+its log, its connected log over MCP, and Coach. Plus **30 tendings every month, free**.
 
 There is **no usage meter on the product itself**.
 

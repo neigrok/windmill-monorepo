@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  agoLabel, alsoReadsLabel, arrivedLabel, ASK_HREF, BACKFILL_HREF, clockOf, CLOSED_ITSELF_NOTE,
+  agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
   CONNECT_HREF,
   dayLabel,
@@ -10,11 +10,11 @@ import {
   groupByExercise,
   hasRecord, isFinished, isFirstSession, isNameOverCap, isUntested, loadedLine, logWhenLabel,
   MOVEMENTS_HREF,
-  movementIdOf, movementOf, NAME_MAX, nameCountLabel,
+  movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
   planFrozenLabel,
   planOf, planReadingOf, proposalHref, proposalIdOf,
-  recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf,
+  recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
   threadHref, threadIdOf, THREADS_HREF,
@@ -142,9 +142,10 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the fourteen rooms a hash names', () => {
-  assert.equal(screenOf('#/gym'), 'today');
-  assert.equal(screenOf('#/gym/'), 'today');
+test('screenOf — one grammar decides which of the fourteen rooms a hash names, and #/gym is the routines home', () => {
+  assert.equal(ROUTINES_HREF, '#/gym');
+  assert.equal(screenOf('#/gym'), 'routines');
+  assert.equal(screenOf('#/gym/'), 'routines');
   assert.equal(screenOf('#/gym/log'), 'log');
   assert.equal(screenOf('#/gym/log?page=2'), 'log');
   assert.equal(screenOf('#/gym/session/ses_9f3a1c22'), 'session');
@@ -155,16 +156,20 @@ test('screenOf — one grammar decides which of the fourteen rooms a hash names'
   assert.equal(screenOf('#/gym/routines?new=1'), 'routines');
   assert.equal(screenOf('#/gym/routines/rt_9f2c'), 'routine');
   assert.equal(screenOf('#/gym/proposals/prop_2f9c40a1'), 'proposal');
-  assert.equal(screenOf(ASK_HREF), 'ask');
-  assert.equal(screenOf('#/gym/ask'), 'ask');
-  assert.equal(screenOf('#/gym/ask?from=proposal'), 'ask');
+  assert.equal(COACH_HREF, '#/gym/coach');
+  assert.equal(screenOf(COACH_HREF), 'coach');
+  assert.equal(screenOf('#/gym/coach/'), 'coach');
+  assert.equal(screenOf('#/gym/coach?from=proposal'), 'coach');
+  assert.equal(THREADS_HREF, '#/gym/coach/threads');
   assert.equal(screenOf(THREADS_HREF), 'threads');
-  assert.equal(screenOf('#/gym/ask/threads'), 'threads');
-  assert.equal(screenOf('#/gym/ask/threads/'), 'threads');
-  assert.equal(screenOf('#/gym/ask/threads?from=routine'), 'threads');
+  assert.equal(screenOf('#/gym/coach/threads/'), 'threads');
+  assert.equal(screenOf('#/gym/coach/threads?from=routine'), 'threads');
   assert.equal(screenOf(threadHref('thr_0a1b2c3d4e5f6071')), 'thread');
   assert.equal(threadIdOf(threadHref('thr_0a1b2c3d4e5f6071')), 'thr_0a1b2c3d4e5f6071');
-  assert.equal(threadHref('thr_1'), '#/gym/ask/threads/thr_1');
+  assert.equal(threadHref('thr_1'), '#/gym/coach/threads/thr_1');
+  assert.equal(NOTES_HREF, '#/gym/notes');
+  assert.equal(screenOf(NOTES_HREF), 'notes');
+  assert.equal(screenOf('#/gym/notes/'), 'notes');
   assert.equal(threadIdOf('#/gym/ask/threads/A-b_9'), 'A-b_9');
   assert.equal(threadIdOf(THREADS_HREF), null);
   assert.equal(threadIdOf('#/gym/ask'), null);
@@ -177,11 +182,27 @@ test('screenOf — one grammar decides which of the fourteen rooms a hash names'
   assert.equal(screenOf(recordHref('back-squat')), 'record');
   assert.equal(screenOf('#/gym/stats'), 'record');
   assert.equal(screenOf('#/gym/stats?movement=bench-press'), 'record');
-  assert.equal(screenOf(''), 'today');
-  assert.equal(screenOf('#/gym/strength-tree'), 'today');
+  assert.equal(screenOf(''), 'routines');
+  assert.equal(screenOf('#/gym/strength-tree'), 'routines');
+  assert.equal(screenOf('#/gym/today'), 'routines');
 });
 
-test('sharedTokenOf — the coach’s link carries a whole base64url token, and only that shape', () => {
+test('screenOf — the older spellings still resolve to the same screens, and are never written', () => {
+  assert.equal(screenOf('#/gym/routines'), 'routines');
+  assert.equal(screenOf('#/gym/routines/'), 'routines');
+  assert.equal(screenOf('#/gym/ask'), 'coach');
+  assert.equal(screenOf('#/gym/ask/'), 'coach');
+  assert.equal(screenOf('#/gym/ask?from=proposal'), 'coach');
+  assert.equal(screenOf('#/gym/ask/threads'), 'threads');
+  assert.equal(screenOf('#/gym/ask/threads/thr_0a1b2c3d4e5f6071'), 'thread');
+  assert.equal(threadIdOf('#/gym/ask/threads/thr_0a1b2c3d4e5f6071'), 'thr_0a1b2c3d4e5f6071');
+  for (const written of [ROUTINES_HREF, COACH_HREF, THREADS_HREF, threadHref('thr_1'), NOTES_HREF]) {
+    assert.equal(written.includes('/ask'), false, written);
+    assert.equal(written.includes('/today'), false, written);
+  }
+});
+
+test('sharedTokenOf — the share link carries a whole base64url token, and only that shape', () => {
   const token = 'JcQ8w-3n1SxT_0aZbYq5rPm7LkHfDgVeU2iOtN4sRw0';
   assert.equal(screenOf(sharedHref(token)), 'shared');
   assert.equal(sharedTokenOf(sharedHref(token)), token);
@@ -280,6 +301,15 @@ test('the name cap is one number, under the store’s own, and the counter count
   assert.equal(nameCountLabel('P'.repeat(NAME_MAX + 10)), '70/60');
   assert.equal(isNameOverCap(''), false);
   assert.equal(isNameOverCap(undefined), false);
+});
+
+test('the name counter is drawn from the last fifth only, and the threshold is named once', () => {
+  assert.equal(NAME_COUNT_FROM, 48);
+  assert.equal(showsNameCount(''), false);
+  assert.equal(showsNameCount(undefined), false);
+  assert.equal(showsNameCount('P'.repeat(47)), false);
+  assert.equal(showsNameCount('P'.repeat(48)), true);
+  assert.equal(showsNameCount('P'.repeat(NAME_MAX + 10)), true);
 });
 
 test('movementOf — the catalog row, and the name is the one field read off it', () => {

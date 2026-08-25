@@ -87,7 +87,7 @@ export function captureError(kind, message, stack, route) {
       ...(RELEASE ? { release: RELEASE } : {}),
       tags: { kind: type },
       // Already reduced to its family by reportError, the one caller: falling back to
-      // window.location.href here would put the magic-link and coach-share secrets back.
+      // window.location.href here would put the magic-link and shared-workout secrets back.
       request: { url: route || '' },
       exception: { values: [{ type, value, stacktrace: { frames: framesFromStack(stack) } }] },
     };

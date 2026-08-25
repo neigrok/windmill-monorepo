@@ -8,7 +8,7 @@
 
 namespace wm::gym {
 
-// Sessions, their sets, the revisions a correction or a delete leaves behind, and the coach share.
+// Sessions, their sets, the revisions a correction or a delete leaves behind, and the workout share.
 // Idempotent writes by client-minted id, every query scoped to the owner, and each method borrows a
 // connection for exactly one transaction.
 //

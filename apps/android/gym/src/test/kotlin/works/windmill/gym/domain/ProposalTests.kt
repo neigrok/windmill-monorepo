@@ -102,8 +102,8 @@ class ProposalTests {
     }
 
     @Test
-    fun testAProposalMintedInAskSaysSo() {
-        assertEquals("Ask", ProposalSource(door = "ask").name)
+    fun testAProposalMintedInCoachSaysSo() {
+        assertEquals("Coach", ProposalSource(door = "ask").name)
         assertEquals("Claude", ProposalSource(door = "ask", agent = "Claude").name)
         assertEquals("your connected agent", ProposalSource(door = "mcp").name)
         assertEquals("a door this build has never heard of is somebody's own agent",
@@ -285,7 +285,7 @@ class ProposalTests {
         assertEquals("29 Jul · applied 3 changes from Claude", applied.historyLine(nowMs))
 
         val dismissed = proposal(changeCount = 3, state = ProposalState.Dismissed, settledAtMs = settled)
-        assertEquals("29 Jul · dismissed 3 changes from Claude", dismissed.historyLine(nowMs))
+        assertEquals("29 Jul · turned down 3 changes from Claude", dismissed.historyLine(nowMs))
 
         val superseded = proposal(changeCount = 3, state = ProposalState.Superseded, settledAtMs = settled)
         assertEquals("29 Jul · set aside 3 changes from Claude", superseded.historyLine(nowMs))
@@ -303,16 +303,16 @@ class ProposalTests {
         val settled = threeDaysAgoMs
         val on = "29 Jul at ${Readout.time(settled)}"
         assertEquals(
-            "Applied to Push A $on. Kept on the routine as a dated record — the program's history, not a toast that disappears.",
+            "Applied to Push A $on. Kept on the routine as a dated record — the program’s history, not a toast that disappears.",
             proposal(state = ProposalState.Applied, settledAtMs = settled).settledNote(nowMs))
         assertEquals(
-            "Dismissed $on. No reason asked for, nothing changed, and it stays in the routine's history in case you want it back.",
+            "Turned down $on. Nothing changed, and it stays in the routine’s history as a record.",
             proposal(state = ProposalState.Dismissed, settledAtMs = settled).settledNote(nowMs))
         assertEquals(
-            "Push A changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine's history.",
+            "Push A changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine’s history.",
             proposal(state = ProposalState.Superseded, settledAtMs = settled).settledNote(nowMs))
         assertTrue(proposal(state = ProposalState.Dismissed, settledAtMs = nowMs)
-            .settledNote(nowMs)!!.startsWith("Dismissed today at ${Readout.time(nowMs)}."))
+            .settledNote(nowMs)!!.startsWith("Turned down today at ${Readout.time(nowMs)}."))
         assertNull(proposal().settledNote(nowMs))
         assertNull(proposal(state = ProposalState.Applied).settledNote(nowMs))
     }
@@ -348,6 +348,14 @@ class ProposalTests {
         assertNull("only a removal keeps sets", whole.changes[0].loggedSets)
         assertEquals("your connected agent", whole.source.name)
         assertFalse(whole.renames)
+    }
+
+    @Test
+    fun testTurningDownIsConfirmedInTheSameWordsAsEverySurface() {
+        assertEquals("Turn this down", Proposal.turnDownVerb)
+        assertEquals("Turn this down?", Proposal.turnDownAsk)
+        assertEquals("Nothing changes, and it stays in the routine’s history as a record.", Proposal.turnDownBody)
+        assertEquals("Turn down", Proposal.turnDown)
     }
 
     @Test

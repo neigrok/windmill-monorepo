@@ -381,7 +381,7 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum - 12.dp)
+            .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
             .background(if (pressed) GymSkin.raised else Color.Transparent)
             .clickable(interactionSource = pressing, indication = null) { onFix(set.id) },

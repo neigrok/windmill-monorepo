@@ -75,13 +75,29 @@ class ConnectedLogTests {
         )
         assertTrue(
             "and the delete level says it can end one",
-            ConnectedLog.deleteLevel.contains("end a coach link"),
+            ConnectedLog.deleteLevel.contains("end a share link"),
         )
         assertEquals(
             "one sentence of the pitch names the shared link too",
             1,
             ConnectedLog.truths.count { it.contains("link you shared") },
         )
+    }
+
+    @Test
+    fun thePitchIsTheSameSentenceTheWebAndIosConnectPagesDraw() {
+        assertEquals(
+            "Not a chat in another tab. The twelve weeks of squats you already logged, readable by the " +
+                "assistant you already use.",
+            ConnectedLog.sub,
+        )
+    }
+
+    @Test
+    fun theWordCoachNamesTheRoomAndNothingOnTheseCards() {
+        assertEquals(emptyList<String>(), everySentence.filter { it.lowercase().contains("coach") })
+        assertTrue("the read list names the notes, which every connected agent reads",
+            ConnectedLog.canDo.contains("notes"))
     }
 
     @Test

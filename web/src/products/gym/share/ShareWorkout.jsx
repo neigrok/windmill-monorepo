@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { failureReason, gymApi } from '../gymApi.js';
 import { expiryLine, SHARE_OFFER, SHARE_OFFER_LINE, SHARE_TERMS, shareLink } from './share.js';
 
-export function CoachShare({ sessionId }) {
+export function ShareWorkout({ sessionId }) {
   const [share, setShare] = useState(null);        // { token, expiresAt } once one is live
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);

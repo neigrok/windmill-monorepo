@@ -215,7 +215,7 @@ struct ThreadScreen: View {
 
     private func turns(_ thread: AskThread) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            ForEach(Array((thread.turns ?? []).enumerated()), id: \.offset) { _, turn in
+            ForEach(Array((thread.turns ?? []).filter(\.isDrawn).enumerated()), id: \.offset) { _, turn in
                 if turn.from == .lifter {
                     HStack {
                         Spacer(minLength: WindmillSpace.x8)

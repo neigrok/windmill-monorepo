@@ -72,4 +72,11 @@ std::string toCsv(const std::vector<ExportedThreadTurn>& turns) {
   return csv;
 }
 
+std::string toCsv(const std::vector<ExportedNote>& notes) {
+  std::string csv = line({"position", "title", "body", "updated_at"});
+  for (const ExportedNote& row : notes)
+    csv += line({row.position, row.title, row.body, row.updatedAt});
+  return csv;
+}
+
 }

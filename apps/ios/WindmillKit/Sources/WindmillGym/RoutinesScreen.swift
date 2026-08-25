@@ -13,7 +13,7 @@ struct RoutinesScreen: View {
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
     let onLater: (String) -> Void
-    // nil wherever an Ask door is not offered, so the chip is absent rather than dead.
+    // nil wherever a Coach door is not offered, so the chip is absent rather than dead.
     let onAsk: (() -> Void)?
     let onSettings: () -> Void
     let onSignIn: () -> Void

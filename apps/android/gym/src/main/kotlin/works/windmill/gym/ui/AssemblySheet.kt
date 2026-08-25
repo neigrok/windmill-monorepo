@@ -246,8 +246,9 @@ fun AssemblySheet(
     }
 }
 
+// Shared with the notes list, which drags the same way.
 @Composable
-private fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
+internal fun GrabRail(lit: Boolean, modifier: Modifier = Modifier) {
     Column(
         modifier.size(width = 32.dp, height = GymTap.minimum),
         verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),

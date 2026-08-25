@@ -3,25 +3,25 @@ import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
-import { AskRoom } from './ask/AskRoom.jsx';
-import { ThreadDetail, ThreadsList } from './ask/Threads.jsx';
 import { Backfill } from './Backfill.jsx';
+import { CoachRoom } from './coach/CoachRoom.jsx';
+import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
 import { ConnectLog } from './connect/ConnectLog.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { LogList, SessionDetail } from './Log.jsx';
+import { Notes } from './notes/Notes.jsx';
 import { ProposalDiff } from './Proposals.jsx';
 import { MovementRecord } from './Record.jsx';
 import { RoutineEditor, RoutinesList } from './Routines.jsx';
-import { Today } from './Today.jsx';
 import {
-  finishIdOf, movementIdOf, proposalIdOf, ROUTINES_HREF, routineIdOf, screenOf, sessionIdOf,
-  sharedTokenOf, threadIdOf,
+  COACH_HREF, finishIdOf, movementIdOf, proposalIdOf, ROUTINES_HREF, routineIdOf, screenOf,
+  sessionIdOf, sharedTokenOf, threadIdOf,
 } from './log.js';
 import { SharedSession } from './share/SharedSession.jsx';
 import { useTrainingLog } from './useTrainingLog.js';
 import './gym.css';
 
-const TAB_SCREENS = ['today', 'log', 'routines'];
+const TAB_SCREENS = ['routines', 'log', 'coach'];
 
 export function GymApp({ hash, inShell = false }) {
   const { user, status, signOut } = useAuth();
@@ -94,18 +94,18 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
     <>
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
       <main className="gym-column">
-        {screen === 'today' && <Today log={log} onSignIn={onSignIn} />}
+        {screen === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} />}
         {screen === 'log' && <LogList log={log} onSignIn={onSignIn} />}
-        {screen === 'routines' && <RoutinesList log={log} />}
         {screen === 'record' && <MovementRecord id={movementIdOf(hash)} log={log} />}
         {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
         {screen === 'proposal' && <ProposalDiff key={proposalIdOf(hash)} id={proposalIdOf(hash)} log={log} />}
         {screen === 'session' && <SessionDetail key={sessionIdOf(hash)} id={sessionIdOf(hash)} log={log} />}
         {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
         {screen === 'backfill' && <Backfill log={log} />}
-        {screen === 'ask' && <AskRoom log={log} />}
+        {screen === 'coach' && <CoachRoom log={log} />}
         {screen === 'threads' && <ThreadsList />}
         {screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} />}
+        {screen === 'notes' && <Notes log={log} />}
         {screen === 'connect' && <ConnectLog />}
       </main>
       {TAB_SCREENS.includes(screen) && <TabBar screen={screen} />}
@@ -132,9 +132,9 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
 function TabBar({ screen }) {
   return (
     <nav className="gym-tabs">
-      <a className={screen === 'today' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym">Today</a>
-      <a className={screen === 'log' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym/log">The log</a>
       <a className={screen === 'routines' ? 'gym-tab is-on' : 'gym-tab'} href={ROUTINES_HREF}>Routines</a>
+      <a className={screen === 'log' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym/log">The log</a>
+      <a className={screen === 'coach' ? 'gym-tab is-on' : 'gym-tab'} href={COACH_HREF}>Coach</a>
     </nav>
   );
 }

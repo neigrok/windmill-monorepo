@@ -13,7 +13,7 @@ namespace {
 
 drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
   if (refusal == AskRefusal::threadMalformed)
-    return error(drogon::k400BadRequest, "that isn't a conversation Ask can answer");
+    return error(drogon::k400BadRequest, "that isn’t a conversation Coach can answer");
   if (refusal == AskRefusal::threadTaken)
     // The thread primary key spans every account, so a taken id is refused, never appended to.
     return error(drogon::k409Conflict, "that conversation id is already in use — start a new one",
@@ -21,29 +21,34 @@ drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
   if (refusal == AskRefusal::questionEmpty)
     return error(drogon::k400BadRequest, "ask something about your training");
   if (refusal == AskRefusal::questionTooLong)
-    return error(drogon::k400BadRequest, "that question is longer than Ask takes");
+    return error(drogon::k400BadRequest, "that question is longer than Coach takes");
   if (refusal == AskRefusal::questionUnstorable)
     // Terminal: a NUL or non-UTF-8 bytes stay unstorable however often the body is re-sent.
-    return error(drogon::k400BadRequest, "that question has characters Ask can't store");
+    return error(drogon::k400BadRequest, "that question has characters Coach can’t store");
   if (refusal == AskRefusal::tooManyTurns)
+    // Four questions: a question and its answer are two turns against kMaxThreadTurns (8).
     return error(drogon::k409Conflict,
-                 "this conversation is as long as Ask holds. Start a new one",
+                 "this conversation holds four questions — start a new one",
                  "ask-thread-full");
   if (refusal == AskRefusal::sessionOpen)
-    return error(drogon::k409Conflict, "finish your workout first — Ask reads a log that has stopped "
-                                       "moving", "ask-session-open");
+    return error(drogon::k409Conflict,
+                 "finish your workout first — Coach reads a log that has stopped moving",
+                 "ask-session-open");
   if (refusal == AskRefusal::dailyLimit)
-    return error(drogon::k429TooManyRequests,
-                 "that's Ask for now — it answers about ten questions a day, three back to back. The "
-                 "next one frees up in a couple of hours",
+    // Says what to do next, not the rule again: the allowance itself is drawn above the composer
+    // by every client. True rather than approximate — ten a day on a steady refill is one every
+    // two and a half hours (AskRation).
+    return error(drogon::k429TooManyRequests, "the next question frees up in a couple of hours",
                  "ask-daily-limit");
   if (refusal == AskRefusal::outOfBudget)
     return error(drogon::k429TooManyRequests,
-                 "this account has reached its AI ceiling for the last 30 days. Ask will answer again "
-                 "as that window rolls on",
+                 "this account has reached its AI ceiling for the last 30 days. Coach will answer "
+                 "again as that window rolls on",
                  "ask-out-of-budget");
   // notConfigured: its own code, so a proxy's 503 during a restart stays a different fact.
-  return error(drogon::k503ServiceUnavailable, "Ask isn't available right now", "ask-not-configured");
+  return error(drogon::k503ServiceUnavailable,
+               "Coach isn’t part of this Windmill. Your log is still yours to read.",
+               "ask-not-configured");
 }
 
 }  // namespace
@@ -73,7 +78,7 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     }
     if (!reply.answer.ok) {
       // Nothing is stored on failure, so a retry into the same thread lands once.
-      cb(error(drogon::k502BadGateway, "Ask didn't answer. Try again in a moment"));
+      cb(error(drogon::k502BadGateway, "Coach didn’t answer. Try again in a moment"));
       return;
     }
     Json::Value steps(Json::arrayValue);

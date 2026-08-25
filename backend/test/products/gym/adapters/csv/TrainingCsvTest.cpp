@@ -55,9 +55,21 @@ TEST(gym_csv_leaves_a_negative_load_a_number) {
 
 TEST(gym_csv_disarms_a_thread_turn_a_model_wrote) {
   const std::string csv = toCsv(std::vector<ExportedThreadTurn>{
-      {"th_1", "=1+1", "applied", "", "", "2026-08-16T05:00:00Z", "1", "ask",
+      {"th_1", "=1+1", "applied", "", "", "2026-08-16T05:00:00Z", "1", "coach",
        "@lookup the coach's number", "2026-08-16T05:00:01Z"}});
 
   CHECK(csv.find("th_1,'=1+1,applied,") != std::string::npos);
-  CHECK(csv.find(",ask,'@lookup the coach's number,") != std::string::npos);
+  CHECK(csv.find(",coach,'@lookup the coach's number,") != std::string::npos);
+}
+
+TEST(gym_csv_exports_a_note_in_precedence_order_and_disarms_what_a_lifter_typed) {
+  const std::string csv = toCsv(std::vector<ExportedNote>{
+      {"0", "How I want to be talked to", "Blunt, no praise.\r\nNumbers first.",
+       "2026-08-16T05:00:00Z"},
+      {"1", "=SUM(A1)", "", "2026-08-16T05:00:01Z"}});
+
+  CHECK_EQ(csv, std::string("position,title,body,updated_at\r\n"
+                            "0,How I want to be talked to,\"Blunt, no praise.\r\nNumbers first.\","
+                            "2026-08-16T05:00:00Z\r\n"
+                            "1,'=SUM(A1),,2026-08-16T05:00:01Z\r\n"));
 }

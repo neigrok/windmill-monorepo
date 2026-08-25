@@ -1582,7 +1582,7 @@ TEST(gym_share_answers_a_token_and_an_end_and_a_second_tap_answers_the_same_one)
 }
 
 // The reply carries the LINK, not just the secret, and the server composes it once for every surface.
-TEST(gym_share_answers_the_page_a_coach_opens_and_never_the_json_route) {
+TEST(gym_share_answers_the_page_its_holder_opens_and_never_the_json_route) {
   Harness h;
   h.signIn("s-live");
   trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);

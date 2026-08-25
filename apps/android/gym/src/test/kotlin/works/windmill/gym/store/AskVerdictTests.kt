@@ -8,25 +8,44 @@ private fun refusal(status: Int, code: String? = null, message: String? = null) 
 
 class AskVerdictTests {
     @Test
-    fun testTheDailyCapAndTheAiCeilingAreBothSaidAndNeitherIsRetried() {
+    fun testTheDailyCapTakesTheComposerDownAndTheAiCeilingIsSaidAndNeitherIsRetried() {
         assertEquals(
-            AskVerdict.Said("that's Ask for now — it answers about ten questions a day"),
+            AskVerdict.Capped("the next question frees up in a couple of hours"),
             AskVerdict.refusing(refusal(429, code = "ask-daily-limit",
-                message = "that's Ask for now — it answers about ten questions a day")),
+                message = "the next question frees up in a couple of hours")),
         )
+        assertEquals("a wordless cap still says what to do next",
+            AskVerdict.Capped("The next question frees up in a couple of hours."),
+            AskVerdict.refusing(refusal(429, code = "ask-daily-limit")))
         assertEquals(
-            AskVerdict.Said("this account has reached its AI ceiling for the last 30 days"),
+            AskVerdict.Said("this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on"),
             AskVerdict.refusing(refusal(429, code = "ask-out-of-budget",
-                message = "this account has reached its AI ceiling for the last 30 days")),
+                message = "this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on")),
+        )
+    }
+
+    @Test
+    fun testAFullConversationIsAnsweredByANewOneAndTheCeilingSaysFour() {
+        assertEquals(
+            AskVerdict.Fresh("this conversation holds four questions — start a new one"),
+            AskVerdict.refusing(refusal(409, code = "ask-thread-full",
+                message = "this conversation holds four questions — start a new one")),
+        )
+        assertEquals(AskVerdict.Fresh("This conversation holds four questions. Start a new one."),
+            AskVerdict.refusing(refusal(409, code = "ask-thread-full")))
+        assertEquals(
+            AskVerdict.Fresh("that conversation id is already in use — start a new one"),
+            AskVerdict.refusing(refusal(409, code = "ask-thread-taken",
+                message = "that conversation id is already in use — start a new one")),
         )
     }
 
     @Test
     fun testAWorkoutStillOpenIsAnAnswerAndNotAFailure() {
         assertEquals(
-            AskVerdict.Said("finish your workout first — Ask reads a log that has stopped moving"),
+            AskVerdict.Said("finish your workout first — Coach reads a log that has stopped moving"),
             AskVerdict.refusing(refusal(409, code = "ask-session-open",
-                message = "finish your workout first — Ask reads a log that has stopped moving")),
+                message = "finish your workout first — Coach reads a log that has stopped moving")),
         )
     }
 
@@ -38,23 +57,23 @@ class AskVerdictTests {
 
     @Test
     fun testOnlyALogThatWentQuietIsWorthAnotherTap() {
-        assertEquals(AskVerdict.Again("Ask didn't answer. Try again in a moment"),
+        assertEquals(AskVerdict.Again("Coach didn’t answer. Try again in a moment"),
             AskVerdict.refusing(RefusalFacts(offline = true)))
-        assertEquals(AskVerdict.Again("Ask didn't answer. Try again in a moment"),
+        assertEquals(AskVerdict.Again("Coach didn’t answer. Try again in a moment"),
             AskVerdict.refusing(RefusalFacts(malformed = true)))
-        assertEquals(AskVerdict.Again("Ask didn't answer. Try again in a moment"),
+        assertEquals(AskVerdict.Again("Coach didn’t answer. Try again in a moment"),
             AskVerdict.refusing(RefusalFacts()))
-        assertEquals(AskVerdict.Again("Ask didn't answer. Try again in a moment"),
-            AskVerdict.refusing(refusal(502, message = "Ask didn't answer. Try again in a moment")))
+        assertEquals(AskVerdict.Again("Coach didn’t answer. Try again in a moment"),
+            AskVerdict.refusing(refusal(502, message = "Coach didn’t answer. Try again in a moment")))
     }
 
     @Test
     fun testATerminalRefusalCarriesTheLogsOwnSentence() {
-        assertEquals(AskVerdict.Said("that isn't a conversation Ask can answer"),
-            AskVerdict.refusing(refusal(400, message = "that isn't a conversation Ask can answer")))
+        assertEquals(AskVerdict.Said("that isn’t a conversation Coach can answer"),
+            AskVerdict.refusing(refusal(400, message = "that isn’t a conversation Coach can answer")))
         assertEquals(AskVerdict.Said("sign in to open your training log"),
             AskVerdict.refusing(refusal(401, message = "sign in to open your training log")))
         assertEquals("a refusal that arrived wordless still says something true",
-            AskVerdict.Said("Ask couldn't take that one"), AskVerdict.refusing(refusal(400)))
+            AskVerdict.Said("Coach couldn’t take that one"), AskVerdict.refusing(refusal(400)))
     }
 }

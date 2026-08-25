@@ -59,14 +59,22 @@ not read, and stacking them made the product **less** honest.
 A note is **a title and a body**. Nothing else. No tags, no folders, no colours. Both stored
 **verbatim**, exactly as typed — nothing in this product summarises what a lifter wrote.
 
-**Bounded at ten notes and five hundred bytes each** — everything around this is bounded by name, and
-an unbounded free-text field feeding a prompt would be the one exception.
+**Bounded, and the bounds are one number in three places.** Ten notes per account; a title of at
+most 60 characters (Unicode code points, non-empty after trim); a body of at most 500 UTF-8 bytes
+after trim, which may be empty. The same numbers sit in the schema CHECK, the domain constructor and
+the `list_notes` tool's description, and the server refuses in three sentences every surface shows
+verbatim: *a note needs a title*, *a title runs to 60 characters*, *a note runs to 500 bytes*.
+Everything around this is bounded by name, and an unbounded free-text field feeding a prompt would
+be the one exception. A note's id is client-minted, `note_<hex>`, so a lost reply is replayed with
+the same id and never minted twice.
 
 **The ceiling is said when it is reached, and here is where that is**, because "at the moment it
 bites" is not a location:
 
-- **The byte ceiling** is a live counter in the note editor — *"70 of 500 bytes"* — and it appears
-  only in the last fifth, so a short note carries no chrome at all.
+- **The byte ceiling** is a live counter in the note editor — *"470 of 500 bytes"* — and it appears
+  only in the last fifth, from 400 bytes, so a short note carries no chrome at all. Past the bound
+  the counter goes alarm and reads *"501 of 500 bytes"*; Save stays tappable and refuses in place
+  with the server's sentence, so nothing is silently dead.
 - **The note ceiling** is the *Add a note* row: at ten it stops offering and says so, in these words
   on every surface — **"10 of 10 notes. Delete one to add another."**
 
@@ -78,8 +86,7 @@ bites" is not a location:
   *(An earlier draft of this brief justified the numerals by the mono face. That was wrong — the
   string is right for the other reason.)*
 
-Neither is drawn today on the phones — the byte counter exists only on web — so both are **owed**, and
-this brief says owed rather than moved.
+Every surface draws both.
 
 **Order is precedence.** The top note wins, and the list is dragged into the order the lifter wants.
 That answers what Coach does when two notes disagree, and it needs three words on screen because the
@@ -113,6 +120,10 @@ your account.
 **Its own resource.** Notes are never stored inside the preferences document, which is a
 whole-document last-write-wins replace — two screens open at once would silently discard one. That is
 a hostile container for text somebody wrote.
+
+**Account-only.** There is no local-first copy on the phones and no claim-replay slot. Signed out,
+the Notes screen is a sign-in door — *"Notes live with your account, so they need you signed in."* —
+and on the web the screen sits behind the same gate as the Coach room.
 
 ## Seeded, never pre-written
 
@@ -157,7 +168,6 @@ never imports.
 
 ## Open
 
-- **The byte bound.** Ten notes at five hundred bytes is proposed, not decided.
 - **Whether a note can be muted** — kept, but ignored for now. It would be one control, and the first
   piece of state on a note that is not its text.
 - **Whether the one honesty line actually lands.** The guideline's easiness effect says a plainer

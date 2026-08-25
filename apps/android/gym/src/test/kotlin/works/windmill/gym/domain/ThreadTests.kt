@@ -43,11 +43,11 @@ class ThreadTests {
     }
 
     @Test
-    fun aDismissedRowSaysWhatWasDismissedAndNeverWhy() {
+    fun aTurnedDownRowSaysWhatWasTurnedDownAndNeverWhy() {
         val dismissed = ThreadOutcome("dismissed", changes = 4)
 
-        assertEquals("4 changes dismissed", dismissed.detail)
-        assertEquals("dismissed", dismissed.label)
+        assertEquals("4 changes turned down", dismissed.detail)
+        assertEquals("turned down", dismissed.label)
         assertEquals(
             "no motive survives the wire",
             ThreadOutcome("dismissed", changes = 4),
@@ -129,7 +129,7 @@ class ThreadTests {
     fun theDeleteSaysWhatItKeepsBeforeItIsOffered() {
         assertEquals(
             "Deleting the conversation keeps what it changed: an applied change stays in the " +
-                "routine's history. There is no undoing the delete.",
+                "routine’s history. There is no undoing the delete.",
             Threads.deleteRule,
         )
     }
@@ -177,12 +177,24 @@ class ThreadTests {
     }
 
     @Test
+    fun aTurnFromASideThisBuildHasNeverHeardOfIsReadAndDrawnAsCoachsRatherThanRefused() {
+        val opened = WindmillJson.decodeFromString(
+            AskThread.serializer(),
+            """{"id":"thr_1","title":"what's stalled?","turns":[
+                 {"from":"oracle","text":"bench, three weeks."}]}""",
+        )
+
+        assertEquals(listOf(AskTurn("oracle", "bench, three weeks.")), opened.turns)
+        assertEquals(listOf(false), opened.turns.map { it.fromLifter })
+    }
+
+    @Test
     fun aMintedProposalIsCountedTheWayTheProgramCountsIt() {
         val minted = ThreadProposal(id = "prop_1", state = ProposalState.Applied, changeCount = 4,
             routineId = "rt_1", routine = "Push A", createdAtMs = august)
 
         assertEquals("4 Aug · 4 changes to Push A · applied", minted.line(august))
-        assertEquals("4 Aug · 1 change to Push A · dismissed",
+        assertEquals("4 Aug · 1 change to Push A · turned down",
             minted.copy(state = ProposalState.Dismissed, changeCount = 1).line(august))
         assertEquals("a routine the reply could not name is left unnamed rather than guessed",
             "4 Aug · 2 changes · waiting",
@@ -198,6 +210,6 @@ class ThreadTests {
         assertEquals("thr_1", fromAsk.conversation)
         assertNull(deleted.conversation)
         assertNull("a thread id under another door is not a door this room opens", fromMcp.conversation)
-        assertEquals("Ask", deleted.name)
+        assertEquals("Coach", deleted.name)
     }
 }

@@ -29,10 +29,11 @@ right one." False per F1.
 `apps/ios/WindmillKit/Sources/WindmillJournal/JournalSkin.swift:31`, which paints
 `canvas: 0xFBF6EA`, so the phone's day sheet is warmer than the web's.
 
-**F4 · `gym.css:67`'s "3.4:1" does not reproduce at any ground** → re-measure.
-Recomputed for `--pr-ink`: 3.19 on the tinted record card, 2.83 on the tinted canvas, 3.73
-untinted. The companion "3.6 on the family cream" matches the untinted cream (3.69), so the
-original measurement was taken against the wrong ground and its conclusion needs re-checking.
+**F4 · `--pr-ink` fails the 4.5 gate in Daylight, and the gold ramp has no darker step** → a
+designer's token before Daylight renders. `gym.css:66-68` states 3.2:1 for `--pr-ink`
+(`--accent-gold-600`) against `--pr-soft` over `--surface-card` in pietra, which agrees with the
+ledger's own recompute (3.19 on the tinted record card; 2.83 on the tinted canvas, 3.73 untinted).
+Nothing renders this skin while gym pins dark (F5), which is when the token has to be decided.
 
 **F5 · gym's Daylight skin has no producer** → **ruled 2026-08-24: build it**, owed a build.
 `routes.js` pins `theme: 'dark'` and `GymApp.jsx` hardcodes `data-theme="dark"`, so the light block
@@ -41,8 +42,9 @@ that ignores the system Appearance is not native and `superapp-shell.md:80-83` a
 owns its palette and never the choice. Three things the ruling found and that the build owes:
 fourteen of the light declarations are byte-identical aliases onto tokens that already flip per
 theme, so only four are real light decisions; `--set-done-glow` is **deleted** in light rather than
-dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it; and
-`--pr-ink` must be re-measured first — see F4, which says its stated 3.4:1 reproduces at no ground.
+dimmed, because a token whose mechanism does not exist in a mode should not carry a value in it
+(done in `gym.css`; the Figma collection still carries it — `1w`); and `--pr-ink` needs a designer's
+value first — see F4, which puts it at 3.2:1 with no darker gold in the ramp.
 Android takes a staged version: its skin is a compile-time object read at ~560 sites,
 `LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
 
@@ -242,28 +244,19 @@ App: "No password. What you make on this device is claimed by your account when 
 Web: "…and some rooms only open once you have an account" (`SignInDialog.jsx` — true on the web,
 where the gym log and mirror need an account). Per-surface truth, or one sentence everywhere?
 
-**0t · web's mirror home is Today; mobile has no Today** → **ruled 2026-08-24: web converges**,
-owed a build. One product does not get two homes. Web's tabs become Routines · The log · Coach,
-matching the phones; Today is deleted as a tab; the live-session mirror moves to the head of
-Routines home, which is already the surface that says whether anything is running. The mirror keeps
-its charter whole — it never offers a Finish, it says "Not training now." over "Workouts start on
-your phone." in words rather than as a greyed control, and it never says "resting". The Log's head
-carries the bodyweight reading line instead, because two heads on one screen is the crowding this
-ruling avoids. Drawn on the Boards page, section "The Coach wave · web".
-
-**0u · Ask is a tab the boards never drew as one** → **superseded by the Coach wave**, owed a
-build. Ask is renamed **Coach** and its tab-root form is drawn on all three surface pages. The two
-build-authored stances are **blessed and de-diverged** in `gym/briefs/09-coach.md`: signed-out is
-*"Coach reads your log, so it needs you signed in."* (iOS's shorter wording wins over Android's
-`AskScreen.kt:208`, which explains a mechanism nobody asked about), and deployment-absent is
-*"Coach isn’t part of this Windmill. Your log is still yours to read."* (Android's wording wins —
-`Ask.kt:75` — because *part of* says nothing is broken, where iOS's *available on*
-(`Ask.swift:178`) implies an outage that will pass). Both surfaces owe the change, and `AskTests`
-pins the old strings. **The apostrophe is the typographic one everywhere**: `Ask.kt:75` ships a
-straight quote in this exact string while `Ask.swift:178` ships a curly one. Note the same wave
-found the server sends four strings saying "Ask" verbatim to all three clients
-(`AskApi.cpp:33-38`); a client must never rewrite server text, so those change too and are
-unassigned.
+**0t · one product has one home, and the web's IA is now the phones'** → **ruled 2026-08-24, built
+2026-08-25**; the Log head's bodyweight reading line is the one half still owed, because it waits on
+the bodyweight wire (BUILD.md Wave 7).
+Every surface draws Routines · The log · Coach (`GymApp.jsx:24`, `GymRoom.swift:37`,
+`GymRoom.kt:114`); the web has no Today, and the live-session mirror heads Routines home
+(`Mirror.jsx`) with its charter whole — it never offers a Finish, it says "Not training now." over
+"Workouts start on your phone." in words rather than as a greyed control, and it never says
+"resting" — pinned by `screens.test.js`. The web's hash grammar was ruled with it: `#/gym` IS the
+routines home and `#/gym/routines` an alias that still resolves; the routine editor stays
+`#/gym/routines/<id>`; `#/gym/coach` is the Coach root and `#/gym/ask` an alias that resolves to it;
+threads are `#/gym/coach/threads` and `#/gym/coach/threads/<id>`; notes are `#/gym/notes`; `home()`
+and `landingAfterSignIn()` return `#/gym` (`log.js:28-59`, `:98-112`; `routes.js:21-27`). Drawn on
+the Boards page, section "The Coach wave · web".
 
 **0v · the gym app boards disagree with the built routine-first IA** → one redraw pass.
 Each line below was ruled for the build and is owed a redraw:
@@ -579,7 +572,7 @@ wave rests on an untested assumption.
 
 **1l · the You seat has no slot in a native tab bar** → canon amendment, owed a build.
 `superapp-shell.md:22-23` and `:157` put the You seat "last in every app's own bar, past a
-hairline", and both phones do exactly that (`GymRoom.swift:240`, `GymRoom.kt:711`). At the iOS 17
+hairline", and both phones do exactly that (`GymRoom.swift:258`, `GymRoom.kt:758`). At the iOS 17
 floor a native `TabView` has no non-tab trailing slot and an M3 `NavigationBar` has none either, so
 the Coach wave moves both shell seats into the room's own **top** chrome — capsule leading, You
 trailing, on each stack root; on Android the avatar is the top app bar's single action slot. The
@@ -601,54 +594,32 @@ choice. It is the line gym has been obeying while pinning dark. It becomes "its 
 schemes · never the scheme itself."
 
 **1o · the proposal's kept rows are drawn on one surface and dropped on two** → one shape, owed a
-build. Web renders them (`proposals.js:180-183`, whose header states why: "The change rows ARE the
-document as well as the diff"); iOS drops them (`ProposalScreen.swift:114-115`, `case .kept:
+build. Web renders them (`proposals.js:191-192`, under a header that states why: "The change rows ARE
+the document as well as the diff"); iOS drops them (`ProposalScreen.swift:124-125`, `case .kept:
 EmptyView()`) and so does Android (`Proposal.kt:151`). The wire carries them deliberately, and the
 system prompt tells the model "a line you leave out is a line you are proposing to remove". The
 Coach wave rules one shape everywhere: changed rows at full weight, **kept rows as a collapsed
 count** — "and 7 lines unchanged" — tappable to expand.
 
-**1p · `AnthropicAsk.cpp:29-30` tells the model it can read the gym's settings** → already false,
-fix now. `get_preferences` was retired and nothing replaced it (`GymTools.cpp:440-444`), so the
-prompt promises a read that cannot happen. The Coach wave's Notes feature makes the line actively
-misleading, since the distinction it ships is precisely that Coach reads notes and **not** settings.
+**1q · the server's Coach strings and the three client suites are one contract** → built
+2026-08-25, nothing owed; the machine tokens stay.
+Every lifter-facing sentence `AskApi.cpp` sends names the room Coach and carries the typographic
+apostrophe (`AskApi.cpp:16-81`), pinned whole by `AskApiTest.cpp` and repeated verbatim in the
+client suites, because a client never rewrites server text. What does not move: the verdict codes
+`ask-thread-taken`, `ask-thread-full`, `ask-session-open`, `ask-daily-limit`, `ask-out-of-budget`,
+`ask-not-configured`, the thread turn's wire enum `from: "lifter" | "ask"` (`TrainingJson.cpp:496`)
+and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1135`). The CSV
+export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadRepository.cpp:224`), not
+the JSON enum. The human share is "Share this workout" on every surface (`share/share.js:12`,
+`CoachShare.swift:28`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
+not on the room (`connect.js:5-9`, `ConnectedLog.swift:114`).
 
-**1q · four server strings say "Ask" to all three clients** → owed a build, unassigned.
-`AskApi.cpp:33-38` sends "this conversation is as long as Ask holds", "Ask reads a log that has
-stopped moving", "that's Ask for now" and "Ask isn't available right now" verbatim. A client must
-never rewrite server text, so the rename reaches them. Related copy in the same sweep:
-`ConnectedLog.swift:114` ("Not a coach in a chat tab") would have gym insulting its own room and is
-rewritten to contrast on scope rather than quality; `ConnectedLog.swift:151` and four
-marketing/head strings (`landingHead.js:7`, `:26`, `:35`, `GymLanding.jsx:368`) carry the old share
-name into the search index.
-
-**1r · the thread cap is four questions and the copy says eight** → fix the copy.
-`ask.js:66-70` computes `answered * 2 + 1 > MAX_TURNS` against a ceiling of 8 turns, so a lifter gets
-**four** questions. Every surface that states the ceiling should say four.
-
-**1s · `set.rpe` is drawn on every surface and enterable on none** → give it a control or delete
-the render. `Log.jsx:281` prints it, `FixSheet.jsx:44-64` edits weight, reps and kind only, the wire
-already accepts it, and the prompt forbids the model estimating one. The Coach wave adds a set-note
-field to the fix sheet and rules the same must happen for RPE, or the render goes: a set row never
-prints a number the lifter cannot touch on any surface.
-
-**1t · three hardcoded black shadows in `gym.css` are tuned for basalt** → move them to the per-skin
-tokens. `gym.css:596` (`0 14px 34px rgba(0,0,0,0.55)`, the toast), `:652`
-(`0 -18px 40px rgba(0,0,0,0.55)`, the sheet) and `:1490` (`0 12px 30px rgba(0,0,0,0.45)`, a dragging
-routine entry). On pietra (`--surface-canvas: #EBE7E3`) a 55%-black drop reads as soot. `shadows.css`
-already carries per-skin `--shadow-lg` and `--shadow-md`. Once the gym room takes the design system's
-`Toast` and `Dialog` the first two inherit the right shadow for free; `:1490` needs a hand. Latent
-until Daylight renders — see F5.
-
-**1u · one surface promises a dismissed proposal can come back, and the wire has no way** → fix the
-copy toward the wire. `Proposal.swift:292` reads *"Dismissed {when}. No reason asked for, nothing
-changed, and it stays in the routine's history in case you want it back."* The web states the
-opposite and is right — `proposals.js:13`, *"Every other state is settled and stays settled; the wire
-has no path back"* — and `ProgramApi.cpp` carries apply and dismiss and nothing that reopens one.
-So the phone promises a recovery the product cannot perform. It stays in the routine's history **as a
-record**, not as something you can take back. Found while drawing the Coach wave's review sheet,
-where it decides whether turning a proposal down deserves a confirmation: once the line is true, it
-does.
+**1s · `set.rpe` is drawn on the web and enterable on no surface** → give it a control or delete
+the render. `Log.jsx:281` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
+already accepts it, and the prompt forbids the model estimating one. The phones carry it as a
+decoded field that no view reads (`Training.swift:152`, `domain/Training.kt:107`). The Coach wave adds a
+set-note field to the fix sheet and rules the same must happen for RPE, or the render goes: a set
+row never prints a number the lifter cannot touch on any surface.
 
 **1v · the gym tab bar carries its entire selected state in two colours that barely differ** → a
 token decision. `brand/base` `#9a90be` against `gym/ink-faint` `#8d8896` is roughly **1.15:1 between
@@ -657,12 +628,12 @@ symbol carries some of it — but the **labels** are colour-only, and at that se
 cannot tell which tab they are on. Either the selected tint moves away from the faint ink, or the
 unselected ink drops further from it. Recorded on the `iOS Tab Bar` component description.
 
-**1w · `glow/set-done` still carries a Daylight value** → delete it from the light mode. F5's ruling
-says a token whose mechanism does not exist in a mode should not be given a value in that mode, and
-emitted light does not exist on pietra. The shared `Gym · Colour` collection still resolves
-`#7d8c4366` in Daylight, and `gym.css`'s light block still declares `--set-done-glow`. No board in
-the Coach wave uses it in either mode, so nothing depends on it today — which is exactly when to
-remove it.
+**1w · `glow/set-done` still carries a Daylight value in the Figma collection** → delete it from the
+light mode. F5's ruling says a token whose mechanism does not exist in a mode should not be given a
+value in that mode, and emitted light does not exist on pietra. `gym.css` declares `--set-done-glow`
+in the dark block only (`:26`) and the light dot draws no shadow (`:582-583`); the shared
+`Gym · Colour` collection still resolves `#7d8c4366` in Daylight. No board in the Coach wave uses it
+in either mode, so nothing depends on it today — which is exactly when to remove it.
 
 **1x · "Apply all N" has no defined unit, and three surfaces could count differently** → define it,
 then pin it. `applyLabel` generates the string, and nothing says whether a *change* is a moved **row**
@@ -701,24 +672,6 @@ haptic, because a vocabulary that starts inconsistent stays inconsistent: gym sh
 haptic today, and the *light on a swipe · medium on a save · success on a finish* vocabulary is
 Lift's design recorded on `gym-native-shell`, not something this room has.
 
-**2a · the architecture says the phone owns the wake lock, and one phone does not** → build it or
-correct the table. `ARCHITECTURE.md:989` lists "wake lock" among the things the phone owns in the
-two-surface split. Android does it — `GymRoom.kt:281-282` adds `FLAG_KEEP_SCREEN_ON` while a workout
-is running and clears it on dispose. **iOS does not: `isIdleTimerDisabled` appears nowhere in
-`apps/ios`.** So on an iPhone the screen sleeps mid-set, on the one surface the split says is the
-capture device. Found while designing the Live Activity, which makes the gap *less* painful — the
-lock screen becomes readable — without closing it. Belongs to `gym-native-shell`.
-
-**2b · the rest clock will read two ways on one device** → ruled, and owed a build.
-The Live Activity counts **up** — time since the last set, the same reading the web prints — and
-names the rest target on its bar. The room's rest row counts **down** to zero and then flips to
-`+0:12`. Two readings of one clock on one device is the drift this wave exists to stop.
-**Ruling (`14-live-activity.md`): the room adopts the count-up reading and keeps the bar.** It removes
-a mode rather than adding one — the existing flip to `+0:12` is already an admission that
-past-the-target matters and that counting up is its natural expression. The optional sound at the
-target still fires; that is the event, and it stays opt-in. After this all three surfaces read one
-clock the same way.
-
 **2c · the iOS Session board prints `w` where the product prints a numeral** → board fix.
 `iOS · Session` (`16:120`) draws `w` in the set-number column for a warmup. `Performed.movements`
 always prints a numeral there; the `w` index exists only in the **live logger's** today column, which
@@ -728,29 +681,31 @@ that board.
 
 **2d · the proposal footnote on the boards no longer matches any shipped string** → owed a build.
 All three codebases ship two sentences — *"Nothing changes until you tap Apply on the diff. Your
-logged sets are never part of a proposal."* (`ask.js:58`, `Ask.swift:194`, `Ask.kt:65`), pinned by
-`ask.test.js:220` and `AskTests.swift:278`. The Coach wave boards keep only the second sentence.
+logged sets are never part of a proposal."* (`coach.js:76-77`, `Ask.swift:229`, `Ask.kt:79`), pinned by
+`coach.test.js:299` and `AskTests.swift:419-420`. The Coach wave boards keep only the second sentence.
 **The cut is deliberate and it stands:** the inert-until-you-act promise belongs at the moment of
 consequence, and the review sheet already carries it — *"All four or none. Nothing is applied until
 you tap."* On a card whose only affordance is **Review**, saying it twice is the stacking the text
 budget forbids. So the strings and their tests change; the boards are ahead of the build, not wrong.
 
-**2e · `empty · tap to write` is on the phones and not on web** → ruled: **keep it, and web adds it.**
-Web's argument was good — an italic muted title beside a live chevron is structure explaining itself,
-and dropping it saves four words. It loses to one thing: the seeded titles are **placeholders that
-look like content**. *"How I want to be talked to"* in italic could be read as a note somebody already
-wrote. Four words to say a row is empty is cheap next to a lifter thinking the product wrote them a
-note. Recorded here so it stops being an accident.
+**2e · the placeholder rows' `empty · tap to write` meta is drawn on no surface** → ruled: **draw
+it, on all three.** Every build draws the two seeded titles alone, in faint ink behind a dashed edge
+(`Notes.jsx:85-87`, `NotesScreen.swift:126-136`, `NotesScreen.kt:194-209`); the string exists
+nowhere in the code. The argument against it is good — a faint title beside a live chevron is
+structure explaining itself, and dropping it saves four words. It loses to one thing: the seeded
+titles are **placeholders that look like content**. *"How I want to be talked to"* in faint ink could
+be read as a note somebody already wrote. Four words to say a row is empty is cheap next to a lifter
+thinking the product wrote them a note. Recorded here so it stops being an accident.
 
-**2f · web draws the note byte counter at 14% of the bound; canon says the last fifth** → fix the
-board or label it. `10-notes.md` rules the counter *"appears only in the last fifth, so a short note
-carries no chrome at all"*. The four `W8 · Note editor` boards draw `70 of 500 bytes`, which is what
-the web **ships** today. The phones now draw the decided rule. A wave board should draw canon and let
-a legacy board record what ships — so the counter comes off `W8` and a `W8b · near the bound` twin
-carries it.
+**2f · the `W8 · Note editor` boards draw the byte counter at 14% of the bound; canon and every
+surface draw it from the last fifth** → fix the board or label it. `10-notes.md` rules the counter
+*"appears only in the last fifth, so a short note carries no chrome at all"*, and all three builds
+do that — from 400 of 500 bytes (`notes/notes.js:20`, `Notes.swift:56`, `Notes.kt:38`). The four
+`W8 · Note editor` boards draw `70 of 500 bytes`, a reading no surface can produce. A wave board
+should draw canon — so the counter comes off `W8` and a `W8b · near the bound` twin carries it.
 
 **2g · `Routine.h` says a client never sends `revision`; the wire accepts it and the web sends it** →
-fix the comment. `Routine.h:41-44` reads *"It is the STORE's to move; a client reads it and never
+fix the comment. `Routine.h:40-44` reads *"It is the STORE's to move; a client reads it and never
 sends it"*, while `TrainingJson.cpp:190-198` parses a client-supplied `revision` and the web routine
 editor sends one — which is how a stale-write 409 is possible at all. The header comment is the stale
 half, and it is the half a reader trusts, because it sits on the type.
@@ -776,7 +731,7 @@ enforcing, which is how they drifted.
 
 **2j · the picker's seven-row cap is what blocks the empty-query ruling, on every surface** → build it.
 `15-the-routine.md` pins *"An empty query shows the six and then the whole catalogue."* Web has no six
-at all and answers an empty query with the first seven catalogue rows (`logger/movements.js:3, 33-41`).
+at all and answers an empty query with the first seven catalogue rows (`logger/movements.js:3, 34-41`).
 Both phones draw the six, and then follow them with seven rows, not a catalogue
 (`PickerOptions.shown = 7`, `apps/ios/.../MovementPicker.swift:7`; `apps/android/.../MovementPicker.kt:50, 112`).
 So no surface implements the ruling today. The cap has to be lifted for the empty query and kept for a
@@ -786,14 +741,16 @@ typed one — the wave-two `R4` board draws the ruling rather than the current c
 boards. On the `Windmill · Gym` Boards page, the Coach section draws `7 movements · last run Sat 16
 August` (nodes `125:276`, `126:55`) and `Sat 16 August · 71 min`, `Thu 14 August · 64 min`,
 `Tue 12 August · 58 min` (`128:412`, `128:425`, `128:432`). No formatter in the product makes that
-shape: `web/src/products/gym/log.js:113` gives `Sat 16 Aug` and `:119` gives `16 Aug`, both with an
-abbreviated month, and the only full month names live in `ask/threads.js:4-7`, used alone as a thread
-heading (`:64`) and never beside a day. `last run` is a string no surface ships either — the routine
-row meta is `routineMetaLabel` (`log.js:308-313`), which reads `{n} movements · trained {ago}` and
+shape: `web/src/products/gym/log.js:116-119` gives `Sat 16 Aug` and `:122-125` gives `16 Aug`, both
+with an abbreviated month, and the only full month names live in `coach/threads.js:4-7`, used alone
+as a thread heading (`:64`) and never beside a day. `last run` is a string no surface ships either —
+the routine row meta is `routineMetaLabel` (`log.js:313-318`), which reads `{n} movements · trained {ago}` and
 `agoLabel` produces only `today`, `yesterday` and `{n} days ago`. The same three-date defect was
 carried into the wave-two `R2` board and has been corrected there to `built 16 Aug · 5 movements`,
 `18 Aug · applied 2 changes from Ask` and `16 Aug · created by you · 5 movements`; the Coach boards
-belong to another wave and were not touched.
+belong to another wave and were not touched. That `R2` line now carries a second drift: the product
+says `from Coach` (`proposals.js:37`, `Proposal.swift:105`, `Proposal.kt:204`), and no board may say
+Ask.
 
 **2l · iOS and Android draw the clear-refusal at two different moments of the same keystroke** →
 decide it once. `15-the-routine.md` pins the words — *Clear reps and weight first — an open line names
@@ -808,18 +765,13 @@ Nothing in `Routine.cpp:17` picks between them; it only refuses the shape at the
 belongs in the brief, beside the open question it already carries about whether clearing sets should
 warn before it cascades.
 
-**2m · the undo window is 9000 ms on the phones and 5000 on the web** → pick one, and correct the
-architecture. `ARCHITECTURE.md:1078` states *"The undo window is 9000 ms on every surface"* as a
-cross-surface invariant. It is not one: `SetQueue.swift:48` and `SetQueue.kt:51` both declare
-`undoWindowMs = 9_000`, while `fix.js:9` declares `UNDO_MS = 5000` and `useTrainingLog.js:16` pins the
-toast to it by comment — *"Must equal UNDO_MS (fix.js): the Undo offer and the window it is true in
-are the same span."* So the web is internally consistent and four seconds short of what every
-document promises.
-
-Found by a design agent while drawing the web row-`×` transient, which had to state a duration. It
-matters beyond a number: `13-gestures.md` gates every swipe-to-delete on *an undo already exists*, and
-that gate silently means something weaker on one surface. The brief has been corrected to say so;
-the architecture line and one of the two values still need to move.
+**2m · the undo window is 9000 ms on every surface** → ruled 2026-08-25, built, nothing owed.
+`SetQueue.swift:48` and `SetQueue.kt:52` declare `undoWindowMs = 9_000`; `fix.js:9` declares
+`UNDO_MS = 9000` and `useTrainingLog.js:16` pins `TOAST_MS` to it — the Undo offer and the window it
+is true in are one span — with `fix.test.js:91` holding the number. `ARCHITECTURE.md:1135` states the
+invariant and it is one, so `13-gestures.md`'s gate — every swipe-to-delete waits on an undo that
+already exists — means the same span on all three surfaces. A board that draws a duration draws
+9000.
 
 **2n · a board's own layer name is a claim, and three of them were false** → check names against
 geometry, not against intent. Wave three shipped a reach band named *"266 pt"* that measured **317**,

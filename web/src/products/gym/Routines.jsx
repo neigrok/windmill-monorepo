@@ -1,15 +1,15 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
   alsoReadsLabel, EMPTY_BAR_KG, entryLabel, fmtKg, isUntested, movementOf, NAME_MAX,
   nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
-  ROUTINES_HREF, threadHref, UNTESTED,
+  ROUTINES_HREF, showsNameCount, threadHref, UNTESTED,
 } from './log.js';
+import { LiveMirror } from './Mirror.jsx';
 import { CONVERSATION_VERB } from './proposals.js';
 import { mintId } from './mint.js';
-import { ConnectInvitation } from './connect/ConnectLog.jsx';
-import { ProposalDot, ProposalFlag } from './Proposals.jsx';
+import { PendingProposals, ProposalDot, ProposalFlag } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';
@@ -20,7 +20,8 @@ import {
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
-export function RoutinesList({ log }) {
+// The home. The live mirror heads it, then whatever is waiting for a decision, then the program.
+export function RoutinesList({ log, onSignIn }) {
   const view = useGymRead(() => gymApi.routines(), []);
   const [copying, setCopying] = useState(false);
 
@@ -42,6 +43,8 @@ export function RoutinesList({ log }) {
         <h1 className="gym-title">Routines</h1>
         <a className="gym-door-past" href={routineHref(NEW_ROUTINE_ID)}>New</a>
       </header>
+      <LiveMirror log={log} onSignIn={onSignIn} />
+      {view.phase === 'ready' && <PendingProposals routines={view.data} />}
       {view.phase === 'loading' && <p className="gym-quiet">Opening your routines…</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
@@ -79,7 +82,6 @@ export function RoutinesList({ log }) {
           ))}
         </ul>
       )}
-      <ConnectInvitation training={log.session != null} />
     </>
   );
 }
@@ -106,7 +108,7 @@ export function RoutineEditor({ id, log }) {
   if (view.phase === 'absent') {
     return (
       <>
-        <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+        <Back href={ROUTINES_HREF}>Routines</Back>
         <p className="gym-quiet">This routine isn’t in your program.</p>
       </>
     );
@@ -114,7 +116,7 @@ export function RoutineEditor({ id, log }) {
   if (view.phase === 'failed') {
     return (
       <>
-        <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+        <Back href={ROUTINES_HREF}>Routines</Back>
         <p className="gym-read-failed">
           The routine didn’t load.
           <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
@@ -164,15 +166,18 @@ export function RoutineEditor({ id, log }) {
   return (
     <>
       <header className="gym-editor-head">
-        <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
-        <input
-          className="gym-editor-name"
-          value={draft.name}
-          maxLength={NAME_MAX}
-          placeholder="Name this routine"
-          aria-label="Routine name"
-          onChange={(event) => setEdits({ ...draft, name: event.target.value })}
-        />
+        <Back href={ROUTINES_HREF}>Routines</Back>
+        <span className="gym-editor-name-field">
+          <input
+            className="gym-editor-name"
+            value={draft.name}
+            maxLength={NAME_MAX}
+            placeholder="Name this routine"
+            aria-label="Routine name"
+            onChange={(event) => setEdits({ ...draft, name: event.target.value })}
+          />
+          {showsNameCount(draft.name) && <span className="gym-name-count">{nameCountLabel(draft.name)}</span>}
+        </span>
         <button
           type="button"
           className={missing || saving ? 'gym-editor-save is-inert' : 'gym-editor-save'}
@@ -264,7 +269,7 @@ function NameTheRoutine({ name, onName, onNext }) {
   const ready = name.trim() !== '';
   return (
     <>
-      <a className="gym-back" href={ROUTINES_HREF}><ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Routines</a>
+      <Back href={ROUTINES_HREF}>Routines</Back>
       <h1 className="gym-title">What do you call this one?</h1>
       <p className="gym-name-sub">Whatever you already call it.</p>
 
@@ -277,7 +282,7 @@ function NameTheRoutine({ name, onName, onNext }) {
           onChange={(event) => onName(event.target.value)}
           autoFocus
         />
-        <span className="gym-name-count">{nameCountLabel(name)}</span>
+        {showsNameCount(name) && <span className="gym-name-count">{nameCountLabel(name)}</span>}
       </div>
 
       <div className="gym-name-openers">

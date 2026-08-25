@@ -50,7 +50,7 @@ final class LinkArrivalTests: XCTestCase {
         XCTAssertEqual(MagicLink.refusal(for: MagicLink.unreadable), MagicLink.expired)
         XCTAssertEqual(MagicLink.refusal(for: WindmillApiError.refused(400, Refusal(Data()))),
                        MagicLink.expired)
-        XCTAssertEqual(MagicLink.refusal(for: WindmillApiError.offline), "Can't reach windmill.works")
+        XCTAssertEqual(MagicLink.refusal(for: WindmillApiError.offline), "Can’t reach windmill.works")
     }
 }
 
@@ -75,7 +75,7 @@ final class SignInCodeTests: XCTestCase {
         XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.refused(410, Refusal(Data()))),
                        SignInCode.expired)
         XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.malformed), SignInCode.expired)
-        XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.offline), "Can't reach windmill.works")
+        XCTAssertEqual(SignInCode.refusal(for: WindmillApiError.offline), "Can’t reach windmill.works")
     }
 }
 
@@ -329,8 +329,8 @@ final class RefusalTests: XCTestCase {
     }
 
     func testAnEmptyRefusalStillEndsInSomethingSayable() {
-        XCTAssertEqual(WindmillApiError.refused(500, Refusal(Data())).line, "That didn't go through")
-        XCTAssertEqual(WindmillApiError.offline.line, "Can't reach windmill.works")
+        XCTAssertEqual(WindmillApiError.refused(500, Refusal(Data())).line, "That didn’t go through")
+        XCTAssertEqual(WindmillApiError.offline.line, "Can’t reach windmill.works")
     }
 
     func testOnly401ReadsAsUnauthorized() {

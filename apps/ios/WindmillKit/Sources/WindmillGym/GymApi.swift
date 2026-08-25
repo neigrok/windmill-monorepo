@@ -238,12 +238,35 @@ public struct GymApi: TrainingSyncing {
         }
     }
 
+    // Sorted by position; an account with none answers an empty list.
+    public func notes() async throws -> [Note] {
+        try await api.get("/v1/gym/notes", as: NoteList.self).notes
+    }
+
+    // Upsert by the id this client minted: a replay with the same body answers the stored row.
+    public func writeNote(_ id: String, _ write: NoteWrite) async throws -> Note {
+        try await api.send("PUT", "/v1/gym/notes/\(id)", body: write, as: SavedNote.self).note
+    }
+
+    // 204 whether or not the row was still there.
+    public func deleteNote(_ id: String) async throws {
+        try await api.send("DELETE", "/v1/gym/notes/\(id)")
+    }
+
+    // Whole-order replace: every note of the account, exactly once.
+    public func reorderNotes(_ order: [String]) async throws -> [Note] {
+        try await api.send("PUT", "/v1/gym/notes", body: NoteOrder(order: order), as: NoteList.self).notes
+    }
+
     private func escaped(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
     }
 
     private struct AskRequest: Encodable { let thread: String; let question: String }
     private struct ThreadList: Decodable { let threads: [AskThread] }
+    private struct NoteList: Decodable { let notes: [Note] }
+    private struct SavedNote: Decodable { let note: Note }
+    private struct NoteOrder: Encodable { let order: [String] }
     private struct Catalog: Decodable { let exercises: [Exercise] }
     private struct LastSets: Decodable { let movements: [LastSet] }
     private struct Log: Decodable { let sessions: [SessionSummary] }

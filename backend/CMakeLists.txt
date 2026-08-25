@@ -95,11 +95,13 @@ add_library(windmill_gym
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
   products/gym/domain/ReadReceipt.cpp
+  products/gym/domain/Note.cpp
   products/gym/application/TrainingService.cpp
   products/gym/application/CatalogService.cpp
   products/gym/application/ProgramService.cpp
   products/gym/application/ThreadService.cpp
-  products/gym/application/PreferencesService.cpp)
+  products/gym/application/PreferencesService.cpp
+  products/gym/application/NotesService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
@@ -180,10 +182,12 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp
   test/products/gym/domain/ReadReceiptTest.cpp
+  test/products/gym/domain/NoteTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp
   test/products/gym/application/CatalogServiceTest.cpp
   test/products/gym/application/ProgramServiceTest.cpp
-  test/products/gym/application/ThreadServiceTest.cpp)
+  test/products/gym/application/ThreadServiceTest.cpp
+  test/products/gym/application/NotesServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
 enable_testing()
@@ -310,10 +314,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     products/gym/adapters/postgres/PgProgramRepository.cpp
     products/gym/adapters/postgres/PgAskThreadRepository.cpp
     products/gym/adapters/postgres/PgPreferencesRepository.cpp
+    products/gym/adapters/postgres/PgNotesRepository.cpp
     products/gym/adapters/http/TrainingApi.cpp
     products/gym/adapters/http/CatalogApi.cpp
     products/gym/adapters/http/ProgramApi.cpp
     products/gym/adapters/http/PreferencesApi.cpp
+    products/gym/adapters/http/NotesApi.cpp
     products/gym/adapters/http/ThreadsApi.cpp
     products/gym/adapters/http/AskApi.cpp
     products/gym/adapters/llm/AnthropicAsk.cpp
@@ -401,7 +407,9 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/http/CatalogApiTest.cpp
     test/products/gym/adapters/http/ProgramApiTest.cpp
     test/products/gym/adapters/http/PreferencesApiTest.cpp
+    test/products/gym/adapters/http/NotesApiTest.cpp
     test/products/gym/adapters/http/ThreadsApiTest.cpp
+    test/products/gym/adapters/http/AskApiTest.cpp
     test/products/gym/adapters/llm/AnthropicAskTest.cpp
     test/products/gym/adapters/csv/TrainingCsvTest.cpp
     test/products/gym/application/AskServiceTest.cpp
@@ -409,7 +417,8 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgProgramRepositoryTest.cpp
     test/products/gym/adapters/postgres/PgAskThreadRepositoryTest.cpp
-    test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp)
+    test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp
+    test/products/gym/adapters/postgres/PgNotesRepositoryTest.cpp)
   target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
   add_test(NAME adapters COMMAND windmill_adapters_tests)
 else()

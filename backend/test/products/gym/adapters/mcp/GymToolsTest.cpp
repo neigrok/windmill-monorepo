@@ -31,7 +31,8 @@ struct Harness {
   CatalogService catalog{repo.catalog};
   ProgramService program{repo.program, clock};
   PreferencesService preferences{repo.preferences};
-  GymTools tools{training, catalog, program, kAppBase};
+  NotesService notes{repo.notes, clock};
+  GymTools tools{training, catalog, program, notes, kAppBase};
 
   Harness() {
     repo.db.seed(benchPress());
@@ -147,7 +148,7 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
            (std::vector<std::string>{
                "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "start_session gym:write", "log_set gym:write", "finish_session gym:write",
+               "list_notes gym:read", "start_session gym:write", "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
                "create_exercise gym:write", "share_session gym:write",
                "discard_session gym:delete", "propose_routine_removal gym:delete",
@@ -191,6 +192,68 @@ TEST(gym_publishes_no_tool_that_applies_or_dismisses_a_proposal) {
   for (const char* name :
        {"apply_proposal", "apply_routine_change", "accept_proposal", "dismiss_proposal"})
     CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
+}
+
+// Coach never creates: a proposal is anchored to a routine that already stands and a revision it is
+// atomic against, and a create has neither. The `propose_` prefix is itself the grant that reaches
+// Coach, so the name's absence is pinned here before anyone adds a tool by it.
+TEST(gym_publishes_no_propose_routine_create_at_any_level) {
+  Harness h;
+
+  for (const ToolDeclaration& tool : gymToolCatalog()) CHECK(tool.name() != "propose_routine_create");
+  for (const std::string& name :
+       namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()})))
+    CHECK(name != "propose_routine_create");
+  CHECK(h.call("propose_routine_create", Json::Value(Json::objectValue)).isError);
+  CHECK_FALSE(h.tools.retirement("propose_routine_create").has_value());
+}
+
+// The notes read: every agent holding gym:read sees them, in precedence order, and no agent writes
+// one — the Notes screen's honesty line rests on the first half, the "proposes only" line on the
+// second.
+TEST(gym_list_notes_answers_in_precedence_order_and_claims_no_log_rows) {
+  Harness h;
+  h.notes.saveNote(Note{NoteId{"note_00000001"}, uid(), "How I want to be talked to", "Blunt."});
+  h.notes.saveNote(Note{NoteId{"note_00000002"}, uid(), "What I am training for", "A 140 squat."});
+  h.notes.saveNote(Note{NoteId{"note_00000009"}, UserId{"u2"}, "Theirs", "Not yours."});
+  h.notes.reorderNotes(uid(), {NoteId{"note_00000002"}, NoteId{"note_00000001"}});
+
+  const ToolResult listed = h.call("list_notes", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  REQUIRE_EQ(body(listed)["notes"].size(), 2u);
+  CHECK_EQ(body(listed)["notes"][0]["position"].asInt(), 0);
+  CHECK_EQ(body(listed)["notes"][0]["title"].asString(), std::string("What I am training for"));
+  CHECK_EQ(body(listed)["notes"][0]["body"].asString(), std::string("A 140 squat."));
+  CHECK_EQ(body(listed)["notes"][1]["position"].asInt(), 1);
+  CHECK_EQ(body(listed)["notes"][1]["title"].asString(), std::string("How I want to be talked to"));
+  // The wire's id and instant are the app's, not the agent's; and a note is not a log row.
+  CHECK_FALSE(body(listed)["notes"][0].isMember("id"));
+  CHECK_FALSE(body(listed)["notes"][0].isMember("updatedAt"));
+  CHECK_FALSE(body(listed).isMember("read"));
+  CHECK_EQ(body(h.call("list_notes", Json::Value(Json::objectValue), "u3"))["notes"].size(), 0u);
+
+  const std::vector<std::string> everything =
+      namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
+  for (const std::string& name : everything) {
+    CHECK(name != "save_note");
+    CHECK(name != "create_note");
+    CHECK(name != "write_note");
+    CHECK(name != "delete_note");
+    CHECK(name != "propose_note_change");
+  }
+  for (const char* name : {"save_note", "create_note", "write_note", "delete_note"})
+    CHECK(h.call(name, Json::Value(Json::objectValue)).isError);
+  CHECK_EQ(h.repo.db.noteRows.size(), std::size_t{3});
+  // The description carries the three bounds the entity and the schema keep.
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "list_notes") {
+      const std::string described = tool.descriptor["description"].asString();
+      CHECK(described.find("at most ten") != std::string::npos);
+      CHECK(described.find("60 characters") != std::string::npos);
+      CHECK(described.find("500 bytes") != std::string::npos);
+      CHECK(described.find("top note wins") != std::string::npos);
+    }
 }
 
 // A retired name is answered by naming its replacement, never by "you were not granted gym:write".
@@ -265,7 +328,8 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   Harness h;
 
   const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
-                                       "last_time",      "list_routines", "get_stats"};
+                                       "last_time",      "list_routines", "get_stats",
+                                       "list_notes"};
   const std::vector<std::string> writes{"start_session",  "log_set",
                                         "finish_session", "create_routine",
                                         "propose_routine_change", "create_exercise",
@@ -305,7 +369,7 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
   CHECK_EQ(namesIn(surface.listTools(ToolCaller{uid(), parseToolScope("gym:read")})),
            (std::vector<std::string>{"list_exercises", "list_sessions", "get_session", "last_time",
-                                     "list_routines", "get_stats"}));
+                                     "list_routines", "get_stats", "list_notes"}));
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
 }
@@ -1035,7 +1099,7 @@ TEST(gym_a_routine_read_narrows_to_one_and_wears_the_same_wrapper) {
                        "routineId to list the ones you own."));
 }
 
-TEST(gym_the_share_tool_answers_with_a_url_a_coach_can_open) {
+TEST(gym_the_share_tool_answers_with_a_url_anyone_holding_it_can_open) {
   Harness h;
   h.start("ses_00000001", 1'000'000);
   h.finish("ses_00000001", 1'060'000);
@@ -1079,7 +1143,7 @@ TEST(gym_revoking_a_share_ends_the_link_and_a_second_revoke_says_there_is_nothin
   const ToolResult again = h.call("revoke_share", with("sessionId", "ses_00000001"));
   CHECK(again.isError);
   CHECK_EQ(message(again),
-           std::string("revoke_share: there is no live coach link on that workout, so there is "
+           std::string("revoke_share: there is no live share link on that workout, so there is "
                        "nothing to revoke — revoked, expired and never-minted are one answer here."));
 }
 

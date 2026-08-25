@@ -130,7 +130,7 @@ TEST(gym_thread_export_is_a_csv_attachment_carrying_every_turn_and_the_outcome) 
                        R"("why is my bench, uh, ""stuck""?",2023-11-14T22:13:20Z)"
                        "\r\n"
                        R"(thr_00000001,"why is my bench, uh, ""stuck""?",applied,4,Push A,)"
-                       "2023-11-14T22:13:20Z,2,ask,Your top set has not moved.,"
+                       "2023-11-14T22:13:20Z,2,coach,Your top set has not moved.,"
                        "2023-11-14T22:13:20Z\r\n"));
 }
 

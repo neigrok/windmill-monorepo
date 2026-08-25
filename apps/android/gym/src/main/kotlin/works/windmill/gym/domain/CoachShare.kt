@@ -58,10 +58,10 @@ object Coach {
 
     fun card(state: State, base: String): Card = when (state) {
         is State.Closed ->
-            Card(title = "Share with a coach", body = offer, link = null,
+            Card(title = "Share this workout", body = offer, link = null,
                  action = if (state.note == null) "Get a link" else "Try again", revoke = null, note = state.note)
         State.Working ->
-            Card(title = "Share with a coach", body = offer, link = null,
+            Card(title = "Share this workout", body = offer, link = null,
                  action = "…", revoke = null, note = null)
         is State.Live ->
             Card(

@@ -21,7 +21,7 @@ test('routeFamily — the magic-link token never leaves the page', () => {
   assert.equal(routeFamily('#/auth?token=SUPERSECRETMAGICLINKTOKEN'), '#/auth');
 });
 
-test('routeFamily — a coach-share token is a capability, so the segment becomes a star', () => {
+test('routeFamily — a shared-workout token is a capability, so the segment becomes a star', () => {
   assert.equal(routeFamily('#/gym/shared/cst_live_30day_token'), '#/gym/shared/*');
   assert.equal(routeFamily('#/t/t_unlisted_tree_id'), '#/t/*');
 });
@@ -78,7 +78,7 @@ test('reportError — an OAuth code in the message is struck out as well', async
   assert.equal(body.events[0].props.route, '#/oauth/authorize');
 });
 
-test('reportError — a crash on a coach-share page names the family, not the token', async () => {
+test('reportError — a crash on a shared-workout page names the family, not the token', async () => {
   sent.length = 0;
   window.location.hash = '#/gym/shared/cst_live_30day_token';
 

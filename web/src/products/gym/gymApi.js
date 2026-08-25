@@ -51,10 +51,20 @@
 //         opening a conversation); {answer, steps: [{tool, failed}], read: {sets, sessions, weeks},
 //         proposals: [id…], thread} out. `steps` is the tools the model asked for, in call order;
 //         `read` is server-counted and may not be summed or inferred here; `proposals` is the ids
-//         minted during the exchange, in mint order. A bare 404 means no Ask on this
+//         minted during the exchange, in mint order. A bare 404 means no Coach on this
 //         deployment. 429 `ask-daily-limit` and `ask-out-of-budget`; 409 `ask-session-open`,
 //         `ask-thread-taken`, `ask-thread-full` at eight stored turns; 400 for a malformed thread id,
-//         a blank question or one over 1000 bytes. A 502 stored nothing.
+//         a blank question or one over 1000 bytes. A 502 stored nothing. The `ask-*` codes and the
+//         route are machine tokens and keep their spelling; the room is Coach.
+//   GET   /v1/gym/notes -> {notes: [{id, position, title, body, updatedAt}]}, position ascending and
+//         contiguous from 0; an account with none is served {notes: []}.
+//   PUT   /v1/gym/notes/:id -> {title, body} in, {note} out; an upsert on the client-minted id
+//         ('note_<hex>'), a new id appended last. 400 with the store's sentence for an empty title,
+//         a title past 60 characters, a body past 500 UTF-8 bytes or an unreadable note; 409
+//         `notes-full` at ten, 409 `note-id-taken` for another account's id.
+//   DELETE /v1/gym/notes/:id -> 204, for a note already gone alike; the rest close the gap.
+//   PUT   /v1/gym/notes -> {order: [id…]} in, {notes} out; a whole-order replace that must name
+//         every note once, or 400 `notes-order-mismatch`.
 //   GET   /v1/gym/threads -> {threads: [Thread…]}, newest `askedAt` first, at most 200.
 //   GET   /v1/gym/threads/:id -> one Thread carrying `turns`, the only read that does, or null on 404.
 //   DELETE /v1/gym/threads/:id -> 204. A proposal it minted keeps `source.door: 'ask'` and loses
@@ -350,8 +360,28 @@ export const gymApi = {
   async deleteThread(id) {
     return json(await call(`/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
+
+  async notes() {
+    return (await json(await call('/notes'))).notes;
+  },
+
+  async saveNote(id, note) {
+    return (await json(await call(`/notes/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(note),
+    }))).note;
+  },
+
+  async deleteNote(id) {
+    return json(await call(`/notes/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  },
+
+  async reorderNotes(order) {
+    return (await json(await call('/notes', { method: 'PUT', body: JSON.stringify({ order }) }))).notes;
+  },
 };
 
 // Links the browser follows, not methods; the session cookie rides the navigation.
 export const EXPORT_HREF = `${base}/export`;
 export const EXPORT_THREADS_HREF = `${base}/export/threads`;
+export const EXPORT_NOTES_HREF = `${base}/export/notes`;

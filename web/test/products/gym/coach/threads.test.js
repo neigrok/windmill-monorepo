@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   askedLabel, conversationsLine, DELETE_NOTE, monthsOf, NO_THREADS, outcomeChip, outcomeLine,
   THREAD_LIST_CEILING, THREADS_TITLE,
-} from '../../../../src/products/gym/ask/threads.js';
+} from '../../../../src/products/gym/coach/threads.js';
 
 const AUGUST = (day, hour = 9) => new Date(2026, 7, day, hour, 0).getTime();
 
@@ -36,18 +36,18 @@ test('a read-only row says no changes were proposed, and that is the whole of it
   assert.equal(outcomeLine({ kind: 'read-only', changes: 0 }), 'no changes proposed');
 });
 
-test('a dismissed row says what was dismissed and never why', () => {
-  assert.equal(outcomeChip({ kind: 'dismissed', changes: 4 }), 'dismissed');
-  assert.equal(outcomeLine({ kind: 'dismissed', changes: 4 }), '4 changes dismissed');
-  assert.equal(outcomeLine({ kind: 'dismissed', changes: 1 }), '1 change dismissed');
+test('a turned-down row says what was turned down — never “dismissed”, never why', () => {
+  assert.equal(outcomeChip({ kind: 'dismissed', changes: 4 }), 'turned down');
+  assert.equal(outcomeLine({ kind: 'dismissed', changes: 4 }), '4 changes turned down');
+  assert.equal(outcomeLine({ kind: 'dismissed', changes: 1 }), '1 change turned down');
   const said = ['read-only', 'applied', 'proposed', 'dismissed', 'superseded']
     .map((kind) => outcomeLine({ kind, changes: 4, routineId: 'rt_1', routine: 'Push A' }));
   assert.deepEqual(said, [
-    'no changes proposed', '4 changes → Push A', '4 changes waiting', '4 changes dismissed',
+    'no changes proposed', '4 changes → Push A', '4 changes waiting', '4 changes turned down',
     '4 changes superseded',
   ]);
   const spoken = fs.readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/ask/threads.js'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/coach/threads.js'),
     'utf8',
   ).replace(/^[ \t]*\/\/.*$/gm, '');
   for (const motive of ['instead', 'myself', 'you decided', 'preferred', 'didn’t want']) {
@@ -68,7 +68,7 @@ test('an outcome this build cannot read is drawn as nothing rather than as a gue
   assert.equal(outcomeChip(undefined), null);
   assert.equal(outcomeLine(undefined), null);
   assert.equal(outcomeLine({ kind: 'applied' }), null);
-  assert.equal(outcomeLine({ kind: 'dismissed', changes: 0 }), '0 changes dismissed');
+  assert.equal(outcomeLine({ kind: 'dismissed', changes: 0 }), '0 changes turned down');
 });
 
 test('monthsOf groups adjacent rows and keeps the order it was handed', () => {
@@ -109,7 +109,7 @@ test('the right of a row is today by its word and every older day by its date', 
 
 test('nothing in the threads vocabulary is an unread count, a badge or a notification', () => {
   const rules = fs.readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/ask/threads.js'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/products/gym/coach/threads.js'),
     'utf8',
   ).replace(/^[ \t]*\/\/.*$/gm, '');
   for (const inbox of ['unread', 'badge', 'notif', 'new message', 'waiting for you', 'pinned', 'search']) {

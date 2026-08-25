@@ -6,7 +6,7 @@ import { bump, bumpReps, round } from './logger/ladder.js';
 export const SET_KINDS = ['warmup', 'working', 'drop', 'failure'];
 
 // Must equal TOAST_MS in useTrainingLog.js: the Undo lives in that toast.
-export const UNDO_MS = 5000;
+export const UNDO_MS = 9000;
 
 // Rounded onto the ladder's grid so comparisons against the stored value are like for like.
 export function fixDraftOf(set) {

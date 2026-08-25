@@ -56,7 +56,7 @@ data class ProposalSource(
     val name: String
         get() = agent?.takeIf { it.isNotBlank() }
             ?: connection?.takeIf { it.isNotBlank() }
-            ?: if (door == askDoor) "Ask" else "your connected agent"
+            ?: if (door == askDoor) "Coach" else "your connected agent"
 
     companion object {
         const val askDoor = "ask"
@@ -201,7 +201,7 @@ data class Proposal(
         val on = Readout.shortDate(settledAtMs ?: createdAtMs, nowMs)
         return when (state) {
             ProposalState.Applied -> "$on · applied $counted from ${source.name}"
-            ProposalState.Dismissed -> "$on · dismissed $counted from ${source.name}"
+            ProposalState.Dismissed -> "$on · turned down $counted from ${source.name}"
             ProposalState.Superseded -> "$on · set aside $counted from ${source.name}"
             ProposalState.Pending -> "$on · $counted from ${source.name}, waiting"
         }
@@ -212,11 +212,11 @@ data class Proposal(
         val on = "${Readout.briefDay(at, nowMs)} at ${Readout.time(at)}"
         return when (state) {
             ProposalState.Applied ->
-                "Applied to $routineName $on. Kept on the routine as a dated record — the program's history, not a toast that disappears."
+                "Applied to $routineName $on. Kept on the routine as a dated record — the program’s history, not a toast that disappears."
             ProposalState.Dismissed ->
-                "Dismissed $on. No reason asked for, nothing changed, and it stays in the routine's history in case you want it back."
+                "Turned down $on. Nothing changed, and it stays in the routine’s history as a record."
             ProposalState.Superseded ->
-                "$routineName changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine's history."
+                "$routineName changed after this was written, so it was set aside $on. None of it was applied, and it stays in the routine’s history."
             ProposalState.Pending -> null
         }
     }
@@ -224,6 +224,13 @@ data class Proposal(
     val routineName: String get() = baseName.ifBlank { "this routine" }
 
     companion object {
+        // Turning a proposal down is settled for good — the wire has no path back — so it is confirmed,
+        // in the same words on every surface.
+        const val turnDownVerb = "Turn this down"
+        const val turnDownAsk = "Turn this down?"
+        const val turnDownBody = "Nothing changes, and it stays in the routine’s history as a record."
+        const val turnDown = "Turn down"
+
         // The load is compared on the LADDER's grid and never on raw doubles.
         fun moves(before: ProposalTargets, after: ProposalTargets): List<FieldMove> {
             val moved = mutableListOf<FieldMove>()

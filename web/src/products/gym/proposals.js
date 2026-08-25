@@ -19,7 +19,7 @@ export function isPending(proposal) {
 const STATE_CHIPS = {
   pending: 'Pending',
   applied: 'Applied',
-  dismissed: 'Dismissed',
+  dismissed: 'Turned down',
   superseded: 'Superseded',
 };
 
@@ -31,9 +31,10 @@ export function stateChip(proposal) {
 // the store always holds.
 export const UNNAMED_AGENT = 'your connected agent';
 
+// `door: 'ask'` is the wire's token for the Coach room.
 export function sourceLabel(source) {
   if (source?.agent) return source.agent;
-  if (source?.door === 'ask') return 'Ask';
+  if (source?.door === 'ask') return 'Coach';
   return UNNAMED_AGENT;
 }
 
@@ -84,7 +85,7 @@ export function summaryLine(head, routineName) {
 // A pending proposal is in the same list and borrows none of these verbs.
 const STATE_VERBS = {
   applied: 'applied',
-  dismissed: 'dismissed',
+  dismissed: 'turned down',
   superseded: 'superseded',
 };
 
@@ -100,14 +101,23 @@ export function settledLine(proposal, now = Date.now()) {
   if (proposal.state === 'applied') {
     return `Applied to ${proposal.baseName} ${when}. Kept on the routine as a dated record — the program’s history, not a toast that disappears.`;
   }
+  // A record and never a way back: the wire has no path that reopens one.
   if (proposal.state === 'dismissed') {
-    return `Dismissed ${when}. No reason asked for, nothing changed, and it stays in the routine’s history in case you want it back.`;
+    return `Turned down ${when}. Nothing changed, and it stays in the routine’s history as a record.`;
   }
   if (proposal.state === 'superseded') {
     return `${proposal.baseName} changed ${when}, after this was written. Nothing from it was applied, and it stays in the routine’s history.`;
   }
   return null;
 }
+
+// Turning down settles for good; the confirmation guards an act the wire cannot undo.
+export const TURN_DOWN_CONFIRM = {
+  title: 'Turn this down?',
+  body: 'Nothing changes, and it stays in the routine’s history as a record.',
+  confirm: 'Turn down',
+  keep: 'Keep it',
+};
 
 // `sets` is the pair — the sets and the reps moving together — and an absent rep target is `max`.
 // An absent `sets` is the OPEN line and never a missing side; the missing side is the row's `kind`.

@@ -24,7 +24,7 @@ class CoachShareTests {
     fun testTheClosedCardOffersTheLinkAndNamesTheThreeThingsThatAreTrueOfIt() {
         val card = Coach.card(Coach.State.Closed(), base)
 
-        assertEquals("Share with a coach", card.title)
+        assertEquals("the share never carries the word coach: that names the room", "Share this workout", card.title)
         assertEquals(Coach.offer, card.body)
         assertNull(card.link)
         assertEquals("Get a link", card.action)
@@ -40,7 +40,7 @@ class CoachShareTests {
     fun testAMintThatFailedKeepsTheOfferAndRepeatsWhatTheLogSaid() {
         val card = Coach.card(Coach.State.Closed(note = "no such session"), base)
 
-        assertEquals("Share with a coach", card.title)
+        assertEquals("Share this workout", card.title)
         assertEquals(Coach.offer, card.body)
         assertEquals("Try again", card.action)
         assertEquals("no such session", card.note)

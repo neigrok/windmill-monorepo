@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <future>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -18,45 +17,6 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 
 namespace {
-
-// An AskAgent that never leaves the process: it records what it was handed, runs its plan, answers.
-struct FakeAsk : AskAgent {
-  bool wired = true;
-  bool answers = true;
-  // Metered vendor round trips this run completed; zero is a run that reached nobody.
-  int turnsSpent = 1;
-  bool throwsUp = false;
-  int runs = 0;
-  ToolScope grantedScope;
-  Json::Value seenCatalog{Json::arrayValue};
-  std::vector<AskTurn> seenTurns;
-  // What the "model" reaches for, in order.
-  std::vector<std::pair<std::string, Json::Value>> plan;
-
-  bool configured() const override { return wired; }
-
-  AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
-                   ToolHost& tools) override {
-    ++runs;
-    if (throwsUp) throw std::runtime_error("the vendor sent a document nobody can read");
-    grantedScope = caller.scope;
-    seenCatalog = tools.listTools(caller);
-    seenTurns = turns;
-    AskAnswer out;
-    out.modelTurns = turnsSpent;
-    for (const std::pair<std::string, Json::Value>& step : plan) {
-      const ToolResult result = tools.callTool(step.first, step.second, caller);
-      out.steps.push_back(AskStep{step.first, result.isError});
-    }
-    out.ok = answers;
-    if (!answers) {
-      out.error = "the upstream never answered";
-      return out;
-    }
-    out.answer = "You squatted 100 for five.";
-    return out;
-  }
-};
 
 struct Harness {
   FakeGym repo;
@@ -69,7 +29,8 @@ struct Harness {
   CatalogService catalog{repo.catalog};
   ProgramService program{repo.program, clock};
   ThreadService threadService{repo.threads, clock};
-  GymTools gymTools{training, catalog, program, "https://windmill.works"};
+  NotesService notesService{repo.notes, clock};
+  GymTools gymTools{training, catalog, program, notesService, "https://windmill.works"};
   FakeAsk agent;
   AskService ask{training, threadService, agent, gymTools, entitlements};
 
@@ -137,6 +98,7 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   CHECK(holds(offered, "last_time"));
   CHECK(holds(offered, "list_routines"));
   CHECK(holds(offered, "get_stats"));
+  CHECK(holds(offered, "list_notes"));
   CHECK_FALSE(holds(offered, "get_preferences"));
   CHECK(holds(offered, "propose_routine_change"));
   CHECK(holds(offered, "propose_routine_removal"));
@@ -154,8 +116,65 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
   std::sort(names.begin(), names.end());
   CHECK_EQ(names, (std::vector<std::string>{"get_session", "get_stats", "last_time",
-                                            "list_exercises", "list_routines", "list_sessions",
-                                            "propose_routine_change", "propose_routine_removal"}));
+                                            "list_exercises", "list_notes", "list_routines",
+                                            "list_sessions", "propose_routine_change",
+                                            "propose_routine_removal"}));
+  // And no tool by the name that would let Coach create: the prefix is the grant.
+  for (const ToolDeclaration& tool : gymToolCatalog()) CHECK(tool.name() != "propose_routine_create");
+  CHECK_FALSE(holds(offered, "propose_routine_create"));
+}
+
+// One proposal per turn: the second mint in a run is refused BEFORE the inner call, in a sentence
+// the model can act on, so the first is never superseded by its own author mid-answer.
+TEST(ask_tools_refuse_a_second_proposal_in_one_run_before_anything_is_minted) {
+  Harness h;
+  h.seedRoutine();
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_00000002"), h.lifter, "Pull A", 1, {benchEntry()}});
+  AskTools hands(h.gymTools, ThreadId{"thr_00000001"});
+  const ToolCaller actor{h.lifter, ToolScope::everything()};
+  const auto proposal = [](const char* id, const char* routine, double kg) {
+    Json::Value entry(Json::objectValue);
+    entry["exerciseId"] = "bench-press";
+    entry["targetSets"] = 5;
+    entry["targetReps"] = 3;
+    entry["targetWeightKg"] = kg;
+    Json::Value entries(Json::arrayValue);
+    entries.append(entry);
+    Json::Value args(Json::objectValue);
+    args["id"] = id;
+    args["routineId"] = routine;
+    args["entries"] = entries;
+    return args;
+  };
+  Json::Value removal(Json::objectValue);
+  removal["id"] = "prop_00000003";
+  removal["routineId"] = rtId("rt_00000002").str();
+
+  // A mint that never landed does not spend the turn.
+  CHECK(hands.callTool("propose_routine_change", proposal("prop_00000000", "rt_00000009", 87.5), actor)
+            .isError);
+  CHECK_EQ(hands.proposals().size(), 0u);
+  CHECK_FALSE(hands.callTool("propose_routine_change", proposal("prop_00000001", "rt_00000001", 87.5), actor)
+                  .isError);
+  const ToolResult second =
+      hands.callTool("propose_routine_change", proposal("prop_00000002", "rt_00000001", 90.0), actor);
+  const ToolResult removed = hands.callTool("propose_routine_removal", removal, actor);
+
+  REQUIRE(second.isError);
+  CHECK_EQ(second.content[0]["text"].asString(),
+           std::string("propose_routine_change: you already wrote a proposal this turn; fold both "
+                       "into one document"));
+  REQUIRE(removed.isError);
+  CHECK_EQ(removed.content[0]["text"].asString(),
+           std::string("propose_routine_removal: you already wrote a proposal this turn; fold both "
+                       "into one document"));
+  // Nothing reached the store: the first proposal still stands pending under its own id.
+  REQUIRE_EQ(h.repo.db.proposalRows.size(), 1u);
+  CHECK_EQ(h.repo.db.proposalRows[0].head.id, ProposalId{"prop_00000001"});
+  CHECK_EQ(h.repo.db.proposalRows[0].head.state, ProposalState::pending);
+  CHECK_EQ(hands.proposals(), std::vector<std::string>{"prop_00000001"});
+  // The reads are still open after a mint.
+  CHECK_FALSE(hands.callTool("list_routines", Json::Value(Json::objectValue), actor).isError);
 }
 
 TEST(ask_tools_refuse_a_destructive_tool_and_the_workout_survives) {
@@ -176,7 +195,7 @@ TEST(ask_tools_refuse_a_write_tool_even_when_the_arguments_are_perfect) {
   const ToolCaller actor{h.lifter, ToolScope::everything()};
 
   CHECK(hands.callTool("share_session", sessionArgs(h.session), actor).isError);
-  CHECK(h.repo.db.shares.empty());  // no coach link was minted behind the lifter's back
+  CHECK(h.repo.db.shares.empty());  // no share link was minted behind the lifter's back
 }
 
 TEST(ask_tools_refuse_a_tool_the_callers_grant_does_not_reach) {
@@ -261,7 +280,7 @@ TEST(ask_answers_a_retired_name_with_gyms_own_sentence) {
   const ToolResult missing = hands.callTool("frobnicate", Json::Value(Json::objectValue), actor);
   REQUIRE(missing.isError);
   CHECK_EQ(missing.content[0]["text"].asString(),
-           std::string("frobnicate: no such tool — call tools/list for what Ask may do."));
+           std::string("frobnicate: no such tool — call tools/list for what Coach may do."));
   CHECK_EQ(hands.read().tally(), (ReadTally{0, 0, 0}));
 }
 

@@ -141,8 +141,8 @@ sealed class WindmillApiException : Exception() {
     // What to show a person — never a status code.
     val line: String
         get() = when (this) {
-            is Offline -> "Can't reach windmill.works"
-            is Refused -> refusal.message ?: "That didn't go through"
-            is Malformed -> "That didn't go through"
+            is Offline -> "Can’t reach windmill.works"
+            is Refused -> refusal.message ?: "That didn’t go through"
+            is Malformed -> "That didn’t go through"
         }
 }

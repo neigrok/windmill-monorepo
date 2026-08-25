@@ -12,6 +12,9 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.NoteWrite
+import works.windmill.gym.domain.NotesOrder
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.Review
@@ -152,6 +155,19 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
         api.send<Unit>("DELETE", "/v1/gym/threads/$id")
     }
 
+    override suspend fun notes(): List<Note> =
+        api.get<NotesPage>("/v1/gym/notes").notes
+
+    override suspend fun writeNote(id: String, write: NoteWrite): Note =
+        api.send<NoteReply>("PUT", "/v1/gym/notes/$id", write).note
+
+    override suspend fun deleteNote(id: String) {
+        api.send<Unit>("DELETE", "/v1/gym/notes/$id")
+    }
+
+    override suspend fun reorderNotes(order: List<String>): List<Note> =
+        api.send<NotesPage>("PUT", "/v1/gym/notes", NotesOrder(order)).notes
+
     private fun escaped(value: String): String = buildString {
         for (byte in value.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xFF
@@ -186,3 +202,9 @@ private data class Routines(val routines: List<Routine>)
 
 @Serializable
 private data class Conversations(val threads: List<AskThread> = emptyList())
+
+@Serializable
+private data class NotesPage(val notes: List<Note> = emptyList())
+
+@Serializable
+private data class NoteReply(val note: Note)

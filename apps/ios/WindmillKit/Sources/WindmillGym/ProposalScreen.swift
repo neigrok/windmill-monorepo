@@ -12,6 +12,7 @@ struct ProposalScreen: View {
     @State private var failure: TrainingStore.WriteFailure?
     // One decision at a time: a second tap on Apply lands on a proposal the first already settled.
     @State private var deciding = false
+    @State private var confirmingTurnDown = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +46,15 @@ struct ProposalScreen: View {
             if let proposal, proposal.state == .pending { actions(proposal) }
         }
         .task { await read() }
+        .confirmationDialog(Proposal.turnDownTitle, isPresented: $confirmingTurnDown, titleVisibility: .visible) {
+            Button(Proposal.turnDownConfirm, role: .destructive) {
+                guard let proposal else { return }
+                Task { await decide(proposal, apply: false) }
+            }
+            Button(Proposal.turnDownKeep, role: .cancel) {}
+        } message: {
+            Text(Proposal.turnDownBody)
+        }
     }
 
     // Named as it was when the diff was written (`baseName`), not as the routine stands now.
@@ -163,8 +173,8 @@ struct ProposalScreen: View {
     private func actions(_ proposal: Proposal) -> some View {
         VStack(spacing: WindmillSpace.x2) {
             HStack(spacing: WindmillSpace.x2) {
-                Button { Task { await decide(proposal, apply: false) } } label: {
-                    Text("Dismiss")
+                Button { confirmingTurnDown = true } label: {
+                    Text(Proposal.turnDown)
                         .font(WindmillFont.body(15, .semibold))
                         .foregroundStyle(skin.inkDim)
                         .padding(.horizontal, WindmillSpace.x5)
@@ -215,7 +225,7 @@ struct ProposalScreen: View {
         case .gone:
             onClosed("that proposal is no longer on the log")
         case .failed(let why):
-            say(why.line(apply ? "nothing was applied" : "nothing was dismissed"))
+            say(why.line(apply ? "nothing was applied" : "nothing was turned down"))
         }
     }
 
@@ -228,7 +238,7 @@ struct ProposalCard: View {
     let onReview: () -> Void
     // Sets the card aside for this visit only: the proposal is untouched and is back on home next time.
     let onLater: () -> Void
-    // nil wherever an Ask door is not offered, so the chip is absent rather than dead.
+    // nil wherever a Coach door is not offered, so the chip is absent rather than dead.
     let onAsk: (() -> Void)?
 
     @Environment(\.gymSkin) private var skin

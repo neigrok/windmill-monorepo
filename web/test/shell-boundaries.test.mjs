@@ -214,3 +214,16 @@ test('the brand root shell offers the first open product, and names it', () => {
   const root = LANDING_HEADS.find((head) => head.path === '/');
   assert.deepEqual(root.fallback.actions, [{ href: open.landing.href, label: `Start with ${open.label}` }]);
 });
+
+// The cost answer is the one place the brand root prices its products, and it is written twice —
+// landingHeads.js and web/index.html — which the build pins to each other byte for byte.
+test('the brand FAQ prices Gym by its true rule: the log, the connected log and Coach are free, a plan only raises the AI ceiling', () => {
+  const root = LANDING_HEADS.find((head) => head.path === '/');
+  const faq = root.schema.find((entry) => entry['@type'] === 'FAQPage');
+  const cost = faq.mainEntity.find((question) => question.name === 'How much does Windmill cost?').acceptedAnswer.text;
+  assert.match(cost, /the log, the connected log and Coach — ten questions a day — cost nothing/);
+  assert.match(cost, /a plan only raises the AI ceiling behind Coach/);
+  assert.doesNotMatch(cost, /Ask chat|Gym is outside/);
+  const shell = fs.readFileSync(path.resolve(SRC, '..', 'index.html'), 'utf8');
+  assert.equal(shell.includes(cost), true, 'web/index.html carries the same answer');
+});

@@ -1,47 +1,26 @@
 import React from 'react';
-import { ArrowLeft } from 'lucide-react';
 import { listMcpKeys } from '../../../shell/auth/McpKeyClient.js';
 import { listGrants } from '../../../shell/auth/OAuthClient.js';
-import { CONNECT_HREF } from '../log.js';
+import { Back } from '../Back.jsx';
+import { COACH_TITLE } from '../coach/coach.js';
+import { COACH_HREF } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   APPROVE_WITH_CARE, connectedLabel, connectionsToTheLog, DISCONNECT_LINE, EXCHANGE, FREE_LINE,
-  GRANT_LINE, INVITATION_FREE, INVITATION_KICKER, INVITATION_LINE, INVITATION_VERB, LEVEL_LINES,
-  NEVER, NOTHING_CONNECTED, PERSONAL_KEY_NOTE, PITCH_LINE, PITCH_POINTS, PITCH_TITLE, PRECONDITION,
-  WORKBENCH_HREF, WORKBENCH_VERB,
+  GRANT_LINE, LEVEL_LINES, NEVER, NOTHING_CONNECTED, PERSONAL_KEY_NOTE, PITCH_LINE, PITCH_POINTS,
+  PITCH_TITLE, PRECONDITION, WORKBENCH_HREF, WORKBENCH_VERB,
 } from './connect.js';
 
 const reachToTheLog = () => Promise.all([listGrants(), listMcpKeys()])
   .then(([grants, keys]) => connectionsToTheLog(grants, keys));
 
-export function ConnectInvitation({ training }) {
-  if (training) return null;
-  return <InvitationCard />;
-}
-
-function InvitationCard() {
-  const reach = useGymRead(reachToTheLog, []);
-  if (reach.phase !== 'ready' || reach.data.length > 0) return null;
-  return (
-    <a className="gym-connect-invite" href={CONNECT_HREF}>
-      <span className="gym-connect-invite-kicker">{INVITATION_KICKER}</span>
-      <span className="gym-connect-invite-line">{INVITATION_LINE}</span>
-      <span className="gym-connect-invite-verb">
-        {INVITATION_VERB}
-        <span className="gym-connect-invite-free">{INVITATION_FREE}</span>
-      </span>
-    </a>
-  );
-}
-
+// Reached from the Coach room's door and from the settings row; its two other homes are gone.
 export function ConnectLog() {
   const reach = useGymRead(reachToTheLog, []);
 
   return (
     <section className="gym-connect">
-      <a className="gym-back" href="#/gym">
-        <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" /> Today
-      </a>
+      <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-connect-head">
         <h1 className="gym-connect-title">{PITCH_TITLE}</h1>
         <p className="gym-connect-lede">{PITCH_LINE}</p>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { gymApi } from '../gymApi.js';
-import { isNameOverCap, NAME_MAX, nameCountLabel } from '../log.js';
+import { isNameOverCap, NAME_MAX, nameCountLabel, showsNameCount } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
 import {
   DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, lastSetLabel, lastSetsById, movementOptions,
@@ -93,9 +93,11 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
             onChange={(event) => onChange({ ...draft, name: event.target.value })}
             autoFocus
           />
-          <span className={isNameOverCap(draft.name) ? 'gym-name-count is-over' : 'gym-name-count'}>
-            {nameCountLabel(draft.name)}
-          </span>
+          {showsNameCount(draft.name) && (
+            <span className={isNameOverCap(draft.name) ? 'gym-name-count is-over' : 'gym-name-count'}>
+              {nameCountLabel(draft.name)}
+            </span>
+          )}
         </div>
 
         <p className="gym-name-label">How is it loaded?</p>

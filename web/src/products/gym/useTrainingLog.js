@@ -13,7 +13,7 @@ const POLL_MS = 5000;
 // The watch for a workout starting, while none is mirrored; the visibilitychange asks at once.
 const WATCH_MS = 30_000;
 // Must equal `UNDO_MS` (fix.js): the Undo offer and the window it is true in are the same span.
-const TOAST_MS = 5000;
+const TOAST_MS = 9000;
 // The handler clamps `limit` to 200, and `end` is a page coming back short of what was asked for —
 // so asking for more would be answered 200 and misread as the bottom of the log.
 const SERVER_PAGE_CAP = 200;

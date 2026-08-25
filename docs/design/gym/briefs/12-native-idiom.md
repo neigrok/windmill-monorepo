@@ -34,9 +34,9 @@ item, card, switch, segmented button, chip, text field, snackbar and dialog. Mat
 every affordance. Modal bottom sheets keep the drag handle they currently pass `null` to. The room
 opts in to predictive back and draws edge to edge.
 
-**Web.** The shared design system, which the gym room currently reaches for four times out of
-seventeen while hand-rolling a twin for the button, the input, the card, the dialog, the toast, the
-tabs, the tag and the icon. Those twins go.
+**Web.** The shared design system, which the gym room does not reach for at all inside `.gym-root`
+— three gym files import it and none is a room screen — while hand-rolling a twin for the button,
+the input, the card, the dialog, the toast, the tabs, the tag and the icon. Those twins go.
 
 Where the design system genuinely lacks something the wave needs — a chat bubble, a diff card, a
 note row, a weight chart — it is **authored in the design system**, not in the gym folder. Roadmap's
@@ -152,14 +152,19 @@ contrast ratio in the room unassertable — which the house rule against unverif
 The honest cost, said here so it is not discovered later: an Android user who expects Material You
 does not get it in this app.
 
-**And the status bar must follow the resolved skin.** The Android theme pins the status icons light
-and nothing enables edge-to-edge, so turning the room to a light ground would make the clock, the
-battery and the signal disappear. That is a one-line change and a real bug if it is missed.
+**And the status bar must follow the resolved skin.** At targetSdk 36 an Android 16 device enforces
+edge-to-edge and ignores the theme's bar colours, so the room is already drawing under the bars there
+and `.systemBarsPadding()` is what holds the layout; the theme still pins the status icons light, so
+turning the room to a light ground would make the clock, the battery and the signal disappear. That
+is a one-line change and a real bug if it is missed.
 
 ## Type
 
-Both phones hard-code point sizes, so **Dynamic Type and font scale do nothing on either.** That is
-the largest accessibility gap in the room and the least visible one.
+iOS hard-codes every point size, so **Dynamic Type does nothing there**. Android's sizes are `sp`
+and do scale with the font-scale setting — but there is no named role scale, no tabular digits on
+the non-numeral roles, and no cap or reflow, so at a large scale the 104 sp numeral grows while every
+fixed-height row and fixed-width column does not, and the room **clips** rather than ignores. That
+is the largest accessibility gap in the room and the least visible one.
 
 **Everything that is prose takes the platform's text styles** and scales with them. Nothing on a
 board is specified in points again; each role is a named text style plus a design and a weight —

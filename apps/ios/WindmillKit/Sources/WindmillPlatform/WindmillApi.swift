@@ -138,9 +138,9 @@ public enum WindmillApiError: Error, Equatable {
 
     public var line: String {
         switch self {
-        case .offline: return "Can't reach windmill.works"
-        case .refused(_, let refusal): return refusal.message ?? "That didn't go through"
-        case .malformed: return "That didn't go through"
+        case .offline: return "Can’t reach windmill.works"
+        case .refused(_, let refusal): return refusal.message ?? "That didn’t go through"
+        case .malformed: return "That didn’t go through"
         }
     }
 }

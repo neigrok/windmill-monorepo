@@ -26,7 +26,8 @@ test('the share terms describe the capability, and never call it public', () => 
     'It opens nothing else — no other session, no account, no name.',
     'You can revoke it here at any time, and the link stops working.',
   ]);
-  assert.equal(SHARE_OFFER, 'Share with a coach');
+  assert.equal(SHARE_OFFER, 'Share this workout');
+  assert.equal(SHARE_OFFER.toLowerCase().includes('coach'), false, 'the word names the room, never the share');
   assert.equal(
     SHARE_OFFER_LINE,
     'A link to this one workout. It expires, you can revoke it here, and sharing again hands back the same link rather than a second one.',
@@ -45,7 +46,7 @@ test('SHARED_ABSENT — the page does not guess which of the three it is looking
   );
 });
 
-test('SHARED_TERMS — what the coach is told, with no date it cannot see', () => {
+test('SHARED_TERMS — what the reader is told, with no date it cannot see', () => {
   assert.deepEqual(SHARED_TERMS, [
     'One workout, shared by the person who trained it.',
     'The link expires, and they can revoke it at any time.',

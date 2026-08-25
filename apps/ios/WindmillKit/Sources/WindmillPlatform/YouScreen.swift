@@ -38,7 +38,7 @@ struct YouScreen: View {
                         }
                     }
                 } footer: {
-                    Text("Windmill is free. One buys the AI — tending in Roadmap, Talk and echoes in Journal, the coach in Gym. It is not on sale yet.")
+                    Text("Windmill is free. One buys the AI — tending in Roadmap, Talk and echoes in Journal. Coach in Gym answers ten questions a day without it; a plan only raises the AI ceiling behind it. It is not on sale yet.")
                 }
 
                 if auth.status.user == nil, !held.isEmpty {
@@ -61,14 +61,14 @@ struct YouScreen: View {
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("Sets the shell — hub, switcher, You, and every sheet. Rooms keep their own skin: journal's night-or-day choice lives in journal.")
+                    Text("Sets the shell — hub, switcher, You, and every sheet. Rooms keep their own skin: journal’s night-or-day choice lives in journal.")
                 }
 
                 Section {
                     Link("Connected tools · MCP", destination: URL(string: "https://windmill.works/#/connect")!)
                     Link("Sessions & data", destination: URL(string: "https://windmill.works/#/settings")!)
                 } footer: {
-                    Text("Sessions, connected tools, export and closing your account live on the web for now. Each app's own settings live inside it.")
+                    Text("Sessions, connected tools, export and closing your account live on the web for now. Each app’s own settings live inside it.")
                 }
 
                 Section {
@@ -79,9 +79,9 @@ struct YouScreen: View {
                     }
                 } footer: {
                     if auth.status.user == nil {
-                        Text("Signing in claims what you've already written and syncs it to your other devices. Until then it lives on this device — though not every room opens without an account.")
+                        Text("Signing in claims what you’ve already written and syncs it to your other devices. Until then it lives on this device — though not every room opens without an account.")
                     } else {
-                        Text("Sign out and what you've written stays on this device, editable.")
+                        Text("Sign out and what you’ve written stays on this device, editable.")
                     }
                 }
             }
@@ -143,7 +143,7 @@ struct ProScreen: View {
                             .foregroundStyle(WindmillColor.textTertiary)
                     }
 
-                    Text("Windmill is free — every app, every device, hand editing forever. One buys the AI: tending in Roadmap, Talk and echoes in Journal, the coach in Gym. It is not on sale yet.")
+                    Text("Windmill is free — every app, every device, hand editing forever. One buys the AI: tending in Roadmap, Talk and echoes in Journal. Coach in Gym answers ten questions a day without it; a plan only raises the AI ceiling behind it. It is not on sale yet.")
                         .font(WindmillFont.body(15))
                         .lineSpacing(4)
                         .foregroundStyle(WindmillColor.textSecondary)

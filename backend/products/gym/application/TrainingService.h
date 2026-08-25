@@ -90,7 +90,7 @@ enum class DiscardOutcome { done, notFound, open };
 // cron, no sweep: staleness is settled lazily, before a start and before every read whose answer a
 // close rewrites.
 // The program port serves one write: a start naming a routine freezes that day's plan onto the
-// session. The token generator serves one: minting a coach share's secret.
+// session. The token generator serves one: minting a workout share's secret.
 class TrainingService {
 public:
   TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,

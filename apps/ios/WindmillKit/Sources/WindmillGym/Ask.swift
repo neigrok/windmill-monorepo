@@ -23,6 +23,7 @@ public struct ReadTally: Equatable, Decodable, Sendable {
     }
 }
 
+// A tool this build has no phrase for prints nothing: the receipt is the honesty check, the step list is detail.
 public struct AskStep: Equatable, Decodable, Sendable {
     public let tool: String
     public let failed: Bool
@@ -32,8 +33,9 @@ public struct AskStep: Equatable, Decodable, Sendable {
         self.failed = failed
     }
 
-    public var line: String {
-        failed ? "\(tool) · no answer" : tool
+    public var line: String? {
+        guard let phrase = Ask.phrase[tool] else { return nil }
+        return failed ? phrase + " (nothing came back)" : phrase
     }
 
     enum CodingKeys: String, CodingKey {
@@ -81,37 +83,42 @@ public struct AskRefusal: Equatable, Error, Sendable {
     public let closesTheDoor: Bool
     // Answered by opening a new thread: the retry carries the same question into a fresh id.
     public let opensAFreshThread: Bool
+    // The daily allowance is spent: the composer gives way to the cap-reached state for this visit.
+    public let capReached: Bool
 
     public init(line: String, mayRetry: Bool = false, closesTheDoor: Bool = false,
-                opensAFreshThread: Bool = false) {
+                opensAFreshThread: Bool = false, capReached: Bool = false) {
         self.line = line
         self.mayRetry = mayRetry
         self.closesTheDoor = closesTheDoor
         self.opensAFreshThread = opensAFreshThread
+        self.capReached = capReached
     }
 
     public init(_ error: Error) {
         guard let failure = error as? WindmillApiError else {
-            self = AskRefusal(line: "Ask didn’t answer. Try again in a moment", mayRetry: true)
+            self = AskRefusal(line: Ask.noAnswer, mayRetry: true)
             return
         }
         switch failure {
         case .offline:
             self = AskRefusal(line: failure.line, mayRetry: true)
         case .malformed:
-            self = AskRefusal(line: "Ask didn’t answer. Try again in a moment", mayRetry: true)
+            self = AskRefusal(line: Ask.noAnswer, mayRetry: true)
         case .refused(404, _):
             // 404 is the route being absent: this deployment has no Anthropic key.
             self = AskRefusal(line: Ask.absentLine, closesTheDoor: true)
         case .refused(502, let refusal):
             // Nothing was stored, so the same thread and question sent again land exactly once.
-            self = AskRefusal(line: refusal.message ?? "Ask didn’t answer. Try again in a moment",
-                              mayRetry: true)
-        case .refused(409, let refusal) where refusal.code == "ask-thread-full"
-            || refusal.code == "ask-thread-taken":
-            self = AskRefusal(
-                line: refusal.message ?? "That conversation is full — this starts a new one",
-                mayRetry: true, opensAFreshThread: true)
+            self = AskRefusal(line: refusal.message ?? Ask.noAnswer, mayRetry: true)
+        case .refused(409, let refusal) where refusal.code == "ask-thread-full":
+            self = AskRefusal(line: refusal.message ?? Ask.threadCeiling,
+                              mayRetry: true, opensAFreshThread: true)
+        case .refused(409, let refusal) where refusal.code == "ask-thread-taken":
+            self = AskRefusal(line: refusal.message ?? Ask.threadTaken,
+                              mayRetry: true, opensAFreshThread: true)
+        case .refused(429, let refusal) where refusal.code == "ask-daily-limit":
+            self = AskRefusal(line: refusal.message ?? Ask.capReached, capReached: true)
         case .refused(_, let refusal):
             self = AskRefusal(line: refusal.message ?? "That didn’t go through")
         }
@@ -159,6 +166,12 @@ public struct AskConversation: Equatable, Sendable {
     public mutating func openAFreshThread() {
         threadId = Ask.mintThreadId()
     }
+
+    // The day's allowance was spent on the last question: the cap-reached state stands until a new conversation opens.
+    public var capReached: Bool {
+        guard case .refused(let why) = exchanges.last?.outcome else { return false }
+        return why.capReached
+    }
 }
 
 public enum Ask {
@@ -170,12 +183,33 @@ public enum Ask {
         "thr_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
-    public static let title = "Ask"
+    public static let title = "Coach"
     public static let subtitle = "reads your log · proposes only"
 
-    public static let needsSignIn = "Ask reads your log, so it needs you signed in."
+    public static let needsSignIn = "Coach reads your log, so it needs you signed in."
     public static let signIn = "Sign in"
-    public static let absentLine = "Ask isn’t available on this Windmill."
+    public static let absentLine = "Coach isn’t part of this Windmill. Your log is still yours to read."
+    public static let noAnswer = "Coach didn’t answer. Try again in a moment"
+
+    // Each phrase is the web's `TOOL_PHRASE` word for word, plus the notes read. A tool absent here is not drawn.
+    public static let phrase: [String: String] = [
+        "list_sessions": "read your recent workouts",
+        "get_session": "read one workout",
+        "last_time": "read the last time you trained a movement",
+        "list_exercises": "read your movement list",
+        "list_routines": "read your program",
+        "get_stats": "read your movement history",
+        "list_notes": "read your notes",
+        "propose_routine_change": "wrote a proposal for one of your routines",
+        "propose_routine_removal": "wrote a proposal to remove a routine",
+    ]
+
+    // One line per distinct phrase, in call order; the receipt stays whether or not any survive.
+    public static func stepLines(_ steps: [AskStep]) -> [String] {
+        var lines: [String] = []
+        for line in steps.compactMap(\.line) where !lines.contains(line) { lines.append(line) }
+        return lines
+    }
 
     public static let scope = """
         Ask about anything in your log — a movement that stalled, what a week actually looked like, \
@@ -186,7 +220,7 @@ public enum Ask {
 
     public static let freeDoor = """
         If you already use Claude, Cursor, Codex or anything else that speaks MCP, connect it \
-        instead — it’s free, and it’s better, because it knows the rest of your life.
+        instead — it’s free, and it reaches what Coach can’t: it knows the rest of your life.
         """
 
     public static let connect = "Connect your own"
@@ -195,15 +229,20 @@ public enum Ask {
         Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.
         """
 
-    public static let dailyLimit = """
-        It answers about ten questions a day, three back to back. That cap is what keeps Ask open to \
-        everyone — when you reach it, it says so, and it answers again later.
-        """
+    // The promise sits immediately above the composer, always; the cap-reached moment replaces the composer.
+    public static let allowance = "Ten questions a day, three back to back."
+    public static let capReached = "The next question frees up in a couple of hours."
+
+    // Local fallbacks for a 409 that arrived without a sentence; the server's own words win when sent.
+    public static let threadCeiling = "This conversation holds four questions. Start a new one."
+    public static let threadTaken = "That conversation id is already in use — this starts a new one."
+
+    public static let notesDoor = "Notes"
 
     public static let placeholder = "Ask about your training"
     public static let waiting = "reading your log…"
 
-    public static let tooLong = "That question is longer than Ask takes. Shorten it to send."
+    public static let tooLong = "That question is longer than Coach takes. Shorten it to send."
 
     public static func doorIsOpen(signedIn: Bool, sessionIsOpen: Bool, onThisDeployment: Bool) -> Bool {
         signedIn && !sessionIsOpen && onThisDeployment

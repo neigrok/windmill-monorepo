@@ -440,12 +440,12 @@ test('historyRows — the day it was written and every proposal since, each spel
     history: [{ kind: 'proposal', at: proposal.createdAt, proposal: { ...proposal, source: { door: 'ask' } } }],
   });
   assert.equal(deleted[0].thread, null);
-  assert.equal(deleted[0].line, '10 Aug · 3 changes from Ask · waiting for you');
+  assert.equal(deleted[0].line, '10 Aug · 3 changes from Coach · waiting for you');
 
   const byAgent = historyRows({
     history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'ask', movements: 2 }],
   });
-  assert.equal(byAgent[0].line, '9 Aug · created by Ask · 2 movements');
+  assert.equal(byAgent[0].line, '9 Aug · created by Coach · 2 movements');
   assert.equal(byAgent[0].line.includes('by you'), false);
   assert.equal(
     historyRows({ history: [{ kind: 'created', at: new Date(2026, 7, 9, 11, 0).getTime(), by: 'mcp' }] })[0].line,

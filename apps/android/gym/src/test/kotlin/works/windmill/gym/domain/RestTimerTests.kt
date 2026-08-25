@@ -32,25 +32,27 @@ class RestTests {
     }
 
     @Test
-    fun testRestingCountsDownToTheTargetAndNamesIt() {
+    fun testRestingCountsUpTowardTheTargetAndNamesIt() {
         val line = Rest.Line(targetSeconds = 180, startedAtMs = 0, now = 49_000)
         assertEquals("resting · target 3:00", line.label)
-        assertEquals("2:11", line.time)
+        assertEquals("the reading is time since the set, the same on every surface", "0:49", line.time)
         assertFalse(line.overrun)
     }
 
     @Test
-    fun testPastTheTargetTheClockCountsUpAndSaysTheRestIsDone() {
+    fun testPastTheTargetTheClockKeepsCountingUpAndSaysTheRestIsDone() {
         val line = Rest.Line(targetSeconds = 180, startedAtMs = 0, now = 187_000)
         assertEquals("rest done · target 3:00", line.label)
-        assertEquals("+0:07", line.time)
+        assertEquals("no flip to a plus sign: one reading throughout", "3:07", line.time)
         assertTrue(line.overrun)
+        assertEquals("the target instant itself is done", true,
+            Rest.Line(targetSeconds = 180, startedAtMs = 0, now = 180_000).overrun)
     }
 
     @Test
     fun testAPocketedPhoneComesBackToTheRealElapsedTime() {
         val line = Rest.Line(targetSeconds = 120, startedAtMs = 1_000_000, now = 1_000_000 + 600_000)
-        assertEquals("+8:00", line.time)
+        assertEquals("10:00", line.time)
         assertTrue(line.overrun)
         assertEquals("10:00", Rest.Line(null, startedAtMs = 1_000_000, now = 1_600_000).time)
     }

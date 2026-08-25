@@ -30,17 +30,10 @@ export const FREE_LINE =
   'Connecting your log costs nothing, and neither does the log: the logger, your history, routines, '
   + 'records and the CSV are free. There is nothing in gym to buy.';
 
-export const INVITATION_KICKER = 'The connected log';
-export const INVITATION_LINE =
-  'The tool you already use can read these weeks and write you the next block: a new day lands, and '
-  + 'a change to a day you already have waits for your tap.';
-export const INVITATION_VERB = 'Connect your log';
-export const INVITATION_FREE = 'It costs nothing.';
-
 export const GRANT_LINE = 'Windmill speaks MCP, and one URL is the whole of it.';
 
 export const LEVEL_LINES = {
-  read: 'Read your log — sets, workouts, routines, records and how your gym is set up',
+  read: 'Read your log — sets, workouts, routines, records, notes and how your gym is set up',
   write: 'Record what happened · add a new day or a new movement · propose changes to the days you have · share one workout by link',
   delete: 'Discard a workout · end a share link · propose a removal',
 };

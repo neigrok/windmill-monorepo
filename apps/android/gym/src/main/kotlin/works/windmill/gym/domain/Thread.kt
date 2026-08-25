@@ -30,7 +30,7 @@ data class ThreadProposal(
         val about = routine.takeIf { it.isNotBlank() }?.let { "$counted to $it" } ?: counted
         val became = when (state) {
             ProposalState.Applied -> "applied"
-            ProposalState.Dismissed -> "dismissed"
+            ProposalState.Dismissed -> "turned down"
             ProposalState.Superseded -> "set aside"
             ProposalState.Pending -> "waiting"
         }
@@ -54,7 +54,7 @@ data class ThreadOutcome(
         get() = when (kind) {
             applied -> "applied"
             readOnly -> "read only"
-            dismissed -> "dismissed"
+            dismissed -> "turned down"
             proposed -> "waiting"
             superseded -> "set aside"
             else -> null
@@ -64,7 +64,7 @@ data class ThreadOutcome(
         get() = when (kind) {
             applied -> routine?.takeIf { it.isNotBlank() }?.let { "$counted → $it" } ?: counted
             readOnly -> "no changes proposed"
-            dismissed -> "$counted dismissed"
+            dismissed -> "$counted turned down"
             proposed -> "$counted waiting"
             superseded -> "$counted superseded"
             else -> null
@@ -114,13 +114,13 @@ object Threads {
         return "$said · yours to delete"
     }
 
-    const val none = "Nothing here yet. Every conversation you have with Ask is kept until you delete it."
+    const val none = "Nothing here yet. Every conversation you have with Coach is kept until you delete it."
 
     const val outOfReach = "the log didn’t answer — your conversations are out of reach"
 
     const val deletes = "Delete this conversation"
     const val deleteRule =
-        "Deleting the conversation keeps what it changed: an applied change stays in the routine's " +
+        "Deleting the conversation keeps what it changed: an applied change stays in the routine’s " +
             "history. There is no undoing the delete."
 
     const val past = "A conversation you had. Ask something new to start another."

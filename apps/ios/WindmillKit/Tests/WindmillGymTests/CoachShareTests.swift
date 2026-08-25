@@ -16,7 +16,7 @@ final class CoachShareTests: XCTestCase {
     func testTheClosedCardOffersTheLinkAndNamesTheThreeThingsThatAreTrueOfIt() {
         let card = Coach.card(.closed(), base: base)
 
-        XCTAssertEqual(card.title, "Share with a coach")
+        XCTAssertEqual(card.title, "Share this workout")
         XCTAssertEqual(card.body, Coach.offer)
         XCTAssertNil(card.link)
         XCTAssertEqual(card.action, "Get a link")
@@ -31,11 +31,23 @@ final class CoachShareTests: XCTestCase {
     func testAMintThatFailedKeepsTheOfferAndRepeatsWhatTheLogSaid() {
         let card = Coach.card(.closed(note: "no such session"), base: base)
 
-        XCTAssertEqual(card.title, "Share with a coach")
+        XCTAssertEqual(card.title, "Share this workout")
         XCTAssertEqual(card.body, Coach.offer)
         XCTAssertEqual(card.action, "Try again")
         XCTAssertEqual(card.note, "no such session")
         XCTAssertNil(card.link)
+    }
+
+    // The word coach names the room and nothing else.
+    func testTheShareNeverCarriesTheWordCoach() {
+        let states: [Coach.State] = [.closed(), .closed(note: "no such session"), .working,
+                                     .live(share: share), .live(share: share, copied: true), .revoked]
+        for state in states {
+            let card = Coach.card(state, base: base)
+            for sentence in [card.title, card.body, card.action, card.revoke ?? "", card.note ?? ""] {
+                XCTAssertFalse(sentence.lowercased().contains("coach"), sentence)
+            }
+        }
     }
 
     func testTheLinkIsTheOneTheServerSentAndTheFallbackIsNeverTheJsonRoute() {

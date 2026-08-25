@@ -17,6 +17,8 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Note
+import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalDecision
 import works.windmill.gym.domain.ProposalIntent
@@ -116,6 +118,9 @@ class TrainingSyncingTests {
         completedAt = at)
 }
 
+// `trimmedName` on the server: these six, both ends.
+private const val serverBlanks = " \t\n\r\u000C\u000B"
+
 private fun refusal(status: Int, code: String? = null, message: String) =
     works.windmill.platform.net.WindmillApiException.Refused(
         status, works.windmill.platform.net.Refusal(message = message, code = code))
@@ -158,6 +163,10 @@ internal class FakeTraining : TrainingSyncing {
     val asked = mutableListOf<AskQuestion>()
     val conversations = mutableMapOf<String, AskThread>()
     var refuseThreads: Exception? = null
+    // Keyed by id, in position order; the same rules the server's table keeps.
+    val notebook = mutableListOf<Note>()
+    var refuseNotes: Exception? = null
+    var noteWrittenAtMs = 7_000L
     var swallowReplies = 0
     var onFinish: suspend () -> Unit = {}
     var onAppend: suspend (SetWrite) -> Unit = {}
@@ -547,5 +556,56 @@ internal class FakeTraining : TrainingSyncing {
                 }
             }
         }
+    }
+
+    override suspend fun notes(): List<Note> {
+        calls.add("notes")
+        reachable()
+        refuseNotes?.let { throw it }
+        return notebook.toList()
+    }
+
+    override suspend fun writeNote(id: String, write: NoteWrite): Note {
+        calls.add("writeNote")
+        reachable()
+        refuseNotes?.let { throw it }
+        // The server's own order: trim first, then bound — the title in code points, the body in bytes.
+        val title = write.title.trim { it in serverBlanks }
+        val body = write.body.trim { it in serverBlanks }
+        if (title.isEmpty()) throw refusal(400, message = "a note needs a title")
+        if (title.codePointCount(0, title.length) > 60) throw refusal(400, message = "a title runs to 60 characters")
+        if (body.toByteArray(Charsets.UTF_8).size > 500) throw refusal(400, message = "a note runs to 500 bytes")
+        val at = notebook.indexOfFirst { it.id == id }
+        if (at < 0 && notebook.size >= 10) throw refusal(409, code = "notes-full", message = "10 of 10 notes. Delete one to add another.")
+        val stored = Note(id = id, position = if (at < 0) notebook.size else at, title = title,
+            body = body, updatedAtMs = noteWrittenAtMs)
+        if (at < 0) notebook.add(stored) else notebook[at] = stored
+        return stored
+    }
+
+    override suspend fun deleteNote(id: String) {
+        calls.add("deleteNote")
+        reachable()
+        refuseNotes?.let { throw it }
+        notebook.removeAll { it.id == id }
+        renumber()
+    }
+
+    override suspend fun reorderNotes(order: List<String>): List<Note> {
+        calls.add("reorderNotes")
+        reachable()
+        refuseNotes?.let { throw it }
+        if (order.toSet() != notebook.map { it.id }.toSet() || order.size != notebook.size) {
+            throw refusal(400, code = "notes-order-mismatch", message = "that order does not name every note")
+        }
+        val byId = notebook.associateBy { it.id }
+        notebook.clear()
+        order.forEach { notebook.add(byId.getValue(it)) }
+        renumber()
+        return notebook.toList()
+    }
+
+    private fun renumber() {
+        for (i in notebook.indices) notebook[i] = notebook[i].copy(position = i)
     }
 }

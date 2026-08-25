@@ -63,7 +63,7 @@ plaintext.
 ## The room
 
 Nothing needs an account first, and **nothing starts by itself**: home is the routine list
-(Routines · The log · Ask), a fresh install's empty state points at *Build a routine* with *Just
+(Routines · The log · Coach), a fresh install's empty state points at *Build a routine* with *Just
 start logging* as the second path, and a session begins only when the lifter taps a start. No tour,
 no splash, no question about goals, and nothing that counts how many times an offer was walked past.
 The one account verb reachable mid-first-session is *Build my routine*, drawn only while there is no

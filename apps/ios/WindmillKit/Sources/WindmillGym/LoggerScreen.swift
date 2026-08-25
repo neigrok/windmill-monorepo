@@ -139,8 +139,7 @@ struct LoggerScreen: View {
             let now = stamp(beat.date)
             let filled = Rest.filled(targetSeconds: clock.targetSeconds,
                                      startedAtMs: clock.startedAtMs, now: now)
-            let reading = Rest.reading(targetSeconds: clock.targetSeconds,
-                                       startedAtMs: clock.startedAtMs, now: now)
+            let reading = Rest.reading(startedAtMs: clock.startedAtMs, now: now)
             Button { restStartedAtMs = nil } label: {
                 HStack(spacing: WindmillSpace.x3) {
                     Capsule().fill(skin.line)

@@ -183,7 +183,7 @@ public struct SignInDoor: View {
                 canResend = true
             }
         } catch {
-            refusal = (error as? WindmillApiError)?.line ?? "That didn't go through"
+            refusal = (error as? WindmillApiError)?.line ?? "That didn’t go through"
         }
     }
 

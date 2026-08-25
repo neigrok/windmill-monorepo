@@ -301,7 +301,7 @@ final class RoutineReadoutTests: XCTestCase {
                                                            movements: 4)),
                        "\(Readout.date(at)) · created by your connected agent · 4 movements")
         XCTAssertEqual(RoutineReadout.created(RoutineEvent(kind: .created, atMs: at, by: "ask")),
-                       "\(Readout.date(at)) · created by Ask")
+                       "\(Readout.date(at)) · created by Coach")
     }
 }
 

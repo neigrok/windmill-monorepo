@@ -3,6 +3,7 @@
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/TrainingService.h"
+#include "products/gym/domain/Note.h"
 #include "products/gym/domain/Preferences.h"
 #include "products/gym/domain/ReadReceipt.h"
 #include "products/gym/domain/Thread.h"
@@ -106,6 +107,14 @@ namespace wm::gym {
 // Entry order is the routine's order: entries in carry no position, the codec numbers them 1..n in
 // arrival order, and entries out carry the number.
 
+//   note in     : { "title": "…", "body": "…" }          PUT /v1/gym/notes/{id}
+//   note out    : { "id": "note_…", "position": n, "title": "…", "body": "…", "updatedAt": ms }
+//   notes out   : { "notes": [ <note> ] }                  GET /v1/gym/notes, position ascending
+//   order in    : { "order": [ "note_…", … ] }             PUT /v1/gym/notes — every note, once
+//
+// A note's id is the client's to mint (`note_<hex>`), the same discipline as `thr_<hex>`. Position
+// is precedence and the store's to assign: a new id lands last, and the whole order is replaced
+// with one write.
 //   threads out : { "threads": [ <thread> ] }                GET /v1/gym/threads
 //   thread out  : { "id": "thr_…", "title": "…", "createdAt": ms, "askedAt": ms,
 //                   "outcome": { "kind": "read-only"|"proposed"|"applied"|"dismissed"|"superseded",
@@ -141,6 +150,9 @@ std::string parseExerciseRename(const Json::Value& body);  // throws InvalidTrai
 // The whole document. The owner is the caller's, never the body's; omitted fields take their
 // defaults, and every refusal carries a machine `code`.
 GymPreferences parsePreferences(const Json::Value& body, const UserId& user);  // throws InvalidPreference
+// The id is the path's and the owner the caller's; the entity applies the three bounds.
+Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user);  // throws InvalidTraining
+std::vector<NoteId> parseNotesOrder(const Json::Value& body);                        // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
 // `topE1rm` is the best estimate over every working set; `topSet` is only the heaviest, and no e1RM
@@ -168,6 +180,8 @@ Json::Value toJson(const std::vector<RoutineEvent>& history);
 Json::Value toJson(const PlanSnapshot& plan);
 // An omitted `restSeconds` means the timer is off.
 Json::Value toJson(const GymPreferences& preferences);
+Json::Value toJson(const Note& note);
+Json::Value toJson(const std::vector<Note>& notes);   // the array; the handler wraps it
 Json::Value toJson(const Review& review);
 // The share omits the ids and the frozen plan: a reader who is not the owner gets neither.
 Json::Value toJson(const Statistics& statistics);

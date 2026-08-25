@@ -111,7 +111,7 @@ enum ConnectedLog {
     static let headline = "Your training log, inside your own Claude."
 
     static let sub = """
-        Not a coach in a chat tab. The twelve weeks of squats you already logged, readable by the \
+        Not a chat in another tab. The twelve weeks of squats you already logged, readable by the \
         assistant you already use.
         """
 
@@ -148,7 +148,7 @@ enum ConnectedLog {
 
     static let free = """
         Connecting your log is free. So is the rest of this room — logging, history, routines, the \
-        coach link and the CSV.
+        workout share and the CSV.
         """
 
     static let canTitle = "What a connection can do"

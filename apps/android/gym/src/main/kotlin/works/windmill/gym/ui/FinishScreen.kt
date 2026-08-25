@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Against
@@ -380,10 +379,25 @@ private fun KeepAsRoutine(
     }
 }
 
-// It deletes for good: nothing on this screen may suggest it can be got back.
+// It deletes for good: nothing on this screen may suggest it can be got back, and the tap that does
+// it is confirmed — there is no undo behind a discard.
 @Composable
 private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> Unit, onDone: () -> Unit) {
     if (finished.slight) {
+        var confirming by remember { mutableStateOf(false) }
+        if (confirming) {
+            ConfirmDialog(
+                title = "Discard this session?",
+                body = "Discarding deletes the session and its sets. There is no undoing it.",
+                confirm = "Discard",
+                destructive = true,
+                onConfirm = {
+                    confirming = false
+                    onDiscard()
+                },
+                onKeep = { confirming = false },
+            )
+        }
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier.fillMaxWidth(),
@@ -394,7 +408,7 @@ private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable(onClick = onDiscard),
+                    .clickable { confirming = true },
             ) {
                 Text(
                     "Discard session",
@@ -402,13 +416,6 @@ private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> U
                     color = GymSkin.alarmInk,
                 )
             }
-            Text(
-                "Discarding deletes the session and its sets. There is no undoing it.",
-                style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
         return
     }

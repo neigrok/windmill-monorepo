@@ -174,7 +174,8 @@ TEST(pg_gym_the_thread_export_is_one_row_per_turn_and_matches_the_in_memory_twin
   CHECK_EQ(exported[0].from, std::string("lifter"));
   // The turn as sent, quotes and all — nothing on the way through edits what a lifter typed.
   CHECK_EQ(exported[0].text, std::string("why is my bench, uh, \"stuck\"?"));
-  CHECK_EQ(exported[1].from, std::string("ask"));
+  // The column a lifter reads names the room; the wire's `from` enum stays "ask".
+  CHECK_EQ(exported[1].from, std::string("coach"));
   CHECK_EQ(exported[2].threadId, std::string("thr_pg000002"));
   // The outcome is not the store's to render.
   CHECK_EQ(exported[0].outcome, std::string(""));

@@ -91,21 +91,22 @@ test('the /gym shell carries a complete no-JS body and asserts the application i
   assert.equal(gymLandingHead.module, 'src/products/gym/marketing/GymLanding.jsx');
 });
 
-test('the coach link is declared bare, so opening gym never drags it into the room', () => {
+test('the share link is declared bare, so opening gym never drags it into the room', () => {
   assert.equal(typeof gymRoutes.shell.bare, 'function');
   assert.equal(gymRoutes.shell.bare('#/gym/shared/tok_abc123'), true);
 
   for (const hash of ['#/gym', '#/gym/log', '#/gym/routines', '#/gym/movement/back-squat',
-                      '#/gym/backfill', '#/gym/session/ses_1', '#/gym/finish/ses_1']) {
+                      '#/gym/backfill', '#/gym/session/ses_1', '#/gym/finish/ses_1', '#/gym/coach',
+                      '#/gym/notes']) {
     assert.equal(gymRoutes.shell.bare(hash), false, hash);
   }
 });
 
-test('gym registers its settings as one section, in the slot the account’s close reads', () => {
-  assert.equal(Array.isArray(gymRoutes.settingsSections.data), true);
-  assert.equal(gymRoutes.settingsSections.data.length, 1);
-  assert.equal(typeof gymRoutes.settingsSections.data[0], 'object');
-  assert.equal(gymRoutes.settingsSections.main, undefined, 'gym contributes nothing to the product zone');
+test('gym registers its settings as one section, in the product zone and never beside the account’s close', () => {
+  assert.equal(Array.isArray(gymRoutes.settingsSections.main), true);
+  assert.equal(gymRoutes.settingsSections.main.length, 1);
+  assert.equal(typeof gymRoutes.settingsSections.main[0], 'object');
+  assert.equal(gymRoutes.settingsSections.data, undefined, 'gym’s dials and its Notes door are the product’s, not the account’s');
 
   assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymSettingsSection.jsx')), true);
   assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymDataSection.jsx')), false);

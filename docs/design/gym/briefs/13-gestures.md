@@ -23,8 +23,10 @@ Every Android board drawing a swipe says so on the board.
 
 **And the law is a per-row test, not a blanket cost.** A row that already carries an overflow control
 has a real, screen-reader-reachable button, and a swipe on that row satisfies this law for free by
-putting the same actions in the overflow. The routine row is in that position today; the set row is
-not, and has to declare its action by hand. Check the row, not the platform.
+putting the same actions in the overflow. No gym row is in that position today — the Android routine
+row is a whole-row tap ending in a decorative chevron, with no overflow control — so the set row and
+the routine row alike declare their action by hand until an overflow exists. Check the row, not the
+platform.
 
 ### 2 · A gesture that destroys needs an undo, not a confirmation.
 
@@ -34,14 +36,12 @@ you just saved.
 Gym already has the mechanism — a window, declared once per platform. So the shape is swipe → gone →
 *"Deleted · Undo"* → really gone.
 
-**But it is not one window, and this brief said it was.** The phones hold a delete for **9000 ms**
-(`SetQueue.swift:48`, `SetQueue.kt:51`); the **web holds it for 5000** (`fix.js:9`, `UNDO_MS`, with
-`useTrainingLog.js:16` pinning the toast to the same span by comment). `ARCHITECTURE.md:1078` states
-*"The undo window is 9000 ms on every surface"*, and that has never been true.
+**And it is one window.** Every surface holds a delete for **9000 ms** — `SetQueue.swift:48`,
+`SetQueue.kt:52`, and `fix.js:9` (`UNDO_MS`, with `useTrainingLog.js:16` pinning the toast to the
+same span) — which is the invariant `ARCHITECTURE.md:1135` states (ledger `2m`).
 
 It matters here more than it looks: the gate above says a swipe ships only where an undo already
-exists, and on the web a lifter gets **four fewer seconds** than every document in this project
-promises them. **Reconciling the two is a prerequisite of any web swipe, not a detail of it.**
+exists, and that gate means the same nine seconds on every surface.
 
 **The corollary is the load-bearing half: an act with no undo path may never be a gesture.** Turning
 a proposal down settles permanently and the wire has no way back, which is exactly why closing the
@@ -111,11 +111,13 @@ thumb away:**
 |---|---|
 | a routine | fires immediately, no confirm, no undo — and on one platform it cascades the proposal ledger |
 | a conversation | fires immediately, no confirm, no undo |
-| a finished session | fires immediately, and the copy correctly says *"There is no undoing it."* |
+| a finished session | asks *Discard this session?* first, then fires — no undo, and the copy says *"There is no undoing it."* |
 
-> **Ruling: those three get a withheld delete before they get a gesture.** The pattern already exists
-> — Android's withheld-delete generalises cleanly — and until it does, those rows keep their drawn
-> buttons. A gesture is not worth an unrecoverable loss.
+> **Ruling: those three get a withheld delete before they get a gesture.** The mechanism exists for
+> a set only — Android's `Withheld` (`TrainingStore.kt:1629`) names a session and a set, and the
+> three delete verbs share no shape, so this is a new abstraction over three verbs rather than a
+> widened data class — and until it exists, those rows keep their drawn buttons. A gesture is not
+> worth an unrecoverable loss.
 
 **And leaving commits.** Navigating away from the session settles the withheld delete immediately,
 and nothing on screen says so. Behind a two-tap trip through a sheet that is survivable; behind a
@@ -160,8 +162,9 @@ likely to settle a previous delete the lifter has not noticed yet.
 **The routine row** — **trailing swipe gives *Delete***, once the withheld delete exists.
 **Duplicate goes to the overflow, not the swipe** — for the same reason Fix left the set row's: two
 trailing actions hide the row's own name behind them, and a lifter cannot see *which* routine they
-are deciding about while they decide. It also costs nothing to put it there, because that row already
-carries an overflow control, which satisfies Law 1 for free. Between them the two removes both buttons
+are deciding about while they decide. The overflow control has to be built first — the Android
+routine row carries none today — and once it exists it satisfies Law 1 for free. Between them the two
+removes both buttons
 from the editor's foot, which today sit **three screens deep**: Routines → the routine → Edit → scroll
 to the bottom.
 
@@ -217,7 +220,7 @@ because it was assumed otherwise.
 
 Gestures are not free here, and the brief says so rather than letting a build discover it.
 
-**iOS has two `List`s and eleven `ScrollView` screens.** `.swipeActions` requires a `List`. So the
+**iOS has three `List`s and sixteen `ScrollView` sites across fourteen files.** `.swipeActions` requires a `List`. So the
 Session, Routines and Threads screens convert before they can carry a swipe — and the session's
 grouping by movement means sections, not a flat list.
 

@@ -65,3 +65,11 @@ export function comparison(against, catalog) {
     })),
   };
 }
+
+// Discarding deletes the session and its sets, and the wire has no restore.
+export const DISCARD_CONFIRM = {
+  title: 'Discard this session?',
+  body: 'Discarding deletes the session and its sets. There is no undoing it.',
+  confirm: 'Discard',
+  keep: 'Keep it',
+};

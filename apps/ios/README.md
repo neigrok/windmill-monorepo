@@ -74,7 +74,7 @@ Rules that hold across the rooms:
   set of rows per seat. A store opened for one seat cannot read another's. The one carry is
   anonymous work, which follows the person who signs in.
 - **Nothing starts by itself.** A gym session begins only on *Start workout* or *Just start
-  logging*. Home is the Routines list (tabs: Routines · The log · Ask); a fresh install offers
+  logging*. Home is the Routines list (tabs: Routines · The log · Coach); a fresh install offers
   **Build a routine** as the primary. Every start goes through `TrainingStore.start`.
 - **Tell set-queue refusals apart by their machine `code`, never by their sentence**
   (`SetQueue.swift`'s `Verdict`): a spent id means re-mint and send again; a finished session and a

@@ -328,7 +328,7 @@ private struct SwitcherRow: View {
                 Text(product.label)
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(WindmillColor.textPrimary)
-                Text(isHere ? "you're here" : line.headline)
+                Text(isHere ? "you’re here" : line.headline)
                     .font(WindmillFont.body(13))
                     .foregroundStyle(WindmillColor.textTertiary)
                     .lineLimit(1)

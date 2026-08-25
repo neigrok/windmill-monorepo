@@ -10,7 +10,7 @@ import { browserWith, renderHook, settle } from './harness.mjs';
 const HOUR = 3600_000;
 const POLL_MS = 5000;
 const WATCH_MS = 30_000;
-const TOAST_MS = 5000;
+const TOAST_MS = 9000;
 
 function phoneWorkout({ startedAt, sets = [] }) {
   const wire = [];
@@ -747,7 +747,7 @@ test('a failed re-read from the top still releases the foot of the log', async (
   assert.deepEqual(view.log.summaries.map((each) => each.id), rows.slice(0, PAGE).map((each) => each.id));
 });
 
-test('a second sentence replaces the first and is up for its own five seconds', async (t) => {
+test('a second sentence replaces the first and is up for its own nine seconds', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const now = Date.now();
   browserWith();

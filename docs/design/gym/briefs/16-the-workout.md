@@ -41,22 +41,23 @@ session header, while owning a major offer (*keep this as a routine*) and a dest
 > workout you finished, which is where you wanted to be.
 
 The offer and the destructive door keep their places inside it. **Discard keeps its confirmation** —
-it is not a gesture, it has no undo, and its own copy already says *"There is no undoing it."*
+on every surface it asks *Discard this session?* / *Discarding deletes the session and its sets.
+There is no undoing it.* with **Discard** (destructive) · **Keep it** — because it is not a gesture
+and it has no undo.
 
 ## The rest reading counts up
 
-Already ruled in `14-live-activity.md` and filed as ledger `2b`: the room's rest row adopts the
-count-up reading and keeps the bar against the target. It removes a mode rather than adding one — the
-room today counts down to zero and then flips to `+0:12`, and that flip was always an admission that
-counting up is the natural expression.
+Ruled in `14-live-activity.md` and built on all three surfaces: the room's rest row counts up —
+time since the last set — and keeps the bar against the target; the optional chime at the target
+still fires. One reading of one clock, on the room and on the lock screen alike.
 
-This wave is where that gets drawn.
+## The set kind gets a control that costs no trip
 
-## The set kind gets a control at last
-
-Warmup · working · drop · failure are columns the backend has always written and **no surface has
-ever offered**. Only working sets count toward anything, so a lifter who cannot mark a warmup is
-feeding the wrong numbers into every stat the product shows them.
+Warmup · working · drop · failure are columns the backend has always written. Only working sets
+count toward anything, so a lifter who cannot mark a warmup is feeding the wrong numbers into every
+stat the product shows them. The phones offer the choice today, and both make it a trip: iOS offers
+working and warmup on the logger's pill and all four only on the fix sheet; Android offers all four
+behind a bottom sheet the pill opens.
 
 It belongs on the set being logged, not in a sheet: the kind is a property of the rep you are about
 to do, and choosing it must not cost a trip. **The default is working**, because it always is.
@@ -67,8 +68,8 @@ to do, and choosing it must not cost a trip. **The default is working**, because
 comes out of the logger's set row, and a transient carries both the action and the fact that the
 window is open — and retires itself when the window closes.
 
-**Note the window is not one number.** The phones hold 9000 ms and the web holds 5000 (ledger `2m`).
-A board that draws a duration draws the one its own surface ships, and says so.
+**The window is one number.** Every surface holds 9000 ms (ledger `2m`); a board that draws a
+duration draws 9000.
 
 ## Drawn in both skins, and at three text sizes
 

@@ -1,11 +1,24 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Against
+import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.AgainstMovement
 import works.windmill.gym.domain.Effort
 import works.windmill.gym.domain.Exercise
@@ -293,5 +306,65 @@ class FinishedSessionTests {
         val short = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true)
         assertTrue(FinishedSession(session = session(routineId = null), sets = lifted,
                                    review = short, isFirst = false).slight)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class DiscardConfirmationTests {
+    @get:Rule
+    val compose = createComposeRule()
+
+    private val short = FinishedSession(
+        session = Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 660_000),
+        sets = listOf(
+            TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
+                        completedAtMs = 2_000),
+        ),
+        review = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true),
+        isFirst = false,
+    )
+
+    private val doors = CoachDoors(
+        origin = "https://windmill.works",
+        mint = { error("never minted on a short session") },
+        revoke = { error("never revoked on a short session") },
+    )
+
+    @Test
+    fun aDiscardIsConfirmedAndKeepingItDecidesNothing() {
+        var discarded = 0
+        var done = 0
+        compose.setContent {
+            FinishScreen(
+                finished = short,
+                catalog = catalog,
+                kept = false,
+                coach = doors,
+                onKeepRoutine = {},
+                onDiscard = { discarded += 1 },
+                onDone = { done += 1 },
+            )
+        }
+
+        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
+        compose.onNodeWithText("Discard session").performScrollTo().performClick()
+        compose.onNodeWithText("Discard this session?").assertIsDisplayed()
+        compose.onNodeWithText("Discarding deletes the session and its sets. There is no undoing it.")
+            .assertIsDisplayed()
+
+        compose.onNode(hasText("Keep it") and hasAnyAncestor(isDialog())).performClick()
+        compose.onNodeWithText("Discard this session?").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals("closing the dialog decides nothing", 0, discarded)
+            assertEquals(0, done)
+        }
+
+        compose.onNodeWithText("Discard session").performScrollTo().performClick()
+        compose.onNode(hasText("Discard") and hasAnyAncestor(isDialog())).performClick()
+        compose.runOnIdle {
+            assertEquals("the confirmed tap is the one that deletes", 1, discarded)
+            assertEquals(0, done)
+        }
     }
 }
