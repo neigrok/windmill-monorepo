@@ -157,8 +157,10 @@ no rows says nothing at all rather than "read 0 sets".
 
 The daily allowance and the back-to-back limit are stated in the room, never hidden behind a quietly
 weaker answer. **In the room** means on the Coach screen itself, in one line — *"Ten questions a day,
-three back to back."* — not in a paragraph explaining why the cap exists, and not only on the board
-that draws the cap being hit.
+three back to back."* — not in a paragraph explaining why the cap exists, not only on the board that
+draws the cap being hit, **and not only on the empty state.** A lifter who has asked one question is
+still in the room; putting the promise only where there is nothing to read means it is seen once,
+by someone who has not yet spent any of it, which is the least useful moment of all.
 
 Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
 says what to do next rather than restating the rule. A wave that removes the paragraph and draws

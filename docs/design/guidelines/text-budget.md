@@ -46,7 +46,8 @@ Typed, because the three kinds carry different weight. **FINDING** is measured r
 | Any line of body text | **40–60 characters** | GUIDANCE |
 | Notification title / body | **< 29** / **< 40** characters collapsed | GUIDANCE |
 | **A glance** | **6–20 words** — 1.5–5 s at 238 wpm | FINDING |
-| **A screen's chrome, first paint** | **≤ 40 words** — the ten-second decision window | FINDING |
+| **A decision screen's chrome, first paint** | **≤ 40 words** — the ten-second decision window | FINDING |
+| **A reference surface** | budgeted **per row**, not per screen — see below | — |
 | **A screen where half the words get read at all** | **≤ 111 words**, everything included | FINDING (derived) |
 | Section footer / caption | ≤ 12 words, **at most one per screen** | — |
 | Empty state | a line and an action, ≤ 15 words together | — |
@@ -173,10 +174,28 @@ Almost every over-budget screen is fixed by one of these, and none of them delet
 4. **It is two sentences doing one job.** Merge, or move one of them to the screen whose question it
    answers.
 
+## Decision surfaces and reference surfaces are not the same screen
+
+The forty-word figure comes from a **decision window** — how long someone spends before choosing what
+to do. It does not transfer to a screen nobody is deciding on.
+
+A **settings list** is chrome by construction: every row is a label, and a lifter scans it for the one
+row they came for. So is a log. Counting those screens against forty says only that they are lists,
+which everyone knew.
+
+> **A reference surface is budgeted per row, and per group.** Row label 1–3 words · row meta ≤ 8 ·
+> **one caption per group, not per screen** · and each caption still ≤ 12 words.
+
+The forty-word budget holds for anything where somebody is choosing or committing: an empty state, a
+review sheet, a refusal, a first run, a chart they came to read.
+
+This distinction was missing from the first draft, and it made three settings screens look like
+failures for being settings screens.
+
 ## Checking
 
-Count the chrome words on first paint. Over forty, something on that screen is doing a job the design
-should be doing.
+On a decision surface, count the chrome words on first paint. Over forty, something is doing a job the
+design should be doing. On a reference surface, count captions per group instead.
 
 **Stacking is the failure mode to watch for.** Four true sentences in a column is not four times as
 honest as one — it is a paragraph, and a paragraph is not read. A screen that gains a fifth caption
