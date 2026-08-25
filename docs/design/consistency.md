@@ -820,3 +820,18 @@ Found by a design agent while drawing the web row-`×` transient, which had to s
 matters beyond a number: `13-gestures.md` gates every swipe-to-delete on *an undo already exists*, and
 that gate silently means something weaker on one surface. The brief has been corrected to say so;
 the architecture line and one of the two values still need to move.
+
+**2n · a board's own layer name is a claim, and three of them were false** → check names against
+geometry, not against intent. Wave three shipped a reach band named *"266 pt"* that measured **317**,
+a logger column named *"156"* that measured **98**, and a note whose word count was taken before the
+rows it counts were drawn. Each was written when it was true and left standing when it stopped being.
+
+The general form is worth keeping: **a layer name that states a measurement is canon in the same way
+a caption is**, because it is what the next person builds from and nobody re-measures it. If a name
+carries a number, either the number is re-derived when the layer changes, or the name should not
+carry it.
+
+**2o · a note that dates itself is a change log** → restate, do not annotate. A wave-three budget note
+read *"the count above was taken before they were drawn"*, which records history on a surface whose
+own rule is that docs hold the current state only. It also truncated mid-word. Rewritten to say what
+the budget IS.
