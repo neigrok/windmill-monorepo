@@ -162,6 +162,12 @@ Almost every over-budget screen is fixed by one of these, and none of them delet
    it. Cut it.
 2. **It belongs at the moment of consequence.** A quota explained before any of it is spent. A size
    limit shown to somebody with two of a possible ten. Move it to where it bites.
+
+   > **A move is not done until the destination is drawn.** This wave learned it the hard way: two
+   > true facts — a daily allowance and a note ceiling — were taken off a screen "to the moment they
+   > bite", and nobody drew that moment. They were not moved. They were deleted, with a rationale
+   > attached. If you cannot point at the screen the fact landed on, you have not moved it, and the
+   > honest label for what you did is *cut*.
 3. **It is structure explaining itself.** *"Drag to reorder"* under a drag handle. Delete the sentence
    and keep the handle.
 4. **It is two sentences doing one job.** Merge, or move one of them to the screen whose question it

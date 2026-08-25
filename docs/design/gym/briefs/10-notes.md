@@ -38,11 +38,17 @@ not read, and stacking them made the product **less** honest.
 - *"…and nothing else you have set"* answers a question you ask **in settings, looking at the dials**,
   so it moved there and became six words beside them:
 
-  > **Coach reads your notes, not these.**
+  > **Coach reads your notes, not your settings.**
 
-  On the Notes screen it answered a question nobody was asking; next to the units toggle and the rest
-  timer it answers the obvious one. That is the *moment of consequence* move, and the salience
-  finding — the same fact placed where it is surprising rather than where it is merely true.
+  On the Notes screen it answered a question nobody was asking; among the dials it answers the obvious
+  one. That is the *moment of consequence* move, and the salience finding — the same fact placed where
+  it is surprising rather than where it is merely true.
+
+  **It names what it excludes, rather than pointing.** The first draft said *"not these"*, which
+  depends entirely on which control it happens to sit beside — and it landed under the haptic and
+  sound toggles on one surface, and one divider above the notes list on another, where *"these"* read
+  as the notes it plainly does read. A caption that changes meaning with its position is not a
+  caption, it is a bug. Naming the thing costs one word and works anywhere on the screen.
 - *"Ten notes, 500 bytes each"* moved to **the moment it bites**. A lifter with two notes does not
   need the ceiling.
 - *"Drag to reorder"* was **structure explaining itself** under a drag handle. Only the part a handle
@@ -54,8 +60,17 @@ A note is **a title and a body**. Nothing else. No tags, no folders, no colours.
 **verbatim**, exactly as typed — nothing in this product summarises what a lifter wrote.
 
 **Bounded at ten notes and five hundred bytes each** — everything around this is bounded by name, and
-an unbounded free-text field feeding a prompt would be the one exception. **The ceiling is said when
-it is reached, not before.**
+an unbounded free-text field feeding a prompt would be the one exception.
+
+**The ceiling is said when it is reached, and here is where that is**, because "at the moment it
+bites" is not a location:
+
+- **The byte ceiling** is a live counter in the note editor — *"70 of 500 bytes"* — and it appears
+  only in the last fifth, so a short note carries no chrome at all.
+- **The note ceiling** is the *Add a note* row: at ten it stops offering and says so.
+
+Neither is drawn today on the phones — the byte counter exists only on web — so both are **owed**, and
+this brief says owed rather than moved.
 
 **Order is precedence.** The top note wins, and the list is dragged into the order the lifter wants.
 That answers what Coach does when two notes disagree, and it needs three words on screen because the

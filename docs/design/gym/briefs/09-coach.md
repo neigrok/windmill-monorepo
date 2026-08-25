@@ -156,7 +156,13 @@ no rows says nothing at all rather than "read 0 sets".
 ## The limits, said on screen
 
 The daily allowance and the back-to-back limit are stated in the room, never hidden behind a quietly
-weaker answer. The thread ceiling is **four questions** — the copy must say four, because the code
+weaker answer. **In the room** means on the Coach screen itself, in one line — *"Ten questions a day,
+three back to back."* — not in a paragraph explaining why the cap exists, and not only on the board
+that draws the cap being hit.
+
+Both are needed. The line in the room is the promise; the **cap-reached** state is the moment, and it
+says what to do next rather than restating the rule. A wave that removes the paragraph and draws
+neither has not trimmed the cap, it has deleted it. The thread ceiling is **four questions** — the copy must say four, because the code
 counts a question and its answer as two turns against a ceiling of eight. Hitting the internal
 iteration cap is a **failure**, not a truncation to be dressed up.
 
