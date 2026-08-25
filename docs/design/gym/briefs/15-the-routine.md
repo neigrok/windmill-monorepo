@@ -154,6 +154,18 @@ seventh.
 because it found the store would tolerate more; that is a product decision with no reason attached
 yet.
 
+**And the counter beside it is `53/60`, appearing in the last fifth** — from 48 characters, silent
+before that. This one got away: the brief pinned the cap and not the counter, and three surfaces
+produced three answers — a new `18 left` form on one, the shipped `53/60` on another, and deletion on
+the third. The shipped form wins, and the threshold matches the note editor's byte counter exactly,
+because a lifter should not have to learn two rules for the same idea.
+
+**A row's `×` is as destructive as a swipe, and takes the same undo.** Where a surface refuses the
+swipe — the web does, correctly, because a pointer drag would then be the only way to remove a line
+and Law 1 forbids a gesture being the only path — the drawn `×` still removes a line from an unsaved
+draft whose only other recovery is Cancel, which discards every other edit. It gets the transient
+undo. **The gate is the act, not the gesture.**
+
 ## What removing a control obliges you to do
 
 The text budget already says *a move is not done until the destination is drawn*. This wave found the
