@@ -8,6 +8,8 @@ namespace wm {
 std::string dump(const Json::Value& value) {
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
+  builder["precision"] = kJsonDoubleDigits;
+  builder["precisionType"] = "significant";
   return Json::writeString(builder, value);
 }
 

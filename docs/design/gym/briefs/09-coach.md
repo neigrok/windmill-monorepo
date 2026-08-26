@@ -39,10 +39,18 @@ may show its inline diff when the column is wide enough, and Review is a link ra
 button.
 
 **One proposal per turn.** An answer *can* mint several, and two on the same routine kill each other:
-the supersede runs before the second lands, so the first is dead while both ids come back, and
-tapping Apply on it refuses with *"that routine changed after this proposal was written"* — which is
-false. Nothing changed but Coach's mind. A second mint in one run is refused with a sentence the
-model can act on: *"you already wrote a proposal this turn; fold both into one document."*
+the supersede runs before the second lands, so the first is dead while both ids come back. A second
+mint in one run is refused with a sentence the model can act on: *"you already wrote a proposal this
+turn; fold both into one document."*
+
+**A dead proposal says why, and never guesses.** Applying one past settling is refused with the reason
+the store recorded, in this order: *a newer proposal replaced this one, so it was not applied* when a
+later proposal took its slot — decided first, because a routine can move after the second mint too,
+and nothing changed but Coach's mind; *that routine changed after this proposal was written, so it
+was not applied* when only the routine's revision moved; *this proposal was superseded before it was
+applied* for a row settled before the reason was kept. Turning one down meets the same three ending
+*…so it was not turned down* (the third: *this proposal was superseded before it was turned down*).
+Every surface shows the server's sentence as sent; local words only for a reply with none.
 
 ### Two · the review
 
@@ -53,25 +61,37 @@ deciding, and you will be back*. The loop is the product, so the navigation has 
 **No fixed partial detent.** A routine holds up to fifty entries and the summary runs to four hundred
 model-written characters, so the diff is unbounded — and a half-height detent does not grow with the
 system's text size, so at the larger accessibility sizes the visible diff goes to zero while Apply
-stays enabled. **Apply is never reachable while the diff is clipped.**
+stays enabled. The iOS sheet is `.large` only; Android's skips the partial state. **Apply is never
+reachable while the diff is clipped:** on every surface it stays disabled until the diff has been
+scrolled to its end, or fits without scrolling. A kept run unfolding past the height already seen
+clips the diff again, so it takes Apply away until the new end is seen — built that way on the web
+and Android; iOS keeps Apply open once seen (ledger `2p`). The web's design-system `Dialog` carries
+the gate for any dialog that asks for it.
 
-**Kept rows have one shape everywhere.** Changed rows at full weight; kept rows as a collapsed count
-— *"and 7 lines unchanged"* — tappable to expand. The rows are the document as well as the diff, and
-a lifter deciding needs to see the run the routine takes on, not only what moved.
+**Kept rows have one shape everywhere.** Changed rows at full weight; every run of kept rows as a
+collapsed count **in its own place** — *"and 7 lines unchanged"*, *"and 1 line unchanged"* — tappable
+to unfold where it stands. The rows are the document as well as the diff, and a lifter deciding needs
+to see the run the routine takes on, not only what moved, in the order it will apply.
 
-**The model's prose is attributed.** The summary sits in a quoted block under a **Coach wrote:**
-kicker, in the treatment a Coach turn gets, visually separate from the counted rows. The sheet never
-puts two kinds of truth under one pair of buttons.
+**The model's prose is attributed to whoever wrote it.** The summary sits in a quoted block under a
+kicker, visually separate from the counted rows: **Coach wrote:** for a proposal that came through the
+Coach door; **<name> wrote:** for one that came over MCP from a source with a name — the agent's own,
+else the connection's, as the byline *from Claude Desktop* already reads; **Your agent wrote:** for
+an MCP source with neither. The kicker is an attribution, not an eyebrow: drawn as written, sentence
+case, never uppercased. The sheet never puts two kinds of truth under one pair of buttons.
 
-**Three exits, not two.** Closing the sheet — swipe, scrim, back — **decides nothing**: the proposal
-stays pending and the card reads *still waiting*.
+**Three exits, not two.** Closing the sheet — swipe, scrim, back, × — **decides nothing**: the proposal
+stays pending, and the card it was opened from reads *still waiting*.
 
-**The band holds one button, and it is Apply.** Turning a proposal down is a **plain text row beneath
-it**, not the left half of a pair. A pair puts the one irreversible act exactly where a lifter's hand
-expects *cancel*, and colour does not undo position — someone reaching for "not now" would settle
-something permanently. "Not now" already exists and costs nothing: close the sheet. So the pinned
-band is a single primary, which is also what the reach law asks for; two full-strength buttons of the
-same weight is a failure to decide.
+**The band holds one button, and it is Apply.** Its label carries the count the store will apply —
+**Apply all N**, **Apply** when N is 1, **Remove <routine>** for a removal — and never a number the
+screen counted for itself. Turning a proposal down is a **plain text row beneath it**, not the left
+half of a pair. A pair puts the one irreversible act exactly where a lifter's hand expects *cancel*,
+and colour does not undo position — someone reaching for "not now" would settle something
+permanently. "Not now" already exists and costs nothing: close the sheet. So the pinned band is a
+single primary, which is also what the reach law asks for; two full-strength buttons of the same
+weight is a failure to decide. The atomic promise — *All N or none. Nothing is applied until you
+tap.* — is always drawn, never toggled, so the band's height never changes.
 
 **"Turn this down"** stays destructive and stays confirmed, and the confirmation's words are pinned
 on every surface: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
@@ -85,8 +105,11 @@ proposal, so the copy promises no way back, and the confirmation guards an act t
 irreversible. The wire state `dismissed` and the route `/dismiss` are machine tokens and stay.
 
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
-mid-workout changes nothing about the workout in progress. While a session is open the sheet carries
-*"Coach changes next time's plan, not this workout."*
+mid-workout changes nothing about the workout in progress. While a session is open the web's dialog
+carries *"You are mid-workout. Applying changes next time, not this session."* That state exists on
+the web only: both phones draw the logger over every other screen while a session is open, so no
+review is reachable there mid-workout, and they draw nothing for it — a board that drew the caveat on
+a phone would be drawing a state the phone cannot reach.
 
 That line sits **above the diff, never inside the pinned band.** A line that appears and disappears
 inside the band moves the Apply button, so the same tap lands somewhere different depending on
@@ -99,22 +122,26 @@ merged over. All of it lands or none of it does.
 
 ### Four · the return
 
-The sheet closes onto the thread and a **receipt line** lands in it:
+The sheet closes onto what opened it and a **receipt line** lands under the proposal's card in the
+Coach room, or under its row in a stored thread:
 
 > **Applied · Push A · 4 changes**
 
-Turning down writes *"Turned down · nothing changed."*
+*1 change* when one; **Applied · Push A · routine removed** for a removal. Turning down writes
+*"Turned down · nothing changed."* Where there is no thread to land in — the web's routines home, or
+a proposal opened from an outside link — the same line is said through the room's transient.
 
-The receipt is **derived from the server's reply, never from the model's prose** — a model that
-mis-states what it just did is the failure this beat exists to make impossible. The wording is the
-sentence the server can stand behind: the diff rows carry an exercise id and never a movement name,
-so *"now runs 5 × 3 at 90"* is reachable only when exactly one field of one movement moved. That is a
-special case, never the shape of the rule.
+The receipt is **derived from the server's reply, never from the model's prose** — the routine's name
+as it now stands (else the name it had) and the store's own change count. A model that mis-states
+what it just did is the failure this beat exists to make impossible. The wording is the sentence the
+server can stand behind: the diff rows carry an exercise id and never a movement name, so *"now runs
+5 × 3 at 90"* is reachable only when exactly one field of one movement moved. That is a special
+case, never the shape of the rule.
 
-**The receipt must be durable, and today it is not.** Nothing writes a turn on apply, and the thread's
-stored shape carries no settled-at, so on reopening a thread the receipt cannot be placed back in the
-conversation's chronology. Until a ledger row exists the boards state plainly that the receipt is
-ephemeral and vanishes on reopen. It must not be dressed up as history it cannot keep.
+**The receipt is ephemeral, and it is not dressed up as history.** Nothing writes a turn on apply,
+and the thread's stored shape carries no settled-at, so the receipt lives in the screen that drew it:
+on reopening a thread it is gone, and nothing pretends otherwise. The durable ledger row is the
+deferred programme (`../BUILD.md`, B12); the boards state the receipt is ephemeral until it lands.
 
 ## The verbs
 

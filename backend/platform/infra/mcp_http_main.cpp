@@ -1,5 +1,6 @@
 #include "platform/adapters/clock/SystemClock.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
+#include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/RateLimiter.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
@@ -80,6 +81,7 @@ int main() {
   auto endpoint = std::make_shared<McpHttpEndpoint>(*server, origins, mcpAuth);
 
   auto& app = drogon::app();
+  configureJsonReplies(app);
 
   // Per-client rate ceiling keyed on Caddy's X-Forwarded-For, before routing; preflight skips it.
   auto mcpLimiter = std::make_shared<RateLimiter>(20.0, 40.0);  // ~20 req/s/client, burst 40

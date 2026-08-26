@@ -289,6 +289,6 @@ final class ThreadTrailTests: XCTestCase {
         let minted = try head(#"{"door":"mcp","connection":"cx_1"}"#)
 
         XCTAssertNil(minted.source.thread)
-        XCTAssertEqual(minted.source.agentName, "your connected agent")
+        XCTAssertEqual(minted.source.agentName, "cx_1", "a connection's name counts as the agent's name")
     }
 }

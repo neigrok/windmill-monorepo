@@ -1,7 +1,9 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
+#include "platform/ports/Clock.h"
 #include "products/gym/application/AskService.h"
+#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/NotesService.h"
 #include "products/gym/application/PreferencesService.h"
@@ -17,14 +19,15 @@ namespace wm::gym {
 
 // Everything the gym product's routes need, built once in main.cpp and handed across the seam —
 // the same shape roadmap and journal use, in its own namespace so the three registerRoutes never
-// collide. Six services — one per aggregate port, and each adapter below takes only the ones it
-// reads — one auth seam, nothing mailed.
+// collide. Seven services — one per aggregate port, and each adapter below takes only the ones it
+// reads — one auth seam, the clock (read by `BodyweightApi` alone, for the forecast gate), nothing
+// mailed.
 //
 // This is the HTTP half of the product and not the whole of it: `adapters/mcp/GymTools` is the
 // second seam, registered as a `ToolModule` on the shared MCP host, and it holds the SAME
-// TrainingService, CatalogService, ProgramService and NotesService this struct carries. One core, two doors — so a
-// rule cannot be true on one surface and not the other, and neither door needs to know the other
-// exists.
+// TrainingService, CatalogService, ProgramService, NotesService and BodyweightService this struct
+// carries. One core, two doors — so a rule cannot be true on one surface and not the other, and
+// neither door needs to know the other exists.
 //
 // `askService` is the ONE nullable field, and null is the shipped default. It is Ask — the in-app
 // chat in front of those same tools — and it needs a vendor key nobody is obliged to set, so a
@@ -38,7 +41,9 @@ struct GymDeps {
   std::shared_ptr<PreferencesService> preferencesService;
   std::shared_ptr<ThreadService> threadService;
   std::shared_ptr<NotesService> notesService;
+  std::shared_ptr<BodyweightService> bodyweightService;
   std::shared_ptr<AuthService> authService;
+  std::shared_ptr<Clock> clock;
   std::shared_ptr<AskService> askService;  // null (or unconfigured) ⇒ no /v1/gym/ask route exists
   std::string appBaseUrl;                  // the browser app's origin — a workout share's link
 };

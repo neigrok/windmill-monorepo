@@ -14,6 +14,10 @@ struct AskScreen: View {
     @ObservedObject var store: TrainingStore
     @Binding var conversation: AskConversation
     let doors: AskDoors
+    // Receipt lines by proposal id, the room's for this visit only: not stored, gone on reopening.
+    let receipts: [String: String]
+    // Proposals whose review was closed without a decision this visit.
+    let undecided: Set<String>
 
     @Environment(\.gymSkin) private var skin
     @State private var question = ""
@@ -43,6 +47,9 @@ struct AskScreen: View {
             composer
         }
         .task { await readMinted() }
+        // A receipt is a settled proposal: the card under it redraws from the log.
+        .onChange(of: receipts) { _, _ in Task { await readMinted() } }
+        .onChange(of: undecided) { _, _ in Task { await readMinted() } }
     }
 
     private var head: some View {
@@ -149,7 +156,10 @@ struct AskScreen: View {
                 .foregroundStyle(skin.ink)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-            ForEach(answer.proposals, id: \.self) { id in proposal(id) }
+            ForEach(answer.proposals, id: \.self) { id in
+                proposal(id)
+                if let receipt = receipts[id] { self.receipt(receipt) }
+            }
             Button {
                 if open { opened.remove(exchange.id) } else { opened.insert(exchange.id) }
             } label: {
@@ -203,32 +213,22 @@ struct AskScreen: View {
                     .foregroundStyle(skin.accent)
                 Spacer(minLength: WindmillSpace.x2)
                 if let found {
-                    Text(found.state == .pending ? found.head.changes : found.state.word)
+                    Text(found.state == .pending
+                            ? "\(found.head.changes) · \(undecided.contains(id) ? Proposal.stillWaiting : Proposal.waiting)"
+                            : found.state.word)
                         .font(GymType.numeral(11))
                         .foregroundStyle(skin.inkFaint)
                 }
             }
-            if let found {
-                let rows = Ask.diffRows(of: found, in: store.catalog)
-                ForEach(Array(rows.prefix(3).enumerated()), id: \.offset) { _, row in
-                    HStack(alignment: .top, spacing: WindmillSpace.x2) {
-                        Text(row.name)
-                            .foregroundStyle(skin.inkFaint)
-                            .frame(width: 92, alignment: .leading)
-                        Text(row.change)
-                            .foregroundStyle(skin.ink)
-                        Spacer(minLength: 0)
-                    }
-                    .font(GymType.numeral(12.5))
-                }
-                if rows.count > 3 {
-                    Text("+ \(rows.count - 3) more")
-                        .font(GymType.numeral(12))
-                        .foregroundStyle(skin.inkFaint)
-                }
+            if let found, !found.head.summary.isEmpty {
+                Text(found.head.summary)
+                    .font(WindmillFont.body(14))
+                    .foregroundStyle(skin.ink)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Button { doors.openProposal(id) } label: {
-                Text(found?.head.reviewLabel ?? "Review it")
+                Text(Proposal.review)
                     .font(WindmillFont.body(14.5, .bold))
                     .foregroundStyle(skin.onAccent)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
@@ -244,6 +244,17 @@ struct AskScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.accent, lineWidth: 1))
+    }
+
+    // Derived from the server's reply and ephemeral: nothing pretends it is history.
+    private func receipt(_ line: String) -> some View {
+        Text(line)
+            .font(GymType.numeral(12.5, .bold))
+            .foregroundStyle(skin.inkDim)
+            .padding(.horizontal, WindmillSpace.x3)
+            .frame(minHeight: 30)
+            .background(Capsule().fill(skin.raised))
+            .accessibilityLabel(line)
     }
 
     private func refused(_ why: AskRefusal, of exchange: AskExchange) -> some View {

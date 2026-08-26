@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/ports/ToolHost.h"
+#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/NotesService.h"
 #include "products/gym/application/ProgramService.h"
@@ -16,7 +17,7 @@ namespace wm::gym {
 class GymTools : public ToolHost {
 public:
   GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-           NotesService& notes, std::string appBaseUrl);
+           NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
   // The hosts above consult these after a name misses their catalog; nothing here dispatches them.
@@ -37,6 +38,7 @@ private:
   CatalogService& catalog_;
   ProgramService& program_;
   NotesService& notes_;
+  BodyweightService& bodyweight_;   // read through `list_bodyweight` alone; no tool writes a weigh-in
   std::string appBaseUrl_;
 };
 

@@ -3,6 +3,7 @@
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/TrainingService.h"
+#include "products/gym/domain/Bodyweight.h"
 #include "products/gym/domain/Note.h"
 #include "products/gym/domain/Preferences.h"
 #include "products/gym/domain/ReadReceipt.h"
@@ -115,6 +116,15 @@ namespace wm::gym {
 // A note's id is the client's to mint (`note_<hex>`), the same discipline as `thr_<hex>`. Position
 // is precedence and the store's to assign: a new id lands last, and the whole order is replaced
 // with one write.
+//   weigh-in in : { "weightKg": n, "recordedAt": ms }     PUT /v1/gym/bodyweight/{dateLocal}
+//   weigh-in out: { "dateLocal": "YYYY-MM-DD", "weightKg": n, "recordedAt": ms }
+//   weigh-ins out: { "entries": [ <weigh-in> ], "latest": <weigh-in> | null }
+//                                                       GET /v1/gym/bodyweight?from=&to=
+//
+// The day is the identity — the lifter's own calendar, never an instant — and kilograms are the
+// only unit on the wire, rounded to two decimals as the column stores them. `recordedAt` is the
+// device's clock at the save and decides only which of two writes to one day is newer. `latest` is
+// the account's newest day whatever window was asked for.
 //   threads out : { "threads": [ <thread> ] }                GET /v1/gym/threads
 //   thread out  : { "id": "thr_…", "title": "…", "createdAt": ms, "askedAt": ms,
 //                   "outcome": { "kind": "read-only"|"proposed"|"applied"|"dismissed"|"superseded",
@@ -153,6 +163,9 @@ GymPreferences parsePreferences(const Json::Value& body, const UserId& user);  /
 // The id is the path's and the owner the caller's; the entity applies the three bounds.
 Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user);  // throws InvalidTraining
 std::vector<NoteId> parseNotesOrder(const Json::Value& body);                        // throws InvalidTraining
+// The day is the path's and the owner the caller's; the entity applies the band and the calendar.
+Bodyweight parseBodyweightWrite(const Json::Value& body, const std::string& dateLocal,
+                                const UserId& user);   // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
 // `topE1rm` is the best estimate over every working set; `topSet` is only the heaviest, and no e1RM
@@ -182,6 +195,8 @@ Json::Value toJson(const PlanSnapshot& plan);
 Json::Value toJson(const GymPreferences& preferences);
 Json::Value toJson(const Note& note);
 Json::Value toJson(const std::vector<Note>& notes);   // the array; the handler wraps it
+Json::Value toJson(const Bodyweight& entry);
+Json::Value toJson(const std::vector<Bodyweight>& entries);   // the array; the handler wraps it
 Json::Value toJson(const Review& review);
 // The share omits the ids and the frozen plan: a reader who is not the owner gets neither.
 Json::Value toJson(const Statistics& statistics);

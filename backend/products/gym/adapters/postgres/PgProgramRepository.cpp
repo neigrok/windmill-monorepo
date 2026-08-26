@@ -265,15 +265,28 @@ std::optional<ProposalMintOutcome> spentId(pqxx::work& txn, const RoutineProposa
   return ProposalMintOutcome{std::nullopt, ProposalMintError::idReused};
 }
 
+// The replaced row records who replaced it, so a settle can say so rather than guess it off the
+// revision (wrong the moment the routine also moves after this mint).
 void supersedeFromDoor(pqxx::work& txn, const RoutineProposal& incoming) {
   txn.exec_params("UPDATE gym_proposals "
-                  "SET state = 'superseded', settled_at = to_timestamp($3::bigint / 1000.0) "
+                  "SET state = 'superseded', settled_at = to_timestamp($3::bigint / 1000.0), "
+                  "    superseded_by = $6 "
                   "WHERE routine_id = $1 AND user_id = $2::uuid AND state = 'pending' "
                   "  AND door = $4 AND connection = $5 AND id <> $6",
                   incoming.head.routine.str(), incoming.head.user.str(),
                   static_cast<long long>(incoming.head.createdAtMs),
                   toString(incoming.head.source.door), incoming.head.source.connection,
                   incoming.head.id.str());
+}
+
+// Why a row that is already superseded cannot be settled, read off the row: the reason column
+// first, the revision second, and the legacy answer for a row that carries neither.
+template <typename Row>
+ProposalSettleError supersededReason(const Row& row) {
+  if (!row["superseded_by"].is_null()) return ProposalSettleError::replaced;
+  if (row["revision"].template as<int>() != row["base_revision"].template as<int>())
+    return ProposalSettleError::routineMoved;
+  return ProposalSettleError::superseded;
 }
 }
 
@@ -537,7 +550,7 @@ ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, con
             .empty())
       return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     pqxx::result locked = txn.exec_params(
-        "SELECT p.state, p.base_revision, r.revision "
+        "SELECT p.state, p.base_revision, p.superseded_by, r.revision "
         "FROM gym_proposals p JOIN gym_routines r ON r.id = p.routine_id "
         "WHERE p.id = $1 AND p.user_id = $2::uuid FOR UPDATE OF p",
         id.str(), user.str());
@@ -552,14 +565,14 @@ ProposalSettleOutcome PgProgramRepository::applyRevision(const UserId& user, con
     if (state == ProposalState::dismissed)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, supersededReason(locked[0])};
     // The base moved between the mint and the tap: the diff describes a document that is gone.
     if (locked[0]["revision"].as<int>() != locked[0]["base_revision"].as<int>()) {
       txn.exec_params("UPDATE gym_proposals SET state = 'superseded', "
                       "  settled_at = to_timestamp($2::bigint / 1000.0) WHERE id = $1",
                       id.str(), static_cast<long long>(nowMs));
       txn.commit();
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
     }
 
     txn.exec_params("UPDATE gym_routines SET name = $3, revision = revision + 1 "
@@ -598,7 +611,7 @@ ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, cons
             .empty())
       return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     pqxx::result locked = txn.exec_params(
-        "SELECT p.state, p.base_revision, p.routine_id, r.revision "
+        "SELECT p.state, p.base_revision, p.superseded_by, p.routine_id, r.revision "
         "FROM gym_proposals p JOIN gym_routines r ON r.id = p.routine_id "
         "WHERE p.id = $1 AND p.user_id = $2::uuid FOR UPDATE OF p",
         id.str(), user.str());
@@ -608,13 +621,13 @@ ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, cons
     if (state == ProposalState::dismissed || state == ProposalState::applied)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, supersededReason(locked[0])};
     if (locked[0]["revision"].as<int>() != locked[0]["base_revision"].as<int>()) {
       txn.exec_params("UPDATE gym_proposals SET state = 'superseded', "
                       "  settled_at = to_timestamp($2::bigint / 1000.0) WHERE id = $1",
                       id.str(), static_cast<long long>(nowMs));
       txn.commit();
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
     }
 
     settled = loadProposal(txn, user, id);
@@ -631,20 +644,23 @@ ProposalSettleOutcome PgProgramRepository::applyRemoval(const UserId& user, cons
 ProposalSettleOutcome PgProgramRepository::dismissProposal(const UserId& user,
                                                             const ProposalId& id,
                                                             std::uint64_t nowMs) {
-  // Touches one table, so it takes one lock and joins no order.
+  // Writes one table, so it takes one lock and joins no order; the routine's revision is only read,
+  // to name the reason a superseded row cannot be turned down.
   std::optional<RoutineProposal> settled;
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
     pqxx::result locked = txn.exec_params(
-        "SELECT state FROM gym_proposals WHERE id = $1 AND user_id = $2::uuid FOR UPDATE",
+        "SELECT p.state, p.base_revision, p.superseded_by, r.revision "
+        "FROM gym_proposals p JOIN gym_routines r ON r.id = p.routine_id "
+        "WHERE p.id = $1 AND p.user_id = $2::uuid FOR UPDATE OF p",
         id.str(), user.str());
     if (locked.empty()) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     const ProposalState state = proposalStateFromStored(locked[0]["state"].as<std::string>());
     if (state == ProposalState::applied)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, supersededReason(locked[0])};
     if (state == ProposalState::pending)
       txn.exec_params("UPDATE gym_proposals SET state = 'dismissed', "
                       "  settled_at = to_timestamp($2::bigint / 1000.0) WHERE id = $1",

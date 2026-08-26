@@ -24,6 +24,7 @@ public final class TrainingStore: ObservableObject {
     private var lastSetsWanted = false
     @Published public private(set) var prefill: Prefill = .emptyBar
     @Published public private(set) var preferences: GymPreferences = .defaults
+    @Published public private(set) var bodyweight: [BodyweightEntry] = []        // ascending by day
     @Published public private(set) var refusals: [RefusedWrite] = []      // writes that never landed
     @Published public private(set) var saveState: SaveState = .idle
     @Published public private(set) var saveTick = 0                       // bumps once per write
@@ -44,6 +45,7 @@ public final class TrainingStore: ObservableObject {
     private let deviceCatalog: DeviceCatalog
     private let accountCopy: AccountCopy
     private let localLog: LocalLog
+    private let bodyweightStore: BodyweightStore
     private let now: () -> Int64
     private let mintSession: () -> String
     private let mintSet: () -> String
@@ -73,6 +75,7 @@ public final class TrainingStore: ObservableObject {
                 deviceCatalog: DeviceCatalog = DeviceCatalog(),
                 accountCopy: AccountCopy = AccountCopy(),
                 localLog: LocalLog = LocalLog(),
+                bodyweightStore: BodyweightStore = BodyweightStore(),
                 now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
                 mintSession: @escaping () -> String = Ids.session,
                 mintSet: @escaping () -> String = Ids.set,
@@ -85,6 +88,7 @@ public final class TrainingStore: ObservableObject {
         self.deviceCatalog = deviceCatalog
         self.accountCopy = accountCopy
         self.localLog = localLog
+        self.bodyweightStore = bodyweightStore
         self.now = now
         self.mintSession = mintSession
         self.mintSet = mintSet
@@ -184,10 +188,12 @@ public final class TrainingStore: ObservableObject {
         // Opened under the arriving seat ahead of the repair, the draw, the walk and the claim.
         localLog.open(under: account.user?.id)
         queue.open(under: account.user?.id)
+        bodyweightStore.open(under: account.user?.id)
         // Only under a seat the log confirmed this launch: adopting is irreversible.
         if account.isSignedIn, account.verified {
             localLog.adoptTheAnonymousShelf()
             queue.adoptTheAnonymousQueue()
+            bodyweightStore.adoptTheAnonymousShelf()
         }
         catalog = merged(deviceCatalog.open(under: account.user?.id))
         lastTimes.removeAll()
@@ -226,6 +232,7 @@ public final class TrainingStore: ObservableObject {
         routines = Routine.byLastTrained(accountCopy.routines + localLog.routines)
         proposals = []
         preferences = localLog.open(preferencesUnder: account.user?.id) ?? .defaults
+        bodyweight = bodyweightStore.entries
         served = []
         recent = mergedRecent([])
         isLoading = false
@@ -256,8 +263,142 @@ public final class TrainingStore: ObservableObject {
             localLog.keep(held, owed: false)
             localLog.flush()
         }
+        await loadBodyweight(from: gym)
         if session != nil, let movement = exerciseId { await choose(movement) }
         if lastSetsWanted { await loadLastSets() }
+    }
+
+    // ── bodyweight ─────────────────────────────────────────────────────────────────────────────
+
+    // Lands on the device first and is told to the log at once; refused for good it is let go, unreachable it
+    // stays owed and the claim replays it. The day is the identity, so a second save for a day is a correction.
+    @discardableResult
+    public func weighIn(_ weightKg: Double, on dateLocal: String) async -> WriteFailure? {
+        // Today is the device's local calendar day, the same day the sheet's picker ends on.
+        if let refusal = Bodyweight.dateRefusal(dateLocal, today: Bodyweight.dateLocal(Date())) {
+            return .refused(refusal)
+        }
+        let entry = BodyweightEntry(dateLocal: dateLocal, weightKg: weightKg, recordedAt: now())
+        bodyweightStore.keep(entry, owed: true)
+        bodyweightStore.flush()
+        bodyweight = bodyweightStore.entries
+        guard let gym else { return nil }
+        // The reply lands on the seat that sent it and on the write it answered — never on the next seat's shelf,
+        // never over a deletion or a newer save made while it was in flight.
+        let seated = seat
+        do {
+            let stored = try await gym.putBodyweight(on: dateLocal, BodyweightWrite(weightKg: weightKg,
+                                                                                 recordedAt: entry.recordedAt))
+            guard seated == seat else { return nil }
+            if !bodyweightStore.claimed(entry, as: stored) {
+                bodyweightStore.oweDeletion(of: stored, at: now())
+                claimOwedRetryably = true
+                scheduleDeliver(after: retryAfter)
+            }
+            bodyweightStore.flush()
+            bodyweight = bodyweightStore.entries
+            return nil
+        } catch {
+            guard seated == seat else { return WriteFailure(error) }
+            guard case .refused(let said) = claimVerdict(of: error, remintCode: "") else {
+                claimOwedRetryably = true
+                scheduleDeliver(after: retryAfter)
+                return WriteFailure(error)
+            }
+            bodyweightStore.letGo(entry)
+            bodyweightStore.flush()
+            bodyweight = bodyweightStore.entries
+            return .refused(said ?? "the log refused that weigh-in")
+        }
+    }
+
+    // Signed out the day simply leaves the shelf; signed in the log is told, and a deletion it could not hear
+    // stays owed as a hidden row stamped with the instant it was made, which the claim replays.
+    @discardableResult
+    public func deleteWeighIn(on dateLocal: String) async -> WriteFailure? {
+        guard let gym else {
+            bodyweightStore.letGo(on: dateLocal)
+            bodyweightStore.flush()
+            bodyweight = bodyweightStore.entries
+            return nil
+        }
+        guard let tombstone = bodyweightStore.markDeleted(on: dateLocal, at: now()) else { return nil }
+        bodyweightStore.flush()
+        bodyweight = bodyweightStore.entries
+        // The reply settles the tombstone it answered, on the seat that sent it: a save made for the day while the
+        // deletion was in flight stands, still owed.
+        let seated = seat
+        do {
+            try await gym.deleteBodyweight(on: dateLocal)
+            guard seated == seat else { return nil }
+            bodyweightStore.letGo(tombstone)
+            bodyweightStore.flush()
+            return nil
+        } catch {
+            guard seated == seat else { return WriteFailure(error) }
+            guard case .refused = claimVerdict(of: error, remintCode: "") else {
+                claimOwedRetryably = true
+                scheduleDeliver(after: retryAfter)
+                return WriteFailure(error)
+            }
+            bodyweightStore.letGo(tombstone)
+            bodyweightStore.flush()
+            return WriteFailure(error)
+        }
+    }
+
+    // The served series lands over the shelf of the seat that asked for it; a read that fails, or one that answers
+    // after the seat moved on, leaves the device's rows standing.
+    private func loadBodyweight(from gym: any TrainingSyncing) async {
+        let seated = seat
+        guard let series = try? await gym.bodyweight(), seated == seat else { return }
+        bodyweightStore.served(series)
+        bodyweightStore.flush()
+        bodyweight = bodyweightStore.entries
+    }
+
+    // The claim's last slot: every owed weigh-in and deletion, ascending by day, after every session landed.
+    // A reply that arrives under another seat touches nothing; a reply for a write the day no longer holds
+    // leaves what the day holds now, still owed, and the cadence comes back for it. A replayed deletion reads
+    // the day first: a row the log took after the deletion was made is a newer correction, and it wins.
+    private func claimBodyweight(with gym: any TrainingSyncing) async -> ClaimEnding {
+        defer { bodyweight = bodyweightStore.entries }
+        let seated = seat
+        var movedOn = false
+        for row in bodyweightStore.owed {
+            let day = row.entry.dateLocal
+            do {
+                if row.deleted {
+                    if let stored = try await gym.bodyweight(on: day), stored.supersedes(row.entry) {
+                        guard seated == seat else { return .settled }
+                        bodyweightStore.withdrawDeletion(row.entry, for: stored)
+                    } else {
+                        try await gym.deleteBodyweight(on: day)
+                        guard seated == seat else { return .settled }
+                        bodyweightStore.letGo(row.entry)
+                    }
+                } else {
+                    let stored = try await gym.putBodyweight(on: day, BodyweightWrite(weightKg: row.entry.weightKg,
+                                                                                    recordedAt: row.entry.recordedAt))
+                    guard seated == seat else { return .settled }
+                    if !bodyweightStore.claimed(row.entry, as: stored) { bodyweightStore.oweDeletion(of: stored, at: now()) }
+                }
+                movedOn = movedOn || bodyweightStore.row(on: day)?.owed == true
+                bodyweightStore.flush()
+            } catch {
+                guard seated == seat else { return .settled }
+                guard case .refused(let said) = claimVerdict(of: error, remintCode: "") else { return .retry }
+                // Terminal as written: let go, so no later connect re-sends it.
+                if !row.deleted {
+                    refusals.append(.claim(RefusedClaim(id: "weigh-in-\(day)",
+                                                        name: "weigh-in · \(Bodyweight.dayMonthYear(day))",
+                                                        reason: said ?? "the log refused that weigh-in")))
+                }
+                bodyweightStore.letGo(row.entry)
+                bodyweightStore.flush()
+            }
+        }
+        return movedOn ? .retry : .settled
     }
 
     @discardableResult
@@ -726,8 +867,10 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
+    // `said` is the server's own sentence when it answered with the row's state instead of the decision asked for
+    // (a 409); nil when the decision landed. The room prints it as sent, never in local words.
     public enum Settling: Equatable {
-        case settled(Proposal)
+        case settled(Proposal, said: String?)
         case removed            // an applied removal: the routine and its ledger are gone
         case gone               // no such proposal, and there never will be
         case failed(WriteFailure)
@@ -745,7 +888,7 @@ public final class TrainingStore: ObservableObject {
             routines = Routine.byLastTrained(routines.map { $0.id == routine.id ? routine : $0 })
             rememberTheProgram()
             await loadProposals(from: gym)
-            return .settled(landed.proposal)
+            return .settled(landed.proposal, said: nil)
         } catch let error as WindmillApiError {
             if proposal.intent == .remove, case .refused(404, _) = error {
                 await loadRoutines(from: gym)
@@ -765,7 +908,7 @@ public final class TrainingStore: ObservableObject {
         do {
             let settled = try await gym.dismissProposal(proposalId)
             settle(settled)
-            return .settled(settled)
+            return .settled(settled, said: nil)
         } catch let error as WindmillApiError {
             return await settling(after: error, of: proposalId, with: gym)
         } catch {
@@ -773,7 +916,8 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
-    // `proposal-superseded` and `proposal-settled` are answers, not failures, and neither is retryable.
+    // `proposal-superseded` and `proposal-settled` are answers, not failures, and neither is retryable. The
+    // server's sentence rides with the fresh row, so the room says why in the server's words.
     private func settling(after error: WindmillApiError, of proposalId: String,
                           with gym: any TrainingSyncing) async -> Settling {
         guard case .refused(let status, let refusal) = error else { return .failed(.noAnswer) }
@@ -790,7 +934,7 @@ public final class TrainingStore: ObservableObject {
         switch await proposal(proposalId) {
         case .success(let fresh):
             settle(fresh)
-            return .settled(fresh)
+            return .settled(fresh, said: refusal.message)
         case .failure(let why):
             return .failed(why)
         }
@@ -1149,8 +1293,8 @@ public final class TrainingStore: ObservableObject {
         }
     }
 
-    // Replayed in dependency order: movements, routines, finished sessions oldest first, the live
-    // session's start, then settings. Per session — start under the client-minted id at the true
+    // Replayed in dependency order: settings, movements, routines, finished sessions oldest first, the
+    // live session's start, then bodyweight last. Per session — start under the client-minted id at the true
     // startedAt with `joinOpenSession: false`, every set per lane in order, finish at the true instant.
     // No log or stats read interleaves: one would auto-close a stale session mid-replay. Keyed by the
     // id each session wore before the claim.
@@ -1192,6 +1336,8 @@ public final class TrainingStore: ObservableObject {
 
     private func replayTheShelf(with gym: any TrainingSyncing,
                                 landing landed: inout [String: Session]) async -> ClaimEnding {
+        // Settings halt nothing behind them: a document that could not go out rides the cadence with the rest.
+        let settings = await sendWhatIsOwed(with: gym).ending
         for write in localLog.exercises {
             let ending = await claim(exercise: write, with: gym)
             guard ending == .settled else { return ending }
@@ -1211,7 +1357,8 @@ public final class TrainingStore: ObservableObject {
             let ending = await claimLive(live, with: gym)
             guard ending == .settled else { return ending }
         }
-        return await sendWhatIsOwed(with: gym).ending
+        let weighIns = await claimBodyweight(with: gym)
+        return settings == .retry || weighIns == .retry ? .retry : .settled
     }
 
     private func claim(exercise write: ExerciseWrite, with gym: any TrainingSyncing) async -> ClaimEnding {

@@ -94,6 +94,7 @@ final class AskReceiptTests: XCTestCase {
             "list_routines": "read your program",
             "get_stats": "read your movement history",
             "list_notes": "read your notes",
+            "list_bodyweight": "read your bodyweight",
             "propose_routine_change": "wrote a proposal for one of your routines",
             "propose_routine_removal": "wrote a proposal to remove a routine",
         ])
@@ -418,57 +419,5 @@ final class AskRefusalTests: XCTestCase {
     func testTheProposalNoteNamesBothHalvesOfThePromise() {
         XCTAssertEqual(Ask.proposalNote, "Nothing changes until you tap Apply on the diff. "
                        + "Your logged sets are never part of a proposal.")
-    }
-}
-
-final class AskDiffRowTests: XCTestCase {
-    private func proposal(_ changes: [ProposalChange], baseName: String = "Push A",
-                          name: String? = nil) -> Proposal {
-        Proposal(head: ProposalHead(id: "prop_1", routineId: "rt_1",
-                                    changeCount: changes.filter { $0.kind != .kept }.count,
-                                    createdAtMs: 1_000, source: ProposalSource(door: "ask")),
-                 baseRevision: 1, baseName: baseName, name: name ?? baseName, changes: changes)
-    }
-
-    private let catalog = [Exercise(id: "bench-press", name: "Bench Press"),
-                           Exercise(id: "incline-db-press", name: "Incline DB Press"),
-                           Exercise(id: "cable-fly", name: "Cable Fly")]
-
-    func testTheCompactDiffSpellsEachChangeTheWayTheDiffScreenDoes() {
-        let changes = [
-            ProposalChange(position: 1, kind: .retargeted, exerciseId: "bench-press",
-                           before: ProposalChange.Targets(sets: 5, reps: 5, weightKg: 82.5),
-                           after: ProposalChange.Targets(sets: 5, reps: 3, weightKg: 87.5)),
-            ProposalChange(position: 2, kind: .added, exerciseId: "incline-db-press",
-                           after: ProposalChange.Targets(sets: 3, reps: 10, weightKg: 24)),
-            ProposalChange(position: 3, kind: .removed, exerciseId: "cable-fly",
-                           before: ProposalChange.Targets(sets: 3, reps: 12, weightKg: 22.5),
-                           loggedSets: 41),
-        ]
-        let rows = Ask.diffRows(of: proposal(changes), in: catalog)
-
-        XCTAssertEqual(rows, [
-            AskDiffRow(name: "Bench Press", change: "5 × 5 → 5 × 3 · 82.5 → 87.5"),
-            AskDiffRow(name: "Incline DB Press", change: "+ added · 3 × 10 · 24"),
-            AskDiffRow(name: "Cable Fly", change: "− removed from the routine · 41 logged sets kept"),
-        ])
-    }
-
-    func testAKeptEntryIsNotARowAndARenameIs() {
-        let changes = [
-            ProposalChange(position: 1, kind: .kept, exerciseId: "bench-press",
-                           before: ProposalChange.Targets(sets: 5, reps: 5),
-                           after: ProposalChange.Targets(sets: 5, reps: 5)),
-        ]
-        let rows = Ask.diffRows(of: proposal(changes, name: "Push A2"), in: catalog)
-
-        XCTAssertEqual(rows, [AskDiffRow(name: "name", change: "Push A → Push A2")])
-    }
-
-    func testAMovementTheCatalogHasNotAnsweredForKeepsItsId() {
-        let changes = [ProposalChange(position: 1, kind: .removed, exerciseId: "front-squat")]
-        let rows = Ask.diffRows(of: proposal(changes), in: catalog)
-
-        XCTAssertEqual(rows, [AskDiffRow(name: "front-squat", change: "− removed from the routine")])
     }
 }

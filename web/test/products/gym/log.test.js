@@ -13,7 +13,7 @@ import {
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
   nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
   planFrozenLabel,
-  planOf, planReadingOf, proposalHref, proposalIdOf,
+  BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineMetaLabel, routineNameOf, ROUTINES_HREF, screenOf, showsNameCount,
   sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setNoteOf, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
@@ -142,8 +142,12 @@ test('sessionMetaLabel — a session read whole, without printing its day twice'
   );
 });
 
-test('screenOf — one grammar decides which of the fourteen rooms a hash names, and #/gym is the routines home', () => {
+test('screenOf — one grammar decides which of the fifteen rooms a hash names, and #/gym is the routines home', () => {
   assert.equal(ROUTINES_HREF, '#/gym');
+  assert.equal(BODYWEIGHT_HREF, '#/gym/bodyweight');
+  assert.equal(screenOf(BODYWEIGHT_HREF), 'bodyweight');
+  assert.equal(screenOf('#/gym/bodyweight/'), 'bodyweight');
+  assert.equal(screenOf('#/gym/bodyweight?window=all'), 'bodyweight');
   assert.equal(screenOf('#/gym'), 'routines');
   assert.equal(screenOf('#/gym/'), 'routines');
   assert.equal(screenOf('#/gym/log'), 'log');

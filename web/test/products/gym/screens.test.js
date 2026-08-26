@@ -55,7 +55,8 @@ test('the tabs are Routines · The log · Coach, in that order, and #/gym is the
   assert.ok(bar.indexOf('The log</a>') < bar.indexOf('Coach</a>'));
   assert.equal(fs.existsSync(path.join(GYM, 'Today.jsx')), false, 'Today is deleted as a screen');
   assert.equal(app.includes("'today'"), false);
-  assert.equal(app.includes("{screen === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} />}"), true);
+  assert.equal(app.includes("{tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}"), true);
+  assert.equal(app.includes("return screen === 'proposal' ? 'routines' : screen;"), true, 'a routable proposal opens over the routines home');
   assert.equal(read('log.js').includes("export const ROUTINES_HREF = '#/gym';"), true);
 });
 
@@ -122,7 +123,7 @@ test('Coach is a tab root: a column in the rail, no back link, its threads and n
   const threads = read('coach/Threads.jsx');
   assert.equal(threads.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
   assert.equal(threads.includes('<Back href={THREADS_HREF}>{THREADS_TITLE}</Back>'), true);
-  assert.equal(read('Proposals.jsx').includes('{!log.session && <a className="gym-coach-aside" href={COACH_HREF}>'), true);
+  assert.equal(read('Proposals.jsx').includes('gym-coach-aside'), false, 'the review is a dialog over the room, with no door to another');
 });
 
 test('the allowance is the line above the composer, and the spent allowance replaces the composer with the door', () => {
@@ -232,7 +233,7 @@ test('an empty Coach contrasts the free door on scope, and walks to it', () => {
 test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
   const app = read('GymApp.jsx');
   assert.equal(app.includes("{screen === 'threads' && <ThreadsList />}"), true);
-  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} />}"), true);
+  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={threadIdOf(hash)} id={threadIdOf(hash)} log={log} />}"), true);
   const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
   assert.equal(rooms?.[1], "'routines', 'log', 'coach'");
 });
@@ -547,9 +548,20 @@ test('applying and dismissing live in one file, and only on the diff', () => {
   assert.equal((source.match(/gymApi\.dismissProposal/g) ?? []).length, 1);
 });
 
-test('the proposal diff is keyed on the proposal it reads', () => {
+test('the routable proposal is the home’s to open: keyed on its id, settling into the home’s own read, closing to it', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes('<ProposalDiff key={proposalIdOf(hash)} id={proposalIdOf(hash)} log={log} />'), true);
+  assert.equal(app.includes("<RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />"), true);
+  assert.equal(app.includes('<ProposalReview'), false, 'a dialog beside the list would settle without the list hearing of it');
+  const routines = read('Routines.jsx');
+  const routable = routines.slice(routines.indexOf('{reviewing && ('), routines.indexOf("{view.phase === 'loading'"));
+  assert.equal(routable.includes('<ProposalReview'), true);
+  assert.equal(routable.includes('key={reviewing}'), true);
+  assert.equal(routable.includes('id={reviewing}'), true);
+  assert.equal(routable.includes('onChanged={view.refresh}'), true);
+  assert.equal(routable.includes('onClose={() => { window.location.hash = ROUTINES_HREF; }}'), true);
+  assert.equal(routable.includes('log.say(receiptLine(receipt)); view.refresh(); window.location.hash = ROUTINES_HREF;'), true);
+  assert.equal(fs.existsSync(path.join(GYM, 'Proposals.jsx')), true);
+  assert.equal(read('Proposals.jsx').includes('export function ProposalDiff'), false, 'the pushed screen is gone');
 });
 
 test('nothing settles a proposal on a render, and no toggle offers to', () => {
@@ -564,12 +576,15 @@ test('nothing settles a proposal on a render, and no toggle offers to', () => {
 });
 
 test('a pending proposal waits at the head of the routines home and on the routine it touches, as a door', () => {
-  assert.equal(read('Routines.jsx').includes('<PendingProposals routines={view.data} />'), true);
-  assert.equal(read('Proposals.jsx').includes('export function PendingProposals({ routines }) {'), true);
+  assert.equal(read('Routines.jsx').includes('<PendingProposals routines={view.data} log={log} onChanged={view.refresh} />'), true);
+  assert.equal(read('Proposals.jsx').includes('export function PendingProposals({ routines, log, onChanged }) {'), true);
   assert.equal(read('Proposals.jsx').includes('useGymRead(() => gymApi.routines()'), false, 'the home reads its routines once');
   assert.equal(read('Routines.jsx').includes('{routine.pendingProposal && <ProposalFlag />}'), true);
   const source = read('Proposals.jsx');
-  assert.equal(source.includes('<a className="gym-proposal-review" href={proposalHref(head.id)}>{reviewLabel(head)}</a>'), true);
+  // One affordance, a link that keeps its routable address and opens the dialog in place on a tap.
+  assert.equal(source.includes('href={proposalHref(head.id)}'), true);
+  assert.equal(source.includes('onClick={(event) => { event.preventDefault(); onReview(head.id); }}'), true);
+  assert.equal(source.includes('{REVIEW_VERB}'), true);
   const routines = read('Routines.jsx');
   assert.equal(routines.includes('<RoutineHistory routine={view.data} />'), true);
   assert.equal(routines.includes('const rows = historyRows(routine);'), true);
@@ -681,7 +696,8 @@ test('discarding a session is confirmed, and the confirmation says what goes and
 
 test('a proposal is turned down, not dismissed, behind a confirmation, and the settled line promises no way back', () => {
   const proposals = read('Proposals.jsx');
-  assert.equal(proposals.includes('Turn this down'), true);
+  assert.equal(speech('proposals.js').includes("TURN_DOWN_VERB = 'Turn this down'"), true);
+  assert.equal(proposals.includes('{TURN_DOWN_VERB}'), true);
   assert.equal(proposals.includes('onClick={() => setTurningDown(true)}'), true);
   assert.equal(proposals.includes('{TURN_DOWN_CONFIRM.confirm}'), true);
   assert.equal(proposals.includes('{TURN_DOWN_CONFIRM.keep}'), true);
@@ -915,4 +931,57 @@ test('a routine’s name moves with its own document, and claims nothing about w
   assert.equal(source.includes('gymApi.replaceRoutine(draft.id, write)'), true);
   assert.equal(source.includes('renameProofOf'), false);
   assert.equal(speech('Routines.jsx').includes('unchanged'), false);
+});
+
+test('bodyweight: the reading heads the log, the chip is the one door in the reach band, and the chart is the design system’s', () => {
+  const log = read('Log.jsx');
+  assert.equal(log.includes('<BodyweightReading latest={weights.latest} />'), true);
+  assert.ok(log.indexOf('<BodyweightReading') < log.indexOf('Add a past workout'), 'the reading sits in the head');
+  assert.equal(log.includes('<WeighInChip onOpen={() => setWeighing(true)} />'), true);
+  assert.equal((log.match(/<WeighInSheet/g) ?? []).length, 1);
+  const screen = read('bodyweight/Bodyweight.jsx');
+  assert.equal(screen.includes("import { DotChart, Tabs } from '../../../design-system/index.js';"), true);
+  assert.equal(fs.existsSync(path.join(GYM, '../../design-system/charts/DotChart.jsx')), true, 'a new primitive, authored in the design system');
+  assert.equal(/Keypad|LADDER|ladder|gym-rungs|record-bar/.test(screen), false, 'no ladder, no keypad, no bar chart');
+  assert.equal(screen.includes('<WeighInChip'), false, 'no second door on the chart screen');
+  assert.equal(screen.includes('inputMode="decimal"'), true);
+  assert.equal(screen.includes('type="date"'), true);
+  assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen />}"), true);
+  assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true, 'not a fourth tab');
+  for (const file of gymFiles()) {
+    if (!/\.(jsx?|css)$/.test(file)) continue;
+    const said = spoken(fs.readFileSync(file, 'utf8')).toLowerCase();
+    assert.equal(said.includes('tracker'), false, file);
+  }
+  for (const file of ['bodyweight/bodyweight.js', 'bodyweight/Bodyweight.jsx']) {
+    const said = speech(file).toLowerCase();
+    for (const banned of ['goal', 'projection', 'bmi', 'body fat', 'trend', 'streak', 'congrat', 'well done', 'scrub']) {
+      assert.equal(said.includes(banned), false, `${file} — ${banned}`);
+    }
+  }
+  const settings = read('settings/GymSettingsSection.jsx');
+  assert.equal(settings.includes('{hasWeighIns && ('), true);
+  assert.ok(settings.indexOf('href={EXPORT_NOTES_HREF}') < settings.indexOf('href={EXPORT_BODYWEIGHT_HREF}'));
+  assert.ok(settings.indexOf('href={EXPORT_BODYWEIGHT_HREF}') < settings.indexOf('<ConnectedLog />'));
+  assert.equal(speech('coach/coach.js').includes("list_bodyweight: 'read your bodyweight'"), true);
+});
+
+test('the review sheet: one Apply in a scroll-gated dialog, kept rows folded in place, the card reads still waiting', () => {
+  const proposals = read('Proposals.jsx');
+  assert.equal(proposals.includes("import { Dialog } from '../../design-system/index.js';"), true);
+  assert.equal(proposals.includes('gate="scrolled"'), true);
+  assert.equal(proposals.includes('disabled={!seen || deciding}'), true);
+  assert.equal(proposals.includes('className="gym-proposal-turn-down"'), true);
+  assert.equal(/gym-proposal-dismiss|gym-proposal-verbs/.test(proposals), false, 'the pair is gone');
+  assert.equal(/gym-proposal-dismiss|gym-proposal-verbs|gym-proposal-decide/.test(read('gym.css')), false);
+  assert.equal(proposals.includes("row.kind === 'kept-run' ? ("), true);
+  assert.equal(proposals.includes('{keptRunLabel(row.rows.length)}'), true);
+  assert.equal(proposals.includes('{wroteKicker(proposal.source)}'), true);
+  assert.equal(/\.gym-proposal-wrote-kicker \{[^}]*text-transform/.test(read('gym.css')), false, 'the kicker is drawn as written, never uppercased');
+  assert.equal(/\.gym-proposal-wrote-kicker \{[^}]*font-size: 10\.5px/.test(read('gym.css')), true);
+  assert.equal(proposals.includes('{`${STILL_WAITING} · ${arrivedLabel(head.createdAt)}`}'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('{pending ? STILL_WAITING : stateChip(proposal)?.toLowerCase()}'), true);
+  assert.equal(read('coach/CoachRoom.jsx').includes('<ReviewDoor head={proposal} onReview={() => setReviewing(true)} />'), true);
+  const dialog = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Dialog.jsx'), 'utf8');
+  assert.equal(dialog.includes("const gated = gate === 'scrolled';"), true);
 });

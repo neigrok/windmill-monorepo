@@ -101,6 +101,7 @@ object Ask {
         "list_routines" to "read your program",
         "get_stats" to "read your movement history",
         "list_notes" to "read your notes",
+        "list_bodyweight" to "read your bodyweight",
         "propose_routine_change" to "wrote a proposal for one of your routines",
         "propose_routine_removal" to "wrote a proposal to remove a routine",
     )

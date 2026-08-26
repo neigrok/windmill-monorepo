@@ -20,6 +20,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
@@ -44,6 +45,7 @@ class RoutinesScreenTests {
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
             scope = scope,
             sync = { null },
         )
@@ -62,12 +64,11 @@ class RoutinesScreenTests {
                 store = store,
                 isSignedIn = false,
                 origin = "https://windmill.works",
-                putOff = null,
+                lookedAt = emptySet(),
                 onJustStart = { doors += "start" },
                 onBuild = { doors += "build" },
                 onOpenRoutine = { doors += "open:$it" },
                 onReview = { doors += "review" },
-                onLater = { doors += "later" },
                 onOpenSettings = { doors += "settings" },
                 onSignIn = { doors += "signIn" },
             )

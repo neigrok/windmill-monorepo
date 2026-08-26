@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
+import { BodyweightReading, useBodyweight, WeighInChip, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { deletedLine, deleteFailure, fixFailure, movesAfterRead, setsAfter, UNDO_MS } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
 import {
@@ -34,6 +35,9 @@ export function LogList({ log, onSignIn }) {
   const { phase, summaries, older, session } = log;
   const [refused, setRefused] = useState(false);
   const weeks = weeksOf(summaries, { complete: older.status === 'end' });
+  // The reading at the head and the chip in the reach band are the two halves of one number.
+  const weights = useBodyweight();
+  const [weighing, setWeighing] = useState(false);
 
   return (
     <>
@@ -43,6 +47,7 @@ export function LogList({ log, onSignIn }) {
           {summaries.length > 0 && (
             <p className="gym-log-count">{loadedLine(summaries.length, weeks.length)}</p>
           )}
+          <BodyweightReading latest={weights.latest} />
         </div>
         <button
           type="button"
@@ -86,6 +91,18 @@ export function LogList({ log, onSignIn }) {
           ))}
           {phase !== 'failed' && <LogFoot older={older} oldest={summaries[summaries.length - 1]} />}
         </>
+      )}
+      <div className="gym-reach-spacer" aria-hidden="true" />
+      <WeighInChip onOpen={() => setWeighing(true)} />
+      {weighing && (
+        <WeighInSheet
+          onSave={async (write) => {
+            const refused = await weights.save(write);
+            if (!refused) setWeighing(false);
+            return refused;
+          }}
+          onClose={() => setWeighing(false)}
+        />
       )}
     </>
   );

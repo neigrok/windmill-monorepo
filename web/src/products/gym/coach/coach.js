@@ -9,6 +9,7 @@ export const TOOL_PHRASE = {
   list_routines: 'read your program',
   get_stats: 'read your movement history',
   list_notes: 'read your notes',
+  list_bodyweight: 'read your bodyweight',
   propose_routine_change: 'wrote a proposal for one of your routines',
   propose_routine_removal: 'wrote a proposal to remove a routine',
 };

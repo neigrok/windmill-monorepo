@@ -34,6 +34,7 @@ class ClaimReplayTests {
     private fun shelf() = LocalLog(File(tmp.root, "local-${System.nanoTime()}.json"))
     private fun settings() = LocalPreferences(File(tmp.root, "prefs-${System.nanoTime()}.json"))
     private fun queue() = SetQueue(File(tmp.root, "queue-${System.nanoTime()}.json"))
+    private fun weights() = LocalBodyweight(File(tmp.root, "bodyweight-${System.nanoTime()}.json"))
 
     private fun refusal(status: Int, code: String, message: String = "a sentence") =
         WindmillApiException.Refused(status, Refusal(message = message, code = code))
@@ -55,7 +56,7 @@ class ClaimReplayTests {
             Session(id = "ses_old", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf("createExercise", "createRoutine", "start", "append", "finish",
             "start", "append", "finish"), server.calls)
@@ -75,7 +76,7 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
 
-        ClaimReplay(server, localLog, queue(), settings).run()
+        ClaimReplay(server, localLog, queue(), settings, weights()).run()
 
         assertEquals("savePreferences", server.calls.first())
         assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
@@ -83,7 +84,7 @@ class ClaimReplayTests {
         assertFalse("the log took them — nothing is owed", settings.owed)
 
         server.calls.clear()
-        ClaimReplay(server, localLog, queue(), settings).run()
+        ClaimReplay(server, localLog, queue(), settings, weights()).run()
         assertFalse("savePreferences" in server.calls)
     }
 
@@ -98,7 +99,7 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings, weights()).run()
 
         assertEquals(listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
         assertTrue("the session went, the rack did not", localLog.finished.isEmpty())
@@ -119,7 +120,7 @@ class ClaimReplayTests {
             queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
             server.refuseStart = { answer }
 
-            val outcome = ClaimReplay(server, shelf(), queue, settings).run()
+            val outcome = ClaimReplay(server, shelf(), queue, settings, weights()).run()
 
             assertFalse("halted at $answer with a rack owed", outcome.retryable)
             assertFalse(outcome.liveLanded)
@@ -135,7 +136,7 @@ class ClaimReplayTests {
         settings.save(GymPreferences(restSeconds = 90))
         queue.hold(Session(id = "ses_live", startedAtMs = 9_000), unclaimed = true)
 
-        val said = ClaimReplay(server, shelf(), queue, settings).runPreferences()
+        val said = ClaimReplay(server, shelf(), queue, settings, weights()).runPreferences()
 
         assertEquals(listOf("savePreferences"), server.calls)
         assertEquals(90, server.settings?.restSeconds)
@@ -150,7 +151,7 @@ class ClaimReplayTests {
         settings.save(GymPreferences(restSeconds = 90))
         server.refusePreferences = refusal(400, code = "rest-target", message = "a rest target runs from 15 to 900 seconds")
 
-        val outcome = ClaimReplay(server, shelf(), queue(), settings).run()
+        val outcome = ClaimReplay(server, shelf(), queue(), settings, weights()).run()
 
         assertEquals(listOf("a rest target runs from 15 to 900 seconds"), outcome.said.map { it.reason })
         assertFalse("let go — not re-sent on every connect", settings.owed)
@@ -167,7 +168,7 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 0, finishedAtMs = -5),
             listOf(aSet("set_a", at = 0))))
 
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(1L, server.started.single().startedAt)
         assertEquals(1L, server.appended.single().completedAt)
@@ -189,7 +190,7 @@ class ClaimReplayTests {
             } else null
         }
 
-        ClaimReplay(server, localLog, queue(), settings(), mintSet = { "set_fresh" }).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights(), mintSet = { "set_fresh" }).run()
 
         assertEquals(listOf("set_spent", "set_fresh"), server.appended.map { it.id })
         assertEquals(listOf("set_fresh"), server.sets.getValue("ses_1").map { it.id })
@@ -213,7 +214,7 @@ class ClaimReplayTests {
             } else null
         }
 
-        ClaimReplay(server, localLog, queue(), settings(), mintRoutine = { "rt_fresh" }).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights(), mintRoutine = { "rt_fresh" }).run()
 
         assertEquals(listOf("rt_fresh"), server.written.keys.toList())
         assertEquals("rt_fresh", server.started.single().routineId)
@@ -231,7 +232,7 @@ class ClaimReplayTests {
             emptyList()))
         server.refuseRoutine = { refusal(400, code = "bad-routine", message = "that document is unclaimable") }
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertNull("the start names no routine the account lacks", server.started.single().routineId)
         assertEquals("the loss is said under the routine's name",
@@ -251,7 +252,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", exerciseId = "ex_bad", at = 1_100))))
         server.refuseCreate = refusal(400, code = "bad-movement", message = "that name is unclaimable")
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("the loss is said under the movement's name",
             listOf(RefusedClaim("ex_bad", "Zercher Squat", "that name is unclaimable")), outcome.said)
@@ -270,7 +271,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100))))
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
 
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("one row, and it is the one the lifter fixed it to",
             listOf("set_a"), server.sets.getValue("ses_1").map { it.id })
@@ -289,11 +290,11 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onFinish = { throw IOException("offline") }
-        assertTrue(ClaimReplay(server, localLog, queue(), settings()).run().retryable)
+        assertTrue(ClaimReplay(server, localLog, queue(), settings(), weights()).run().retryable)
         server.onFinish = {}
 
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("still one row per set — a correction is never a second row",
             listOf("set_a", "set_b"), server.sets.getValue("ses_1").map { it.id })
@@ -312,11 +313,11 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onFinish = { throw IOException("offline") }
-        assertTrue(ClaimReplay(server, localLog, queue(), settings()).run().retryable)
+        assertTrue(ClaimReplay(server, localLog, queue(), settings(), weights()).run().retryable)
         server.onFinish = {}
 
         localLog.deleteSet("ses_1", "set_a")
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
         assertEquals(listOf("ses_1" to "set_a"), server.removed)
@@ -337,7 +338,7 @@ class ClaimReplayTests {
             }
         }
 
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("one row per set, still", listOf("set_a", "set_b"),
             server.sets.getValue("ses_1").map { it.id })
@@ -357,7 +358,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onFinish = { localLog.deleteSet("ses_1", "set_a") }
 
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf("set_b"), server.sets.getValue("ses_1").map { it.id })
         assertEquals(listOf("ses_1" to "set_a"), server.removed)
@@ -374,7 +375,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         localLog.deleteSet("ses_1", "set_a")
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("only the surviving set was ever appended",
             listOf("set_b"), server.appended.map { it.id })
@@ -393,13 +394,13 @@ class ClaimReplayTests {
         localLog.deleteSet("ses_1", "set_a")
         server.refuseDelete = refusal(500, code = "storage", message = "internal error")
 
-        val first = ClaimReplay(server, localLog, queue(), settings()).run()
+        val first = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         assertTrue("retryable, and the row is still here to try with", first.retryable)
         assertEquals(listOf("set_a"), localLog.finished.single().deleted)
         assertTrue("nothing was said — a 500 has cost the delete nothing", first.said.isEmpty())
 
         server.refuseDelete = null
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         assertTrue(localLog.finished.isEmpty())
     }
 
@@ -411,13 +412,13 @@ class ClaimReplayTests {
             Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000),
             listOf(aSet("set_a", at = 1_100))))
         server.onFinish = { throw IOException("offline") }
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         server.onFinish = {}
 
         localLog.fixSet("ses_1", "set_a", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
         server.refuseFix = { refusal(400, code = "fix-unreadable", message = "could not read that fix") }
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf(RefusedSet(id = "set_a", exerciseId = "bench-press", weightKg = 90.0,
             reps = 3, reason = "the log kept the numbers this set was logged with")), outcome.said)
@@ -441,7 +442,7 @@ class ClaimReplayTests {
             else null
         }
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals("the 404 start retried without the routine, and the orphan reached ses_2 too",
             listOf("rt_gone", null, null), server.started.map { it.routineId })
@@ -459,7 +460,7 @@ class ClaimReplayTests {
             entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", targetSets = 5)),
             pendingProposal = Proposal(id = "prop_1", routineId = "rt_1", changeCount = 3)))
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf("createRoutine"), server.calls)
         assertTrue("no proposal door was opened", server.ledger.isEmpty())
@@ -477,19 +478,19 @@ class ClaimReplayTests {
         queue.hold(Session(id = "ses_live", startedAtMs = 9_000))
         assertFalse(queue.sessionIsUnclaimed)
 
-        val first = ClaimReplay(server, shelf(), queue, settings()).run()
+        val first = ClaimReplay(server, shelf(), queue, settings(), weights()).run()
         assertEquals("no start went out for a session the log answered for", emptyList<String>(), server.calls)
         assertTrue(first.liveLanded)
 
         queue.hold(Session(id = "ses_mine", startedAtMs = 9_500), unclaimed = true)
         assertTrue(queue.sessionIsUnclaimed)
-        val second = ClaimReplay(server, shelf(), queue, settings()).run()
+        val second = ClaimReplay(server, shelf(), queue, settings(), weights()).run()
         assertEquals(listOf("start"), server.calls)
         assertEquals(listOf(false), server.started.map { it.joinOpenSession })
         assertTrue(second.liveLanded)
         assertFalse("written claimed for its id, and on disk", queue.sessionIsUnclaimed)
 
-        val third = ClaimReplay(server, shelf(), queue, settings()).run()
+        val third = ClaimReplay(server, shelf(), queue, settings(), weights()).run()
         assertEquals("the next pass skips it", listOf("start"), server.calls)
         assertTrue(third.liveLanded)
     }
@@ -507,7 +508,7 @@ class ClaimReplayTests {
         localLog.hold(Routine(id = "rt_1", name = "Legs",
             entries = listOf(RoutineEntry(position = 1, exerciseId = "back-squat", targetSets = 3))))
 
-        val outcome = ClaimReplay(server, localLog, queue, settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue, settings(), weights()).run()
 
         assertEquals("the routine landed, the past session's start was refused, and nothing waited",
             listOf("createRoutine", "start"), server.calls)
@@ -517,7 +518,7 @@ class ClaimReplayTests {
         assertFalse("and the live session stays the log's", queue.sessionIsUnclaimed)
 
         queue.hold(null)
-        val waited = ClaimReplay(server, localLog, queue, settings()).run()
+        val waited = ClaimReplay(server, localLog, queue, settings(), weights()).run()
         assertEquals(Outcome(said = emptyList(), liveLanded = false, retryable = false), waited)
         assertEquals(1, localLog.finished.size)
     }
@@ -532,19 +533,19 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100))))
 
         server.refuseStart = { refusal(400, code = "clock-ahead", message = "that start is in the future") }
-        val transient = ClaimReplay(server, localLog, queue(), settings()).run()
+        val transient = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         assertEquals(Outcome(said = emptyList(), liveLanded = false, retryable = true), transient)
         assertEquals("the row waits for the cadence", 1, localLog.finished.size)
 
         server.refuseStart = { refusal(400, code = "bad-start", message = "that start cannot be taken") }
-        val terminal = ClaimReplay(server, localLog, queue(), settings()).run()
+        val terminal = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         assertEquals(Outcome(
             said = listOf(RefusedClaim("ses_early", "Push Day · ${Readout.date(1_000)}", "that start cannot be taken")),
             liveLanded = true, retryable = false), terminal)
         assertTrue("let go, so no later connect re-sends it", localLog.finished.isEmpty())
 
         server.refuseStart = { null }
-        ClaimReplay(server, localLog, queue(), settings()).run()
+        ClaimReplay(server, localLog, queue(), settings(), weights()).run()
         assertEquals("nothing left to walk", listOf("start", "start"), server.calls)
     }
 
@@ -557,7 +558,7 @@ class ClaimReplayTests {
             listOf(aSet("set_a", at = 1_100), aSet("set_b", at = 1_200))))
         server.onAppend = { server.stored.remove("ses_1") }
 
-        val outcome = ClaimReplay(server, localLog, queue(), settings()).run()
+        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights()).run()
 
         assertEquals(listOf("start", "append"), server.calls)
         assertEquals(Outcome(

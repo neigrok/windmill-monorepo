@@ -10,7 +10,7 @@ application/ · adapters/{json,csv,postgres,http,mcp,llm}` — and plugs in thro
 
 The backend owns the durable set write, exercise identity, the reads the device cannot fake (the
 log, last-time prefill, the finish review, a movement's record, the statistics engine, the CSV
-exports, the workout share), the notes a lifter writes for Coach, seventeen MCP tools behind the
+exports, the workout share), the notes a lifter writes for Coach, eighteen MCP tools behind the
 platform grant gate, and the proposal ledger.
 
 Device-side and never here: the weight ladder, the rest timer, workout mode, and the prefill
@@ -36,21 +36,21 @@ arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
 ```
 domain/       Training (ids · enums · Exercise · Session · Set · PlanSnapshot · InvalidTraining ·
               codecs · defaultStepKg · the four session rules) · Routine · Proposal · Review ·
-              Statistics · Record · Preferences · Thread · ReadReceipt · Note
+              Statistics · Record · Preferences · Thread · ReadReceipt · Note · Bodyweight
 ports/        LogRepository (sessions · sets · revisions · the share) · CatalogRepository ·
               ProgramRepository (routines + the ledger) · AskThreadRepository ·
-              PreferencesRepository · NotesRepository · AskAgent
+              PreferencesRepository · NotesRepository · BodyweightRepository · AskAgent
 application/  TrainingService · CatalogService · ProgramService · ThreadService ·
-              PreferencesService · NotesService · AskService
-adapters/     json/TrainingJson · csv/TrainingCsv · postgres/PgGymRows.h + six Pg repositories ·
-              http/{Training,Catalog,Program,Preferences,Threads,Notes,Ask}Api ·
+              PreferencesService · NotesService · BodyweightService · AskService
+adapters/     json/TrainingJson · csv/TrainingCsv · postgres/PgGymRows.h + seven Pg repositories ·
+              http/{Training,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
 Ports are cut by **aggregate**: the log, the catalog, the program (routines and the ledger together,
 because `replaceRoutine` supersedes pending proposals in the same transaction), Coach's threads, the
-settings row, the notes. The split is not table ownership — the log's reads join the catalog for a movement
+settings row, the notes, the weigh-ins. The split is not table ownership — the log's reads join the catalog for a movement
 name, the program's mint checks a movement against the catalog's predicate. Each Pg adapter's
 preamble says what it reads from another aggregate's tables; shared helpers live in `PgGymRows.h`.
 The in-memory fake keeps one shared store (`FakeGymStore`) so every cross-aggregate rule is written
@@ -330,7 +330,8 @@ create table if not exists gym_proposals (
   agent         text not null default '',
   created_at    timestamptz not null,
   settled_at    timestamptz,
-  thread_id     text references gym_ask_threads(id) on delete set null
+  thread_id     text references gym_ask_threads(id) on delete set null,
+  superseded_by text                                -- the proposal that took this one's pending slot
 );
 create unique index if not exists gym_proposals_one_pending
   on gym_proposals (routine_id, door, connection) where state = 'pending';
@@ -360,9 +361,21 @@ create table if not exists gym_proposal_changes (
   bytes already standing moves nothing and settles nothing; neither does a drag up the routines
   screen, since `position` is not part of any proposal.
 - **One pending proposal per (routine, door, connection).** A newer one from the same door and
-  connection supersedes the older; another door's, or another agent's on the same account, stands.
-  Applied, dismissed and superseded proposals stay as a dated record for as long as the routine
-  stands — `routine_id` cascades, so an applied REMOVAL takes the whole ledger with it.
+  connection supersedes the older and writes its own id into the older row's `superseded_by`;
+  another door's, or another agent's on the same account, stands. Applied, dismissed and superseded
+  proposals stay as a dated record for as long as the routine stands — `routine_id` cascades, so an
+  applied REMOVAL takes the whole ledger with it.
+- **The superseded refusal names its reason, and never guesses it.** A settle (apply or dismiss) on
+  a proposal past settling answers one code, `proposal-superseded`, with one of three sentences,
+  decided in the store in this order: `superseded_by` set → *a newer proposal replaced this one* —
+  decided FIRST, because a routine can move after the second mint too, and comparing revisions then
+  would tell the lifter the routine changed when nothing changed but Coach's mind; else
+  `gym_routines.revision != base_revision` → *that routine changed after this proposal was written*
+  (a still-pending row is settled as superseded as it answers); else a row settled as superseded
+  before the column existed → *this proposal was superseded before it was applied*. Existing rows
+  keep `superseded_by` null and are that third case until their routine moves. The port carries the
+  three as `ProposalSettleError::replaced` / `routineMoved` / `superseded`; the column is not on the
+  wire.
 - **`door` / `connection` / `agent` are provenance columns.** The last two come from the transport:
   `ToolCaller` (`platform/domain/ToolScope.h`) carries the account, the grant and a `ToolConnection`
   — over OAuth the client id and its registered name (capped at 64 printable characters), over an MCP
@@ -454,6 +467,61 @@ holding `gym:read` (`list_notes`), written by nobody but a hand.
   `ON CONFLICT (id) DO NOTHING`, so two accounts landing one id at once leave the loser with
   `note-id-taken` rather than a primary-key failure at commit.
 - On `PgAccountFootprint`'s owned list, and in the export as a third CSV.
+
+### 3.10 Bodyweight
+
+```sql
+create table if not exists gym_bodyweight (
+  user_id     uuid not null references users(id) on delete cascade,
+  date_local  date not null,
+  weight_kg   numeric(5,2) not null check (weight_kg between 20 and 400),
+  recorded_at bigint not null,
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, date_local)
+);
+```
+
+A lifter's weigh-ins: one row per **local calendar day**, kilograms to two decimals. Read by every
+agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing else.
+
+- **The day is the identity.** `date_local` is the lifter's own calendar (`YYYY-MM-DD`, validated as
+  a real day by `domain/Bodyweight.h`'s `wellFormedLocalDate`), never an instant and never the
+  server's clock. A second write to a day is a correction — the primary key makes a second row
+  impossible — so every write is idempotent by its key and there is no client-minted id.
+- **The later `recordedAt` wins.** `recorded_at` is the device's clock at the save. It can support an
+  omission and never an assertion, so it decides exactly one thing: which of two writes to one day is
+  newer. The write is one upsert whose UPDATE arm is guarded (`WHERE stored.recorded_at <=
+  incoming.recorded_at`); an older write changes nothing and answers `200` with the row that stands,
+  so a replayed stale write can never undo a newer correction. An equal instant replaces. The row
+  lock the conflict takes is the whole concurrency story.
+- **One band, three places**: `20.00 ≤ weight_kg ≤ 400.00` in the CHECK, in the constructor
+  (`kMinBodyweightKg`, `kMaxBodyweightKg`, checked after rounding to two decimals as the column
+  does) and in the weigh-in sheet's refusal, which is the constructor's own sentence: `Between 20 and
+  400 kg — check the number.` Kilograms are the only unit on the wire; a unit toggle is a display
+  transform on the client.
+- **A weigh-in is never a forecast.** The phones refuse a day past the device's local today at the
+  field, with `A weigh-in is not a forecast — today or earlier.`; the server refuses the same
+  sentence (`400`, no code) for a day more than one past ITS UTC today (`domain/Bodyweight.h`'s
+  `beyondTomorrowUtc`, read by `BodyweightApi` alone) — the one opinion a server clock has about a
+  weigh-in, loose by the one day a local calendar can run ahead of UTC, so no honest local today is
+  ever refused and no served row is ever a future point. It is decided after the day is a day and
+  before the body is read.
+- **`latest` is the account's newest day regardless of any window** — it rides every list read
+  whatever `?from=&to=` asked, so one windowed read draws the chart and the reading at the head of
+  the log. A client may derive its own reading from `entries`, and a served row dated after the
+  device's local today is never the reading and never a dot.
+- **`weightKg` crosses every wire as the two decimals the lifter wrote** — `82.4`, never
+  `82.400000000000006`. The rounding is the constructor's; the bytes are the writer's: every JSON
+  writer in the process carries 15 significant digits (`platform/adapters/json/JsonText.h`'s
+  `kJsonDoubleDigits` — `dump`, the tool text and Drogon's replies alike), and `BodyweightApiTest`
+  and `GymToolsTest` pin the bytes.
+- **No write tool at any grant level, and nothing named `propose_*` ever.** A weigh-in is a fact
+  only the lifter observed; an agent writing one would be inventing a number, which the prompt
+  already forbids. `GymToolsTest` pins it off the declarations: every tool whose name or argument
+  names say bodyweight is `gym:read`, and Coach's door offers reads and `propose_*` only.
+- On `PgAccountFootprint`'s owned list, and in the export as a fourth CSV
+  (`date,weight_kg,recorded_at`). On the phones it is local-first like sessions and replays LAST in
+  the claim (§11.6).
 
 ## 4. Domain
 
@@ -549,11 +617,13 @@ within four hours of the last activity, staying at that activity when the tap ca
 
 ## 5. Services and the write path
 
-Six services, one per repository port, none holding another: `TrainingService` (`LogRepository&`,
+Seven services, one per repository port, none holding another: `TrainingService` (`LogRepository&`,
 plus `ProgramRepository&` for the one write that freezes a plan, the clock and the token mint),
 `CatalogService`, `ProgramService` (+ clock), `ThreadService` (+ clock), `PreferencesService`,
-`NotesService` (+ clock); `AskService` stands above them (§12). Each
-HTTP adapter and `GymTools` takes only the services it reads. Each write answers with a small outcome
+`NotesService` (+ clock), `BodyweightService` (no clock: a weigh-in is dated by the lifter's calendar
+and ordered by the device's instant — the forecast gate's clock is `BodyweightApi`'s, §3.10);
+`AskService` stands above them (§12). Each HTTP adapter and `GymTools` takes only the services it
+reads. Each write answers with a small outcome
 — `StartOutcome` / `AppendOutcome` / `FinishOutcome`, a resolved row plus a typed refusal. **Flow
 control never travels as a throw**; `InvalidTraining` is reserved for malformed input.
 
@@ -622,7 +692,7 @@ truth in one round trip — and where there is no row it is entitled to, a refus
 
 ## 6. Ports
 
-Six structs, each file carrying its own DTOs. `LogRepository`: `open` · `session` · `setOf` ·
+Seven structs, each file carrying its own DTOs. `LogRepository`: `open` · `session` · `setOf` ·
 `lastActivity` · `insertSession` · `close` · `insertSet` · `updateSet` · `deleteSet` · `log` ·
 `setsOf` · `lastTime` · `lastSets` · `historyFor` · `movementHistory` · `trainingLog` ·
 `exportedSets` · `deleteSession` · `insertShare` · `revokeShare` · `sharedSession`.
@@ -631,6 +701,9 @@ Six structs, each file carrying its own DTOs. `LogRepository`: `open` · `sessio
 `NotesRepository`: `notes` · `saveNote` · `deleteNote` · `reorderNotes` · `exportedNotes`, every
 refusal a value (`NoteWriteOutcome`: `full`, `idTaken`; `NotesOrderOutcome`: `mismatch`), the
 whole-order rule decided once in `domain/Note.h` (`namesEveryNoteOnce`) for the fake and the SQL.
+`BodyweightRepository`: `entries` (inclusive `BodyweightRange`, day ascending) · `latest` · `save`
+(answers the row that stands) · `remove` · `exported` — no refusal value at all, because the only
+rule (the later `recordedAt` wins) is answered by the row rather than refused.
 
 - **Every method that can resolve a row carries the credential that may see it** — a `UserId`
   everywhere but `sharedSession`, where an unguessable token stands in its place, and where revoked,
@@ -794,7 +867,7 @@ the frozen plan itself does not travel.
 
 ### 8.1 HTTP routes
 
-Six adapters mirror the six ports, plus `AskApi`. `routes.cpp` names every path in this order.
+Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every path in this order.
 
 | Method & path | Purpose |
 |---|---|
@@ -820,14 +893,17 @@ Six adapters mirror the six ports, plus `AskApi`. `routes.cpp` names every path 
 | `DELETE /v1/gym/routines/{id}` | `204`; entries, proposals and change rows cascade, sessions keep their snapshots |
 | `GET  /v1/gym/proposals` | the ledger, newest first; `?routineId=`, `?state=pending` |
 | `GET  /v1/gym/proposals/{id}` | one proposal with its typed diff |
-| `POST /v1/gym/proposals/{id}/apply` | **the tap.** All of it or none, against the frozen base revision. `{proposal, routine?}` — `routine` absent when the proposal removed it |
-| `POST /v1/gym/proposals/{id}/dismiss` | no reason asked for, nothing changed; stays in the routine's history |
+| `POST /v1/gym/proposals/{id}/apply` | **the tap.** All of it or none, against the frozen base revision. `{proposal, routine?}` — `routine` absent when the proposal removed it. `409 proposal-superseded` carries one of three sentences (§3.7) |
+| `POST /v1/gym/proposals/{id}/dismiss` | no reason asked for, nothing changed; stays in the routine's history. The same three sentences, ending `…so it was not turned down` |
 | `GET  /v1/gym/preferences` | the one read in gym that cannot 404: no row means the DEFAULTS |
 | `PUT  /v1/gym/preferences` | replace it whole; omitted fields take their default |
 | `GET  /v1/gym/notes` | `{notes:[{id, position, title, body, updatedAt}]}`, position ascending; an empty account is `{notes:[]}` |
 | `PUT  /v1/gym/notes` | `{order:[id…]}` — the whole order, every note exactly once; `400 notes-order-mismatch` otherwise |
 | `PUT  /v1/gym/notes/{id}` | `{title, body}` — upsert on the client-minted id: append last, replay, or edit in place. `409 notes-full` at ten, `409 note-id-taken` for another account's id; the three bound refusals are 400s with the entity's sentence |
 | `DELETE /v1/gym/notes/{id}` | `204`, and `204` on retry; the notes after it close the gap |
+| `GET  /v1/gym/bodyweight?from=&to=` | `{entries:[{dateLocal, weightKg, recordedAt}], latest}`, day ascending, both bounds inclusive and optional; `latest` is the newest day whatever the window, `null` for an account that never weighed in; `400 could not read that date` for a bound that is not a calendar day |
+| `PUT  /v1/gym/bodyweight/{dateLocal}` | `{weightKg, recordedAt}` — upsert on the day; answers `{entry}` as it STANDS, the incoming write only when its `recordedAt` is at or after the stored one. `400`, no code, decided in this order: `could not read that date` (the day) → `A weigh-in is not a forecast — today or earlier.` (more than one day past UTC today) → `could not read that weigh-in` (no json, not an object, a weight that is not a number, an instant that is not an integer) → `Between 20 and 400 kg — check the number.` (the band, after rounding) → `could not read that weigh-in` again (an instant outside the band) |
+| `DELETE /v1/gym/bodyweight/{dateLocal}` | `204` always for this account: absent, already gone and a day that is not a day are one answer |
 | `GET  /v1/gym/stats` | the statistics engine — per-movement line, standing bests, weekly counts |
 | `GET  /v1/gym/export` | every set, CSV — `text/csv`, a header row, `Content-Disposition: attachment` |
 | `POST /v1/gym/sessions/{id}/share` | mint — `{token, expiresAt}`, idempotent on the session |
@@ -835,6 +911,7 @@ Six adapters mirror the six ports, plus `AskApi`. `routes.cpp` names every path 
 | `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** Revoked, expired and unknown are one `404` |
 | `GET  /v1/gym/export/threads` | every turn of every conversation, CSV — one row per turn; `from` is `lifter` or `coach` |
 | `GET  /v1/gym/export/notes` | every note, CSV — `position,title,body,updated_at`, precedence order |
+| `GET  /v1/gym/export/bodyweight` | every weigh-in, CSV — `date,weight_kg,recorded_at`, day ascending, the instant ISO-8601 UTC |
 | `GET  /v1/gym/threads` | `{threads:[{id,title,createdAt,askedAt,outcome,proposals}]}`, newest asked first, bounded at `kThreadList` (200), no total and no "there are more" flag. No turns. Mounted unconditionally |
 | `GET  /v1/gym/threads/{id}` | one conversation whole, `turns` and all |
 | `DELETE /v1/gym/threads/{id}` | `204`; turns cascade, and every proposal it minted keeps its row, state and place in the routine's history, losing only `source.thread` |
@@ -859,6 +936,11 @@ source:{door, connection?, agent?}}`; the whole adds `{baseRevision, baseName, n
 changes:[{position, kind, exerciseId, before?, after?, loggedSets?}]}`, each side
 `{sets, reps?, weightKg?, restSeconds?}` — `before` absent on an added line, `after` on a removed one,
 `loggedSets` on removed lines alone. `revision` is read-only on the wire.
+
+A weigh-in is `{dateLocal, weightKg, recordedAt}` — the day a `YYYY-MM-DD` string that is the
+lifter's own calendar, kilograms rounded to two decimals and written as such (`82.4`, never
+`82.400000000000006` — §3.10), the device instant in epoch ms. The list wraps
+`{entries:[…], latest}`, the write answers `{entry}`.
 
 Parsing type-checks every jsoncpp field before `.as*()` and throws `InvalidTraining` → 400.
 **Instants are bounded at the wire**: a UInt64, never `0`, never past `kMaxInstantMs`, which is also
@@ -918,7 +1000,8 @@ refusal a client must branch on carries a machine word under `code`
 | 409 | `notes-full` | a NEW note id while ten stand | terminal — delete one; the sentence is the Add row's |
 | 409 | `note-id-taken` | a note id another account holds | mint a NEW id and resend |
 | 400 | `notes-order-mismatch` | an order that does not name every note exactly once | re-read the list and send the whole order |
-| 409 | `proposal-superseded` | apply or dismiss a proposal whose routine moved after the diff was written | terminal — draw the routine as it now stands |
+| 400 | — | a weigh-in's day, bound or body: `could not read that date`, `A weigh-in is not a forecast — today or earlier.`, `could not read that weigh-in`, `Between 20 and 400 kg — check the number.` — the last two shown in place as the sheet's own refusals | terminal |
+| 409 | `proposal-superseded` | apply or dismiss a proposal past settling: the routine moved after the diff was written, a newer proposal from the same door replaced it, or it was superseded before the reason was recorded — three sentences, one code (§3.7) | terminal — draw the routine as it now stands |
 | 409 | `proposal-settled` | ask for one decision on a proposal that already took the OTHER one | terminal — re-read. Asking for the decision it DID take replays 200 |
 | 409 | `ask-thread-taken` / `ask-thread-full` / `ask-session-open` | another account's thread id; a thread at `kMaxThreadTurns`; an ask mid-workout | open a new thread / wait |
 | 429 | `ask-daily-limit` / `ask-out-of-budget` | the day's ration or the platform ceiling | wait |
@@ -938,7 +1021,7 @@ refusal a client must branch on carries a machine word under `code`
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares, `adapters/mcp/GymTools` dispatches. Seventeen tools; a tool a
+`adapters/mcp/GymToolCatalog` declares, `adapters/mcp/GymTools` dispatches. Eighteen tools; a tool a
 parameter on another tool could serve does not get a slot, because `tools/list` is the fixed cost of
 every connection. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.
@@ -952,6 +1035,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
+| `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt; **the only bodyweight tool there will ever be** | | |
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
 `create_routine` writes it; a day that already stands is `existing` and the two `propose_` tools mint a
@@ -971,8 +1055,12 @@ in-process); `gymInstructions()` carries the same retirement in the connect hand
   `GET /v1/gym/export` has no tool because `list_sessions` + `get_session` + `get_stats` already give
   an agent those numbers in a shape it reads.
 - **Every tool goes through a service, never the repository** — `TrainingService`, `CatalogService`,
-  `ProgramService`, `NotesService`; no tool reads a thread or the settings, and no tool at any level
-  writes a note: the notes are what a lifter wrote FOR the agent, and `list_notes` is the one door.
+  `ProgramService`, `NotesService`, `BodyweightService`; no tool reads a thread or the settings, and
+  no tool at any level writes a note or a weigh-in: the notes are what a lifter wrote FOR the agent,
+  and `list_notes` is the one door; a weigh-in is a fact only the lifter observed, and
+  `list_bodyweight` is the one door. `GymToolsTest` pins that the only tool whose name says
+  bodyweight is the read, that it is `gym:read`, and that every write-shaped name misses the
+  dispatcher and leaves the rows untouched.
   **`propose_routine_create` does not exist and `GymToolsTest` pins the absence by name** — Coach
   never creates, because a proposal is anchored to a routine that stands and a revision it is atomic
   against, and the `propose_` prefix is itself the grant that would hand a new tool to Coach unread. The tools are a second *door on the same
@@ -998,14 +1086,15 @@ tool name **at boot**.
 
 ## 10. Composition
 
-- **CMake:** `windmill_gym` = the `domain/*.cpp` plus the six `application/*Service.cpp`, linking
+- **CMake:** `windmill_gym` = the `domain/*.cpp` plus the seven `application/*Service.cpp`, linking
   `windmill_platform PUBLIC`; adapters + `routes.cpp` folded in via `target_sources` under the
   `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` on the four `target_link_libraries` lines
   (domain tests, server, adapters tests, mcp tests). Tests are **appended to the existing executables**
   — a new binary means editing the Dockerfile's `--target` list.
 - **Dockerfile:** untouched. `windmill_server` statically absorbs the lib; `schema.sql` rides at
   `/app/db/schema.sql`.
-- **main.cpp:** the six Pg repositories, the six services, `GymTools` and `GymDeps`. The core is
+- **main.cpp:** the seven Pg repositories, the seven services, `GymTools` and `GymDeps` (which also
+  carries the system clock, for `BodyweightApi`'s forecast gate). The core is
   built **up with the MCP surface**, because the composite host is constructed before the server takes
   traffic and gym's tools have to be in it (`ToolModule{*gymTools, gym::gymInstructions()}`); the
   `gym::registerRoutes(app, gymDeps)` mount stays down with the other products'. One core, two doors:
@@ -1015,7 +1104,8 @@ tool name **at boot**.
   composite. Gym arms no ticker, reads no env var and contributes nothing to the mail list.
 - **`PgAccountFootprint`'s owned list** carries `gym_sessions`, `gym_sets`, `gym_set_revisions`,
   `gym_routines`, `gym_proposals`, `gym_proposal_changes`, `gym_session_shares`, `gym_ask_threads`,
-  `gym_ask_turns`, `gym_notes` and `gym_exercise_names` / `gym_exercise_aliases` on `user_id`, plus
+  `gym_ask_turns`, `gym_notes`, `gym_bodyweight` and `gym_exercise_names` / `gym_exercise_aliases` on
+  `user_id`, plus
   `gym_exercises` on `created_by`. That last column is `created_by` and **not** `user_id` precisely
   because the 64 seeds carry it NULL — a probe matching the seeds would report every account non-empty
   and break the delete door. `gym_preferences` is deliberately off the list.
@@ -1131,6 +1221,14 @@ order is the law. On sign-in, and on every connect while a local backlog exists:
 5. The live local session claims the same way minus the finish; the existing queue then owns it.
 6. After a session's finish confirms, the local copy is **claimed**: the server log is the truth, and
    local reads merge server history with unclaimed-local only.
+7. **Bodyweight last**, after every session landed (iOS `TrainingStore.claimBodyweight`, Android
+   `ClaimReplay.claimBodyweight`): one `PUT /v1/gym/bodyweight/{dateLocal}` per owed local row, day
+   ascending, idempotent by the day, and one `DELETE` per deletion still owed. The server keeps
+   whichever write carries the later `recordedAt`, so a replay can never undo a correction made on
+   another device; the reply is the row that stands and the local copy takes it — unless the day
+   moved on while the reply was in flight (a newer save, a deletion), in which case what the day
+   holds now stays owed for the next pass. A `400` is the one terminal verdict: said as a
+   `RefusedClaim` and the row let go; anything else waits for another pass.
 
 The undo window is 9000 ms on every surface. Copy may change; the verdict codes may not.
 

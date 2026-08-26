@@ -24,6 +24,8 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.domain.WeighInWrite
 
 interface TrainingSyncing {
     suspend fun exercises(): List<Exercise>
@@ -118,4 +120,14 @@ interface TrainingSyncing {
 
     // Whole-order replace, naming every note of the account exactly once.
     suspend fun reorderNotes(order: List<String>): List<Note>
+
+    // Ascending by date; both bounds inclusive and optional, absent meaning the whole series.
+    suspend fun bodyweight(from: String? = null, to: String? = null): List<WeighIn>
+
+    // Idempotent by the local date. The reply is the row that STANDS — the newer of the two by
+    // `recordedAt` — so a replayed stale write answers with the correction it could not overtake.
+    suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn
+
+    // 204 whether or not the row was there.
+    suspend fun deleteBodyweight(dateLocal: String)
 }

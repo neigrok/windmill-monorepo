@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/json/JsonText.h"
 #include "platform/domain/ToolScope.h"
 
 #include <json/json.h>
@@ -31,9 +32,7 @@ struct ToolResult {
 
   // content = compact dump, payload = value, structuredContent = nothing
   static ToolResult json(const Json::Value& value) {
-    Json::StreamWriterBuilder builder;
-    builder["indentation"] = "";
-    ToolResult out = text(Json::writeString(builder, value));
+    ToolResult out = text(dump(value));
     out.payload = value;
     return out;
   }

@@ -373,11 +373,13 @@ sealed class ProposalVerdict {
         fun refusing(facts: RefusalFacts): ProposalVerdict {
             val status = facts.status
             if (facts.offline || facts.malformed || status == null) return Retry
+            // The log's own sentence reaches the lifter as sent: a superseded proposal has three
+            // reasons and only the server knows which. Local words stand in for a sentence-less reply.
             if (facts.code == "proposal-superseded") {
-                return Superseded("the routine moved after this was written — nothing was applied")
+                return Superseded(facts.sentence ?: "the routine moved after this was written — nothing was applied")
             }
             if (facts.code == "proposal-settled") {
-                return Settled("that proposal was already decided")
+                return Settled(facts.sentence ?: "that proposal was already decided")
             }
             if (status >= 500) return Retry
             // A code-less 404/400/409 is an older server, not a different meaning.

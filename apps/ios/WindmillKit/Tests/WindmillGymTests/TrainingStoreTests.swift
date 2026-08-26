@@ -1368,8 +1368,11 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var refuseRecord: WindmillApiError?
     var refuseRename: WindmillApiError?
     var refusePreferences: WindmillApiError?
+    var refuseBodyweight: WindmillApiError?
     // Nil is an account that has never answered; the read serves the defaults.
     var settings: GymPreferences?
+    // One row per local day, the newer `recordedAt` standing, exactly as the SQL keeps it.
+    var weighIns: [String: BodyweightEntry] = [:]
     // Ids another account already spent — 409, asking for a remint.
     var takenSessionIds: Set<String> = []
     var takenRoutineIds: Set<String> = []
@@ -1379,6 +1382,10 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     var swallowStartReplies = 0
     var onFinish: () async -> Void = {}
     var onSavePreferences: () async -> Void = {}
+    // Awaited once the call is counted and before the fake acts: a test holds a reply in flight here.
+    var onBodyweightRead: () async -> Void = {}
+    var onPutBodyweight: () async -> Void = {}
+    var onDeleteBodyweight: () async -> Void = {}
 
     private(set) var appended: [SetWrite] = []
     private(set) var corrected: [String] = []
@@ -1388,6 +1395,7 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
     private(set) var routineWrites: [RoutineWrite] = []
     private(set) var exerciseWrites: [ExerciseWrite] = []
     private(set) var settingsWrites: [GymPreferences] = []
+    private(set) var bodyweightWrites: [String] = []
     private(set) var calls: [String] = []
 
     func open(_ session: Session) {
@@ -1762,5 +1770,50 @@ final class FakeTraining: TrainingSyncing, @unchecked Sendable {
         if let refusePreferences { throw refusePreferences }
         settings = preferences
         return preferences
+    }
+
+    func bodyweight() async throws -> [BodyweightEntry] {
+        calls.append("bodyweight")
+        await onBodyweightRead()
+        guard online else { throw WindmillApiError.offline }
+        if let refuseBodyweight { throw refuseBodyweight }
+        return weighIns.values.sorted { $0.dateLocal < $1.dateLocal }
+    }
+
+    func bodyweight(on dateLocal: String) async throws -> BodyweightEntry? {
+        calls.append("bodyweightOn")
+        await onBodyweightRead()
+        guard online else { throw WindmillApiError.offline }
+        if let refuseBodyweight { throw refuseBodyweight }
+        return weighIns[dateLocal]
+    }
+
+    // The server's rules: a real date, the 20–400 band, and the later `recordedAt` wins — a stale replay
+    // answers 200 with the stored row unchanged.
+    func putBodyweight(on dateLocal: String, _ write: BodyweightWrite) async throws -> BodyweightEntry {
+        calls.append("putBodyweight")
+        bodyweightWrites.append(dateLocal)
+        await onPutBodyweight()
+        guard online else { throw WindmillApiError.offline }
+        if let refuseBodyweight { throw refuseBodyweight }
+        guard Bodyweight.isDateLocal(dateLocal) else {
+            throw WindmillApiError.refused(400, Refusal(Data(#"{"error":"could not read that date"}"#.utf8)))
+        }
+        guard write.weightKg >= 20, write.weightKg <= 400 else {
+            throw WindmillApiError.refused(400, Refusal(Data(#"{"error":"Between 20 and 400 kg — check the number."}"#.utf8)))
+        }
+        if let held = weighIns[dateLocal], held.recordedAt > write.recordedAt { return held }
+        let stored = BodyweightEntry(dateLocal: dateLocal, weightKg: (write.weightKg * 100).rounded() / 100,
+                                     recordedAt: write.recordedAt)
+        weighIns[dateLocal] = stored
+        return stored
+    }
+
+    func deleteBodyweight(on dateLocal: String) async throws {
+        calls.append("deleteBodyweight")
+        await onDeleteBodyweight()
+        guard online else { throw WindmillApiError.offline }
+        if let refuseBodyweight { throw refuseBodyweight }
+        weighIns[dateLocal] = nil
     }
 }

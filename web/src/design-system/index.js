@@ -24,3 +24,6 @@ export { Toast } from './feedback/Toast.jsx';
 
 // navigation
 export { Tabs } from './navigation/Tabs.jsx';
+
+// charts
+export { DotChart } from './charts/DotChart.jsx';

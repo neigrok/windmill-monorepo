@@ -1,14 +1,16 @@
-// Phases: loading / ready / absent (reader resolved null) / failed.
+// Phases: loading / ready / absent (reader resolved null) / failed. `retry` reads again from
+// loading; `refresh` reads again in place, keeping what is drawn until the new read lands, so a
+// screen that learned its data moved can re-read without unmounting whatever it holds open.
 
 import { useCallback, useEffect, useState } from 'react';
 
 export function useGymRead(read, deps) {
   const [view, setView] = useState({ phase: 'loading' });
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState({ count: 0, inPlace: false });
 
   useEffect(() => {
     let live = true;
-    setView({ phase: 'loading' });
+    if (!attempt.inPlace) setView({ phase: 'loading' });
     read()
       .then((data) => {
         if (!live) return;
@@ -20,6 +22,7 @@ export function useGymRead(read, deps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, attempt]);
 
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
-  return { ...view, retry };
+  const retry = useCallback(() => setAttempt((held) => ({ count: held.count + 1, inPlace: false })), []);
+  const refresh = useCallback(() => setAttempt((held) => ({ count: held.count + 1, inPlace: true })), []);
+  return { ...view, retry, refresh };
 }

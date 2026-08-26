@@ -14,6 +14,7 @@ function preferencesStore(initial) {
       async preferences() { return initial; },
       async sessions() { return []; },
       async notes() { return []; },
+      async bodyweight() { return { entries: [], latest: null }; },
       savePreferences(document) {
         return new Promise((resolve, reject) => {
           puts.push({

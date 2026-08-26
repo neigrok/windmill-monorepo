@@ -1,5 +1,6 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
+#include "products/gym/domain/Bodyweight.h"
 #include "products/gym/domain/Note.h"
 #include "products/gym/domain/Proposal.h"
 #include "products/gym/domain/Routine.h"
@@ -239,6 +240,21 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         Json::Value(Json::objectValue), {}));
   }
   {
+    // A read and nothing else: no tool at any grant level writes a weigh-in, and nothing named
+    // `propose_*` ever will — a weigh-in is a fact only the lifter observed.
+    Json::Value p(Json::objectValue);
+    p["from"] = str("The first day to include, YYYY-MM-DD, inclusive. Omitted, from the first weigh-in.");
+    p["to"] = str("The last day to include, YYYY-MM-DD, inclusive. Omitted, to the last weigh-in.");
+    tools.push_back(tool("list_bodyweight", Access::read,
+        "The lifter's weigh-ins, one per local calendar day, oldest first: {entries: [{dateLocal, "
+        "weightKg}]}. Kilograms, two decimals, and the day is the lifter's own calendar rather than "
+        "an instant. Narrow with `from` and `to`. Carries no `read` block: a weigh-in is not a log "
+        "row. There is no tool that writes one, at any level, and there never will be — a "
+        "bodyweight is a fact only the lifter observed, so an agent writing one would be inventing "
+        "a number. Say what the series did and never estimate a weight the entries do not give you.",
+        p, {}));
+  }
+  {
     Json::Value p(Json::objectValue);
     p["id"] = str("The id YOU mint for this workout (`ses_` + hex is the house shape).");
     p["startedAt"] = instant("When the workout began, epoch ms — a real instant, never one ahead of now (a start in the future is refused).");
@@ -431,7 +447,9 @@ std::string gymInstructions() {
          "`get_preferences` does not exist and nothing replaced it. gym keeps no plate inventory "
          "and no bar weight — propose loads in kilograms and let the lifter round at the rack — and "
          "the rest target and reading unit it also carried are their own dials, not context for you "
-         "to fetch.";
+         "to fetch.\n\n"
+         "Bodyweight is read-only here: `list_bodyweight` answers the lifter's weigh-ins, and no "
+         "tool at any level writes one, because a weigh-in is a fact only the lifter observed.";
 }
 
 }

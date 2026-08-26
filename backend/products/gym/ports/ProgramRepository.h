@@ -60,10 +60,16 @@ struct ProposalMintOutcome {
   ProposalMintError error;
 };
 
-// `superseded`: the base moved since the mint, so the proposal is settled rather than repaired.
-// `settled`: a proposal already applied or dismissed is being asked for the OTHER one; asking for
-// the state it already holds is a replay and answers with the stored row.
-enum class ProposalSettleError { none, notFound, superseded, settled };
+// Three reasons a proposal is past settling, each its own sentence at the door, one code for all:
+// `routineMoved` — the base moved since the mint (a pending row is settled as superseded as it
+// answers; a row already superseded whose revision no longer matches says the same); `replaced` —
+// a newer proposal from the same door and connection took the pending slot, and
+// `gym_proposals.superseded_by` names it, which is decided BEFORE the revision because a routine
+// can move after the second mint too; `superseded` — a row settled as superseded before the reason
+// column existed, with the revision unmoved, so the store cannot say which. `settled`: a proposal
+// already applied or dismissed is being asked for the OTHER one; asking for the state it already
+// holds is a replay and answers with the stored row.
+enum class ProposalSettleError { none, notFound, routineMoved, replaced, superseded, settled };
 
 struct ProposalSettleOutcome {
   std::optional<RoutineProposal> proposal;
@@ -103,7 +109,9 @@ struct ProgramRepository {
   virtual std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) = 0;
   virtual std::optional<RoutineProposal> proposal(const UserId& user, const ProposalId& id) = 0;
   // One transaction: the proposal row, its lines, and the supersession of whatever was pending from
-  // the same door. The routine is resolved under the caller's own scope inside that transaction.
+  // the same door — that row's `superseded_by` records this proposal's id, so a later settle can say
+  // a newer proposal replaced it. The routine is resolved under the caller's own scope inside that
+  // transaction.
   virtual ProposalMintOutcome insertProposal(const RoutineProposal& incoming) = 0;
   // All-or-none. `becomes` is what the domain computed from the base; the store re-checks the
   // revision under its own lock and refuses the whole thing if the routine moved between the two.

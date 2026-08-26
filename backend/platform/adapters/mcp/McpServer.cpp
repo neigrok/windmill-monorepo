@@ -6,12 +6,6 @@ namespace {
 constexpr char kJsonRpc[] = "2.0";
 constexpr char kProtocolVersion[] = "2025-06-18";  // latest we speak; we echo the client's if newer/known
 
-std::string compact(const Json::Value& value) {
-  Json::StreamWriterBuilder builder;
-  builder["indentation"] = "";
-  return Json::writeString(builder, value);
-}
-
 Json::Value result(const Json::Value& id, Json::Value payload) {
   Json::Value response(Json::objectValue);
   response["jsonrpc"] = kJsonRpc;

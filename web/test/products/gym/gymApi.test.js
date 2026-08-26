@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
-  EXPORT_HREF, EXPORT_NOTES_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError, UNCHANGED,
+  EXPORT_BODYWEIGHT_HREF, EXPORT_HREF, EXPORT_NOTES_HREF, EXPORT_THREADS_HREF, failureReason, gymApi, GymError,
+  UNCHANGED,
 } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
@@ -1599,4 +1600,41 @@ test('reorderNotes — the whole order in one write, the renumbered list back', 
     assert.equal(error.code, 'notes-order-mismatch');
     return true;
   });
+});
+
+test('bodyweight — the series, whole or between two inclusive dates, as the wire sends it', async () => {
+  const series = { entries: [{ dateLocal: '2026-08-25', weightKg: 82.4, recordedAt: 1 }], latest: { dateLocal: '2026-08-25', weightKg: 82.4, recordedAt: 1 } };
+  serve(ok(series));
+  assert.deepEqual(await gymApi.bodyweight(), series);
+  assert.deepEqual(wireOf(calls[0]), { path: '/v1/gym/bodyweight', method: 'GET', credentials: 'include', contentType: 'application/json', body: undefined });
+  serve(ok({ entries: [], latest: null }));
+  assert.deepEqual(await gymApi.bodyweight({ from: '2026-06-01', to: '2026-08-26' }), { entries: [], latest: null });
+  assert.equal(wireOf(calls[0]).path, '/v1/gym/bodyweight?from=2026-06-01&to=2026-08-26');
+});
+
+test('saveBodyweight — one PUT per local date carrying kilograms and the device clock, the stored row back', async () => {
+  serve(ok({ entry: { dateLocal: '2026-08-26', weightKg: 82.4, recordedAt: 9 } }));
+  assert.deepEqual(await gymApi.saveBodyweight('2026-08-26', { weightKg: 82.4, recordedAt: 9 }), { dateLocal: '2026-08-26', weightKg: 82.4, recordedAt: 9 });
+  assert.deepEqual(wireOf(calls[0]), {
+    path: '/v1/gym/bodyweight/2026-08-26', method: 'PUT', credentials: 'include', contentType: 'application/json',
+    body: '{"weightKg":82.4,"recordedAt":9}',
+  });
+  serve(refusal(400, 'Between 20 and 400 kg — check the number.'));
+  await assert.rejects(gymApi.saveBodyweight('2026-08-26', { weightKg: 420, recordedAt: 9 }), (error) => {
+    assert.equal(error.status, 400);
+    assert.equal(error.detail, 'Between 20 and 400 kg — check the number.');
+    assert.equal(error.terminal, true);
+    return true;
+  });
+});
+
+test('deleteBodyweight — 204 for a date with a row and for one without alike', async () => {
+  serve(nothing());
+  assert.equal(await gymApi.deleteBodyweight('2026-08-26'), null);
+  assert.deepEqual(wireOf(calls[0]), { path: '/v1/gym/bodyweight/2026-08-26', method: 'DELETE', credentials: 'include', contentType: 'application/json', body: undefined });
+});
+
+test('EXPORT_BODYWEIGHT_HREF — the weigh-ins as their own file, on the same origin', () => {
+  assert.equal(EXPORT_BODYWEIGHT_HREF, `${API_BASE}/v1/gym/export/bodyweight`);
+  assert.equal(new Set([EXPORT_HREF, EXPORT_THREADS_HREF, EXPORT_NOTES_HREF, EXPORT_BODYWEIGHT_HREF]).size, 4);
 });

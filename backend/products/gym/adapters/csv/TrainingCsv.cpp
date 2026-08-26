@@ -79,4 +79,11 @@ std::string toCsv(const std::vector<ExportedNote>& notes) {
   return csv;
 }
 
+std::string toCsv(const std::vector<ExportedBodyweight>& entries) {
+  std::string csv = line({"date", "weight_kg", "recorded_at"});
+  for (const ExportedBodyweight& row : entries)
+    csv += line({row.date, row.weightKg, row.recordedAt});
+  return csv;
+}
+
 }

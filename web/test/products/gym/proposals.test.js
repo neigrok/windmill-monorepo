@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  applyLabel, atomicLine, changeLabel, diffRows, documentLine, historyLabel, intentLine, isPending,
-  conversationOf, CONVERSATION_VERB,
-  logKeptLabel, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM,
-  UNNAMED_AGENT,
+  applyLabel, atomicLine, changeLabel, collapseKept, diffRows, documentLine, historyLabel, intentLine, isPending,
+  agentNameOf, conversationOf, CONVERSATION_VERB, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, STILL_WAITING,
+  logKeptLabel, REVIEW_VERB, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB,
+  UNNAMED_AGENT, wroteKicker,
 } from '../../../src/products/gym/proposals.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -130,7 +130,7 @@ test('diffRows — a movement that only changed position is still on the screen,
     },
   ]);
   assert.equal(rows.filter((row) => row.kind !== 'kept').length, reordered.changeCount);
-  assert.equal(applyLabel(reordered), 'Apply all 1');
+  assert.equal(applyLabel(reordered), 'Apply');
 });
 
 test('diffRows — a reorder the store counted is a row of its own, so the count under Apply is honest', () => {
@@ -310,11 +310,15 @@ test('settledLine — applied, dismissed and superseded each say what happened a
 
 test('sourceLabel — who wrote it, and never a blank where a name should be', () => {
   assert.equal(sourceLabel({ door: 'mcp', agent: 'Claude Code' }), 'Claude Code');
+  assert.equal(sourceLabel({ door: 'mcp', connection: 'Claude Desktop' }), 'Claude Desktop', 'a connection’s name counts as the agent’s');
+  assert.equal(sourceLabel({ door: 'mcp', agent: 'Claude Code', connection: 'Claude Desktop' }), 'Claude Code', 'the agent’s own name first');
   assert.equal(sourceLabel({ door: 'mcp' }), UNNAMED_AGENT);
-  assert.equal(sourceLabel({ door: 'mcp', agent: '' }), UNNAMED_AGENT);
+  assert.equal(sourceLabel({ door: 'mcp', agent: '', connection: '' }), UNNAMED_AGENT);
   assert.equal(sourceLabel({ door: 'ask' }), 'Coach');
   assert.equal(sourceLabel(undefined), UNNAMED_AGENT);
   assert.equal(UNNAMED_AGENT, 'your connected agent');
+  assert.equal(agentNameOf({ door: 'mcp', connection: 'Claude Desktop' }), 'Claude Desktop');
+  assert.equal(agentNameOf({ door: 'ask' }), null);
 });
 
 test('conversationOf — the thread behind a diff, and nothing at all when there is none', () => {
@@ -326,7 +330,7 @@ test('conversationOf — the thread behind a diff, and nothing at all when there
   assert.equal(CONVERSATION_VERB, 'Open the conversation');
 });
 
-test('summaryLine and reviewLabel — the card says what is waiting, with or without the agent’s prose', () => {
+test('summaryLine and the review door — the card says what is waiting, and its one affordance is Review', () => {
   assert.equal(
     summaryLine(proposal(), 'Push A'),
     'Four weeks of heavier bench triples, incline work in place of flies. Everything else unchanged.',
@@ -334,8 +338,7 @@ test('summaryLine and reviewLabel — the card says what is waiting, with or wit
   assert.equal(summaryLine(proposal({ summary: '' }), 'Push A'), '4 changes to Push A.');
   assert.equal(summaryLine(proposal({ summary: '   ' }), 'Push A'), '4 changes to Push A.');
   assert.equal(summaryLine(proposal({ summary: '', changeCount: 1 }), 'Push A'), '1 change to Push A.');
-  assert.equal(reviewLabel(proposal()), 'Review 4 changes');
-  assert.equal(reviewLabel(proposal({ changeCount: 1 })), 'Review 1 change');
+  assert.equal(REVIEW_VERB, 'Review', 'the count is on the card’s own line, never in the door');
   assert.equal(changeLabel(1), '1 change');
   assert.equal(changeLabel(0), '0 changes');
 });
@@ -346,7 +349,6 @@ test('a removal names itself on the card, whatever its summary says', () => {
   assert.equal(intentLine(proposal(), 'Push A'), null);
   assert.equal(summaryLine(removal, 'Push A'), 'Tidying up your program a little.');
   assert.equal(summaryLine(proposal({ intent: 'remove', summary: '' }), 'Push A'), 'A proposal to remove Push A.');
-  assert.equal(reviewLabel(removal), 'Read the proposal');
   assert.equal(applyLabel(removal), 'Remove Push A');
   assert.equal(documentLine(removal), null);
   assert.equal(
@@ -376,4 +378,57 @@ test('historyLabel — one dated row per proposal, whatever became of it', () =>
     historyLabel(proposal({ intent: 'remove', state: 'dismissed', settledAt: SETTLED_AT, changeCount: 1 })),
     '3 Aug · turned down a removal from your connected agent',
   );
+});
+
+test('collapseKept — a run of kept rows folds to one counted item at its own position, and unfolds there', () => {
+  const rows = diffRows(proposal());
+  const folded = collapseKept(rows);
+  assert.deepEqual(folded.map((row) => row.kind), ['retargeted', 'added', 'retargeted', 'kept-run', 'removed']);
+  assert.equal(folded[3].at, 3);
+  assert.deepEqual(folded[3].rows, [rows[3], rows[4]]);
+  assert.equal(keptRunLabel(folded[3].rows.length), 'and 2 lines unchanged');
+  assert.equal(keptRunLabel(1), 'and 1 line unchanged');
+  assert.equal(keptRunLabel(7), 'and 7 lines unchanged');
+  assert.deepEqual(collapseKept(rows, new Set([3])), rows, 'unfolded in place, the document in its order');
+  assert.deepEqual(collapseKept(rows, new Set([0])).map((row) => row.kind), ['retargeted', 'added', 'retargeted', 'kept-run', 'removed']);
+});
+
+test('collapseKept — two runs fold separately, a lone kept row is a run of one, and a changed row is never touched', () => {
+  const rows = [
+    { kind: 'kept', exerciseId: 'a', targets: '3 × 8' },
+    { kind: 'retargeted', exerciseId: 'b', moves: [] },
+    { kind: 'kept', exerciseId: 'c', targets: '3 × 8' },
+    { kind: 'kept', exerciseId: 'd', targets: '3 × 8' },
+    { kind: 'kept', exerciseId: 'e', targets: '3 × 8' },
+  ];
+  const folded = collapseKept(rows);
+  assert.deepEqual(folded.map((row) => row.kind), ['kept-run', 'retargeted', 'kept-run']);
+  assert.deepEqual(folded.map((row) => row.at ?? null), [0, null, 2]);
+  assert.equal(folded[2].rows.length, 3);
+  assert.deepEqual(collapseKept(rows, new Set([2])).map((row) => row.kind), ['kept-run', 'retargeted', 'kept', 'kept', 'kept']);
+  assert.deepEqual(collapseKept([], new Set()), []);
+});
+
+test('receiptLine — derived from the server’s reply, never the prose; turned down says nothing changed', () => {
+  const applied = { ...proposal(), state: 'applied', name: 'Push A', changeCount: 4, summary: 'I rewrote everything (untrue)' };
+  assert.equal(receiptLine({ verb: 'apply', proposal: applied }), 'Applied · Push A · 4 changes');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, changeCount: 1 } }), 'Applied · Push A · 1 change');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, name: 'Push B' } }), 'Applied · Push B · 4 changes', 'the routine as it now stands');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, intent: 'remove', name: undefined } }), 'Applied · Push A · routine removed');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, changeCount: undefined } }), 'Applied · Push A', 'no count from the server, no count on the receipt');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { id: 'prop_1', name: 'Push A' } }), 'Applied · Push A');
+  assert.equal(receiptLine({ verb: 'dismiss', proposal: applied }), 'Turned down · nothing changed.');
+});
+
+test('the review’s words are pinned: the kicker, the caveat, the waiting card, the text row', () => {
+  assert.equal(wroteKicker({ door: 'ask' }), 'Coach wrote:');
+  assert.equal(wroteKicker({ door: 'mcp', agent: 'Claude' }), 'Claude wrote:');
+  assert.equal(wroteKicker({ door: 'mcp', connection: 'Claude Desktop' }), 'Claude Desktop wrote:', 'a connection’s name counts as the agent’s, as on the byline');
+  assert.equal(wroteKicker({ door: 'mcp', agent: 'Claude', connection: 'Claude Desktop' }), 'Claude wrote:');
+  assert.equal(wroteKicker({ door: 'mcp' }), 'Your agent wrote:', 'an unnamed agent is never given Coach’s name');
+  assert.equal(wroteKicker({ door: 'mcp', agent: '', connection: '' }), 'Your agent wrote:');
+  assert.equal(wroteKicker(undefined), 'Your agent wrote:');
+  assert.equal(MID_WORKOUT_CAVEAT, 'You are mid-workout. Applying changes next time, not this session.');
+  assert.equal(STILL_WAITING, 'still waiting');
+  assert.equal(TURN_DOWN_VERB, 'Turn this down');
 });

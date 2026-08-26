@@ -9,11 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,14 +29,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.domain.DocumentRow
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
@@ -51,17 +56,19 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// Nothing is applied until the tap, and Apply is atomic against the base the diff was written on.
+// The review, drawn INSIDE a modal bottom sheet over the conversation or the routines home — never a
+// push, because a lifter deciding is coming back. Nothing is applied until the tap, Apply is atomic
+// against the base the diff was written on, and Apply is unreachable until the diff has been seen to
+// its end. Closing the sheet decides nothing; `onDecided` is the server's own reply.
 @Composable
-fun ProposalScreen(
+fun ReviewSheet(
     proposalId: String,
     routineId: String,
     store: TrainingStore,
-    backLabel: String,
-    onBack: () -> Unit,
     // Null where Coach is not offered. Nothing on the wire says whether a deployment has Coach, so the
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
-    onAsk: ((String) -> Unit)? = null,
+    onAsk: ((String) -> Unit)?,
+    onDecided: (Proposal) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
@@ -73,6 +80,18 @@ fun ProposalScreen(
     // The latch stops a copy read on the way in from offering a decision the log has refused; only a
     // read that ANSWERED drops it.
     var overtaken by remember(proposalId) { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    // Seen to its end, or fits without scrolling — of THIS document: the extent the end was last
+    // reached at. A diff arriving after the read, or a run of kept rows expanding, changes the extent,
+    // and what grew has not been seen.
+    var seenExtent by remember(proposalId) { mutableIntStateOf(-1) }
+    val atEnd = !scroll.canScrollForward
+    val extent = scroll.maxValue
+    // The extent is the key's own value, read in the same snapshot as `atEnd`: by the time the effect
+    // runs, a diff that arrived in this composition has already been measured and the live extent
+    // would be the one nobody has seen.
+    LaunchedEffect(atEnd, extent) { if (atEnd) seenExtent = extent }
+    val seen = seenExtent == extent
 
     LaunchedEffect(proposalId, asked) {
         failure = null
@@ -101,7 +120,10 @@ fun ProposalScreen(
                 said = null
                 val outcome = if (apply) store.applyProposal(open.id) else store.dismissProposal(open.id)
                 when (outcome) {
-                    is ProposalOutcome.Decided -> proposal = outcome.proposal
+                    is ProposalOutcome.Decided -> {
+                        proposal = outcome.proposal
+                        onDecided(outcome.proposal)
+                    }
                     is ProposalOutcome.Moved -> {
                         said = outcome.said
                         overtaken = true
@@ -125,14 +147,14 @@ fun ProposalScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Head(standing, backLabel, nowMs, onBack)
+    Column(Modifier.fillMaxWidth()) {
+        Head(standing, nowMs)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = false)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = WindmillSpace.x5)
                 .padding(bottom = WindmillSpace.x4),
         ) {
@@ -159,26 +181,21 @@ fun ProposalScreen(
                 }
             }
         }
-        standing?.let { Foot(it, decidable, deciding, said, onDecide = ::decide) }
+        standing?.let { Foot(it, decidable, deciding, seen, said, onDecide = ::decide) }
     }
 }
 
 @Composable
-private fun Head(proposal: Proposal?, backLabel: String, nowMs: Long, onBack: () -> Unit) {
+private fun Head(proposal: Proposal?, nowMs: Long) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
-            .padding(horizontal = WindmillSpace.x5),
+            .padding(horizontal = WindmillSpace.x5)
+            .padding(bottom = WindmillSpace.x2),
     ) {
-        Text(
-            "‹",
-            style = WindmillFont.body(20, FontWeight.SemiBold),
-            color = GymSkin.inkDim,
-            modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onBack),
-        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 proposal?.let { "Proposal · ${it.routineName}" } ?: "Proposal",
@@ -220,13 +237,40 @@ private fun StateChip(state: ProposalState) {
     )
 }
 
+// The model's prose sits under its kicker, quoted, apart from the counted rows: two kinds of truth
+// never share one block.
 @Composable
-private fun Body(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, superseded: Boolean) {
-    Text(
-        proposal.summaryLine(proposal.routineName),
-        style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-        color = GymSkin.ink,
-    )
+private fun Body(
+    proposal: Proposal,
+    catalog: List<Exercise>,
+    nowMs: Long,
+    superseded: Boolean,
+) {
+    if (proposal.summary.isNotBlank()) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(GymSkin.raised, RoundedCornerShape(WindmillRadius.md))
+                .padding(WindmillSpace.x3),
+        ) {
+            Text(proposal.kicker, style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.accent)
+            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
+                Box(Modifier.width(2.dp).heightIn(min = 20.dp).background(GymSkin.accent))
+                Text(
+                    proposal.summary,
+                    style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+                    color = GymSkin.ink,
+                )
+            }
+        }
+    } else {
+        Text(
+            proposal.summaryLine(proposal.routineName),
+            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+            color = GymSkin.ink,
+        )
+    }
     if (proposal.intent == ProposalIntent.Remove) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -255,7 +299,12 @@ private fun Body(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, super
             MoveLine("routine", proposal.baseName, proposal.name)
         }
     }
-    proposal.drawn.forEach { change -> ChangeRow(proposal, change, catalog) }
+    proposal.document.forEach { row ->
+        when (row) {
+            is DocumentRow.Changed -> ChangeRow(proposal, row.change, catalog)
+            is DocumentRow.Unchanged -> KeptRun(row, catalog)
+        }
+    }
     val note = proposal.settledNote(nowMs)
         ?: if (superseded && proposal.isPending) supersededLine else null
     note?.let {
@@ -273,6 +322,48 @@ private fun Body(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, super
 
 private const val supersededLine =
     "This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands."
+
+// A run of kept rows, collapsed to its count where it stands and expanded in place: the position is
+// the document.
+@Composable
+private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
+    var open by remember(row) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .semantics { stateDescription = if (open) "expanded" else "collapsed" }
+                .clickable(role = Role.Button) { open = !open }
+                .padding(horizontal = WindmillSpace.x2),
+        ) {
+            Text(row.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Text(if (open) "⌃" else "⌄", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.inkFaint)
+        }
+        if (open) {
+            row.kept.forEach { change ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x2),
+                ) {
+                    Text(
+                        Readout.movement(change.exerciseId, catalog),
+                        style = WindmillFont.body(14),
+                        color = GymSkin.inkDim,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        (change.after ?: change.before)?.let { Proposal.asks(it) } ?: Readout.openTarget,
+                        style = GymType.numeral(12),
+                        color = GymSkin.inkFaint,
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<Exercise>) {
@@ -348,11 +439,14 @@ private fun ChangeCard(edge: Color, content: @Composable () -> Unit) {
     }
 }
 
+// The band holds one button, Apply, and its height never changes. Turning down is a text row beneath
+// it, behind its confirmation — never the left half of a pair, where a hand expects Cancel.
 @Composable
 private fun Foot(
     proposal: Proposal,
     decidable: Boolean,
     deciding: Boolean,
+    seen: Boolean,
     said: String?,
     onDecide: (Boolean) -> Unit,
 ) {
@@ -361,7 +455,7 @@ private fun Foot(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = WindmillSpace.x5)
-            .padding(bottom = WindmillSpace.x4),
+            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x6),
     ) {
         said?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkDim, maxLines = 2) }
         if (!decidable) return@Column
@@ -379,27 +473,30 @@ private fun Foot(
                 onKeep = { turningDown = false },
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2), modifier = Modifier.fillMaxWidth()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .heightIn(min = GymTap.primary - 8.dp)
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = !deciding) { turningDown = true }
-                    .padding(horizontal = WindmillSpace.x5),
-            ) {
-                Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-            }
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = GymTap.primary - 8.dp)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = !deciding) { onDecide(true) },
-            ) {
-                Text(proposal.applyLabel, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
-            }
+        val ready = seen && !deciding
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.primary - 8.dp)
+                .alpha(if (ready) 1f else 0.4f)
+                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+                .clickable(enabled = ready) { onDecide(true) },
+        ) {
+            Text(
+                if (proposal.intent == ProposalIntent.Remove) proposal.applyLabel else Proposal.apply,
+                style = WindmillFont.body(17, FontWeight.Bold),
+                color = GymSkin.onAccent,
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .clickable(enabled = !deciding) { turningDown = true },
+        ) {
+            Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
         Text(
             proposal.atomicLine,
@@ -410,14 +507,14 @@ private fun Foot(
     }
 }
 
-// `Later` is not a decision and never sends one; the routine still carries the proposal.
+// The card: the summary, the counted changes, and one affordance. Nothing on it decides anything.
 @Composable
 fun ProposalCard(
     proposal: Proposal,
     routineName: String,
     nowMs: Long,
+    stillWaiting: Boolean,
     onReview: () -> Unit,
-    onLater: (() -> Unit)? = null,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
@@ -449,36 +546,20 @@ fun ProposalCard(
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),
             color = GymSkin.ink,
         )
-        if (proposal.summary.isNotBlank()) {
-            Text(
-                "$routineName · ${proposal.counted}",
-                style = GymType.numeral(12),
-                color = GymSkin.inkDim,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2), modifier = Modifier.fillMaxWidth()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = GymTap.minimum)
-                    .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
-                    .clickable(onClick = onReview),
-            ) {
-                Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
-            }
-            onLater?.let { later ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .heightIn(min = GymTap.minimum)
-                        .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                        .clickable(onClick = later)
-                        .padding(horizontal = WindmillSpace.x4),
-                ) {
-                    Text("Later", style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.inkDim)
-                }
-            }
+        Text(
+            proposal.cardLine(routineName, stillWaiting),
+            style = GymType.numeral(12),
+            color = GymSkin.inkDim,
+        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
+                .clickable(onClick = onReview),
+        ) {
+            Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
         }
     }
 }

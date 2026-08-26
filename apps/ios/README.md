@@ -70,9 +70,10 @@ Rules that hold across the rooms:
   · saved here`; signed out says `saved on this device`.
 - **Device storage is per seat.** Journal's page cache is one file per seat
   (`windmill-journal-pages-v2-u.<userId>.json`, `-v2-anon.json` signed out — the `v2` is the scale
-  version, bumped when the shape of a stored page changes); gym's shelf and queue are one
-  set of rows per seat. A store opened for one seat cannot read another's. The one carry is
-  anonymous work, which follows the person who signs in.
+  version, bumped when the shape of a stored page changes); gym's shelf, queue and weigh-ins
+  (`windmill-gym-bodyweight.json`) are one set of rows per seat. A store opened for one seat cannot
+  read another's. The one carry is anonymous work, which follows the person who signs in — the claim
+  replays settings, movements, routines, sessions, then bodyweight last.
 - **Nothing starts by itself.** A gym session begins only on *Start workout* or *Just start
   logging*. Home is the Routines list (tabs: Routines · The log · Coach); a fresh install offers
   **Build a routine** as the primary. Every start goes through `TrainingStore.start`.

@@ -1,9 +1,10 @@
 // The pure rules behind a proposal's diff and card. Nothing here writes, decides or derives a target.
 // The change rows ARE the document as well as the diff: rows up to the first `removed` are the run
 // the routine would take on, in order, and the rest are what it takes away, so all of them are drawn
-// — the order is part of what applies and the wire carries it nowhere else. The count under Apply is
-// the store's. A proposal names its fields `sets` · `reps` · `weightKg` · `restSeconds` where a
-// routine entry names them `target…`, and both hand the reading to `entryLabel`.
+// — the order is part of what applies and the wire carries it nowhere else. A run of kept rows
+// collapses to a count IN ITS PLACE and expands there, so the document never reads out of order.
+// The count under Apply is the store's. A proposal names its fields `sets` · `reps` · `weightKg` ·
+// `restSeconds` where a routine entry names them `target…`, and both hand the reading to `entryLabel`.
 
 import {
   agoLabel, entryLabel, fmt, numberWord, OPEN_TARGET, shortDayLabel, targetLoadOf, timeLabel,
@@ -31,9 +32,18 @@ export function stateChip(proposal) {
 // the store always holds.
 export const UNNAMED_AGENT = 'your connected agent';
 
+// The transport's name for the writer: the agent's own where it gave one, else the connection's (the
+// OAuth client or the key), the same on every surface. Null for Coach and for a caller with neither.
+export function agentNameOf(source) {
+  if (source?.agent) return source.agent;
+  if (source?.connection) return source.connection;
+  return null;
+}
+
 // `door: 'ask'` is the wire's token for the Coach room.
 export function sourceLabel(source) {
-  if (source?.agent) return source.agent;
+  const named = agentNameOf(source);
+  if (named) return named;
   if (source?.door === 'ask') return 'Coach';
   return UNNAMED_AGENT;
 }
@@ -49,14 +59,13 @@ export function changeLabel(count) {
   return count === 1 ? '1 change' : `${count} changes`;
 }
 
-export function reviewLabel(head) {
-  if (head.intent === 'remove') return 'Read the proposal';
-  return `Review ${changeLabel(head.changeCount)}`;
-}
+// The card's one affordance, the same word on every surface; the count is on the card's own line.
+export const REVIEW_VERB = 'Review';
 
 // The store's count and not the rows this screen drew: the store is what applies.
 export function applyLabel(proposal) {
   if (proposal.intent === 'remove') return `Remove ${proposal.baseName}`;
+  if (proposal.changeCount === 1) return 'Apply';
   return `Apply all ${proposal.changeCount}`;
 }
 
@@ -118,6 +127,61 @@ export const TURN_DOWN_CONFIRM = {
   confirm: 'Turn down',
   keep: 'Keep it',
 };
+
+export const TURN_DOWN_VERB = 'Turn this down';
+
+// Closing the review decides nothing; the card keeps saying so.
+export const STILL_WAITING = 'still waiting';
+
+// Above the diff and never in the band: a session's plan is frozen, so applying now changes nothing
+// about the workout in progress, and a line inside the band would move Apply.
+export const MID_WORKOUT_CAVEAT = 'You are mid-workout. Applying changes next time, not this session.';
+
+// The writer's prose sits under this, apart from the counted rows; the two are different kinds of
+// truth. Attributed by door: the room, a named agent, or an unnamed one — never Coach's name over
+// an agent's words.
+export function wroteKicker(source) {
+  const named = agentNameOf(source);
+  if (named) return `${named} wrote:`;
+  if (source?.door === 'ask') return 'Coach wrote:';
+  return 'Your agent wrote:';
+}
+
+export function keptRunLabel(count) {
+  return count === 1 ? 'and 1 line unchanged' : `and ${count} lines unchanged`;
+}
+
+// Runs of kept rows fold to one `kept-run` item holding the rows it stands for, at the run's own
+// position; a run whose `at` is in `expanded` unfolds there. Changed rows pass through untouched.
+export function collapseKept(rows, expanded = new Set()) {
+  const folded = [];
+  let run = null;
+  rows.forEach((row, index) => {
+    if (row.kind !== 'kept') {
+      run = null;
+      folded.push(row);
+      return;
+    }
+    if (run) {
+      run.rows.push(row);
+      return;
+    }
+    run = { kind: 'kept-run', at: index, rows: [row] };
+    folded.push(run);
+  });
+  return folded.flatMap((item) => (item.kind === 'kept-run' && expanded.has(item.at) ? item.rows : [item]));
+}
+
+// The receipt is derived from the server's settle reply and never from the model's prose, and it is
+// not stored: it lands in the thread for the visit and is gone on reopening. The count is the
+// server's to state; a reply without one gets no count, never a made-up one.
+export function receiptLine({ verb, proposal }) {
+  if (verb === 'dismiss') return 'Turned down · nothing changed.';
+  const name = proposal?.name ?? proposal?.baseName;
+  if (proposal?.intent === 'remove') return `Applied · ${name} · routine removed`;
+  if (typeof proposal?.changeCount !== 'number') return `Applied · ${name}`;
+  return `Applied · ${name} · ${changeLabel(proposal.changeCount)}`;
+}
 
 // `sets` is the pair — the sets and the reps moving together — and an absent rep target is `max`.
 // An absent `sets` is the OPEN line and never a missing side; the missing side is the row's `kind`.

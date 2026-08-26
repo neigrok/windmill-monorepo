@@ -348,6 +348,69 @@ TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into
       CHECK_EQ(head.state, ProposalState::superseded);
       CHECK_EQ(head.settledAtMs, std::optional<std::uint64_t>(kNow));
     }
+  // The replaced row records who replaced it; the two still pending record nothing.
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    pqxx::result reasons = txn.exec_params(
+        "SELECT id, superseded_by FROM gym_proposals WHERE user_id = $1::uuid ORDER BY id", kUser);
+    REQUIRE_EQ(reasons.size(), static_cast<std::size_t>(3));
+    CHECK_EQ(reasons[0]["superseded_by"].as<std::string>(), std::string("prop_pg00002"));
+    CHECK(reasons[1]["superseded_by"].is_null());
+    CHECK(reasons[2]["superseded_by"].is_null());
+  }
+  // And every settle of the replaced row says so — the reason column outranks the revision, so it
+  // still says so after the replacement lands and the routine moves.
+  const Routine stale = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                                  *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}));
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 60'000).error ==
+        ProposalSettleError::replaced);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 60'000).error ==
+        ProposalSettleError::replaced);
+  const Routine becomes = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                                    *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00002"}));
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00002"}, becomes, kNow + 120'000).error ==
+        ProposalSettleError::none);
+  CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"})->revision, 2);
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 180'000).error ==
+        ProposalSettleError::replaced);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 180'000).error ==
+        ProposalSettleError::replaced);
+  // The Ask-door proposal was superseded by the APPLY (the routine moved), and says that.
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00003"}, stale, kNow + 180'000).error ==
+        ProposalSettleError::routineMoved);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00003"}, kNow + 180'000).error ==
+        ProposalSettleError::routineMoved);
+}
+
+// A row settled as superseded before the reason column existed: null reason, revision unmoved. The
+// store says only that it was superseded — and once the routine moves, that it moved.
+TEST(pg_gym_a_legacy_superseded_row_says_only_that_until_the_routine_moves) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgProgramRepository repo{wm::pgTestPool()};
+  inserted(repo, routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press")}));
+  repo.insertProposal(proposalAt("prop_pg00001", "rt_pg000001", 1, {benchAt(87.5, 3)}));
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("UPDATE gym_proposals SET state = 'superseded', settled_at = now(), "
+                    "superseded_by = NULL WHERE id = $1", "prop_pg00001");
+    txn.commit();
+  }
+  const Routine stale = appliedTo(*repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"}),
+                                  *repo.proposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}));
+
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 60'000).error ==
+        ProposalSettleError::superseded);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 60'000).error ==
+        ProposalSettleError::superseded);
+  repo.replaceRoutine(routineAt("rt_pg000001", "Push A", {entryAt(1, "bench-press", 5, 5, 85.0, 180)}),
+                      kNow + 120'000, std::nullopt);
+  CHECK(repo.applyRevision(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, stale, kNow + 180'000).error ==
+        ProposalSettleError::routineMoved);
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 180'000).error ==
+        ProposalSettleError::routineMoved);
 }
 
 // A replay reads back the proposal already waiting rather than superseding it with itself.
@@ -515,8 +578,10 @@ TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refu
 
   CHECK(rewritten.error == RoutineWriteError::none);
   CHECK_EQ(rewritten.routine->revision, 2);
-  CHECK(refused.error == ProposalSettleError::superseded);
+  CHECK(refused.error == ProposalSettleError::routineMoved);
   CHECK_EQ(refused.routine, std::optional<Routine>());
+  CHECK(repo.dismissProposal(wm::UserId{kUser}, ProposalId{"prop_pg00001"}, kNow + 120'000).error ==
+        ProposalSettleError::routineMoved);
   CHECK_EQ(repo.routine(wm::UserId{kUser}, RoutineId{"rt_pg000001"})->entries[0].targetWeightKg,
            std::optional<double>(85.0));
   const std::vector<ProposalHead> history =

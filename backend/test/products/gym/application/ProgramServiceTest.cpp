@@ -330,7 +330,7 @@ TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it
                            h.pushAWrite({benchAt(85.0)}, "rt_00000001", "Push A"));
   ProposalSettleOutcome tapped = h.program.apply(uid(), ProposalId{"prop_00000001"});
 
-  CHECK(tapped.error == ProposalSettleError::superseded);
+  CHECK(tapped.error == ProposalSettleError::routineMoved);
   CHECK_EQ(tapped.routine, std::optional<Routine>());
   CHECK_EQ(h.program.routine(uid(), rtId())->entries[0].targetWeightKg, std::optional<double>(85.0));
   CHECK_EQ(h.program.routine(uid(), rtId())->revision, 2);
@@ -338,6 +338,48 @@ TEST(a_lifter_rewriting_the_routine_supersedes_a_proposal_rather_than_merging_it
   REQUIRE_EQ(history.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history[0].state, ProposalState::superseded);
   CHECK_EQ(history[0].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
+  // The same fact on the other door: turning it down is refused for the same reason.
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error ==
+        ProposalSettleError::routineMoved);
+}
+
+// Three reasons a proposal is past settling, told apart by the store and never guessed: the one
+// a newer proposal from the same door replaced (`superseded_by` names it) says so even after the
+// routine ALSO moved; the one the routine's own move superseded says the routine moved; a row
+// superseded before the reason was recorded, with the revision unmoved, says only that.
+TEST(a_replaced_proposal_says_so_even_after_the_routine_also_moved) {
+  Harness h;
+  h.create(h.pushAWrite());
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}, "prop_00000001"));
+  h.clock.now += 60'000;
+  h.program.propose(uid(), proposalFor({benchAt(90.0, 3)}, "prop_00000002"));   // same door: replaces
+
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::replaced);
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::replaced);
+  // The second one lands, so the routine moves; the first is STILL the replaced one.
+  h.clock.now += 60'000;
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000002"}).error == ProposalSettleError::none);
+  CHECK_EQ(h.program.routine(uid(), rtId())->revision, 2);
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::replaced);
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::replaced);
+}
+
+TEST(a_proposal_superseded_before_the_reason_was_recorded_says_only_that) {
+  Harness h;
+  h.create(h.pushAWrite());
+  h.program.propose(uid(), proposalFor({benchAt(87.5, 3)}, "prop_00000001"));
+  // A legacy row: settled as superseded with no `superseded_by`, the routine still at its revision.
+  for (RoutineProposal& held : h.repo.db.proposalRows) {
+    held.head.state = ProposalState::superseded;
+    held.head.settledAtMs = h.clock.now;
+  }
+
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::superseded);
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::superseded);
+  // Once the routine moves, that same legacy row reads as the routine having changed.
+  h.program.replaceRoutine(uid(), rtId(), h.pushAWrite({benchAt(85.0)}, "rt_00000001", "Push A"));
+  CHECK(h.program.apply(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::routineMoved);
+  CHECK(h.program.dismiss(uid(), ProposalId{"prop_00000001"}).error == ProposalSettleError::routineMoved);
 }
 
 // A PUT of the bytes already standing, or a move in the week, changes no revision and settles nothing.

@@ -4,7 +4,8 @@ import { listMcpKeys } from '../../../shell/auth/McpKeyClient.js';
 import { listGrants } from '../../../shell/auth/OAuthClient.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 import { connectedLabel, connectionsToTheLog, NOTHING_CONNECTED } from '../connect/connect.js';
-import { EXPORT_HREF, EXPORT_NOTES_HREF, gymApi } from '../gymApi.js';
+import { EXPORT_BODYWEIGHT_LINE, EXPORT_BODYWEIGHT_VERB } from '../bodyweight/bodyweight.js';
+import { EXPORT_BODYWEIGHT_HREF, EXPORT_HREF, EXPORT_NOTES_HREF, gymApi } from '../gymApi.js';
 import { CONNECT_HREF, NOTES_HREF } from '../log.js';
 import { EXPORT_NOTES_LINE, EXPORT_NOTES_VERB, SETTINGS_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
@@ -16,6 +17,7 @@ export function GymSettingsSection({ api = gymApi } = {}) {
   const [preferences, setPreferences] = useState(null);
   const [hasLog, setHasLog] = useState(false);
   const [hasNotes, setHasNotes] = useState(false);
+  const [hasWeighIns, setHasWeighIns] = useState(false);
   const [refused, setRefused] = useState('');
   // The document the store last confirmed; a ref, so a reverting reply cannot close over a stale copy.
   const stored = useRef(null);
@@ -39,6 +41,9 @@ export function GymSettingsSection({ api = gymApi } = {}) {
       .catch(() => {});
     api.notes()
       .then((notes) => { if (live) setHasNotes(notes.length > 0); })
+      .catch(() => {});
+    api.bodyweight()
+      .then((series) => { if (live) setHasWeighIns((series?.entries ?? []).length > 0); })
       .catch(() => {});
     return () => { live = false; };
   }, [api]);
@@ -135,6 +140,16 @@ export function GymSettingsSection({ api = gymApi } = {}) {
           <span style={look.doorMain}>
             <span style={styles.primaryText}>{EXPORT_NOTES_VERB}</span>
             <span style={styles.metaText}>{EXPORT_NOTES_LINE}</span>
+          </span>
+          <span aria-hidden="true" style={look.chevron}>›</span>
+        </a>
+      )}
+
+      {hasWeighIns && (
+        <a href={EXPORT_BODYWEIGHT_HREF} style={look.door}>
+          <span style={look.doorMain}>
+            <span style={styles.primaryText}>{EXPORT_BODYWEIGHT_VERB}</span>
+            <span style={styles.metaText}>{EXPORT_BODYWEIGHT_LINE}</span>
           </span>
           <span aria-hidden="true" style={look.chevron}>›</span>
         </a>

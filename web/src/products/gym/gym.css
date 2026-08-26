@@ -2927,20 +2927,6 @@ button.gym-set:focus-visible .gym-set-fix,
   text-decoration: none;
 }
 
-/* Only ever a link: the two verbs on that screen are the decision. */
-.gym-coach-aside {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin-top: 18px;
-  color: var(--text-link);
-  font-size: 13.5px;
-  text-decoration: none;
-}
-.gym-coach-aside:hover {
-  color: var(--text-link-hover);
-}
-
 /* ── Notes — what the lifter writes for Coach ─────────────── */
 .gym-notes {
   padding-bottom: 24px;
@@ -3620,6 +3606,93 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
+/* The review sits in the design system's dialog; the room's own type and rows inside it. */
+.gym-proposal-dialog {
+  color: var(--gym-ink);
+  font-size: 14.5px;
+}
+.gym-proposal-dialog .gym-proposal-head {
+  margin: 0 0 12px;
+}
+/* Content above the diff, never in the band: the band's height is constant. */
+.gym-proposal-caveat {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 12px;
+  background: var(--gym-sunken);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--gym-ink);
+}
+/* The writer's prose, attributed and apart from the counted rows. */
+.gym-proposal-wrote {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--color-brand);
+  background: var(--color-brand-soft);
+  border-radius: 0 12px 12px 0;
+}
+.gym-proposal-wrote-kicker {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: var(--color-brand);
+}
+.gym-proposal-wrote-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--gym-ink);
+}
+.gym-proposal-refusal {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--alarm-ink);
+}
+/* A run of unchanged lines, folded to a count in its own place and unfolded there. */
+.gym-diff-row.is-kept-run {
+  padding: 0 13px;
+  border-color: transparent;
+  background: none;
+}
+.gym-diff-unfold,
+.gym-diff-unfolded {
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-faint);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+}
+.gym-diff-unfold {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--gym-line-strong);
+  text-underline-offset: 3px;
+}
+.gym-diff-unfold:hover {
+  color: var(--gym-ink-dim);
+}
+.gym-diff-unfolded {
+  display: inline-flex;
+  align-items: center;
+}
+/* Derived from the server's reply, held for this visit only. */
+.gym-coach-receipt {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gym-ink-dim);
+}
+
 /* The diff draws the whole run and not only the changed lines. */
 .gym-diff-caption {
   margin: 0 0 10px;
@@ -3734,32 +3807,16 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-dim);
 }
 
-.gym-proposal-decide {
-  margin-top: 20px;
-}
-.gym-proposal-verbs {
+/* The band holds one button. Apply is inert until the diff has been scrolled to its end; the way
+   to turn the proposal down is a plain text row beneath it, never the left half of a pair. */
+.gym-proposal-band {
+  flex: 1;
   display: flex;
-  gap: 9px;
-}
-.gym-proposal-dismiss {
-  flex: none;
-  height: 52px;
-  padding: 0 18px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 15px;
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.gym-proposal-dismiss:hover {
-  background: var(--gym-raised);
-  color: var(--gym-ink);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 .gym-proposal-apply {
-  flex: 1;
   height: 52px;
   border: none;
   border-radius: 15px;
@@ -3773,14 +3830,27 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-proposal-apply:hover {
   background: var(--color-brand-hover);
 }
-/* Both inert while a tap is in the air: the two verbs settle the same proposal. */
 .gym-proposal-apply.is-inert {
   background: var(--gym-raised);
   color: var(--gym-ink-faint);
+  cursor: default;
 }
-.gym-proposal-dismiss.is-inert {
-  border-color: var(--gym-line);
-  color: var(--gym-ink-faint);
+.gym-proposal-turn-down {
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-proposal-turn-down:hover {
+  color: var(--gym-ink);
+}
+.gym-proposal-confirm {
+  flex: 1;
+  margin-top: 0;
 }
 .gym-proposal-atomic {
   margin: 9px 0 0;
@@ -4031,3 +4101,172 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
+
+/* ── Bodyweight — the reading at the head of the log, the chip in the reach band, the chart ── */
+.gym-bodyweight-reading {
+  display: inline-block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gym-ink-dim);
+  text-decoration: none;
+}
+.gym-bodyweight-reading:hover {
+  color: var(--gym-ink);
+}
+/* Pinned above the tab bar, at every scroll position; the log's only primary action. */
+.gym-reach {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 78px;
+  z-index: 5;
+  width: min(560px, 100vw);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.gym-reach-chip {
+  pointer-events: auto;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 99px;
+  background: var(--gym-raised);
+  color: var(--gym-ink);
+  box-shadow: var(--shadow-lg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-reach-chip:hover {
+  border-color: var(--color-brand);
+}
+.gym-reach-spacer {
+  height: 56px;
+}
+.gym-sheet.gym-weigh {
+  padding-bottom: 34px;
+}
+.gym-weigh-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.gym-weigh-input {
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 14px;
+  background: var(--gym-sunken);
+  color: var(--gym-ink);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gym-weigh-input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+.gym-weigh-unit {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--gym-ink-dim);
+}
+.gym-weigh-hint {
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: var(--gym-ink-faint);
+}
+.gym-weigh-date {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 9px 2px;
+  border-top: 1px solid var(--gym-line);
+  border-bottom: 1px solid var(--gym-line);
+}
+.gym-weigh-date-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gym-ink-dim);
+}
+.gym-weigh-date-input {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--gym-line-strong);
+  border-radius: 10px;
+  background: var(--gym-surface);
+  color: var(--gym-ink);
+  font: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+}
+.gym-root[data-theme="light"] .gym-weigh-date-input {
+  color-scheme: light;
+}
+.gym-weigh-date-fixed {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--gym-ink);
+}
+.gym-weigh-refusal {
+  margin: 10px 2px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--alarm-ink);
+}
+.gym-weigh-save {
+  width: 100%;
+  height: 52px;
+  margin-top: 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--color-brand);
+  color: var(--gym-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gym-weigh-save.is-inert {
+  background: var(--gym-raised);
+  color: var(--gym-ink-faint);
+  cursor: default;
+}
+.gym-weigh-delete {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--alarm-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gym-bodyweight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 18px;
+}
+.gym-bodyweight-chart {
+  padding: 16px 14px 14px;
+  border: 1px solid var(--gym-line);
+  border-radius: 18px;
+  background: var(--gym-surface);
+}

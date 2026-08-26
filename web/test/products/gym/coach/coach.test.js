@@ -22,10 +22,11 @@ test('the room is Coach, and the terms name the reach AND the limit, in that ord
 
 test('every tool Coach can be handed has a phrase a lifter can read, and no tool it cannot', () => {
   assert.deepEqual(Object.keys(TOOL_PHRASE).sort(), [
-    'get_session', 'get_stats', 'last_time', 'list_exercises', 'list_notes', 'list_routines',
-    'list_sessions', 'propose_routine_change', 'propose_routine_removal',
+    'get_session', 'get_stats', 'last_time', 'list_bodyweight', 'list_exercises', 'list_notes',
+    'list_routines', 'list_sessions', 'propose_routine_change', 'propose_routine_removal',
   ]);
   assert.equal(TOOL_PHRASE.list_notes, 'read your notes');
+  assert.equal(TOOL_PHRASE.list_bodyweight, 'read your bodyweight');
   for (const banned of ['log_set', 'start_session', 'finish_session', 'discard_session', 'create_routine', 'propose_routine_create']) {
     assert.equal(banned in TOOL_PHRASE, false, banned);
   }

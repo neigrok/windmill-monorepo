@@ -6,15 +6,13 @@ import WindmillPlatform
 struct RoutinesScreen: View {
     @ObservedObject var store: TrainingStore
     let isSignedIn: Bool
-    let setAside: Set<String>
+    // Proposals whose review was closed without a decision this visit: the card reads `still waiting`.
+    let undecided: Set<String>
     let onOpen: (String) -> Void
     let onNew: () -> Void
     let onStartLogging: () -> Void
     let onMovement: (String) -> Void
     let onProposal: (String) -> Void
-    let onLater: (String) -> Void
-    // nil wherever a Coach door is not offered, so the chip is absent rather than dead.
-    let onAsk: (() -> Void)?
     let onSettings: () -> Void
     let onSignIn: () -> Void
     // nil once something already reaches this log.
@@ -123,12 +121,10 @@ struct RoutinesScreen: View {
     // The newest pending proposal, and only while its routine is on screen to be named.
     @ViewBuilder
     private var waiting: some View {
-        if let head = store.proposals.first(where: { $0.isPending && !setAside.contains($0.id) }),
+        if let head = store.proposals.first(where: \.isPending),
            let routine = store.routines.first(where: { $0.id == head.routineId }) {
-            ProposalCard(head: head, routineName: routine.name,
-                         onReview: { onProposal(head.id) },
-                         onLater: { onLater(head.id) },
-                         onAsk: onAsk)
+            ProposalCard(head: head, routineName: routine.name, undecided: undecided.contains(head.id),
+                         onReview: { onProposal(head.id) })
         }
     }
 

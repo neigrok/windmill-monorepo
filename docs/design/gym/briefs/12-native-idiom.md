@@ -31,12 +31,14 @@ Sheets keep their detents.
 
 **Android.** A real `Scaffold` with a real top app bar and a real navigation bar. Material's list
 item, card, switch, segmented button, chip, text field, snackbar and dialog. Material Symbols on
-every affordance. Modal bottom sheets keep the drag handle they currently pass `null` to. The room
-opts in to predictive back and draws edge to edge.
+every affordance. Modal bottom sheets keep the drag handle: the review sheet and the weigh-in sheet
+show it, and the four older sheets that still pass `null` join them. The room opts in to predictive
+back and draws edge to edge.
 
-**Web.** The shared design system, which the gym room does not reach for at all inside `.gym-root`
-— three gym files import it and none is a room screen — while hand-rolling a twin for the button,
-the input, the card, the dialog, the toast, the tabs, the tag and the icon. Those twins go.
+**Web.** The shared design system, which the gym room reaches for in two room screens — the review
+dialog is the design system's `Dialog`, and the bodyweight chart is its `DotChart` under its `Tabs`
+— while every other control inside `.gym-root` is still a hand-rolled twin: the button, the input,
+the card, the toast, the tabs elsewhere, the tag and the icon. Those twins go.
 
 Where the design system genuinely lacks something the wave needs — a chat bubble, a diff card, a
 note row, a weight chart — it is **authored in the design system**, not in the gym folder. Roadmap's

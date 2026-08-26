@@ -98,11 +98,15 @@ enum LogWeeks {
     }
 }
 
+// The reading sits at the head of the tab and opens the chart; the writing is the one chip pinned in the reach band.
 struct LogScreen: View {
     @ObservedObject var store: TrainingStore
     let onOpen: (SessionSummary) -> Void
+    let onBodyweight: () -> Void
+    let say: (String) -> Void
 
     @Environment(\.gymSkin) private var skin
+    @State private var weighingIn = false
 
     var body: some View {
         let weeks = LogWeeks.fold(store.recent, deviceOnly: store.deviceOnly,
@@ -126,8 +130,21 @@ struct LogScreen: View {
             .padding(.top, WindmillSpace.x10)
             .padding(.bottom, WindmillSpace.x8)
         }
+        .safeAreaInset(edge: .bottom) { weighInChip }
+        .sheet(isPresented: $weighingIn) {
+            WeighInSheet(existing: nil, fixedDate: nil, drawsKgOnly: store.preferences.units == .lb,
+                         onSave: { kg, day in
+                             weighingIn = false
+                             Task { await weighIn(kg, on: day) }
+                         },
+                         onDelete: nil)
+                .presentationBackground(skin.surface)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
+    // The last weigh-in and its age; nothing at all before the first, never a dash or a zero.
     private func head(_ weeks: Int) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x1) {
             Text("The log")
@@ -138,8 +155,46 @@ struct LogScreen: View {
                     .font(GymType.numeral(13))
                     .foregroundStyle(skin.inkFaint)
             }
+            if let reading = Bodyweight.reading(store.bodyweight, today: Bodyweight.dateLocal(Date())) {
+                Button(action: onBodyweight) {
+                    HStack(spacing: WindmillSpace.x1) {
+                        Text(reading)
+                            .font(GymType.numeral(13))
+                            .foregroundStyle(skin.inkDim)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(skin.inkFaint)
+                    }
+                    .frame(minHeight: GymTap.minimum - 18)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Bodyweight \(reading)")
+                .accessibilityHint("Opens the bodyweight chart")
+            }
         }
         .padding(.bottom, WindmillSpace.x2)
+    }
+
+    // The only door to entering a weigh-in, at every scroll position.
+    private var weighInChip: some View {
+        HStack {
+            Spacer(minLength: 0)
+            Button { weighingIn = true } label: {
+                Text(Bodyweight.chip)
+                    .font(WindmillFont.body(15, .bold))
+                    .foregroundStyle(skin.onAccent)
+                    .padding(.horizontal, WindmillSpace.x5)
+                    .frame(minHeight: GymTap.minimum)
+                    .background(Capsule().fill(skin.accent))
+            }
+        }
+        .padding(.horizontal, WindmillSpace.x5)
+        .padding(.vertical, WindmillSpace.x2)
+    }
+
+    private func weighIn(_ kg: Double, on dateLocal: String) async {
+        guard let why = await store.weighIn(kg, on: dateLocal) else { return }
+        say(why.line("the weigh-in is saved on this device"))
     }
 
     private var nothingYet: some View {

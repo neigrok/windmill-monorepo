@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { gymApi } from '../gymApi.js';
 import { CONNECT_HREF, NOTES_HREF, proposalHref, THREADS_HREF } from '../log.js';
 import { mintId } from '../mint.js';
-import { changeLabel, diffRows, reviewLabel } from '../proposals.js';
-import { DiffRow } from '../Proposals.jsx';
+import { collapseKept, diffRows, isPending, keptRunLabel, receiptLine, stateChip, STILL_WAITING, summaryLine } from '../proposals.js';
+import { DiffRow, ProposalReview, ReviewDoor } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import {
   ALLOWANCE_LINE, answerTurn, askFailure, CAP_REACHED_NOTE, COACH_PLACEHOLDER, COACH_TERMS,
@@ -119,7 +119,7 @@ function CoachBody({ log, turns, asking, note, closed, capped, draft, setDraft, 
               {turn.from === 'lifter' ? (
                 <p className="gym-coach-text">{turn.text}</p>
               ) : (
-                <Answer turn={turn} catalog={log.catalog} />
+                <Answer turn={turn} log={log} />
               )}
             </li>
           ))}
@@ -202,12 +202,12 @@ function CapReached({ onStartAgain }) {
 }
 
 // The receipt is the honesty mechanism and is always visible; the step list opens behind it.
-function Answer({ turn, catalog }) {
+function Answer({ turn, log }) {
   const steps = stepsLine(turn.steps);
   return (
     <>
       <p className="gym-coach-text">{turn.text}</p>
-      {turn.proposals?.map((id) => <CoachProposal key={id} id={id} catalog={catalog} />)}
+      {turn.proposals?.map((id) => <CoachProposal key={id} id={id} log={log} />)}
       {steps === null ? (
         <p className="gym-coach-read">{readLine(turn.read)}</p>
       ) : (
@@ -220,8 +220,12 @@ function Answer({ turn, catalog }) {
   );
 }
 
-function CoachProposal({ id, catalog }) {
+// The card: the summary it wrote, the counted rows with kept runs folded, one affordance, and after
+// a decision the receipt beneath it — derived from the server's reply, held only for this visit to the room.
+function CoachProposal({ id, log }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
+  const [reviewing, setReviewing] = useState(false);
+  const [receipt, setReceipt] = useState('');
 
   if (view.phase !== 'ready') {
     return (
@@ -230,22 +234,46 @@ function CoachProposal({ id, catalog }) {
   }
 
   const proposal = view.data;
+  const pending = isPending(proposal);
   return (
-    <article className="gym-coach-proposal">
-      <p className="gym-proposal-kicker">
-        <span className="gym-proposal-dot" aria-hidden="true" />
-        <span>{`Proposal · ${proposal.baseName}`}</span>
-        <span className="gym-proposal-when">{changeLabel(proposal.changeCount)}</span>
-      </p>
-      <ul className="gym-diff">
-        {diffRows(proposal).map((row, index) => (
-          <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
-            <DiffRow row={row} catalog={catalog} />
-          </li>
-        ))}
-      </ul>
-      <a className="gym-proposal-review" href={proposalHref(proposal.id)}>{reviewLabel(proposal)}</a>
-      <p className="gym-coach-proposal-note">{PROPOSAL_NOTE}</p>
-    </article>
+    <>
+      <article className="gym-coach-proposal">
+        <p className="gym-proposal-kicker">
+          <span className="gym-proposal-dot" aria-hidden="true" />
+          <span>{`Proposal · ${proposal.baseName}`}</span>
+          <span className="gym-proposal-when">{pending ? STILL_WAITING : stateChip(proposal)?.toLowerCase()}</span>
+        </p>
+        <p className="gym-proposal-line">{summaryLine(proposal, proposal.baseName)}</p>
+        <ul className="gym-diff">
+          {collapseKept(diffRows(proposal)).map((row, index) => (
+            row.kind === 'kept-run' ? (
+              <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}>
+                <span className="gym-diff-unfolded">{keptRunLabel(row.rows.length)}</span>
+              </li>
+            ) : (
+              <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
+                <DiffRow row={row} catalog={log.catalog} />
+              </li>
+            )
+          ))}
+        </ul>
+        {pending && <ReviewDoor head={proposal} onReview={() => setReviewing(true)} />}
+        {pending && <p className="gym-coach-proposal-note">{PROPOSAL_NOTE}</p>}
+      </article>
+      {receipt && <p className="gym-coach-receipt" role="status">{receipt}</p>}
+      {reviewing && (
+        <ProposalReview
+          id={id}
+          log={log}
+          onClose={() => setReviewing(false)}
+          onChanged={view.refresh}
+          onSettled={(settled) => {
+            setReviewing(false);
+            setReceipt(receiptLine(settled));
+            view.refresh();
+          }}
+        />
+      )}
+    </>
   );
 }

@@ -42,9 +42,14 @@ public struct ProposalSource: Equatable, Decodable, Sendable {
         self.thread = thread
     }
 
+    // A connection's name counts as the agent's name, for the byline and the kicker alike.
+    public var named: String? {
+        [agent, connection].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
     public var agentName: String {
-        guard let agent, !agent.isEmpty else { return door == "ask" ? "Coach" : "your connected agent" }
-        return agent
+        guard let named else { return door == "ask" ? "Coach" : "your connected agent" }
+        return named
     }
 }
 
@@ -83,11 +88,6 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
         return "\(changes) to \(routineName)."
     }
 
-    public var reviewLabel: String {
-        guard intent == .revise else { return "Review the removal" }
-        return "Review \(changes)"
-    }
-
     // A count: the ledger keeps one pending proposal per door, so two doors put two on one routine.
     public static func waitingLine(_ count: Int) -> String {
         count == 1 ? "1 proposal" : "\(count) proposals"
@@ -108,6 +108,13 @@ public struct ProposalHead: Equatable, Decodable, Sendable, Identifiable {
     }
 
     public var changes: String { Readout.changeCount(changeCount) }
+
+    // The model's prose is attributed by its door, never bare: Coach for the ask door, the agent or the connection
+    // by name over MCP, and `Your agent` when the MCP source carries neither.
+    public var kicker: String {
+        if source.door == "ask" { return "Coach wrote:" }
+        return "\(source.named ?? "Your agent") wrote:"
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, routineId, intent, state, summary, changeCount, source
@@ -225,11 +232,31 @@ public struct ProposalChange: Equatable, Decodable, Sendable {
     }
 }
 
-// A `kept` row is not a change and is not here; a renamed routine is, and the count under the button includes it.
+// The rows are the document as well as the diff: every entry in its position, a kept line among them, and a renamed
+// routine first. A change is a row that is not `kept`; the count under the button is the server's.
 public enum ProposalRow: Equatable, Sendable {
     case renamed(from: String, to: String)
     // `follows` is read only on an added row.
     case entry(ProposalChange, follows: String?)
+    case kept(ProposalChange)
+
+    public var isKept: Bool {
+        if case .kept = self { return true }
+        return false
+    }
+}
+
+// What the sheet draws: a changed row at full weight, a run of kept rows folded to a count IN PLACE, so expanding
+// never shows the document out of order.
+public enum ProposalBlock: Equatable, Sendable, Identifiable {
+    case row(Int, ProposalRow)
+    case unchanged(Int, [ProposalChange])
+
+    public var id: Int {
+        switch self {
+        case .row(let index, _), .unchanged(let index, _): return index
+        }
+    }
 }
 
 // `baseRevision` is the token apply is atomic against; this device never checks it.
@@ -257,13 +284,39 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     public var rows: [ProposalRow] {
         var drawn: [ProposalRow] = []
         if name != baseName { drawn.append(.renamed(from: baseName, to: name)) }
-        for change in changes where change.kind != .kept {
+        for change in changes {
+            guard change.kind != .kept else {
+                drawn.append(.kept(change))
+                continue
+            }
             let previous = change.position > 1
                 ? changes.first { $0.position == change.position - 1 }?.exerciseId
                 : nil
             drawn.append(.entry(change, follows: previous))
         }
         return drawn
+    }
+
+    public var blocks: [ProposalBlock] { Proposal.folded(rows) }
+
+    public static func folded(_ rows: [ProposalRow]) -> [ProposalBlock] {
+        var blocks: [ProposalBlock] = []
+        for (index, row) in rows.enumerated() {
+            guard case .kept(let change) = row else {
+                blocks.append(.row(index, row))
+                continue
+            }
+            if case .unchanged(let start, let run) = blocks.last {
+                blocks[blocks.count - 1] = .unchanged(start, run + [change])
+            } else {
+                blocks.append(.unchanged(index, [change]))
+            }
+        }
+        return blocks
+    }
+
+    public static func unchangedLabel(_ count: Int) -> String {
+        count == 1 ? "and 1 line unchanged" : "and \(count) lines unchanged"
     }
 
     // The server's count, never the rows this build drew: apply is atomic against the whole document.
@@ -274,8 +327,31 @@ public struct Proposal: Equatable, Decodable, Sendable, Identifiable {
     public static let turnDownConfirm = "Turn down"
     public static let turnDownKeep = "Keep it"
 
+    // Closing the sheet decides nothing; the card then says so.
+    public static let waiting = "waiting"
+    public static let stillWaiting = "still waiting"
+    public static let review = "Review"
+    public static let close = "Close"
+    public static let applyHint = "Read the changes to the end to apply them."
+
+    // The receipt is the server's reply, never the model's prose; it is not stored and it does not pretend to be.
+    // A revision names the routine as it now stands (`name`, which a rename moved); a removal names what went.
+    public static func receipt(applied: Proposal) -> String {
+        guard applied.intent == .revise else { return removalReceipt(of: applied.baseName) }
+        let name = applied.name.isEmpty ? applied.baseName : applied.name
+        return "Applied · \(name) · \(Readout.changeCount(applied.head.changeCount))"
+    }
+
+    // A removal's reply carries no routine: the log confirmed the routine is gone, and that is the receipt.
+    public static func removalReceipt(of baseName: String) -> String {
+        "Applied · \(baseName) · routine removed"
+    }
+
+    public static let turnedDownReceipt = "Turned down · nothing changed."
+
     public var applyLabel: String {
         guard intent == .revise else { return "Remove \(baseName)" }
+        if head.changeCount == 1 { return "Apply" }
         return "Apply all \(head.changeCount)"
     }
 

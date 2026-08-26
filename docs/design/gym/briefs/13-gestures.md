@@ -220,11 +220,11 @@ because it was assumed otherwise.
 
 Gestures are not free here, and the brief says so rather than letting a build discover it.
 
-**iOS has three `List`s and sixteen `ScrollView` sites across fourteen files.** `.swipeActions` requires a `List`. So the
+**iOS has three `List`s and eighteen `ScrollView` sites across fifteen files.** `.swipeActions` requires a `List`. So the
 Session, Routines and Threads screens convert before they can carry a swipe — and the session's
 grouping by movement means sections, not a flat list.
 
-**Android has one `LazyColumn` in the whole room** and every swipe in it is hand-built on raw pointer
+**Android has two `LazyColumn`s in the whole room** — the assembly sheet and the notes list — and every swipe in it is hand-built on raw pointer
 input with a hand-tuned threshold and a hand-drawn alpha ramp. The containers convert, and the
 bespoke swipes become the platform's — the assembly sheet is the cheapest win, since it is already
 lazy.

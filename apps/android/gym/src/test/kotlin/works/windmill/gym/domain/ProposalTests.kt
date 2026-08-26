@@ -57,7 +57,7 @@ class ProposalTests {
         assertEquals(4, waiting.changeCount)
         assertEquals("Claude", waiting.source.name)
         assertTrue("a head carries no diff", waiting.changes.isEmpty())
-        assertEquals("Review 4 changes", waiting.reviewLabel)
+        assertEquals("Review", waiting.reviewLabel)
         assertEquals("Heavier triples.", waiting.summaryLine("Push A"))
         assertNull("a head carries no base either", waiting.baseRevision)
         assertFalse("so it is never read as superseded", waiting.supersededBy(routine))
@@ -108,6 +108,36 @@ class ProposalTests {
         assertEquals("your connected agent", ProposalSource(door = "mcp").name)
         assertEquals("a door this build has never heard of is somebody's own agent",
             "your connected agent", ProposalSource(door = "carrier-pigeon").name)
+    }
+
+    @Test
+    fun testTheKickerAttributesTheProseByWhoWroteIt() {
+        assertEquals("Coach wrote:", ProposalSource(door = "ask").kicker)
+        assertEquals("Claude Desktop wrote:", ProposalSource(door = "mcp", agent = "Claude Desktop").kicker)
+        assertEquals("Claude Desktop wrote:", ProposalSource(door = "mcp", connection = "Claude Desktop").kicker)
+        assertEquals("Your agent wrote:", ProposalSource(door = "mcp").kicker)
+        assertEquals("Your agent wrote:", ProposalSource(door = "mcp", agent = " ").kicker)
+        assertEquals("Your agent wrote:", ProposalSource(door = "mcp", agent = "", connection = " ").kicker)
+        assertEquals("the agent's own name outranks the connection's",
+            "Claude Desktop wrote:", ProposalSource(door = "mcp", agent = "Claude Desktop", connection = "Claude Code").kicker)
+        assertEquals("the sheet reads it off the proposal", "Coach wrote:",
+            proposal(source = ProposalSource(door = "ask")).kicker)
+    }
+
+    @Test
+    fun testTheReceiptIsDerivedFromTheServersReplyAndNeverFromTheProse() {
+        val applied = """{"proposal":{"id":"prop_1","routineId":"rt_1","intent":"revise","state":"applied",
+            "summary":"the model said twelve things","changeCount":4,"createdAt":1000,"settledAt":2000,
+            "source":{"agent":"Claude"},"baseName":"Push A","name":"Push A"}}"""
+        fun decoded(wire: String) = WindmillJson.decodeFromString<ProposalDecision>(wire).proposal
+
+        assertEquals("Applied · Push A · 4 changes", decoded(applied).receipt)
+        assertEquals("Applied · Push Day · 1 change", decoded(applied
+            .replace(""""name":"Push A"""", """"name":"Push Day"""")
+            .replace(""""changeCount":4""", """"changeCount":1""")).receipt)
+        assertEquals("Applied · Push A · routine removed", decoded(applied.replace("revise", "remove")).receipt)
+        assertEquals("Turned down · nothing changed.", decoded(applied.replace("applied", "dismissed")).receipt)
+        assertNull(decoded(applied.replace("applied", "pending")).receipt)
     }
 
     @Test
@@ -208,13 +238,15 @@ class ProposalTests {
     fun testTheButtonAndTheAtomicLineAgreeAtEveryCount() {
         val four = proposal(changeCount = 4)
         assertEquals("Apply all 4", four.applyLabel)
-        assertEquals("Review 4 changes", four.reviewLabel)
+        assertEquals("Review", four.reviewLabel)
         assertEquals("All four or none. Nothing is applied until you tap.", four.atomicLine)
 
         val one = proposal(changeCount = 1)
-        assertEquals("Apply all 1", one.applyLabel)
-        assertEquals("Review 1 change", one.reviewLabel)
+        assertEquals("Apply", one.applyLabel)
+        assertEquals("Review", one.reviewLabel)
         assertEquals("Nothing is applied until you tap.", one.atomicLine)
+
+        assertEquals("Apply all 2", proposal(changeCount = 2).applyLabel)
 
         assertEquals("All 14 or none. Nothing is applied until you tap.",
             proposal(changeCount = 14).atomicLine)
@@ -225,7 +257,8 @@ class ProposalTests {
         val removal = proposal(intent = ProposalIntent.Remove, changeCount = 6, baseName = "Push B")
 
         assertEquals("a removal", removal.counted)
-        assertEquals("Review the removal", removal.reviewLabel)
+        assertEquals("Applied · Push B · routine removed", removal.copy(state = ProposalState.Applied).receipt)
+        assertEquals("Review", removal.reviewLabel)
         assertEquals("Remove Push B", removal.applyLabel)
         assertEquals("The routine goes and your logged sets stay. Nothing is removed until you tap.",
             removal.atomicLine)

@@ -29,6 +29,8 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.store.RefusalFacts
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
@@ -168,6 +170,20 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     override suspend fun reorderNotes(order: List<String>): List<Note> =
         api.send<NotesPage>("PUT", "/v1/gym/notes", NotesOrder(order)).notes
 
+    override suspend fun bodyweight(from: String?, to: String?): List<WeighIn> {
+        val bounds = listOfNotNull(from?.let { "from=${escaped(it)}" }, to?.let { "to=${escaped(it)}" })
+        val query = if (bounds.isEmpty()) "" else "?" + bounds.joinToString("&")
+        return api.get<BodyweightPage>("/v1/gym/bodyweight$query").entries
+    }
+
+    // The date rides raw in the path, as every id does: digits and hyphens need no escaping.
+    override suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn =
+        api.send<WeighInReply>("PUT", "/v1/gym/bodyweight/$dateLocal", write).entry
+
+    override suspend fun deleteBodyweight(dateLocal: String) {
+        api.send<Unit>("DELETE", "/v1/gym/bodyweight/$dateLocal")
+    }
+
     private fun escaped(value: String): String = buildString {
         for (byte in value.toByteArray(Charsets.UTF_8)) {
             val code = byte.toInt() and 0xFF
@@ -208,3 +224,9 @@ private data class NotesPage(val notes: List<Note> = emptyList())
 
 @Serializable
 private data class NoteReply(val note: Note)
+
+@Serializable
+private data class BodyweightPage(val entries: List<WeighIn> = emptyList())
+
+@Serializable
+private data class WeighInReply(val entry: WeighIn)

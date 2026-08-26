@@ -39,6 +39,11 @@ public protocol TrainingSyncing {
 
     func preferences() async throws -> GymPreferences
     func savePreferences(_ preferences: GymPreferences) async throws -> GymPreferences
+
+    func bodyweight() async throws -> [BodyweightEntry]
+    func bodyweight(on dateLocal: String) async throws -> BodyweightEntry?
+    func putBodyweight(on dateLocal: String, _ write: BodyweightWrite) async throws -> BodyweightEntry
+    func deleteBodyweight(on dateLocal: String) async throws
 }
 
 public struct GymApi: TrainingSyncing {
@@ -206,6 +211,28 @@ public struct GymApi: TrainingSyncing {
         try await api.send("PUT", "/v1/gym/preferences", body: preferences, as: GymPreferences.self)
     }
 
+    // The whole series, ascending by day; an account that has never weighed in answers an empty list.
+    public func bodyweight() async throws -> [BodyweightEntry] {
+        try await api.get("/v1/gym/bodyweight", as: BodyweightSeries.self).entries
+    }
+
+    // One day's row, or nil: the window is inclusive at both ends, so a day is its own window.
+    public func bodyweight(on dateLocal: String) async throws -> BodyweightEntry? {
+        try await api.get("/v1/gym/bodyweight?from=\(dateLocal)&to=\(dateLocal)", as: BodyweightSeries.self)
+            .entries.first { $0.dateLocal == dateLocal }
+    }
+
+    // Idempotent by the local calendar day: the reply is the row the log holds, which is the newer of the two
+    // by `recordedAt` — a replayed stale write can never overwrite a newer correction.
+    public func putBodyweight(on dateLocal: String, _ write: BodyweightWrite) async throws -> BodyweightEntry {
+        try await api.send("PUT", "/v1/gym/bodyweight/\(dateLocal)", body: write, as: StoredBodyweight.self).entry
+    }
+
+    // 204 whether or not the day still held a row.
+    public func deleteBodyweight(on dateLocal: String) async throws {
+        try await api.send("DELETE", "/v1/gym/bodyweight/\(dateLocal)")
+    }
+
     // The server keeps the conversation, so this sends the question and its thread id and never a
     // turns array: a fresh id opens a conversation, a known one continues it.
     public func ask(_ question: String, in threadId: String) async throws -> AskAnswer {
@@ -273,4 +300,6 @@ public struct GymApi: TrainingSyncing {
     private struct Routines: Decodable { let routines: [Routine] }
     private struct Ledger: Decodable { let proposals: [ProposalHead] }
     private struct Settled: Decodable { let proposal: Proposal }
+    private struct BodyweightSeries: Decodable { let entries: [BodyweightEntry] }
+    private struct StoredBodyweight: Decodable { let entry: BodyweightEntry }
 }

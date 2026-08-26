@@ -18,9 +18,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -98,56 +105,122 @@ object LogFold {
     }
 }
 
+// The reading sits in the head with the title; the one input, the weigh-in chip, is PINNED under the
+// scroll in the reach band — the head scrolls away exactly when a hand reaches for it.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogScreen(store: TrainingStore, onOpenSession: (SessionSummary) -> Unit) {
+fun LogScreen(
+    store: TrainingStore,
+    onOpenSession: (SessionSummary) -> Unit,
+    onOpenBodyweight: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val onThisDevice = store.shelved.map { it.id }.toSet()
     val weeks = LogFold.weeks(store.recent, onThisDevice, complete = store.older == Older.End, nowMs = nowMs)
     val load: () -> Unit = { scope.launch { store.loadOlder() } }
+    var weighingIn by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var refused by remember { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x8),
-    ) {
-        Text("The log", style = WindmillFont.display(32), color = GymSkin.ink)
-        headLine(weeks, store.older)?.let {
-            Text(
-                it,
-                style = GymType.numeral(13),
-                color = GymSkin.inkFaint,
-                modifier = Modifier.padding(top = WindmillSpace.x1),
+    fun close() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion {
+            weighingIn = false
+            refused = null
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = WindmillSpace.x5)
+                .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x4),
+        ) {
+            Text("The log", style = WindmillFont.display(32), color = GymSkin.ink)
+            headLine(weeks, store.older)?.let {
+                Text(
+                    it,
+                    style = GymType.numeral(13),
+                    color = GymSkin.inkFaint,
+                    modifier = Modifier.padding(top = WindmillSpace.x1),
+                )
+            }
+            BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
+
+            // Three silences: the log said so · the read failed · the log has not answered yet.
+            if (weeks.isEmpty()) {
+                when (store.older) {
+                    Older.End -> Empty()
+                    Older.Failed -> LogFoot(Older.Failed, first = null, onLoad = load)
+                    else -> Unit
+                }
+                return@Column
+            }
+
+            weeks.forEach { week ->
+                WeekDivider(week)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+                    modifier = Modifier.padding(bottom = WindmillSpace.x2),
+                ) {
+                    week.rows.forEach { row -> SessionRow(row, onOpen = { onOpenSession(row.summary) }) }
+                }
+            }
+
+            LogFoot(
+                older = store.older,
+                first = weeks.lastOrNull()?.rows?.lastOrNull()?.summary,
+                onLoad = load,
             )
         }
-
-        // Three silences: the log said so · the read failed · the log has not answered yet.
-        if (weeks.isEmpty()) {
-            when (store.older) {
-                Older.End -> Empty()
-                Older.Failed -> LogFoot(Older.Failed, first = null, onLoad = load)
-                else -> Unit
-            }
-            return@Column
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = WindmillSpace.x5)
+                .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
+        ) {
+            WeighInChip(onOpen = { weighingIn = true })
         }
+    }
 
-        weeks.forEach { week ->
-            WeekDivider(week)
-            Column(
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                modifier = Modifier.padding(bottom = WindmillSpace.x2),
-            ) {
-                week.rows.forEach { row -> SessionRow(row, onOpen = { onOpenSession(row.summary) }) }
-            }
+    if (weighingIn) {
+        ModalBottomSheet(
+            onDismissRequest = { close() },
+            sheetState = sheetState,
+            containerColor = GymSkin.surface,
+        ) {
+            WeighInSheet(
+                initial = null,
+                fixedDate = null,
+                nowMs = nowMs,
+                units = store.preferences.units,
+                saving = saving,
+                refused = refused,
+                onSave = { dateLocal, weightKg ->
+                    scope.launch {
+                        if (saving) return@launch
+                        saving = true
+                        try {
+                            refused = null
+                            val failed = store.weighIn(dateLocal, weightKg)
+                            if (failed != null) {
+                                refused = failed.line("that weigh-in stayed on this device")
+                                return@launch
+                            }
+                            close()
+                        } finally {
+                            saving = false
+                        }
+                    }
+                },
+                onDelete = null,
+            )
         }
-
-        LogFoot(
-            older = store.older,
-            first = weeks.lastOrNull()?.rows?.lastOrNull()?.summary,
-            onLoad = load,
-        )
     }
 }
 

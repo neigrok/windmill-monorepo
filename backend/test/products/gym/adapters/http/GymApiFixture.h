@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/gym/adapters/http/BodyweightApi.h"
 #include "products/gym/adapters/http/CatalogApi.h"
 #include "products/gym/adapters/http/NotesApi.h"
 #include "products/gym/adapters/http/PreferencesApi.h"
@@ -19,7 +20,7 @@
 #include <string>
 #include <utility>
 
-// The fixture every gym HTTP test file shares: all six adapters over one fake store.
+// The fixture every gym HTTP test file shares: all seven adapters over one fake store.
 namespace wm::gym::apitest {
 
 using namespace wm::fake;
@@ -46,12 +47,15 @@ struct Harness {
   std::shared_ptr<ThreadService> threadService =
       std::make_shared<ThreadService>(repo.threads, clock);
   std::shared_ptr<NotesService> notesService = std::make_shared<NotesService>(repo.notes, clock);
+  std::shared_ptr<BodyweightService> bodyweightService =
+      std::make_shared<BodyweightService>(repo.bodyweight);
   TrainingApi training{trainingService, auth, "https://windmill.works"};
   CatalogApi catalog{catalogService, trainingService, auth};
   ProgramApi program{programService, auth};
   PreferencesApi preferences{preferencesService, auth};
   ThreadsApi threads{threadService, auth};
   NotesApi notes{notesService, auth};
+  BodyweightApi bodyweight{bodyweightService, auth, clock};
 
   Harness() {
     repo.db.seed(benchPress());

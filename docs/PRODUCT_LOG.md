@@ -270,8 +270,9 @@ decisions behind it.
   evidence.
 - **Cardio, distance, duration, bodyweight-only movements — cut.** Strictly weight × reps; a plank
   logs 0 kg and contributes nothing.
-- **Bodyweight — building.** An input and a graph, in the log, because a weigh-in is something that
-  happened. **Measurements and progress photos stay cut.**
+- **Bodyweight — built.** A reading at the head of the log, one chip in the reach band, a dot chart
+  that refuses to interpret, and a read-only `list_bodyweight` for any agent — because a weigh-in is
+  something that happened. **Measurements and progress photos stay cut.**
 - **Muscle-group volume — cut.** If it returns, tags live on the catalog, weighted
   primary/secondary, windowed — never read from live templates.
 - **Streaks — cut.** The PR line is the celebration that earns its place.

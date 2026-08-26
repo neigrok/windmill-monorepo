@@ -199,6 +199,32 @@ ToolResult listNotes(NotesService& notes, const UserId& caller) {
   return ToolResult::json(out);
 }
 
+// Day ascending, the wire's shape minus the device instant an agent has no use for. No receipt:
+// a weigh-in is not a log row. A bound that is not a calendar day is refused before the store is
+// asked, in the sentence the schema's description already gives.
+ToolResult listBodyweight(BodyweightService& bodyweight, const UserId& caller,
+                          const Json::Value& args) {
+  BodyweightRange range;
+  for (const char* bound : {"from", "to"}) {
+    const Json::Value& value = args[bound];
+    if (value.isNull()) continue;
+    if (!value.isString() || !wellFormedLocalDate(value.asString()))
+      return ToolResult::failure("\"" + std::string(bound) +
+                                 "\" must be a calendar day written YYYY-MM-DD.");
+    (bound == std::string("from") ? range.from : range.to) = value.asString();
+  }
+  Json::Value rows(Json::arrayValue);
+  for (const Bodyweight& entry : bodyweight.entries(caller, range)) {
+    Json::Value row(Json::objectValue);
+    row["dateLocal"] = entry.dateLocal;
+    row["weightKg"] = entry.weightKg;
+    rows.append(row);
+  }
+  Json::Value out(Json::objectValue);
+  out["entries"] = rows;
+  return ToolResult::json(out);
+}
+
 // --- The writes ------------------------------------------------------------------------------
 
 ToolResult startSession(TrainingService& training, const UserId& caller, const Json::Value& args) {
@@ -438,9 +464,9 @@ ToolResult revokeShare(TrainingService& training, const UserId& caller, const Js
 }  // namespace
 
 GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-                   NotesService& notes, std::string appBaseUrl)
+                   NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl)
     : training_(training), catalog_(catalog), program_(program), notes_(notes),
-      appBaseUrl_(std::move(appBaseUrl)) {}
+      bodyweight_(bodyweight), appBaseUrl_(std::move(appBaseUrl)) {}
 
 std::vector<ToolRetirement> GymTools::retiredTools() const {
   return {
@@ -516,6 +542,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
   if (name == "get_stats")       return getStats(training_, caller, arguments, served);
   if (name == "list_notes")      return listNotes(notes_, caller);
+  if (name == "list_bodyweight") return listBodyweight(bodyweight_, caller, arguments);
 
   if (name == "start_session")   return startSession(training_, caller, arguments);
   if (name == "log_set")         return logSet(training_, caller, arguments);

@@ -505,3 +505,149 @@ TEST(gym_the_routines_list_carries_the_proposal_waiting_on_a_day_of_the_program)
                        R"("intent":"revise","routineId":"rt_11111111","source":{"door":"mcp"},)"
                        R"("state":"pending","summary":"Heavier triples."})"));
 }
+
+// The superseded refusal: one code, three true sentences, and the store says which. A newer
+// proposal from the same door replaced it (and still did after the routine moved); the routine
+// moved under it; or it was superseded before the reason was recorded.
+TEST(gym_the_superseded_refusal_says_why_on_apply_and_on_dismiss) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}, "prop_11111111"));
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(87.5, 3)}, "prop_33333333"));
+  h.repo.db.proposalRows.back().head.state = ProposalState::superseded;   // a legacy row, no reason
+  h.repo.db.proposalRows.back().head.settledAtMs = 1'700'000'000'000ull;
+  const auto apply = [&](const std::string& id) {
+    return send(h.program, &ProgramApi::applyProposal,
+                postRequest("/v1/gym/proposals/" + id + "/apply", Json::Value(Json::objectValue),
+                            "s-live"),
+                id);
+  };
+  const auto dismiss = [&](const std::string& id) {
+    return send(h.program, &ProgramApi::dismissProposal,
+                postRequest("/v1/gym/proposals/" + id + "/dismiss", Json::Value(Json::objectValue),
+                            "s-live"),
+                id);
+  };
+  const auto refused = [&](const drogon::HttpResponsePtr& response) {
+    CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+    CHECK_EQ(bodyOf(response)["code"].asString(), std::string("proposal-superseded"));
+    return bodyOf(response)["error"].asString();
+  };
+
+  CHECK_EQ(refused(apply("prop_33333333")),
+           std::string("this proposal was superseded before it was applied"));
+  CHECK_EQ(refused(dismiss("prop_33333333")),
+           std::string("this proposal was superseded before it was turned down"));
+
+  // The same door and connection mints again: the first is replaced, and says so.
+  h.programService->propose(caller, ProposalWrite{ProposalId{"prop_22222222"}, rtId("rt_11111111"),
+                                                  std::nullopt, "Heavier still.", {benchAt(90.0, 3)},
+                                                  ProposalSource{ProposalDoor::mcp, "", ""}});
+  CHECK_EQ(refused(apply("prop_11111111")),
+           std::string("a newer proposal replaced this one, so it was not applied"));
+  CHECK_EQ(refused(dismiss("prop_11111111")),
+           std::string("a newer proposal replaced this one, so it was not turned down"));
+
+  // The replacement lands and the routine moves: the replaced one STILL says replaced, the legacy
+  // row now says the routine moved, because the revision no longer matches.
+  CHECK_EQ(apply("prop_22222222")->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(refused(apply("prop_11111111")),
+           std::string("a newer proposal replaced this one, so it was not applied"));
+  CHECK_EQ(refused(dismiss("prop_11111111")),
+           std::string("a newer proposal replaced this one, so it was not turned down"));
+  CHECK_EQ(refused(apply("prop_33333333")),
+           std::string("that routine changed after this proposal was written, so it was not applied"));
+  CHECK_EQ(refused(dismiss("prop_33333333")),
+           std::string("that routine changed after this proposal was written, so it was not turned down"));
+
+  // A pending proposal the lifter's own rewrite outran: the routine moved.
+  h.repo.db.proposalRows.push_back(proposedFor(caller, {benchAt(95.0, 3)}, "prop_44444444", 2));
+  Json::Value rewritten = routineBody("rt_11111111", "Push A");
+  rewritten["entries"][0]["targetWeightKg"] = 85.0;
+  send(h.program, &ProgramApi::replaceRoutine,
+       putRequest("/v1/gym/routines/rt_11111111", rewritten, "s-live"), "rt_11111111");
+  CHECK_EQ(refused(apply("prop_44444444")),
+           std::string("that routine changed after this proposal was written, so it was not applied"));
+  CHECK_EQ(refused(dismiss("prop_44444444")),
+           std::string("that routine changed after this proposal was written, so it was not turned down"));
+}
+
+// `changeCount` is the unit the review's button, the card and the receipt all count: a ROW of the
+// document that is not `kept`, plus one for a renamed routine — never a field, so a row that moves
+// three targets is one change, and the kept rows the sheet collapses to "and N lines unchanged"
+// count for nothing. The head and the whole document carry the same number.
+TEST(gym_change_count_is_rows_that_are_not_kept_plus_a_rename_never_fields) {
+  Harness h;
+  const UserId caller = h.signIn("s-live");
+  h.repo.db.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5,
+                          false});
+  const std::vector<RoutineEntry> base{
+      RoutineEntry{1, ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
+      RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8, 100.0, 240},
+      RoutineEntry{3, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 120}};
+  h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, base});
+  // One row moving three fields, one kept, one removed, one added, and a rename.
+  const std::vector<RoutineEntry> proposed{
+      RoutineEntry{1, ExerciseId{"bench-press"}, 5, 3, 90.0, 240},
+      RoutineEntry{2, ExerciseId{"back-squat"}, 3, 8, 100.0, 240},
+      RoutineEntry{3, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 120}};
+  const ProposalMintOutcome minted = h.programService->propose(
+      caller, ProposalWrite{ProposalId{"prop_11111111"}, rtId("rt_11111111"), "Push A — heavy",
+                            "Heavier triples.", proposed,
+                            ProposalSource{ProposalDoor::mcp, "", ""}});
+  REQUIRE(minted.error == ProposalMintError::none);
+
+  const Json::Value whole = bodyOf(send(h.program, &ProgramApi::getProposal,
+                                        getRequest("/v1/gym/proposals/prop_11111111", "s-live"),
+                                        "prop_11111111"));
+  int notKept = 0;
+  int kept = 0;
+  for (const Json::Value& row : whole["changes"]) (row["kind"].asString() == "kept" ? kept : notKept)++;
+  CHECK_EQ(kept, 2);
+  CHECK_EQ(notKept, 1);
+  CHECK_EQ(whole["changes"].size(), 3u);   // the rows are the document: kept rows travel
+  CHECK_EQ(whole["changes"][0]["kind"].asString(), std::string("retargeted"));
+  CHECK_EQ(whole["changeCount"].asInt(), notKept + 1);   // + the rename, one change with no row
+  CHECK_EQ(whole["changeCount"].asInt(), 2);
+  const Json::Value heads = bodyOf(send(h.program, &ProgramApi::listProposals,
+                                        getRequest("/v1/gym/proposals", "s-live")));
+  CHECK_EQ(heads["proposals"][0]["changeCount"].asInt(), whole["changeCount"].asInt());
+
+  // The same document with no rename: the three moved fields are still ONE change.
+  h.repo.db.proposalRows.clear();
+  const ProposalMintOutcome fieldsOnly = h.programService->propose(
+      caller, ProposalWrite{ProposalId{"prop_22222222"}, rtId("rt_11111111"), std::nullopt,
+                            "Heavier triples.", proposed,
+                            ProposalSource{ProposalDoor::mcp, "", ""}});
+  REQUIRE(fieldsOnly.error == ProposalMintError::none);
+  const Json::Value one = bodyOf(send(h.program, &ProgramApi::getProposal,
+                                      getRequest("/v1/gym/proposals/prop_22222222", "s-live"),
+                                      "prop_22222222"));
+  CHECK_EQ(one["changeCount"].asInt(), 1);
+  CHECK_EQ(one["changes"][0]["before"]["reps"].asInt(), 5);
+  CHECK_EQ(one["changes"][0]["after"]["reps"].asInt(), 3);
+  CHECK_EQ(one["changes"][0]["after"]["weightKg"].asDouble(), 90.0);
+  CHECK_EQ(one["changes"][0]["after"]["restSeconds"].asInt(), 240);
+
+  // Added and removed rows are one change each; the kept row still none.
+  h.repo.db.proposalRows.clear();
+  const std::vector<RoutineEntry> reshaped{
+      RoutineEntry{1, ExerciseId{"bench-press"}, 5, 5, 82.5, 180},
+      RoutineEntry{2, ExerciseId{"chin-up"}, 3, std::nullopt, std::nullopt, 120},
+      RoutineEntry{3, ExerciseId{"back-squat"}, 3, 8, 100.0, 240},
+      RoutineEntry{4, ExerciseId{"bench-press"}, 3, 10, 60.0, 90}};
+  const ProposalMintOutcome addedOne = h.programService->propose(
+      caller, ProposalWrite{ProposalId{"prop_33333333"}, rtId("rt_11111111"), std::nullopt,
+                            "A second bench line.", reshaped,
+                            ProposalSource{ProposalDoor::mcp, "", ""}});
+  REQUIRE(addedOne.error == ProposalMintError::none);
+  const Json::Value reordered = bodyOf(send(h.program, &ProgramApi::getProposal,
+                                            getRequest("/v1/gym/proposals/prop_33333333", "s-live"),
+                                            "prop_33333333"));
+  int rowsMoved = 0;
+  for (const Json::Value& row : reordered["changes"])
+    if (row["kind"].asString() != "kept") ++rowsMoved;
+  CHECK_EQ(rowsMoved, 1);   // the added line; the three kept lines in a new order are a reorder
+  CHECK_EQ(reordered["changeCount"].asInt(), rowsMoved + 1);   // + one for the reorder of the run
+}

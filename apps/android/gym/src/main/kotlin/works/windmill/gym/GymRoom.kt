@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +51,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskExchange
+import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
@@ -62,6 +66,7 @@ import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
@@ -69,6 +74,7 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
 import works.windmill.gym.ui.AskSignedOutStance
+import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
@@ -78,8 +84,8 @@ import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
 import works.windmill.gym.ui.NotesScreen
-import works.windmill.gym.ui.ProposalScreen
 import works.windmill.gym.ui.RecordScreen
+import works.windmill.gym.ui.ReviewSheet
 import works.windmill.gym.ui.RoutineBuilder
 import works.windmill.gym.ui.RoutineScreen
 import works.windmill.gym.ui.RoutinesScreen
@@ -122,21 +128,32 @@ internal fun restoredTab(saved: Any?): Tab =
 internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::restoredTab)
 
 // A session travels as the ROW the list already holds, which carries facts no other read gives back;
-// so does a note, which the list just read and the editor edits whole. A movement, routine, proposal
-// and thread travel as IDS, because what they say changes under them; a proposal carries the routine
-// the diff was written against. `Coach` carries a DRAFT, never the thread — the thread is hoisted
-// into the room below so it outlives this stack.
+// so does a note, which the list just read and the editor edits whole. A movement, routine and
+// thread travel as IDS, because what they say changes under them. `Coach` carries a DRAFT, never the
+// thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
+// not a destination at all: it is a sheet over whichever of these is standing.
 private sealed interface Away {
     data class Session(val summary: SessionSummary) : Away
     data class Movement(val exerciseId: String) : Away
     data class Program(val routineId: String) : Away
-    data class Proposal(val proposalId: String, val routineId: String) : Away
     data class Coach(val seed: String = "") : Away
     data object Threads : Away
     data class Thread(val threadId: String) : Away
     data object Settings : Away
     data object Notes : Away
     data class NoteEditor(val note: Note?, val seedTitle: String) : Away
+    data object Bodyweight : Away
+}
+
+// The review sheet and the door it opened from, which is where its receipt lands: the live
+// conversation, a stored thread, or the routines home. The proposal carries the routine the diff was
+// written against.
+private data class Reviewing(val proposalId: String, val routineId: String, val door: String) {
+    companion object {
+        const val coach = "coach"
+        const val routines = "routines"
+        fun thread(id: String) = "thread:$id"
+    }
 }
 
 // The three tabs, the live session, the finish screen, and the screens a tab can push. The shell
@@ -147,6 +164,7 @@ private sealed interface Away {
 // A room's state dies when you leave it, store included: the queue is on disk after every tap and
 // leaving flushes, or a set is refused once the session closes.
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GymRoom(account: Account) {
     val context = LocalContext.current
@@ -159,6 +177,7 @@ fun GymRoom(account: Account) {
             DeviceCopy(File(context.filesDir, DeviceCopy.fileName)),
             LocalLog(File(context.filesDir, LocalLog.fileName), deviceOwner),
             LocalPreferences(File(context.filesDir, LocalPreferences.fileName)),
+            LocalBodyweight(File(context.filesDir, LocalBodyweight.fileName), deviceOwner),
             scope,
         )
     }
@@ -174,9 +193,16 @@ fun GymRoom(account: Account) {
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
-    // The one proposal home has been asked not to draw for now. Empty rather than null so it saves
-    // as the String it is. Not a decision and never sent.
-    var putOff by rememberSaveable { mutableStateOf("") }
+    // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
+    // mid-review lands back on the card, which decides nothing either.
+    var reviewing by remember { mutableStateOf<Reviewing?>(null) }
+    val reviewSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
+    // string it is, ids joined by a space.
+    var lookedAt by rememberSaveable { mutableStateOf("") }
+    // Receipts by the door they landed in. NOT saved and not stored anywhere: a receipt is derived
+    // from the server's apply reply and vanishes with the screen, and nothing pretends otherwise.
+    var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
     // the turns but not the receipt, the tools or a question that failed with no reply.
     var conversation by rememberSaveable(stateSaver = askThreadSaver) {
@@ -203,15 +229,42 @@ fun GymRoom(account: Account) {
     // so it must not hand the composer back mid-cap.
     var capped by rememberSaveable { mutableStateOf(false) }
 
+    // A thread's receipts live exactly as long as that thread is on screen.
+    fun pruneReceipts() {
+        val standing = (away.lastOrNull() as? Away.Thread)?.let { Reviewing.thread(it.threadId) }
+        receipts = receipts.filterKeys { it == Reviewing.coach || it == standing }
+    }
+
     // The note is about the screen you are ON, so every move between destinations clears it.
     fun look(at: Away) {
         note = null
         away = away + at
+        pruneReceipts()
     }
 
     fun back() {
         note = null
         away = away.dropLast(1)
+        pruneReceipts()
+    }
+
+    // Opened over whatever is standing; the door is where the receipt will land.
+    fun review(proposalId: String, routineId: String, door: String) {
+        reviewing = Reviewing(proposalId, routineId, door)
+    }
+
+    fun closeReview() {
+        scope.launch { reviewSheet.hide() }.invokeOnCompletion { reviewing = null }
+    }
+
+    // The server's reply, never the model's prose. From the routines home there is no thread to land
+    // in, so the room's own line carries it until the next move.
+    fun landReceipt(door: String, line: String) {
+        if (door == Reviewing.routines) {
+            note = line
+            return
+        }
+        receipts = receipts + (door to receipts[door].orEmpty() + line)
     }
 
     // A pushed screen pops to the tab it came from; a tab that is not home falls back to Routines.
@@ -249,6 +302,7 @@ fun GymRoom(account: Account) {
             // conversation.
             conversationId = ""
             seat = standing ?: ""
+            receipts = emptyMap()
         }
         if (standing != null) seatRead = true
         // The thread is saved and the request is not, so a recreation mid-answer restores a question
@@ -403,6 +457,7 @@ fun GymRoom(account: Account) {
         conversationId = ""
         capped = false
         away = emptyList()
+        receipts = emptyMap()
         tab = Tab.Coach
     }
 
@@ -459,6 +514,39 @@ fun GymRoom(account: Account) {
     // The origin comes from the account's own client.
     val origin = account.api.baseUrl.toString()
     val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
+    val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
+
+    // Over the conversation or the routines home, never a push. Closing it — swipe, scrim, back —
+    // decides nothing: the proposal stays pending and its card reads `still waiting`.
+    reviewing?.let { open ->
+        ModalBottomSheet(
+            onDismissRequest = {
+                reviewing = null
+                if (open.proposalId !in lookedAtIds) lookedAt = (lookedAtIds + open.proposalId).joinToString(" ")
+            },
+            sheetState = reviewSheet,
+            containerColor = GymSkin.surface,
+        ) {
+            ReviewSheet(
+                proposalId = open.proposalId,
+                routineId = open.routineId,
+                store = store,
+                // Offered only where Coach itself is: an account, and a deployment that has one.
+                onAsk = if (account.isSignedIn && !askAbsent) {
+                    { about ->
+                        closeReview()
+                        look(Away.Coach("What would this change to $about do?"))
+                    }
+                } else {
+                    null
+                },
+                onDecided = { settled ->
+                    settled.receipt?.let { landReceipt(open.door, it) }
+                    closeReview()
+                },
+            )
+        }
+    }
 
     Column(
         Modifier
@@ -473,7 +561,6 @@ fun GymRoom(account: Account) {
             is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
             is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
             is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
-            is Away.Proposal -> "Proposal"
             is Away.Coach -> Ask.title
             Away.Threads -> Threads.title
             // The noun, not the thread's title: a title is the lifter's first message verbatim.
@@ -481,6 +568,7 @@ fun GymRoom(account: Account) {
             Away.Settings -> "Gym"
             Away.Notes -> Notes.title
             is Away.NoteEditor -> Notes.title
+            Away.Bodyweight -> Bodyweight.title
             null -> tab.title
         }
 
@@ -585,27 +673,23 @@ fun GymRoom(account: Account) {
                     // The page stays underneath, so saving lands back on the routine it came from.
                     onBuild = { building = it },
                     onOpenMovement = { look(Away.Movement(it)) },
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    lookedAt = lookedAtIds,
+                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
                     // Drawn only where the log carries a thread id: the history row survives the
                     // conversation's deletion.
                     onOpenThread = { look(Away.Thread(it)) },
                 )
-                standing is Away.Proposal -> ProposalScreen(
-                    proposalId = standing.proposalId,
-                    routineId = standing.routineId,
+                standing is Away.Bodyweight -> BodyweightScreen(
                     store = store,
                     backLabel = beneath,
                     onBack = { back() },
-                    // Offered only where Coach itself is: an account, and a deployment that has one.
-                    onAsk = if (account.isSignedIn && !askAbsent) {
-                        { about -> look(Away.Coach("What would this change to $about do?")) }
-                    } else {
-                        null
-                    },
+                    say = { note = it },
                 )
                 standing is Away.Coach -> AskScreen(
                     store = store,
                     thread = conversation,
+                    receipts = receipts[Reviewing.coach].orEmpty(),
+                    lookedAt = lookedAtIds,
                     asking = asking,
                     capped = capped,
                     onAsk = { asked -> ask(conversation, asked) },
@@ -621,7 +705,7 @@ fun GymRoom(account: Account) {
                     origin = origin,
                     backLabel = beneath,
                     onBack = { back() },
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    onReview = { review(it.id, it.routineId, Reviewing.coach) },
                 )
                 standing is Away.Threads -> ThreadsScreen(
                     store = store,
@@ -633,15 +717,21 @@ fun GymRoom(account: Account) {
                 standing is Away.Thread -> ThreadScreen(
                     threadId = standing.threadId,
                     store = store,
+                    receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
+                    lookedAt = lookedAtIds,
                     backLabel = beneath,
                     onBack = { back() },
                     // The list reads itself again: a deleted conversation is gone because the log says
                     // so, never because this room crossed a row out.
                     onDeleted = { back() },
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    onReview = { review(it.id, it.routineId, Reviewing.thread(standing.threadId)) },
                     say = { note = it },
                 )
-                tab == Tab.Log -> LogScreen(store, onOpenSession = { look(Away.Session(it)) })
+                tab == Tab.Log -> LogScreen(
+                    store,
+                    onOpenSession = { look(Away.Session(it)) },
+                    onOpenBodyweight = { look(Away.Bodyweight) },
+                )
                 // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                 // designed stance rather than a 401.
                 tab == Tab.Coach && !account.isSignedIn ->
@@ -650,6 +740,8 @@ fun GymRoom(account: Account) {
                 tab == Tab.Coach -> AskScreen(
                     store = store,
                     thread = conversation,
+                    receipts = receipts[Reviewing.coach].orEmpty(),
+                    lookedAt = lookedAtIds,
                     asking = asking,
                     capped = capped,
                     onAsk = { asked -> ask(conversation, asked) },
@@ -663,20 +755,18 @@ fun GymRoom(account: Account) {
                     origin = origin,
                     backLabel = null,
                     onBack = null,
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
+                    onReview = { review(it.id, it.routineId, Reviewing.coach) },
                 )
-                // `Later` on the proposal card is not a decision and nothing is sent.
                 else -> RoutinesScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
                     origin = origin,
-                    putOff = putOff.ifEmpty { null },
+                    lookedAt = lookedAtIds,
                     // The only start home offers; a routine's own start lives on its detail page.
                     onJustStart = { open(null) },
                     onBuild = { building = it },
                     onOpenRoutine = { look(Away.Program(it)) },
-                    onReview = { look(Away.Proposal(it.id, it.routineId)) },
-                    onLater = { putOff = it.id },
+                    onReview = { review(it.id, it.routineId, Reviewing.routines) },
                     onOpenSettings = { look(Away.Settings) },
                     onSignIn = LocalShellActions.current.openYou,
                 )

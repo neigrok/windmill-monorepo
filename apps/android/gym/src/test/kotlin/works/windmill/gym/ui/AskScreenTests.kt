@@ -1,5 +1,8 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
@@ -25,12 +28,22 @@ import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.AskStep
+import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalChange
+import works.windmill.gym.domain.ProposalSource
+import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.domain.ProposalTargets
+import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
+import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
+import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
@@ -48,14 +61,15 @@ class AskScreenTests {
 
     private val read = ReadTally(sets = 214, sessions = 34, weeks = 12)
 
-    private fun store(scope: CoroutineScope): TrainingStore {
+    private fun store(scope: CoroutineScope, server: FakeTraining = FakeTraining()): TrainingStore {
         val store = TrainingStore(
             queue = SetQueue(File(tmp.root, "queue.json")),
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
             scope = scope,
-            sync = { FakeTraining() },
+            sync = { server },
         )
         runBlocking {
             store.connect(Account(
@@ -76,6 +90,8 @@ class AskScreenTests {
             AskScreen(
                 store = store,
                 thread = thread,
+                receipts = emptyList(),
+                lookedAt = emptySet(),
                 asking = false,
                 capped = capped,
                 onAsk = { doors += "ask:$it" },
@@ -165,6 +181,47 @@ class AskScreenTests {
 
         compose.onNodeWithText(Threads.open).performClick()
         compose.runOnIdle { assertEquals(listOf("askNew"), doors) }
+        scope.cancel()
+    }
+
+    // The card was minted off one read of the log; the decision is the log's reply, and the two must
+    // not stand on one screen saying different things about one act.
+    @Test
+    fun afterApplyTheCardReadsAppliedBesideTheReceiptAndNeverWaiting() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeTraining()
+        val store = store(scope, server)
+        val routine = runBlocking {
+            (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value
+        }
+        server.propose(Proposal(
+            id = "prop_1", routineId = routine.id, state = ProposalState.Pending, summary = "Heavier triples.",
+            changeCount = 1, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
+            baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
+            changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
+                before = ProposalTargets(sets = 3, reps = 5), after = ProposalTargets(sets = 5, reps = 3))),
+        ))
+        val answered = AskExchange(
+            question = "heavier?",
+            answer = AskAnswer(answer = "Triples.", read = read, proposals = listOf("prop_1")),
+        )
+        var receipts by mutableStateOf<List<String>>(emptyList())
+        compose.setContent {
+            AskScreen(
+                store = store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
+                asking = false, capped = false, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
+                origin = "https://windmill.works", backLabel = null, onBack = null,
+                onThreads = {}, onNotes = {}, onReview = {},
+            )
+        }
+        compose.onNodeWithText("Push Day · 1 change · waiting").assertIsDisplayed()
+
+        val settled = runBlocking { store.applyProposal("prop_1") as ProposalOutcome.Decided }
+        compose.runOnIdle { receipts = listOf(settled.proposal.receipt!!) }
+
+        compose.onNodeWithText("Applied · Push Day · 1 change").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("applied 1 change from Coach", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("waiting", substring = true).assertDoesNotExist()
         scope.cancel()
     }
 

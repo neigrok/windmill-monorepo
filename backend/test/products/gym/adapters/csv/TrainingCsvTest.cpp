@@ -73,3 +73,13 @@ TEST(gym_csv_exports_a_note_in_precedence_order_and_disarms_what_a_lifter_typed)
                             "2026-08-16T05:00:00Z\r\n"
                             "1,'=SUM(A1),,2026-08-16T05:00:01Z\r\n"));
 }
+
+TEST(gym_csv_exports_a_weigh_in_per_day_with_the_stores_own_renderings) {
+  const std::string csv = toCsv(std::vector<ExportedBodyweight>{
+      {"2026-08-01", "83.00", "2026-08-01T06:02:00Z"}, {"2026-08-25", "82.40", "2026-08-25T06:14:00Z"}});
+
+  CHECK_EQ(csv, std::string("date,weight_kg,recorded_at\r\n"
+                            "2026-08-01,83.00,2026-08-01T06:02:00Z\r\n"
+                            "2026-08-25,82.40,2026-08-25T06:14:00Z\r\n"));
+  CHECK_EQ(toCsv(std::vector<ExportedBodyweight>{}), std::string("date,weight_kg,recorded_at\r\n"));
+}

@@ -26,7 +26,7 @@ struct AskHarness {
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
   GymTools gymTools{*h.trainingService, *h.catalogService, *h.programService, *h.notesService,
-                    "https://windmill.works"};
+                    *h.bodyweightService, "https://windmill.works"};
   FakeAsk agent;
   std::shared_ptr<AskService> askService = std::make_shared<AskService>(
       *h.trainingService, *h.threadService, agent, gymTools, entitlements);

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Back } from '../Back.jsx';
 import { EXPORT_THREADS_HREF, gymApi } from '../gymApi.js';
 import { COACH_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
-import { changeLabel, stateChip } from '../proposals.js';
+import { changeLabel, isPending, receiptLine, stateChip, STILL_WAITING } from '../proposals.js';
+import { ProposalReview } from '../Proposals.jsx';
 import { useGymRead } from '../useGymRead.js';
 import { COACH_TITLE } from './coach.js';
 import {
@@ -76,8 +77,12 @@ function ThreadRow({ thread }) {
   );
 }
 
-export function ThreadDetail({ id }) {
+export function ThreadDetail({ id, log }) {
   const view = useGymRead(() => gymApi.thread(id), [id]);
+  const [reviewing, setReviewing] = useState(null);
+  // Receipts by proposal id, held for this visit only: the thread's stored shape carries no
+  // settled-at, so on reopening they are gone and nothing pretends otherwise.
+  const [receipts, setReceipts] = useState(() => new Map());
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the conversation…</p>;
   if (view.phase === 'absent') {
@@ -128,16 +133,36 @@ export function ThreadDetail({ id }) {
           <ul className="gym-history-rows">
             {thread.proposals.map((head) => (
               <li key={head.id}>
-                <a className="gym-history-row" href={proposalHref(head.id)}>
+                <a
+                  className="gym-history-row"
+                  href={proposalHref(head.id)}
+                  onClick={(event) => { event.preventDefault(); setReviewing(head.id); }}
+                >
                   <span className="gym-history-line">
-                    {`${changeLabel(head.changeCount)} to ${head.routine} · ${stateChip(head)?.toLowerCase() ?? head.state}`}
+                    {`${changeLabel(head.changeCount)} to ${head.routine} · ${isPending(head) ? STILL_WAITING : stateChip(head)?.toLowerCase()}`}
                   </span>
                   <span className="gym-history-go" aria-hidden="true">›</span>
                 </a>
+                {receipts.get(head.id) && <p className="gym-coach-receipt" role="status">{receipts.get(head.id)}</p>}
               </li>
             ))}
           </ul>
         </section>
+      )}
+
+      {reviewing && (
+        <ProposalReview
+          key={reviewing}
+          id={reviewing}
+          log={log}
+          onClose={() => setReviewing(null)}
+          onChanged={view.refresh}
+          onSettled={(settled) => {
+            setReceipts((held) => new Map(held).set(reviewing, receiptLine(settled)));
+            setReviewing(null);
+            view.refresh();
+          }}
+        />
       )}
 
       <DeleteThread id={thread.id} />

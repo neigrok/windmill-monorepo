@@ -143,16 +143,6 @@ public struct AskExchange: Equatable, Sendable, Identifiable {
     }
 }
 
-public struct AskDiffRow: Equatable, Sendable {
-    public let name: String
-    public let change: String
-
-    public init(name: String, change: String) {
-        self.name = name
-        self.change = change
-    }
-}
-
 // The thread id is client-minted: a fresh one opens a thread, and the server refuses one another account holds.
 public struct AskConversation: Equatable, Sendable {
     public private(set) var threadId: String
@@ -200,6 +190,7 @@ public enum Ask {
         "list_routines": "read your program",
         "get_stats": "read your movement history",
         "list_notes": "read your notes",
+        "list_bodyweight": "read your bodyweight",
         "propose_routine_change": "wrote a proposal for one of your routines",
         "propose_routine_removal": "wrote a proposal to remove a routine",
     ]
@@ -258,29 +249,4 @@ public enum Ask {
         return asked
     }
 
-    public static func diffRows(of proposal: Proposal, in catalog: [Exercise]) -> [AskDiffRow] {
-        proposal.rows.map { row in
-            switch row {
-            case .renamed(let before, let after):
-                return AskDiffRow(name: "name", change: "\(before) → \(after)")
-            case .entry(let change, _):
-                let name = Readout.movement(change.exerciseId, in: catalog)
-                switch change.kind {
-                case .added:
-                    guard let after = change.after else { return AskDiffRow(name: name, change: "+ added") }
-                    return AskDiffRow(name: name, change: "+ added · "
-                        + Readout.target(sets: after.sets, reps: after.reps, weightKg: after.weightKg))
-                case .removed:
-                    return AskDiffRow(name: name, change: "− \(change.removedLine)")
-                case .retargeted:
-                    let moved = change.moves.map { "\($0.before) → \($0.after)" }
-                    guard !moved.isEmpty else { return AskDiffRow(name: name, change: "retargeted") }
-                    return AskDiffRow(name: name, change: moved.joined(separator: " · "))
-                case .kept:
-                    // Unreachable: `Proposal.rows` drops every kept entry.
-                    return AskDiffRow(name: name, change: "unchanged")
-                }
-            }
-        }
-    }
 }

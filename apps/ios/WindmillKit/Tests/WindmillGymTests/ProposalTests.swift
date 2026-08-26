@@ -147,7 +147,8 @@ final class ProposalDiffTests: XCTestCase {
                        "removed from the routine · never logged")
     }
 
-    func testTheRowsAreTheChangesAndTheKeptLinesAreNotAmongThem() {
+    // The rows are the document as well as the diff: a kept line keeps its place among the changes.
+    func testTheRowsAreTheWholeDocumentWithTheKeptLinesInTheirPlace() {
         let drawn = proposal([
             change(.retargeted, "bench-press", position: 1,
                    before: ProposalChange.Targets(sets: 5, reps: 5),
@@ -157,19 +158,22 @@ final class ProposalDiffTests: XCTestCase {
                    after: ProposalChange.Targets(sets: 3, reps: 8)),
             change(.added, "incline-db-press", position: 3,
                    after: ProposalChange.Targets(sets: 3, reps: 10)),
-        ], name: "Push A — heavy").rows
+        ], name: "Push A — heavy")
 
-        guard case .renamed(let from, let to) = drawn.first else {
+        guard case .renamed(let from, let to) = drawn.rows.first else {
             return XCTFail("a renamed routine is a row of the diff")
         }
         XCTAssertEqual([from, to], ["Push A", "Push A — heavy"])
-        XCTAssertEqual(drawn.count, 3)
-        guard case .entry(let retargeted, _) = drawn[1], case .entry(let added, let follows) = drawn[2] else {
-            return XCTFail("the two moved entries are drawn, the kept one is not")
+        XCTAssertEqual(drawn.rows.count, 4)
+        guard case .entry(let retargeted, _) = drawn.rows[1], case .kept(let kept) = drawn.rows[2],
+              case .entry(let added, let follows) = drawn.rows[3] else {
+            return XCTFail("every entry is drawn, in its position")
         }
         XCTAssertEqual(retargeted.exerciseId, "bench-press")
+        XCTAssertEqual(kept.exerciseId, "overhead-press")
         XCTAssertEqual(added.exerciseId, "incline-db-press")
         XCTAssertEqual(follows, "overhead-press")
+        XCTAssertEqual(drawn.rows.filter { !$0.isKept }.count, 3, "a change is a row that is not kept")
     }
 
     func testTheButtonPromisesTheServersCountAndNotTheRowsItDrew() {
@@ -182,6 +186,11 @@ final class ProposalDiffTests: XCTestCase {
         XCTAssertEqual(short.rows.count, 1)
         XCTAssertEqual(short.applyLabel, "Apply all 5")
         XCTAssertEqual(short.footnote, "All five or none. Nothing is applied until you tap.")
+    }
+
+    func testOneChangeIsAppliedWithoutACountAndTwoWithOne() {
+        XCTAssertEqual(proposal([], changeCount: 1).applyLabel, "Apply")
+        XCTAssertEqual(proposal([], changeCount: 2).applyLabel, "Apply all 2")
     }
 
     func testTheFootnoteSaysWhatTheTapDoesAtEveryCount() {
@@ -252,7 +261,6 @@ final class ProposalDiffTests: XCTestCase {
 
         XCTAssertEqual(quiet.line(about: "Push A"), "4 changes to Push A.")
         XCTAssertEqual(spoken.line(about: "Push A"), "Heavier triples.")
-        XCTAssertEqual(quiet.reviewLabel, "Review 4 changes")
     }
 
     func testTheRoutinesMarkerCountsWhatIsWaitingRatherThanAssumingOne() {
@@ -357,7 +365,7 @@ final class ProposalStoreTests: XCTestCase {
 
         let outcome = await store.apply(server.ledger[0])
 
-        guard case .settled(let settled) = outcome else { return XCTFail("apply landed: \(outcome)") }
+        guard case .settled(let settled, _) = outcome else { return XCTFail("apply landed: \(outcome)") }
         XCTAssertEqual(settled.state, .applied)
         XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 87.5)
         XCTAssertEqual(store.routines.first?.entries.first?.targetReps, 3)
@@ -374,7 +382,7 @@ final class ProposalStoreTests: XCTestCase {
 
         let outcome = await store.apply(stale)
 
-        guard case .settled(let settled) = outcome else { return XCTFail("set aside: \(outcome)") }
+        guard case .settled(let settled, _) = outcome else { return XCTFail("set aside: \(outcome)") }
         XCTAssertEqual(settled.state, .superseded)
         XCTAssertEqual(server.written["rt_1"]?.entries.first?.targetWeightKg, 90)
         XCTAssertEqual(store.routines.first?.entries.first?.targetWeightKg, 90)
@@ -402,7 +410,7 @@ final class ProposalStoreTests: XCTestCase {
 
         let outcome = await store.dismiss("prop_1")
 
-        guard case .settled(let settled) = outcome else { return XCTFail("dismissed: \(outcome)") }
+        guard case .settled(let settled, _) = outcome else { return XCTFail("dismissed: \(outcome)") }
         XCTAssertEqual(settled.state, .dismissed)
         XCTAssertEqual(store.routines.first, pushA())
         XCTAssertEqual(store.history(of: "rt_1").map(\.state), [.dismissed])
@@ -417,7 +425,7 @@ final class ProposalStoreTests: XCTestCase {
 
         let outcome = await store.apply(waiting)
 
-        guard case .settled(let settled) = outcome else { return XCTFail("already settled: \(outcome)") }
+        guard case .settled(let settled, _) = outcome else { return XCTFail("already settled: \(outcome)") }
         XCTAssertEqual(settled.state, .dismissed)
         XCTAssertEqual(store.routines.first, pushA())
     }
@@ -467,6 +475,43 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertEqual(server.ledger.map(\.state), [.pending])
     }
 
+    // B13: the server's 409 sentence reaches the lifter as sent. Each of the three B10 sentences rides with the
+    // fresh row; a decision that landed carries no sentence at all.
+    func testTheServersOwnSentenceRidesWithASetAsideProposal() async {
+        let sentences = [
+            "that routine changed after this proposal was written, so it was not applied",
+            "a newer proposal replaced this one, so it was not applied",
+            "this proposal was superseded before it was applied",
+        ]
+        for sentence in sentences {
+            let server = seeded()
+            server.ledger = [heavier(state: .superseded, settledAtMs: 9_000)]
+            let store = store(server)
+            await store.connect(to: account(signedIn: true))
+            server.refuseApply = refusal(409, code: "proposal-superseded", message: sentence)
+
+            let outcome = await store.apply(server.ledger[0])
+
+            guard case .settled(let fresh, let said) = outcome else { return XCTFail("set aside: \(outcome)") }
+            XCTAssertEqual(fresh.state, .superseded)
+            XCTAssertEqual(said, sentence, "the server's bytes, not local words")
+        }
+
+        let server = seeded()
+        server.ledger = [heavier(state: .superseded, settledAtMs: 9_000)]
+        let store = store(server)
+        await store.connect(to: account(signedIn: true))
+        let turnedDown = await store.dismiss("prop_1")
+        guard case .settled(_, let said) = turnedDown else { return XCTFail("set aside: \(turnedDown)") }
+        XCTAssertEqual(said, "that proposal was already settled", "the dismiss variant rides the same way")
+
+        let landed = seeded()
+        let applying = self.store(landed)
+        await applying.connect(to: account(signedIn: true))
+        guard case .settled(_, let quiet) = await applying.apply(landed.ledger[0]) else { return XCTFail("landed") }
+        XCTAssertNil(quiet, "a decision that landed has nothing to say beyond the receipt")
+    }
+
     func testApplyingSetsEveryOtherCardOnThatRoutineAsideHereToo() async {
         let server = seeded()
         server.ledger.insert(heavier("prop_2", createdAtMs: 6_000, door: "ask", agent: "Ask"), at: 0)
@@ -476,7 +521,7 @@ final class ProposalStoreTests: XCTestCase {
 
         let outcome = await store.apply(server.ledger[0])
 
-        guard case .settled(let settled) = outcome else { return XCTFail("apply landed: \(outcome)") }
+        guard case .settled(let settled, _) = outcome else { return XCTFail("apply landed: \(outcome)") }
         XCTAssertEqual(settled.id, "prop_2")
         XCTAssertEqual(store.pending(of: "rt_1"), [])
         XCTAssertEqual(Dictionary(uniqueKeysWithValues: store.history(of: "rt_1").map { ($0.id, $0.state) }),

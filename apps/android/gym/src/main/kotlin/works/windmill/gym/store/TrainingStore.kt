@@ -15,6 +15,7 @@ import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AutoClose
 import works.windmill.gym.domain.Blocker
+import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.GymPreferences
@@ -48,6 +49,8 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.net.GymHttp
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
@@ -67,6 +70,7 @@ class TrainingStore(
     private val deviceCopy: DeviceCopy,
     private val localLog: LocalLog,
     private val localPreferences: LocalPreferences,
+    private val localBodyweight: LocalBodyweight,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val mintSession: () -> String = Ids::session,
@@ -83,6 +87,14 @@ class TrainingStore(
         private set
     // Published from here so the settings screen and the logger read one document.
     var preferences: GymPreferences by mutableStateOf(GymPreferences())
+        private set
+    // The device's copy of the series for the seat in hand, ascending by date; the log's answer
+    // replaces it on connect except for what this phone still owes.
+    var bodyweight: List<WeighIn> by mutableStateOf(emptyList())
+        private set
+    // Every proposal this room settled, as the log's reply said it: a card minted in a conversation
+    // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
+    var settledProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
         private set
     // Every write to the program is also written to the device copy for the seat holding it, so a
     // connect that cannot read the log draws it back.
@@ -266,6 +278,9 @@ class TrainingStore(
         // An anonymous settings document that landed nowhere rides onto the account that signed in.
         localPreferences.adopt(owner)
         preferences = localPreferences.document
+        // Weigh-ins made with nobody signed in ride the same way, and every one of them is owed.
+        localBodyweight.adopt(owner, confirmed = account.verified)
+        bodyweight = localBodyweight.entries
         // The six ride with every seat and fill only ids nothing else here holds, so a name this
         // account chose is never overwritten by a constant.
         val known = deviceCopy.movements(owner).let { held ->
@@ -278,6 +293,7 @@ class TrainingStore(
         routines = deviceCopy.routines(owner).filter { localLog.routine(it.id) == null } + localLog.routines
         // The last-time cache dies with the seat; the picker's meta goes with it.
         lastTimes.clear()
+        settledProposals = emptyMap()
         lastSets = null
         // Neither read has been made for THIS seat.
         routinesFailed = false
@@ -364,6 +380,13 @@ class TrainingStore(
                 tried { log.preferences() }?.let {
                     localPreferences.readBack(it)
                     preferences = localPreferences.document
+                }
+            }
+            // The account's whole series; an owed write and a pending delete outrank it.
+            launch {
+                tried { log.bodyweight() }?.let {
+                    localBodyweight.readBack(it)
+                    bodyweight = localBodyweight.entries
                 }
             }
         }
@@ -892,6 +915,7 @@ class TrainingStore(
                 else held.copy(pendingProposal = held.pendingProposal?.takeIf { it.id != settled.id })
             }
         }
+        settledProposals = settledProposals + (settled.id to settled)
         return ProposalOutcome.Decided(settled)
     }
 
@@ -1092,6 +1116,49 @@ class TrainingStore(
 
     fun clearRefusals() {
         refusals = emptyList()
+    }
+
+    // The newest day that has happened: a row dated past this phone's today is not a reading (B2).
+    val latestWeighIn: WeighIn? get() = Bodyweight.latest(bodyweight, Bodyweight.today(now()))
+
+    // Held on the device FIRST, keyed by the local date, then sent exactly like a set: a log that
+    // went quiet leaves it owed to the claim, and only a refusal with a reason comes back as one.
+    // The row that stands is the newer of the two by `recordedAt`, on this phone and on the log.
+    suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
+        val recorded = localBodyweight.record(WeighIn(dateLocal, weightKg, recordedAt = now()))
+        bodyweight = localBodyweight.entries
+        val log = gym ?: return null
+        return try {
+            localBodyweight.landed(log.putBodyweight(recorded.dateLocal, WeighInWrite(recorded.weightKg, recorded.recordedAt)))
+            bodyweight = localBodyweight.entries
+            null
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (refusing: Exception) {
+            if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) {
+                claimOwed = true
+                deliver()
+                return null
+            }
+            localBodyweight.letGo(recorded.dateLocal)
+            bodyweight = localBodyweight.entries
+            WriteFailure(refusing)
+        }
+    }
+
+    // Gone from the device at once; the log's delete has no terminal refusal, so a miss is owed to
+    // the claim rather than said.
+    suspend fun deleteWeighIn(dateLocal: String) {
+        localBodyweight.delete(dateLocal)
+        bodyweight = localBodyweight.entries
+        val log = gym ?: return
+        val landed = tried { log.deleteBodyweight(dateLocal) }
+        if (landed != null) {
+            localBodyweight.deletionLanded(dateLocal)
+            return
+        }
+        claimOwed = true
+        deliver()
     }
 
     // Computed by the DOMAIN and read here, never re-derived. For a session only the shelf holds it
@@ -1443,6 +1510,7 @@ class TrainingStore(
                 // A landed claim answers with the STORED settings, so the room draws what the account
                 // now holds rather than what it sent.
                 preferences = localPreferences.document
+                bodyweight = localBodyweight.entries
                 drawFromQueue()
             }
         } finally {
@@ -1454,7 +1522,7 @@ class TrainingStore(
     // One argument list, so the cadence's send and the sign-in's walk cannot be handed different
     // collaborators.
     private fun replay(seat: TrainingSyncing) =
-        ClaimReplay(seat, localLog, queue, localPreferences,
+        ClaimReplay(seat, localLog, queue, localPreferences, localBodyweight,
                     mintExercise, mintRoutine, mintSession, mintSet)
 
     // The walk follows the claim exactly as connect's does, the queue going out before any read, and

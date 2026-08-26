@@ -183,9 +183,20 @@ void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&&
     cb(error(drogon::k404NotFound, "no such proposal"));
     return;
   }
-  if (outcome.error == ProposalSettleError::superseded) {
+  // One code, three true sentences: the store says which of the three it was.
+  if (outcome.error == ProposalSettleError::routineMoved) {
     cb(error(drogon::k409Conflict,
              "that routine changed after this proposal was written, so it was not applied",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::replaced) {
+    cb(error(drogon::k409Conflict, "a newer proposal replaced this one, so it was not applied",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::superseded) {
+    cb(error(drogon::k409Conflict, "this proposal was superseded before it was applied",
              "proposal-superseded"));
     return;
   }
@@ -212,10 +223,19 @@ void ProgramApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback
     cb(error(drogon::k404NotFound, "no such proposal"));
     return;
   }
-  if (outcome.error == ProposalSettleError::superseded) {
+  if (outcome.error == ProposalSettleError::routineMoved) {
     cb(error(drogon::k409Conflict,
-             "that routine changed after this proposal was written, so there is nothing left to "
-             "dismiss",
+             "that routine changed after this proposal was written, so it was not turned down",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::replaced) {
+    cb(error(drogon::k409Conflict, "a newer proposal replaced this one, so it was not turned down",
+             "proposal-superseded"));
+    return;
+  }
+  if (outcome.error == ProposalSettleError::superseded) {
+    cb(error(drogon::k409Conflict, "this proposal was superseded before it was turned down",
              "proposal-superseded"));
     return;
   }

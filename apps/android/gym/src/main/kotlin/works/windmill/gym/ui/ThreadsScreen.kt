@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AskTurn
+import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ThreadProposal
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.store.GymResult
@@ -178,6 +181,9 @@ private fun OutcomeChip(label: String, applied: Boolean) {
 fun ThreadScreen(
     threadId: String,
     store: TrainingStore,
+    // Ephemeral lines from the server's apply reply, alive only while this screen stands.
+    receipts: List<String>,
+    lookedAt: Set<String>,
     backLabel: String,
     onBack: () -> Unit,
     onDeleted: () -> Unit,
@@ -187,13 +193,24 @@ fun ThreadScreen(
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     var thread by remember(threadId) { mutableStateOf<AskThread?>(null) }
+    // The proposals' own rows, read after the thread: the card carries the model's prose, which the
+    // thread's line does not. A read that missed leaves the counted fallback standing.
+    var minted by remember(threadId) { mutableStateOf<Map<String, Proposal>>(emptyMap()) }
     var deleting by remember(threadId) { mutableStateOf(false) }
 
-    LaunchedEffect(threadId) {
+    // Read on the way in, and again when a receipt lands: the rows' states and the outcome are the
+    // server's, so a decision taken here is read back rather than crossed in by this screen.
+    LaunchedEffect(threadId, receipts) {
         when (val read = store.thread(threadId)) {
-            is GymResult.Ok -> thread = read.value
-            // A thread that could not be read and one with nothing in it are two different evenings.
-            is GymResult.Failed -> say(read.why.line("that conversation didn’t open"))
+            is GymResult.Ok -> {
+                thread = read.value
+                minted = read.value.proposals.mapNotNull { row ->
+                    (store.proposal(row.id) as? GymResult.Ok)?.value?.let { row.id to it }
+                }.toMap()
+            }
+            // A thread that could not be read and one with nothing in it are two different evenings;
+            // a re-read that missed leaves what is held.
+            is GymResult.Failed -> if (thread == null) say(read.why.line("that conversation didn’t open"))
         }
     }
 
@@ -219,8 +236,9 @@ fun ThreadScreen(
             Text(Threads.past, style = GymType.numeral(12), color = GymSkin.inkFaint)
             held.turns.forEach { turn -> Turn(turn) }
             held.proposals.forEach { proposal ->
-                Minted(proposal, nowMs) { onReview(proposal) }
+                Minted(proposal, minted[proposal.id], nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
             }
+            receipts.forEach { ReceiptLine(it) }
             Text(Threads.deleteRule, style = GymType.numeral(11).copy(lineHeight = 17.sp), color = GymSkin.inkFaint)
             Box(
                 contentAlignment = Alignment.Center,
@@ -284,25 +302,55 @@ private fun Turn(turn: AskTurn) {
     }
 }
 
+// The card, as the Coach room draws it: the summary, the counted line dated by when the proposal was
+// written, and one affordance, Review. Nothing on it decides anything.
 @Composable
-private fun Minted(proposal: ThreadProposal, nowMs: Long, onReview: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+private fun Minted(
+    proposal: ThreadProposal,
+    read: Proposal?,
+    nowMs: Long,
+    stillWaiting: Boolean,
+    onReview: () -> Unit,
+) {
+    val routineName = proposal.routine.ifBlank { read?.routineName ?: "this routine" }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .background(GymSkin.raised)
-            .clickable(onClick = onReview)
-            .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
+            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
+            .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
+            .padding(WindmillSpace.x4),
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))
+            Spacer(Modifier.size(WindmillSpace.x2))
+            Text(
+                "Proposal · $routineName",
+                style = GymType.numeral(11, FontWeight.Bold),
+                color = GymSkin.accent,
+                maxLines = 1,
+            )
+        }
         Text(
-            proposal.line(nowMs),
+            read?.summaryLine(routineName) ?: proposal.summaryLine,
+            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
+            color = GymSkin.ink,
+        )
+        Text(
+            proposal.line(nowMs, stillWaiting),
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
             color = GymSkin.inkDim,
-            modifier = Modifier.weight(1f),
         )
-        Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum)
+                .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
+                .clickable(onClick = onReview),
+        ) {
+            Text(Proposal.review, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
+        }
     }
 }
 

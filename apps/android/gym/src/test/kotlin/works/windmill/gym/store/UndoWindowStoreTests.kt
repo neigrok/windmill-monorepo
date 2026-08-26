@@ -45,6 +45,7 @@ class UndoWindowStoreTests {
         deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile),
         localPreferences = LocalPreferences(preferencesFile),
+        localBodyweight = LocalBodyweight(File(tmp.root, "gym-undo-bodyweight-${System.nanoTime()}.json")),
         scope = backgroundScope,
         now = { clockMs },
         mintSession = { "ses_1" },

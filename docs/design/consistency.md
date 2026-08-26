@@ -244,11 +244,11 @@ App: "No password. What you make on this device is claimed by your account when 
 Web: "…and some rooms only open once you have an account" (`SignInDialog.jsx` — true on the web,
 where the gym log and mirror need an account). Per-surface truth, or one sentence everywhere?
 
-**0t · one product has one home, and the web's IA is now the phones'** → **ruled 2026-08-24, built
-2026-08-25**; the Log head's bodyweight reading line is the one half still owed, because it waits on
-the bodyweight wire (BUILD.md Wave 7).
-Every surface draws Routines · The log · Coach (`GymApp.jsx:24`, `GymRoom.swift:37`,
-`GymRoom.kt:114`); the web has no Today, and the live-session mirror heads Routines home
+**0t · one product has one home, and the web's IA is now the phones'** → ruled 2026-08-24, built
+2026-08-25, the Log head's bodyweight reading with it on 2026-08-26 (`Log.jsx:5` `BodyweightReading`,
+`LogScreen.swift:158-161`, `LogScreen.kt:152`); nothing owed.
+Every surface draws Routines · The log · Coach (`GymApp.jsx:24`, `GymRoom.swift:39-40`,
+`GymRoom.kt:117`); the web has no Today, and the live-session mirror heads Routines home
 (`Mirror.jsx`) with its charter whole — it never offers a Finish, it says "Not training now." over
 "Workouts start on your phone." in words rather than as a greyed control, and it never says
 "resting" — pinned by `screens.test.js`. The web's hash grammar was ruled with it: `#/gym` IS the
@@ -572,7 +572,7 @@ wave rests on an untested assumption.
 
 **1l · the You seat has no slot in a native tab bar** → canon amendment, owed a build.
 `superapp-shell.md:22-23` and `:157` put the You seat "last in every app's own bar, past a
-hairline", and both phones do exactly that (`GymRoom.swift:258`, `GymRoom.kt:758`). At the iOS 17
+hairline", and both phones do exactly that (`GymRoom.swift:293`, `GymRoom.kt:848`). At the iOS 17
 floor a native `TabView` has no non-tab trailing slot and an M3 `NavigationBar` has none either, so
 the Coach wave moves both shell seats into the room's own **top** chrome — capsule leading, You
 trailing, on each stack root; on Android the avatar is the top app bar's single action slot. The
@@ -593,13 +593,13 @@ rule that Appearance is chosen once for the whole app and a room owns its palett
 choice. It is the line gym has been obeying while pinning dark. It becomes "its palette in both
 schemes · never the scheme itself."
 
-**1o · the proposal's kept rows are drawn on one surface and dropped on two** → one shape, owed a
-build. Web renders them (`proposals.js:191-192`, under a header that states why: "The change rows ARE
-the document as well as the diff"); iOS drops them (`ProposalScreen.swift:124-125`, `case .kept:
-EmptyView()`) and so does Android (`Proposal.kt:151`). The wire carries them deliberately, and the
-system prompt tells the model "a line you leave out is a line you are proposing to remove". The
-Coach wave rules one shape everywhere: changed rows at full weight, **kept rows as a collapsed
-count** — "and 7 lines unchanged" — tappable to expand.
+**1o · the proposal's kept rows are drawn on one surface and dropped on two** → built 2026-08-26,
+nothing owed. One shape on all three: changed rows at full weight, and every run of consecutive kept
+rows folded **in place** to *and N lines unchanged* (*and 1 line unchanged*), tappable to unfold where
+it stands so the document keeps its order — `proposals.js:150-156` (`keptRunLabel`, `collapseKept`),
+`Proposal.swift:300-319` (`blocks`, `unchangedLabel`), `Proposal.kt:161` and `:329` (`document`). The
+wire still carries every kept row, and the system prompt still tells the model "a line you leave out
+is a line you are proposing to remove".
 
 **1q · the server's Coach strings and the three client suites are one contract** → built
 2026-08-25, nothing owed; the machine tokens stay.
@@ -615,7 +615,7 @@ the JSON enum. The human share is "Share this workout" on every surface (`share/
 not on the room (`connect.js:5-9`, `ConnectedLog.swift:114`).
 
 **1s · `set.rpe` is drawn on the web and enterable on no surface** → give it a control or delete
-the render. `Log.jsx:281` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
+the render. `Log.jsx:298` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
 already accepts it, and the prompt forbids the model estimating one. The phones carry it as a
 decoded field that no view reads (`Training.swift:152`, `domain/Training.kt:107`). The Coach wave adds a
 set-note field to the fix sheet and rules the same must happen for RPE, or the render goes: a set
@@ -635,23 +635,21 @@ in the dark block only (`:26`) and the light dot draws no shadow (`:582-583`); t
 `Gym · Colour` collection still resolves `#7d8c4366` in Daylight. No board in the Coach wave uses it
 in either mode, so nothing depends on it today — which is exactly when to remove it.
 
-**1x · "Apply all N" has no defined unit, and three surfaces could count differently** → define it,
-then pin it. `applyLabel` generates the string, and nothing says whether a *change* is a moved **row**
-or a moved **field**. A proposal that retargets one movement's sets, weight and rest is one row and
-three fields — "Apply all 1" or "Apply all 3", and both are defensible readings of the same diff. The
-receipt inherits the ambiguity (*"Applied · Push A · 4 changes"*), and the sheet already mixes two
-nouns for one list: **four changes**, **seven lines unchanged**, eleven entries — a reader has to work
-out they share a denominator. Raised while drawing the web review dialog, where a diff had to be
-recomposed to make the label true. Three surfaces counting differently is precisely what this wave
-exists to stop, so the definition belongs in the domain beside `countedChanges`, not in each client.
-
-**The boards answer it, and the answer is the row.** All three surfaces now draw four changes as
-*added · removed · retargeted · renamed* — one card each — and the retargeted card legitimately
-carries two field moves (`sets 5 × 5 → 5 × 3`, `weight 82.5 → 90`) inside that one change. So a
-**change is a row of the document**, a **line** is an entry of the routine, and a renamed routine is
-one change with no entry at all. That reading makes "Apply all 4" and "and 7 lines unchanged" two true
-statements about the same eleven-entry document, and it is the one the build should pin. What remains
-owed is the pinning: the domain says it, the clients read it, and no surface counts for itself.
+**1x · "Apply all N" has no defined unit, and three surfaces could count differently** → pinned
+2026-08-26 in the domain and on the wire, nothing owed. A **change** is a row of the document that is
+not `kept`, plus one for a renamed routine, plus one for a reorder of the surviving lines; a **line**
+is an entry of the routine, so "Apply all 4" and "and 7 lines unchanged" are two true statements about
+one eleven-entry document. The count is the domain's `countedChanges` (`domain/Proposal.cpp:140-162`),
+travels as `changeCount` on every proposal head, and is pinned by `ProgramApiTest.cpp`
+`gym_change_count_is_rows_that_are_not_kept_plus_a_rename_never_fields`: a row moving three fields is
+one change, kept rows count nothing and still travel as rows, a rename adds one, and the head and the
+whole document carry the same number. No client counts for itself — the band's label reads
+`changeCount` (`proposals.js:66-70`, `Proposal.swift:352-355`, `Proposal.kt:235-239`) and so does the
+receipt, off the server's apply reply (`proposals.js:178-181`, `Proposal.swift:342-347`,
+`Proposal.kt:186-187`). The band's label is the rule on all three: **`Apply all N`** for a revision,
+**`Apply`** when N is 1, **`Remove <routine>`** for a removal. One consequence stands as built: a
+proposal that only reorders kept rows reads `Apply` over a document whose every row folds into *and N
+lines unchanged*; the order shows on unfolding.
 
 **1y · gym's screen titles are Nunito where the brand says Baloo 2 is the display face** → a
 designer call, one way or the other. `brand-foundations.md` gives Baloo 2 the display role — "page
@@ -681,21 +679,19 @@ that board.
 
 **2d · the proposal footnote on the boards no longer matches any shipped string** → owed a build.
 All three codebases ship two sentences — *"Nothing changes until you tap Apply on the diff. Your
-logged sets are never part of a proposal."* (`coach.js:76-77`, `Ask.swift:229`, `Ask.kt:79`), pinned by
-`coach.test.js:299` and `AskTests.swift:419-420`. The Coach wave boards keep only the second sentence.
+logged sets are never part of a proposal."* (`coach.js:77-78`, `Ask.swift:220`, `Ask.kt:79`), pinned by
+`coach.test.js:300` and `AskTests.swift:420-421`. The Coach wave boards keep only the second sentence.
 **The cut is deliberate and it stands:** the inert-until-you-act promise belongs at the moment of
 consequence, and the review sheet already carries it — *"All four or none. Nothing is applied until
 you tap."* On a card whose only affordance is **Review**, saying it twice is the stacking the text
 budget forbids. So the strings and their tests change; the boards are ahead of the build, not wrong.
 
-**2e · the placeholder rows' `empty · tap to write` meta is drawn on no surface** → ruled: **draw
-it, on all three.** Every build draws the two seeded titles alone, in faint ink behind a dashed edge
-(`Notes.jsx:85-87`, `NotesScreen.swift:126-136`, `NotesScreen.kt:194-209`); the string exists
-nowhere in the code. The argument against it is good — a faint title beside a live chevron is
-structure explaining itself, and dropping it saves four words. It loses to one thing: the seeded
-titles are **placeholders that look like content**. *"How I want to be talked to"* in faint ink could
-be read as a note somebody already wrote. Four words to say a row is empty is cheap next to a lifter
-thinking the product wrote them a note. Recorded here so it stops being an accident.
+**2e · the placeholder rows' `empty · tap to write` meta is drawn on no surface** → ruled 2026-08-26:
+**not drawn; the ruling to draw it is withdrawn.** Every build draws the two seeded titles alone, in
+faint ink behind a dashed edge (`Notes.jsx:85-87`, `NotesScreen.swift:126-136`,
+`NotesScreen.kt:195-210`), and that is the shape: the placeholder rows carry placeholder text and no
+meta. A faint title behind a dashed edge beside a live chevron is structure explaining itself, and
+the boards follow the build.
 
 **2f · the `W8 · Note editor` boards draw the byte counter at 14% of the bound; canon and every
 surface draw it from the last fifth** → fix the board or label it. `10-notes.md` rules the counter
@@ -749,7 +745,7 @@ the routine row meta is `routineMetaLabel` (`log.js:313-318`), which reads `{n} 
 carried into the wave-two `R2` board and has been corrected there to `built 16 Aug · 5 movements`,
 `18 Aug · applied 2 changes from Ask` and `16 Aug · created by you · 5 movements`; the Coach boards
 belong to another wave and were not touched. That `R2` line now carries a second drift: the product
-says `from Coach` (`proposals.js:37`, `Proposal.swift:105`, `Proposal.kt:204`), and no board may say
+says `from Coach` (`proposals.js:47`, `Proposal.swift:51`, `Proposal.kt:57`), and no board may say
 Ask.
 
 **2l · iOS and Android draw the clear-refusal at two different moments of the same keystroke** →

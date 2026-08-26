@@ -7,9 +7,9 @@ import {
   ROUTINES_HREF, showsNameCount, threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
-import { CONVERSATION_VERB } from './proposals.js';
+import { CONVERSATION_VERB, receiptLine } from './proposals.js';
 import { mintId } from './mint.js';
-import { PendingProposals, ProposalDot, ProposalFlag } from './Proposals.jsx';
+import { PendingProposals, ProposalDot, ProposalFlag, ProposalReview } from './Proposals.jsx';
 import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';
@@ -21,7 +21,9 @@ import {
 import { useGymRead } from './useGymRead.js';
 
 // The home. The live mirror heads it, then whatever is waiting for a decision, then the program.
-export function RoutinesList({ log, onSignIn }) {
+// `reviewing` is a proposal reached by its address: its dialog opens over the home and closes to it,
+// and whatever it settles or learns lands in this list's own read.
+export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const view = useGymRead(() => gymApi.routines(), []);
   const [copying, setCopying] = useState(false);
 
@@ -44,7 +46,17 @@ export function RoutinesList({ log, onSignIn }) {
         <a className="gym-door-past" href={routineHref(NEW_ROUTINE_ID)}>New</a>
       </header>
       <LiveMirror log={log} onSignIn={onSignIn} />
-      {view.phase === 'ready' && <PendingProposals routines={view.data} />}
+      {view.phase === 'ready' && <PendingProposals routines={view.data} log={log} onChanged={view.refresh} />}
+      {reviewing && (
+        <ProposalReview
+          key={reviewing}
+          id={reviewing}
+          log={log}
+          onClose={() => { window.location.hash = ROUTINES_HREF; }}
+          onChanged={view.refresh}
+          onSettled={(receipt) => { log.say(receiptLine(receipt)); view.refresh(); window.location.hash = ROUTINES_HREF; }}
+        />
+      )}
       {view.phase === 'loading' && <p className="gym-quiet">Opening your routines…</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">

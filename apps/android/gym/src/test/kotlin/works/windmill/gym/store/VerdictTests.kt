@@ -117,6 +117,30 @@ class VerdictTests {
             FixVerdict.refusing(refusal(409, code = "session-finished", message = "reworded")))
     }
 
+    // B13: a superseded proposal has three reasons and only the log knows which, so its sentence is
+    // shown as sent; the local words stand in only for a reply that carries none.
+    @Test
+    fun testASupersededProposalSaysTheLogsOwnReasonAndLocalWordsOnlyWithoutOne() {
+        listOf(
+            "that routine changed after this proposal was written, so it was not applied",
+            "a newer proposal replaced this one, so it was not applied",
+            "this proposal was superseded before it was applied",
+            "a newer proposal replaced this one, so it was not turned down",
+        ).forEach { sentence ->
+            assertEquals(ProposalVerdict.Superseded(sentence),
+                ProposalVerdict.refusing(refusal(409, code = "proposal-superseded", message = sentence)))
+        }
+        assertEquals(ProposalVerdict.Superseded("the routine moved after this was written — nothing was applied"),
+            ProposalVerdict.refusing(RefusalFacts(status = 409, code = "proposal-superseded")))
+        assertEquals(ProposalVerdict.Settled("reworded on a Tuesday"),
+            ProposalVerdict.refusing(refusal(409, code = "proposal-settled", message = "reworded on a Tuesday")))
+        assertEquals(ProposalVerdict.Settled("that proposal was already decided"),
+            ProposalVerdict.refusing(RefusalFacts(status = 409, code = "proposal-settled")))
+        assertEquals(ProposalVerdict.Gone("that proposal is no longer on the log"),
+            ProposalVerdict.refusing(refusal(404, message = "no such proposal")))
+        assertEquals(ProposalVerdict.Retry, ProposalVerdict.refusing(storageFailure))
+    }
+
     @Test
     fun testARefusedSetCarriesTheMovementAndTheNumbersWithTheReason() {
         val set = TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 82.5, reps = 8,

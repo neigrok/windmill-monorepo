@@ -48,12 +48,12 @@ fun RoutinesScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
     origin: String,
-    putOff: String?,
+    // Reviews opened and closed with nothing decided: those cards read `still waiting`.
+    lookedAt: Set<String>,
     onJustStart: () -> Unit,
     onBuild: (RoutineDraft) -> Unit,
     onOpenRoutine: (String) -> Unit,
     onReview: (Proposal) -> Unit,
-    onLater: (Proposal) -> Unit,
     onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
 ) {
@@ -80,14 +80,14 @@ fun RoutinesScreen(
         Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
 
         // The newest waiting card, one at a time; the others keep their dot on their routine's row.
-        store.pendingProposals.firstOrNull { it.id != putOff }?.let { waiting ->
+        store.pendingProposals.firstOrNull()?.let { waiting ->
             val about = store.routine(waiting.routineId)
             ProposalCard(
                 proposal = waiting,
                 routineName = about?.name ?: waiting.routineName,
                 nowMs = nowMs,
+                stillWaiting = waiting.id in lookedAt,
                 onReview = { onReview(waiting) },
-                onLater = { onLater(waiting) },
             )
         }
 
@@ -336,6 +336,7 @@ fun RoutineScreen(
     onStart: (String) -> Unit,
     onBuild: (RoutineDraft) -> Unit,
     onOpenMovement: (String) -> Unit,
+    lookedAt: Set<String>,
     onReview: (Proposal) -> Unit,
     onOpenThread: (String) -> Unit,
 ) {
@@ -414,7 +415,8 @@ fun RoutineScreen(
         }
 
         routine.pendingProposal?.let { waiting ->
-            ProposalCard(waiting, routine.name, nowMs, onReview = { onReview(waiting) })
+            ProposalCard(waiting, routine.name, nowMs, stillWaiting = waiting.id in lookedAt,
+                onReview = { onReview(waiting) })
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {

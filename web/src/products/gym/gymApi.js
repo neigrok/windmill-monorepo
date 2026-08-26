@@ -65,6 +65,16 @@
 //   DELETE /v1/gym/notes/:id -> 204, for a note already gone alike; the rest close the gap.
 //   PUT   /v1/gym/notes -> {order: [id…]} in, {notes} out; a whole-order replace that must name
 //         every note once, or 400 `notes-order-mismatch`.
+//   GET   /v1/gym/bodyweight[?from=&to=] -> {entries: [{dateLocal, weightKg, recordedAt}], latest};
+//         entries ascending by `dateLocal` ('YYYY-MM-DD', the lifter's own calendar date), both
+//         bounds inclusive and absent for the whole series; `latest` is the newest date's entry or
+//         null. 400 for a bound that is not a date.
+//   PUT   /v1/gym/bodyweight/:dateLocal -> {weightKg, recordedAt} in, {entry} out. One row per
+//         local date and the write is idempotent by it; where a row already stands the newer
+//         `recordedAt` wins, so a stale replay answers 200 with the stored row unchanged. 400 with
+//         the store's sentence for a date that is not one, a weight outside 20–400 kg, or a body it
+//         cannot read. Kilograms only, two decimals.
+//   DELETE /v1/gym/bodyweight/:dateLocal -> 204, for a date with no row alike.
 //   GET   /v1/gym/threads -> {threads: [Thread…]}, newest `askedAt` first, at most 200.
 //   GET   /v1/gym/threads/:id -> one Thread carrying `turns`, the only read that does, or null on 404.
 //   DELETE /v1/gym/threads/:id -> 204. A proposal it minted keeps `source.door: 'ask'` and loses
@@ -379,9 +389,29 @@ export const gymApi = {
   async reorderNotes(order) {
     return (await json(await call('/notes', { method: 'PUT', body: JSON.stringify({ order }) }))).notes;
   },
+
+  async bodyweight({ from, to } = {}) {
+    const query = new URLSearchParams();
+    if (from !== undefined) query.set('from', from);
+    if (to !== undefined) query.set('to', to);
+    const suffix = query.toString();
+    return json(await call(`/bodyweight${suffix ? `?${suffix}` : ''}`));
+  },
+
+  async saveBodyweight(dateLocal, { weightKg, recordedAt }) {
+    return (await json(await call(`/bodyweight/${encodeURIComponent(dateLocal)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ weightKg, recordedAt }),
+    }))).entry;
+  },
+
+  async deleteBodyweight(dateLocal) {
+    return json(await call(`/bodyweight/${encodeURIComponent(dateLocal)}`, { method: 'DELETE' }));
+  },
 };
 
 // Links the browser follows, not methods; the session cookie rides the navigation.
 export const EXPORT_HREF = `${base}/export`;
 export const EXPORT_THREADS_HREF = `${base}/export/threads`;
 export const EXPORT_NOTES_HREF = `${base}/export/notes`;
+export const EXPORT_BODYWEIGHT_HREF = `${base}/export/bodyweight`;

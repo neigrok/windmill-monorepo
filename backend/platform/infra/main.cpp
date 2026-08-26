@@ -15,6 +15,7 @@
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 #include "platform/adapters/http/EventsApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
+#include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
@@ -81,12 +82,14 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
+#include "products/gym/adapters/postgres/PgBodyweightRepository.h"
 #include "products/gym/adapters/postgres/PgCatalogRepository.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
+#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/NotesService.h"
 #include "products/gym/application/PreferencesService.h"
@@ -180,6 +183,7 @@ int main() {
                 {"gym_ask_threads", "user_id"},       // gym
                 {"gym_ask_turns", "user_id"},         // gym
                 {"gym_notes", "user_id"},             // gym
+                {"gym_bodyweight", "user_id"},        // gym
                 // created_by is null on the catalog seeds, so they match no account.
                 {"gym_exercises", "created_by"},
                 {"gym_exercise_names", "user_id"},    // gym
@@ -354,6 +358,7 @@ int main() {
   auto gymThreads = std::make_shared<gym::PgAskThreadRepository>(pool);
   auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
+  auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
   auto gymTrainingService =
       std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens);
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog);
@@ -361,8 +366,10 @@ int main() {
   auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock);
   auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
   auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *systemClock);
+  auto gymBodyweightService = std::make_shared<gym::BodyweightService>(*gymBodyweight);
   auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
-                                                  *gymProgramService, *gymNotesService, appBaseUrl);
+                                                  *gymProgramService, *gymNotesService,
+                                                  *gymBodyweightService, appBaseUrl);
 
   // With no ANTHROPIC_API_KEY there is no AskService, so gym::registerRoutes never mounts the path.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
@@ -413,6 +420,7 @@ int main() {
   }
 
   auto& app = drogon::app();
+  configureJsonReplies(app);
 
   // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
@@ -846,7 +854,9 @@ int main() {
                        .preferencesService = gymPreferencesService,
                        .threadService = gymThreadService,
                        .notesService = gymNotesService,
+                       .bodyweightService = gymBodyweightService,
                        .authService = authService,
+                       .clock = systemClock,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);

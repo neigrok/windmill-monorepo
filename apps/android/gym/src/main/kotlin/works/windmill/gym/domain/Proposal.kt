@@ -54,9 +54,15 @@ data class ProposalSource(
     val conversation: String? get() = thread?.takeIf { it.isNotBlank() && door == askDoor }
 
     val name: String
-        get() = agent?.takeIf { it.isNotBlank() }
-            ?: connection?.takeIf { it.isNotBlank() }
-            ?: if (door == askDoor) "Coach" else "your connected agent"
+        get() = named ?: if (door == askDoor) "Coach" else "your connected agent"
+
+    // The prose is attributed by who wrote it: the agent by name, Coach for the room's own door, and
+    // an agent that did not name itself is still the lifter's own. The same three on every surface.
+    val kicker: String
+        get() = "${named ?: if (door == askDoor) "Coach" else "Your agent"} wrote:"
+
+    private val named: String?
+        get() = agent?.takeIf { it.isNotBlank() } ?: connection?.takeIf { it.isNotBlank() }
 
     companion object {
         const val askDoor = "ask"
@@ -150,6 +156,42 @@ data class Proposal(
 
     val drawn: List<ProposalChange> get() = changes.filterNot { it.kind == ChangeKind.Kept }
 
+    // The rows ARE the document as well as the diff: a kept row keeps its place in the run the routine
+    // takes on, and a run of them collapses to one counted row that expands where it stands.
+    val document: List<DocumentRow>
+        get() {
+            val rows = mutableListOf<DocumentRow>()
+            var kept = mutableListOf<ProposalChange>()
+            fun closeRun() {
+                if (kept.isEmpty()) return
+                rows += DocumentRow.Unchanged(kept.toList())
+                kept = mutableListOf()
+            }
+            changes.forEach { change ->
+                if (change.kind == ChangeKind.Kept) kept += change
+                else {
+                    closeRun()
+                    rows += DocumentRow.Changed(change)
+                }
+            }
+            closeRun()
+            return rows
+        }
+
+    // Derived from the SERVER's reply and never from the model's prose: the name the routine now
+    // carries and the server's own count of what moved, or that the routine is gone.
+    val receipt: String?
+        get() = when (state) {
+            ProposalState.Applied -> {
+                if (intent == ProposalIntent.Remove) "Applied · $routineName · routine removed"
+                else "Applied · ${name.ifBlank { baseName }.ifBlank { "this routine" }} · $counted"
+            }
+            ProposalState.Dismissed -> turnedDownReceipt
+            else -> null
+        }
+
+    val kicker: String get() = source.kicker
+
     val renames: Boolean
         get() = name.isNotBlank() && baseName.isNotBlank() && name != baseName
 
@@ -181,12 +223,21 @@ data class Proposal(
             return if (changeCount == 1) "1 change" else "$changeCount changes"
         }
 
-    val reviewLabel: String
-        get() = if (intent == ProposalIntent.Remove) "Review the removal" else "Review $counted"
+    // One affordance on a card, and it is Review; the card's counted line says how much.
+    val reviewLabel: String get() = review
+
+    fun cardLine(routineName: String, stillWaiting: Boolean): String {
+        val waiting = if (stillWaiting) Proposal.stillWaiting else "waiting"
+        return "$routineName · $counted · $waiting"
+    }
 
     // The server's count, never the rows this build drew: apply is atomic against the document.
     val applyLabel: String
-        get() = if (intent == ProposalIntent.Remove) "Remove $routineName" else "Apply all $changeCount"
+        get() = when {
+            intent == ProposalIntent.Remove -> "Remove $routineName"
+            changeCount == 1 -> "Apply"
+            else -> "Apply all $changeCount"
+        }
 
     val atomicLine: String
         get() {
@@ -224,6 +275,11 @@ data class Proposal(
     val routineName: String get() = baseName.ifBlank { "this routine" }
 
     companion object {
+        const val review = "Review"
+        const val apply = "Apply"
+        const val stillWaiting = "still waiting"
+        const val turnedDownReceipt = "Turned down · nothing changed."
+
         // Turning a proposal down is settled for good — the wire has no path back — so it is confirmed,
         // in the same words on every surface.
         const val turnDownVerb = "Turn this down"
@@ -269,5 +325,13 @@ data class Proposal(
 // The routine is absent when the intent was to remove it.
 @Serializable
 data class ProposalDecision(val proposal: Proposal, val routine: Routine? = null)
+
+sealed interface DocumentRow {
+    data class Changed(val change: ProposalChange) : DocumentRow
+    data class Unchanged(val kept: List<ProposalChange>) : DocumentRow {
+        val label: String
+            get() = if (kept.size == 1) "and 1 line unchanged" else "and ${kept.size} lines unchanged"
+    }
+}
 
 data class FieldMove(val label: String, val before: String, val after: String)

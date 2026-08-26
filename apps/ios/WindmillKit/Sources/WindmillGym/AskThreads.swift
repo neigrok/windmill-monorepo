@@ -124,6 +124,12 @@ public struct ThreadProposal: Equatable, Decodable, Sendable, Identifiable {
         "\(Readout.changeCount(changeCount)) to \(routine) · \(state.word)"
     }
 
+    // A review closed without a decision reads `still waiting` for the rest of the visit.
+    public func line(undecided: Bool) -> String {
+        guard state == .pending, undecided else { return line }
+        return "\(Readout.changeCount(changeCount)) to \(routine) · \(Proposal.stillWaiting)"
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, state, changeCount, routineId, routine
         case createdAtMs = "createdAt"

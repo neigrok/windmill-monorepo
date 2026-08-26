@@ -164,6 +164,9 @@ struct ThreadScreen: View {
     let threadId: String
     let doors: ThreadDoors
     let onDeleted: () -> Void
+    // Receipt lines by proposal id, this visit's only; a reopened thread carries none.
+    let receipts: [String: String]
+    let undecided: Set<String>
 
     @Environment(\.gymSkin) private var skin
     @State private var thread: AskThread?
@@ -177,7 +180,10 @@ struct ThreadScreen: View {
                 if let thread {
                     head(thread)
                     turns(thread)
-                    ForEach(thread.proposals) { minted in proposal(minted) }
+                    ForEach(thread.proposals) { minted in
+                        proposal(minted)
+                        if let receipt = receipts[minted.id] { self.receipt(receipt) }
+                    }
                     delete
                 } else if gone {
                     Text("that conversation is gone")
@@ -196,6 +202,8 @@ struct ThreadScreen: View {
             .padding(.bottom, WindmillSpace.x8)
         }
         .task { await read() }
+        .onChange(of: receipts) { _, _ in Task { await read() } }
+        .onChange(of: undecided) { _, _ in Task { await read() } }
     }
 
     private func head(_ thread: AskThread) -> some View {
@@ -244,7 +252,7 @@ struct ThreadScreen: View {
     private func proposal(_ minted: ThreadProposal) -> some View {
         Button { doors.openProposal(minted.id) } label: {
             HStack(spacing: WindmillSpace.x2) {
-                Text(minted.line)
+                Text(minted.line(undecided: undecided.contains(minted.id)))
                     .font(GymType.numeral(12.5))
                     .foregroundStyle(skin.inkDim)
                     .multilineTextAlignment(.leading)
@@ -260,6 +268,15 @@ struct ThreadScreen: View {
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                 .strokeBorder(skin.line, lineWidth: 1))
         }
+    }
+
+    private func receipt(_ line: String) -> some View {
+        Text(line)
+            .font(GymType.numeral(12.5, .bold))
+            .foregroundStyle(skin.inkDim)
+            .padding(.horizontal, WindmillSpace.x3)
+            .frame(minHeight: 30)
+            .background(Capsule().fill(skin.raised))
     }
 
     private var delete: some View {

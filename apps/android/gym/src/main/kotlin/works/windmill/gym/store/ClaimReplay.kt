@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import kotlinx.coroutines.CancellationException
+import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ExerciseWrite
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.Instants
@@ -9,6 +10,7 @@ import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
 
@@ -16,8 +18,8 @@ import works.windmill.gym.net.TrainingSyncing
 // shelf holds a backlog, and on the deliver cadence while the last pass stopped retryably.
 //
 // Order: preferences → movements → routines → finished sessions oldest first → the live session's
-// start. Preferences halt nothing behind them and re-arm nothing, so `retryable` means "another pass
-// of the SHELF could change this".
+// start → the weigh-ins, last, once every session has landed. Preferences halt nothing behind them
+// and re-arm nothing, so `retryable` means "another pass of the SHELF could change this".
 //
 // Per finished session, strictly: `start` under the client-minted id with the true startedAt, its
 // routineId only if that routine landed, and joinOpenSession FALSE; then its sets in performed
@@ -37,6 +39,7 @@ class ClaimReplay(
     private val localLog: LocalLog,
     private val queue: SetQueue,
     private val preferences: LocalPreferences,
+    private val bodyweight: LocalBodyweight,
     private val mintExercise: () -> String = Ids::exercise,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintSession: () -> String = Ids::session,
@@ -59,8 +62,9 @@ class ClaimReplay(
             val halted = claimFinished(past, said) ?: continue
             return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
         }
-        val halted = claimLive(said) ?: return Outcome(said, liveLanded = true, retryable = false)
-        return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
+        val halted = claimLive(said)
+        if (halted != null) return Outcome(said, liveLanded = false, retryable = halted == Halt.Retry)
+        return Outcome(said, liveLanded = true, retryable = !claimBodyweight(said))
     }
 
     // The one step that retries by itself, without the shelf behind it.
@@ -371,6 +375,37 @@ class ClaimReplay(
                 return Halt.Refused
             }
         }
+    }
+
+    // Every write is idempotent by its date and the server keeps the newer of two by `recordedAt`, so
+    // a replayed stale write answers with the correction it could not overtake, and `landed` keeps
+    // that. A 400 is the one answer that cannot change: said, and the row let go. A delete has no
+    // terminal refusal, so anything but a 204 waits for another pass.
+    private suspend fun claimBodyweight(said: MutableList<RefusedWrite>): Boolean {
+        for (owed in bodyweight.owed) {
+            try {
+                bodyweight.landed(log.putBodyweight(owed.dateLocal, WeighInWrite(owed.weightKg, owed.recordedAt)))
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                val facts = RefusalFacts(refusing)
+                if (Verdict.refusing(facts) is Verdict.Retry) return false
+                said += RefusedClaim(owed.dateLocal, "weigh-in · ${Bodyweight.shortDay(owed.date)}",
+                    facts.sentence ?: "the log refused this weigh-in")
+                bodyweight.letGo(owed.dateLocal)
+            }
+        }
+        for (gone in bodyweight.deletions) {
+            try {
+                log.deleteBodyweight(gone)
+                bodyweight.deletionLanded(gone)
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (refusing: Exception) {
+                return false
+            }
+        }
+        return true
     }
 
     // A routine still on the shelf is one the account does not have, so a start may not name it.

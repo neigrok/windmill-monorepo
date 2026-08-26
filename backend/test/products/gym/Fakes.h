@@ -2,6 +2,7 @@
 
 #include "products/gym/ports/AskAgent.h"
 #include "products/gym/ports/AskThreadRepository.h"
+#include "products/gym/ports/BodyweightRepository.h"
 #include "products/gym/ports/CatalogRepository.h"
 #include "products/gym/ports/LogRepository.h"
 #include "products/gym/ports/NotesRepository.h"
@@ -95,6 +96,10 @@ struct FakeGymStore {
   std::vector<SessionShare> shares;   // one per session at most, exactly as the primary key says
   std::vector<GymPreferences> preferenceRows;   // one per account at most, likewise
   std::vector<Note> noteRows;                   // gym_notes: dense on position per account
+  std::vector<Bodyweight> bodyweightRows;       // gym_bodyweight: one per (account, local day)
+  // gym_proposals.superseded_by: the id of the proposal that took a pending one's slot, by the
+  // replaced proposal's id. Absent for a row the routine's own move superseded, and for a legacy row.
+  std::map<std::string, std::string> supersededBy;
   // gym_exercise_names: what one account calls one SEED, keyed (owner, movement) and coalesced over it.
   std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
   // gym_exercise_aliases: what one account USED to call a movement; `at` stands in for created_at.
@@ -977,11 +982,11 @@ public:
     if (held->head.state == ProposalState::dismissed)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (held->head.state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
     if (base->revision != held->baseRevision) {
       held->head.state = ProposalState::superseded;
       held->head.settledAtMs = nowMs;
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
     }
 
     for (Routine& row : db.routineRows) {
@@ -1005,11 +1010,11 @@ public:
         held->head.state == ProposalState::dismissed)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
     if (held->head.state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
     if (base->revision != held->baseRevision) {
       held->head.state = ProposalState::superseded;
       held->head.settledAtMs = nowMs;
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
     }
 
     // Composed BEFORE the delete, because the delete cascades this very row away with the routine.
@@ -1026,8 +1031,11 @@ public:
     if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
     if (held->head.state == ProposalState::applied)
       return {std::nullopt, std::nullopt, ProposalSettleError::settled};
-    if (held->head.state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, ProposalSettleError::superseded};
+    if (held->head.state == ProposalState::superseded) {
+      std::optional<Routine> base = routine(user, held->head.routine);
+      if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
+      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
+    }
     if (held->head.state == ProposalState::pending) {
       held->head.state = ProposalState::dismissed;
       held->head.settledAtMs = nowMs;
@@ -1066,7 +1074,8 @@ private:
     }
   }
 
-  // The partial unique index's rule: one pending proposal per (routine, door, connection).
+  // The partial unique index's rule: one pending proposal per (routine, door, connection). The
+  // replaced row records who replaced it (`superseded_by`).
   void supersedeFromDoor(const RoutineProposal& incoming) {
     for (RoutineProposal& held : db.proposalRows) {
       if (!(held.head.user == incoming.head.user) ||
@@ -1079,7 +1088,15 @@ private:
         continue;
       held.head.state = ProposalState::superseded;
       held.head.settledAtMs = incoming.head.createdAtMs;
+      db.supersededBy[held.head.id.str()] = incoming.head.id.str();
     }
+  }
+
+  // The SQL's `supersededReason`: the reason column first, the revision second, legacy last.
+  ProposalSettleError supersededReason(const RoutineProposal& held, const Routine& base) const {
+    if (db.supersededBy.count(held.head.id.str())) return ProposalSettleError::replaced;
+    if (base.revision != held.baseRevision) return ProposalSettleError::routineMoved;
+    return ProposalSettleError::superseded;
   }
 };
 
@@ -1312,7 +1329,61 @@ public:
   }
 };
 
-// The whole store and its six doors, in the shape a harness holds them.
+class FakeBodyweightRepository : public BodyweightRepository {
+public:
+  explicit FakeBodyweightRepository(FakeGymStore& db) : db(db) {}
+
+  FakeGymStore& db;
+
+  // Owner-scoped, both bounds inclusive, day ascending — the SQL's WHERE and ORDER BY. The day
+  // strings compare as the calendar does, because they are zero-padded YYYY-MM-DD.
+  std::vector<Bodyweight> entries(const UserId& user, const BodyweightRange& range) override {
+    std::vector<Bodyweight> out;
+    for (const Bodyweight& held : db.bodyweightRows) {
+      if (!(held.user == user)) continue;
+      if (!range.from.empty() && held.dateLocal < range.from) continue;
+      if (!range.to.empty() && held.dateLocal > range.to) continue;
+      out.push_back(held);
+    }
+    std::sort(out.begin(), out.end(),
+              [](const Bodyweight& a, const Bodyweight& b) { return a.dateLocal < b.dateLocal; });
+    return out;
+  }
+
+  std::optional<Bodyweight> latest(const UserId& user) override {
+    const std::vector<Bodyweight> all = entries(user, BodyweightRange{});
+    if (all.empty()) return std::nullopt;
+    return all.back();
+  }
+
+  // The upsert's guarded UPDATE arm: at or after the stored instant replaces, older leaves it, and
+  // the answer is always the row that stands.
+  Bodyweight save(const Bodyweight& incoming) override {
+    for (Bodyweight& held : db.bodyweightRows) {
+      if (!(held.user == incoming.user) || held.dateLocal != incoming.dateLocal) continue;
+      if (held.recordedAtMs <= incoming.recordedAtMs) held = incoming;
+      return held;
+    }
+    db.bodyweightRows.push_back(incoming);
+    return incoming;
+  }
+
+  void remove(const UserId& user, const std::string& dateLocal) override {
+    std::erase_if(db.bodyweightRows, [&](const Bodyweight& held) {
+      return held.user == user && held.dateLocal == dateLocal;
+    });
+  }
+
+  std::vector<ExportedBodyweight> exported(const UserId& user) override {
+    std::vector<ExportedBodyweight> out;
+    for (const Bodyweight& held : entries(user, BodyweightRange{}))
+      out.push_back(ExportedBodyweight{held.dateLocal, scaled(held.weightKg, 2),
+                                       isoUtc(held.recordedAtMs)});
+    return out;
+  }
+};
+
+// The whole store and its seven doors, in the shape a harness holds them.
 struct FakeGym {
   FakeGymStore db;
   FakeLogRepository log{db};
@@ -1321,6 +1392,7 @@ struct FakeGym {
   FakeAskThreadRepository threads{db};
   FakePreferencesRepository preferences{db};
   FakeNotesRepository notes{db};
+  FakeBodyweightRepository bodyweight{db};
 };
 
 // An AskAgent that never leaves the process: it records what it was handed, runs its plan, answers.

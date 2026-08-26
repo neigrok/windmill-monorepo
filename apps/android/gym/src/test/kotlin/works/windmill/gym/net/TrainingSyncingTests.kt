@@ -9,6 +9,9 @@ import org.junit.Test
 import works.windmill.gym.domain.AskAnswer
 import works.windmill.gym.domain.AskQuestion
 import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.Bodyweight
+import works.windmill.gym.domain.ThreadOutcome
+import works.windmill.gym.domain.ThreadProposal
 import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Exercise
@@ -38,6 +41,8 @@ import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighIn
+import works.windmill.gym.domain.WeighInWrite
 
 class TrainingSyncingTests {
     @Test
@@ -167,6 +172,10 @@ internal class FakeTraining : TrainingSyncing {
     val notebook = mutableListOf<Note>()
     var refuseNotes: Exception? = null
     var noteWrittenAtMs = 7_000L
+    // Keyed by the local date; the newer `recordedAt` wins, as the server's row rule says.
+    val weighIns = mutableMapOf<String, WeighIn>()
+    var refuseBodyweight: Exception? = null
+    var refuseBodyweightRead: Exception? = null
     var swallowReplies = 0
     var onFinish: suspend () -> Unit = {}
     var onAppend: suspend (SetWrite) -> Unit = {}
@@ -416,14 +425,18 @@ internal class FakeTraining : TrainingSyncing {
         if (standing.state == ProposalState.Applied) {
             return ProposalDecision(standing, written[standing.routineId])
         }
+        // The log's reason column, in the log's order: a moved revision is named first, a proposal set
+        // aside with its revision unmoved is the legacy row.
+        val base = written[standing.routineId]
+        if (base != null && base.revision != standing.baseRevision) {
+            throw refusal(409, "proposal-superseded",
+                "that routine changed after this proposal was written, so it was not applied")
+        }
         if (standing.state == ProposalState.Superseded) {
-            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
+            throw refusal(409, "proposal-superseded", "this proposal was superseded before it was applied")
         }
         if (!standing.isPending) throw refusal(409, "proposal-settled", "that proposal was already decided")
-        val base = written[standing.routineId] ?: throw refusal(404, message = "no such proposal")
-        if (base.revision != standing.baseRevision) {
-            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
-        }
+        if (base == null) throw refusal(404, message = "no such proposal")
         val settled = standing.copy(state = ProposalState.Applied, settledAtMs = settledAtMs)
         ledger[id] = settled
         if (settled.intent == ProposalIntent.Remove) {
@@ -454,7 +467,7 @@ internal class FakeTraining : TrainingSyncing {
         val standing = ledger[id] ?: throw refusal(404, message = "no such proposal")
         if (standing.state == ProposalState.Dismissed) return ProposalDecision(standing)
         if (standing.state == ProposalState.Superseded) {
-            throw refusal(409, "proposal-superseded", "the routine has changed since this was written")
+            throw refusal(409, "proposal-superseded", "this proposal was superseded before it was turned down")
         }
         if (!standing.isPending) throw refusal(409, "proposal-settled", "that proposal was already decided")
         val settled = standing.copy(state = ProposalState.Dismissed, settledAtMs = settledAtMs)
@@ -532,14 +545,36 @@ internal class FakeTraining : TrainingSyncing {
         refuseThreads?.let { throw it }
         return conversations.values
             .sortedByDescending { it.askedAtMs }
-            .map { it.copy(turns = emptyList()) }
+            .map { derived(it).copy(turns = emptyList()) }
     }
 
     override suspend fun thread(id: String): AskThread? {
         calls.add("thread")
         reachable()
         refuseThreads?.let { throw it }
-        return conversations[id]
+        return conversations[id]?.let { derived(it) }
+    }
+
+    // The server derives a thread's proposal rows and its outcome from the proposals as they stand,
+    // so a decision taken anywhere has moved the thread by its next read. A row the ledger does not
+    // hold is served as the test wrote it.
+    private fun derived(held: AskThread): AskThread {
+        val rows = held.proposals.map { row ->
+            ledger[row.id]?.let { row.copy(state = it.state, changeCount = it.changeCount) } ?: row
+        }
+        if (held.proposals.none { ledger.containsKey(it.id) }) return held.copy(proposals = rows)
+        val about = rows.map { it.routineId }.distinct().singleOrNull()?.let { id -> rows.first { it.routineId == id } }
+        fun outcome(kind: String, counted: List<ThreadProposal>) =
+            ThreadOutcome(kind, counted.sumOf { it.changeCount }, about?.routineId, about?.routine)
+        val applied = rows.filter { it.state == ProposalState.Applied }
+        val pending = rows.filter { it.state == ProposalState.Pending }
+        val outcome = when {
+            applied.isNotEmpty() -> outcome(ThreadOutcome.applied, applied)
+            pending.isNotEmpty() -> outcome(ThreadOutcome.proposed, pending)
+            rows.all { it.state == ProposalState.Dismissed } -> outcome(ThreadOutcome.dismissed, rows)
+            else -> outcome(ThreadOutcome.superseded, rows)
+        }
+        return held.copy(proposals = rows, outcome = outcome)
     }
 
     override suspend fun deleteThread(id: String) {
@@ -607,5 +642,41 @@ internal class FakeTraining : TrainingSyncing {
 
     private fun renumber() {
         for (i in notebook.indices) notebook[i] = notebook[i].copy(position = i)
+    }
+
+    override suspend fun bodyweight(from: String?, to: String?): List<WeighIn> {
+        calls.add("bodyweight")
+        reachable()
+        refuseBodyweightRead?.let { throw it }
+        return weighIns.values
+            .filter { (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }
+            .sortedBy { it.dateLocal }
+    }
+
+    override suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn {
+        calls.add("putBodyweight")
+        reachable()
+        refuseBodyweight?.let { throw it }
+        val date = runCatching { java.time.LocalDate.parse(dateLocal) }.getOrNull()
+            ?: throw refusal(400, message = "could not read that date")
+        // The server's own UTC today, plus the one day a device west of it may be ahead by.
+        if (date.isAfter(java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(1))) {
+            throw refusal(400, message = Bodyweight.notAForecast)
+        }
+        if (write.weightKg < 20.0 || write.weightKg > 400.0) {
+            throw refusal(400, message = "Between 20 and 400 kg — check the number.")
+        }
+        val standing = weighIns[dateLocal]
+        if (standing != null && standing.recordedAt > write.recordedAt) return standing
+        val stored = WeighIn(dateLocal, write.weightKg, write.recordedAt)
+        weighIns[dateLocal] = stored
+        return stored
+    }
+
+    override suspend fun deleteBodyweight(dateLocal: String) {
+        calls.add("deleteBodyweight")
+        reachable()
+        refuseBodyweight?.let { throw it }
+        weighIns.remove(dateLocal)
     }
 }

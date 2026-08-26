@@ -1,31 +1,51 @@
 import React, { useState } from 'react';
-import { Back } from './Back.jsx';
+import { Dialog } from '../../design-system/index.js';
 import { failureReason, gymApi } from './gymApi.js';
+import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
-  arrivedLabel, COACH_HREF, nameOfMovement, proposalHref, recordHref, routineHref, ROUTINES_HREF,
-  threadHref,
-} from './log.js';
-import {
-  applyLabel, atomicLine, conversationOf, CONVERSATION_VERB, diffRows, documentLine, intentLine,
-  isPending, reviewLabel, settledLine, sourceLabel, stateChip, summaryLine, TURN_DOWN_CONFIRM,
+  applyLabel, atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, diffRows, documentLine,
+  intentLine, isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine, REVIEW_VERB, settledLine,
+  sourceLabel, stateChip, STILL_WAITING, summaryLine, TURN_DOWN_CONFIRM, TURN_DOWN_VERB, wroteKicker,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
 
 // The standing surface for a proposal with no conversation to appear in — one minted over MCP —
-// drawn at the head of the routines home off the list's own read.
-export function PendingProposals({ routines }) {
+// drawn at the head of the routines home off the list's own read. Review opens the dialog over the
+// home; settling says its receipt in the one voice, and `onChanged` re-reads the list whenever the
+// dialog settled the proposal or learned it had moved.
+export function PendingProposals({ routines, log, onChanged }) {
+  const [reviewing, setReviewing] = useState(null);
   const waiting = (routines ?? []).filter((routine) => routine.pendingProposal);
-  if (waiting.length === 0) return null;
+  // The dialog stands outside the cards: a re-read that drops the card it was opened from (the
+  // proposal moved underneath it) must not take the dialog and its refusal down with it.
   return (
-    <section className="gym-proposals">
-      {waiting.map((routine) => (
-        <ProposalCard key={routine.id} routine={routine} />
-      ))}
-    </section>
+    <>
+      {waiting.length > 0 && (
+        <section className="gym-proposals">
+          {waiting.map((routine) => (
+            <ProposalCard key={routine.id} routine={routine} onReview={setReviewing} />
+          ))}
+        </section>
+      )}
+      {reviewing && (
+        <ProposalReview
+          key={reviewing}
+          id={reviewing}
+          log={log}
+          onClose={() => setReviewing(null)}
+          onChanged={onChanged}
+          onSettled={(receipt) => {
+            setReviewing(null);
+            log.say(receiptLine(receipt));
+            onChanged();
+          }}
+        />
+      )}
+    </>
   );
 }
 
-function ProposalCard({ routine }) {
+function ProposalCard({ routine, onReview }) {
   const head = routine.pendingProposal;
   const consequence = intentLine(head, routine.name);
   return (
@@ -33,12 +53,26 @@ function ProposalCard({ routine }) {
       <p className="gym-proposal-kicker">
         <ProposalDot />
         <span>{`Proposal · ${sourceLabel(head.source)}`}</span>
-        <span className="gym-proposal-when">{arrivedLabel(head.createdAt)}</span>
+        <span className="gym-proposal-when">{`${STILL_WAITING} · ${arrivedLabel(head.createdAt)}`}</span>
       </p>
       <p className="gym-proposal-line">{summaryLine(head, routine.name)}</p>
       {consequence && <p className="gym-proposal-intent">{consequence}</p>}
-      <a className="gym-proposal-review" href={proposalHref(head.id)}>{reviewLabel(head)}</a>
+      <ReviewDoor head={head} onReview={onReview} />
     </article>
+  );
+}
+
+// The card's one affordance. A link, so the routable address survives a middle-click; a tap opens
+// the dialog in place with no hash change.
+export function ReviewDoor({ head, onReview }) {
+  return (
+    <a
+      className="gym-proposal-review"
+      href={proposalHref(head.id)}
+      onClick={(event) => { event.preventDefault(); onReview(head.id); }}
+    >
+      {REVIEW_VERB}
+    </a>
   );
 }
 
@@ -55,131 +89,65 @@ export function ProposalFlag() {
   );
 }
 
-export function ProposalDiff({ id, log }) {
+// The review: a dialog over whatever opened it. Closing it decides nothing. The band holds Apply,
+// gated until the diff has been seen to its end, and the plain text row beneath it turns the
+// proposal down behind its confirmation. `onSettled` receives `{ verb, proposal }` off the server's
+// reply, which is what the receipt is derived from. `onChanged` fires when a refusal taught the dialog
+// the proposal had moved underneath it, so the card behind it never outlives what it just learned.
+export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }) {
   const view = useGymRead(() => gymApi.proposal(id), [id]);
-  // The settle reply carries the newer proposal; it replaces the read.
+  // A refused settle re-reads; the re-read replaces the first.
   const [settled, setSettled] = useState(null);
   const [deciding, setDeciding] = useState(false);
   const [turningDown, setTurningDown] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [refusal, setRefusal] = useState('');
 
-  if (view.phase === 'loading') return <p className="gym-quiet">Opening the proposal…</p>;
-  if (view.phase === 'absent') {
-    return (
-      <>
-        <Back href={ROUTINES_HREF}>Routines</Back>
-        <p className="gym-quiet">That proposal isn’t in your program.</p>
-      </>
-    );
-  }
-  if (view.phase === 'failed') {
-    return (
-      <>
-        <Back href={ROUTINES_HREF}>Routines</Back>
-        <p className="gym-read-failed">
-          The proposal didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
-        </p>
-      </>
-    );
-  }
-
-  const proposal = settled ?? view.data;
-  const rows = diffRows(proposal);
-  const documentNote = documentLine(proposal);
+  const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
+  const pending = proposal ? isPending(proposal) : false;
+  const midWorkout = Boolean(log.session) && pending;
+  // Position is part of a row's identity: never reorder or filter these rows; a kept run folds in place.
+  const rows = proposal ? collapseKept(diffRows(proposal), expanded) : [];
+  const documentNote = proposal ? documentLine(proposal) : null;
+  const wrote = (proposal?.summary ?? '').trim();
 
   const settle = async (verb) => {
-    if (deciding) return;
+    if (deciding || !proposal) return;
     setDeciding(true);
-    // On an applied removal a 404 means the same as success.
-    const removed = () => {
-      log.say(`${proposal.baseName} was removed.`);
-      window.location.hash = ROUTINES_HREF;
-    };
+    setRefusal('');
     const reread = (sentence) => {
       setSettled(null);
       view.retry();
-      log.say(sentence);
+      onChanged?.();
+      setRefusal(sentence);
     };
     try {
       const answer = verb === 'apply'
         ? await gymApi.applyProposal(proposal.id)
         : await gymApi.dismissProposal(proposal.id);
-      if (verb === 'apply' && proposal.intent === 'remove') {
-        removed();
-        return;
-      }
-      setSettled(answer.proposal);
+      onSettled({ verb, proposal: answer.proposal ?? proposal });
+      return;
     } catch (error) {
+      // On an applied removal a 404 means the same as success: the routine and its ledger went.
       if (verb === 'apply' && proposal.intent === 'remove' && error.status === 404) {
-        removed();
+        onSettled({ verb, proposal });
         return;
       }
-      if (error.proposalSuperseded) reread(`${proposal.baseName} changed after this was written. Nothing from it was applied.`);
-      else if (error.proposalSettled) reread('That proposal was already decided somewhere else.');
-      else if (error.status === 404) reread('That proposal isn’t in your program any more.');
-      else log.say(`That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
+      // The server's sentence where it sent one; the room's words only for a reply that carried none.
+      const said = typeof error.detail === 'string' && error.detail !== '' ? error.detail : null;
+      if (error.proposalSuperseded) reread(said ?? `${proposal.baseName} changed after this was written. Nothing from it was applied.`);
+      else if (error.proposalSettled) reread(said ?? 'That proposal was already decided somewhere else.');
+      else if (error.status === 404) reread(said ?? 'That proposal isn’t in your program any more.');
+      else setRefusal(said ?? `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
     }
     setDeciding(false);
     setTurningDown(false);
   };
 
-  return (
-    <>
-      <Back href={routineHref(proposal.routineId)}>{proposal.baseName}</Back>
-      <header className="gym-proposal-head">
-        <div className="gym-proposal-titles">
-          <h1 className="gym-title">{`Proposal · ${proposal.baseName}`}</h1>
-          <p className="gym-proposal-from">
-            {`from ${sourceLabel(proposal.source)}  ·  ${arrivedLabel(proposal.createdAt)}`}
-          </p>
-          {conversationOf(proposal.source) && (
-            <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>
-              {CONVERSATION_VERB} ›
-            </a>
-          )}
-        </div>
-        <span className={`gym-proposal-chip is-${proposal.state}`}>{stateChip(proposal)}</span>
-      </header>
-
-      <p className="gym-proposal-summary">{summaryLine(proposal, proposal.baseName)}</p>
-
-      {/* Position is part of a row's identity: never reorder or filter these rows. */}
-      {documentNote && <p className="gym-diff-caption">{documentNote}</p>}
-      <ul className="gym-diff">
-        {rows.map((row, index) => (
-          <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
-            <DiffRow row={row} catalog={log.catalog} />
-          </li>
-        ))}
-      </ul>
-
-      {!isPending(proposal) && <p className="gym-proposal-settled">{settledLine(proposal)}</p>}
-
-      {isPending(proposal) && !turningDown && (
-        <div className="gym-proposal-decide">
-          <div className="gym-proposal-verbs">
-            <button
-              type="button"
-              className={deciding ? 'gym-proposal-dismiss is-inert' : 'gym-proposal-dismiss'}
-              onClick={() => setTurningDown(true)}
-            >
-              Turn this down
-            </button>
-            <button
-              type="button"
-              className={deciding ? 'gym-proposal-apply is-inert' : 'gym-proposal-apply'}
-              onClick={() => settle('apply')}
-            >
-              {applyLabel(proposal)}
-            </button>
-          </div>
-          <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>
-        </div>
-      )}
-
-      {/* Turning down is settled for good, so it is confirmed; the confirmation says so. */}
-      {isPending(proposal) && turningDown && (
-        <section className="gym-confirm">
+  const band = ({ seen }) => {
+    if (turningDown) {
+      return (
+        <section className="gym-confirm gym-proposal-confirm">
           <p className="gym-confirm-title">{TURN_DOWN_CONFIRM.title}</p>
           <p className="gym-confirm-body">{TURN_DOWN_CONFIRM.body}</p>
           <div className="gym-finish-foot">
@@ -193,10 +161,98 @@ export function ProposalDiff({ id, log }) {
             </button>
           </div>
         </section>
-      )}
+      );
+    }
+    return (
+      <div className="gym-proposal-band">
+        <button
+          type="button"
+          className={!seen || deciding ? 'gym-proposal-apply is-inert' : 'gym-proposal-apply'}
+          disabled={!seen || deciding}
+          aria-busy={deciding}
+          onClick={() => settle('apply')}
+        >
+          {applyLabel(proposal)}
+        </button>
+        <button type="button" className="gym-proposal-turn-down" onClick={() => setTurningDown(true)}>
+          {TURN_DOWN_VERB}
+        </button>
+      </div>
+    );
+  };
 
-      {!log.session && <a className="gym-coach-aside" href={COACH_HREF}>Open Coach ›</a>}
-    </>
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={proposal ? `Proposal · ${proposal.baseName}` : 'Proposal'}
+      width={560}
+      padding="var(--space-5)"
+      gate="scrolled"
+      footer={pending ? band : null}
+    >
+      <div className="gym-proposal-dialog">
+        {view.phase === 'loading' && !settled && <p className="gym-quiet">Opening the proposal…</p>}
+        {view.phase === 'absent' && !settled && <p className="gym-quiet">That proposal isn’t in your program.</p>}
+        {view.phase === 'failed' && !settled && (
+          <p className="gym-read-failed">
+            The proposal didn’t load.
+            <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          </p>
+        )}
+        {proposal && (
+          <>
+            <header className="gym-proposal-head">
+              <div className="gym-proposal-titles">
+                <p className="gym-proposal-from">
+                  {`from ${sourceLabel(proposal.source)}  ·  ${arrivedLabel(proposal.createdAt)}`}
+                </p>
+                {conversationOf(proposal.source) && (
+                  <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>
+                    {CONVERSATION_VERB} ›
+                  </a>
+                )}
+              </div>
+              <span className={`gym-proposal-chip is-${proposal.state}`}>{stateChip(proposal)}</span>
+            </header>
+
+            {midWorkout && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
+
+            {/* The writer's own words, attributed and apart from the counted rows. With none, the card's
+                own sentence stands as ours. */}
+            {wrote !== '' ? (
+              <blockquote className="gym-proposal-wrote">
+                <p className="gym-proposal-wrote-kicker">{wroteKicker(proposal.source)}</p>
+                <p className="gym-proposal-wrote-text">{wrote}</p>
+              </blockquote>
+            ) : (
+              <p className="gym-proposal-summary">{summaryLine(proposal, proposal.baseName)}</p>
+            )}
+
+            {documentNote && <p className="gym-diff-caption">{documentNote}</p>}
+            <ul className="gym-diff">
+              {rows.map((row, index) => (
+                row.kind === 'kept-run' ? (
+                  <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}>
+                    <button type="button" className="gym-diff-unfold" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>
+                      {keptRunLabel(row.rows.length)}
+                    </button>
+                  </li>
+                ) : (
+                  <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}>
+                    <DiffRow row={row} catalog={log.catalog} />
+                  </li>
+                )
+              ))}
+            </ul>
+
+            {pending && <p className="gym-proposal-atomic">{atomicLine(proposal)}</p>}
+            {!pending && <p className="gym-proposal-settled">{settledLine(proposal)}</p>}
+          </>
+        )}
+        {refusal && <p className="gym-proposal-refusal">{refusal}</p>}
+      </div>
+    </Dialog>
   );
 }
 

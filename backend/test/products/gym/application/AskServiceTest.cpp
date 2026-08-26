@@ -30,7 +30,9 @@ struct Harness {
   ProgramService program{repo.program, clock};
   ThreadService threadService{repo.threads, clock};
   NotesService notesService{repo.notes, clock};
-  GymTools gymTools{training, catalog, program, notesService, "https://windmill.works"};
+  BodyweightService bodyweightService{repo.bodyweight};
+  GymTools gymTools{training, catalog, program, notesService, bodyweightService,
+                    "https://windmill.works"};
   FakeAsk agent;
   AskService ask{training, threadService, agent, gymTools, entitlements};
 
@@ -99,6 +101,7 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   CHECK(holds(offered, "list_routines"));
   CHECK(holds(offered, "get_stats"));
   CHECK(holds(offered, "list_notes"));
+  CHECK(holds(offered, "list_bodyweight"));
   CHECK_FALSE(holds(offered, "get_preferences"));
   CHECK(holds(offered, "propose_routine_change"));
   CHECK(holds(offered, "propose_routine_removal"));
@@ -116,9 +119,9 @@ TEST(ask_tools_hand_the_model_gyms_reads_and_the_two_tools_that_only_propose) {
   for (const ToolDeclaration& tool : offered) names.push_back(tool.name());
   std::sort(names.begin(), names.end());
   CHECK_EQ(names, (std::vector<std::string>{"get_session", "get_stats", "last_time",
-                                            "list_exercises", "list_notes", "list_routines",
-                                            "list_sessions", "propose_routine_change",
-                                            "propose_routine_removal"}));
+                                            "list_bodyweight", "list_exercises", "list_notes",
+                                            "list_routines", "list_sessions",
+                                            "propose_routine_change", "propose_routine_removal"}));
   // And no tool by the name that would let Coach create: the prefix is the grant.
   for (const ToolDeclaration& tool : gymToolCatalog()) CHECK(tool.name() != "propose_routine_create");
   CHECK_FALSE(holds(offered, "propose_routine_create"));

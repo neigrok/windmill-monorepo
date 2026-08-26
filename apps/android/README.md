@@ -73,8 +73,8 @@ Gym's settings — units, the rest dial and how a logged set confirms itself
 (`domain/Preferences.kt`, `ui/SettingsScreen.kt`) — are reached from a row at the foot of the
 Routines home rather than from You: `ProductModule` exposes a room and nothing else on this surface.
 
-**The room opens and works signed out**: sessions, routines, movements and gym's own settings live
-on the device in `LocalLog` + `SetQueue` + `LocalPreferences`. The six barbell movements —
+**The room opens and works signed out**: sessions, routines, movements, weigh-ins and gym's own
+settings live on the device in `LocalLog` + `SetQueue` + `LocalBodyweight` + `LocalPreferences`. The six barbell movements —
 back-squat · bench-press · deadlift · overhead-press · barbell-row · chin-up — ride with every seat
 as a client constant (`domain/Training.kt`, ids and names identical to `backend/db/schema.sql`'s
 seed), filling only ids the catalog does not already hold, so an anonymous squat is logged against
@@ -83,7 +83,8 @@ the real `back-squat` and signing in lands it on the movement the log already ha
 Signing in claims everything through `ClaimReplay`: settings first, then movements, then routines,
 then finished sessions oldest-first — each replayed start → sets → finish with
 `joinOpenSession: false` — then the live session's start **only if the log has not answered for it**
-(`SetQueue`'s persisted `unclaimed` bit).
+(`SetQueue`'s persisted `unclaimed` bit), and last, once every session has landed, the weigh-ins
+(`LocalBodyweight`, one row per local date, the newer `recordedAt` winning on both ends).
 
 Rules that must hold:
 

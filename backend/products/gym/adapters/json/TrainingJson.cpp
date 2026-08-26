@@ -806,6 +806,31 @@ Json::Value toJson(const std::vector<Note>& notes) {
   return out;
 }
 
+// The weight and the device instant are the whole write; the day comes off the path and the owner
+// off the caller. A body that is not an object, a weight that is not a number, or an instant that
+// is not an integer is the one sentence every unreadable weigh-in gets; the band and the calendar
+// are the entity's to refuse, with their own sentences.
+Bodyweight parseBodyweightWrite(const Json::Value& body, const std::string& dateLocal,
+                                const UserId& user) {
+  if (!body.isObject() || !body["weightKg"].isNumeric() || !body["recordedAt"].isUInt64())
+    throw InvalidTraining("could not read that weigh-in");
+  return Bodyweight{user, dateLocal, body["weightKg"].asDouble(), body["recordedAt"].asUInt64()};
+}
+
+Json::Value toJson(const Bodyweight& entry) {
+  Json::Value body(Json::objectValue);
+  body["dateLocal"] = entry.dateLocal;
+  body["weightKg"] = entry.weightKg;
+  body["recordedAt"] = Json::Value::UInt64(entry.recordedAtMs);
+  return body;
+}
+
+Json::Value toJson(const std::vector<Bodyweight>& entries) {
+  Json::Value out(Json::arrayValue);
+  for (const Bodyweight& entry : entries) out.append(toJson(entry));
+  return out;
+}
+
 std::string shareUrl(const std::string& appBaseUrl, const std::string& token) {
   return appBaseUrl + "/#/gym/shared/" + token;
 }

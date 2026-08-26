@@ -87,6 +87,7 @@ class TrainingStoreTests {
     private lateinit var catalogFile: File
     private lateinit var localFile: File
     private lateinit var preferencesFile: File
+    private lateinit var bodyweightFile: File
 
     @Before
     fun setUp() {
@@ -95,6 +96,7 @@ class TrainingStoreTests {
         catalogFile = File(tmp.root, "gym-catalog-${System.nanoTime()}.json")
         localFile = File(tmp.root, "gym-local-${System.nanoTime()}.json")
         preferencesFile = File(tmp.root, "gym-prefs-${System.nanoTime()}.json")
+        bodyweightFile = File(tmp.root, "gym-bodyweight-${System.nanoTime()}.json")
     }
 
     private fun TestScope.makeStore(
@@ -109,6 +111,7 @@ class TrainingStoreTests {
         deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile, deviceOwner),
         localPreferences = LocalPreferences(preferencesFile),
+        localBodyweight = LocalBodyweight(bodyweightFile),
         scope = backgroundScope,
         now = { clockMs += 1; clockMs },
         mintSession = mintSession,
@@ -126,6 +129,7 @@ class TrainingStoreTests {
         deviceCopy = DeviceCopy(catalogFile),
         localLog = LocalLog(localFile, deviceOwner),
         localPreferences = LocalPreferences(preferencesFile),
+        localBodyweight = LocalBodyweight(bodyweightFile),
         scope = backgroundScope,
         now = { clockMs += 1; clockMs },
         mintSession = { "ses_minted" },
@@ -2138,7 +2142,8 @@ class TrainingStoreTests {
 
         val refused = store.applyProposal("prop_1")
 
-        assertEquals(ProposalOutcome.Moved("the routine moved after this was written — nothing was applied"),
+        assertEquals("the log's own sentence, as sent (B13)",
+            ProposalOutcome.Moved("that routine changed after this proposal was written, so it was not applied"),
             refused)
         assertEquals("the routine was re-read, not argued with", 2, store.routine("rt_1")?.revision)
         assertTrue(store.pendingProposals.isEmpty())

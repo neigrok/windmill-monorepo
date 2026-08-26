@@ -69,6 +69,10 @@ import works.windmill.platform.net.WindmillJson
 fun AskScreen(
     store: TrainingStore,
     thread: List<AskExchange>,
+    // Ephemeral lines derived from the server's apply reply; they die with the conversation.
+    receipts: List<String>,
+    // Reviews opened and closed with nothing decided: those cards read `still waiting`.
+    lookedAt: Set<String>,
     asking: Boolean,
     capped: Boolean,
     onAsk: (String) -> Unit,
@@ -85,7 +89,8 @@ fun AskScreen(
     val nowMs = System.currentTimeMillis()
     val scroll = rememberScrollState()
 
-    // Read back off the log: the reply carries ids only, and a proposal moves when anybody decides.
+    // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
+    // decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val minted = remember { mutableStateMapOf<String, Proposal>() }
     val wanted = thread.flatMap { it.answer?.proposals.orEmpty() }
     LaunchedEffect(wanted) {
@@ -96,7 +101,7 @@ fun AskScreen(
         }
     }
 
-    LaunchedEffect(thread) {
+    LaunchedEffect(thread, receipts) {
         withFrameNanos { }
         scroll.animateScrollTo(scroll.maxValue)
     }
@@ -123,7 +128,7 @@ fun AskScreen(
                     Text(Ask.waiting, style = GymType.numeral(12), color = GymSkin.inkFaint)
                 }
                 exchange.answer?.let { answered ->
-                    Answer(answered, minted, store.catalog, nowMs, onReview)
+                    Answer(answered, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview)
                 }
                 exchange.trouble?.let { said ->
                     // The cap-reached state below says this refusal once; it is not drawn twice.
@@ -137,6 +142,7 @@ fun AskScreen(
                     )
                 }
             }
+            receipts.forEach { ReceiptLine(it) }
         }
         // The allowance sits immediately above the composer — where a question is spent — and is
         // always drawn, cap state included; only what stands under it changes.
@@ -382,6 +388,7 @@ private fun Answer(
     minted: Map<String, Proposal>,
     catalog: List<Exercise>,
     nowMs: Long,
+    lookedAt: Set<String>,
     onReview: (Proposal) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
@@ -392,9 +399,23 @@ private fun Answer(
         )
         // Drawn from the LOG's own copy and never from what the model said about it.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
-            Minted(proposal, catalog, nowMs) { onReview(proposal) }
+            Minted(proposal, catalog, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
         }
         Receipt(answer)
+    }
+}
+
+// What the server said it did, the moment it said so. Not stored: reopening the thread does not
+// draw it again, and nothing here pretends otherwise.
+@Composable
+fun ReceiptLine(line: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum),
+    ) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.setDone))
+        Text(line, style = GymType.numeral(12, FontWeight.Bold), color = GymSkin.inkDim)
     }
 }
 
@@ -448,6 +469,7 @@ private fun Minted(
     proposal: Proposal,
     catalog: List<Exercise>,
     nowMs: Long,
+    stillWaiting: Boolean,
     onReview: () -> Unit,
 ) {
     Column(
@@ -467,8 +489,6 @@ private fun Minted(
                 color = GymSkin.accent,
                 maxLines = 1,
             )
-            Spacer(Modifier.weight(1f))
-            Text(proposal.counted, style = GymType.numeral(11), color = GymSkin.inkFaint, maxLines = 1)
         }
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
             proposal.drawn.take(3).forEach { change ->
@@ -491,9 +511,12 @@ private fun Minted(
                 )
             }
         }
-        if (!proposal.isPending) {
-            Text(proposal.historyLine(nowMs), style = GymType.numeral(11), color = GymSkin.inkFaint)
-        }
+        Text(
+            if (proposal.isPending) proposal.cardLine(proposal.routineName, stillWaiting)
+            else proposal.historyLine(nowMs),
+            style = GymType.numeral(11),
+            color = GymSkin.inkFaint,
+        )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier

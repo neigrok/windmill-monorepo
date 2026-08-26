@@ -1,6 +1,7 @@
 #include "products/gym/routes.h"
 
 #include "products/gym/adapters/http/AskApi.h"
+#include "products/gym/adapters/http/BodyweightApi.h"
 #include "products/gym/adapters/http/CatalogApi.h"
 #include "products/gym/adapters/http/NotesApi.h"
 #include "products/gym/adapters/http/PreferencesApi.h"
@@ -18,9 +19,9 @@ namespace wm::gym {
 
 // The gym product's whole HTTP surface, mounted behind one named seam — the same shape roadmap's
 // and journal's registerRoutes have. main.cpp builds the collaborators, bundles them into GymDeps,
-// and calls this beside the other two mounts. The handlers live on six adapters that mirror the
-// six aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
-// PreferencesApi, ThreadsApi, NotesApi — and this file is the ONE place the paths are named, so a route's
+// and calls this beside the other two mounts. The handlers live on seven adapters that mirror the
+// seven aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
+// PreferencesApi, ThreadsApi, NotesApi, BodyweightApi — and this file is the ONE place the paths are named, so a route's
 // method, its path and the reason it hangs where it does are read in one column. Every path below is
 // owner-scoped but the workout share's read, which is the only unauthenticated route in the product.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
@@ -32,6 +33,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   auto preferences = std::make_shared<PreferencesApi>(deps.preferencesService, deps.authService);
   auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService);
   auto notes = std::make_shared<NotesApi>(deps.notesService, deps.authService);
+  auto bodyweight =
+      std::make_shared<BodyweightApi>(deps.bodyweightService, deps.authService, *deps.clock);
 
   app.registerHandler(
       "/v1/gym/exercises",
@@ -253,6 +256,27 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         notes->deleteNote(req, std::move(cb), id);
       },
       {drogon::Delete});
+  // BODYWEIGHT: one row per LOCAL calendar day, and the day in the path is the identity — a second
+  // write to a day is a correction, never a second row, so every write is idempotent by its key
+  // and the store keeps whichever of two writes carries the later `recordedAt`. Kilograms only on
+  // the wire. Read by every connected agent through `list_bodyweight`; written by a hand and by
+  // nothing else — no tool at any grant level, for the reason no tool edits a logged set.
+  app.registerHandler(
+      "/v1/gym/bodyweight",
+      [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        bodyweight->listEntries(req, std::move(cb));
+      },
+      {drogon::Get});
+  app.registerHandler(
+      "/v1/gym/bodyweight/{dateLocal}",
+      [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                   const std::string& dateLocal) { bodyweight->saveEntry(req, std::move(cb), dateLocal); },
+      {drogon::Put});
+  app.registerHandler(
+      "/v1/gym/bodyweight/{dateLocal}",
+      [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+                   const std::string& dateLocal) { bodyweight->deleteEntry(req, std::move(cb), dateLocal); },
+      {drogon::Delete});
   app.registerHandler(
       "/v1/gym/stats",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -279,6 +303,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       "/v1/gym/export/notes",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         notes->exportNotes(req, std::move(cb));
+      },
+      {drogon::Get});
+  // The fourth: every weigh-in, one row per day.
+  app.registerHandler(
+      "/v1/gym/export/bodyweight",
+      [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        bodyweight->exportEntries(req, std::move(cb));
       },
       {drogon::Get});
   // ASK'S THREADS (§O), MOUNTED UNCONDITIONALLY — unlike `POST /v1/gym/ask` below, which exists only

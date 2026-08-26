@@ -1066,6 +1066,13 @@ alter table gym_proposals add column if not exists thread_id text
   references gym_ask_threads(id) on delete set null;
 create index if not exists gym_proposals_thread on gym_proposals (thread_id);
 
+-- Which proposal took a pending one's slot: the id the SAME door and connection minted next on the
+-- routine (one pending per (routine, door, connection)). Null on every row superseded because the
+-- routine MOVED, and on every row settled before this column existed — so a settle can tell "a
+-- newer proposal replaced this one" from "that routine changed" without guessing off the revision,
+-- which is wrong the moment a routine also moves after the second mint.
+alter table gym_proposals add column if not exists superseded_by text;
+
 -- The notes a lifter writes FOR Coach: title-and-body pairs, stored verbatim, read by every agent
 -- holding the gym read scope. Ten per account, a title of 1..60 characters, a body of at most 500
 -- bytes — the same three numbers products/gym/domain/Note.h refuses against and `list_notes`
@@ -1083,6 +1090,22 @@ create table if not exists gym_notes (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   unique (user_id, position) deferrable initially deferred
+);
+
+-- A lifter's weigh-ins: one row per LOCAL calendar day, kilograms to two decimals, and the identity
+-- is the day — a second write to the same day is a correction, never a second row. `recorded_at`
+-- is the device's clock at the save and decides ONLY which of two writes to one day is newer: the
+-- later one wins, an older one answers with the row that stands (a replayed stale write can never
+-- overwrite a newer correction). The CHECK is the same band products/gym/domain/Bodyweight.h
+-- refuses against. No agent writes here at any grant level: a weigh-in is a fact only the lifter
+-- observed, and `list_bodyweight` is the one door.
+create table if not exists gym_bodyweight (
+  user_id     uuid not null references users(id) on delete cascade,
+  date_local  date not null,
+  weight_kg   numeric(5,2) not null check (weight_kg between 20 and 400),
+  recorded_at bigint not null,
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, date_local)
 );
 
 -- The catalog seed. step_kg by equipment, in kg: barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5,

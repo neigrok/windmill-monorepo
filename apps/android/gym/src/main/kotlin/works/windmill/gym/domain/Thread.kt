@@ -24,15 +24,22 @@ data class ThreadProposal(
     val routine: String = "",
     @SerialName("createdAt") val createdAtMs: Long = 0,
 ) {
+    val counted: String get() = if (changeCount == 1) "1 change" else "$changeCount changes"
+
+    // The card's summary where the thread read carries no prose: the same shape the routines-home
+    // card falls back to. The conversation's own detail read replaces it with the model's words.
+    val summaryLine: String
+        get() = routine.takeIf { it.isNotBlank() }?.let { "$counted to $it." } ?: "$counted."
+
     // Dated by when the proposal was WRITTEN; an absent instant drops the date and keeps the rest.
-    fun line(nowMs: Long): String {
-        val counted = if (changeCount == 1) "1 change" else "$changeCount changes"
+    // `stillWaiting` is a review opened and closed with nothing decided.
+    fun line(nowMs: Long, stillWaiting: Boolean = false): String {
         val about = routine.takeIf { it.isNotBlank() }?.let { "$counted to $it" } ?: counted
         val became = when (state) {
             ProposalState.Applied -> "applied"
             ProposalState.Dismissed -> "turned down"
             ProposalState.Superseded -> "set aside"
-            ProposalState.Pending -> "waiting"
+            ProposalState.Pending -> if (stillWaiting) Proposal.stillWaiting else "waiting"
         }
         val said = "$about · $became"
         if (createdAtMs <= 0) return said

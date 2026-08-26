@@ -73,16 +73,23 @@ test('the pound is defined in exactly one file in this product', () => {
   assert.deepEqual(carriers, ['units.js']);
 });
 
-test('only the spelling calls the conversion, and no module that writes to the log imports it', () => {
+test('only the spelling and the weigh-in call the conversion, and no module that writes a set imports it', () => {
   const callers = sourceFiles(GYM)
     .filter((file) => /\binDisplayUnit\b/.test(fs.readFileSync(file, 'utf8')))
     .map((file) => path.relative(GYM, file))
     .sort();
-  assert.deepEqual(callers, ['log.js', 'units.js']);
+  assert.deepEqual(callers, ['bodyweight/bodyweight.js', 'log.js', 'units.js']);
 
   const writers = ['gymApi.js', 'backfill.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
   const reaching = writers.filter((file) => /from '\.\.?\/?[a-z/]*units\.js'/.test(read(file)));
   assert.deepEqual(reaching, []);
+
+  // The one field typed in the display unit: a weigh-in comes back to kilograms before the write.
+  const back = sourceFiles(GYM)
+    .filter((file) => /\bfromDisplayUnit\b/.test(fs.readFileSync(file, 'utf8')))
+    .map((file) => path.relative(GYM, file))
+    .sort();
+  assert.deepEqual(back, ['bodyweight/bodyweight.js', 'units.js']);
 });
 
 test('every field a lifter types into spells the kilogram, not the reading', () => {
@@ -117,5 +124,5 @@ test('the shared workout’s page spells kilograms itself, in the render that pr
 test('the transform says out loud that the store holds kilograms and only kilograms', () => {
   const source = read('units.js');
   assert.equal(source.includes('The store holds kilograms and only kilograms'), true);
-  assert.equal(source.includes('it is never on the way to a write'), true);
+  assert.equal(source.includes('the one field typed in the display unit is a weigh-in'), true);
 });

@@ -31,6 +31,7 @@ import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
+import works.windmill.gym.store.LocalBodyweight
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
@@ -57,6 +58,7 @@ class NotesScreenTests {
             deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
             localLog = LocalLog(File(tmp.root, "local.json")),
             localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
+            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
             scope = scope,
             sync = { if (it.isSignedIn) server else null },
         )

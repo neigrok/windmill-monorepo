@@ -2,12 +2,15 @@
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
+#include "products/gym/application/AskService.h"
+#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/PreferencesService.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
 #include "test/testing.h"
 
+#include <cctype>
 #include <functional>
 #include <optional>
 #include <string>
@@ -32,7 +35,8 @@ struct Harness {
   ProgramService program{repo.program, clock};
   PreferencesService preferences{repo.preferences};
   NotesService notes{repo.notes, clock};
-  GymTools tools{training, catalog, program, notes, kAppBase};
+  BodyweightService bodyweight{repo.bodyweight};
+  GymTools tools{training, catalog, program, notes, bodyweight, kAppBase};
 
   Harness() {
     repo.db.seed(benchPress());
@@ -148,7 +152,8 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
            (std::vector<std::string>{
                "list_exercises gym:read", "list_sessions gym:read", "get_session gym:read",
                "last_time gym:read", "list_routines gym:read", "get_stats gym:read",
-               "list_notes gym:read", "start_session gym:write", "log_set gym:write", "finish_session gym:write",
+               "list_notes gym:read", "list_bodyweight gym:read", "start_session gym:write",
+               "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
                "create_exercise gym:write", "share_session gym:write",
                "discard_session gym:delete", "propose_routine_removal gym:delete",
@@ -256,6 +261,124 @@ TEST(gym_list_notes_answers_in_precedence_order_and_claims_no_log_rows) {
     }
 }
 
+// The bodyweight read: day ascending, kilograms, the device instant kept off the agent's copy, no
+// receipt, both bounds inclusive, and a bound that is not a calendar day refused before the store.
+TEST(gym_list_bodyweight_answers_day_ascending_in_kilograms_and_claims_no_log_rows) {
+  Harness h;
+  h.bodyweight.save(Bodyweight{uid(), "2026-08-03", 82.4, 1'785'000'000'000});
+  h.bodyweight.save(Bodyweight{uid(), "2026-08-01", 83.0, 1'784'800'000'000});
+  h.bodyweight.save(Bodyweight{uid(), "2026-08-25", 81.95, 1'786'000'000'000});
+  h.bodyweight.save(Bodyweight{UserId{"u2"}, "2026-08-02", 70.0, 1'785'000'000'000});
+
+  const ToolResult listed = h.call("list_bodyweight", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  REQUIRE_EQ(body(listed)["entries"].size(), 3u);
+  CHECK_EQ(body(listed)["entries"][0]["dateLocal"].asString(), std::string("2026-08-01"));
+  CHECK_EQ(body(listed)["entries"][0]["weightKg"].asDouble(), 83.0);
+  CHECK_EQ(body(listed)["entries"][1]["dateLocal"].asString(), std::string("2026-08-03"));
+  CHECK_EQ(body(listed)["entries"][2]["dateLocal"].asString(), std::string("2026-08-25"));
+  CHECK_EQ(body(listed)["entries"][2]["weightKg"].asDouble(), 81.95);
+  CHECK_FALSE(body(listed)["entries"][0].isMember("recordedAt"));
+  CHECK_FALSE(body(listed).isMember("read"));
+  // B3: the text the agent reads carries the two decimals the lifter wrote, never a double's noise.
+  CHECK_EQ(message(listed),
+           std::string(R"({"entries":[{"dateLocal":"2026-08-01","weightKg":83.0},)"
+                       R"({"dateLocal":"2026-08-03","weightKg":82.4},)"
+                       R"({"dateLocal":"2026-08-25","weightKg":81.95}]})"));
+
+  Json::Value window(Json::objectValue);
+  window["from"] = "2026-08-02";
+  window["to"] = "2026-08-03";
+  const ToolResult narrowed = h.call("list_bodyweight", window);
+  REQUIRE(!narrowed.isError);
+  REQUIRE_EQ(body(narrowed)["entries"].size(), 1u);
+  CHECK_EQ(body(narrowed)["entries"][0]["dateLocal"].asString(), std::string("2026-08-03"));
+  CHECK_EQ(body(h.call("list_bodyweight", Json::Value(Json::objectValue), "u3"))["entries"].size(),
+           0u);
+
+  Json::Value bad(Json::objectValue);
+  bad["from"] = "2026-02-30";
+  const ToolResult refused = h.call("list_bodyweight", bad);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused),
+           std::string("list_bodyweight: \"from\" must be a calendar day written YYYY-MM-DD."));
+  bad = Json::Value(Json::objectValue);
+  bad["to"] = 20260803;
+  CHECK_EQ(message(h.call("list_bodyweight", bad)),
+           std::string("list_bodyweight: \"to\" must be a calendar day written YYYY-MM-DD."));
+  for (const ToolDeclaration& tool : gymToolCatalog())
+    if (tool.name() == "list_bodyweight") {
+      const std::string described = tool.descriptor["description"].asString();
+      CHECK(described.find("no tool that writes one") != std::string::npos);
+      CHECK(described.find("never estimate") != std::string::npos);
+    }
+}
+
+// A weigh-in is a fact only the lifter observed. No tool at any grant level writes one — not by
+// any of the names a wave might reach for, not under `propose_`, which would hand it to Coach
+// unread — so the ONLY tool whose name says bodyweight is the read, and every other name misses
+// the dispatcher and leaves the store untouched. The ban is read off the declarations, not off a
+// list of guesses: a tool is about bodyweight when its name or any argument it declares says so
+// (`bodyweight`, `weigh_in`, or the weigh-in's own key `dateLocal` — `weightKg` is a set's load and
+// is not it), and every such tool is a read. Coach's door offers nothing but reads and `propose_*`,
+// so no future write could reach Coach under any name.
+TEST(gym_publishes_no_tool_that_writes_a_bodyweight_at_any_level) {
+  Harness h;
+  h.bodyweight.save(Bodyweight{uid(), "2026-08-25", 82.4, 1'786'000'000'000});
+  const std::vector<Bodyweight> before = h.repo.db.bodyweightRows;
+
+  const auto saysBodyweight = [](std::string word) {
+    for (char& c : word) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return word.find("bodyweight") != std::string::npos ||
+           word.find("weigh_in") != std::string::npos ||
+           word.find("weighin") != std::string::npos || word == "datelocal";
+  };
+  std::vector<std::string> aboutBodyweight;
+  for (const ToolDeclaration& tool : gymToolCatalog()) {
+    const std::string name = tool.name();
+    bool about = saysBodyweight(name) || name.find("weigh") != std::string::npos ||
+                 name.find("weight") != std::string::npos;
+    for (const std::string& argument : tool.descriptor["inputSchema"]["properties"].getMemberNames())
+      about = about || saysBodyweight(argument);
+    if (!about) continue;
+    aboutBodyweight.push_back(name);
+    CHECK(tool.access == Access::read);
+  }
+  CHECK_EQ(aboutBodyweight, std::vector<std::string>{"list_bodyweight"});
+  const std::vector<std::string> everything =
+      namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()}));
+  for (const std::string& name : everything)
+    CHECK(name == "list_bodyweight" || name.find("bodyweight") == std::string::npos);
+
+  // Coach's door, read off its declarations: reads and `propose_*`, nothing else, and the read is
+  // there while every write is not.
+  AskTools coach(h.tools, ThreadId{"thr_00000001"});
+  std::vector<std::string> offered;
+  for (const ToolDeclaration& tool : coach.declareTools()) {
+    CHECK(tool.access == Access::read || mintsProposal(tool.name()));
+    offered.push_back(tool.name());
+  }
+  CHECK_EQ(offered, (std::vector<std::string>{"list_exercises", "list_sessions", "get_session",
+                                              "last_time", "list_routines", "get_stats",
+                                              "list_notes", "list_bodyweight",
+                                              "propose_routine_change",
+                                              "propose_routine_removal"}));
+
+  Json::Value args(Json::objectValue);
+  args["dateLocal"] = "2026-08-26";
+  args["weightKg"] = 90.0;
+  args["recordedAt"] = Json::Value::UInt64(1'786'100'000'000);
+  for (const char* name :
+       {"log_bodyweight", "save_bodyweight", "record_bodyweight", "set_bodyweight", "weigh_in",
+        "log_weigh_in", "delete_bodyweight", "remove_bodyweight", "propose_bodyweight",
+        "propose_bodyweight_change", "propose_weigh_in"}) {
+    CHECK(h.call(name, args).isError);
+    CHECK_FALSE(h.tools.retirement(name).has_value());
+  }
+  CHECK_EQ(h.repo.db.bodyweightRows, before);
+}
+
 // A retired name is answered by naming its replacement, never by "you were not granted gym:write".
 TEST(gym_the_retired_routine_tools_name_what_replaced_them) {
   Harness h;
@@ -329,7 +452,7 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
 
   const std::vector<std::string> reads{"list_exercises", "list_sessions", "get_session",
                                        "last_time",      "list_routines", "get_stats",
-                                       "list_notes"};
+                                       "list_notes",     "list_bodyweight"};
   const std::vector<std::string> writes{"start_session",  "log_set",
                                         "finish_session", "create_routine",
                                         "propose_routine_change", "create_exercise",
@@ -369,7 +492,8 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
   CHECK_EQ(surface.products(), (std::vector<std::string>{"roadmap", "gym"}));
   CHECK_EQ(namesIn(surface.listTools(ToolCaller{uid(), parseToolScope("gym:read")})),
            (std::vector<std::string>{"list_exercises", "list_sessions", "get_session", "last_time",
-                                     "list_routines", "get_stats", "list_notes"}));
+                                     "list_routines", "get_stats", "list_notes",
+                                     "list_bodyweight"}));
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
 }

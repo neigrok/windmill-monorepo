@@ -19,8 +19,13 @@ public struct GymRoom: View {
     @State private var savingRoutine = false
     @State private var routineFailure: String?
     @State private var note: String?
-    // "Later" means exactly this visit: the room holds it, never disk.
-    @State private var setAside: Set<String> = []
+    // The review sheet, over whatever is beneath it; a session starting takes it down.
+    @State private var reviewing: Reviewing?
+    @State private var reviewedLast: String?
+    // What this visit decided and what it closed undecided: the receipt lines and the `still waiting` cards.
+    // Neither is stored; on re-entering the room both are gone, and nothing pretends otherwise.
+    @State private var receipts: [String: String] = [:]
+    @State private var undecided: Set<String> = []
     @State private var conversation = AskConversation()
     // A server with no Anthropic key answers the Coach route's 404, and the entry goes for the rest of the visit.
     @State private var askOnThisDeployment = true
@@ -39,11 +44,15 @@ public struct GymRoom: View {
         var id: String { rawValue }
     }
 
+    private struct Reviewing: Identifiable {
+        let id: String
+    }
+
     // What a tab can open over itself. They stack, and only two deep.
     private enum Away: Equatable {
         case session(SessionSummary)
         case movement(String)
-        case proposal(String)
+        case bodyweight
         case threads
         case thread(String)
         case notes
@@ -56,7 +65,7 @@ public struct GymRoom: View {
             switch self {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
-            case .proposal: return "Proposal"
+            case .bodyweight: return Bodyweight.title
             case .threads: return AskThreads.title
             case .thread: return "Conversation"
             case .notes: return Notes.title
@@ -89,6 +98,21 @@ public struct GymRoom: View {
         .environment(\.colorScheme, .dark)
         .roomChrome(.dark)
         .tint(skin.accent)
+        .sheet(item: $reviewing, onDismiss: closedTheReview) { open in
+            ReviewSheet(proposalId: open.id, store: store,
+                        onSettled: { receipt in
+                            receipts[open.id] = receipt
+                            undecided.remove(open.id)
+                        },
+                        onClosed: { said in
+                            reviewing = nil
+                            note = said
+                        },
+                        say: { note = $0 })
+                .presentationBackground(skin.surface)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         // `connect` drains what the device holds BEFORE it reads the log: reading settles a stale open session at its last
         // activity, and past four hours from that close an owed set is refused for good.
         .task(id: account.seat) {
@@ -110,8 +134,10 @@ public struct GymRoom: View {
             }
         }
         // Held while the room holds an open session, whichever way it opened or closed: finish, discard, a start, a connect.
+        // A session outranks the stage the sheet stood over, so the sheet is taken down with it.
         .onChange(of: store.session != nil, initial: true) { _, open in
             WakeLock.hold(WakeLock.wanted(sessionIsOpen: open, phase: scenePhase))
+            if open { reviewing = nil }
         }
         .onDisappear {
             WakeLock.hold(false)
@@ -144,14 +170,13 @@ public struct GymRoom: View {
                               onMovement: { look(at: .movement($0)) })
             case .movement(let exerciseId):
                 RecordScreen(exerciseId: exerciseId, store: store, isSignedIn: account.isSignedIn)
-            case .proposal(let proposalId):
-                ProposalScreen(proposalId: proposalId, store: store,
-                               onClosed: { said in back(); note = said },
-                               say: { note = $0 })
+            case .bodyweight:
+                BodyweightScreen(store: store, say: { note = $0 })
             case .threads:
                 ThreadsScreen(doors: threadDoors)
             case .thread(let threadId):
-                ThreadScreen(threadId: threadId, doors: threadDoors, onDeleted: back)
+                ThreadScreen(threadId: threadId, doors: threadDoors, onDeleted: back,
+                             receipts: receipts, undecided: undecided)
             case .notes:
                 if account.isSignedIn {
                     NotesScreen(doors: notesDoors)
@@ -170,7 +195,7 @@ public struct GymRoom: View {
                               onStart: { Task { await open(routineId) } },
                               onEdit: { look(at: .building(RoutineDraft(editing: $0))) },
                               onMovement: { look(at: .movement($0)) },
-                              onProposal: { look(at: .proposal($0)) },
+                              onProposal: review,
                               onThread: { look(at: .thread($0)) })
             case .building(let draft):
                 RoutineEditorScreen(draft: draft, catalog: store.catalog,
@@ -193,29 +218,26 @@ public struct GymRoom: View {
         } else {
             switch tab {
             case .routines:
-                RoutinesScreen(store: store, isSignedIn: account.isSignedIn, setAside: setAside,
+                RoutinesScreen(store: store, isSignedIn: account.isSignedIn, undecided: undecided,
                                onOpen: { look(at: .routine($0)) },
                                onNew: newRoutine,
                                onStartLogging: { Task { await open(nil) } },
                                onMovement: { look(at: .movement($0)) },
-                               onProposal: { look(at: .proposal($0)) },
-                               onLater: { setAside.insert($0) },
-                               onAsk: Ask.doorIsOpen(signedIn: account.isSignedIn,
-                                                     sessionIsOpen: store.session != nil,
-                                                     onThisDeployment: askOnThisDeployment)
-                                   ? { note = nil; tab = .ask } : nil,
+                               onProposal: review,
                                onSettings: { look(at: .settings) },
                                onSignIn: { shell.openYou() },
                                onConnect: connected.invites ? { look(at: .connect) } : nil)
             case .log:
-                LogScreen(store: store, onOpen: { look(at: .session($0)) })
+                LogScreen(store: store, onOpen: { look(at: .session($0)) },
+                          onBodyweight: { look(at: .bodyweight) }, say: { note = $0 })
             case .ask:
                 if !account.isSignedIn {
                     AskSignedOutStance(onSignIn: { shell.openYou() })
                 } else if !askOnThisDeployment {
                     AskAbsentStance(onNotes: { look(at: .notes) })
                 } else {
-                    AskScreen(store: store, conversation: $conversation, doors: askDoors)
+                    AskScreen(store: store, conversation: $conversation, doors: askDoors,
+                              receipts: receipts, undecided: undecided)
                 }
             }
         }
@@ -234,6 +256,19 @@ public struct GymRoom: View {
         note = nil
         routineFailure = nil
         away.append(destination)
+    }
+
+    // Over the conversation, over the routines home, over the routine: a sheet, never a push.
+    private func review(_ proposalId: String) {
+        note = nil
+        reviewedLast = proposalId
+        reviewing = Reviewing(id: proposalId)
+    }
+
+    // Closing decides nothing: a proposal the sheet did not settle is still waiting, and the card says so.
+    private func closedTheReview() {
+        guard let last = reviewedLast, receipts[last] == nil else { return }
+        undecided.insert(last)
     }
 
     private func back() {
@@ -306,7 +341,7 @@ public struct GymRoom: View {
             openThreads: { look(at: .threads) },
             openNotes: { look(at: .notes) },
             connect: { look(at: .connect) },
-            openProposal: { look(at: .proposal($0)) },
+            openProposal: review,
             absent: { askOnThisDeployment = false })
     }
 
@@ -357,7 +392,7 @@ public struct GymRoom: View {
                 }
             },
             openThread: { look(at: .thread($0)) },
-            openProposal: { look(at: .proposal($0)) },
+            openProposal: review,
             askSomethingNew: {
                 conversation = AskConversation()
                 note = nil

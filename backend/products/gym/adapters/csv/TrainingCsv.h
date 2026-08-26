@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/ports/AskThreadRepository.h"
+#include "products/gym/ports/BodyweightRepository.h"
 #include "products/gym/ports/LogRepository.h"
 #include "products/gym/ports/NotesRepository.h"
 
@@ -17,5 +18,7 @@ std::string toCsv(const std::vector<ExportedSet>& sets);
 std::string toCsv(const std::vector<ExportedThreadTurn>& turns);
 
 std::string toCsv(const std::vector<ExportedNote>& notes);
+
+std::string toCsv(const std::vector<ExportedBodyweight>& entries);
 
 }
