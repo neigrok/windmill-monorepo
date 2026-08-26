@@ -269,7 +269,7 @@ Coach, the live mirror heads Routines home, the hash grammar is P5's. Ledger `0t
 over the conversation and over the routines home; one Apply, disabled until the diff has been seen
 to its end; kept rows folded in place; the writer's kicker; the ephemeral receipt from the server's
 apply reply; the superseded refusal's three sentences off `gym_proposals.superseded_by`. Ledger `1o`
-and `1x` are closed; `2p` (iOS does not re-lock Apply when a kept run unfolds) is what it left open.
+and `1x` are closed; the gate re-locks when a kept run unfolds on all three surfaces.
 
 **Wave 5 · Native idiom.** The largest wave. iOS: TabView, NavigationStack, List conversions,
 `.toolbar`, `.searchable`, platform controls. Android: Scaffold, TopAppBar, NavigationBar,
