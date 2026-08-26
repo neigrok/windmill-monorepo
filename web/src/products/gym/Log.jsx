@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
 import { MID_WORKOUT_REFUSAL } from './backfill.js';
@@ -19,14 +20,14 @@ export function LogNotOpen({ log, onSignIn }) {
     return (
       <p className="gym-read-failed">
         Your sign-in lapsed.
-        <button type="button" className="gym-retry" onClick={onSignIn}>Sign in</button>
+        <Button variant="secondary" size="sm" onClick={onSignIn}>Sign in</Button>
       </p>
     );
   }
   return (
     <p className="gym-read-failed">
       {log.failure === 'signal' ? 'The log didn’t load. Open it again when you have signal.' : 'The log didn’t answer.'}
-      <button type="button" className="gym-retry" onClick={log.retryBoot}>Retry</button>
+      <Button variant="secondary" size="sm" onClick={log.retryBoot}>Retry</Button>
     </p>
   );
 }
@@ -240,7 +241,7 @@ export function SessionDetail({ id, log }) {
         <Back href="#/gym/log">The log</Back>
         <p className="gym-read-failed">
           The session didn’t load.
-          <button type="button" className="gym-retry" onClick={reread}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={reread}>Retry</Button>
         </p>
       </>
     );

@@ -678,22 +678,22 @@ final class JournalModuleTests: XCTestCase {
     func testTheHubCountsThePagesOfWhoeverIsSittingHere() {
         let module = JournalModule(device: directory)
 
-        XCTAssertEqual(module.hubLine(account("u-a")).headline, "You've written today.")
+        XCTAssertEqual(module.hubLine(account("u-a")).headline, "You’ve written today.")
         XCTAssertEqual(module.hubLine(account("u-a")).meta, "3 words so far")
         XCTAssertEqual(module.holdings(account("u-a")).count, 1)
 
-        XCTAssertEqual(module.hubLine(account(nil)).headline, "The cursor's waiting.")
+        XCTAssertEqual(module.hubLine(account(nil)).headline, "The cursor’s waiting.")
         XCTAssertNil(module.hubLine(account(nil)).meta)
         XCTAssertEqual(module.holdings(account(nil)).count, 0)
 
-        XCTAssertEqual(module.hubLine(account("u-b")).headline, "The cursor's waiting.")
+        XCTAssertEqual(module.hubLine(account("u-b")).headline, "The cursor’s waiting.")
         XCTAssertEqual(module.holdings(account("u-b")).count, 0)
     }
 
     func testASeatTheLogCouldNotConfirmStillCountsItsOwnPages() {
         let module = JournalModule(device: directory)
 
-        XCTAssertEqual(module.hubLine(account("u-a", verified: false)).headline, "You've written today.")
+        XCTAssertEqual(module.hubLine(account("u-a", verified: false)).headline, "You’ve written today.")
         XCTAssertEqual(module.holdings(account("u-a", verified: false)).count, 1)
         XCTAssertEqual(module.holdings(account("u-b", verified: false)).count, 0, "and only their own")
     }

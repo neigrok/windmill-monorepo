@@ -28,7 +28,9 @@ tired, one-handed, sits below it.
 - **A primary button inside a card in the middle of a scroll.** A card may hold the *content*
   of a decision; the buttons that commit it live in the bottom band, pinned, so they do not
   move when the body scrolls.
-- **Anything important in a top corner.** With a phone in one hand there is no top-right.
+- **A primary or destructive action in a top corner.** With a phone in one hand there is no
+  top-right. A **destination** is not an action: the shell's capsule and the You seat live there, and
+  so may a planning door the lifter is sitting down to take — never one they need mid-set.
 - **A destructive action above the reach band** — it belongs at the bottom too, but as the
   *secondary* slot, never as the widest target.
 

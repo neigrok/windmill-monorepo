@@ -18,9 +18,13 @@ app's.
 
 1. **The hub**, and the order its cards take (§3).
 2. **The capsule** — 38pt, top-left, one lane every app reserves and none of them paints.
-3. **Two gestures, and nothing else**: tap the capsule = the switcher; edge-swipe right = home.
-4. **The You seat** — the last slot in every app's own bar, past a hairline, so it reads as the
-   shell's and not the app's.
+3. **Two gestures, and nothing else**: tap the capsule = the switcher; edge-swipe right = home **at
+   the root of a room's navigation stack**. One push deep that edge is the room's own back, and the
+   shell's gesture is not attached there at all.
+4. **The You seat** — the trailing slot of the room's own bar, past a hairline, so it reads as the
+   shell's and not the app's. Where a room hosts its own **top** bar, both shell doors sit in it —
+   capsule leading, seat trailing — because a native tab bar has no fourth slot and an avatar
+   jammed into one is not something either platform draws.
 5. **You and Windmill One**, always clay whatever room you came from — and One is reachable
    **only** from You.
 
@@ -44,12 +48,16 @@ implying a room that opens onto nothing.
 
 ## 4. Inside an app — two reserved seats
 
-**Top-left: the capsule.** Tap opens the switcher; edge-swipe right goes home. It wears a
-**dot** when another app has something running — never a count, never a number.
+**Top-left: the capsule.** Tap opens the switcher; edge-swipe right goes home **at the root of the
+room's navigation stack** — one push deep that edge is the room's own back. It wears a **dot** when
+another app has something running — never a count, never a number. The shell reserves that lane over
+a room that does not host its own top bar; a room that does draws the capsule itself, leading in its
+own bar, and the shell lays none over it.
 
-**Bottom-right: You.** The last slot in the app's own bar, past a hairline — same right edge
-whatever the app's chrome. Journal has no tabs, so its one bottom bar takes that seat; gym has
-three tabs and takes it after them.
+**The trailing seat: You.** The trailing slot of the room's own bar, past a hairline — same right
+edge whatever the app's chrome. Journal has no tabs and no top bar of its own, so its one bottom bar
+takes that seat; gym hosts its own top bar and seats You trailing in it, on every stack root and in
+the logger.
 
 **The switcher** is a sheet: rooms sit **lowest** (the most-tapped thing under the thumb), Home
 is the small line above them, and Windmill One is not in it at all. Each row carries the app's
@@ -152,9 +160,10 @@ bills real tokens, the allowance is metered per account, and a device id is not 
 ```
 FRONT DOOR  hub on cold launch · deep link skips it · doors low, stacked bottom-up
             reach order = priority order · running sinks to the bottom · no plan meter
-CAPSULE     38pt · top-left · one reserved lane · tap = switcher · edge-swipe right = home
+CAPSULE     38pt · top-left · one reserved lane · tap = switcher
+            edge-swipe right = home at a room's stack root only · deeper it is the room's back
             dot when another app is running · never a count
-YOU SEAT    last slot in every app's own bar, past a hairline · same right edge everywhere
+YOU SEAT    trailing slot of the room's own top bar, past a hairline · same right edge everywhere
 SWITCHER    rooms lowest · Home above them · Windmill One never in it
 SHARED      You and Windmill One always clay · One reachable only from You
 APP OWNS    its bar, tabs, gestures below the capsule · its skin incl. dark default

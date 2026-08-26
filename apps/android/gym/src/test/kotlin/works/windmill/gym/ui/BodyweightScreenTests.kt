@@ -47,7 +47,7 @@ import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class BodyweightScreenTests {
     @get:Rule
     val compose = createComposeRule()
@@ -80,6 +80,7 @@ class BodyweightScreenTests {
         compose.setContent {
             LogScreen(
                 store = store,
+                seat = "",
                 onOpenSession = { doors += "session" },
                 onOpenBodyweight = { doors += "bodyweight" },
             )
@@ -185,7 +186,7 @@ class BodyweightScreenTests {
             store.weighIn(today.toString(), 82.4)
         }
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
 
         compose.onNodeWithText(Bodyweight.title).assertIsDisplayed()
@@ -218,7 +219,7 @@ class BodyweightScreenTests {
             store.weighIn(today.toString(), 82.4)
         }
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
 
         compose.onNodeWithContentDescription("82.9 kg · ${Bodyweight.shortDay(day)}").performClick()
@@ -249,7 +250,7 @@ class BodyweightScreenTests {
         val day = today.minusDays(1)
         runBlocking { store.weighIn(day.toString(), 182.0) }
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
 
         compose.onNodeWithContentDescription("182 kg · ${Bodyweight.shortDay(day)}").performClick()
@@ -308,7 +309,7 @@ class BodyweightScreenTests {
             store.weighIn(later.toString(), 83.0)
         }
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
 
         compose.onNodeWithContentDescription("82.9 kg · ${Bodyweight.shortDay(earlier)}")
@@ -330,7 +331,7 @@ class BodyweightScreenTests {
         server.weighIns[today.minusDays(3).toString()] = WeighIn(today.minusDays(3).toString(), 82.4, 4_000)
         val store = store(scope, server)
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
 
         compose.runOnIdle {
@@ -365,7 +366,7 @@ class BodyweightScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = store(scope, FakeTraining())
         compose.setContent {
-            BodyweightScreen(store = store, backLabel = "The log", onBack = {}, say = {})
+            BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
         }
         compose.onNodeWithText(Bodyweight.nothingYet).assertIsDisplayed()
         compose.onNodeWithText("90 days").assertDoesNotExist()

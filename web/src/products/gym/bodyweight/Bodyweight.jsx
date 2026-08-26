@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DotChart, Tabs } from '../../../design-system/index.js';
+import { Button, DotChart, Tabs } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { BODYWEIGHT_HREF, dayLabel } from '../log.js';
@@ -193,7 +193,7 @@ export function BodyweightScreen() {
       {weights.phase === 'failed' && (
         <p className="gym-read-failed">
           {FAILED}
-          <button type="button" className="gym-retry" onClick={weights.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={weights.retry}>Retry</Button>
         </p>
       )}
 

@@ -15,9 +15,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,9 +33,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -38,6 +45,7 @@ import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TheSix
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -47,7 +55,19 @@ import works.windmill.platform.design.WindmillSpace
 // catalog has never heard of is to MINT it here. The last-done read is SPARSE, so `never logged` is
 // drawn from an absence.
 object PickerOptions {
+    // A TYPED query is capped: seven rows are a shortlist, and dumping the catalog under three letters
+    // is not an answer. An EMPTY query is not capped at all — it opens on the six and then hands over
+    // the whole catalog, because a picker that shows only six has removed the ability to find the
+    // seventh.
     const val shown = 7
+    const val featured = 6
+
+    // The six are counted over a FIXED depth of the log and never over more, so a phone that has paged
+    // further back does not rank differently from one that has not.
+    const val trainedWindow = 50
+
+    // The bytes web and iOS say for the same silence.
+    const val catalogUnread = "The catalog didn’t load. It comes back when you have signal."
 
     // `never logged` is only ever said where an ANSWER carried no row for that movement.
     // `alias` is the word the MATCH came from and is drawn on no other row.
@@ -83,24 +103,47 @@ object PickerOptions {
         val hasRows: Boolean get() = six.isNotEmpty() || matches.isNotEmpty()
     }
 
+    // Most-used, off the log THIS DEVICE holds: a session summary names every movement in it, so the
+    // count is sessions that named it rather than working sets — the wire ranks nothing by use and
+    // this invents no read. A session the LOG served names its movements by name and one this device
+    // wrote names them by id, so a movement is counted by either spelling of itself. What the log
+    // cannot fill is filled from the openers, in their own order, so a fresh account still sees six.
+    fun mostTrained(available: List<Exercise>, sessions: List<SessionSummary>): List<Exercise> {
+        val counted = mutableMapOf<String, Int>()
+        for (session in sessions.take(trainedWindow)) {
+            for (named in session.exercises.distinct()) counted[named] = (counted[named] ?: 0) + 1
+        }
+        val timesTrained = { movement: Exercise ->
+            (counted[movement.id] ?: 0) + (counted[movement.name] ?: 0)
+        }
+        // `sortedByDescending` is stable, so movements trained equally often keep catalog order.
+        val ranked = available
+            .filter { timesTrained(it) > 0 }
+            .sortedByDescending(timesTrained)
+            .take(featured)
+        if (ranked.size >= featured) return ranked
+        val openers = TheSix.movements
+            .mapNotNull { opener -> available.firstOrNull { it.id == opener.id } }
+            .filterNot { it in ranked }
+        return (ranked + openers).take(featured)
+    }
+
     fun matching(
         query: String,
         catalog: List<Exercise>,
         taken: List<String>,
         lastSets: Map<String, LastSet>? = null,
         nowMs: Long = 0,
-        pinTheSix: Boolean = false,
+        sessions: List<SessionSummary> = emptyList(),
         catalogUnread: Boolean = false,
     ): Result {
         val term = query.trim()
         val available = catalog.filter { it.id !in taken }
-        val six = if (!pinTheSix || term.isNotEmpty()) emptyList()
-            else TheSix.movements
-                .mapNotNull { pinned -> available.firstOrNull { it.id == pinned.id } }
-                .map { Row(it, lastSets, nowMs) }
+        val six = if (term.isNotEmpty()) emptyList()
+            else mostTrained(available, sessions).map { Row(it, lastSets, nowMs) }
         // The filter reads names AND aliases, one pass over the list already in hand.
         val wanted = term.lowercase()
-        val matches = available
+        val rest = available
             .filter { movement -> six.none { it.id == movement.id } }
             .mapNotNull { movement ->
                 if (term.isEmpty()) return@mapNotNull Row(movement, lastSets, nowMs)
@@ -109,10 +152,9 @@ object PickerOptions {
                     ?: return@mapNotNull null
                 Row(movement, lastSets, nowMs, alias = alias)
             }
-            .take(shown)
+        val matches = if (term.isEmpty()) rest else rest.take(shown)
 
-        val unread = if (!catalogUnread && catalog.isNotEmpty()) null
-            else "Your catalog didn’t load — the rest of it comes back when you have signal."
+        val unread = if (!catalogUnread && catalog.isNotEmpty()) null else PickerOptions.catalogUnread
         val result = Result(six, matches, unread, empty = null, create = null)
         if (result.hasRows) return result
         if (unread != null) return result
@@ -122,6 +164,11 @@ object PickerOptions {
         return result.copy(empty = "No movement by that name.", create = "Create “$term”")
     }
 }
+
+// The sheet grows with its rows and stops short of the top, leaving the drag handle its own room —
+// a fixed fraction of the screen would have the handle eat the last row instead.
+@Composable
+fun pickerMaxHeight(): Dp = (LocalConfiguration.current.screenHeightDp.dp * 0.92f) - 44.dp
 
 // `onClose` is nullable because the FIRST movement has nothing behind it to cancel back to.
 @Composable
@@ -134,6 +181,9 @@ fun MovementPicker(
     onPick: (String) -> Unit,
     onCreate: (String) -> Unit,
     modifier: Modifier = Modifier,
+    // Newest first. What the six are ranked from, read once — on the first non-empty read; an empty
+    // list still answers with the openers.
+    sessions: List<SessionSummary> = emptyList(),
     subtitle: String? = null,
     firstSession: Boolean = false,
     signedIn: Boolean = false,
@@ -142,8 +192,16 @@ fun MovementPicker(
     onBuildRoutine: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
+    // The window is read ONCE, on the first NON-EMPTY read: the log behind an open picker keeps
+    // moving — a poll lands a finished session, a claim replays the shelf — and the six may not
+    // reshuffle under a thumb already reaching for one of them. Freezing on the first FRAME instead
+    // would leave a picker opened before the log answered holding the generic openers for its whole
+    // life, so an empty window keeps re-seeding until one arrives, and that one is the window.
+    val held = remember { mutableStateOf(emptyList<SessionSummary>()) }
+    if (held.value.isEmpty()) held.value = sessions.take(PickerOptions.trainedWindow)
+    val opened = held.value
     val options = PickerOptions.matching(query, catalog, taken, lastSets, nowMs,
-                                         pinTheSix = firstSession, catalogUnread = catalogUnread)
+                                         sessions = opened, catalogUnread = catalogUnread)
 
     Column(
         modifier
@@ -157,7 +215,9 @@ fun MovementPicker(
                 Spacer(Modifier.weight(1f))
                 onClose?.let { close ->
                     Box(
-                        Modifier.heightIn(min = GymTap.minimum).clickable(onClick = close),
+                        Modifier
+                            .heightIn(min = GymTap.minimum)
+                            .clickable(role = Role.Button, onClick = close),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text("Cancel", style = WindmillFont.body(16), color = GymSkin.inkDim)
@@ -167,32 +227,20 @@ fun MovementPicker(
             subtitle?.let { Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint) }
         }
 
-        BasicTextField(
+        OutlinedTextField(
             value = query,
             onValueChange = { query = it },
             singleLine = true,
-            textStyle = WindmillFont.body(17).copy(color = GymSkin.ink),
-            cursorBrush = SolidColor(GymSkin.accent),
+            textStyle = WindmillFont.body(17),
+            placeholder = { Text("Search ${catalog.size} movements", style = WindmillFont.body(17)) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Words,
                 autoCorrectEnabled = false,
             ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(GymTap.minimum + 4.dp)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .background(GymSkin.raised),
-            decorationBox = { inner ->
-                Box(
-                    Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (query.isEmpty()) {
-                        Text("Search ${catalog.size} movements", style = WindmillFont.body(17), color = GymSkin.inkFaint)
-                    }
-                    inner()
-                }
-            },
+            shape = RoundedCornerShape(WindmillRadius.md),
+            colors = gymFieldColours(),
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Column(
@@ -205,6 +253,7 @@ fun MovementPicker(
             options.unread?.let { unread ->
                 Text(unread, style = WindmillFont.body(14), color = GymSkin.inkDim, lineHeight = 20.sp)
             }
+            // One section label and a gap: the catalog follows under no head of its own.
             if (options.six.isNotEmpty()) {
                 Text(
                     "The six",
@@ -226,7 +275,7 @@ fun MovementPicker(
                         .heightIn(min = GymTap.minimum + 6.dp)
                         .clip(RoundedCornerShape(WindmillRadius.md))
                         .background(GymSkin.accent)
-                        .clickable { onCreate(query.trim()) },
+                        .clickable(role = Role.Button) { onCreate(query.trim()) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(create, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.onAccent)
@@ -254,7 +303,9 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onCancel),
+                Modifier
+                    .heightIn(min = GymTap.minimum)
+                    .clickable(role = Role.Button, onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("Cancel", style = WindmillFont.body(16), color = GymSkin.inkDim)
@@ -268,29 +319,27 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
             Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BasicTextField(
+                OutlinedTextField(
                     value = typed,
                     onValueChange = { typed = Program.capped(it) },
                     singleLine = true,
-                    textStyle = WindmillFont.body(19).copy(color = GymSkin.ink),
-                    cursorBrush = SolidColor(GymSkin.accent),
+                    textStyle = WindmillFont.body(19),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         autoCorrectEnabled = false,
                     ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum)
-                        .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(GymSkin.raised)
-                        .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
+                    shape = RoundedCornerShape(WindmillRadius.md),
+                    colors = gymFieldColours(),
+                    modifier = Modifier.weight(1f).heightIn(min = GymTap.minimum),
                 )
-                Text(
-                    Program.counter(typed),
-                    style = GymType.numeral(12),
-                    color = GymSkin.inkFaint,
-                    modifier = Modifier.padding(start = WindmillSpace.x3),
-                )
+                Program.counter(typed)?.let { counted ->
+                    Text(
+                        counted,
+                        style = GymType.numeral(12),
+                        color = GymSkin.inkFaint,
+                        modifier = Modifier.padding(start = WindmillSpace.x3),
+                    )
+                }
             }
         }
 
@@ -310,7 +359,7 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
                             .background(if (picked) GymSkin.accentSoft else GymSkin.raised)
                             .border(1.dp, if (picked) GymSkin.accent else GymSkin.line,
                                     RoundedCornerShape(WindmillRadius.md))
-                            .clickable { equipment = loading },
+                            .selectable(selected = picked, role = Role.RadioButton) { equipment = loading },
                     ) {
                         Text(
                             loading.replaceFirstChar { it.uppercase() },
@@ -330,7 +379,7 @@ fun CreateMovementSheet(name: String, onCancel: () -> Unit, onCreate: (String, S
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(if (named) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = named) { onCreate(typed.trim(), equipment) },
+                .clickable(enabled = named, role = Role.Button) { onCreate(typed.trim(), equipment) },
         ) {
             Text(
                 "Create and add",
@@ -350,7 +399,7 @@ private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
             .padding(top = WindmillSpace.x3)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .dashedEdge(GymSkin.accent, WindmillRadius.lg)
-            .clickable(onClick = onBuildRoutine)
+            .clickable(role = Role.Button, onClick = onBuildRoutine)
             .padding(WindmillSpace.x4),
     ) {
         Text(
@@ -375,7 +424,7 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
             .clip(RoundedCornerShape(WindmillRadius.md))
             .background(GymSkin.surface)
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
-            .clickable { onPick(row.id) }
+            .clickable(role = Role.Button, onClickLabel = "add ${row.name}") { onPick(row.id) }
             .padding(horizontal = WindmillSpace.x3),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
@@ -400,6 +449,6 @@ private fun MovementRow(row: PickerOptions.Row, onPick: (String) -> Unit) {
             }
             row.meta?.let { Text(it, style = GymType.numeral(11), color = GymSkin.inkFaint) }
         }
-        Text("+", style = WindmillFont.body(20), color = GymSkin.inkDim)
+        Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.inkDim)
     }
 }

@@ -23,10 +23,10 @@ Every Android board drawing a swipe says so on the board.
 
 **And the law is a per-row test, not a blanket cost.** A row that already carries an overflow control
 has a real, screen-reader-reachable button, and a swipe on that row satisfies this law for free by
-putting the same actions in the overflow. No gym row is in that position today — the Android routine
-row is a whole-row tap ending in a decorative chevron, with no overflow control — so the set row and
-the routine row alike declare their action by hand until an overflow exists. Check the row, not the
-platform.
+putting the same actions in the overflow. The **routine row** is now in that position on every
+surface — it carries an overflow holding Duplicate — so a swipe there costs nothing extra the day
+Delete can join it. The **set row** is not: it is a whole-row tap into the fix sheet and nothing
+else, so its swipe declares its action by hand. Check the row, not the platform.
 
 ### 2 · A gesture that destroys needs an undo, not a confirmation.
 
@@ -81,9 +81,10 @@ not jump twice for every set logged. It sits over the controls beneath it while 
 which is a real cost and is drawn rather than hidden.
 
 That is better than both alternatives: the row loses its button, and the closing of the window
-becomes visible for the first time. Note gym has **no snackbar at all** today on Android — one
-mono status line above the rail is the whole messaging system — so this and the native-idiom brief
-are asking for the same thing.
+becomes visible for the first time. Android's transient exists — a `SnackbarHost` in the room's own
+Scaffold, running for the queue's own window and never a snackbar default, and taken down the moment
+the delete it offers to undo has gone. What is left is the logger's drawn *Undo* on both phones, and
+the iOS transient, which SwiftUI does not provide and the room has to draw.
 
 ### 5 · Haptics are the gesture's receipt.
 
@@ -102,7 +103,8 @@ This is the finding that shapes the whole wave, and it is not a matter of taste.
 
 **Exactly one row in gym is ready today: the set row in a past session.** Both platforms already hold
 a delete for 9000 ms — iOS deletes and offers a restore, Android withholds the send entirely — and
-both already draw an undo row. A swipe there is safe on the day it ships.
+both already offer the undo: iOS as an inline row, Android as the room's snackbar, which is where
+Law 4 sends both. A swipe there is safe on the day it ships.
 
 **Three rows are not ready, and a swipe on any of them would put an unrecoverable delete one careless
 thumb away:**
@@ -114,10 +116,10 @@ thumb away:**
 | a finished session | asks *Discard this session?* first, then fires — no undo, and the copy says *"There is no undoing it."* |
 
 > **Ruling: those three get a withheld delete before they get a gesture.** The mechanism exists for
-> a set only — Android's `Withheld` (`TrainingStore.kt:1629`) names a session and a set, and the
-> three delete verbs share no shape, so this is a new abstraction over three verbs rather than a
-> widened data class — and until it exists, those rows keep their drawn buttons. A gesture is not
-> worth an unrecoverable loss.
+> a set only — Android's `Withheld` (`TrainingStore.kt:1703`) names a session, a set and whether the
+> delete has gone, and the three delete verbs share no shape, so this is a new abstraction over three
+> verbs rather than a widened data class — and until it exists, those rows keep their drawn buttons.
+> A gesture is not worth an unrecoverable loss.
 
 **And leaving commits.** Navigating away from the session settles the withheld delete immediately,
 and nothing on screen says so. Behind a two-tap trip through a sheet that is survivable; behind a
@@ -162,11 +164,10 @@ likely to settle a previous delete the lifter has not noticed yet.
 **The routine row** — **trailing swipe gives *Delete***, once the withheld delete exists.
 **Duplicate goes to the overflow, not the swipe** — for the same reason Fix left the set row's: two
 trailing actions hide the row's own name behind them, and a lifter cannot see *which* routine they
-are deciding about while they decide. The overflow control has to be built first — the Android
-routine row carries none today — and once it exists it satisfies Law 1 for free. Between them the two
-removes both buttons
-from the editor's foot, which today sit **three screens deep**: Routines → the routine → Edit → scroll
-to the bottom.
+are deciding about while they decide. That overflow is built, on all three surfaces, and it satisfies
+Law 1 for free. Between them the two empty the editor's foot, which sits **three screens deep**:
+Routines → the routine → Edit → scroll to the bottom. Web's and iOS's Duplicate is already out of
+it; Delete leaves it the day the withheld delete lands.
 
 **The thread row** — trailing swipe gives *Delete*, once the withheld delete exists. Removes the
 delete block and its caption from inside the conversation. Note the constraint it trades against: the
@@ -190,13 +191,14 @@ horizontal-dominance threshold; the title is a full-width tap target, so the str
 above it; and **leaving a movement can raise a sheet, guarded by a check that was written for taps and
 must be re-verified at swipe velocity.**
 
-**And a fourth on Android, which is the opposite of what this brief first said.** Mid-workout the room
-hands back to the platform — its handler is enabled only when a session is *not* live — so an edge
-stroke during a workout is plain system back and **it leaves the room.** The logger is therefore the
-*most* exposed screen to an edge-started horizontal gesture, not the safest. A predictive back handler
-on the live logger is a **prerequisite** of this gesture, not a nicety. What Android is genuinely
-clear of is the *shell's* claim: it has no shell chrome, so there is no go-home swipe layered
-underneath as a simultaneous gesture. That is the iOS risk, and it does not exist here.
+**And a fourth on Android, which was the opposite of what this brief first said.** The logger is the
+*most* exposed screen to an edge-started horizontal gesture, not the safest, because mid-workout an
+edge stroke used to be plain system back and it left the room. That prerequisite is built: back
+mid-workout now means **stay in the workout** — the handler is claimed, the logger stands, and the
+app is never backgrounded. What Android is genuinely clear of is the *shell's* claim: it has no shell
+chrome, so there is no go-home swipe layered underneath as a simultaneous gesture. That is the iOS
+risk, and it does not exist here — where, at the logger, the room reports depth zero and the shell's
+edge still means home.
 
 ## What does not ship, and why
 
@@ -220,26 +222,27 @@ because it was assumed otherwise.
 
 Gestures are not free here, and the brief says so rather than letting a build discover it.
 
-**iOS has three `List`s and eighteen `ScrollView` sites across fifteen files.** `.swipeActions` requires a `List`. So the
-Session, Routines and Threads screens convert before they can carry a swipe — and the session's
-grouping by movement means sections, not a flat list.
+**The containers are converted, so the gestures are no longer gated on them.** iOS holds eight
+`List`s against fourteen `ScrollView` sites across twelve files, and every screen a swipe is ruled
+for — the session, the routines list, the threads list, the log, the routine editor — is one of the
+Lists, so `.swipeActions` is available where it was not. Android holds six `LazyColumn`s: the log,
+the session, the routines list, the threads list, the notes list and the assembly sheet, whose swipe
+is now a `SwipeToDismissBox` with the non-droppable rows simply left unwrapped. Twelve
+`verticalScroll` sites remain, all of them screens no swipe is ruled for.
 
-**Android has two `LazyColumn`s in the whole room** — the assembly sheet and the notes list — and every swipe in it is hand-built on raw pointer
-input with a hand-tuned threshold and a hand-drawn alpha ramp. The containers convert, and the
-bespoke swipes become the platform's — the assembly sheet is the cheapest win, since it is already
-lazy.
+**What is still hand-built and should stop being ours:** the long-press reorder on both phones, and
+**one** hand-rolled horizontal swipe — the routine editor's remove-a-movement row on Android, which
+carries its own threshold, its own alpha ramp and a declared custom action beside it.
 
-**Two gestures the platform owns that gym re-implements** should simply stop being ours: the
-hand-built long-press reorder, and the hand-built navigation stack with its drawn back button and no
-interactive pop at all.
-
-**And one parity gap the audit found:** a routine draft can be reordered by dragging on iOS and
+**And one parity gap:** a routine draft can be reordered by dragging on the web and on iOS, and
 cannot on Android at all.
 
 ## Where a long-press earns its place
 
-There is no context menu anywhere in gym on either platform. The highest-value one is not a
-duplicate of a swipe — it is the **session row in the log**, which today has exactly one action.
+No long press in gym opens a menu on either platform — where one is held, it starts a reorder drag
+(the notes list, the assembly sheet). Menus exist and are all tapped: the routine row's overflow, the
+editor's, the logger's set-kind picker. The highest-value long press is not a duplicate of a swipe —
+it is the **session row in the log**, which today has exactly one action.
 *Share this workout* currently lives only inside the session, and discarding one lives only on the
 finish screen. A long-press puts both on the row without drawing anything.
 

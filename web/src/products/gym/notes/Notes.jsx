@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF } from '../log.js';
@@ -72,7 +73,7 @@ export function Notes({ log }) {
       {view.phase === 'failed' && held === null && (
         <p className="gym-read-failed">
           {NOTES_FAILED}
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       )}
 
@@ -191,14 +192,10 @@ export function NoteEditor({ note, onClose, onSaved, onDeleted, onStale }) {
     <section className="gym-note-editor">
       <header className="gym-editor-head">
         <Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>Notes</Back>
-        <button
-          type="button"
-          className={ready ? 'gym-editor-save' : 'gym-editor-save is-inert'}
-          onClick={save}
-          aria-busy={saving}
-        >
-          Save
-        </button>
+        {/* Tappable at every length: over the bound it refuses in place with the store's own
+            sentence, so nothing here is ever silently dead. It says it is busy while the save is in
+            the air, because it stays tappable through it. */}
+        <Button size="md" variant={ready ? 'primary' : 'secondary'} ariaBusy={saving} onClick={save}>Save</Button>
       </header>
 
       {/* No maxLength: a sixty-first character is taken and counted, and the store's refusal is shown. */}

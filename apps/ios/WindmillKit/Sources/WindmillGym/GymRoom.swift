@@ -11,9 +11,15 @@ public struct GymRoom: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellActions) private var shell
     @Environment(\.openURL) private var openURL
+    // The finish is a sheet over the session it just closed, never a screen of its own.
     @State private var finished: FinishedSession?
+    // A refusal raised BY the finish sheet belongs inside it: the room's own note line is drawn on the
+    // stack underneath, which a `.large` sheet covers, and a refusal nobody can read is a silent death.
+    @State private var finishFailure: String?
     @State private var tab: Tab = .routines
-    @State private var away: [Away] = []
+    // One path per tab, all three owned here. A TabView keeps every tab mounted, so a stack is never
+    // read for a tab that is not on screen — see `stackDepth`.
+    @State private var paths: [Tab: [Away]] = [:]
     @State private var keptRoutine = false
     @State private var starting = false
     @State private var savingRoutine = false
@@ -36,20 +42,41 @@ public struct GymRoom: View {
         self.account = account
     }
 
+    // The raw value is the tab's identity; `label` is the word a lifter reads, and Coach's is the one
+    // the room already pins (`Ask.title`) rather than a second spelling of it.
     private enum Tab: String, CaseIterable, Identifiable {
-        case routines = "Routines"
-        case log = "The log"
-        case ask = "Coach"
+        case routines
+        case log
+        case ask
 
         var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .routines: return "Routines"
+            case .log: return "The log"
+            case .ask: return Ask.title
+            }
+        }
+
+        // The selected tab is drawn with a filled symbol as well as a tint, so the symbol carries the
+        // half of the signal colour cannot (ledger `1v`).
+        var symbol: String {
+            switch self {
+            case .routines: return "list.bullet.rectangle"
+            case .log: return "book.closed"
+            case .ask: return "bubble.left.and.bubble.right"
+            }
+        }
     }
 
     private struct Reviewing: Identifiable {
         let id: String
     }
 
-    // What a tab can open over itself. They stack, and only two deep.
-    private enum Away: Equatable {
+    // What a tab can open over itself. The room owns the stacks; each IS a NavigationStack's path, so a
+    // system back pops it and the room reads the depth off the same array it pushes onto.
+    private enum Away: Hashable {
         case session(SessionSummary)
         case movement(String)
         case bodyweight
@@ -61,7 +88,7 @@ public struct GymRoom: View {
         case routine(String)
         case building(RoutineDraft)
 
-        func label(in catalog: [Exercise]) -> String {
+        func label(in catalog: [Exercise], routines: [Routine]) -> String {
             switch self {
             case .session(let summary): return Readout.routine(of: summary.session)
             case .movement(let exerciseId): return Readout.movement(exerciseId, in: catalog)
@@ -71,8 +98,30 @@ public struct GymRoom: View {
             case .notes: return Notes.title
             case .settings: return "Gym"
             case .connect: return "Connected log"
-            case .routine: return "Routine"
+            case .routine(let routineId):
+                return routines.first { $0.id == routineId }?.name ?? "Routine"
             case .building(let draft): return draft.isNamed ? draft.trimmedName : "New routine"
+            }
+        }
+
+        // The stack is keyed on where a screen goes, never on what it is holding: a draft's letters
+        // change as they are typed, and the path may not move under the screen when they do.
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(key)
+        }
+
+        private var key: String {
+            switch self {
+            case .session(let summary): return "session:\(summary.id)"
+            case .movement(let exerciseId): return "movement:\(exerciseId)"
+            case .bodyweight: return "bodyweight"
+            case .threads: return "threads"
+            case .thread(let threadId): return "thread:\(threadId)"
+            case .notes: return "notes"
+            case .settings: return "settings"
+            case .connect: return "connect"
+            case .routine(let routineId): return "routine:\(routineId)"
+            case .building(let draft): return "building:\(draft.id)"
             }
         }
     }
@@ -80,90 +129,171 @@ public struct GymRoom: View {
     private var skin: GymSkin { .instrument }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            stage
-            if let note {
-                Text(note)
-                    .font(GymType.numeral(12))
-                    .foregroundStyle(skin.inkDim)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, WindmillSpace.x5)
-                    .padding(.bottom, WindmillSpace.x2)
+        stage
+            .background(skin.canvas.ignoresSafeArea())
+            .environment(\.gymSkin, skin)
+            .environment(\.colorScheme, .dark)
+            .roomChrome(.dark)
+            // The shell reads this to decide what its leading edge means: home at 0, the room's own back
+            // deeper. Written once, here, whatever the stage is drawing.
+            .roomDepth(stackDepth)
+            .tint(skin.accent)
+            .sheet(item: $reviewing, onDismiss: closedTheReview) { open in
+                ReviewSheet(proposalId: open.id, store: store,
+                            onSettled: { receipt in
+                                receipts[open.id] = receipt
+                                undecided.remove(open.id)
+                            },
+                            onClosed: { said in
+                                reviewing = nil
+                                note = said
+                            },
+                            say: { note = $0 })
+                    .presentationBackground(skin.surface)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
-            if isAtRest { rail } else { bar }
-        }
-        .background(skin.canvas.ignoresSafeArea())
-        .environment(\.gymSkin, skin)
-        .environment(\.colorScheme, .dark)
-        .roomChrome(.dark)
-        .tint(skin.accent)
-        .sheet(item: $reviewing, onDismiss: closedTheReview) { open in
-            ReviewSheet(proposalId: open.id, store: store,
-                        onSettled: { receipt in
-                            receipts[open.id] = receipt
-                            undecided.remove(open.id)
-                        },
-                        onClosed: { said in
-                            reviewing = nil
-                            note = said
-                        },
-                        say: { note = $0 })
-                .presentationBackground(skin.surface)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        // `connect` drains what the device holds BEFORE it reads the log: reading settles a stale open session at its last
-        // activity, and past four hours from that close an owed set is refused for good.
-        .task(id: account.seat) {
-            await store.connect(to: account)
-            guard store.exerciseId == nil,
-                  let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
-            await store.choose(movement)
-        }
-        // Its own task so a credential list never holds up the read above.
-        .task(id: account.seat) {
-            connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
-        }
-        .onChange(of: scenePhase) { _, phase in
-            WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
-            if phase != .active { Task { await store.flushPendingSets() } }
-            // `onChange` never fires for the value the scene launched at.
-            if phase == .active, account.isSignedIn {
-                Task { connected = await ConnectedLog.read(with: account.api) }
+            // Over the session it closed. Dismissing it leaves the lifter in the workout they finished.
+            .sheet(item: $finished) { closed in
+                FinishScreen(finished: closed, catalog: store.catalog, kept: keptRoutine,
+                             coach: doors(to: closed.session.id), failure: finishFailure,
+                             onKeepRoutine: { name in Task { await keep(closed.sets, as: name) } },
+                             onDiscard: { Task { await discard(closed.session) } },
+                             onDone: { finished = nil; finishFailure = nil })
+                    .presentationBackground(skin.canvas)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
-        }
-        // Held while the room holds an open session, whichever way it opened or closed: finish, discard, a start, a connect.
-        // A session outranks the stage the sheet stood over, so the sheet is taken down with it.
-        .onChange(of: store.session != nil, initial: true) { _, open in
-            WakeLock.hold(WakeLock.wanted(sessionIsOpen: open, phase: scenePhase))
-            if open { reviewing = nil }
-        }
-        .onDisappear {
-            WakeLock.hold(false)
-            Task { await store.flushPendingSets(force: true) }
+            // `connect` drains what the device holds BEFORE it reads the log: reading settles a stale open session at its last
+            // activity, and past four hours from that close an owed set is refused for good.
+            .task(id: account.seat) {
+                await store.connect(to: account)
+                guard store.exerciseId == nil,
+                      let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
+                await store.choose(movement)
+            }
+            // Its own task so a credential list never holds up the read above.
+            .task(id: account.seat) {
+                connected = account.isSignedIn ? await ConnectedLog.read(with: account.api) : .none
+            }
+            .onChange(of: scenePhase) { _, phase in
+                WakeLock.hold(WakeLock.wanted(sessionIsOpen: store.session != nil, phase: phase))
+                if phase != .active { Task { await store.flushPendingSets() } }
+                // `onChange` never fires for the value the scene launched at.
+                if phase == .active, account.isSignedIn {
+                    Task { connected = await ConnectedLog.read(with: account.api) }
+                }
+            }
+            // Held while the room holds an open session, whichever way it opened or closed: finish, discard, a start, a connect.
+            // A session outranks the stage the sheet stood over, so the sheet is taken down with it.
+            .onChange(of: store.session != nil, initial: true) { _, open in
+                WakeLock.hold(WakeLock.wanted(sessionIsOpen: open, phase: scenePhase))
+                if open { reviewing = nil }
+            }
+            .onDisappear {
+                WakeLock.hold(false)
+                Task { await store.flushPendingSets(force: true) }
+            }
+    }
+
+    // A live session outranks every tab: it replaces them, and it carries the room's chrome itself.
+    @ViewBuilder
+    private var stage: some View {
+        if store.session != nil {
+            NavigationStack {
+                LoggerScreen(store: store, isSignedIn: account.isSignedIn,
+                             onBuildRoutine: connected.invites ? openConnect : nil,
+                             say: { note = $0 })
+                    .background(skin.canvas)
+                    .navigationBarMargin()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) { CapsuleButton() }
+                        // The rarer act by two orders of magnitude, and the one you never want under a
+                        // wet thumb beside `Log set` (16-the-workout.md).
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Finish") { Task { await close() } }
+                                .font(WindmillFont.body(15, .semibold))
+                                .disabled(store.isFinishing)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) { YouSeat() }
+                    }
+            }
+            .safeAreaInset(edge: .bottom) { noteLine }
+        } else {
+            TabView(selection: $tab) {
+                ForEach(Tab.allCases) { destination in
+                    stack(for: destination)
+                        .tabItem { Label(destination.label, systemImage: destination.symbol) }
+                        .tag(destination)
+                }
+            }
+            // No `.tint` here, and the reason is measured rather than preferred. `.tint` is an
+            // ENVIRONMENT value: put on the TabView it reaches every control in all three tabs and
+            // every sheet they raise, so a tint chosen for the tab bar repaints the picker's Create
+            // button, the editor's Cancel and Save, and every other default-tinted control. On iOS
+            // 26.3 (iPhone 17) it buys nothing in exchange: the system tab bar paints BOTH labels
+            // itself — #FFFFFF selected against #F6F3FA unselected, 1.10:1 — and ignores `.tint`,
+            // `UITabBarAppearance` and `unselectedItemTintColor` alike. What signals selection there
+            // is the capsule the system draws behind the selected item (#47444A on the bar's
+            // #262328, 1.62:1) plus the filled symbol. Ledger `1v` cannot be closed by any token this
+            // room chooses on that OS; the room's own `.tint(skin.accent)` holds everywhere instead.
         }
     }
 
-    // A live session outranks every tab and every away screen.
+    // One stack per tab, and one writer of the room's chrome: the capsule leading, the You seat
+    // trailing, on every root (`12-native-idiom.md`, ledger `1l`).
+    private func stack(for destination: Tab) -> some View {
+        NavigationStack(path: path(of: destination)) {
+            tabRoot(destination)
+                .background(skin.canvas)
+                .navigationBarMargin()
+                .navigationTitle(destination.label)
+                .navigationBarTitleDisplayMode(destination == .ask ? .inline : .large)
+                .navigationDestination(for: Away.self) { pushed in
+                    screen(at: pushed)
+                        .background(skin.canvas)
+                        .navigationTitle(pushed.label(in: store.catalog, routines: store.routines))
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { CapsuleButton() }
+                    // Planning work goes to the top chrome; nobody plans a training block one-handed
+                    // at the rack (`12-native-idiom.md`).
+                    if destination == .routines {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: newRoutine) {
+                                Label("New routine", systemImage: "plus")
+                            }
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { YouSeat() }
+                }
+        }
+        .safeAreaInset(edge: .bottom) { noteLine }
+    }
+
+    private func path(of destination: Tab) -> Binding<[Away]> {
+        Binding(get: { paths[destination] ?? [] }, set: { paths[destination] = $0 })
+    }
+
+    // The room's one status line, above the tab bar and above whatever the tab is drawing.
     @ViewBuilder
-    private var stage: some View {
-        if let finished {
-            FinishScreen(finished: finished, catalog: store.catalog, kept: keptRoutine,
-                         coach: doors(to: finished.session.id),
-                         onKeepRoutine: { name in Task { await keep(finished.sets, as: name) } },
-                         onDiscard: { Task { await discard(finished.session) } },
-                         onDone: {
-                             self.finished = nil
-                             away.removeAll()
-                             tab = .routines
-                         })
-        } else if store.session != nil {
-            LoggerScreen(store: store, isSignedIn: account.isSignedIn,
-                         onBuildRoutine: connected.invites ? openConnect : nil,
-                         say: { note = $0 }, onFinish: { Task { await close() } })
-        } else if let showing {
-            switch showing {
+    private var noteLine: some View {
+        if let note {
+            Text(note)
+                .font(GymType.numeral(12))
+                .foregroundStyle(skin.inkDim)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, WindmillSpace.x5)
+                .padding(.bottom, WindmillSpace.x2)
+        }
+    }
+
+    @ViewBuilder
+    private func screen(at destination: Away) -> some View {
+        switch destination {
             case .session(let summary):
                 SessionScreen(summary: summary, store: store,
                               coach: doors(to: summary.session.id),
@@ -198,25 +328,29 @@ public struct GymRoom: View {
                               onProposal: review,
                               onThread: { look(at: .thread($0)) })
             case .building(let draft):
-                RoutineEditorScreen(draft: draft, catalog: store.catalog,
+                RoutineEditorScreen(draft: draft, catalog: store.catalog, sessions: store.recent,
                                     editing: store.routines.contains { $0.id == draft.id },
                                     untested: untested(draft), saving: savingRoutine,
                                     failure: routineFailure,
                                     onSave: { written in Task { await save(written) } },
+                                    onCancel: back,
                                     // A copy is a new routine under a fresh id; `.id(draft.id)` is what gives it the screen.
                                     onDuplicate: { copied in
-                                        away[away.count - 1] = .building(
+                                        replaceTop(with: .building(
                                             RoutineDraft(duplicating: copied,
-                                                         position: store.routines.count))
+                                                         position: store.routines.count)))
                                     },
                                     onDelete: { Task { await delete(draft.id) } },
                                     onCreateMovement: { name, equipment in
                                         await store.create(name, loadedAs: equipment)
                                     })
                     .id(draft.id)
-            }
-        } else {
-            switch tab {
+        }
+    }
+
+    @ViewBuilder
+    private func tabRoot(_ destination: Tab) -> some View {
+        switch destination {
             case .routines:
                 RoutinesScreen(store: store, isSignedIn: account.isSignedIn, undecided: undecided,
                                onOpen: { look(at: .routine($0)) },
@@ -239,23 +373,21 @@ public struct GymRoom: View {
                     AskScreen(store: store, conversation: $conversation, doors: askDoors,
                               receipts: receipts, undecided: undecided)
                 }
-            }
         }
     }
 
-    private var isAtRest: Bool {
-        finished == nil && store.session == nil && away.isEmpty
-    }
-
-    private var showing: Away? {
-        guard finished == nil, store.session == nil else { return nil }
-        return away.last
+    // Zero whenever the stacks are not what is on screen, so the shell's leading edge means home there,
+    // and the VISIBLE tab's depth otherwise — never the deepest of the three, which would disable the
+    // way home from a tab standing at its own root.
+    private var stackDepth: Int {
+        guard store.session == nil else { return 0 }
+        return paths[tab]?.count ?? 0
     }
 
     private func look(at destination: Away) {
         note = nil
         routineFailure = nil
-        away.append(destination)
+        paths[tab, default: []].append(destination)
     }
 
     // Over the conversation, over the routines home, over the routine: a sheet, never a push.
@@ -274,55 +406,13 @@ public struct GymRoom: View {
     private func back() {
         note = nil
         routineFailure = nil
-        away.removeLast()
+        guard !(paths[tab]?.isEmpty ?? true) else { return }
+        paths[tab]?.removeLast()
     }
 
-    private var rail: some View {
-        HStack(spacing: WindmillSpace.x1) {
-            ForEach(Tab.allCases) { destination in
-                Button { note = nil; away.removeAll(); tab = destination } label: {
-                    Text(destination.rawValue)
-                        .font(WindmillFont.body(13, destination == tab ? .bold : .semibold))
-                        .foregroundStyle(destination == tab ? skin.accent : skin.inkFaint)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .background(RoundedRectangle(cornerRadius: WindmillRadius.full)
-                            .fill(destination == tab ? skin.accentSoft : .clear))
-                }
-                .accessibilityAddTraits(destination == tab ? [.isSelected] : [])
-            }
-            YouSeat()
-        }
-        .padding(WindmillSpace.x1)
-        .frame(minHeight: 50)
-        .background(Capsule().fill(skin.surface))
-        .overlay(Capsule().strokeBorder(skin.line, lineWidth: 1))
-        .padding(.horizontal, 14)
-        .padding(.bottom, WindmillSpace.x2)
-    }
-
-    private var bar: some View {
-        HStack(spacing: WindmillSpace.x3) {
-            if showing != nil {
-                Button { back() } label: {
-                    HStack(spacing: WindmillSpace.x1) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(away.count > 1
-                                ? away[away.count - 2].label(in: store.catalog)
-                                : tab.rawValue)
-                            .font(WindmillFont.body(15, .semibold))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(skin.inkDim)
-                    .frame(minHeight: GymTap.minimum)
-                }
-            }
-            Spacer(minLength: 0)
-            YouSeat()
-        }
-        .padding(.horizontal, WindmillSpace.x5)
-        .padding(.bottom, WindmillSpace.x2)
-        .frame(minHeight: 46)
+    private func replaceTop(with destination: Away) {
+        guard let held = paths[tab], !held.isEmpty else { return }
+        paths[tab]?[held.count - 1] = destination
     }
 
     private func doors(to sessionId: String) -> CoachDoors {
@@ -396,7 +486,7 @@ public struct GymRoom: View {
             askSomethingNew: {
                 conversation = AskConversation()
                 note = nil
-                away.removeAll()
+                paths[.ask] = []
                 tab = .ask
             })
     }
@@ -418,16 +508,21 @@ public struct GymRoom: View {
         if case .failure(let why) = await store.start(routineId: routineId) {
             note = why.line("a session starts there")
             guard store.session != nil else { return }
-            away.removeAll()
-            tab = .routines
+            unwind()
             guard let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
             await store.choose(movement)
             return
         }
-        away.removeAll()
-        tab = .routines
+        unwind()
         guard let movement = LiveOrder.resume(order: store.order, sets: store.sets) else { return }
         await store.choose(movement)
+    }
+
+    // A NavigationStack owns its own path, so a session opening has to say so: a stack left standing
+    // behind a live logger is a lifter who finishes a workout and lands three screens deep in an editor.
+    private func unwind() {
+        paths.removeAll()
+        tab = .routines
     }
 
     // The sets are taken BEFORE the close: the queue lets go of a delivered row the moment its session ends.
@@ -438,6 +533,12 @@ public struct GymRoom: View {
         switch await store.finish() {
         case .closed(let session):
             keptRoutine = false
+            finishFailure = nil
+            // The sheet stands over the session it just closed, so the room navigates there first.
+            paths.removeAll()
+            tab = .log
+            paths[.log] = [.session(store.recent.first { $0.id == session.id }
+                                    ?? SessionSummary(session: session))]
             // Reviewed under the id the close came back with, never the one it went out under.
             finished = FinishedSession(session: session,
                                        sets: performed,
@@ -452,11 +553,14 @@ public struct GymRoom: View {
 
     private func discard(_ session: Session) async {
         note = nil
+        finishFailure = nil
         guard await store.discard(session.id) else {
-            note = "the log didn’t answer — the session is still there"
+            finishFailure = "the log didn’t answer — the session is still there"
             return
         }
         finished = nil
+        // The screen the sheet stood over is a session that no longer exists.
+        paths[.log] = []
     }
 
     private func newRoutine() {
@@ -473,7 +577,7 @@ public struct GymRoom: View {
             routineFailure = why.line("the routine wasn’t deleted")
             return
         }
-        away.removeAll()
+        paths[tab] = []
     }
 
     private func untested(_ draft: RoutineDraft) -> Bool {
@@ -491,11 +595,12 @@ public struct GymRoom: View {
         switch written {
         case .success(let saved):
             // An edit returns to the routine page underneath rather than pushing a second copy of it.
-            guard away.count > 1, away[away.count - 2] == .routine(saved.id) else {
-                away[away.count - 1] = .routine(saved.id)
+            let held = paths[tab] ?? []
+            guard held.count > 1, held[held.count - 2] == .routine(saved.id) else {
+                replaceTop(with: .routine(saved.id))
                 return
             }
-            away.removeLast()
+            back()
         case .failure(let why):
             routineFailure = why.line("the routine wasn’t saved")
         }
@@ -503,8 +608,9 @@ public struct GymRoom: View {
 
     private func keep(_ sets: [TrainingSet], as name: String) async {
         note = nil
+        finishFailure = nil
         guard await store.keep(sets, asRoutineNamed: name) != nil else {
-            note = "the log didn’t answer — the routine wasn’t kept"
+            finishFailure = "the log didn’t answer — the routine wasn’t kept"
             return
         }
         keptRoutine = true

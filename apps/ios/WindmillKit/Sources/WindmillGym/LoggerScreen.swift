@@ -9,13 +9,11 @@ struct LoggerScreen: View {
     // nil once something already reaches this log.
     let onBuildRoutine: (() -> Void)?
     let say: (String?) -> Void
-    let onFinish: () -> Void
 
     @Environment(\.gymSkin) private var skin
     @State private var weightKg = Prefill.emptyBarKg
     @State private var reps = Prefill.emptyBarReps
     @State private var kind: SetKind = .working
-    @State private var kindsUp = false
     @State private var restStartedAtMs: Int64?
     @State private var sheet: Sheet?
     @State private var goingTo: String?
@@ -126,10 +124,6 @@ struct LoggerScreen: View {
                 Text(Readout.clock(stamp(beat.date) - (store.session?.startedAtMs ?? 0)))
                     .font(GymType.numeral(14))
                     .foregroundStyle(skin.inkDim)
-                Button("Finish", action: onFinish)
-                    .font(WindmillFont.body(15, .semibold))
-                    .foregroundStyle(skin.accent)
-                    .frame(minWidth: 70, minHeight: GymTap.minimum)
             }
         }
     }
@@ -172,7 +166,7 @@ struct LoggerScreen: View {
 
     private var assembling: some View {
         OpeningPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
-                      isSignedIn: isSignedIn,
+                      sessions: store.recent, isSignedIn: isSignedIn,
                       onPick: { move(to: $0) },
                       onCreate: { sheet = .creating($0) },
                       onBuildRoutine: onBuildRoutine)
@@ -317,7 +311,7 @@ struct LoggerScreen: View {
                         .foregroundStyle(skin.weightInk)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
-                        .overlay(alignment: .bottom) { typeable }
+                        .overlay(alignment: .bottom) { TypeableRule() }
                 }
                 .accessibilityLabel("Weight \(Readout.weight(weightKg)) kilograms")
                 .accessibilityHint("Type a weight")
@@ -341,24 +335,25 @@ struct LoggerScreen: View {
     }
 
     // SwiftUI's `underline(pattern: .dot)` scales its rule with the font; this stays 2pt under both numbers.
-    private var typeable: some View {
-        DottedRule()
-            .stroke(style: StrokeStyle(lineWidth: 2, dash: [2, 3]))
-            .foregroundStyle(skin.lineStrong)
-            .frame(height: 2)
-    }
-
     // MARK: - the dial
 
     // Which kind the next set is filed as. It disarms itself the moment a set lands: a warmup counts toward nothing, and a
     // toggle left on would file every working set after it as a ramp-up.
     private var kindPill: some View {
         HStack(spacing: 0) {
-            Button { kindsUp = true } label: {
+            // A Menu holding a Picker, so all four kinds are one tap away in place rather than a trip
+            // through a sheet, and the armed one carries the platform's own checkmark.
+            Menu {
+                Picker("Log the next set as", selection: $kind) {
+                    ForEach(SetKind.allCases, id: \.self) { choice in
+                        Text(choice.rawValue).tag(choice)
+                    }
+                }
+            } label: {
                 HStack(spacing: WindmillSpace.x1) {
                     Text(kind.rawValue)
                         .font(WindmillFont.body(13, .bold))
-                    Image(systemName: "chevron.down")
+                    Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(skin.inkFaint)
                 }
@@ -368,14 +363,10 @@ struct LoggerScreen: View {
                 .background(Capsule().fill(skin.surface))
                 .overlay(Capsule().strokeBorder(skin.lineStrong, lineWidth: 1))
             }
+            .menuOrder(.fixed)
             .accessibilityLabel("Set type")
             .accessibilityValue(kind.rawValue)
             Spacer(minLength: 0)
-        }
-        .confirmationDialog("Log the next set as", isPresented: $kindsUp, titleVisibility: .visible) {
-            ForEach([SetKind.working, .warmup], id: \.self) { choice in
-                Button(choice.rawValue) { kind = choice }
-            }
         }
     }
 
@@ -405,25 +396,25 @@ struct LoggerScreen: View {
                 .font(WindmillFont.body(13))
                 .foregroundStyle(skin.inkFaint)
             Spacer(minLength: 0)
-            Button { reps = Ladder.bumpReps(reps, direction: -1) } label: { step("−") }
+            Button { reps = Ladder.bumpReps(reps, direction: -1) } label: { step("minus") }
                 .accessibilityLabel("One rep fewer")
             Button { sheet = .reps } label: {
                 Text(String(reps))
                     .font(GymType.numeral(20, .bold))
                     .foregroundStyle(skin.ink)
-                    .overlay(alignment: .bottom) { typeable }
+                    .overlay(alignment: .bottom) { TypeableRule() }
                     .frame(minWidth: 40, minHeight: GymTap.minimum)
             }
             .accessibilityLabel("\(reps) reps")
             .accessibilityHint("Type a rep count")
-            Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("+") }
+            Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("plus") }
                 .accessibilityLabel("One rep more")
         }
     }
 
-    private func step(_ glyph: String) -> some View {
-        Text(glyph)
-            .font(WindmillFont.display(21, .semibold))
+    private func step(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(skin.inkDim)
             .frame(width: GymTap.minimum, height: GymTap.minimum)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
@@ -484,6 +475,7 @@ struct LoggerScreen: View {
                       onClose: { self.sheet = nil })
         case .picker:
             MovementPicker(catalog: store.catalog, taken: store.order, lastSets: store.lastSets,
+                           sessions: store.recent,
                            onPick: { move(to: $0) },
                            onCreate: { self.sheet = .creating($0) },
                            onClose: { self.sheet = nil })
@@ -561,6 +553,19 @@ struct LoggerScreen: View {
 
     private func stamp(_ date: Date) -> Int64 {
         Int64(date.timeIntervalSince1970 * 1000)
+    }
+}
+
+// The rule under a numeral says the number takes a keypad. Both screens that raise one draw it — the
+// logger and the fix sheet — so it is one view rather than two copies of five lines.
+struct TypeableRule: View {
+    @Environment(\.gymSkin) private var skin
+
+    var body: some View {
+        DottedRule()
+            .stroke(style: StrokeStyle(lineWidth: 2, dash: [2, 3]))
+            .foregroundStyle(skin.lineStrong)
+            .frame(height: 2)
     }
 }
 

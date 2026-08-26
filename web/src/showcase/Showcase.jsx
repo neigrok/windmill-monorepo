@@ -17,6 +17,7 @@ import {
   Dialog,
   Toast,
   Tabs,
+  TabRail,
 } from '../design-system/index.js';
 // A product's specimens arrive only through products/<p>/showcase.js; the boundary test enforces
 // that this surface imports nothing else out of a product.
@@ -388,7 +389,7 @@ export default function Showcase() {
         </Section>
 
         {/* ---- Navigation + feedback ---- */}
-        <Section title="Navigation & feedback" meta="Tabs · Tooltip · Dialog · Toast">
+        <Section title="Navigation & feedback" meta="Tabs · TabRail · Tooltip · Dialog · Toast">
           <div className="wm-stack" style={{ gap: 'var(--space-6)' }}>
             <Tabs
               value={tab}
@@ -399,6 +400,18 @@ export default function Showcase() {
                 { value: 'timeline', label: 'Timeline' },
               ]}
             />
+            {/* The rail is `position: fixed`, so a transform makes this box its containing block —
+                the one way to show a floating piece inside a gallery rather than over it. */}
+            <div style={{ position: 'relative', transform: 'translateZ(0)', height: 132, borderRadius: 'var(--radius-xl)', border: '1px solid var(--border-subtle)', background: 'var(--surface-canvas)', overflow: 'hidden' }}>
+              <TabRail
+                label="A room’s three rooms"
+                items={[
+                  { label: 'Routines', href: '#showcase', active: true },
+                  { label: 'The log', href: '#showcase', active: false },
+                  { label: 'Coach', href: '#showcase', active: false },
+                ]}
+              />
+            </div>
             <div className="wm-row">
               <Tooltip label="This unlocks 2 more steps up the tree">
                 <Button variant="secondary" icon={<Icon name="info" size={16} />}>Hover for tooltip</Button>

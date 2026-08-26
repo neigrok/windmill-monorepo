@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -273,16 +273,17 @@ fun FinishScreen(
         mutableStateOf(Readout.weekday(finished.session.startedAtMs))
     }
 
-    Column(
+    // Back is claimed and inert here: the session is closed and this screen is the receipt for it.
+    GymScreen(title = head.title) {
+      Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x5),
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x12),
-    ) {
+            .padding(bottom = WindmillSpace.x12),
+      ) {
         Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-            Text(head.title, style = WindmillFont.display(30), color = GymSkin.ink)
             Text(head.subtitle, style = WindmillFont.body(17), color = GymSkin.inkDim)
             Text(head.at, style = GymType.numeral(12), color = GymSkin.inkFaint)
         }
@@ -298,6 +299,7 @@ fun FinishScreen(
         }
 
         Actions(finished, kept, onDiscard, onDone)
+      }
     }
 }
 
@@ -327,15 +329,16 @@ private fun KeepAsRoutine(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum),
         ) {
-            BasicTextField(
+            OutlinedTextField(
                 value = name,
                 onValueChange = onName,
                 singleLine = true,
-                textStyle = WindmillFont.body(17, FontWeight.SemiBold).copy(color = GymSkin.ink),
-                cursorBrush = SolidColor(GymSkin.accent),
+                label = { Text("Routine name") },
+                textStyle = WindmillFont.body(17, FontWeight.SemiBold),
+                shape = RoundedCornerShape(WindmillRadius.md),
+                colors = gymFieldColours(),
                 modifier = Modifier.weight(1f),
             )
-            Text("tap to rename", style = GymType.numeral(11), color = GymSkin.inkFaint)
         }
 
         val entries = RoutineWrite.from(name, SessionDetail(finished.session, finished.sets))?.entries
@@ -368,7 +371,7 @@ private fun KeepAsRoutine(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(onClick = onDone),
+                .clickable(role = Role.Button, onClick = onDone),
         ) {
             Text(
                 "Just keep the session",
@@ -408,7 +411,7 @@ private fun Actions(finished: FinishedSession, kept: Boolean, onDiscard: () -> U
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable { confirming = true },
+                    .clickable(role = Role.Button) { confirming = true },
             ) {
                 Text(
                     "Discard session",
@@ -433,7 +436,7 @@ private fun PrimaryButton(label: String, enabled: Boolean = true, onClick: () ->
             .heightIn(min = GymTap.primary)
             .alpha(if (enabled) 1f else 0.4f)
             .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     ) {
         Text(label, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
     }

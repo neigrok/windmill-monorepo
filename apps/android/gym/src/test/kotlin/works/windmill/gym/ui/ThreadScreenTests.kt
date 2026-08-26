@@ -44,7 +44,7 @@ import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class ThreadScreenTests {
     @get:Rule
     val compose = createComposeRule()
@@ -100,7 +100,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = emptyList(), lookedAt = setOf("prop_1"),
-                backLabel = "Coach", onBack = {}, onDeleted = {}, onReview = { doors += it.id }, say = {},
+                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = { doors += it.id }, say = {},
             )
         }
 
@@ -126,7 +126,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = emptyList(), lookedAt = emptySet(),
-                backLabel = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
+                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
             )
         }
         compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
@@ -159,7 +159,7 @@ class ThreadScreenTests {
         compose.setContent {
             ThreadScreen(
                 threadId = "thr_1", store = store, receipts = receipts, lookedAt = emptySet(),
-                backLabel = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
+                backTo = "Coach", onBack = {}, onDeleted = {}, onReview = {}, say = {},
             )
         }
         compose.onNodeWithText("1 change to Push Day · waiting").assertIsDisplayed()

@@ -39,6 +39,10 @@ xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
 # from apps/ios/WindmillKit — the package's own scheme, not one of the project's
 cd WindmillKit && xcodebuild test -scheme WindmillKit-Package \
   -destination 'platform=iOS Simulator,name=iPhone 17'
+
+# the UI tests (UITests/), which need a booted simulator and drive real touches
+xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 - `swift build` does not work: the package is iOS-only (`platforms: [.iOS(.v17)]`) and the UI uses
@@ -62,6 +66,39 @@ always, and exactly one thing that moves on its own — today's ember.
 offline queue (`backend/products/gym/ARCHITECTURE.md` §11). The web mirrors and backfills.
 The catalog ships in the app (`DeviceCatalog.seeded`, the same 64 rows as `backend/db/schema.sql`)
 because signed out there is no catalog read to make.
+
+Its containers are the platform's. A `TabView` carries Routines · The log · Coach, each tab holding
+its own `NavigationStack` whose path the room owns (`GymRoom.paths`) — so a screen pushed in one tab
+is that tab's, and a session opening or closing unwinds all three rather than leaving a stack
+standing behind a live logger. Every root seats the capsule leading and the You seat trailing in its
+own toolbar; the logger does too, with Finish beside the seat, because a live session replaces the
+tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
+that the session is closed, so dismissing it leaves the lifter in the workout they finished. The
+rack's keypad and ladder stay where they are, and the fix sheet raises that same keypad off its
+weight numeral and its rep count, because a correction at the rack is one-handed too; the routine
+target sheet is three typed fields (`TargetEntry`), whose bands are the routine's — sets 1–20,
+reps 1–100 — and not the live logger's, which are `KeypadEntry`'s. Both keypads refuse in the same
+four sentences; only the reps band differs.
+
+An open line — a movement with no set target — says what that means in one sentence,
+`You decide the numbers at the rack.`, drawn in the target sheet while the line is open and **once**
+beneath any list of a routine's movements holding an open row — and while a target sheet stands over
+that list, the SHEET owns the sentence and the list's copy steps aside, so one state is described
+once. The word `open` in a row's target column is what says which rows they are. In the sheet the
+sentence sits ABOVE the three fields,
+beside `Never logged — these are your numbers.`: everything drawn under a field is that field's own
+note. A list OF ROUTINES carries neither — it names movements and no targets, and the numbers are
+read on the routine's own screen.
+
+The movement picker opens on six and then hands over the whole catalogue. The six are this log's own
+— the movements the most of its newest fifty sessions named (`PickerOptions.mostTrained`, counted off
+`store.recent`), topped up in order from the shared opener list so a phone with no log still sees six
+— and only a TYPED query is capped, at seven rows. The fifty-session window is cut once and held for
+the life of the picker (`PickerOptions.window`, held in `@State`), so a claim or a poll landing
+underneath cannot reshuffle the six under a thumb already reaching for one of them. The cut is made
+on the first read that HELD something rather than on the first render: a picker opened in the moment
+before the log answers has frozen nothing, and takes the answer that lands under it. The section is headed
+`The six`; the catalogue under the gap needs no head of its own.
 
 Rules that hold across the rooms:
 
@@ -100,7 +137,8 @@ until it is configured — see `docs/IOS_APPLE_SIGNIN.md`.
 Built to the Shell page of the Windmill · Design System Figma file (`qoOwNbWOYE1GFi0yR5uGY2`).
 
 - **The shell owns** the hub and its card order · the capsule (38pt, top-left, one lane every app
-  reserves) · tap = switcher, edge-swipe right = home, nothing else · the You seat, last slot in
+  reserves) · tap = switcher, edge-swipe right = home at the room's root and nowhere deeper, nothing
+  else · the You seat, last slot in
   every app's bar, past a hairline · You and Windmill One, always clay, One reachable only from You.
 - **Each app owns** its nav bar, tabs and gestures below the capsule · its skin, including a dark
   default · its own settings · the one line it lends the hub.
@@ -111,7 +149,15 @@ so a product whose `hubLine` is `running` sinks below everything else. That is t
 the hub makes. The first-run entry question orders by registry, being read top-down as a question.
 
 The capsule lane is reserved with a safe-area inset rather than an overlay, so an app cannot forget
-it. A room says what colour it is with `roomChrome(_:)` and the shell dresses the capsule to match.
+it — unless the room declares `hostsTopChrome`, which says it draws a bar across the top itself and
+seats `CapsuleButton` leading and `YouSeat` trailing in that bar's own toolbar. Gym does; journal and
+roadmap do not. A room says what colour it is with `roomChrome(_:)` and the shell dresses the capsule
+to match.
+
+A room also says how deep it stands, with `roomDepth(_:)` — written once, at its root. The shell reads
+it to decide what its leading edge means: home at 0, the room's own back below it, where the shell's
+gesture is not attached at all. `UITests/RoomEdgeGestureUITests.swift` is what settles that on a
+simulator, because only a real touch can.
 
 **Appearance** (You → Light · Dark · System) is the one place light-or-dark is chosen, for the whole
 app including every room. A room owns its palette but not the choice. The shell states the scheme
@@ -198,10 +244,22 @@ be tested without the file on the domain and a signed build.
 - **No app icon or launch asset.**
 - **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
   of three products have no phone-side state to report.
-- **Gym's drag-to-reorder and swipe-to-drop are built but never performed**, and **the edge-swipe
-  home gesture is unverified** (hand-rolled on the leading 20pt, because each app hides the
-  navigation bar and that disables the system's interactive pop; the switcher carries a Home row
-  regardless). No synthetic touch is available here.
+- **Gym's drag-to-reorder and swipe-to-drop are built but never performed.** No synthetic touch
+  covers them yet; the edge-swipe home gesture, which used to sit in this list, is now driven by
+  `WindmillUITests` on a simulator.
+- **Dynamic Type does nothing in gym, so the room is MIXED at accessibility sizes.** Every size the
+  room paints is a literal point value and does not move; the containers the platform paints do —
+  the navigation bar, the tab bar, the keyboard, and `List` section headers and footers. At
+  AccessibilityXXXL the routine editor is the visible case: `Movements` and its footer grow several
+  times over while the name field beside them stays where it was. Photographed both ways through
+  `UITests/RoomFramesUITests.swift`; the conversion to text styles is its own wave.
+- **The gym tab bar's selected state is the system's, not the room's.** On iOS 26 the tab bar paints
+  its own labels — measured #FFFFFF selected against #F6F3FA unselected, **1.10:1** — and ignores
+  `.tint`, `UITabBarAppearance` and `unselectedItemTintColor` alike. What separates the selected tab
+  there is the capsule the system draws behind it (#47444A on #262328, 1.62:1) and the filled symbol.
+  The room applies no tint of its own to the `TabView`: `.tint` is an environment value, so one put
+  there for the bar repaints every control in all three tabs and every sheet they raise, and it buys
+  nothing on that OS. The room's `.tint(GymSkin.accent)` holds everywhere instead.
 - **Quarantined pages and workouts have no door.** A device file written before per-seat storage is
   attributed to the session the device was holding; a phone holding none quarantines them (journal:
   `windmill-journal-pages-v2-unclaimed.json`; gym: a shelf and queue key no seat can name). Releasing

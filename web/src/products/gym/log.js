@@ -376,24 +376,37 @@ export function nameOfMovement(catalog, exerciseId) {
   return movementOf(catalog, exerciseId)?.name ?? exerciseId;
 }
 
-// Tighter than the store's eighty-BYTE ceiling, and counted in UTF-16 units like `maxLength`.
+// A character is a CODE POINT, here and on the phones: that is the unit Postgres `char_length`
+// counts, and sixty of them weigh at most 240 bytes — the store's own ceiling (`kMaxNameLength`),
+// which a name this field accepts can therefore never break.
 export const NAME_MAX = 60;
 
 // The counter is chrome a short name does not need: it is drawn from the last fifth of the bound,
 // the same rule the note editor's byte counter reads (notes/notes.js).
 export const NAME_COUNT_FROM = 48;
 
+// Never `.length`: that counts UTF-16 units, and one emoji is one character weighing two of them.
+export function nameChars(typed) {
+  return [...(typed ?? '')].length;
+}
+
+// The cut, in the unit the counter counts, and never through the middle of a character. Applied
+// where a name is typed, never to one that arrived from the store.
+export function cappedName(typed, max = NAME_MAX) {
+  return [...(typed ?? '')].slice(0, max).join('');
+}
+
 export function showsNameCount(typed) {
-  return (typed ?? '').length >= NAME_COUNT_FROM;
+  return nameChars(typed) >= NAME_COUNT_FROM;
 }
 
 export function nameCountLabel(typed) {
-  return `${(typed ?? '').length}/${NAME_MAX}`;
+  return `${nameChars(typed)}/${NAME_MAX}`;
 }
 
-// A stored name can open a field already over the cap; `maxLength` only stops a key and a paste.
+// A stored name can open a field already over the cap; the cut on the way in only stops a key and a paste.
 export function isNameOverCap(typed) {
-  return (typed ?? '').length > NAME_MAX;
+  return nameChars(typed) > NAME_MAX;
 }
 
 // Zero is an instant like any other, so this asks for absence and not truthiness.

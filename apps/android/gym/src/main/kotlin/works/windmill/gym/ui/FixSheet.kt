@@ -9,11 +9,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
@@ -28,7 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +53,24 @@ fun FixSheet(
     var weightKg by remember(set.id) { mutableDoubleStateOf(set.weightKg) }
     var reps by remember(set.id) { mutableIntStateOf(set.reps) }
     var kind by remember(set.id) { mutableStateOf(set.kind) }
+    // The rack's own pad, raised from the numeral it corrects. It takes the whole sheet rather than
+    // opening a second one over it: a modal over a modal is a layer the phone does not need, and the
+    // pad is a whole answer to the same question the sheet is asking.
+    var typing by remember(set.id) { mutableStateOf<KeypadEntry.Mode?>(null) }
+
+    val pad = typing
+    if (pad != null) {
+        KeypadSheet(
+            mode = pad,
+            current = if (pad == KeypadEntry.Mode.Weight) weightKg else reps.toDouble(),
+            onCommit = {
+                if (pad == KeypadEntry.Mode.Weight) weightKg = it else reps = it.toInt()
+                typing = null
+            },
+            onCancel = { typing = null },
+        )
+        return
+    }
 
     Column(
         Modifier
@@ -76,14 +93,19 @@ fun FixSheet(
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // −102.5 is the widest this readout holds; it shrinks rather than truncating.
+            // −102.5 is the widest this readout holds; it shrinks rather than truncating. Tapping it
+            // raises the pad, exactly as the logger's numeral does — a correction is one-handed too.
             BasicText(
                 Readout.weight(weightKg),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 40.sp, maxFontSize = 72.sp),
                 style = GymType.weight.copy(
                     fontSize = 72.sp, lineHeight = 66.sp, color = GymSkin.weightInk),
-                modifier = Modifier.alignByBaseline(),
+                modifier = Modifier
+                    .alignByBaseline()
+                    .clickable(role = Role.Button, onClickLabel = "type a weight") {
+                        typing = KeypadEntry.Mode.Weight
+                    },
             )
             Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint,
                  modifier = Modifier.alignByBaseline())
@@ -99,7 +121,7 @@ fun FixSheet(
                         .background(GymSkin.raised)
                         .border(1.dp, if (index == 0 || index == 3) GymSkin.line else GymSkin.lineStrong,
                                 RoundedCornerShape(WindmillRadius.md))
-                        .clickable {
+                        .clickable(role = Role.Button, onClickLabel = "change the weight by $label") {
                             weightKg = Ladder.bump(weightKg, direction = if (index < 2) -1 else 1,
                                                    big = index == 0 || index == 3)
                         },
@@ -121,39 +143,26 @@ fun FixSheet(
                 horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RepStep("−") { reps = Ladder.bumpReps(reps, direction = -1) }
-                Text(reps.toString(), style = GymType.numeral(22, FontWeight.Bold), color = GymSkin.ink,
-                     modifier = Modifier.widthIn(min = 42.dp))
-                RepStep("+") { reps = Ladder.bumpReps(reps, direction = 1) }
+                RepStep("−", "one rep fewer") { reps = Ladder.bumpReps(reps, direction = -1) }
+                Box(
+                    Modifier
+                        .sizeIn(minWidth = 42.dp, minHeight = GymTap.minimum)
+                        .clickable(role = Role.Button, onClickLabel = "type the reps") {
+                            typing = KeypadEntry.Mode.Reps
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(reps.toString(), style = GymType.numeral(22, FontWeight.Bold), color = GymSkin.ink)
+                }
+                RepStep("+", "one rep more") { reps = Ladder.bumpReps(reps, direction = 1) }
             }
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            SetKind.entries.forEach { entry ->
-                val chosen = entry == kind
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum)
-                        .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(if (chosen) GymSkin.accentSoft else Color.Transparent)
-                        .border(1.dp, if (chosen) GymSkin.lineStrong else GymSkin.line,
-                                RoundedCornerShape(WindmillRadius.md))
-                        .clickable { kind = entry },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        entry.wire,
-                        style = GymType.numeral(12, if (chosen) FontWeight.Bold else FontWeight.SemiBold),
-                        color = when {
-                            entry == SetKind.Warmup -> GymSkin.warmupInk
-                            chosen -> GymSkin.accent
-                            else -> GymSkin.inkDim
-                        },
-                    )
-                }
-            }
-        }
+        GymSegmented(
+            options = SetKind.entries.map { it to it.wire },
+            picked = kind,
+            onPick = { kind = it },
+        )
 
         Box(
             Modifier
@@ -161,7 +170,9 @@ fun FixSheet(
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(GymSkin.accent)
-                .clickable { onSave(SetFix(weightKg = weightKg, reps = reps, kind = kind)) },
+                .clickable(role = Role.Button) {
+                    onSave(SetFix(weightKg = weightKg, reps = reps, kind = kind))
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text("Save the fix", style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
@@ -169,7 +180,7 @@ fun FixSheet(
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onDelete),
+                Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = onDelete),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text("Delete set", style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.alarmInk)
@@ -183,36 +194,15 @@ fun FixSheet(
 }
 
 @Composable
-private fun RepStep(glyph: String, onTap: () -> Unit) {
+private fun RepStep(glyph: String, said: String, onTap: () -> Unit) {
     Box(
         Modifier
             .size(GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
             .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-            .clickable(onClick = onTap),
+            .clickable(role = Role.Button, onClickLabel = said, onClick = onTap),
         contentAlignment = Alignment.Center,
     ) {
         Text(glyph, style = WindmillFont.display(19, FontWeight.SemiBold), color = GymSkin.ink)
-    }
-}
-
-@Composable
-fun WithheldRow(set: TrainingSet, onUndo: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().height(GymTap.minimum),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Deleted ${Readout.effort(set.weightKg, set.reps)}",
-            style = GymType.numeral(12),
-            color = GymSkin.inkDim,
-        )
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.widthIn(min = 60.dp).heightIn(min = GymTap.minimum).clickable(onClick = onUndo),
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Text("Undo", style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
-        }
     }
 }

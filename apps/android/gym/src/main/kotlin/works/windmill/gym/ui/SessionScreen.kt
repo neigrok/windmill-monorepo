@@ -12,14 +12,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -34,9 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.domain.Exercise
@@ -152,6 +158,8 @@ fun SessionScreen(
     summary: SessionSummary,
     store: TrainingStore,
     coach: CoachDoors,
+    backTo: String,
+    onBack: () -> Unit,
     say: (String?) -> Unit,
     onOpenMovement: (String) -> Unit,
 ) {
@@ -189,30 +197,54 @@ fun SessionScreen(
         read = true
     }
 
-    // Leaving the room settles whatever is left of the withheld delete's window.
-    LaunchedEffect(withheld) {
-        val holding = withheld ?: return@LaunchedEffect
-        delay(holding.untilMs - System.currentTimeMillis())
-        store.settleWithheld()?.let { say(it.line("that set is still on the log")) }
-    }
-
     fun close() {
         scope.launch { sheetState.hide() }.invokeOnCompletion { fixing = null }
     }
 
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x5)
-            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x8),
+    // The withheld row's undo is the room's transient, not a row inside this scroll: the window has
+    // to stay visible while it is open, and a scroll can put a row out of sight.
+    GymScreen(
+        title = standing.plan?.routine ?: Readout.noRoutine,
+        onBack = onBack,
+        backTo = backTo,
     ) {
-        SessionHead(standing)
-        SetsBlock(movements, setsFailure, onOpenMovement, onFix = { fixing = it })
-        withheld?.let { WithheldRow(it.set, onUndo = { store.keepWithheld() }) }
-        if (read) ReviewRemarks(review, store.catalog)
-        CoachShareCard(coach, summary.id)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = WindmillSpace.x5,
+                end = WindmillSpace.x5,
+                bottom = WindmillSpace.x8,
+            ),
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        ) {
+            item("head") { SessionHead(standing) }
+            val held = movements
+            if (held != null) {
+                items(held, key = { it.id }) { movement ->
+                    MovementCard(movement, onOpenMovement, onFix = { fixing = it })
+                }
+            } else if (setsFailure != null) {
+                item("failure") {
+                    Text(
+                        setsFailure!!.line("the sets are on your account"),
+                        style = GymType.numeral(13),
+                        color = GymSkin.inkFaint,
+                    )
+                }
+            }
+            if (read) {
+                item("review") {
+                    Column(Modifier.padding(top = WindmillSpace.x2)) {
+                        ReviewRemarks(review, store.catalog)
+                    }
+                }
+            }
+            item("share") {
+                Column(Modifier.padding(top = WindmillSpace.x2)) {
+                    CoachShareCard(coach, summary.id)
+                }
+            }
+        }
     }
 
     val open = movements.orEmpty().firstNotNullOfOrNull { movement ->
@@ -223,7 +255,6 @@ fun SessionScreen(
             onDismissRequest = { close() },
             sheetState = sheetState,
             containerColor = GymSkin.surface,
-            dragHandle = null,
         ) {
             val (movement, row) = open
             FixSheet(
@@ -273,11 +304,6 @@ fun SessionScreen(
 @Composable
 private fun SessionHead(summary: SessionSummary) {
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        Text(
-            summary.plan?.routine ?: Readout.noRoutine,
-            style = WindmillFont.display(28),
-            color = GymSkin.ink,
-        )
         Text(headLine(summary), style = GymType.numeral(12), color = GymSkin.inkDim)
         if (summary.closedItself) {
             Text(
@@ -312,28 +338,6 @@ private fun SessionHead(summary: SessionSummary) {
 }
 
 @Composable
-private fun SetsBlock(
-    movements: List<Performed.Movement>?,
-    setsFailure: WriteFailure?,
-    onOpenMovement: (String) -> Unit,
-    onFix: (String) -> Unit,
-) {
-    if (movements != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            movements.forEach { movement -> MovementCard(movement, onOpenMovement, onFix) }
-        }
-        return
-    }
-    if (setsFailure != null) {
-        Text(
-            setsFailure.line("the sets are on your account"),
-            style = GymType.numeral(13),
-            color = GymSkin.inkFaint,
-        )
-    }
-}
-
-@Composable
 private fun MovementCard(
     movement: Performed.Movement,
     onOpenMovement: (String) -> Unit,
@@ -352,7 +356,9 @@ private fun MovementCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .clickable { onOpenMovement(movement.id) },
+                .clickable(role = Role.Button, onClickLabel = "open this movement") {
+                    onOpenMovement(movement.id)
+                },
         ) {
             Text(
                 movement.movement,
@@ -384,14 +390,30 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
             .heightIn(min = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.sm))
             .background(if (pressed) GymSkin.raised else Color.Transparent)
-            .clickable(interactionSource = pressing, indication = null) { onFix(set.id) },
+            .clickable(
+                interactionSource = pressing,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "fix this set",
+            ) { onFix(set.id) },
     ) {
         val counts = set.kind == SetKind.Working
-        Text(
-            if (set.kind == SetKind.Warmup) "·" else "✓",
-            style = GymType.numeral(13),
-            color = if (counts) GymSkin.setDone else GymSkin.warmupInk,
-        )
+        if (counts) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = GymSkin.setDone,
+                modifier = Modifier.size(15.dp),
+            )
+        } else {
+            // No core icon says `warmup`; the dot does, and the kind is said in the tree.
+            Box(
+                Modifier.size(15.dp).semantics { contentDescription = set.kind.wire },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(5.dp).clip(CircleShape).background(GymSkin.warmupInk))
+            }
+        }
         Text(
             set.effort,
             style = GymType.numeral(14),

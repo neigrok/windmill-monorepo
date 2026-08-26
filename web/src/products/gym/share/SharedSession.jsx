@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '../../../design-system/index.js';
 import { gymApi } from '../gymApi.js';
 import {
   CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, fmt, NO_ROUTINE, sessionMetaLabel, timeLabel,
@@ -29,7 +30,7 @@ export function SharedSession({ token }) {
       <main className="gym-column gym-shared">
         <p className="gym-read-failed">
           This didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       </main>
     );

@@ -310,7 +310,7 @@ class FinishedSessionTests {
 }
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class DiscardConfirmationTests {
     @get:Rule
     val compose = createComposeRule()

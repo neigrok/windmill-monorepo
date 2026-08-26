@@ -20,7 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,10 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -65,7 +65,7 @@ import works.windmill.platform.design.WindmillSpace
 fun NotesScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
-    backLabel: String,
+    backTo: String,
     onBack: () -> Unit,
     onEdit: (Note?, String) -> Unit,
     onSignIn: () -> Unit,
@@ -110,8 +110,8 @@ fun NotesScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        BackRow(backLabel, onBack)
+    GymScreen(title = Notes.title, onBack = onBack, backTo = backTo) {
+      Column(Modifier.fillMaxSize()) {
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier
@@ -162,6 +162,7 @@ fun NotesScreen(
                 AddRow(count = held.size) { onEdit(null, "") }
             }
         }
+      }
     }
 }
 
@@ -182,7 +183,7 @@ private fun SignedOut(onSignIn: () -> Unit) {
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary - 8.dp)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(onClick = onSignIn),
+                .clickable(role = Role.Button, onClick = onSignIn),
         ) {
             Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
         }
@@ -200,12 +201,12 @@ private fun PlaceholderRow(title: String, onOpen: () -> Unit) {
             .heightIn(min = GymTap.minimum + 6.dp)
             .dashedEdge(GymSkin.lineStrong, WindmillRadius.lg)
             .clip(RoundedCornerShape(WindmillRadius.lg))
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClickLabel = "write this note", onClick = onOpen)
             .padding(horizontal = WindmillSpace.x4),
     ) {
         Text(title, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
         Spacer(Modifier.weight(1f))
-        Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+        Chevron()
     }
 }
 
@@ -226,7 +227,7 @@ private fun AddRow(count: Int, onAdd: () -> Unit) {
             .fillMaxWidth()
             .heightIn(min = GymTap.primary - 8.dp)
             .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
-            .clickable(onClick = onAdd),
+            .clickable(role = Role.Button, onClick = onAdd),
         contentAlignment = Alignment.Center,
     ) {
         Text(Notes.add, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
@@ -281,7 +282,7 @@ private fun NoteList(
                     .clip(RoundedCornerShape(WindmillRadius.lg))
                     .background(GymSkin.surface)
                     .border(1.dp, if (held) GymSkin.accent else GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable { onOpen(note) }
+                    .clickable(role = Role.Button, onClickLabel = "open this note") { onOpen(note) }
                     .semantics { customActions = steps }
                     .padding(start = if (handles) 0.dp else WindmillSpace.x4, end = WindmillSpace.x4)
                     .padding(vertical = WindmillSpace.x2),
@@ -347,7 +348,7 @@ private fun NoteList(
                         Text(it, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
                     }
                 }
-                Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+                Chevron()
             }
         }
         item { foot() }
@@ -361,7 +362,7 @@ fun NoteEditorScreen(
     note: Note?,
     seedTitle: String,
     store: TrainingStore,
-    backLabel: String,
+    backTo: String,
     onBack: () -> Unit,
     onDone: () -> Unit,
 ) {
@@ -422,15 +423,19 @@ fun NoteEditorScreen(
         )
     }
 
-    Column(
+    GymScreen(
+        title = if (note == null) "New note" else "Note",
+        onBack = onBack,
+        backTo = backTo,
+    ) {
+      Column(
         Modifier
             .fillMaxSize()
             .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(bottom = WindmillSpace.x8),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-    ) {
-        BackRow(backLabel, onBack)
+      ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
@@ -479,7 +484,7 @@ fun NoteEditorScreen(
                     .heightIn(min = GymTap.primary)
                     .alpha(if (ready) 1f else 0.4f)
                     .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(enabled = ready) { save() },
+                    .clickable(enabled = ready, role = Role.Button) { save() },
             ) {
                 Text(Notes.save, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
             }
@@ -489,12 +494,13 @@ fun NoteEditorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = GymTap.minimum + 6.dp)
-                        .clickable(enabled = !saving) { confirmingDelete = true },
+                        .clickable(enabled = !saving, role = Role.Button) { confirmingDelete = true },
                 ) {
                     Text(Notes.delete, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
                 }
             }
         }
+      }
     }
 }
 
@@ -508,42 +514,17 @@ private fun Field(
     enabled: Boolean,
     minHeight: androidx.compose.ui.unit.Dp = 54.dp,
 ) {
-    BasicTextField(
+    OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        textStyle = style.copy(color = GymSkin.ink),
-        cursorBrush = SolidColor(GymSkin.accent),
+        textStyle = style,
         singleLine = singleLine,
         enabled = enabled,
+        placeholder = { Text(placeholder, style = style) },
+        shape = RoundedCornerShape(WindmillRadius.lg),
+        colors = gymFieldColours(),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = minHeight)
-            .clip(RoundedCornerShape(WindmillRadius.lg))
-            .background(GymSkin.raised)
-            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg)),
-        decorationBox = { inner ->
-            Box(
-                Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
-                contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
-            ) {
-                if (value.isEmpty()) Text(placeholder, style = style, color = GymSkin.inkFaint)
-                inner()
-            }
-        },
+            .heightIn(min = minHeight),
     )
-}
-
-@Composable
-private fun BackRow(label: String, onBack: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .heightIn(min = GymTap.minimum)
-            .padding(horizontal = WindmillSpace.x4)
-            .clickable(onClick = onBack),
-    ) {
-        Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-        Text(label, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-    }
 }

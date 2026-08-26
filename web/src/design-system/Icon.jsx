@@ -69,6 +69,7 @@ import {
   Bell,
   Pin,
   RotateCcw,
+  ArrowLeft,
   ArrowRight,
   Keyboard,
 } from 'lucide-react';
@@ -147,6 +148,7 @@ const REGISTRY = {
   bell: Bell,
   pin: Pin,
   'rotate-ccw': RotateCcw,
+  'arrow-left': ArrowLeft,
   'arrow-right': ArrowRight,
   keyboard: Keyboard,
 };
@@ -157,7 +159,9 @@ export function Icon({ name, size = 16, strokeWidth = 2, color = 'currentColor',
     if (import.meta.env?.DEV) console.warn(`[Icon] Unregistered icon: "${name}" — add it to Icon.jsx`);
     return null;
   }
-  return <Cmp size={size} strokeWidth={strokeWidth} color={color} style={style} />;
+  // Always decorative: every icon in this app sits beside its own words, or inside a control that
+  // carries an aria-label. Nothing here is the only name of anything.
+  return <Cmp size={size} strokeWidth={strokeWidth} color={color} style={style} aria-hidden="true" />;
 }
 
 export default Icon;

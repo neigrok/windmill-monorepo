@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Dialog } from '../../design-system/index.js';
+import { Button, Dialog } from '../../design-system/index.js';
 import { failureReason, gymApi } from './gymApi.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
@@ -197,7 +197,7 @@ export function ProposalReview({ id, log, onClose, onSettled, onChanged = null }
         {view.phase === 'failed' && !settled && (
           <p className="gym-read-failed">
             The proposal didn’t load.
-            <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+            <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
           </p>
         )}
         {proposal && (

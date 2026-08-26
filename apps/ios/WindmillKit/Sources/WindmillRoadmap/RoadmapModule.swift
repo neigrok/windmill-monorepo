@@ -11,7 +11,7 @@ public struct RoadmapModule: ProductModule {
     public var presence: Presence {
         .elsewhere(
             url: URL(string: "https://windmill.works/#/")!,
-            line: "Your trees are on the web. The tree canvas isn't built for the phone yet."
+            line: "Your trees are on the web. The tree canvas isn’t built for the phone yet."
         )
     }
 

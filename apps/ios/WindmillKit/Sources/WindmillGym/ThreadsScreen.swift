@@ -20,58 +20,55 @@ struct ThreadsScreen: View {
     @State private var failure: AskRefusal?
 
     var body: some View {
-        VStack(spacing: 0) {
-            head
-            ScrollView {
-                VStack(alignment: .leading, spacing: WindmillSpace.x5) {
-                    if let threads {
-                        if threads.isEmpty { empty } else { months(of: threads) }
-                    } else if let failure {
-                        silence(failure.line)
-                    } else {
-                        Text(AskThreads.reading)
-                            .font(GymType.numeral(13))
-                            .foregroundStyle(skin.inkFaint)
-                    }
+        List {
+            if let threads {
+                if threads.isEmpty {
+                    Section { empty }.modifier(ThreadRow())
+                } else {
+                    Section { meta(threads.count) }.modifier(ThreadRow())
+                    months(of: threads)
                 }
-                .padding(.horizontal, WindmillSpace.x4)
-                .padding(.vertical, WindmillSpace.x4)
+            } else if let failure {
+                Section { silence(failure.line) }.modifier(ThreadRow())
+            } else {
+                Section {
+                    ProgressView(AskThreads.reading)
+                        .font(GymType.numeral(13))
+                        .tint(skin.inkFaint)
+                        .foregroundStyle(skin.inkFaint)
+                        .frame(maxWidth: .infinity)
+                }
+                .modifier(ThreadRow())
             }
-            foot
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
+        .safeAreaInset(edge: .bottom) { foot }
         .task { await read() }
     }
 
-    private var head: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(AskThreads.title)
-                .font(WindmillFont.display(19))
-                .foregroundStyle(skin.ink)
-            if let threads {
-                Text(AskThreads.meta(threads.count))
-                    .font(GymType.numeral(11))
-                    .foregroundStyle(skin.inkFaint)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, WindmillSpace.x4)
-        .padding(.top, WindmillSpace.x6)
-        .padding(.bottom, WindmillSpace.x3)
-        .overlay(alignment: .bottom) { Rectangle().fill(skin.line).frame(height: 1) }
+    private func meta(_ count: Int) -> some View {
+        Text(AskThreads.meta(count))
+            .font(GymType.numeral(11))
+            .foregroundStyle(skin.inkFaint)
     }
 
     private func months(of threads: [AskThread]) -> some View {
         ForEach(AskThreads.months(of: threads, now: nowMs)) { month in
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
+            Section {
+                ForEach(month.threads) { thread in
+                    Button { doors.openThread(thread.id) } label: { row(thread) }
+                        .buttonStyle(.plain)
+                }
+            } header: {
                 Text(month.label)
                     .font(GymType.numeral(10.5, .bold))
                     .textCase(.uppercase)
                     .kerning(0.9)
                     .foregroundStyle(skin.inkFaint)
-                ForEach(month.threads) { thread in
-                    Button { doors.openThread(thread.id) } label: { row(thread) }
-                }
             }
+            .modifier(ThreadRow())
         }
     }
 
@@ -112,12 +109,17 @@ struct ThreadsScreen: View {
             .background(Capsule().fill(lit ? skin.accentSoft : skin.raised))
     }
 
+    // No action fits here — the way to start one is the button pinned in the reach band below. The
+    // head is the STATE and never the screen's own name: the navigation bar already says `Threads`,
+    // and a pushed screen says its title once.
     private var empty: some View {
-        Text(AskThreads.empty)
-            .font(WindmillFont.body(14.5))
-            .foregroundStyle(skin.inkDim)
-            .lineSpacing(5)
-            .fixedSize(horizontal: false, vertical: true)
+        ContentUnavailableView {
+            Label(AskThreads.emptyHead, systemImage: "bubble.left.and.bubble.right")
+                .foregroundStyle(skin.inkDim)
+        } description: {
+            Text(AskThreads.empty)
+                .foregroundStyle(skin.inkFaint)
+        }
     }
 
     private func silence(_ line: String) -> some View {
@@ -145,7 +147,7 @@ struct ThreadsScreen: View {
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
         }
         .padding(.horizontal, WindmillSpace.x4)
-        .padding(.top, WindmillSpace.x3)
+        .padding(.bottom, WindmillSpace.x2)
     }
 
     private func read() async {
@@ -192,9 +194,11 @@ struct ThreadScreen: View {
                 } else if let failure {
                     silence(failure)
                 } else {
-                    Text(AskThreads.reading)
+                    ProgressView(AskThreads.reading)
                         .font(GymType.numeral(13))
+                        .tint(skin.inkFaint)
                         .foregroundStyle(skin.inkFaint)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
@@ -344,4 +348,15 @@ struct ThreadScreen: View {
     }
 
     private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+}
+
+// The room's own card frame, kept under a List that would otherwise draw its own.
+private struct ThreadRow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x4,
+                                      bottom: 4, trailing: WindmillSpace.x4))
+    }
 }

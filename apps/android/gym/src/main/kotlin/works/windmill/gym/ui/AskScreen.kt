@@ -19,8 +19,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,7 +40,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -80,8 +84,9 @@ fun AskScreen(
     onAskNew: () -> Unit,
     seed: String,
     origin: String,
-    backLabel: String?,
-    onBack: (() -> Unit)?,
+    backTo: String? = null,
+    onBack: (() -> Unit)? = null,
+    seat: String? = null,
     onThreads: () -> Unit,
     onNotes: () -> Unit,
     onReview: (Proposal) -> Unit,
@@ -106,12 +111,21 @@ fun AskScreen(
         scroll.animateScrollTo(scroll.maxValue)
     }
 
-    Column(
+    GymScreen(
+        title = Ask.title,
+        onBack = onBack,
+        backTo = backTo,
+        actions = {
+            TopAction(Threads.door, onClick = onThreads)
+            seat?.let { YouSeat(it) }
+        },
+    ) {
+      Column(
         Modifier
             .fillMaxSize()
             .imePadding(),
-    ) {
-        Head(backLabel, onBack, onThreads, onNotes)
+      ) {
+        Head(onNotes)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
             modifier = Modifier
@@ -157,66 +171,26 @@ fun AskScreen(
             Text(Ask.allowance, style = GymType.numeral(12), color = GymSkin.inkFaint)
             if (capped) CapReached(origin, onAskNew) else Composer(seed, asking, onAsk)
         }
+      }
     }
 }
 
-// The notes door is a ROW under the title, never a third icon beside Threads: an icon there would say
-// Coach owns the notes, which is the opposite of what the notes screen exists to say.
+// The notes door is a ROW under the terms, never a second action beside Threads: an icon up there
+// would say Coach owns the notes, which is the opposite of what the notes screen exists to say.
 @Composable
-private fun Head(
-    backLabel: String?,
-    onBack: (() -> Unit)?,
-    onThreads: (() -> Unit)?,
-    onNotes: (() -> Unit)?,
-) {
+private fun Head(onNotes: (() -> Unit)?) {
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .padding(bottom = WindmillSpace.x3)
-            .padding(top = if (backLabel == null) WindmillSpace.x3 else 0.dp),
+        modifier = Modifier.padding(bottom = WindmillSpace.x3),
     ) {
-        if (backLabel != null && onBack != null) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .padding(horizontal = WindmillSpace.x4)
-                    .clickable(onClick = onBack),
-            ) {
-                Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-                Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-            }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(Ask.title, style = WindmillFont.display(26), color = GymSkin.ink, maxLines = 1)
-                Text(Ask.subtitle, style = GymType.numeral(12), color = GymSkin.inkFaint, maxLines = 1)
-            }
-            onThreads?.let { open ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .heightIn(min = GymTap.minimum)
-                        .clip(RoundedCornerShape(WindmillRadius.full))
-                        .clickable(onClick = open)
-                        .padding(horizontal = WindmillSpace.x3),
-                ) {
-                    Text(
-                        Threads.door,
-                        style = WindmillFont.body(14, FontWeight.SemiBold),
-                        color = GymSkin.accent,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
+        // No line cap: at the largest font scale the terms wrap rather than losing their second
+        // half, which is the half that says what Coach cannot do.
+        Text(
+            Ask.subtitle,
+            style = GymType.numeral(12),
+            color = GymSkin.inkFaint,
+            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+        )
         onNotes?.let { open ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -227,24 +201,25 @@ private fun Head(
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(GymSkin.surface)
                     .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
-                    .clickable(onClick = open)
+                    .clickable(role = Role.Button, onClick = open)
                     .padding(horizontal = WindmillSpace.x3),
             ) {
                 Text(Ask.notesDoor, style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.ink)
                 Spacer(Modifier.weight(1f))
-                Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+                Chevron()
             }
         }
     }
 }
 
 @Composable
-fun AskSignedOutStance(onSignIn: () -> Unit) {
-    Column(
+fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
+    GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
+      Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
         modifier = Modifier.fillMaxSize(),
-    ) {
-        Head(backLabel = null, onBack = null, onThreads = null, onNotes = null)
+      ) {
+        Head(onNotes = null)
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
             modifier = Modifier.padding(horizontal = WindmillSpace.x4),
@@ -265,28 +240,31 @@ fun AskSignedOutStance(onSignIn: () -> Unit) {
                     .fillMaxWidth()
                     .heightIn(min = GymTap.primary - 8.dp)
                     .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(onClick = onSignIn),
+                    .clickable(role = Role.Button, onClick = onSignIn),
             ) {
                 Text("Sign in", style = WindmillFont.body(16, FontWeight.Bold), color = GymSkin.onAccent)
             }
         }
+      }
     }
 }
 
 // A bare 404 means the feature is not configured, so there is nothing to retry.
 @Composable
-fun AskAbsentStance() {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        Head(backLabel = null, onBack = null, onThreads = null, onNotes = null)
-        Text(
-            Ask.notHere,
-            style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-            color = GymSkin.inkDim,
-            modifier = Modifier.padding(horizontal = WindmillSpace.x4),
-        )
+fun AskAbsentStance(seat: String) {
+    GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Head(onNotes = null)
+            Text(
+                Ask.notHere,
+                style = WindmillFont.body(15).copy(lineHeight = 23.sp),
+                color = GymSkin.inkDim,
+                modifier = Modifier.padding(horizontal = WindmillSpace.x4),
+            )
+        }
     }
 }
 
@@ -332,7 +310,9 @@ private fun ConnectDoor(origin: String) {
                 .heightIn(min = GymTap.minimum)
                 .clip(RoundedCornerShape(WindmillRadius.md))
                 .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                .clickable { runCatching { web.openUri(ConnectedLog.setupUrl(origin)) } },
+                .clickable(role = Role.Button) {
+                    runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                },
         ) {
             Text(Ask.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
         }
@@ -356,7 +336,7 @@ private fun CapReached(origin: String, onAskNew: () -> Unit) {
                 .heightIn(min = GymTap.minimum)
                 .clip(RoundedCornerShape(WindmillRadius.md))
                 .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                .clickable(onClick = onAskNew),
+                .clickable(role = Role.Button, onClick = onAskNew),
         ) {
             Text(Threads.open, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
         }
@@ -440,10 +420,11 @@ private fun Receipt(answer: AskAnswer) {
         ) {
             Text(Ask.receipt(answer.read), style = GymType.numeral(11), color = GymSkin.inkFaint)
             if (phrases.isNotEmpty()) {
-                Text(
-                    if (open) "⌃" else "⌄",
-                    style = GymType.numeral(11, FontWeight.Bold),
-                    color = GymSkin.inkFaint,
+                Icon(
+                    if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = GymSkin.inkFaint,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -523,7 +504,7 @@ private fun Minted(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
-                .clickable(onClick = onReview),
+                .clickable(role = Role.Button, onClick = onReview),
         ) {
             Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
         }
@@ -541,7 +522,7 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
         )
         onRetry?.let { retry ->
             Box(
-                Modifier.heightIn(min = GymTap.minimum).clickable(onClick = retry),
+                Modifier.heightIn(min = GymTap.minimum).clickable(role = Role.Button, onClick = retry),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text("Try again", style = WindmillFont.body(14, FontWeight.SemiBold), color = GymSkin.accent)
@@ -564,7 +545,7 @@ private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.full))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.full))
-                    .clickable(enabled = !asking) { onAsk(opener) }
+                    .clickable(enabled = !asking, role = Role.Button) { onAsk(opener) }
                     .padding(horizontal = WindmillSpace.x3),
             ) {
                 Text(opener, style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.inkDim)
@@ -578,30 +559,20 @@ private fun Openers(asking: Boolean, onAsk: (String) -> Unit) {
 @Composable
 private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
     var typed by rememberSaveable { mutableStateOf(seed) }
-    Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2), modifier = Modifier.fillMaxWidth()) {
-        BasicTextField(
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
             value = typed,
             onValueChange = { edited -> if (Ask.sendable(edited) || edited.isBlank()) typed = edited },
-            textStyle = WindmillFont.body(16).copy(color = GymSkin.ink),
-            cursorBrush = SolidColor(GymSkin.accent),
+            textStyle = WindmillFont.body(16),
             enabled = !asking,
-            modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 54.dp)
-                .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(GymSkin.raised)
-                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg)),
-            decorationBox = { inner ->
-                Box(
-                    Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (typed.isEmpty()) {
-                        Text(Ask.placeholder, style = WindmillFont.body(16), color = GymSkin.inkFaint)
-                    }
-                    inner()
-                }
-            },
+            placeholder = { Text(Ask.placeholder, style = WindmillFont.body(16)) },
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = gymFieldColours(),
+            modifier = Modifier.weight(1f).heightIn(min = 54.dp),
         )
         val ready = Ask.sendable(typed) && !asking
         Box(
@@ -612,17 +583,18 @@ private fun Composer(seed: String, asking: Boolean, onAsk: (String) -> Unit) {
                     if (ready) GymSkin.accent else GymSkin.raised,
                     RoundedCornerShape(WindmillRadius.lg),
                 )
-                .clickable(enabled = ready) {
+                .clickable(enabled = ready, role = Role.Button) {
                     onAsk(typed.trim())
                     typed = ""
                 },
         ) {
-            Text(
-                "↑",
-                style = WindmillFont.body(20, FontWeight.Bold),
-                color = if (ready) GymSkin.onAccent else GymSkin.inkFaint,
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Send",
+                tint = if (ready) GymSkin.onAccent else GymSkin.inkFaint,
+                modifier = Modifier.size(22.dp),
             )
-    }
+        }
     }
 }
 

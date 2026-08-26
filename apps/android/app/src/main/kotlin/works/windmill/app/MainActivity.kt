@@ -1,8 +1,11 @@
 package works.windmill.app
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -17,6 +20,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import works.windmill.gym.GymModule
+import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ShellActions
@@ -29,6 +33,13 @@ import works.windmill.platform.you.YouSheet
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge to edge on every version, not only where the platform enforces it: the room draws
+        // under both bars and its own Scaffold holds the insets. The bars keep light icons, because
+        // the one skin this app has is dark.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         val auth = AuthStore(WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL), PrefsSessions(this))
         setContent { Root(auth) }
@@ -56,10 +67,12 @@ private fun Root(auth: AuthStore) {
     val account = Account(auth.api, standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true)
 
-    // WindmillMaterial must wrap everything Material draws.
+    // WindmillMaterial must wrap everything Material draws. The gym room takes its OWN Material
+    // theme inside it: the brand's primary is gold, and gold in that room means a personal record.
+    // The shell's own sheet stays on the brand's.
     CompositionLocalProvider(LocalShellActions provides shell) {
         WindmillMaterial {
-            gym.Room(account)
+            GymMaterial { gym.Room(account) }
             if (youUp) YouSheet(auth, onDismiss = { youUp = false })
         }
     }

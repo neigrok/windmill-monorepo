@@ -23,7 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -45,6 +51,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -74,7 +82,6 @@ import works.windmill.platform.design.WindmillSpace
 private sealed class LoggerSheet {
     data object Weight : LoggerSheet()
     data object Reps : LoggerSheet()
-    data object Kind : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Create(val name: String) : LoggerSheet()
@@ -176,17 +183,21 @@ fun LoggerScreen(
         confirm.restLanded()
     }
 
-    Column(
+    // Finish rides the top bar: the band below holds one primary and it is Log set, pressed forty
+    // times to Finish's once.
+    GymScreen(
+        title = store.session?.plan?.routine ?: Readout.noRoutine,
+        actions = { TopAction("Finish", onClick = onFinish) },
+    ) {
+      Column(
         Modifier
             .fillMaxSize()
             .padding(horizontal = WindmillSpace.x4)
-            .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
+            .padding(bottom = WindmillSpace.x3),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-    ) {
-        Header(
-            routine = store.session?.plan?.routine ?: Readout.noRoutine,
+      ) {
+        RestReading(
             rest = restStartedAtMs?.let { Rest.Line(restTarget, it, nowMs) },
-            onFinish = onFinish,
             onClearRest = { restStartedAtMs = null },
         )
         LiveLines.onThisDeviceLine(store.strandedCount, store.strandedBy)?.let { line ->
@@ -207,6 +218,7 @@ fun LoggerScreen(
                 taken = store.order,
                 lastSets = store.lastSets,
                 nowMs = nowMs,
+                sessions = store.recent,
                 title = if (store.firstSession) "What are you starting with?" else "What are you lifting?",
                 subtitle = if (store.session?.plan == null) "the session is already running"
                     else "nothing in this plan is left to walk",
@@ -260,7 +272,13 @@ fun LoggerScreen(
                     onType = { sheet = LoggerSheet.Weight },
                 )
             }
-            KindPill(kind, onOpen = { sheet = LoggerSheet.Kind })
+            // Four kinds on the set being logged, because the kind is a property of the rep you are
+            // about to do and choosing it must not cost a trip.
+            GymSegmented(
+                options = SetKind.entries.map { it to it.wire },
+                picked = kind,
+                onPick = { kind = it },
+            )
             LadderRow(weightKg, onDial = { weightKg = it })
             RepsRow(
                 reps = reps,
@@ -280,6 +298,7 @@ fun LoggerScreen(
                 },
             )
         }
+      }
     }
 
     val open = sheet
@@ -288,7 +307,6 @@ fun LoggerScreen(
             onDismissRequest = { close() },
             sheetState = sheetState,
             containerColor = GymSkin.surface,
-            dragHandle = null,
         ) {
             when (open) {
                 LoggerSheet.Weight -> KeypadSheet(
@@ -300,10 +318,6 @@ fun LoggerScreen(
                     KeypadEntry.Mode.Reps, reps.toDouble(),
                     onCommit = { reps = it.toInt(); close() },
                     onCancel = { close() },
-                )
-                LoggerSheet.Kind -> KindSheet(
-                    kind = kind,
-                    onPick = { kind = it; close() },
                 )
                 LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets, store.session?.plan,
@@ -320,12 +334,13 @@ fun LoggerScreen(
                     taken = store.order,
                     lastSets = store.lastSets,
                     nowMs = nowMs,
+                    sessions = store.recent,
                     title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
                     onCreate = { name -> sheet = LoggerSheet.Create(name) },
                     modifier = Modifier
-                        .fillMaxHeight(0.92f)
+                        .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
                         .padding(WindmillSpace.x5),
                     onClose = { close() },
@@ -358,22 +373,22 @@ fun LoggerScreen(
     }
 }
 
+// The clock counts UP — time since the last set — and keeps the bar against the target.
 @Composable
-private fun Header(routine: String, rest: Rest.Line?, onFinish: () -> Unit, onClearRest: () -> Unit) {
+private fun RestReading(rest: Rest.Line?, onClearRest: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(GymSkin.accent))
-            Text(routine, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            if (rest != null) {
+        if (rest != null) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(rest.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
+                Spacer(Modifier.weight(1f))
                 Box(
                     Modifier
                         .heightIn(min = GymTap.minimum)
-                        .clickable(onClickLabel = "clear the rest", onClick = onClearRest)
+                        .clickable(role = Role.Button, onClickLabel = "clear the rest", onClick = onClearRest)
                         .semantics(mergeDescendants = true) {
                             contentDescription = "${rest.label}  ·  ${rest.time}"
                         },
@@ -382,12 +397,6 @@ private fun Header(routine: String, rest: Rest.Line?, onFinish: () -> Unit, onCl
                     Text(rest.time, style = GymType.numeral(14),
                          color = if (rest.overrun) GymSkin.accent else GymSkin.inkDim)
                 }
-            }
-            Box(
-                Modifier.sizeIn(minWidth = 70.dp, minHeight = GymTap.minimum).clickable(onClick = onFinish),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Finish", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
             }
         }
         val filled = rest?.fraction
@@ -424,9 +433,13 @@ private fun MovementTitle(
     onOpenSession: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Arrow("‹", previous, onMove)
+        Arrow(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous movement", previous, onMove)
         Column(
-            Modifier.weight(1f).clickable(onClick = onOpenSession),
+            Modifier.weight(1f).clickable(
+                role = Role.Button,
+                onClickLabel = "open this session",
+                onClick = onOpenSession,
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -440,7 +453,7 @@ private fun MovementTitle(
             place?.let {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    modifier = Modifier.clearAndSetSemantics { },
+                    modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = it },
                 ) {
                     repeat(walk) { step ->
                         Box(
@@ -452,29 +465,27 @@ private fun MovementTitle(
                         )
                     }
                 }
+                // The dots above already say this in words; an uppercased line is read out letter
+                // by letter otherwise.
                 Text(
                     it.uppercase(),
                     style = GymType.numeral(10).copy(letterSpacing = 0.07.em),
                     color = GymSkin.inkFaint,
+                    modifier = Modifier.clearAndSetSemantics { },
                 )
             }
         }
-        Arrow("›", next, onMove)
+        Arrow(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next movement", next, onMove)
     }
 }
 
 @Composable
-private fun Arrow(glyph: String, to: String?, onMove: (String) -> Unit) {
-    Box(
-        Modifier
-            .size(GymTap.minimum)
-            .clickable(enabled = to != null) { to?.let(onMove) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
+private fun Arrow(glyph: ImageVector, said: String, to: String?, onMove: (String) -> Unit) {
+    IconButton(onClick = { to?.let(onMove) }, enabled = to != null) {
+        Icon(
             glyph,
-            style = WindmillFont.body(22, FontWeight.SemiBold),
-            color = if (to == null) GymSkin.line else GymSkin.inkDim,
+            contentDescription = said,
+            tint = if (to == null) GymSkin.line else GymSkin.inkDim,
         )
     }
 }
@@ -526,7 +537,7 @@ private fun History(
                     Box(
                         Modifier
                             .sizeIn(minWidth = 60.dp, minHeight = GymTap.minimum - 8.dp)
-                            .clickable(onClick = onUndo),
+                            .clickable(role = Role.Button, onClick = onUndo),
                         contentAlignment = Alignment.CenterEnd,
                     ) {
                         Text("Undo", style = WindmillFont.body(14, FontWeight.SemiBold),
@@ -536,8 +547,12 @@ private fun History(
                     Text(LiveLines.onThisDevice, style = GymType.numeral(11),
                          color = GymSkin.unsyncedInk)
                 } else {
-                    Text("✓", style = GymType.numeral(13),
-                         color = if (row.isWarmup) GymSkin.warmupInk else GymSkin.setDone)
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = if (row.isWarmup) GymSkin.warmupInk else GymSkin.setDone,
+                        modifier = Modifier.size(15.dp),
+                    )
                 }
             }
         }
@@ -574,7 +589,7 @@ private fun Value(
                 style = GymType.weight.copy(color = GymSkin.weightInk),
                 modifier = Modifier
                     .alignByBaseline()
-                    .clickable(onClick = onType)
+                    .clickable(role = Role.Button, onClickLabel = "type a weight", onClick = onType)
                     .drawBehind {
                         val y = size.height + 3.dp.toPx()
                         drawLine(
@@ -595,56 +610,6 @@ private fun Value(
 }
 
 @Composable
-private fun KindPill(kind: SetKind, onOpen: () -> Unit) {
-    Row(
-        Modifier
-            .heightIn(min = GymTap.minimum - 10.dp)
-            .clip(RoundedCornerShape(WindmillRadius.full))
-            .background(if (kind == SetKind.Working) GymSkin.surface else GymSkin.raised)
-            .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.full))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = WindmillSpace.x3),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(kind.wire, style = GymType.numeral(12, FontWeight.Bold),
-             color = if (kind == SetKind.Working) GymSkin.inkDim else GymSkin.warmupInk)
-        Text("▾", style = GymType.numeral(10), color = GymSkin.inkFaint)
-    }
-}
-
-// A warmup counts toward NOTHING — not the plan counter, not the sticky weight, no record rule.
-@Composable
-private fun KindSheet(kind: SetKind, onPick: (SetKind) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().background(GymSkin.surface).padding(WindmillSpace.x5),
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-    ) {
-        Text("This set", style = WindmillFont.display(20), color = GymSkin.ink)
-        listOf(SetKind.Working, SetKind.Warmup).forEach { offered ->
-            val picked = offered == kind
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = GymTap.minimum + 6.dp)
-                    .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(if (picked) GymSkin.raised else Color.Transparent)
-                    .border(1.dp, if (picked) GymSkin.lineStrong else GymSkin.line,
-                            RoundedCornerShape(WindmillRadius.md))
-                    .clickable { onPick(offered) }
-                    .padding(horizontal = WindmillSpace.x4),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(offered.wire, style = WindmillFont.body(16, FontWeight.SemiBold),
-                     color = if (picked) GymSkin.ink else GymSkin.inkDim)
-                Spacer(Modifier.weight(1f))
-                if (picked) Text("✓", style = GymType.numeral(13), color = GymSkin.accent)
-            }
-        }
-    }
-}
-
-@Composable
 internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Ladder.labels(weightKg).forEachIndexed { index, label ->
@@ -656,7 +621,7 @@ internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit) {
                     .background(if (plate) GymSkin.surface else GymSkin.raised)
                     .border(1.dp, if (plate) GymSkin.line else GymSkin.lineStrong,
                             RoundedCornerShape(WindmillRadius.md))
-                    .clickable {
+                    .clickable(role = Role.Button, onClickLabel = "change the weight by $label") {
                         onDial(Ladder.bump(weightKg, direction = if (index < 2) -1 else 1, big = plate))
                     },
                 contentAlignment = Alignment.Center,
@@ -680,26 +645,28 @@ private fun RepsRow(reps: Int, onDial: (Int) -> Unit, onType: () -> Unit) {
     ) {
         Text("reps", style = GymType.numeral(13), color = GymSkin.inkFaint)
         Spacer(Modifier.weight(1f))
-        Step("−") { onDial(Ladder.bumpReps(reps, direction = -1)) }
+        Step("−", "one rep fewer") { onDial(Ladder.bumpReps(reps, direction = -1)) }
         Box(
-            Modifier.sizeIn(minWidth = 40.dp, minHeight = GymTap.minimum).clickable(onClick = onType),
+            Modifier
+                .sizeIn(minWidth = 40.dp, minHeight = GymTap.minimum)
+                .clickable(role = Role.Button, onClickLabel = "type the reps", onClick = onType),
             contentAlignment = Alignment.Center,
         ) {
             Text(reps.toString(), style = GymType.numeral(20, FontWeight.Bold), color = GymSkin.ink)
         }
-        Step("+") { onDial(Ladder.bumpReps(reps, direction = 1)) }
+        Step("+", "one rep more") { onDial(Ladder.bumpReps(reps, direction = 1)) }
     }
 }
 
 @Composable
-internal fun Step(glyph: String, onTap: () -> Unit) {
+internal fun Step(glyph: String, said: String, onTap: () -> Unit) {
     Box(
         Modifier
             .size(GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
             .background(GymSkin.surface)
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
-            .clickable(onClick = onTap),
+            .clickable(role = Role.Button, onClickLabel = said, onClick = onTap),
         contentAlignment = Alignment.Center,
     ) {
         Text(glyph, style = WindmillFont.display(20, FontWeight.SemiBold), color = GymSkin.inkDim)
@@ -715,7 +682,7 @@ private fun LogButton(label: String, finishing: Boolean, onLog: () -> Unit) {
             .heightIn(min = GymTap.primary)
             .clip(RoundedCornerShape(WindmillRadius.lg))
             .background(if (finishing) GymSkin.raised else GymSkin.accent)
-            .clickable(enabled = !finishing, onClick = onLog),
+            .clickable(enabled = !finishing, role = Role.Button, onClick = onLog),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, style = WindmillFont.body(19, FontWeight.Bold),

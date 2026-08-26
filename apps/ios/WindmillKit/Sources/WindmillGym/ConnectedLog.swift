@@ -442,9 +442,6 @@ struct ConnectScreen: View {
     private func connected(_ tools: [ConnectedTool]) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x3) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(ConnectedLog.stateTitle)
-                    .font(WindmillFont.display(28))
-                    .foregroundStyle(skin.ink)
                 Text(ConnectedLog.count(tools.count))
                     .font(GymType.numeral(12))
                     .foregroundStyle(skin.inkFaint)

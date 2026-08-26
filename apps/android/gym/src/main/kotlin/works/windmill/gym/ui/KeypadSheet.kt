@@ -23,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,7 +42,35 @@ object KeypadEntry {
     enum class Mode { Weight, Reps }
 
     const val maxBuffer = 8
+
+    // The band a PERFORMED set is bounded by. The routine's own target band is wider and lives on
+    // `TargetEntry` — a plan may name 100 reps, a logged set may not.
+    const val maxLoggedReps = 99
+
+    // The same four refusals the routine target's typed fields carry, in the same bytes — a lifter
+    // who has read one has read the other. Only the band differs: a set that was PERFORMED is bounded
+    // at 99 reps, where `TargetEntry` plans up to 100. The comma lesson lives in `weightHint`, said
+    // once beside the pad rather than inside a refusal.
+    const val onePoint = "One decimal point only."
+    const val notANumber = "That is not a number yet."
+    const val overWeight = "Over 500 kg — check the number."
+    const val outsideReps = "Whole reps, 1 to $maxLoggedReps."
+
     val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", ",")
+
+    // C21: the ten digits and the decimal separator read themselves out loud. The pad's two glyphs
+    // read as nothing, so each carries a name — ± in the same bytes the target sheet's own ± control
+    // carries, so one control met on two screens is called one thing.
+    const val deleteGlyph = "⌫"
+    const val signName = "Flip the sign"
+    const val deleteName = "Delete"
+
+    fun spoken(key: String): String? = when (key) {
+        "±" -> signName
+        deleteGlyph -> deleteName
+        else -> null
+    }
+
     const val weightHint = "kg  ·  comma or point both read as a decimal  ·  ± for band-assisted"
     const val repsHint = "whole reps"
 
@@ -87,21 +118,21 @@ object KeypadEntry {
         }
         val normalised = raw.replace(",", ".")
         if (normalised.count { it == '.' } > 1) {
-            return Reading(null, "One decimal point only — 72,5 or 72.5")
+            return Reading(null, onePoint)
         }
         val value = normalised.toDoubleOrNull()
         if (value == null || !value.isFinite()) {
-            return Reading(null, "Not a number yet — 72,5 reads as 72.5")
+            return Reading(null, notANumber)
         }
         if (mode == Mode.Weight) {
             if (kotlin.math.abs(value) > 500) {
-                return Reading(null, "Over 500 kg — check the number")
+                return Reading(null, overWeight)
             }
             return Reading(Ladder.round(value), weightHint)
         }
         // 1 and not 0: the server refuses reps < 1.
-        if (value < 1 || value > 99 || value != kotlin.math.floor(value)) {
-            return Reading(null, "Whole reps, 1 to 99")
+        if (value < 1 || value > maxLoggedReps || value != kotlin.math.floor(value)) {
+            return Reading(null, outsideReps)
         }
         return Reading(value, repsHint)
     }
@@ -159,7 +190,13 @@ fun KeypadSheet(
                             .heightIn(min = 58.dp)
                             .clip(RoundedCornerShape(WindmillRadius.md))
                             .background(GymSkin.raised)
-                            .clickable { pad = pad.pressing(key, mode) },
+                            .clickable(role = Role.Button) { pad = pad.pressing(key, mode) }
+                            // A digit is its own name; a glyph is not, so a glyph key says what it is.
+                            .then(
+                                KeypadEntry.spoken(key)?.let { name ->
+                                    Modifier.semantics(mergeDescendants = true) { contentDescription = name }
+                                } ?: Modifier
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -181,7 +218,7 @@ fun KeypadSheet(
                 Modifier
                     .widthIn(min = 88.dp)
                     .heightIn(min = GymTap.minimum)
-                    .clickable(onClick = onCancel),
+                    .clickable(role = Role.Button, onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
@@ -190,10 +227,16 @@ fun KeypadSheet(
             Box(
                 Modifier
                     .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
-                    .clickable { pad = pad.backspaced },
+                    .clickable(role = Role.Button, onClickLabel = "delete the last digit") {
+                        pad = pad.backspaced
+                    }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = KeypadEntry.deleteName
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Text("⌫", style = WindmillFont.body(20), color = GymSkin.ink)
+                // No core icon draws a backspace, so the glyph stays and the key carries its name.
+                Text(KeypadEntry.deleteGlyph, style = WindmillFont.body(20), color = GymSkin.ink)
             }
 
             Box(
@@ -202,7 +245,7 @@ fun KeypadSheet(
                     .heightIn(min = GymTap.minimum + 6.dp)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(if (reading.isValid) GymSkin.accent else GymSkin.raised)
-                    .clickable { reading.value?.let(onCommit) },
+                    .clickable(role = Role.Button) { reading.value?.let(onCommit) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

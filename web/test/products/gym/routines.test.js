@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  blankRoutine, builtLabel, draftFrom, duplicateRoutine, ENTRY_REPS_MAX, ENTRY_REPS_MIN,
-  ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, historyRows, NAME_SUGGESTIONS, NEW_ENTRY_REPS,
-  NEW_ENTRY_SETS, openTargetsLine, reorderEntries, routineFromSession, routineWrite, saysNeverLogged,
-  targetDraftOf, withEntryAdded, withEntryChanged, withEntryOpened, withEntryRemoved,
+  blankRoutine, builtLabel, CLEAR_REPS_AND_WEIGHT, DECIMAL_NOTE, draftFrom, duplicateRoutine,
+  ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, historyRows,
+  isOpenEntry, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER, NAME_SETS_FIRST, ONE_DECIMAL,
+  OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, refusalOf, reorderEntries, REPS_BAND,
+  routineFromSession, routineWrite, saysNeverLogged, SETS_BAND, targetEntryOf,
+  targetFieldsOf, targetRefusal, withEntryAdded, withEntryRemoved, withEntrySet, withField,
+  ZERO_TARGET,
 } from '../../../src/products/gym/routines.js';
 import { entryLabel, NAME_MAX } from '../../../src/products/gym/log.js';
 
@@ -214,36 +217,127 @@ test('draftFrom — the draft is a whole routine, and editing it leaves the orig
   });
 });
 
-test('withEntryChanged — one line changes, the counts stay inside what a movement can ask for', () => {
+test('withEntrySet — the sheet hands back a whole row, and the row it replaces keeps nothing', () => {
   const entries = [
     { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5 },
     { exerciseId: 'chin-up', targetSets: 3, targetReps: 8 },
   ];
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 6 })[0].targetSets, 6);
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 0 })[0].targetSets, ENTRY_SETS_MIN);
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 99 })[0].targetSets, ENTRY_SETS_MAX);
-  assert.equal(withEntryChanged(entries, 0, { targetReps: 0 })[0].targetReps, ENTRY_REPS_MIN);
-  assert.equal(withEntryChanged(entries, 0, { targetReps: 500 })[0].targetReps, ENTRY_REPS_MAX);
-  assert.deepEqual(withEntryChanged(entries, 0, { targetSets: 15, targetReps: 100 })[0], {
-    exerciseId: 'bench-press', targetSets: 15, targetReps: 100, targetWeightKg: 82.5,
-  });
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 20 })[0].targetSets, 20);
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 21 })[0].targetSets, 20);
-  assert.equal(withEntryChanged(entries, 0, { targetReps: 101 })[0].targetReps, 100);
-  assert.equal(withEntryChanged(entries, 1, { targetWeightKg: 60 })[1].targetWeightKg, 60);
-  assert.equal(withEntryChanged(entries, 0, { targetWeightKg: null })[0].targetWeightKg, null);
-  assert.deepEqual(
-    routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: withEntryChanged(entries, 0, { targetWeightKg: null }) }).entries[0],
-    { exerciseId: 'bench-press', targetSets: 5, targetReps: 5 },
-  );
-  assert.equal(withEntryChanged(entries, 0, { targetSets: 6 })[1], entries[1]);
+  const changed = withEntrySet(entries, 0, { exerciseId: 'bench-press', targetSets: 6, targetReps: 5 });
+  assert.deepEqual(changed[0], { exerciseId: 'bench-press', targetSets: 6, targetReps: 5 });
+  assert.equal(changed[0].targetWeightKg, undefined, 'a weight the new row does not name is gone');
+  assert.equal(changed[1], entries[1]);
   assert.equal(entries[0].targetSets, 5);
 
-  assert.equal(withEntryChanged(entries, 0, { targetReps: null })[0].targetReps, null);
+  // The open row: every target goes together, because the store refuses a line asking for reps of nothing.
+  const opened = withEntrySet(entries, 1, { exerciseId: 'chin-up', restSeconds: 120 });
+  assert.deepEqual(opened[1], { exerciseId: 'chin-up', restSeconds: 120 });
+  const write = routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: opened });
+  assert.deepEqual(write.entries[1], { exerciseId: 'chin-up', restSeconds: 120 });
+  assert.deepEqual(Object.keys(write.entries[1]), ['exerciseId', 'restSeconds']);
+  assert.deepEqual(withEntrySet(entries, 9, { exerciseId: 'nothing' }), entries);
+});
+
+test('the three typed fields open on the row, and an empty one is the null it stands for', () => {
+  // An open row opens EMPTY: the sheet asserts no target the row does not hold, and the placeholders
+  // are read on the row that is open rather than behind numbers nobody typed.
+  assert.deepEqual(targetFieldsOf({ exerciseId: 'deadlift', restSeconds: 120 }), {
+    sets: '', reps: '', weight: '', clearRefused: false,
+  });
+  assert.deepEqual(targetFieldsOf({ exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 }), {
+    sets: '5', reps: '3', weight: '110', clearRefused: false,
+  });
+  assert.deepEqual(targetFieldsOf({ exerciseId: 'chin-up', targetSets: 3, targetReps: null, targetWeightKg: -20 }), {
+    sets: '3', reps: '', weight: '-20', clearRefused: false,
+  });
+  assert.deepEqual([OPEN_PLACEHOLDER, MAX_PLACEHOLDER, LAST_TIME_PLACEHOLDER], ['open', 'max', 'last time']);
+  assert.equal(DECIMAL_NOTE, 'comma or point, both read as a decimal');
+});
+
+test('the six refusals are the pinned strings, and the reps band is the routine target’s 1–100', () => {
+  assert.equal(refusalOf('weight', '72,5'), null, 'a comma reads as a decimal');
+  assert.equal(refusalOf('weight', '72.5'), null);
+  assert.equal(refusalOf('weight', '72,5.5'), ONE_DECIMAL);
+  assert.equal(refusalOf('weight', '7,2,5'), ONE_DECIMAL);
+  assert.equal(refusalOf('weight', 'ninety'), NOT_A_NUMBER);
+  assert.equal(refusalOf('weight', '-'), NOT_A_NUMBER);
+  assert.equal(refusalOf('weight', '501'), OVER_MAX_LOAD);
+  assert.equal(refusalOf('weight', '-501'), OVER_MAX_LOAD, 'band-assisted is a load like any other');
+  assert.equal(refusalOf('weight', '-20'), null);
+  assert.equal(refusalOf('weight', '500'), null);
+  assert.equal(refusalOf('weight', '0'), ZERO_TARGET);
+
+  assert.equal(refusalOf('reps', '1'), null);
+  assert.equal(refusalOf('reps', '100'), null);
+  assert.equal(refusalOf('reps', '101'), REPS_BAND);
+  assert.equal(refusalOf('reps', '5.5'), REPS_BAND);
+  assert.equal(refusalOf('reps', '0'), ZERO_TARGET);
+  assert.equal(refusalOf('sets', '20'), null);
+  assert.equal(refusalOf('sets', '21'), SETS_BAND);
+  assert.equal(refusalOf('sets', '0'), ZERO_TARGET);
+  for (const field of ['sets', 'reps', 'weight']) assert.equal(refusalOf(field, '  '), null);
+
   assert.deepEqual(
-    routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: withEntryChanged(entries, 1, { targetReps: null }) }).entries[1],
-    { exerciseId: 'chin-up', targetSets: 3 },
+    [ONE_DECIMAL, NOT_A_NUMBER, OVER_MAX_LOAD, REPS_BAND, SETS_BAND, ZERO_TARGET],
+    ['One decimal point only.', 'That is not a number yet.', 'Over 500 kg — check the number.',
+      'Whole reps, 1 to 100.', 'Sets, 1 to 20.', 'A zero target is no target — clear the field instead.'],
   );
+});
+
+test('one refusal at a time, topmost first, and the clear of sets is refused rather than cascaded', () => {
+  const full = { sets: '3', reps: '5', weight: '82.5', clearRefused: false };
+  assert.equal(targetRefusal(full), null);
+  assert.deepEqual(targetRefusal({ ...full, reps: '101', weight: '600' }), { field: 'reps', message: REPS_BAND });
+  assert.deepEqual(targetRefusal({ ...full, weight: '600' }), { field: 'weight', message: OVER_MAX_LOAD });
+
+  // The keystroke never lands: the field keeps its value and the sentence says what to clear first.
+  const refused = withField(full, 'sets', '');
+  assert.equal(refused.sets, '3');
+  assert.equal(refused.clearRefused, true);
+  assert.deepEqual(targetRefusal(refused), { field: 'sets', message: CLEAR_REPS_AND_WEIGHT });
+  assert.equal(CLEAR_REPS_AND_WEIGHT, 'Clear reps and weight first — an open line names neither.');
+
+  // The other way into the same illegal shape is the OPPOSITE act — a number typed onto a line whose
+  // sets are already empty — so it takes the opposite sentence. The keystroke lands, the commit is
+  // refused, and the way out named is the one the lifter wants: name the sets they just asked to fill.
+  const openThenTyped = withField({ sets: '', reps: '', weight: '', clearRefused: false }, 'reps', '5');
+  assert.equal(openThenTyped.reps, '5');
+  assert.deepEqual(targetRefusal(openThenTyped), { field: 'sets', message: NAME_SETS_FIRST });
+  assert.deepEqual(
+    targetRefusal(withField({ sets: '', reps: '', weight: '', clearRefused: false }, 'weight', '82.5')),
+    { field: 'sets', message: NAME_SETS_FIRST },
+  );
+  assert.equal(NAME_SETS_FIRST, 'Name the sets first — an open line names neither.');
+  assert.notEqual(NAME_SETS_FIRST, CLEAR_REPS_AND_WEIGHT);
+  // Naming the sets is the way out, and taking it clears the refusal.
+  assert.equal(targetRefusal(withField(openThenTyped, 'sets', '3')), null);
+
+  // Any other keystroke settles it, and once the other two are empty the clear lands.
+  assert.equal(withField(refused, 'sets', '4').clearRefused, false);
+  const emptied = withField(withField(refused, 'reps', ''), 'weight', '');
+  assert.equal(emptied.clearRefused, false);
+  const open = withField(emptied, 'sets', '');
+  assert.equal(open.sets, '');
+  assert.equal(targetRefusal(open), null);
+});
+
+test('the row the sheet hands back: the open line when sets is empty, the clamps as the last guard', () => {
+  const entry = { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeightKg: 82.5, restSeconds: 180 };
+  assert.deepEqual(targetEntryOf(entry, { sets: '4', reps: '6', weight: '85,5', clearRefused: false }), {
+    exerciseId: 'bench-press', targetSets: 4, targetReps: 6, targetWeightKg: 85.5, restSeconds: 180,
+  });
+  assert.deepEqual(targetEntryOf(entry, { sets: '4', reps: '', weight: '', clearRefused: false }), {
+    exerciseId: 'bench-press', targetSets: 4, targetReps: null, targetWeightKg: null, restSeconds: 180,
+  });
+  assert.deepEqual(targetEntryOf(entry, { sets: '', reps: '', weight: '', clearRefused: false }), {
+    exerciseId: 'bench-press', restSeconds: 180,
+  });
+  assert.deepEqual(targetEntryOf({ exerciseId: 'chin-up' }, { sets: '', reps: '', weight: '', clearRefused: false }), {
+    exerciseId: 'chin-up',
+  });
+  assert.equal(targetEntryOf(entry, { sets: '99', reps: '5', weight: '', clearRefused: false }).targetSets, ENTRY_SETS_MAX);
+  assert.equal(targetEntryOf(entry, { sets: '1', reps: '900', weight: '', clearRefused: false }).targetReps, ENTRY_REPS_MAX);
+  assert.equal(ENTRY_SETS_MIN, 1);
+  assert.equal(ENTRY_REPS_MIN, 1);
 });
 
 test('routineFromSession — a session too big to ask for is clamped to what a routine may ask for', () => {
@@ -266,8 +360,8 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
 
   const one = withEntryAdded([], 'bench-press');
   assert.deepEqual(one, [{ exerciseId: 'bench-press' }]);
-  assert.equal(NEW_ENTRY_SETS, 3);
-  assert.equal(NEW_ENTRY_REPS, 5);
+  // A movement joins open and nothing is invented for it: no target key at all, not a zero.
+  assert.deepEqual(Object.keys(one[0]), ['exerciseId']);
 
   const two = withEntryAdded(one, 'chin-up');
   assert.deepEqual(two.map((entry) => entry.exerciseId), ['bench-press', 'chin-up']);
@@ -284,11 +378,10 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
   assert.deepEqual(withEntryRemoved(two, 7), two);
   assert.equal(two.length, 2);
 
-  const sheet = targetDraftOf(two[1]);
-  const maxed = withEntryChanged(two, 1, { ...sheet, targetReps: null });
-  assert.deepEqual(maxed[1], { exerciseId: 'chin-up', targetSets: NEW_ENTRY_SETS, targetReps: null });
+  const maxed = withEntrySet(two, 1, targetEntryOf(two[1], { sets: '3', reps: '', weight: '', clearRefused: false }));
+  assert.deepEqual(maxed[1], { exerciseId: 'chin-up', targetSets: 3, targetReps: null, targetWeightKg: null });
   assert.deepEqual(routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: maxed }).entries[1], {
-    exerciseId: 'chin-up', targetSets: NEW_ENTRY_SETS,
+    exerciseId: 'chin-up', targetSets: 3,
   });
 });
 
@@ -304,72 +397,12 @@ test('saysNeverLogged — an untested routine, and a row that has not been fille
   assert.equal(saysNeverLogged(blankRoutine({ id: 'rt_new' }), { exerciseId: 'deadlift' }), true);
 });
 
-test('withEntryOpened — an open row keeps its place, its rest, and no target at all', () => {
-  const entries = [
-    { position: 1, exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 },
-    { position: 2, exerciseId: 'barbell-row', targetSets: 4, targetReps: 8, targetWeightKg: 70, restSeconds: 120 },
-  ];
-  const opened = withEntryOpened(entries, 1);
-  assert.deepEqual(opened, [
-    { position: 1, exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 },
-    { exerciseId: 'barbell-row', restSeconds: 120 },
-  ]);
-  assert.equal(entries[1].targetSets, 4);
-  assert.deepEqual(withEntryOpened(entries, 9), entries);
-
-  const write = routineWrite({ id: 'rt_1', name: 'Heavy Thursday', position: 0, entries: opened });
-  assert.deepEqual(write.entries[1], { exerciseId: 'barbell-row', restSeconds: 120 });
-  assert.deepEqual(Object.keys(write.entries[1]), ['exerciseId', 'restSeconds']);
-
-  const half = routineWrite({
-    id: 'rt_1',
-    name: 'Heavy Thursday',
-    position: 0,
-    entries: [{ exerciseId: 'deadlift', targetReps: 5, targetWeightKg: 140 }],
-  });
-  assert.deepEqual(half.entries[0], { exerciseId: 'deadlift' });
-});
-
-test('openTargetsLine — the open rows are named, and a routine with none says nothing', () => {
-  const catalog = [
-    { id: 'back-squat', name: 'Back Squat' },
-    { id: 'barbell-row', name: 'Barbell Row' },
-    { id: 'deadlift', name: 'Deadlift' },
-  ];
-  const targeted = { exerciseId: 'back-squat', targetSets: 5, targetReps: 3 };
-  assert.equal(openTargetsLine([targeted], catalog), null);
-  assert.equal(openTargetsLine([], catalog), null);
-  assert.equal(
-    openTargetsLine([targeted, { exerciseId: 'barbell-row' }], catalog),
-    'Barbell Row has no target — it will ask at the rack.',
-  );
-  assert.equal(
-    openTargetsLine([{ exerciseId: 'barbell-row' }, { exerciseId: 'deadlift' }], catalog),
-    'Barbell Row and Deadlift have no target — they will ask at the rack.',
-  );
-  assert.equal(
-    openTargetsLine([{ exerciseId: 'barbell-row' }, { exerciseId: 'deadlift' }, { exerciseId: 'back-squat' }], catalog),
-    'Barbell Row, Deadlift and Back Squat have no target — they will ask at the rack.',
-  );
-  assert.equal(openTargetsLine([{ exerciseId: 'barbell-row' }], []), 'barbell-row has no target — it will ask at the rack.');
-});
-
-test('targetDraftOf — an open row opens the sheet at three of five, and takes nothing on its own', () => {
-  const open = { exerciseId: 'deadlift', restSeconds: 120 };
-  assert.deepEqual(targetDraftOf(open), {
-    exerciseId: 'deadlift', restSeconds: 120, targetSets: NEW_ENTRY_SETS, targetReps: NEW_ENTRY_REPS,
-  });
-  assert.equal(targetDraftOf(open).targetWeightKg, undefined);
-  assert.equal(open.targetSets, undefined);
-
-  const set = { exerciseId: 'back-squat', targetSets: 5, targetReps: 3, targetWeightKg: 110 };
-  assert.deepEqual(targetDraftOf(set), set);
-  assert.notEqual(targetDraftOf(set), set);
-});
-
-test('NAME_SUGGESTIONS — three fixed openers, and none of them is derived from anything', () => {
-  assert.deepEqual(NAME_SUGGESTIONS, ['Push C', 'Lower B', 'Thursday']);
-  for (const suggestion of NAME_SUGGESTIONS) assert.equal(suggestion.length <= NAME_MAX, true);
+test('the open row carries the one pinned sentence, and a row with a target carries none', () => {
+  assert.equal(OPEN_LINE, 'You decide the numbers at the rack.');
+  assert.equal(isOpenEntry({ exerciseId: 'barbell-row' }), true);
+  assert.equal(isOpenEntry({ exerciseId: 'barbell-row', restSeconds: 120 }), true);
+  assert.equal(isOpenEntry({ exerciseId: 'back-squat', targetSets: 5, targetReps: 3 }), false);
+  assert.equal(isOpenEntry({ exerciseId: 'back-squat', targetSets: 5, targetReps: null }), false);
 });
 
 test('entryPlaceLabel — the position in the run, and the routine when it has a name', () => {

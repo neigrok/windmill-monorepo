@@ -1,57 +1,77 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { Button, Icon, Input } from '../../../design-system/index.js';
 import { gymApi } from '../gymApi.js';
-import { isNameOverCap, NAME_MAX, nameCountLabel, showsNameCount } from '../log.js';
+import { cappedName, isNameOverCap, nameCountLabel, showsNameCount } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
 import {
-  DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, lastSetLabel, lastSetsById, movementOptions,
+  DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, FEATURED_HEAD, lastSetLabel, lastSetsById, movementOptions,
+  TRAINED_WINDOW,
 } from './movements.js';
 
+// `sessions` is the log this page already holds: the six the empty query opens on are the movements
+// it names most, topped up from the opener list both phones draw, so the section is always six.
+//
+// The window is read once, at the first read that ANSWERS: a picker opened before the log has
+// landed would otherwise keep the generic openers for its whole life, so an empty window is
+// re-seeded on every render until one arrives. The moment it holds sessions it is frozen — the log
+// behind it keeps moving — the mirror's poll lands a finished session, Older appends a page — and
+// the six may not reshuffle under a finger that is already reaching for one of them.
 export function MovementPicker({
-  catalog, order = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements',
+  catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements',
 }) {
-  const { matches, empty, create } = movementOptions({ catalog, order, query });
+  const held = useRef([]);
+  if (held.current.length === 0) held.current = sessions.slice(0, TRAINED_WINDOW);
+  const opened = held.current;
+  const { featured, matches, empty, create } = movementOptions({ catalog, order, query, sessions: opened });
   const [minting, setMinting] = useState(null);
   const last = useGymRead(() => gymApi.lastSets(), []);
   const meta = last.phase === 'ready' ? lastSetsById(last.data) : null;
+  const row = (each) => (
+    <li key={each.id}>
+      <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
+        <span className="gym-picker-named">
+          {each.name}
+          {each.custom && <span className="gym-picker-tag">yours</span>}
+          {each.alias && <span className="gym-picker-alias">{`was “${each.alias}”`}</span>}
+        </span>
+        {meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
+      </button>
+    </li>
+  );
 
   return (
     <div className="gym-picker" role="dialog" aria-label={title}>
       <div className="gym-picker-head">
         <span className="gym-picker-title">{title}</span>
-        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
+        <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
+          <Icon name="x" size={15} />
+        </button>
       </div>
-      <input
-        className="gym-picker-search"
+      <Input
         type="search"
         value={query}
         placeholder={catalog.length > 0 ? `Search ${catalog.length} movements` : 'Search movements'}
-        aria-label="Search movements"
+        ariaLabel="Search movements"
         onChange={(event) => onQuery(event.target.value)}
         autoFocus
       />
-      <ul className="gym-picker-list">
-        {matches.map((each) => (
-          <li key={each.id}>
-            <button type="button" className="gym-picker-row" onClick={() => onPick(each.id)}>
-              <span className="gym-picker-named">
-                {each.name}
-                {each.custom && <span className="gym-picker-tag">yours</span>}
-                {each.alias && <span className="gym-picker-alias">{`was “${each.alias}”`}</span>}
-              </span>
-              {meta && <span className="gym-picker-meta">{lastSetLabel(meta.get(each.id))}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {featured.length > 0 && (
+        <>
+          <p className="gym-picker-group">{FEATURED_HEAD}</p>
+          <ul className="gym-picker-list">{featured.map(row)}</ul>
+        </>
+      )}
+      {/* The six are a shortcut, never a replacement for browsing: the whole catalogue follows them. */}
+      <ul className="gym-picker-list">{matches.map(row)}</ul>
       {empty && <p className="gym-picker-empty">{empty}</p>}
       {create && onCreate && (
-        <button
-          type="button"
-          className="gym-picker-create"
+        <Button
+          full
+          variant="secondary"
           onClick={() => setMinting({ name: query.trim(), equipment: DEFAULT_EQUIPMENT })}
         >
           {create}
-        </button>
+        </Button>
       )}
       {minting && (
         <NewMovement
@@ -83,22 +103,18 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
           <button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>
         </div>
 
-        <label className="gym-name-label" htmlFor="gym-new-movement">Name</label>
-        <div className="gym-name-field">
-          <input
-            id="gym-new-movement"
-            className="gym-name-input"
-            value={draft.name}
-            maxLength={NAME_MAX}
-            onChange={(event) => onChange({ ...draft, name: event.target.value })}
-            autoFocus
-          />
-          {showsNameCount(draft.name) && (
+        <Input
+          label="Name"
+          id="gym-new-movement"
+          value={draft.name}
+          onChange={(event) => onChange({ ...draft, name: cappedName(event.target.value) })}
+          autoFocus
+          trailing={showsNameCount(draft.name) && (
             <span className={isNameOverCap(draft.name) ? 'gym-name-count is-over' : 'gym-name-count'}>
               {nameCountLabel(draft.name)}
             </span>
           )}
-        </div>
+        />
 
         <p className="gym-name-label">How is it loaded?</p>
         <div className="gym-equipment">
@@ -114,18 +130,17 @@ function NewMovement({ draft, onChange, onCancel, onCreate }) {
           ))}
         </div>
 
-        <button
-          type="button"
-          className={ready ? 'gym-name-save' : 'gym-name-save is-inert'}
+        <Button
+          full
+          disabled={!ready}
           onClick={async () => {
-            if (!ready) return;
             setCreating(true);
             if (await onCreate({ name: draft.name.trim(), equipment: draft.equipment })) return;
             setCreating(false);
           }}
         >
           {creating ? 'Creating…' : 'Create and add'}
-        </button>
+        </Button>
       </div>
     </div>
   );

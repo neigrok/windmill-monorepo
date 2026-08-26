@@ -1,0 +1,134 @@
+import XCTest
+
+// C2 · the six are the account's OWN most-trained, ranked off the log this device holds, and the
+// shared opener list only fills what the log cannot. `PickerSixRankingTests` pins the ranking; this
+// pins the wiring — that the log the room holds actually reaches the picker, which no unit test can
+// see, because the picker's `sessions` are handed to it by the screen that draws it.
+//
+// The assertion is written to hold on every run rather than only on a fresh phone: a kept session
+// stays on the device, so a test that asserted "before" would pass once and then poison itself. What
+// is asserted is the state a run leaves behind, and it is the state the unwired picker cannot reach —
+// with no log in hand the six are the openers, the leg press sits deep in the catalogue and the chin-
+// up is the sixth row on screen.
+final class RoomPickerSixUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUp() {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["-windmill.journey.asked", "YES", "-windmill.journey.lastRoom", "gym"]
+        app.launch()
+        // A room holding an open session draws the logger and no tabs, so a session left standing by
+        // whatever ran before is thrown away rather than allowed to fail this test as a room that
+        // never opened.
+        if !app.buttons["Coach"].waitForExistence(timeout: 20) { throwAwayTheStandingSession() }
+        XCTAssertTrue(app.buttons["Coach"].waitForExistence(timeout: 20), "the gym room never opened")
+    }
+
+    override func tearDown() {
+        app?.terminate()
+        app = nil
+    }
+
+    func testAMovementTheLogNamesTakesAnOpenersPlaceAmongTheSix() {
+        logOneSession(of: "Leg Press")
+        // Keeping a session leaves the room standing on the session it just closed, and the picker is
+        // reached from the routines home. Coming back through the front door rather than guessing at
+        // chrome also proves the ranking survives the log being read again from scratch.
+        relaunch()
+
+        openThePicker()
+        let legPress = row("Leg Press")
+        XCTAssertTrue(legPress.waitForExistence(timeout: 10),
+                      "a movement this log has trained is not among the six on screen")
+        let barbellRow = row("Barbell Row")
+        XCTAssertTrue(barbellRow.exists, "the openers no longer fill what the log cannot")
+        XCTAssertLessThan(legPress.frame.minY, barbellRow.frame.minY,
+                          "what the log ranked sits below what merely topped the six up")
+        // The six are six: one ranked movement puts the last opener out, and the catalogue it lands
+        // in is twenty rows below the fold.
+        XCTAssertFalse(row("Chin Up").exists,
+                       "the six grew a seventh row rather than spending one")
+
+        leaveTheSessionUnstarted()
+    }
+
+    // MARK: - the ways in
+
+    private func throwAwayTheStandingSession() {
+        guard app.navigationBars.buttons["Finish"].exists else { return }
+        app.navigationBars.buttons["Finish"].tap()
+        let discard = app.buttons["Discard session"]
+        guard discard.waitForExistence(timeout: 20) else { return }
+        discard.tap()
+        let confirm = app.buttons["Discard"]
+        if confirm.waitForExistence(timeout: 10) { confirm.tap() }
+    }
+
+    private func relaunch() {
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Coach"].waitForExistence(timeout: 20), "the gym room never reopened")
+    }
+
+    private func row(_ movement: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", movement)).firstMatch
+    }
+
+    private func openThePicker() {
+        XCTAssertTrue(app.buttons["Just start logging"].waitForExistence(timeout: 20),
+                      "the routines home never drew its reach band")
+        app.buttons["Just start logging"].tap()
+        XCTAssertTrue(app.staticTexts["What are you starting with?"].waitForExistence(timeout: 20),
+                      "the logger never opened")
+        XCTAssertTrue(app.staticTexts["The six"].waitForExistence(timeout: 10),
+                      "the picker drew no six to rank")
+    }
+
+    // Searched for rather than scrolled to: the leg press is the seventh row of the catalogue on a
+    // phone that has never trained it, and this test is about where it sits AFTERWARDS.
+    private func logOneSession(of movement: String) {
+        openThePicker()
+        app.searchFields.firstMatch.tap()
+        app.typeText(movement)
+        let found = row(movement)
+        XCTAssertTrue(found.waitForExistence(timeout: 10), "the catalogue does not hold \(movement)")
+        found.tap()
+
+        let logSet = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Log set")).firstMatch
+        XCTAssertTrue(logSet.waitForExistence(timeout: 15), "the logger drew no Log set")
+        logSet.tap()
+
+        app.navigationBars.buttons["Finish"].tap()
+        // One set is a slight session, so which head the sheet draws is the log's business and not
+        // this test's: either of them means the sheet is up.
+        let head = app.staticTexts
+            .matching(NSPredicate(format: "label IN %@", ["Session finished", "Ended early"]))
+            .firstMatch
+        XCTAssertTrue(head.waitForExistence(timeout: 20), "the finish sheet never presented")
+        let keep = ["Keep it", "Just keep the session", "Done"]
+            .map { app.buttons[$0] }
+            .first { $0.exists }
+        XCTAssertNotNil(keep, "the finish sheet drew no way to keep the session")
+        keep?.tap()
+        XCTAssertFalse(app.buttons["Discard session"].exists, "the finish sheet is still up")
+    }
+
+    // The second session named nothing, so it is thrown away rather than left standing in front of
+    // whatever runs next.
+    private func leaveTheSessionUnstarted() {
+        app.navigationBars.buttons["Finish"].tap()
+        let discard = app.buttons["Discard session"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 20),
+                      "an empty session offered no way to throw it away")
+        discard.tap()
+        // A confirmation dialog, so the answer is a plain button on the action sheet it raises.
+        let confirm = app.buttons["Discard"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "the discard was never asked about")
+        confirm.tap()
+        // The discard drops the room back onto its tabs — on the log's own root, since the screen the
+        // sheet stood over was the session it just deleted.
+        XCTAssertTrue(app.buttons["Coach"].waitForExistence(timeout: 20),
+                      "the discard did not put the room back on its tabs")
+    }
+}

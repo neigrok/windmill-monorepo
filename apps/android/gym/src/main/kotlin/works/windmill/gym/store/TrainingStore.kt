@@ -1264,19 +1264,23 @@ class TrainingStore(
         return deleteSet(standing.sessionId, standing.set.id)
     }
 
+    // False once the delete is on the wire: there is no undelete, so a true here would report a keep
+    // the log has already lost.
     fun keepWithheld(): Boolean {
-        withheld ?: return false
+        val holding = withheld ?: return false
+        if (!holding.takeable) return false
         withheld = null
         return true
     }
 
     // The window closing, or the room being left: leaving ENDS it, because the row is off the screen
-    // the gesture belonged to.
+    // the gesture belonged to. The row stops being takeable BEFORE the wire is asked and stays here
+    // until the log answers, either way: a settle cancelled mid-flight leaves the delete still owed,
+    // and the route is idempotent.
     suspend fun settleWithheld(): WriteFailure? {
         val holding = withheld ?: return null
+        withheld = holding.copy(sent = true)
         val failed = deleteSet(holding.sessionId, holding.set.id)
-        // Let go only once the log has answered, either way: a settle cancelled mid-flight leaves the
-        // delete still owed, and the route is idempotent.
         withheld = null
         return failed
     }
@@ -1692,9 +1696,18 @@ fun WriteFailure(refusing: Throwable): WriteFailure {
     return WriteFailure.Refused(refusing.line)
 }
 
-// A delete this device has made and told nobody about yet. The set travels whole: it is the last copy
-// while the window is open, and Undo has to put it back exactly.
-data class Withheld(val sessionId: String, val set: TrainingSet, val untilMs: Long)
+// A delete this device has made. The set travels whole: it is the last copy while the window is open,
+// and Undo has to put it back exactly. `sent` is the moment the window stops being the lifter's — the
+// delete is on the wire and there is no way back — while the row stays here until the log answers, so
+// a settle cancelled mid-flight is still owed and the next one re-sends it.
+data class Withheld(
+    val sessionId: String,
+    val set: TrainingSet,
+    val untilMs: Long,
+    val sent: Boolean = false,
+) {
+    val takeable: Boolean get() = !sent
+}
 
 // A row the log no longer holds is not a fix that can be tried again: the row leaves the screen,
 // where a `Failed` leaves it standing with the sentence beside it.

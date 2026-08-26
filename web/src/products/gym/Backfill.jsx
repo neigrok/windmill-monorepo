@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import {
   dayChips, DURATION_CHIPS, endsAhead, expandLines, fileBackfill, lineLabel, MID_WORKOUT_REFUSAL,
@@ -176,9 +177,9 @@ export function Backfill({ log }) {
         </section>
       ))}
 
-      <button type="button" className="gym-editor-add" onClick={() => { setQuery(''); setPicking(true); }}>
+      <Button full variant="secondary" onClick={() => { setQuery(''); setPicking(true); }}>
         Add a movement
-      </button>
+      </Button>
 
       {overlap && (
         <section className="gym-overlap">
@@ -227,6 +228,7 @@ export function Backfill({ log }) {
       {picking && (
         <MovementPicker
           catalog={log.catalog}
+          sessions={log.summaries}
           query={query}
           onQuery={setQuery}
           onPick={(exerciseId) => { setPicking(false); blocks((held) => withMovementAdded(held, exerciseId)); }}

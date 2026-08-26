@@ -67,7 +67,7 @@ class KeypadEntryTests {
     fun testASecondDecimalPointNamesTheProblemAndTeachesTheFormat() {
         val reading = KeypadEntry.read(pad("10,2,5"), KeypadEntry.Mode.Weight, keeping = 0.0)
         assertNull(reading.value)
-        assertEquals("One decimal point only — 72,5 or 72.5", reading.message)
+        assertEquals(KeypadEntry.onePoint, reading.message)
     }
 
     @Test
@@ -97,7 +97,7 @@ class KeypadEntryTests {
     fun testAWeightOverTheCeilingIsQuestionedRatherThanCommitted() {
         val reading = KeypadEntry.read(pad("5000"), KeypadEntry.Mode.Weight, keeping = 0.0)
         assertNull(reading.value)
-        assertEquals("Over 500 kg — check the number", reading.message)
+        assertEquals(KeypadEntry.overWeight, reading.message)
         assertEquals(500.0, KeypadEntry.read(pad("500"), KeypadEntry.Mode.Weight, keeping = 0.0).value!!, 0.0)
     }
 
@@ -105,7 +105,7 @@ class KeypadEntryTests {
     fun testZeroRepsIsRefusedHereBecauseTheLogRefusesItThere() {
         val zero = KeypadEntry.read(pad("0"), KeypadEntry.Mode.Reps, keeping = 5.0)
         assertNull(zero.value)
-        assertEquals("Whole reps, 1 to 99", zero.message)
+        assertEquals(KeypadEntry.outsideReps, zero.message)
         assertEquals(1.0, KeypadEntry.read(pad("1"), KeypadEntry.Mode.Reps, keeping = 5.0).value!!, 0.0)
         assertEquals(99.0, KeypadEntry.read(pad("99"), KeypadEntry.Mode.Reps, keeping = 5.0).value!!, 0.0)
         assertNull(KeypadEntry.read(pad("100"), KeypadEntry.Mode.Reps, keeping = 5.0).value)

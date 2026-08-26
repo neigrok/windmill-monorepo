@@ -1,5 +1,11 @@
 package works.windmill.gym.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -173,10 +179,15 @@ fun ReviewSheet(
                         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
                         modifier = Modifier
                             .heightIn(min = GymTap.minimum)
-                            .clickable { ask(proposal.routineName) },
+                            .clickable(role = Role.Button) { ask(proposal.routineName) },
                     ) {
                         Text("Ask Coach about this", style = GymType.numeral(12), color = GymSkin.accent)
-                        Text("›", style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.accent)
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = GymSkin.accent,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                 }
             }
@@ -340,7 +351,12 @@ private fun KeptRun(row: DocumentRow.Unchanged, catalog: List<Exercise>) {
                 .padding(horizontal = WindmillSpace.x2),
         ) {
             Text(row.label, style = GymType.numeral(12), color = GymSkin.inkFaint)
-            Text(if (open) "⌃" else "⌄", style = GymType.numeral(11, FontWeight.Bold), color = GymSkin.inkFaint)
+            Icon(
+                if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = GymSkin.inkFaint,
+                modifier = Modifier.size(18.dp),
+            )
         }
         if (open) {
             row.kept.forEach { change ->
@@ -371,7 +387,12 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
     when (change.kind) {
         ChangeKind.Added -> ChangeCard(GymSkin.setDone) {
             Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-                Text("+", style = GymType.numeral(14, FontWeight.Bold), color = GymSkin.setDone)
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    tint = GymSkin.setDone,
+                    modifier = Modifier.size(16.dp),
+                )
                 Text(name, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
             }
             Text(
@@ -481,7 +502,7 @@ private fun Foot(
                 .heightIn(min = GymTap.primary - 8.dp)
                 .alpha(if (ready) 1f else 0.4f)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(enabled = ready) { onDecide(true) },
+                .clickable(enabled = ready, role = Role.Button) { onDecide(true) },
         ) {
             Text(
                 if (proposal.intent == ProposalIntent.Remove) proposal.applyLabel else Proposal.apply,
@@ -494,7 +515,7 @@ private fun Foot(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .clickable(enabled = !deciding) { turningDown = true },
+                .clickable(enabled = !deciding, role = Role.Button) { turningDown = true },
         ) {
             Text(Proposal.turnDownVerb, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
@@ -557,7 +578,7 @@ fun ProposalCard(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .background(GymSkin.accent, RoundedCornerShape(WindmillRadius.md))
-                .clickable(onClick = onReview),
+                .clickable(role = Role.Button, onClick = onReview),
         ) {
             Text(proposal.reviewLabel, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.onAccent)
         }
@@ -571,7 +592,7 @@ fun ProposalChip(onReview: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier
             .heightIn(min = GymTap.minimum)
-            .clickable(onClick = onReview)
+            .clickable(role = Role.Button, onClick = onReview)
             .padding(horizontal = WindmillSpace.x1),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(GymSkin.accent))

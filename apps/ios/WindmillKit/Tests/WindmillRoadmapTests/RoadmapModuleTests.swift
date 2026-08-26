@@ -11,12 +11,12 @@ final class RoadmapModuleTests: XCTestCase {
             return XCTFail("roadmap has no room on this phone and must say so")
         }
         XCTAssertEqual(url, URL(string: "https://windmill.works/#/")!)
-        XCTAssertEqual(line, "Your trees are on the web. The tree canvas isn't built for the phone yet.")
+        XCTAssertEqual(line, "Your trees are on the web. The tree canvas isn’t built for the phone yet.")
     }
 
     func testTheFirstRunCardCarriesThatSameSentence() {
         XCTAssertEqual(module.caveat,
-                       "Your trees are on the web. The tree canvas isn't built for the phone yet.")
+                       "Your trees are on the web. The tree canvas isn’t built for the phone yet.")
     }
 
     func testTheSentenceIsNotWrittenTwice() {

@@ -4,15 +4,48 @@ import WindmillPlatform
 // The native twin of web/src/products/gym/logger/entry.js.
 
 public enum KeypadEntry {
-    public enum Mode: Equatable {
+    // Identifiable because both screens that raise the keypad — the logger and the fix sheet — key a
+    // `.sheet` on which of the two numbers is being typed.
+    public enum Mode: String, Equatable, Identifiable {
         case weight
         case reps
+
+        public var id: String { rawValue }
     }
 
     public static let maxBuffer = 8
     public static let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", ","]
+
+    // The ten digits and the decimal separator say themselves out loud. The pad's two glyphs do not —
+    // a screen reader left to read one says "plus minus sign", "erase to the left" or nothing at all —
+    // so each carries a name (C21). `±` takes the routine target's sign-control bytes (C17): one
+    // control, one name, two screens.
+    public static let deleteGlyph = "⌫"
+    public static let flipTheSign = "Flip the sign"
+    public static let deleteTheDigit = "Delete"
+
+    public static func spoken(_ key: String) -> String {
+        if key == "±" { return flipTheSign }
+        if key == deleteGlyph { return deleteTheDigit }
+        return key
+    }
+
+    // The LIVE LOGGER's bands, which are not the routine target's: a logged set's reps run 1–99 here,
+    // while a routine target's run 1–100 (`TargetEntry.repsBand`, `domain/Routine.cpp:24`). The two
+    // fields sit on two screens and each names the band it enforces so they cannot drift again.
+    public static let repsBand = 1...99
+    public static let maxWeightKg: Double = 500
     public static let weightHint = "kg  ·  comma or point both read as a decimal  ·  ± for band-assisted"
     public static let repsHint = "whole reps"
+
+    // The four refusals a keypad can raise, in the pinned bytes of `briefs/15-the-routine.md` — the
+    // same sentences the planning sheet says (`TargetEntry`), because a lifter meets both keypads in
+    // one session and one refusal cannot be spelled two ways. Only the fourth differs, and only in
+    // its band: what is being refused there is a set that was PERFORMED, whose reps run 1 to 99.
+    public static let oneDecimalPoint = "One decimal point only."
+    public static let notANumber = "That is not a number yet."
+    public static let overWeight = "Over 500 kg — check the number."
+    public static let outOfRepsBand = "Whole reps, 1 to 99."
 
     public struct Pad: Equatable {
         // The buffer is ASCII: a U+2212 minus is normalised on the way in and re-spelled by `echo` on the way out.
@@ -72,20 +105,21 @@ public enum KeypadEntry {
         }
         let normalised = raw.replacingOccurrences(of: ",", with: ".")
         guard normalised.filter({ $0 == "." }).count <= 1 else {
-            return Reading(value: nil, message: "One decimal point only — 72,5 or 72.5")
+            return Reading(value: nil, message: oneDecimalPoint)
         }
         guard let value = Double(normalised), value.isFinite else {
-            return Reading(value: nil, message: "Not a number yet — 72,5 reads as 72.5")
+            return Reading(value: nil, message: notANumber)
         }
         guard mode == .reps else {
-            guard abs(value) <= 500 else {
-                return Reading(value: nil, message: "Over 500 kg — check the number")
+            guard abs(value) <= maxWeightKg else {
+                return Reading(value: nil, message: overWeight)
             }
             return Reading(value: Ladder.round(value), message: weightHint)
         }
         // The server refuses reps < 1.
-        guard value >= 1, value <= 99, value == value.rounded() else {
-            return Reading(value: nil, message: "Whole reps, 1 to 99")
+        guard value == value.rounded(), let whole = Int(exactly: value.rounded()),
+              repsBand.contains(whole) else {
+            return Reading(value: nil, message: outOfRepsBand)
         }
         return Reading(value: value, message: repsHint)
     }
@@ -140,6 +174,7 @@ struct KeypadSheet: View {
                             .frame(maxWidth: .infinity, minHeight: 58)
                             .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.raised))
                     }
+                    .accessibilityLabel(KeypadEntry.spoken(key))
                 }
             }
 
@@ -150,11 +185,12 @@ struct KeypadSheet: View {
                     .frame(minWidth: 88, minHeight: GymTap.minimum)
 
                 Button { pad = pad.backspaced } label: {
-                    Text("⌫")
+                    Text(KeypadEntry.deleteGlyph)
                         .font(WindmillFont.body(20))
                         .foregroundStyle(skin.ink)
                         .frame(minWidth: GymTap.minimum, minHeight: GymTap.minimum)
                 }
+                .accessibilityLabel(KeypadEntry.spoken(KeypadEntry.deleteGlyph))
 
                 Button { if let value = reading.value { onCommit(value) } } label: {
                     Text("Set")

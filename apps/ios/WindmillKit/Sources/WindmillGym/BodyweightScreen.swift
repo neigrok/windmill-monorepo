@@ -57,9 +57,6 @@ struct BodyweightScreen: View {
 
     private func head(today: String) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-            Text(Bodyweight.title)
-                .font(WindmillFont.display(32))
-                .foregroundStyle(skin.ink)
             if let reading = Bodyweight.reading(store.bodyweight, today: today) {
                 Text(reading)
                     .font(GymType.numeral(13))
@@ -68,7 +65,8 @@ struct BodyweightScreen: View {
         }
     }
 
-    // Two values, stated; the active one is printed on the chart as well.
+    // Two values, stated; the active one is printed on the chart as well. `.controlSize(.large)` is
+    // the room's 46pt tap floor: a stock segmented control measures 30.7pt and ignores a frame.
     private var windows: some View {
         Picker(Bodyweight.title, selection: $window) {
             ForEach(Bodyweight.Window.allCases, id: \.self) { choice in
@@ -77,6 +75,7 @@ struct BodyweightScreen: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        .controlSize(.large)
     }
 
     private func card(_ chart: Bodyweight.Chart) -> some View {

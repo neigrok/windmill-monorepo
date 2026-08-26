@@ -116,20 +116,26 @@ struct SessionScreen: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x4) {
+        List {
+            Section {
                 head
                 RefusalRows(refusals: store.refusals, catalog: store.catalog,
                             onDismiss: { store.clearRefusals() })
                 undoRow
-                sets
+            }
+            .modifier(PlainRow())
+
+            sets
+
+            Section {
                 if read { ReviewReadout(review: review, catalog: store.catalog, stats: false) }
                 CoachShareCard(doors: coach)
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x8)
+            .modifier(PlainRow())
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
         .task { await load() }
         .sheet(item: $fixing) { open in
             FixSheet(set: open.set, movement: open.movement, number: open.number,
@@ -149,9 +155,6 @@ struct SessionScreen: View {
 
     private var head: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text(Readout.routine(of: row.session))
-                .font(WindmillFont.display(28))
-                .foregroundStyle(skin.ink)
             Text(when)
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkDim)
@@ -202,12 +205,16 @@ struct SessionScreen: View {
         }
     }
 
+    // One section per movement, in the order the movements were first touched. The card is the
+    // section's row background, not a rectangle drawn around a stack.
     @ViewBuilder
     private var sets: some View {
         if let detail {
             ForEach(Performed.movements(detail.sets, catalog: store.catalog,
                                         plan: row.session.plan)) { movement in
-                VStack(alignment: .leading, spacing: WindmillSpace.x3) {
+                Section {
+                    ForEach(movement.rows) { performed in row(performed, of: movement.movement) }
+                } header: {
                     HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
                         MovementDoor(exerciseId: movement.id, name: movement.movement,
                                      font: WindmillFont.body(16, .bold), ink: skin.ink,
@@ -215,19 +222,18 @@ struct SessionScreen: View {
                         Spacer(minLength: 0)
                         planLine(movement.against)
                     }
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(movement.rows) { performed in row(performed, of: movement.movement) }
-                    }
+                    .textCase(nil)
                 }
-                .padding(WindmillSpace.x4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
-                .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+                .listRowBackground(skin.surface)
+                .listRowSeparatorTint(skin.line)
             }
         } else if let setsFailure {
-            Text(setsFailure.line("the sets are on your account"))
-                .font(GymType.numeral(13))
-                .foregroundStyle(skin.inkFaint)
+            Section {
+                Text(setsFailure.line("the sets are on your account"))
+                    .font(GymType.numeral(13))
+                    .foregroundStyle(skin.inkFaint)
+            }
+            .modifier(PlainRow())
         }
     }
 
@@ -271,6 +277,7 @@ struct SessionScreen: View {
             .frame(maxWidth: .infinity, minHeight: GymTap.minimum, alignment: .leading)
             .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityHint("Fix this set")
     }
 
@@ -333,5 +340,16 @@ struct SessionScreen: View {
     private func moved() async {
         guard let read = await store.review(of: summary.session.id) else { return }
         review = read
+    }
+}
+
+// A row the List draws no chrome around: the room's own cards paint themselves.
+struct PlainRow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 4, leading: WindmillSpace.x5,
+                                      bottom: 4, trailing: WindmillSpace.x5))
     }
 }

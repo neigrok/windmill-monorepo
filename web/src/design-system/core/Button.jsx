@@ -1,5 +1,8 @@
 import React from 'react';
 
+// `href` draws the same button as an anchor — a destination that looks like the action it is — and
+// `full` gives it the width of its column, for the one button a narrow screen puts under the thumb.
+// `ariaBusy` is for the button that stays tappable while the request it fired is in the air.
 export function Button({
   children,
   variant = 'primary',
@@ -8,6 +11,10 @@ export function Button({
   disabled = false,
   onClick,
   type = 'button',
+  href = null,
+  full = false,
+  ariaLabel = null,
+  ariaBusy = false,
 }) {
   const sizes = {
     sm: { padding: '8px 14px', fontSize: 'var(--text-sm)', gap: '6px', radius: 'var(--radius-md)' },
@@ -60,11 +67,18 @@ export function Button({
     ? (v.shadow === 'none' ? 'var(--focus-ring)' : `${v.shadow}, var(--focus-ring)`)
     : v.shadow;
 
+  // A disabled anchor keeps no href — the only way an anchor stops being a destination — and says so.
+  const Frame = href ? 'a' : 'button';
+  const frameProps = href
+    ? { href: disabled ? undefined : href, role: 'link', 'aria-disabled': disabled ? 'true' : undefined }
+    : { type, disabled };
+
   return (
-    <button
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
+    <Frame
+      {...frameProps}
+      aria-label={ariaLabel ?? undefined}
+      aria-busy={ariaBusy ? 'true' : undefined}
+      onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => { setHover(false); setActive(false); }}
       onMouseDown={() => setActive(true)}
@@ -72,7 +86,10 @@ export function Button({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={{
-        display: 'inline-flex',
+        display: full ? 'flex' : 'inline-flex',
+        width: full ? '100%' : undefined,
+        boxSizing: 'border-box',
+        textDecoration: 'none',
         alignItems: 'center',
         justifyContent: 'center',
         gap: s.gap,
@@ -92,6 +109,6 @@ export function Button({
     >
       {icon && <span style={{ display: 'inline-flex', width: '1.1em', height: '1.1em' }}>{icon}</span>}
       {children}
-    </button>
+    </Frame>
   );
 }

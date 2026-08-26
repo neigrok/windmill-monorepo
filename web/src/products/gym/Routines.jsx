@@ -1,22 +1,23 @@
 import React, { useRef, useState } from 'react';
+import { Button, Icon, Input, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
-  alsoReadsLabel, EMPTY_BAR_KG, entryLabel, fmtKg, isUntested, movementOf, NAME_MAX,
-  nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel,
-  ROUTINES_HREF, showsNameCount, threadHref, UNTESTED,
+  alsoReadsLabel, cappedName, entryLabel, isUntested, movementOf, nameCountLabel, nameOfMovement,
+  NEW_ROUTINE_ID, recordHref, routineHref, routineMetaLabel, ROUTINES_HREF, showsNameCount,
+  threadHref, UNTESTED,
 } from './log.js';
 import { LiveMirror } from './Mirror.jsx';
+import { Overflow } from './Overflow.jsx';
 import { CONVERSATION_VERB, receiptLine } from './proposals.js';
 import { mintId } from './mint.js';
 import { PendingProposals, ProposalDot, ProposalFlag, ProposalReview } from './Proposals.jsx';
-import { Keypad } from './logger/Keypad.jsx';
 import { MovementPicker } from './logger/MovementPicker.jsx';
-import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';
 import {
-  blankRoutine, builtLabel, draftFrom, duplicateRoutine, entryPlaceLabel, historyRows,
-  NAME_SUGGESTIONS, NEW_ENTRY_REPS, openTargetsLine, reorderEntries, routineWrite, saysNeverLogged,
-  targetDraftOf, withEntryAdded, withEntryChanged, withEntryOpened, withEntryRemoved, withTarget,
+  blankRoutine, builtLabel, DECIMAL_NOTE, draftFrom, duplicateRoutine, entryPlaceLabel, hasOpenEntry,
+  historyRows, isOpenFields, LAST_TIME_PLACEHOLDER, MAX_PLACEHOLDER, OPEN_LINE, OPEN_PLACEHOLDER,
+  reorderEntries, routineWrite, saysNeverLogged, targetEntryOf, targetFieldsOf, targetRefusal,
+  withEntryAdded, withEntryRemoved, withEntrySet, withField, withSignFlipped,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 
@@ -61,14 +62,14 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
           The routines didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       )}
       {view.phase === 'ready' && view.data.length === 0 && (
         <>
           <p className="gym-quiet">No routines yet.</p>
           <p className="gym-quiet">Finish a session and gym offers to keep it as one — or write one out now.</p>
-          <a className="gym-routines-build" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>
+          <Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>
         </>
       )}
       {view.phase === 'ready' && view.data.length > 0 && (
@@ -82,14 +83,10 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
                 </span>
                 <span className="gym-routine-meta">{routineMetaLabel(routine)}</span>
               </a>
-              <button
-                type="button"
-                className="gym-routine-copy"
-                onClick={() => duplicate(routine)}
-                aria-label={`Duplicate ${routine.name}`}
-              >
-                ⧉
-              </button>
+              <Overflow
+                label={`More for ${routine.name}`}
+                items={[{ label: 'Duplicate', run: () => duplicate(routine) }]}
+              />
             </li>
           ))}
         </ul>
@@ -113,7 +110,6 @@ export function RoutineEditor({ id, log }) {
   const [query, setQuery] = useState('');
   const [target, setTarget] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [naming, setNaming] = useState(fresh);
   const draft = edits ?? (view.phase === 'ready' ? draftFrom(view.data) : null);
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the routine…</p>;
@@ -131,26 +127,25 @@ export function RoutineEditor({ id, log }) {
         <Back href={ROUTINES_HREF}>Routines</Back>
         <p className="gym-read-failed">
           The routine didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       </>
     );
   }
 
-  if (naming) {
-    return (
-      <NameTheRoutine
-        name={draft.name}
-        onName={(name) => setEdits({ ...draft, name })}
-        onNext={() => setNaming(false)}
-      />
-    );
-  }
-
   const editEntries = (change) => setEdits({ ...draft, entries: change(draft.entries) });
+  // One at a time, and in this order: there is no screen before this one to have asked for a name.
   const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);
-  const openTargets = openTargetsLine(draft.entries, log.catalog);
   const built = builtLabel(view.data);
+  const copy = async () => {
+    try {
+      const made = duplicateRoutine(view.data, { id: mintId('rt_') });
+      await gymApi.createRoutine(made);
+      window.location.hash = routineHref(made.id);
+    } catch (error) {
+      log.say(`That copy wasn’t made — ${failureReason(error)}.`);
+    }
+  };
 
   const commit = async () => {
     if (missing || saving) return false;
@@ -180,29 +175,29 @@ export function RoutineEditor({ id, log }) {
       <header className="gym-editor-head">
         <Back href={ROUTINES_HREF}>Routines</Back>
         <span className="gym-editor-name-field">
-          <input
-            className="gym-editor-name"
+          <Input
             value={draft.name}
-            maxLength={NAME_MAX}
             placeholder="Name this routine"
-            aria-label="Routine name"
-            onChange={(event) => setEdits({ ...draft, name: event.target.value })}
+            ariaLabel="Routine name"
+            autoFocus={fresh}
+            onChange={(event) => setEdits({ ...draft, name: cappedName(event.target.value) })}
+            trailing={showsNameCount(draft.name) && <span className="gym-name-count">{nameCountLabel(draft.name)}</span>}
           />
-          {showsNameCount(draft.name) && <span className="gym-name-count">{nameCountLabel(draft.name)}</span>}
         </span>
-        <button
-          type="button"
-          className={missing || saving ? 'gym-editor-save is-inert' : 'gym-editor-save'}
+        <Button
+          size="md"
+          disabled={Boolean(missing) || saving}
           onClick={async () => { if (await commit()) window.location.hash = ROUTINES_HREF; }}
         >
           Save
-        </button>
+        </Button>
+        {!fresh && <Overflow label="More for this routine" items={[{ label: 'Duplicate', run: copy }]} />}
       </header>
       {missing && <p className="gym-editor-missing">{missing}</p>}
 
       {!fresh && (isUntested(view.data) || built) && (
         <p className="gym-editor-meta">
-          {isUntested(view.data) && <span className="gym-editor-untested">{UNTESTED}</span>}
+          {isUntested(view.data) && <Tag size="sm">{UNTESTED}</Tag>}
           {built && <span>{built}</span>}
         </p>
       )}
@@ -215,33 +210,17 @@ export function RoutineEditor({ id, log }) {
         onRemove={(index) => editEntries((held) => withEntryRemoved(held, index))}
       />
 
-      {openTargets && <p className="gym-editor-open">{openTargets}</p>}
+      {/* Once, under the whole list, while a row is open and no target sheet stands over it: the
+          rows say WHICH by reading `open` in their own target column, and this says what that word
+          means. While a sheet is up the sheet owns the sentence — one state, one sentence, never a
+          blessing behind a scrim beside a refusal in front of it. */}
+      {target == null && hasOpenEntry(draft.entries) && <p className="gym-open-line">{OPEN_LINE}</p>}
 
-      <button type="button" className="gym-editor-add" onClick={() => { setQuery(''); setPicking(true); }}>
+      <Button full variant="secondary" onClick={() => { setQuery(''); setPicking(true); }}>
         + Add movement
-      </button>
+      </Button>
 
       <RoutineHistory routine={view.data} />
-
-      {!fresh && (
-        <div className="gym-editor-foot">
-          <button
-            type="button"
-            className="gym-editor-duplicate"
-            onClick={async () => {
-              try {
-                const copy = duplicateRoutine(view.data, { id: mintId('rt_') });
-                await gymApi.createRoutine(copy);
-                window.location.hash = routineHref(copy.id);
-              } catch (error) {
-                log.say(`That copy wasn’t made — ${failureReason(error)}.`);
-              }
-            }}
-          >
-            Duplicate
-          </button>
-        </div>
-      )}
 
       {target != null && (
         <TargetSheet
@@ -251,11 +230,7 @@ export function RoutineEditor({ id, log }) {
           entry={draft.entries[target]}
           neverLogged={saysNeverLogged(view.data, draft.entries[target])}
           onSet={(entry) => {
-            editEntries((held) => withEntryChanged(held, target, entry));
-            setTarget(null);
-          }}
-          onOpen={() => {
-            editEntries((held) => withEntryOpened(held, target));
+            editEntries((held) => withEntrySet(held, target, entry));
             setTarget(null);
           }}
           onClose={() => setTarget(null)}
@@ -265,6 +240,7 @@ export function RoutineEditor({ id, log }) {
       {picking && (
         <MovementPicker
           catalog={log.catalog}
+          sessions={log.summaries}
           query={query}
           onQuery={setQuery}
           onPick={(exerciseId) => { setPicking(false); editEntries((held) => withEntryAdded(held, exerciseId)); }}
@@ -273,45 +249,6 @@ export function RoutineEditor({ id, log }) {
           title="Add movement"
         />
       )}
-    </>
-  );
-}
-
-function NameTheRoutine({ name, onName, onNext }) {
-  const ready = name.trim() !== '';
-  return (
-    <>
-      <Back href={ROUTINES_HREF}>Routines</Back>
-      <h1 className="gym-title">What do you call this one?</h1>
-      <p className="gym-name-sub">Whatever you already call it.</p>
-
-      <div className="gym-name-field">
-        <input
-          className="gym-name-input"
-          value={name}
-          maxLength={NAME_MAX}
-          aria-label="Routine name"
-          onChange={(event) => onName(event.target.value)}
-          autoFocus
-        />
-        {showsNameCount(name) && <span className="gym-name-count">{nameCountLabel(name)}</span>}
-      </div>
-
-      <div className="gym-name-openers">
-        {NAME_SUGGESTIONS.map((suggestion) => (
-          <button key={suggestion} type="button" className="gym-name-opener" onClick={() => onName(suggestion)}>
-            {suggestion}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        className={ready ? 'gym-name-save' : 'gym-name-save is-inert'}
-        onClick={() => { if (ready) onNext(); }}
-      >
-        Next · add movements
-      </button>
     </>
   );
 }
@@ -347,89 +284,99 @@ function RoutineHistory({ routine }) {
   );
 }
 
-// Null targets are not zeros: no load means "last time", no rep target means max.
-function TargetSheet({ movement, place, entry, neverLogged, onSet, onOpen, onClose }) {
-  const [draft, setDraft] = useState(() => targetDraftOf(entry));
-  const [typing, setTyping] = useState(false);
-  const reps = draft.targetReps;
-  const rungs = ladderLabels(draft.targetWeightKg ?? EMPTY_BAR_KG);
-  const alsoReads = alsoReadsLabel(draft.targetWeightKg);
-  return (
-    <>
-      <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
-        <div className="gym-sheet" role="dialog" aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
-          <div className="gym-sheet-head">
-            <span className="gym-target-movement">{movement}</span>
-            <span className="gym-target-place">{place}</span>
-            <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">×</button>
-          </div>
-          {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
-          <div className="gym-target-row">
-            <span className="gym-target-label">Sets</span>
-            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetSets: held.targetSets - 1 }))} aria-label="One set fewer">−</button>
-            <span className="gym-target-value">{draft.targetSets}</span>
-            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetSets: held.targetSets + 1 }))} aria-label="One set more">+</button>
-          </div>
-          <div className="gym-target-row">
-            <span className="gym-target-label">Reps</span>
-            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetReps: reps == null ? NEW_ENTRY_REPS : reps - 1 }))} aria-label="One rep fewer">−</button>
-            <span className="gym-target-value">{reps ?? 'max'}</span>
-            <button type="button" className="gym-target-step" onClick={() => setDraft((held) => withTarget(held, { targetReps: reps == null ? NEW_ENTRY_REPS : reps + 1 }))} aria-label="One rep more">+</button>
-            {reps != null && (
-              <button type="button" className="gym-target-clear" onClick={() => setDraft((held) => withTarget(held, { targetReps: null }))}>
-                take it to max
-              </button>
-            )}
-          </div>
-          <div className="gym-target-row">
-            <span className="gym-target-label">Target weight</span>
-            <button type="button" className="gym-target-weight" onClick={() => setTyping(true)}>
-              {draft.targetWeightKg == null ? 'last time' : `${fmtKg(draft.targetWeightKg)} kg`}
-            </button>
-            {draft.targetWeightKg != null && (
-              <button type="button" className="gym-target-clear" onClick={() => setDraft((held) => withTarget(held, { targetWeightKg: null }))}>
-                use last time
-              </button>
-            )}
-          </div>
-          <div className="gym-rungs">
-            {LADDER_KEYS.map((rung, index) => (
-              <button
-                key={`${rung.direction}${rung.big}`}
-                type="button"
-                className={rung.weight === 'inner' ? 'gym-rung is-loud' : 'gym-rung'}
-                onClick={() => setDraft((held) => withTarget(held, {
-                  targetWeightKg: held.targetWeightKg == null
-                    ? EMPTY_BAR_KG
-                    : bump(held.targetWeightKg, rung.direction, rung.big),
-                }))}
-              >
-                {rungs[index]}
-              </button>
-            ))}
-          </div>
-          {/* The button above is kilograms; null when the account also reads kilograms. */}
-          {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
+// Three fields and no escape hatch, because clearing a field IS the escape: sets cleared is the open
+// line, reps cleared is `max`, weight cleared is `last time`, and each placeholder says so. The plate
+// ladder and the keypad are rack controls (16-the-workout.md) and are not here.
+function TargetSheet({ movement, place, entry, neverLogged, onSet, onClose }) {
+  const [fields, setFields] = useState(() => targetFieldsOf(entry));
+  const refusal = targetRefusal(fields);
+  // Nothing is derived from a refused field: while one stands, the button says only what it is.
+  const held = refusal ? null : targetEntryOf(entry, fields);
+  const alsoReads = alsoReadsLabel(held?.targetWeightKg ?? null);
+  // A refused clear keeps the field's value, so it keeps it SELECTED too: the gesture that reaches
+  // this refusal is backspace-then-retype, and a kept value with the caret behind it would turn the
+  // next digit into a second one (5 backspaced and 4 typed reading 54). Written to the node before
+  // React's own restore, so the selection survives the re-render that puts the value back.
+  const type = (field) => (event) => {
+    const input = event.target;
+    const next = withField(fields, field, input.value);
+    setFields(next);
+    if (!next.clearRefused) return;
+    input.value = next.sets;
+    input.setSelectionRange(0, next.sets.length);
+  };
+  const refusalFor = (field) => (refusal?.field === field ? refusal.message : undefined);
 
-          <button type="button" className="gym-target-set" onClick={() => onSet(draft)}>
-            {`Set · ${entryLabel(draft)}`}
-          </button>
-          <button type="button" className="gym-target-open" onClick={onOpen}>
-            Leave it open
-            <span className="gym-target-open-why">decide at the rack</span>
+  return (
+    <div className="gym-sheet-catch" role="presentation" onClick={onClose}>
+      <div className="gym-sheet" role="dialog" aria-label={`Target · ${movement}`} onClick={(event) => event.stopPropagation()}>
+        <div className="gym-sheet-head">
+          <span className="gym-target-movement">{movement}</span>
+          <span className="gym-target-place">{place}</span>
+          <button type="button" className="gym-sheet-close" onClick={onClose} aria-label="Close">
+            <Icon name="x" size={15} />
           </button>
         </div>
+        {neverLogged && <p className="gym-target-never">Never logged — these are your numbers.</p>}
+        {/* The same sentence the list draws beneath its rows, said here for the row being decided.
+            It sits with the other statement about the line, above the fields: everything under a
+            field belongs to that field. While a refusal stands the sentence is not drawn: blessing a
+            state the sheet is refusing in the same breath says two things at once. */}
+        {!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}
+
+        <div className="gym-target-fields">
+          <Input
+            label="Sets"
+            value={fields.sets}
+            placeholder={OPEN_PLACEHOLDER}
+            inputMode="numeric"
+            error={refusalFor('sets')}
+            onChange={type('sets')}
+          />
+          <Input
+            label="Reps"
+            value={fields.reps}
+            placeholder={MAX_PLACEHOLDER}
+            inputMode="numeric"
+            error={refusalFor('reps')}
+            onChange={type('reps')}
+          />
+          <div>
+            <Input
+              label="Weight"
+              value={fields.weight}
+              placeholder={LAST_TIME_PLACEHOLDER}
+              inputMode="decimal"
+              error={refusalFor('weight')}
+              onChange={type('weight')}
+              describedBy="gym-target-decimal"
+              trailing={(
+                <>
+                  <span className="gym-target-unit">kg</span>
+                  {/* A decimal keyboard offers no sign, and band-assisted work is a negative load. */}
+                  <button
+                    type="button"
+                    className="gym-target-sign"
+                    aria-label="Flip the sign"
+                    onClick={() => setFields(withSignFlipped)}
+                  >
+                    ±
+                  </button>
+                </>
+              )}
+            />
+            <p className="gym-target-decimal" id="gym-target-decimal">{DECIMAL_NOTE}</p>
+          </div>
+        </div>
+
+        {/* The field is kilograms; null when the account also reads kilograms. */}
+        {alsoReads && <p className="gym-target-reads">{alsoReads}</p>}
+
+        <Button full disabled={held == null} onClick={() => onSet(held)}>
+          {held == null ? 'Set' : `Set · ${entryLabel(held)}`}
+        </Button>
       </div>
-      {/* Keep the keypad outside the sheet; nested, a tap on it closes the sheet. */}
-      {typing && (
-        <Keypad
-          mode="weight"
-          current={draft.targetWeightKg ?? EMPTY_BAR_KG}
-          onCommit={(value) => { setDraft((held) => withTarget(held, { targetWeightKg: value })); setTyping(false); }}
-          onCancel={() => setTyping(false)}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -480,7 +427,7 @@ function EntryList({ entries, catalog, onMove, onTarget, onRemove }) {
             onClick={() => onRemove(index)}
             aria-label={`Remove ${nameOfMovement(catalog, entry.exerciseId)}`}
           >
-            ×
+            <Icon name="x" size={15} />
           </button>
         </li>
       ))}

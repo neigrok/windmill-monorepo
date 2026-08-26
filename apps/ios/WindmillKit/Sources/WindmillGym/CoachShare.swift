@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import WindmillPlatform
 
 // The expiry is printed from the server's reply, never counted off this device's clock.
@@ -45,7 +44,7 @@ public enum Coach {
     public enum State: Equatable {
         case closed(note: String? = nil)
         case working
-        case live(share: SessionShare, copied: Bool = false, note: String? = nil)
+        case live(share: SessionShare, note: String? = nil)
         case revoked
 
         // A revoke that did not happen leaves the link live.
@@ -57,13 +56,10 @@ public enum Coach {
                 return .live(share: share)
             case .mintFailed(let why):
                 return .closed(note: why)
-            case .copied:
-                guard case .live(let share, _, let note) = self else { return self }
-                return .live(share: share, copied: true, note: note)
             case .revoked:
                 return .revoked
             case .revokeFailed(let why):
-                guard case .live(let share, _, _) = self else { return self }
+                guard case .live(let share, _) = self else { return self }
                 return .live(share: share, note: why)
             }
         }
@@ -73,7 +69,6 @@ public enum Coach {
         case asked
         case minted(SessionShare)
         case mintFailed(String)
-        case copied
         case revoked
         case revokeFailed(String)
     }
@@ -94,13 +89,15 @@ public enum Coach {
         case .working:
             return Card(title: shareTitle, body: offer, link: nil,
                         action: "…", revoke: nil, note: nil)
-        case .live(let share, let copied, let note):
+        case .live(let share, let note):
             return Card(
                 title: "The link is live",
                 body: "Anyone who has this link can read this one workout. It stops working on "
                     + "\(Readout.day(share.expiresAtMs)), and revoking it kills it immediately.",
                 link: link(share, base: base),
-                action: copied ? "Copied" : "Copy link",
+                // The system share sheet hands the link on and reports nothing back, so there is no
+                // `copied` state to draw and nothing pretends there is.
+                action: shareTitle,
                 revoke: "Revoke the link",
                 note: note)
         case .revoked:
@@ -156,15 +153,26 @@ struct CoachShareCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button { Task { await act() } } label: {
-                Text(card.action)
-                    .font(WindmillFont.body(16, .semibold))
-                    .foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                        .strokeBorder(skin.lineStrong, lineWidth: 1))
+            if let address = card.link, let url = URL(string: address) {
+                ShareLink(item: url) {
+                    Label(card.action, systemImage: "square.and.arrow.up")
+                        .font(WindmillFont.body(16, .semibold))
+                        .foregroundStyle(skin.accent)
+                        .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
+                        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                            .strokeBorder(skin.lineStrong, lineWidth: 1))
+                }
+            } else {
+                Button { Task { await act() } } label: {
+                    Text(card.action)
+                        .font(WindmillFont.body(16, .semibold))
+                        .foregroundStyle(skin.accent)
+                        .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
+                        .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
+                            .strokeBorder(skin.lineStrong, lineWidth: 1))
+                }
+                .disabled(state == .working)
             }
-            .disabled(state == .working)
 
             if let revoke = card.revoke {
                 Button { Task { await revokeLink() } } label: {
@@ -182,11 +190,6 @@ struct CoachShareCard: View {
     }
 
     private func act() async {
-        if case .live(let share, _, _) = state {
-            UIPasteboard.general.string = Coach.link(share, base: doors.base)
-            state = state.after(.copied)
-            return
-        }
         state = state.after(.asked)
         switch await doors.mint() {
         case .success(let share):

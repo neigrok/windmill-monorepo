@@ -68,13 +68,45 @@
      passing value is a designer's token (ledger F4). Nothing renders this skin while gym pins dark. */
   --pr-ink: var(--accent-gold-600);
   --pr-soft: rgba(161, 120, 34, 0.14);
-  --alarm-ink: var(--color-danger);
+  --alarm-ink: var(--accent-brick-500);
   --alarm-soft: var(--color-danger-bg);
 
   --weight-size: 104px;
   --weight-leading: 92px;
   --reps-size: 54px;
   --readout-size: 15px;
+}
+
+/* ── The bridge — what a design-system component reads, answered in gym's vocabulary ──
+   A component from `design-system/` styles itself with the shared ROLES (--surface-card,
+   --text-primary, --color-brand, --border-*, …). Inside this room those roles already resolve to
+   gym's palette, because .gym-root carries data-brand="gym" and palettes.css re-points them there —
+   which is why no line below re-states a surface, a border, an ink or the brand. Pointing a shared
+   role back at gym's alias of it would also be a CYCLE (--gym-surface is var(--surface-card)) and
+   both properties would resolve to nothing.
+
+   What is left is the handful of roles where the room's answer is genuinely its own. One block per
+   skin, no per-component override anywhere else. */
+.gym-root[data-theme="dark"] {
+  /* The ink gym measured against its own brand fill (6.18:1), not the family's. */
+  --text-on-accent: var(--gym-on-accent);
+  /* One shared role, and gym holds two: an alarm INK and an alarm FILL. A component reads this as
+     ink — a refusal under a field — so the ink is what it gets; gym's destructive fills stay gym's. */
+  --color-danger: var(--alarm-ink);
+  /* Iris, because the room is iris. The family's ring is terracotta and would be the one hue in the
+     room that belongs to another product. The two edges beside it are the same argument: a focused
+     field and a selected chip carry the family's terracotta 400 everywhere else, and that is the one
+     re-point this room makes to them — the change stays inside .gym-root and no other product moves. */
+  --focus-ring: 0 0 0 4px rgba(154, 144, 190, 0.4);
+  --field-focus-edge: var(--color-brand);
+  --chip-selected-edge: var(--color-brand);
+}
+.gym-root[data-theme="light"] {
+  --text-on-accent: var(--gym-on-accent);
+  --color-danger: var(--alarm-ink);
+  --focus-ring: 0 0 0 4px rgba(76, 67, 116, 0.4);
+  --field-focus-edge: var(--color-brand);
+  --chip-selected-edge: var(--color-brand);
 }
 
 /* Everything below paints with the tokens above and stays scoped under .gym-root. */
@@ -95,7 +127,7 @@
 .gym-column {
   max-width: 560px;
   margin: 0 auto;
-  padding: 76px 16px 96px;
+  padding: 76px 16px 24px;
 }
 
 .gym-root[data-chrome='shell'] .gym-column {
@@ -133,20 +165,6 @@
   font-size: 15px;
   color: var(--alarm-ink);
 }
-.gym-retry {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 8px;
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.gym-retry:hover {
-  background: var(--gym-raised);
-}
 
 .gym-door {
   display: flex;
@@ -160,23 +178,6 @@
   margin: 0;
   font-size: 15px;
   color: var(--gym-ink-dim);
-}
-.gym-door-button {
-  min-height: 44px;
-  padding: 0 22px;
-  border: none;
-  border-radius: 10px;
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-.gym-door-button:hover {
-  background: var(--color-brand-hover);
-}
-.gym-door-button:active {
-  background: var(--color-brand-active);
 }
 
 /* The log — one row per session, recognisable without opening, under a divider per week. */
@@ -553,12 +554,10 @@ button.gym-set:focus-visible .gym-set-fix,
   from { transform: translateY(100%); }
   to { transform: none; }
 }
-/* Reduced motion: the sheet, the toast and the picker keep their arrival and lose the travel.
-   Redefined rather than cancelled, the way tokens/motion.css treats the shared waveforms — every
-   consumer of these two waveforms is covered at once, and a sheet that fades in still reads as
-   something that arrived, where `animation: none` would have it blink into place. Dropping the
-   `transform` keys also hands .gym-toast back its own `translateX(-50%)`, which gym-rise's
-   `transform` had been overriding for the length of the run. */
+/* Reduced motion: the sheet and the picker keep their arrival and lose the travel. Redefined rather
+   than cancelled, the way tokens/motion.css treats the shared waveforms — every consumer of these
+   two waveforms is covered at once, and a sheet that fades in still reads as something that
+   arrived, where `animation: none` would have it blink into place. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes gym-rise {
     from { opacity: 0; }
@@ -568,6 +567,17 @@ button.gym-set:focus-visible .gym-set-fix,
     from { opacity: 0; }
     to { opacity: 1; }
   }
+}
+
+/* Where the one voice sits: above the rail, clear of the reach band, and centred on the column. The
+   toast inside it is the design system's; this is only the slot it floats in. */
+.gym-toast-slot {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 68px;
+  z-index: 55;
+  width: min(374px, calc(100vw - 28px));
 }
 
 /* The mark of a session running somewhere else, never beside a control that could drive it. */
@@ -583,53 +593,6 @@ button.gym-set:focus-visible .gym-set-fix,
   box-shadow: none;
 }
 
-.gym-toast {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 68px;
-  z-index: 55;
-  width: min(374px, calc(100vw - 28px));
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 11px 11px 14px;
-  border-radius: 14px;
-  background: var(--gym-raised);
-  border: 1px solid var(--gym-line-strong);
-  box-shadow: var(--shadow-lg);
-  font-size: 12.5px;
-  line-height: 1.4;
-  animation: gym-rise 240ms var(--ease-soft);
-}
-/* The take-back, up for exactly as long as it is true (fix.js). Brand ink rather than alarm. */
-.gym-toast-undo {
-  margin-left: auto;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--color-brand);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.gym-toast-undo + .gym-toast-close {
-  margin-left: 0;
-}
-.gym-toast-close {
-  margin-left: auto;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 99px;
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font-size: 17px;
-  cursor: pointer;
-}
 
 /* Sheets — one chrome for the keypad, the picker, the target sheet and the fix.
    FIXED, not absolute: .gym-root is the scroller, and nothing inside it transforms, so the viewport is
@@ -993,22 +956,24 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 15px;
   font-weight: 800;
 }
-.gym-picker-search {
-  width: 100%;
-  height: 48px;
-  padding: 0 13px;
-  box-sizing: border-box;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 15px;
-}
 .gym-picker-list {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
+}
+/* The catalogue after the six. Its own boundary has to be wider than the eyebrow's, or the label over
+   the six reads as the head of every row under it. */
+.gym-picker-list + .gym-picker-list {
+  margin-top: 22px;
+}
+/* The one label in the picker, over the six. What follows them is the catalogue and needs no label. */
+.gym-picker-group {
+  margin: 14px 0 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gym-ink-faint);
 }
 /* A floor rather than a fixed height: the second line arrives only once its read has answered. */
 .gym-picker-row {
@@ -1060,43 +1025,11 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-/* The three rooms' tab rail. */
-.gym-tabs {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 0;
-  z-index: 4;
-  width: min(402px, 100vw);
-  box-sizing: border-box;
-  display: grid;
-  /* The room count is stated here and in GymApp.jsx; both have to move together. */
-  grid-template-columns: repeat(3, 1fr);
-  padding: 0 14px 22px;
-  background: linear-gradient(to bottom, transparent, var(--gym-canvas) 40%);
-}
-.gym-tab {
-  height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gym-ink-faint);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
-}
-.gym-tab.is-on {
-  color: var(--color-brand);
-}
 
 /* The focus ring is the brand's, not the browser's. */
 .gym-picker :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
-}
-.gym-picker-search:focus {
-  outline: none;
-  border-color: var(--color-brand);
 }
 
 /* The rooms, every one of them drawn in the 560px .gym-column. */
@@ -1242,19 +1175,6 @@ button.gym-set:focus-visible .gym-set-fix,
 
 /* ── Routines, and one of them under the hand ──────────────── */
 
-.gym-routines-build {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 52px;
-  margin-top: 14px;
-  border-radius: 16px;
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font-size: 15px;
-  font-weight: 800;
-  text-decoration: none;
-}
 
 .gym-routines {
   list-style: none;
@@ -1264,13 +1184,14 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 10px;
 }
+/* Not `overflow: hidden`: the row's overflow menu opens past the card's own edge. The one child that
+   paints to the edge rounds its own corners instead. */
 .gym-routine {
   display: flex;
   align-items: stretch;
   border: 1px solid var(--gym-line);
   border-radius: 12px;
   background: var(--gym-surface);
-  overflow: hidden;
 }
 .gym-routine:hover {
   border-color: var(--gym-line-strong);
@@ -1282,6 +1203,7 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 4px;
   padding: 14px 16px;
+  border-radius: 11px 0 0 11px;
   color: var(--gym-ink);
   text-decoration: none;
 }
@@ -1299,21 +1221,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 13px;
   color: var(--gym-ink-faint);
 }
-.gym-routine-copy {
-  flex: none;
-  width: 46px;
-  border: none;
-  border-left: 1px solid var(--gym-line);
-  background: transparent;
-  color: var(--gym-ink-faint);
-  font: inherit;
-  font-size: 15px;
-  cursor: pointer;
-}
-.gym-routine-copy:hover {
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-}
 
 .gym-editor-head {
   display: flex;
@@ -1322,45 +1229,8 @@ button.gym-set:focus-visible .gym-set-fix,
   margin-bottom: 16px;
 }
 .gym-editor-name-field {
-  position: relative;
   flex: 1;
   min-width: 0;
-  display: flex;
-}
-.gym-editor-name {
-  flex: 1;
-  min-width: 0;
-  height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--gym-line);
-  border-radius: 11px;
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-}
-.gym-editor-name:focus {
-  outline: none;
-  border-color: var(--color-brand);
-}
-.gym-editor-save {
-  flex: none;
-  height: 44px;
-  padding: 0 18px;
-  border: none;
-  border-radius: 11px;
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-}
-/* Inert rather than absent, and the line beneath says which of the two things is missing. */
-.gym-editor-save.is-inert {
-  background: var(--gym-raised);
-  color: var(--gym-ink-faint);
 }
 .gym-editor-missing {
   margin: -8px 0 12px;
@@ -1377,22 +1247,6 @@ button.gym-set:focus-visible .gym-set-fix,
   font-size: 12.5px;
   color: var(--gym-ink-faint);
 }
-.gym-editor-untested {
-  padding: 3px 9px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 99px;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--gym-ink-dim);
-}
-.gym-editor-open {
-  margin: 12px 2px 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--gym-ink-faint);
-}
 
 .gym-entries {
   list-style: none;
@@ -1402,9 +1256,24 @@ button.gym-set:focus-visible .gym-set-fix,
   flex-direction: column;
   gap: 8px;
 }
+/* One sentence for one meaning, drawn in the two places that hold it: under a list of movements when
+   a row of it is open, and on the target sheet while the line being decided is the open one. Never
+   once per row — the rows already read `open` in their own target column, and this says what that
+   word means. */
+.gym-open-line {
+  margin: 9px 2px 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gym-ink-faint);
+}
+.gym-sheet .gym-open-line {
+  margin: 2px 2px 10px;
+}
 .gym-entry {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 6px;
   gap: 10px;
   padding: 11px 12px;
   border: 1px solid var(--gym-line);
@@ -1486,46 +1355,63 @@ button.gym-set:focus-visible .gym-set-fix,
 .gym-entry-drop:hover {
   color: var(--alarm-ink);
 }
-.gym-editor-add {
-  width: 100%;
-  height: 50px;
-  margin-top: 12px;
-  border: 1px dashed var(--gym-line-strong);
-  border-radius: 12px;
+/* One overflow, drawn twice: on a routine row and in the editor's head. It holds what a lifter does
+   to a routine rather than in it, and nothing destructive lives here until a withheld delete does. */
+.gym-overflow {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.gym-overflow-open {
+  width: 44px;
+  min-height: 44px;
+  border: none;
   background: transparent;
-  color: var(--gym-ink-dim);
+  color: var(--gym-ink-faint);
   font: inherit;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 17px;
+  line-height: 1;
   cursor: pointer;
 }
-.gym-editor-add:hover {
-  border-color: var(--color-brand);
-  color: var(--color-brand);
+.gym-routine .gym-overflow-open {
+  align-self: stretch;
+  border-left: 1px solid var(--gym-line);
 }
-.gym-editor-foot {
-  display: flex;
-  gap: 10px;
-  margin-top: 22px;
+.gym-overflow-open:hover {
+  color: var(--gym-ink);
 }
-.gym-editor-duplicate {
-  height: 50px;
-  padding: 0 18px;
+.gym-overflow-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 4px;
+  z-index: 6;
+  min-width: 148px;
+  padding: 5px;
   border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
+  border-radius: 12px;
+  background: var(--gym-raised);
+  box-shadow: var(--shadow-lg);
+}
+.gym-overflow-item {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: var(--gym-ink);
   font: inherit;
   font-size: 14px;
-  font-weight: 700;
+  text-align: left;
   cursor: pointer;
 }
-/* Inert on exactly what Done is inert on. */
-.gym-editor-duplicate.is-inert {
-  border-color: var(--gym-line);
-  color: var(--gym-ink-faint);
+.gym-overflow-item:hover {
+  background: var(--gym-surface);
 }
-/* The target sheet — two counts, the ladder, and the weight on the keypad. */
+
+/* The target sheet — three typed fields and nothing else. Emptying one is how you clear it, and the
+   placeholder says what empty means: sets `open`, reps `max`, weight `last time`. The ladder and the
+   keypad are rack controls and stay at the rack (the fix sheet). */
 /* Where you are in the day, beside the movement being asked about. */
 .gym-target-place {
   margin-left: 9px;
@@ -1538,100 +1424,47 @@ button.gym-set:focus-visible .gym-set-fix,
   line-height: 1.45;
   color: var(--gym-ink-faint);
 }
-.gym-target-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 2px;
-  border-bottom: 1px solid var(--gym-line);
-}
-.gym-target-label {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--gym-ink-dim);
-}
-.gym-target-step {
-  width: 46px;
-  height: 42px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-  font-family: var(--font-mono);
-  font-size: 17px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.gym-target-value {
-  min-width: 40px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 19px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.gym-target-weight {
-  height: 42px;
-  padding: 0 14px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 12px;
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.gym-target-clear {
-  height: 42px;
-  padding: 0 10px;
-  border: none;
-  background: transparent;
-  color: var(--gym-ink-faint);
-  font: inherit;
-  font-size: 12px;
-  text-decoration: underline;
-  cursor: pointer;
-}
 /* Drawn only for an account reading in pounds (log.js `alsoReadsLabel`). */
-.gym-target-reads {
-  margin: 6px 2px 0;
+.gym-target-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 14px;
+}
+/* The field is kilograms and says so inside itself: a number a lifter types is never converted. */
+.gym-target-unit {
+  flex: none;
   font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--gym-ink-faint);
+}
+/* The sign, in the field it belongs to: a decimal keyboard has no `−` and band-assisted work is a
+   negative load. A full touch target, so it is not a hairline beside the number. */
+.gym-target-sign {
+  flex: none;
+  width: 38px;
+  height: 34px;
+  margin: -6px -8px -6px 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--gym-ink-dim);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.gym-target-sign:hover {
+  color: var(--color-brand);
+}
+/* Said once on the sheet, beside the one field that takes a decimal. */
+.gym-target-decimal {
+  margin: 6px 2px 0;
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
-/* What the row will read, on the button that makes it read that. */
-.gym-target-set {
-  width: 100%;
-  height: 52px;
-  margin-top: 16px;
-  border: none;
-  border-radius: 16px;
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-}
-/* A second verb and not a hidden one: a routine is savable while incomplete. */
-.gym-target-open {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  height: 44px;
-  margin-top: 8px;
-  border: none;
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 13.5px;
-  cursor: pointer;
-}
-.gym-target-open-why {
+.gym-target-reads {
+  margin: 6px 2px 0;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--gym-ink-faint);
 }
@@ -2089,23 +1922,6 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink-faint);
 }
 
-.gym-picker-create {
-  width: 100%;
-  height: 50px;
-  margin-top: 10px;
-  border: 1px dashed var(--gym-line-strong);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.gym-picker-create:hover {
-  border-color: var(--color-brand);
-  color: var(--color-brand);
-}
 
 /* ── A movement's record ─────────────────────────────────────
    The one colour in it is the gold, and it marks one mark wherever that mark appears. */
@@ -2330,96 +2146,30 @@ button.gym-set:focus-visible .gym-set-fix,
   color: var(--gym-ink);
 }
 
-/* ── A name a lifter types — one field, one counter, one primary ── */
-.gym-name-sub {
-  margin: 4px 0 18px;
-  font-size: 13.5px;
-  color: var(--gym-ink-faint);
-}
-.gym-name-field {
-  position: relative;
-  margin-top: 4px;
-}
-.gym-name-input {
-  width: 100%;
-  height: 52px;
-  box-sizing: border-box;
-  padding: 0 62px 0 13px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: 13px;
-  background: var(--gym-sunken);
-  color: var(--gym-ink);
-  font: inherit;
-  font-size: 17px;
-  font-weight: 600;
-}
-.gym-name-input:focus {
-  outline: none;
-  border-color: var(--color-brand);
-}
+/* ── A name a lifter types — the field is the design system's, what rides inside it is gym's ──
+   Inside the field, in its trailing slot: the Input owns the box, this owns the count. */
 .gym-name-count {
-  position: absolute;
-  top: 50%;
-  right: 13px;
-  transform: translateY(-50%);
+  flex: none;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--gym-ink-faint);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-/* Already over is a real state: a name arrives prefilled from a store that keeps eighty, so `70/60`
-   is the true count of a field that has stopped accepting keys. */
+/* Already over is a real state: a name arrives prefilled from a store whose own ceiling is 240
+   BYTES, so `70/60` is the true count of a field that has stopped accepting keys. */
 .gym-name-count.is-over {
   color: var(--alarm-ink);
 }
+/* The caption over the equipment chooser, in the design system's own field-label treatment: it sits
+   in the same sheet as a design-system Input, and one sheet draws one kind of label. */
 .gym-name-label {
   display: block;
-  margin: 14px 0 0;
-  font-size: 12px;
+  margin: 14px 0 6px;
+  font-size: var(--text-sm);
   font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--gym-ink-dim);
-}
-/* Suggestions, never rules: no selected state at all. */
-.gym-name-openers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.gym-name-opener {
-  height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--gym-line);
-  border-radius: 99px;
-  background: var(--gym-surface);
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 13.5px;
-  cursor: pointer;
-}
-.gym-name-opener:hover {
-  border-color: var(--gym-line-strong);
-  color: var(--gym-ink);
-}
-.gym-name-save {
-  width: 100%;
-  height: 52px;
-  margin-top: 18px;
-  border: none;
-  border-radius: 16px;
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.gym-name-save.is-inert {
-  background: var(--gym-raised);
-  color: var(--gym-ink-faint);
-  cursor: default;
+  letter-spacing: normal;
+  color: var(--text-primary);
 }
 .gym-name-cancel {
   width: 100%;

@@ -406,11 +406,8 @@ struct NotesSignedOutStance: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x4) {
-            Text(Notes.title)
-                .font(WindmillFont.display(19))
-                .foregroundStyle(skin.ink)
-                .padding(.top, WindmillSpace.x6)
             Text(Notes.needsSignIn)
+                .padding(.top, WindmillSpace.x6)
                 .font(WindmillFont.body(15))
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)

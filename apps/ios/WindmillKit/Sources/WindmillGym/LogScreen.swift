@@ -113,23 +113,40 @@ struct LogScreen: View {
                                   reach: store.logFoot == .bottom
                                       ? .whole : .served(oldest: store.servedOldestMs),
                                   now: Int64(Date().timeIntervalSince1970 * 1000))
-        return ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-                head(weeks.count)
-                if store.recent.isEmpty, store.logFoot == .bottom {
-                    nothingYet
-                } else {
-                    ForEach(weeks) { week in
-                        divider(week)
+        return List {
+            Section { head(weeks.count) }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x5,
+                                          bottom: WindmillSpace.x2, trailing: WindmillSpace.x5))
+            if store.recent.isEmpty, store.logFoot == .bottom {
+                Section { nothingYet }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: WindmillSpace.x5,
+                                              bottom: 0, trailing: WindmillSpace.x5))
+            } else {
+                ForEach(weeks) { week in
+                    Section {
                         ForEach(week.rows) { row in self.row(row) }
+                    } header: {
+                        divider(week)
                     }
-                    foot
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 3, leading: WindmillSpace.x5,
+                                              bottom: 3, trailing: WindmillSpace.x5))
                 }
+                Section { foot }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: WindmillSpace.x3, leading: WindmillSpace.x5,
+                                              bottom: WindmillSpace.x6, trailing: WindmillSpace.x5))
             }
-            .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x8)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
         .safeAreaInset(edge: .bottom) { weighInChip }
         .sheet(isPresented: $weighingIn) {
             WeighInSheet(existing: nil, fixedDate: nil, drawsKgOnly: store.preferences.units == .lb,
@@ -147,9 +164,6 @@ struct LogScreen: View {
     // The last weigh-in and its age; nothing at all before the first, never a dash or a zero.
     private func head(_ weeks: Int) -> some View {
         VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-            Text("The log")
-                .font(WindmillFont.display(32))
-                .foregroundStyle(skin.ink)
             if let loaded = LogWeeks.loaded(sessions: store.recent.count, weeks: weeks) {
                 Text(loaded)
                     .font(GymType.numeral(13))
@@ -197,16 +211,15 @@ struct LogScreen: View {
         say(why.line("the weigh-in is saved on this device"))
     }
 
+    // One description and no action: the weigh-in chip below is this screen's only writing.
     private var nothingYet: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            Text("No sessions yet.")
-                .font(WindmillFont.body(16))
+        ContentUnavailableView {
+            Label("No sessions yet.", systemImage: "book.closed")
                 .foregroundStyle(skin.inkDim)
+        } description: {
             Text("The first one you log lands here, newest first.")
-                .font(GymType.numeral(13))
                 .foregroundStyle(skin.inkFaint)
         }
-        .padding(.top, WindmillSpace.x2)
     }
 
     private func divider(_ week: LogWeeks.Week) -> some View {
@@ -263,8 +276,9 @@ struct LogScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg).strokeBorder(skin.line, lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .padding(.bottom, WindmillSpace.x1)
+        .buttonStyle(.plain)
     }
 
     private func fact(_ text: String) -> some View {
@@ -281,16 +295,9 @@ struct LogScreen: View {
                 box("Load older", ink: skin.inkDim, edge: skin.lineStrong)
             }
         case .loading:
-            HStack(spacing: WindmillSpace.x2) {
-                Circle()
-                    .fill(skin.inkFaint)
-                    .frame(width: 7, height: 7)
-                Text("Loading")
-                    .font(WindmillFont.body(14, .semibold))
-                    .foregroundStyle(skin.inkFaint)
-            }
-            .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md).strokeBorder(skin.line, lineWidth: 1))
+            ProgressView()
+                .tint(skin.inkFaint)
+                .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
         case .bottom:
             if let first = store.recent.last {
                 Text("first session · \(Readout.dateWithYear(first.session.startedAtMs))")

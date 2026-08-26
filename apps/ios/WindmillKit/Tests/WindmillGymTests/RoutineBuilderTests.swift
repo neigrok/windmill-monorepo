@@ -53,9 +53,11 @@ final class RoutineDraftTests: XCTestCase {
                                  entries: [.init(exerciseId: "back-squat", targetSets: 5, targetReps: 5),
                                            .init(exerciseId: "chin-up", targetSets: 3)],
                                  position: 0)
+        // The sheet opens on what the row holds and commits the same three fields back.
         for line in draft.lines {
-            let opened = RoutineTarget(line.entry)
-            draft.set(line.id, sets: opened.sets, reps: opened.reps, weightKg: opened.weightKg)
+            let held = line.entry
+            draft.set(line.id, sets: held.targetSets ?? 0, reps: held.targetReps,
+                      weightKg: held.targetWeightKg)
         }
         XCTAssertEqual(draft.entries.map(\.targetSets), [5, 3])
         XCTAssertEqual(draft.entries.map(\.targetReps), [5, nil])
@@ -98,24 +100,46 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(copy.entries.map(\.targetWeightKg), [140])
     }
 
+    // The counter's silence below the last fifth is `RoutineEditorCopyTests`; this is what it counts
+    // once it does speak.
     func testTheCounterIsCharactersAgainstTheClientsOwnCap() {
-        XCTAssertEqual(RoutineDraft.counter("Heavy Thursday"), "14/60")
-        XCTAssertEqual(RoutineDraft.counter(""), "0/60")
-        XCTAssertEqual(RoutineDraft.counter("Тяжёлый четверг"), "15/60")
+        XCTAssertNil(RoutineDraft.counter("Heavy Thursday"))
+        XCTAssertNil(RoutineDraft.counter(""))
+        XCTAssertNil(RoutineDraft.counter("Тяжёлый четверг"))
+        XCTAssertEqual(RoutineDraft.counter("Heavy Thursday " + String(repeating: "a", count: 33)),
+                       "48/60")
         XCTAssertEqual(RoutineDraft.maxNameLength, 60, "the board's bound, in the unit it is drawn in")
-        XCTAssertEqual(RoutineDraft.maxNameBytes, 80, "and the column's, in the unit it counts in")
     }
 
-    func testANameIsCappedByTheBytesTheColumnHoldsAndNotOnlyByItsLetters() {
+    // The store's ceiling is 240 BYTES and sixty accented characters weigh 120, so an accent costs a
+    // name nothing: it is bounded and counted in characters here exactly as on web and Android.
+    func testAnAccentedNameGetsAllSixtyCharactersAndCountsAgainstSixty() {
+        let accented = String(repeating: "ü", count: 60)
+        XCTAssertEqual(accented.count, 60)
+        XCTAssertEqual(accented.utf8.count, 120)
+
+        XCTAssertEqual(RoutineDraft.capped(accented), accented, "no byte cuts a character off this name")
+        XCTAssertEqual(RoutineDraft.counter(accented), "60/60")
+
+        let draft = RoutineDraft(name: accented, entries: [.init(exerciseId: "deadlift")], position: 0)
+        XCTAssertTrue(draft.isSavable)
+        XCTAssertNil(draft.saveRefusal)
+        XCTAssertEqual(draft.write.name, accented, "the whole name reaches the log, all 120 bytes of it")
+
+        let overCap = String(repeating: "ü", count: 61)
+        XCTAssertEqual(RoutineDraft.capped(overCap), accented, "the sixty-first character is the only one refused")
+    }
+
+    func testACyrillicNameIsBoundedAndCountedByItsLettersAlone() {
         let cyrillic = String(repeating: "я", count: 45)
         XCTAssertEqual(cyrillic.count, 45)
         XCTAssertEqual(cyrillic.utf8.count, 90)
 
-        let kept = RoutineDraft.capped(cyrillic)
-        XCTAssertEqual(kept, String(repeating: "я", count: 40))
-        XCTAssertEqual(kept.utf8.count, 80, "the column holds 80 bytes and this is all of them")
-        XCTAssertEqual(RoutineDraft.counter(kept), "40/40")
-        XCTAssertEqual(RoutineDraft.counter(String(repeating: "я", count: 39)), "39/60")
+        XCTAssertEqual(RoutineDraft.capped(cyrillic), cyrillic, "ninety bytes is not a bound this field has")
+        XCTAssertNil(RoutineDraft.counter(cyrillic), "45 letters is below the last fifth, whatever it weighs")
+        XCTAssertEqual(RoutineDraft.counter(String(repeating: "я", count: 48)), "48/60")
+        XCTAssertEqual(RoutineDraft.counter(String(repeating: "я", count: 60)), "60/60")
+        XCTAssertNil(RoutineDraft.counter(String(repeating: "я", count: 20)))
     }
 
     func testALatinNameIsCappedAtSixtyLettersAndCountsAgainstSixty() {
@@ -125,16 +149,26 @@ final class RoutineDraftTests: XCTestCase {
         XCTAssertEqual(RoutineDraft.capped("Heavy Thursday"), "Heavy Thursday")
     }
 
-    func testTheCutNeverHalvesALetter() {
-        let emoji = String(repeating: "🏋️‍♀️", count: 20)
-        let kept = RoutineDraft.capped(emoji)
-        XCTAssertLessThanOrEqual(kept.utf8.count, RoutineDraft.maxNameBytes)
-        XCTAssertEqual(kept, String(emoji.prefix(kept.count)),
-                       "what is kept is whole letters off the front and never a piece of one")
+    // The cut is CODE POINTS, and this is the shape that tells that apart from anything else: one
+    // lifter emoji is one thing on screen and five code points underneath, so sixty code points is
+    // twelve of them. Cutting by what the eye counts would have let sixty of these through at 960
+    // bytes, four times the store's 240; cutting by code points bounds the bytes by construction.
+    func testTheCutIsCodePointsAndNeverHalvesOne() {
+        let lifter = "🏋️‍♀️"
+        XCTAssertEqual(lifter.unicodeScalars.count, 5)
+        XCTAssertEqual(lifter.count, 1)
+
+        let kept = RoutineDraft.capped(String(repeating: lifter, count: 61))
+        XCTAssertEqual(kept.unicodeScalars.count, RoutineDraft.maxNameLength)
+        XCTAssertEqual(kept, String(repeating: lifter, count: 12),
+                       "sixty code points is twelve of these, kept whole off the front")
+        XCTAssertEqual(kept.utf8.count, 192)
+        XCTAssertLessThanOrEqual(kept.utf8.count, 240, "the cap bounds the bytes; what the eye counts never did")
     }
 
-    func testTheSuggestionsAreOfferedAndNeverEnforced() {
-        XCTAssertEqual(RoutineDraft.suggestions, ["Push C", "Lower B", "Thursday"])
+    // The suggestion chips died with the naming step: a lifter naming their own training block does
+    // not need three guesses from us, and nothing validates a name against a list.
+    func testAnyNameAtAllIsANameAndTheEditorProposesNone() {
         XCTAssertTrue(RoutineDraft(name: "the slanty one day",
                                    entries: [.init(exerciseId: "deadlift")], position: 0).isSavable)
     }
@@ -150,100 +184,105 @@ final class RoutineDraftTests: XCTestCase {
     }
 }
 
-final class RoutineTargetTests: XCTestCase {
-    func testAnOpenRowOpensOnTheOpeningPairAndNamesNoWeight() {
-        let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift"))
-        XCTAssertEqual(target.sets, RoutineDraft.openingSets)
-        XCTAssertEqual(target.reps, RoutineDraft.openingReps)
-        XCTAssertNil(target.weightKg)
-        XCTAssertEqual(target.commitLine, "Set · 3 × 5")
+// The routine target's three typed fields. Six refusals, two bands that are not the logger's, and a
+// clear that is refused rather than cascaded.
+final class TargetEntryTests: XCTestCase {
+    func testAnEmptyFieldIsTheNullTargetAndNotARefusal() {
+        for typed in ["", "   "] {
+            XCTAssertNil(TargetEntry.readSets(typed).value)
+            XCTAssertNil(TargetEntry.readSets(typed).refusal)
+            XCTAssertNil(TargetEntry.readReps(typed).value)
+            XCTAssertNil(TargetEntry.readReps(typed).refusal)
+            XCTAssertNil(TargetEntry.readWeight(typed).value)
+            XCTAssertNil(TargetEntry.readWeight(typed).refusal)
+        }
+        XCTAssertEqual(TargetEntry.setsPlaceholder, "open")
+        XCTAssertEqual(TargetEntry.repsPlaceholder, "max")
+        XCTAssertEqual(TargetEntry.weightPlaceholder, "last time")
     }
 
-    func testARowWithNoRepTargetOpensOnMaxAndCommitsItUnchanged() {
-        let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        XCTAssertEqual(target.sets, 3)
-        XCTAssertNil(target.reps)
-        XCTAssertNil(target.weightKg)
-        XCTAssertEqual(target.commitLine, "Set · 3 × max")
+    func testASecondDecimalPointIsTheFirstRefusalATypistMeets() {
+        XCTAssertEqual(TargetEntry.readWeight("10,2,5").refusal, "One decimal point only.")
+        XCTAssertEqual(TargetEntry.readWeight("10.2.5").refusal, "One decimal point only.")
+        XCTAssertEqual(TargetEntry.readReps("5.5.5").refusal, "One decimal point only.")
     }
 
-    func testARowWithNoWeightOpensOnLastTimeAndCommitsItUnchanged() {
-        let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "back-squat", targetSets: 5,
-                                                      targetReps: 5))
-        XCTAssertEqual(target.sets, 5)
-        XCTAssertEqual(target.reps, 5)
-        XCTAssertNil(target.weightKg)
-        XCTAssertEqual(target.commitLine, "Set · 5 × 5")
-        XCTAssertEqual(target.ladderWeight, Prefill.emptyBarKg,
-                       "the four keys still need a number to read their bands off")
+    func testAnEntryThatIsNotYetANumberSaysSo() {
+        XCTAssertEqual(TargetEntry.readWeight("-").refusal, "That is not a number yet.")
+        XCTAssertEqual(TargetEntry.readWeight("12kg").refusal, "That is not a number yet.")
+        XCTAssertEqual(TargetEntry.readSets(".").refusal, "That is not a number yet.")
     }
 
-    func testEitherAbsenceCanBeGivenBackWithoutTouchingTheOthers() {
-        var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 4,
-                                                      targetReps: 8, targetWeightKg: 20))
-        target.reps = nil
-        XCTAssertEqual(target.commitLine, "Set · 4 × max · 20")
-        target.weightKg = nil
-        XCTAssertEqual(target.commitLine, "Set · 4 × max")
-        XCTAssertEqual(target.sets, 4)
+    func testACommaAndAPointBothReadAsADecimal() {
+        XCTAssertEqual(TargetEntry.readWeight("72,5").value, 72.5)
+        XCTAssertEqual(TargetEntry.readWeight("72.5").value, 72.5)
+        XCTAssertEqual(TargetEntry.decimalHint, "comma or point, both read as a decimal")
     }
 
-    func testFromMaxAndFromLastTimeTheFirstTapLandsOnTheOpeningNumber() {
-        var down = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        down.bumpReps(-1)
-        XCTAssertEqual(down.reps, RoutineDraft.openingReps)
-
-        var up = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        up.bumpReps(1)
-        XCTAssertEqual(up.reps, RoutineDraft.openingReps)
-
-        var lighter = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        lighter.bump(direction: -1, big: true)
-        XCTAssertEqual(lighter.weightKg, Prefill.emptyBarKg)
-
-        var heavier = RoutineTarget(RoutineWrite.Entry(exerciseId: "chin-up", targetSets: 3))
-        heavier.bump(direction: 1, big: false)
-        XCTAssertEqual(heavier.weightKg, Prefill.emptyBarKg)
+    func testALoadBeyondTheStoredRangeIsQuestionedAndABandAssistedOneIsNot() {
+        XCTAssertEqual(TargetEntry.readWeight("501").refusal, "Over 500 kg — check the number.")
+        XCTAssertEqual(TargetEntry.readWeight("500").value, 500)
+        XCTAssertEqual(TargetEntry.readWeight("-20").value, -20)
+        XCTAssertEqual(TargetEntry.readWeight("\u{2212}20").value, -20,
+                       "the readout is typographic, so the field has to read its own minus back")
+        XCTAssertNil(TargetEntry.readWeight("-501").value)
     }
 
-    func testARowThatAlreadyHasATargetOpensOnWhatItSays() {
-        let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 5,
-                                                     targetReps: 3, targetWeightKg: 110))
-        XCTAssertEqual(target.sets, 5)
-        XCTAssertEqual(target.reps, 3)
-        XCTAssertEqual(target.weightKg, 110)
+    // 1–100 here, and 1–99 at the rack. Two fields, two screens, two named bands (ledger `2i`).
+    func testTheRoutineTargetsRepsBandIsNotTheLiveLoggers() {
+        XCTAssertEqual(TargetEntry.repsBand, 1...100)
+        XCTAssertEqual(KeypadEntry.repsBand, 1...99)
+        XCTAssertEqual(TargetEntry.readReps("100").value, 100)
+        XCTAssertEqual(TargetEntry.readReps("101").refusal, "Whole reps, 1 to 100.")
+        XCTAssertEqual(TargetEntry.readReps("7.5").refusal, "Whole reps, 1 to 100.")
+        XCTAssertNil(KeypadEntry.read(KeypadEntry.Pad(opening: "100"), as: .reps, keeping: 5).value)
     }
 
-    func testTheWeightMovesOnTheLaddersOwnBands() {
-        var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 3,
-                                                     targetReps: 5, targetWeightKg: 140))
-        target.bump(direction: 1, big: false)
-        XCTAssertEqual(target.weightKg, Ladder.bump(weight: 140, direction: 1, big: false))
-        XCTAssertEqual(target.weightKg, 142.5)
-        target.bump(direction: -1, big: true)
-        XCTAssertEqual(target.weightKg, 132.5)
+    func testTheSetsBandIsTheDomainsOwn() {
+        XCTAssertEqual(TargetEntry.setsBand, 1...20)
+        XCTAssertEqual(TargetEntry.readSets("20").value, 20)
+        XCTAssertEqual(TargetEntry.readSets("21").refusal, "Sets, 1 to 20.")
     }
 
-    func testTheSetsAndRepsSteppersStayInsideTheWiresOwnBounds() {
-        var target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 1,
-                                                     targetReps: 1, targetWeightKg: 60))
-        target.bumpSets(-1)
-        target.bumpReps(-1)
-        XCTAssertEqual(target.sets, 1)
-        XCTAssertEqual(target.reps, 1)
-
-        var top = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 20,
-                                                  targetReps: 100, targetWeightKg: 60))
-        top.bumpSets(1)
-        top.bumpReps(1)
-        XCTAssertEqual(top.sets, 20)
-        XCTAssertEqual(top.reps, 100)
+    // A zero is not a small target, it is no target — and there is already a way to say that.
+    func testATypedZeroPointsAtTheClearRatherThanTheBand() {
+        XCTAssertEqual(TargetEntry.readSets("0").refusal,
+                       "A zero target is no target — clear the field instead.")
+        XCTAssertEqual(TargetEntry.readReps("0").refusal,
+                       "A zero target is no target — clear the field instead.")
+        XCTAssertEqual(TargetEntry.readWeight("0").refusal,
+                       "A zero target is no target — clear the field instead.")
+        XCTAssertEqual(TargetEntry.readWeight("0,0").refusal,
+                       "A zero target is no target — clear the field instead.")
     }
 
-    func testTheButtonSaysWhatItWillWrite() {
-        let target = RoutineTarget(RoutineWrite.Entry(exerciseId: "deadlift", targetSets: 3,
-                                                     targetReps: 5, targetWeightKg: 140))
-        XCTAssertEqual(target.commitLine, "Set · 3 × 5 · 140")
+    // `Routine.cpp:18`: an open entry names no sets, so it names no reps and no weight either.
+    func testClearingSetsIsRefusedWhileEitherOfTheOtherTwoHoldsAValue() {
+        XCTAssertEqual(TargetEntry.clearingSets(reps: "5", weight: ""),
+                       "Clear reps and weight first — an open line names neither.")
+        XCTAssertEqual(TargetEntry.clearingSets(reps: "", weight: "100"),
+                       "Clear reps and weight first — an open line names neither.")
+        XCTAssertEqual(TargetEntry.clearingSets(reps: "5", weight: "100"),
+                       "Clear reps and weight first — an open line names neither.")
+        XCTAssertNil(TargetEntry.clearingSets(reps: "", weight: ""))
+        XCTAssertNil(TargetEntry.clearingSets(reps: "  ", weight: " "))
+    }
+
+    // Every refusal the six name is one sentence, ending in a full stop, and none of them is a hint.
+    func testTheSixRefusalsAreThePinnedSentences() {
+        XCTAssertEqual([TargetEntry.oneDecimalPoint, TargetEntry.notANumber, TargetEntry.overWeight,
+                        TargetEntry.outOfRepsBand, TargetEntry.outOfSetsBand, TargetEntry.zeroTarget],
+                       ["One decimal point only.",
+                        "That is not a number yet.",
+                        "Over 500 kg — check the number.",
+                        "Whole reps, 1 to 100.",
+                        "Sets, 1 to 20.",
+                        "A zero target is no target — clear the field instead."])
+    }
+
+    // A typed load lands on the same grid the rack's ladder moves on.
+    func testATypedWeightIsRoundedOnTheLaddersGrid() {
+        XCTAssertEqual(TargetEntry.readWeight("102,505").value, 102.51)
     }
 }
 
@@ -263,21 +302,21 @@ final class RoutineReadoutTests: XCTestCase {
         XCTAssertFalse(routine([], trained: 1_700_000_000_000).isUntested)
     }
 
-    func testTheOpenRowFactNamesOneAndCountsMore() {
+    // One sentence for one state, said ONCE beneath a list that holds an open row and never per row
+    // (`15-the-routine.md`, C1). The target column's `open` is what says which rows they are.
+    func testTheOpenLineIsOnePinnedSentenceSaidOnceForTheWholeList() {
+        XCTAssertEqual(TargetEntry.openLine, "You decide the numbers at the rack.")
+
         let named = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
                                           targetReps: 3, targetWeightKg: 110),
                              RoutineEntry(position: 2, exerciseId: "barbell-row")])
-        XCTAssertEqual(RoutineReadout.openRows(named, in: catalog),
-                       "Barbell Row has no target — it will ask at the rack.")
-
-        let several = routine([RoutineEntry(position: 1, exerciseId: "deadlift"),
-                               RoutineEntry(position: 2, exerciseId: "barbell-row")])
-        XCTAssertEqual(RoutineReadout.openRows(several, in: catalog),
-                       "2 movements have no target — they will ask at the rack.")
+        XCTAssertEqual(named.entries.filter(\.isOpen).map(\.exerciseId), ["barbell-row"])
+        XCTAssertEqual(TargetEntry.openLineUnder(named.entries), TargetEntry.openLine)
 
         let none = routine([RoutineEntry(position: 1, exerciseId: "back-squat", targetSets: 5,
                                          targetReps: 3, targetWeightKg: 110)])
-        XCTAssertNil(RoutineReadout.openRows(none, in: catalog))
+        XCTAssertTrue(none.entries.filter(\.isOpen).isEmpty)
+        XCTAssertNil(TargetEntry.openLineUnder(none.entries))
     }
 
     func testTheMetaDatesOffTheHistoryAndCountsWhatIsThereNow() {

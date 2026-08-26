@@ -41,7 +41,8 @@ final class CoachShareTests: XCTestCase {
     // The word coach names the room and nothing else.
     func testTheShareNeverCarriesTheWordCoach() {
         let states: [Coach.State] = [.closed(), .closed(note: "no such session"), .working,
-                                     .live(share: share), .live(share: share, copied: true), .revoked]
+                                     .live(share: share),
+                                     .live(share: share, note: "the log didn’t answer"), .revoked]
         for state in states {
             let card = Coach.card(state, base: base)
             for sentence in [card.title, card.body, card.action, card.revoke ?? "", card.note ?? ""] {
@@ -69,19 +70,22 @@ final class CoachShareTests: XCTestCase {
         XCTAssertEqual(card.body, "Anyone who has this link can read this one workout. It stops "
                        + "working on \(Readout.day(share.expiresAtMs)), and revoking it kills it immediately.")
         XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
-        XCTAssertEqual(card.action, "Copy link")
+        XCTAssertEqual(card.action, "Share this workout")
         XCTAssertEqual(card.revoke, "Revoke the link")
         XCTAssertNil(card.note)
     }
 
-    func testCopyingSaysSoAndChangesNothingElseAboutTheCard() {
-        let copied = Coach.State.live(share: share).after(.copied)
-        let card = Coach.card(copied, base: base)
-
-        XCTAssertEqual(copied, .live(share: share, copied: true))
-        XCTAssertEqual(card.action, "Copied")
-        XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
-        XCTAssertEqual(card.revoke, "Revoke the link")
+    // The system share sheet reports nothing back, so there is no `copied` state to draw and the card
+    // never claims one: the live card's action is the share itself, at every moment it is live.
+    func testTheLiveCardHandsTheLinkToTheSystemAndClaimsNothingAboutTheClipboard() {
+        for state in [Coach.State.live(share: share),
+                      .live(share: share, note: "the log didn’t answer — the link is still live")] {
+            let card = Coach.card(state, base: base)
+            XCTAssertEqual(card.action, Coach.shareTitle)
+            XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
+            XCTAssertEqual(card.revoke, "Revoke the link")
+        }
+        XCTAssertFalse(Coach.card(.live(share: share), base: base).action.lowercased().contains("cop"))
     }
 
     func testARevokedLinkIsDeadInPlainWordsAndTheDoorReopens() {
@@ -104,17 +108,17 @@ final class CoachShareTests: XCTestCase {
     }
 
     func testARevokeThatFailedLeavesTheLinkLiveAndSaysWhy() {
-        let live = Coach.State.live(share: share, copied: true)
+        let live = Coach.State.live(share: share)
         let after = live.after(.revokeFailed("the log didn’t answer — the link is still live"))
         let card = Coach.card(after, base: base)
 
-        XCTAssertEqual(after, .live(share: share, copied: false,
+        XCTAssertEqual(after, .live(share: share,
                                     note: "the log didn’t answer — the link is still live"))
         XCTAssertEqual(card.title, "The link is live")
         XCTAssertEqual(card.link, "https://windmill.works/#/gym/shared/abc123")
         XCTAssertEqual(card.note, "the log didn’t answer — the link is still live")
         XCTAssertEqual(card.revoke, "Revoke the link", "the door stays open — it is still revocable")
-        XCTAssertEqual(card.action, "Copy link", "the note is the news, so the clipboard claim goes")
+        XCTAssertEqual(card.action, Coach.shareTitle, "and the share is still the way to hand it on")
     }
 
     func testTheStateMachineOnlyGoesLiveOnTheLogsOwnAnswer() {
@@ -124,8 +128,6 @@ final class CoachShareTests: XCTestCase {
         XCTAssertEqual(Coach.State.working.after(.mintFailed("no such session")),
                        .closed(note: "no such session"))
         XCTAssertEqual(Coach.State.working.after(.revoked), .revoked)
-        XCTAssertEqual(Coach.State.closed().after(.copied), .closed(),
-                       "there is nothing to copy before a link exists")
         XCTAssertEqual(Coach.State.revoked.after(.revokeFailed("gone")), .revoked,
                        "a revoke cannot fail on a link that is already dead")
     }

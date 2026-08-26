@@ -55,9 +55,6 @@ struct AskScreen: View {
     private var head: some View {
         HStack(spacing: WindmillSpace.x3) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(Ask.title)
-                    .font(WindmillFont.display(19))
-                    .foregroundStyle(skin.ink)
                 Text(Ask.subtitle)
                     .font(GymType.numeral(11))
                     .foregroundStyle(skin.inkFaint)
@@ -133,8 +130,9 @@ struct AskScreen: View {
     private func outcome(of exchange: AskExchange) -> some View {
         switch exchange.outcome {
         case .waiting:
-            Text(Ask.waiting)
+            ProgressView(Ask.waiting)
                 .font(GymType.numeral(12.5))
+                .tint(skin.inkFaint)
                 .foregroundStyle(skin.inkFaint)
         case .answered(let answer):
             answered(answer, of: exchange)
@@ -481,19 +479,15 @@ struct NotesDoorRow: View {
     }
 }
 
+// The room's name is the navigation bar's title on every stance; this head carries only the terms.
 private struct AskStanceHead: View {
     @Environment(\.gymSkin) private var skin
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(Ask.title)
-                .font(WindmillFont.display(19))
-                .foregroundStyle(skin.ink)
-            Text(Ask.subtitle)
-                .font(GymType.numeral(11))
-                .foregroundStyle(skin.inkFaint)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, WindmillSpace.x6)
+        Text(Ask.subtitle)
+            .font(GymType.numeral(11))
+            .foregroundStyle(skin.inkFaint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, WindmillSpace.x6)
     }
 }

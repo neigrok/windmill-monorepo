@@ -16,6 +16,10 @@ public protocol ProductModule {
     var entry: EntryDoor { get }
 
     func holdings(_ account: Account) -> Holdings
+
+    // True when the room draws its own bar across the top. The shell then lays no capsule over it,
+    // and the room seats `CapsuleButton` leading and `YouSeat` trailing in that bar's own toolbar.
+    var hostsTopChrome: Bool { get }
 }
 
 public struct EntryDoor {
@@ -87,9 +91,35 @@ public struct RoomChromePreference: PreferenceKey {
     }
 }
 
+// How many screens the room has pushed on top of its own root. The shell's go-home swipe is what the
+// leading edge means only at 0; deeper, that edge is the room's back and the shell does not take it.
+// A room writes this ONCE, at its root — the deepest wins if more than one writer ever appears.
+public struct RoomDepthPreference: PreferenceKey {
+    public static let defaultValue = 0
+    public static func reduce(value: inout Int, nextValue: () -> Int) {
+        value = max(value, nextValue())
+    }
+}
+
+// Something is running in another room: the capsule's dot, wherever the capsule is drawn.
+private struct ElsewhereRunningKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+public extension EnvironmentValues {
+    var elsewhereRunning: Bool {
+        get { self[ElsewhereRunningKey.self] }
+        set { self[ElsewhereRunningKey.self] = newValue }
+    }
+}
+
 public extension View {
     func roomChrome(_ scheme: ColorScheme) -> some View {
         preference(key: RoomChromePreference.self, value: scheme)
+    }
+
+    func roomDepth(_ depth: Int) -> some View {
+        preference(key: RoomDepthPreference.self, value: depth)
     }
 }
 
@@ -114,6 +144,8 @@ public extension ProductModule {
     var presence: Presence { .here }
 
     func holdings(_ account: Account) -> Holdings { .none }
+
+    var hostsTopChrome: Bool { false }
 
     // From `presence` when the room lives on another surface, else from `entry`.
     var caveat: String? {

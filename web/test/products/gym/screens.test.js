@@ -15,13 +15,25 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('the editor’s Duplicate copies the routine as stored, and a fresh routine offers none', () => {
+test('Duplicate lives in an overflow and nowhere else, on the row and in the editor’s head', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes("duplicateRoutine(view.data, { id: mintId('rt_') })"), true);
   assert.equal(source.includes("duplicateRoutine(draft,"), false);
-  const foot = source.indexOf('className="gym-editor-duplicate"');
-  assert.notEqual(foot, -1);
-  assert.equal(source.lastIndexOf('{!fresh && (', foot) > source.lastIndexOf('<RoutineHistory', foot), true);
+  assert.equal(source.includes("<Overflow\n                label={`More for ${routine.name}`}\n                items={[{ label: 'Duplicate', run: () => duplicate(routine) }]}\n              />"), true);
+  assert.equal(source.includes("{!fresh && <Overflow label=\"More for this routine\" items={[{ label: 'Duplicate', run: copy }]} />}"), true);
+  assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false, 'the two drawn buttons are gone');
+  assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
+  // Delete is not in the overflow, and there is still no way to delete a routine on this surface:
+  // 13-gestures.md gates it behind a withheld delete that does not exist yet.
+  assert.equal(source.includes('deleteRoutine'), false);
+  for (const file of gymFiles()) {
+    if (!/\.jsx$/.test(file)) continue;
+    assert.equal(spoken(fs.readFileSync(file, 'utf8')).includes('gymApi.deleteRoutine'), false, file);
+  }
+  const overflow = spoken(read('Overflow.jsx'));
+  assert.equal(overflow.includes("aria-haspopup=\"menu\""), true);
+  assert.equal(overflow.includes("role=\"menuitem\""), true);
+  assert.equal(overflow.includes("if (event.key === 'Escape') setOpen(false);"), true);
 });
 
 test('the routine row’s proposal flag counts nothing', () => {
@@ -37,22 +49,29 @@ test('every list of a routine’s entries is keyed on the position as well as th
   assert.equal(source.includes('key={entry.exerciseId}'), false);
 });
 
-test('the tab bar draws the same number of tabs the grid has columns for', () => {
-  const tabs = read('GymApp.jsx').match(/className=\{screen === '[a-z]+' \? 'gym-tab is-on' : 'gym-tab'\}/g) ?? [];
-  const grid = /\.gym-tabs \{[^}]*grid-template-columns: repeat\((\d+), 1fr\)/.exec(read('gym.css'));
-  assert.equal(tabs.length, 3);
-  assert.equal(grid?.[1], String(tabs.length));
-  assert.equal(read('GymApp.jsx').includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true);
+test('the rail is the design system’s, it reserves its own height, and the room count is stated once', () => {
+  const app = read('GymApp.jsx');
+  const items = app.match(/\{ label: '[^']+', href: [^,]+, active: screen === '[a-z]+' \}/g) ?? [];
+  assert.equal(items.length, 3);
+  assert.equal(app.includes("const TAB_SCREENS = ['routines', 'log', 'coach'];"), true);
+  assert.equal(app.includes("import { Button, TabRail, Toast } from '../../design-system/index.js';"), true);
+  assert.equal(/\.gym-tabs|\.gym-tab\b/.test(read('gym.css')), false, 'the twin is gone with the adoption');
+  const rail = fs.readFileSync(path.join(GYM, '../../design-system/navigation/TabRail.jsx'), 'utf8');
+  assert.equal(rail.includes('gridTemplateColumns: `repeat(${items.length}, 1fr)`'), true, 'the grid counts the items it was given');
+  assert.equal(rail.includes("aria-current={item.active ? 'page' : undefined}"), true);
+  assert.equal(rail.includes("<div aria-hidden=\"true\" style={{ height: RAIL_HEIGHT, flex: 'none' }} />"), true);
+  // The rail reserves its height, so the column no longer clears furniture it cannot see.
+  assert.equal(/\.gym-column \{[^}]*padding: 76px 16px 24px;/.test(read('gym.css')), true);
 });
 
 test('the tabs are Routines · The log · Coach, in that order, and #/gym is the first of them', () => {
   const app = read('GymApp.jsx');
   const bar = app.slice(app.indexOf('function TabBar'));
-  assert.equal(bar.includes("href={ROUTINES_HREF}>Routines</a>"), true);
-  assert.equal(bar.includes('href="#/gym/log">The log</a>'), true);
-  assert.equal(bar.includes('href={COACH_HREF}>Coach</a>'), true);
-  assert.ok(bar.indexOf('Routines</a>') < bar.indexOf('The log</a>'));
-  assert.ok(bar.indexOf('The log</a>') < bar.indexOf('Coach</a>'));
+  assert.equal(bar.includes("{ label: 'Routines', href: ROUTINES_HREF, active: screen === 'routines' },"), true);
+  assert.equal(bar.includes("{ label: 'The log', href: '#/gym/log', active: screen === 'log' },"), true);
+  assert.equal(bar.includes("{ label: 'Coach', href: COACH_HREF, active: screen === 'coach' },"), true);
+  assert.ok(bar.indexOf("'Routines'") < bar.indexOf("'The log'"));
+  assert.ok(bar.indexOf("'The log'") < bar.indexOf("'Coach'"));
   assert.equal(fs.existsSync(path.join(GYM, 'Today.jsx')), false, 'Today is deleted as a screen');
   assert.equal(app.includes("'today'"), false);
   assert.equal(app.includes("{tabOf(screen) === 'routines' && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}"), true);
@@ -114,7 +133,7 @@ test('Coach is a tab root: a column in the rail, no back link, its threads and n
   const app = read('GymApp.jsx');
   const rooms = /const TAB_SCREENS = \[([^\]]*)\];/.exec(app);
   assert.equal(rooms?.[1], "'routines', 'log', 'coach'");
-  assert.equal(/\.gym-tabs \{[^}]*grid-template-columns: repeat\(3, 1fr\)/.test(read('gym.css')), true);
+  assert.equal((app.match(/active: screen === '[a-z]+'/g) ?? []).length, 3);
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('gym-back'), false, 'a tab root keeps no back link');
   assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE} ›</a>'), true);
@@ -368,7 +387,7 @@ test('every re-read of the session lets go of the corrections this screen was ho
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(movesAfterRead);\n    view.retry();\n  };'), true);
   assert.equal(source.includes('if (error.setNotFound) reread();'), true);
-  assert.equal(source.includes('className="gym-retry" onClick={reread}'), true);
+  assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
 
@@ -470,10 +489,7 @@ test('a picker row says it has no last time, only once the read behind it has an
 
 test('the empty routines home offers to build one, and this surface still starts nothing', () => {
   const source = read('Routines.jsx');
-  assert.equal(
-    source.includes('<a className="gym-routines-build" href={routineHref(NEW_ROUTINE_ID)}>Build a routine</a>'),
-    true,
-  );
+  assert.equal(source.includes('<Button full href={routineHref(NEW_ROUTINE_ID)}>Build a routine</Button>'), true);
   assert.equal(source.includes("view.phase === 'ready' && view.data.length === 0"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?)$/.test(file)) continue;
@@ -755,6 +771,65 @@ test('the name counter is gated on the last fifth wherever a name is typed, off 
   assert.equal(/export const NAME_COUNT_FROM = 48;/.test(read('log.js')), true);
 });
 
+test('the token bridge: one block per skin, and no shared role pointed back at gym’s alias of it', () => {
+  const css = read('gym.css');
+  const start = css.indexOf('/* ── The bridge —');
+  assert.notEqual(start, -1, 'the bridge is a named block, not a scatter of overrides');
+  const bridge = css.slice(start, css.indexOf('/* Everything below paints'));
+  const blocks = bridge.match(/\.gym-root\[data-theme="(dark|light)"\] \{/g) ?? [];
+  assert.deepEqual(blocks, ['.gym-root[data-theme="dark"] {', '.gym-root[data-theme="light"] {']);
+  for (const role of ['--text-on-accent: var(--gym-on-accent);', '--color-danger: var(--alarm-ink);', '--focus-ring:']) {
+    assert.equal((bridge.match(new RegExp(role.replace(/[-()*+?.\\^$|[\]]/g, '\\$&'), 'g')) ?? []).length, 2, role);
+  }
+  // A cycle is the trap: --gym-surface IS var(--surface-card), so the bridge may never restate one.
+  for (const alias of ['--surface-card', '--surface-canvas', '--surface-hover', '--surface-sunken',
+    '--text-primary', '--text-secondary', '--text-tertiary', '--color-brand', '--border-subtle',
+    '--border-default', '--color-success', '--color-danger-bg']) {
+    assert.equal(bridge.includes(`${alias}:`), false, `${alias} is re-declared inside .gym-root`);
+  }
+  // And the one gym token the bridge reads must not read back through it.
+  assert.equal(/--alarm-ink: var\(--color-danger\)/.test(css), false);
+  assert.equal(/--gym-on-accent: var\(/.test(css), false);
+  // Nothing outside the bridge overrides a design-system role for one component.
+  const painted = css.slice(css.indexOf('/* Everything below paints'));
+  assert.equal(/--focus-ring:|--text-on-accent:|--color-danger:/.test(painted), false);
+});
+
+test('the picker opens on the six it counted, then the catalogue, and says which is which', () => {
+  const picker = read('logger/MovementPicker.jsx');
+  assert.equal(picker.includes('const { featured, matches, empty, create } = movementOptions({ catalog, order, query, sessions: opened });'), true);
+  // Read once, at the first read that ANSWERS: an empty window is re-seeded until the log lands, and
+  // from then on the poll behind the picker keeps landing sessions and the six may not reshuffle
+  // under a finger already reaching for one of them.
+  assert.equal(picker.includes('  const held = useRef([]);\n'), true);
+  assert.equal(picker.includes('  if (held.current.length === 0) held.current = sessions.slice(0, TRAINED_WINDOW);\n'), true);
+  assert.equal(picker.includes('  const opened = held.current;\n'), true);
+  assert.equal(picker.includes('useState(() => sessions'), false, 'the window is not frozen at the first render');
+  assert.equal(picker.includes('<p className="gym-picker-group">{FEATURED_HEAD}</p>'), true);
+  assert.equal((picker.match(/<ul className="gym-picker-list">/g) ?? []).length, 2);
+  // The count comes off the log the page already holds — no read of its own, and no invented rank.
+  const rules = speech('logger/movements.js');
+  assert.equal(rules.includes('for (const name of session.exercises ?? []) counted.set(name, (counted.get(name) ?? 0) + 1);'), true);
+  assert.equal(/gymApi|fetch\(/.test(rules), false, 'the six cost no read');
+  for (const host of ['Routines.jsx', 'Backfill.jsx', 'Record.jsx']) {
+    assert.equal(read(host).includes('sessions={log.summaries}'), true, host);
+  }
+  // The head names the shortcut in the bytes both phones draw, and asserts no ranking over a log
+  // this page has not read.
+  assert.equal(rules.includes("export const FEATURED_HEAD = 'The six';"), true);
+  // The count is over a fixed depth, so tapping Older on the Log tab cannot reshuffle the six.
+  assert.equal(rules.includes('export const TRAINED_WINDOW = 50;'), true);
+  assert.equal(rules.includes('for (const session of sessions.slice(0, TRAINED_WINDOW))'), true);
+  // And the section is never gated: an empty query shows six on the first session as on the five
+  // hundredth, because what the log cannot fill comes off the opener list every surface draws.
+  assert.equal(rules.includes("const featured = term === '' ? mostTrained(available, sessions) : [];"), true);
+  assert.equal(/firstSession|isFirstSession|sessions\.length === 0/.test(rules), false);
+  // The catalogue's boundary is wider than the eyebrow's own offset, or the head reads as the head
+  // of every row under it.
+  assert.equal(/\.gym-picker-list \+ \.gym-picker-list \{\n  margin-top: 22px;\n\}/.test(read('gym.css')), true);
+  assert.equal(/\.gym-picker-group \{[^}]*margin: 14px 0 0;/.test(read('gym.css')), true);
+});
+
 test('Daylight carries no glow token and no black shadow tuned for basalt', () => {
   const css = read('gym.css');
   const light = css.slice(css.indexOf('.gym-root[data-theme="light"] {'), css.indexOf('/* Everything below paints'));
@@ -762,7 +837,8 @@ test('Daylight carries no glow token and no black shadow tuned for basalt', () =
   assert.equal(css.includes('.gym-root[data-theme="light"] .gym-live-dot {\n  box-shadow: none;\n}'), true);
   const painted = css.slice(css.indexOf('/* Everything below paints'));
   assert.equal(/rgba\(0, 0, 0/.test(painted), false);
-  assert.equal(/\.gym-toast \{[^}]*box-shadow: var\(--shadow-lg\)/.test(css), true);
+  const toast = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Toast.jsx'), 'utf8');
+  assert.equal(toast.includes("boxShadow: 'var(--shadow-lg)'"), true, 'the transient’s depth is the token’s');
   assert.equal(/\.gym-entry\.is-dragging \{[^}]*box-shadow: var\(--shadow-md\)/.test(css), true);
 });
 
@@ -835,23 +911,79 @@ test('no gym surface counts a decline, on the device or on the wire', () => {
   assert.equal(read('Finish.jsx').includes('onClick={() => setOffered(false)}'), true);
 });
 
-test('a routine written from scratch is named before it is filled in, and only then', () => {
+test('the naming interstitial is gone: the name is the editor’s first field, and Save waits for it', () => {
   const source = read('Routines.jsx');
-  assert.equal(source.includes('const [naming, setNaming] = useState(fresh);'), true);
-  assert.equal(source.includes('if (naming) {'), true);
-  assert.equal(source.includes('Next · add movements'), true);
-  assert.equal(source.includes('onClick={() => onName(suggestion)}'), true);
-  assert.equal(/suggestion === |selectedSuggestion|chosenName/.test(source), false);
-  const step = source.slice(source.indexOf('function NameTheRoutine'), source.indexOf('function RoutineHistory'));
-  assert.equal(/createRoutine|replaceRoutine/.test(step), false);
+  for (const gone of ['NameTheRoutine', 'naming', 'Next · add movements', 'NAME_SUGGESTIONS', 'gym-name-opener']) {
+    assert.equal(source.includes(gone), false, gone);
+  }
+  assert.equal(read('routines.js').includes('NAME_SUGGESTIONS'), false, 'the suggestions go with the screen');
+  assert.equal(/gym-name-sub|gym-name-openers|gym-name-opener/.test(read('gym.css')), false);
+  // The field the interstitial existed to collect, focused, on the screen that always had it.
+  assert.equal(source.includes('autoFocus={fresh}'), true);
+  assert.equal(source.includes('placeholder="Name this routine"'), true);
+  // The Save gate survives the screen, and prints one refusal at a time.
+  assert.equal(source.includes("const missing = draft.name.trim() === '' ? 'Name it to save it.' : (draft.entries.length === 0 ? 'A routine is at least one movement.' : null);"), true);
+  assert.equal(source.includes('disabled={Boolean(missing) || saving}'), true);
+  assert.equal(source.includes('{missing && <p className="gym-editor-missing">{missing}</p>}'), true);
 });
 
-test('the target sheet steps a weight on the logger’s ladder and states no step size of its own', () => {
+test('the ladder and the keypad are rack controls: off the target sheet, kept on the fix sheet', () => {
   const source = read('Routines.jsx');
-  assert.equal(source.includes("import { LADDER_KEYS, ladderLabels, bump } from './logger/ladder.js';"), true);
-  assert.equal(source.includes('const rungs = ladderLabels(draft.targetWeightKg ?? EMPTY_BAR_KG);'), true);
-  assert.equal(source.includes('bump(held.targetWeightKg, rung.direction, rung.big)'), true);
+  for (const rack of ['Keypad', 'LADDER_KEYS', 'ladderLabels', 'gym-rungs', 'gym-target-step', 'gym-target-clear']) {
+    assert.equal(source.includes(rack), false, `the target sheet still draws ${rack}`);
+  }
+  assert.equal(/gym-target-row|gym-target-step|gym-target-value|gym-target-weight|gym-target-clear|gym-target-open/.test(read('gym.css')), false);
+  // The fix sheet is at the rack (16-the-workout.md) and keeps both.
+  const fix = read('FixSheet.jsx');
+  assert.equal(fix.includes("import { Keypad } from './logger/Keypad.jsx';"), true);
+  assert.equal(fix.includes("import { LADDER_KEYS, ladderLabels } from './logger/ladder.js';"), true);
+  assert.equal(fs.existsSync(path.join(GYM, 'logger', 'Keypad.jsx')), true);
+  // The digits and the decimal separator read as themselves; the pad's two glyphs are named through
+  // one lookup, and ± takes the target sheet's own bytes.
+  const keypad = read('logger/Keypad.jsx');
+  assert.equal(keypad.includes("const SPOKEN = { '±': 'Flip the sign', [DELETE]: 'Delete' };"), true);
+  assert.equal(keypad.includes('aria-label={SPOKEN[key]}'), true);
+  assert.equal(keypad.includes('aria-label={SPOKEN[DELETE]}'), true);
+  assert.equal((keypad.match(/aria-label="Flip the sign"/g) ?? []).length, 0, 'one key, not twelve');
+  assert.equal(source.includes('aria-label="Flip the sign"'), true, 'the sheet names it in the same bytes');
   assert.equal(/\d\.\d/.test(speech('Routines.jsx').replace(/strokeWidth=\{[\d.]+\}/g, '')), false);
+});
+
+test('the target sheet is three typed fields, each saying what empty means, and one refusal at a time', () => {
+  const source = read('Routines.jsx');
+  assert.equal(source.includes('placeholder={OPEN_PLACEHOLDER}'), true);
+  assert.equal(source.includes('placeholder={MAX_PLACEHOLDER}'), true);
+  assert.equal(source.includes('placeholder={LAST_TIME_PLACEHOLDER}'), true);
+  assert.equal(source.includes("inputMode=\"decimal\""), true);
+  assert.equal((source.match(/<Input/g) ?? []).length, 4, 'the name field and the sheet’s three');
+  assert.equal(source.includes("const refusalFor = (field) => (refusal?.field === field ? refusal.message : undefined);"), true);
+  assert.equal(source.includes('{DECIMAL_NOTE}'), true);
+  assert.equal((source.match(/DECIMAL_NOTE/g) ?? []).length, 2, 'said once on the sheet: the import and the one use');
+  // The escape hatches came off with the ladder: clearing a field IS the escape.
+  for (const gone of ['take it to max', 'use last time', 'Leave it open', 'decide at the rack']) {
+    assert.equal(source.includes(gone), false, gone);
+  }
+  assert.equal(source.includes('onOpen'), false, 'there is no second verb to leave a line open');
+  // The refused clear keeps the field's value and its SELECTION, or backspace-then-retype — the way a
+  // one-digit number is changed on a phone — would append to the digit that never left.
+  assert.equal(source.includes('input.value = next.sets;'), true);
+  assert.equal(source.includes('input.setSelectionRange(0, next.sets.length);'), true);
+  // The sheet's Save-side twin: the head's commit is a reach-band-sized control like the field beside it.
+  assert.equal(/<Button\n\s+size="md"\n\s+disabled=\{Boolean\(missing\) \|\| saving\}/.test(source), true);
+});
+
+test('the two ways into an open line are opposite acts, so they take opposite sentences', () => {
+  const rules = read('routines.js');
+  assert.equal(rules.includes("export const CLEAR_REPS_AND_WEIGHT = 'Clear reps and weight first — an open line names neither.';"), true);
+  assert.equal(rules.includes("export const NAME_SETS_FIRST = 'Name the sets first — an open line names neither.';"), true);
+  // The pinned sentence belongs to the clear and to nothing else; the mirror state names the way out
+  // the lifter actually wants, which is to name the sets they just typed reps for.
+  assert.equal(rules.includes("  if (fields.clearRefused) return { field: 'sets', message: CLEAR_REPS_AND_WEIGHT };"), true);
+  assert.equal(rules.includes("  if (open && named) return { field: 'sets', message: NAME_SETS_FIRST };"), true);
+  // And the sheet opens on what the row holds: no target is invented for the lifter to delete.
+  assert.equal(rules.includes('targetDraftOf'), false);
+  assert.equal(/NEW_ENTRY_SETS|NEW_ENTRY_REPS/.test(rules), false);
+  assert.equal(rules.includes("    sets: entry.targetSets == null ? '' : String(entry.targetSets),"), true);
 });
 
 test('the target sheet says there is nothing to prefill from, and prefills nothing', () => {
@@ -868,13 +1000,30 @@ test('the target sheet says there is nothing to prefill from, and prefills nothi
   }
 });
 
-test('a line can be left open from the sheet, and the screen says which lines will ask', () => {
+test('the open line is one sentence, drawn once beneath the list and once on the sheet', () => {
   const source = read('Routines.jsx');
-  assert.equal(source.includes('Leave it open'), true);
-  assert.equal(source.includes('decide at the rack'), true);
-  assert.equal(source.includes('const openTargets = openTargetsLine(draft.entries, log.catalog);'), true);
-  assert.equal(source.includes('{openTargets && <p className="gym-editor-open">{openTargets}</p>}'), true);
-  assert.equal(/\.gym-editor-untested \{[^}]*var\(--alarm-ink\)/.test(read('gym.css')), false);
+  // Once under the whole list, when at least one row is open — never one copy per open row — and
+  // never while a target sheet stands over the list: up there the sheet owns the sentence, so the
+  // list's copy is not left lit behind the scrim beside the sheet's own refusal.
+  assert.equal(
+    source.includes('{target == null && hasOpenEntry(draft.entries) && <p className="gym-open-line">{OPEN_LINE}</p>}'),
+    true,
+  );
+  // And once on the target sheet, while the line it is holding is the open one AND nothing on the
+  // sheet is being refused: a refusal and a blessing of the same state are never drawn together.
+  assert.equal(source.includes('{!refusal && isOpenFields(fields) && <p className="gym-open-line">{OPEN_LINE}</p>}'), true);
+  assert.equal((source.match(/OPEN_LINE/g) ?? []).length, 3, 'the import and the two placements');
+  assert.equal(source.includes('gym-entry-open'), false, 'the per-row copy is gone');
+  assert.equal(/\.gym-entry-open\b/.test(read('gym.css')), false);
+  assert.equal(read('routines.js').includes('export function hasOpenEntry(entries) {'), true);
+  assert.equal(source.includes('openTargetsLine'), false);
+  assert.equal(read('routines.js').includes('openTargetsLine'), false);
+  assert.equal(read('routines.js').includes("export const OPEN_LINE = 'You decide the numbers at the rack.';"), true);
+  assert.equal(/gym-editor-open\b/.test(read('gym.css')), false);
+  // The row still names itself open in its own target button, so nothing above the list has to.
+  assert.equal(read('log.js').includes("export const OPEN_TARGET = 'open';"), true);
+  assert.equal(/\.gym-editor-untested/.test(read('gym.css')), false, 'the pill is the design system’s Tag');
+  assert.equal(source.includes('<Tag size="sm">{UNTESTED}</Tag>'), true);
 });
 
 test('the create door asks how a movement is loaded, and mints nothing before it is answered', () => {
@@ -883,6 +1032,13 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(picker.includes('function NewMovement({ draft, onChange, onCancel, onCreate }) {'), true);
   assert.equal(picker.includes('Create and add'), true);
   assert.equal(picker.includes('How is it loaded?'), true);
+  // One sheet draws one kind of label: the caption over the chooser is the design system's field
+  // label, the same treatment the Input above it draws for `Name`.
+  const label = read('gym.css').match(/\.gym-name-label \{([^}]*)\}/)[1];
+  assert.equal(label.includes('font-size: var(--text-sm);'), true);
+  assert.equal(label.includes('font-weight: 700;'), true);
+  assert.equal(label.includes('color: var(--text-primary);'), true);
+  assert.equal(label.includes('letter-spacing: normal;'), true);
   assert.equal(picker.includes('{EQUIPMENT_CHOICES.map((choice) => ('), true);
   assert.equal(/'(cable|kettlebell)'/.test(picker), false);
   assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
@@ -911,10 +1067,11 @@ test('the rename sheet’s proof is the page’s own read, and no number on it i
   assert.equal(sheet.includes('gym-sheet-close'), false);
 });
 
-test('every name a lifter types is capped once, and the counter counts the same field', () => {
+test('every name a lifter types is capped once, in code points, and the counter counts the same field', () => {
   for (const file of ['Routines.jsx', 'Record.jsx', 'logger/MovementPicker.jsx']) {
     const source = read(file);
-    assert.equal(source.includes('maxLength={NAME_MAX}'), true, file);
+    assert.equal(source.includes('cappedName(event.target.value)'), true, file);
+    assert.equal(source.includes('maxLength'), false, `${file}: maxLength counts UTF-16 units, not characters`);
     assert.equal(/const NAME_MAX = \d+/.test(source), false, file);
   }
   for (const file of ['Record.jsx', 'logger/MovementPicker.jsx']) {
@@ -940,7 +1097,7 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
   assert.equal(log.includes('<WeighInChip onOpen={() => setWeighing(true)} />'), true);
   assert.equal((log.match(/<WeighInSheet/g) ?? []).length, 1);
   const screen = read('bodyweight/Bodyweight.jsx');
-  assert.equal(screen.includes("import { DotChart, Tabs } from '../../../design-system/index.js';"), true);
+  assert.equal(screen.includes("import { Button, DotChart, Tabs } from '../../../design-system/index.js';"), true);
   assert.equal(fs.existsSync(path.join(GYM, '../../design-system/charts/DotChart.jsx')), true, 'a new primitive, authored in the design system');
   assert.equal(/Keypad|LADDER|ladder|gym-rungs|record-bar/.test(screen), false, 'no ladder, no keypad, no bar chart');
   assert.equal(screen.includes('<WeighInChip'), false, 'no second door on the chart screen');
@@ -968,7 +1125,7 @@ test('bodyweight: the reading heads the log, the chip is the one door in the rea
 
 test('the review sheet: one Apply in a scroll-gated dialog, kept rows folded in place, the card reads still waiting', () => {
   const proposals = read('Proposals.jsx');
-  assert.equal(proposals.includes("import { Dialog } from '../../design-system/index.js';"), true);
+  assert.equal(proposals.includes("import { Button, Dialog } from '../../design-system/index.js';"), true);
   assert.equal(proposals.includes('gate="scrolled"'), true);
   assert.equal(proposals.includes('disabled={!seen || deciding}'), true);
   assert.equal(proposals.includes('className="gym-proposal-turn-down"'), true);

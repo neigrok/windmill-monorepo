@@ -22,14 +22,26 @@ class ProgramTests {
         assertEquals(sixty, Program.capped(sixty))
         assertEquals("the 61st character is refused, the first sixty stand", sixty, Program.capped(sixty + "b"))
         assertEquals("60/60", Program.counter(sixty))
-        assertEquals("14/60", Program.counter("Heavy Thursday"))
+        assertNull("a name nowhere near the cap counts nothing out loud",
+                   Program.counter("Heavy Thursday"))
+    }
+
+    // The last fifth and no sooner — the same threshold and the same silence as the note editor's
+    // byte counter, because a lifter should not have to learn two rules for one idea.
+    @Test
+    fun testTheCounterAppearsInTheLastFifthAndIsSilentBeforeIt() {
+        assertEquals(48, Program.counterFrom)
+        assertNull(Program.counter("a".repeat(47)))
+        assertEquals("48/60", Program.counter("a".repeat(48)))
+        assertEquals("53/60", Program.counter("a".repeat(53)))
     }
 
     @Test
     fun testTheCounterCountsCharactersAndNotUtf16Units() {
-        assertEquals("2/60", Program.counter("💪A"))
+        assertNull("two characters, whatever their width", Program.counter("💪A"))
         val wide = "💪".repeat(30)
-        assertEquals("30/60", Program.counter(wide))
+        assertNull("thirty characters is below the threshold, not sixty units", Program.counter(wide))
+        assertEquals("50/60", Program.counter("💪".repeat(50)))
         assertEquals("the 31st emoji still fits", 31, Program.length(Program.capped(wide + "💪")))
         assertEquals("and the 61st does not", 60, Program.length(Program.capped("💪".repeat(61))))
     }
@@ -51,15 +63,12 @@ class ProgramTests {
             Program.renamed("Push A", "PUSH A"))
     }
 
+    // The roll-up that named every open row is gone: one sentence, `TargetEntry.openLine`, is drawn
+    // once beneath a list that holds an open row, and the row's own target column says WHICH.
     @Test
-    fun testTheOpenLineNamesEveryRowThatWillAskAtTheRack() {
-        assertNull(Program.openLine(emptyList()))
-        assertEquals("Barbell Row has no target — it will ask at the rack.",
-            Program.openLine(listOf("Barbell Row")))
-        assertEquals("Deadlift and Barbell Row have no targets — they will ask at the rack.",
-            Program.openLine(listOf("Deadlift", "Barbell Row")))
-        assertEquals("Deadlift, Barbell Row and Chin Up have no targets — they will ask at the rack.",
-            Program.openLine(listOf("Deadlift", "Barbell Row", "Chin Up")))
+    fun testTheOpenLineIsOneSentenceAndTheRowNamesItselfOpen() {
+        assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
+        assertEquals("open", Readout.openTarget)
     }
 
     @Test

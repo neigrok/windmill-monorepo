@@ -198,9 +198,13 @@ public enum AskThreads {
         return "\(count) conversations · yours to delete"
     }
 
+    // Two halves because the empty state has two slots and the screen's own title fills neither: the
+    // head is the state, the body is what the surface is for.
+    public static let emptyHead = "Nothing here yet."
+
     public static let empty = """
-        Nothing here yet. A question you ask lands here in your own words, with what came of it — \
-        so a conversation about a plateau is still findable in six weeks.
+        A question you ask lands here in your own words, with what came of it — so a conversation \
+        about a plateau is still findable in six weeks.
         """
 
     public static let delete = "Delete this conversation"

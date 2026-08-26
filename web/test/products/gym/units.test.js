@@ -93,15 +93,21 @@ test('only the spelling and the weigh-in call the conversion, and no module that
 });
 
 test('every field a lifter types into spells the kilogram, not the reading', () => {
-  const fields = ['Backfill.jsx', 'backfill.js', 'FixSheet.jsx', 'Routines.jsx', 'logger/entry.js'];
+  const fields = ['Backfill.jsx', 'backfill.js', 'FixSheet.jsx', 'logger/entry.js'];
   const wrong = fields.filter((file) => !/\bfmtKg\b/.test(read(file)) || /\bfmt\(/.test(read(file)));
   assert.deepEqual(wrong, []);
+  // The target sheet's field is text the lifter types over: it is spelled by String and by nothing
+  // else, so no transform can reach it on the way in or out.
+  assert.equal(/\bfmt\(|inDisplayUnit|fromDisplayUnit/.test(read('routines.js')), false);
+  assert.equal(read('routines.js').includes("weight: entry.targetWeightKg == null ? '' : String(entry.targetWeightKg),"), true);
+  assert.equal(/\bfmt\(/.test(read('Routines.jsx')), false);
 });
 
 test('every kilogram field on a screen carries the word kg', () => {
   assert.equal(/\$\{fmtKg\(line\.weightKg\)\} kg`/.test(read('Backfill.jsx')), true);
   assert.equal(read('FixSheet.jsx').includes('<span className="gym-fix-unit">kg</span>'), true);
-  assert.equal(/\$\{fmtKg\(draft\.targetWeightKg\)\} kg`/.test(read('Routines.jsx')), true);
+  // The unit rides in the field beside the sign control, and neither is part of the field's name.
+  assert.equal(read('Routines.jsx').includes('<span className="gym-target-unit">kg</span>'), true);
   assert.equal(/WEIGHT_HINT = 'kg\b/.test(read('logger/entry.js')), true);
 });
 

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,7 +52,7 @@ fun DeviationSheet(
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(GymSkin.accent)
-                .clickable(onClick = onSave),
+                .clickable(role = Role.Button, onClick = onSave),
             contentAlignment = Alignment.Center,
         ) {
             Text(deviation.saveLabel, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
@@ -61,7 +62,7 @@ fun DeviationSheet(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(onClick = onToday),
+                .clickable(role = Role.Button, onClick = onToday),
             contentAlignment = Alignment.Center,
         ) {
             Text("Today only", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)

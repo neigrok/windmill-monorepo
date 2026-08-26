@@ -44,7 +44,7 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.design.WindmillSpace
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class NotesScreenTests {
     @get:Rule
     val compose = createComposeRule()
@@ -82,7 +82,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { note, seed -> opened += note to seed },
                 onSignIn = {},
@@ -116,7 +116,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { _, _ -> },
                 onSignIn = {},
@@ -154,7 +154,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { _, _ -> },
                 onSignIn = {},
@@ -179,7 +179,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = false,
-                backLabel = "Gym",
+                backTo = "Gym",
                 onBack = {},
                 onEdit = { _, _ -> doors += "edit" },
                 onSignIn = { doors += "signIn" },
@@ -228,7 +228,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { _, _ -> },
                 onSignIn = {},
@@ -261,7 +261,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { _, _ -> },
                 onSignIn = {},
@@ -292,7 +292,7 @@ class NotesScreenTests {
             NotesScreen(
                 store = store,
                 isSignedIn = true,
-                backLabel = "Coach",
+                backTo = "Coach",
                 onBack = {},
                 onEdit = { _, _ -> },
                 onSignIn = {},

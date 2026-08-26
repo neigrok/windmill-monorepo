@@ -30,11 +30,11 @@ public struct JournalModule: ProductModule {
     public func hubLine(_ account: Account) -> HubLine {
         let today = pages(of: account).page(on: .today())
         guard let today, today.isWritten else {
-            return HubLine(eyebrow: "Tonight", headline: "The cursor's waiting.")
+            return HubLine(eyebrow: "Tonight", headline: "The cursor’s waiting.")
         }
         let words = today.wordCount
         return HubLine(eyebrow: "Tonight",
-                       headline: "You've written today.",
+                       headline: "You’ve written today.",
                        meta: "\(words) \(words == 1 ? "word" : "words") so far")
     }
 

@@ -78,15 +78,17 @@ struct RenameSheet: View {
                 .focused($typing)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.words)
-                // Sixty characters or eighty bytes, whichever runs out first; only fresh typing is bounded.
+                // Sixty characters, the one bound a name has; only fresh typing is bounded.
                 .onChange(of: name) { _, typed in
                     let kept = RoutineDraft.capped(typed)
                     guard kept != typed else { return }
                     name = kept
                 }
-            Text(RoutineDraft.counter(name))
-                .font(GymType.numeral(11))
-                .foregroundStyle(skin.inkFaint)
+            if let counted = RoutineDraft.counter(name) {
+                Text(counted)
+                    .font(GymType.numeral(11))
+                    .foregroundStyle(skin.inkFaint)
+            }
         }
         .padding(.horizontal, WindmillSpace.x4)
         .frame(height: GymTap.primary - 6)

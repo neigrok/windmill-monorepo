@@ -221,7 +221,7 @@ TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   }));
 }
 
-TEST(exercise_name_is_capped_at_the_same_eighty_a_routine_name_is) {
+TEST(exercise_name_is_capped_at_the_same_bytes_a_routine_name_is) {
   CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, std::string(kMaxNameLength, 'x'), Pattern::squat,
                     Equipment::barbell, 2.5, true)
                .name.size(),

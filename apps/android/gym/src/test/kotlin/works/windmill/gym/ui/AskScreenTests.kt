@@ -51,7 +51,7 @@ import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class AskScreenTests {
     @get:Rule
     val compose = createComposeRule()
@@ -99,7 +99,7 @@ class AskScreenTests {
                 onAskNew = { doors += "askNew" },
                 seed = "",
                 origin = "https://windmill.works",
-                backLabel = null,
+                backTo = null,
                 onBack = null,
                 onThreads = { doors += "threads" },
                 onNotes = { doors += "notes" },
@@ -210,7 +210,7 @@ class AskScreenTests {
             AskScreen(
                 store = store, thread = listOf(answered), receipts = receipts, lookedAt = emptySet(),
                 asking = false, capped = false, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
-                origin = "https://windmill.works", backLabel = null, onBack = null,
+                origin = "https://windmill.works", backTo = null, onBack = null,
                 onThreads = {}, onNotes = {}, onReview = {},
             )
         }

@@ -32,9 +32,6 @@ struct SettingsScreen: View {
 
     private var head: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Gym")
-                .font(WindmillFont.display(30))
-                .foregroundStyle(skin.ink)
             Text("how the room behaves at the rack")
                 .font(GymType.numeral(12))
                 .foregroundStyle(skin.inkFaint)
@@ -45,28 +42,25 @@ struct SettingsScreen: View {
     // Kilograms are stored under either answer.
     private var units: some View {
         card {
-            HStack(spacing: WindmillSpace.x3) {
-                Text("Units")
-                    .font(WindmillFont.body(15, .bold))
-                    .foregroundStyle(skin.ink)
-                Spacer(minLength: 0)
-                HStack(spacing: 4) {
-                    ForEach(Units.allCases, id: \.rawValue) { unit in
-                        let chosen = unit == store.preferences.units
-                        Button { write(store.preferences.with(units: unit)) } label: {
-                            Text(unit.rawValue)
-                                .font(GymType.numeral(12.5, .bold))
-                                .foregroundStyle(chosen ? skin.onAccent : skin.inkDim)
-                                .padding(.horizontal, WindmillSpace.x4)
-                                .frame(minHeight: GymTap.minimum)
-                                .background(Capsule().fill(chosen ? skin.accent : .clear))
-                        }
-                        .accessibilityAddTraits(chosen ? [.isSelected] : [])
-                    }
+            // Drawn, not inherited: a segmented `Picker` outside a Form or List renders no label at
+            // all, so without this row the card is an unnamed `kg | lb` pair. Same shape as the two
+            // cards below it.
+            Text("Units")
+                .font(WindmillFont.body(15, .bold))
+                .foregroundStyle(skin.ink)
+            // A stock segmented control measures 30.7pt on this OS — under the 46pt floor every other
+            // control in this room keeps (`GymTap.minimum`), and the one thing on a settings screen a
+            // thumb would have to aim at. `.controlSize(.large)` takes it to 48; a `.frame` does not
+            // move it at all, because the control's height is its own and SwiftUI hands it through.
+            Picker("Units", selection: Binding(get: { store.preferences.units },
+                                               set: { write(store.preferences.with(units: $0)) })) {
+                ForEach(Units.allCases, id: \.rawValue) { unit in
+                    Text(unit.rawValue).tag(unit)
                 }
-                .padding(4)
-                .background(Capsule().fill(skin.canvas))
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.large)
             caption("Display only — nothing stored changes.")
             if store.preferences.units == .lb {
                 caption("Not on this phone yet — this room still draws kg. Your answer is kept on the account.")
@@ -86,22 +80,15 @@ struct SettingsScreen: View {
                     .font(GymType.numeral(12.5))
                     .foregroundStyle(skin.inkDim)
             }
-            HStack(spacing: 6) {
-                ForEach(Array(Rest.choices.enumerated()), id: \.offset) { _, seconds in
-                    let chosen = seconds == store.preferences.restSeconds
-                    Button { write(store.preferences.resting(seconds)) } label: {
-                        Text(Self.spell(seconds))
-                            .font(GymType.numeral(12.5, chosen ? .bold : .regular))
-                            .foregroundStyle(chosen ? skin.accent : skin.inkDim)
-                            .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-                            .background(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                                .fill(chosen ? skin.accentSoft : .clear))
-                            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                                .strokeBorder(chosen ? skin.accent : skin.line, lineWidth: 1))
-                    }
-                    .accessibilityAddTraits(chosen ? [.isSelected] : [])
+            Picker("Rest timer", selection: Binding(get: { store.preferences.restSeconds },
+                                                    set: { write(store.preferences.resting($0)) })) {
+                ForEach(Rest.choices, id: \.self) { seconds in
+                    Text(Self.spell(seconds)).tag(seconds)
                 }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.large)
             switching("Sound when it ends", isOn: store.preferences.restSound) {
                 write(store.preferences.with(restSound: $0))
             }
@@ -126,26 +113,33 @@ struct SettingsScreen: View {
     private var doors: some View {
         VStack(alignment: .leading, spacing: 9) {
             Button(action: onNotes) {
-                door(title: Notes.title, line: Notes.purpose, lit: false, away: false)
+                door(title: Notes.title, line: Notes.purpose, symbol: "note.text",
+                     lit: false, away: false)
             }
             Link(destination: page("/#/settings")) {
-                door(title: "Export", line: "sets, notes and weigh-ins as CSV · yours, always", lit: false, away: true)
+                door(title: "Export", line: "sets, notes and weigh-ins as CSV · yours, always",
+                     symbol: "tablecells", lit: false, away: true)
             }
             Link(destination: page("/#/gym/coach/threads")) {
-                door(title: "Export conversations", line: "every Coach conversation as CSV", lit: false, away: true)
+                door(title: "Export conversations", line: "every Coach conversation as CSV",
+                     symbol: "tablecells", lit: false, away: true)
             }
             Button(action: onConnectedLog) {
                 door(title: ConnectedLog.stateTitle,
                      line: connected.settingsLine(now: Int64(Date().timeIntervalSince1970 * 1000))
                         ?? ConnectedLog.settingsFallback,
-                     lit: true, away: false)
+                     symbol: "link", lit: true, away: false)
             }
         }
     }
 
     // `away` draws the arrow that leaves this app for a browser; the chevron stays in the room.
-    private func door(title: String, line: String, lit: Bool, away: Bool) -> some View {
+    private func door(title: String, line: String, symbol: String, lit: Bool, away: Bool) -> some View {
         HStack(spacing: WindmillSpace.x3) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(lit ? skin.accent : skin.inkFaint)
+                .frame(width: 22)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(WindmillFont.body(15, .bold))

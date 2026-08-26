@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,8 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -67,27 +71,28 @@ fun RenameSheet(
         Text(title, style = WindmillFont.display(22), color = GymSkin.ink)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
+            OutlinedTextField(
                 value = value,
                 onValueChange = { onValue(Program.capped(it)) },
                 singleLine = true,
-                textStyle = WindmillFont.body(19).copy(color = GymSkin.ink),
-                cursorBrush = SolidColor(GymSkin.accent),
+                isError = refused != null,
+                textStyle = WindmillFont.body(19),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                shape = RoundedCornerShape(WindmillRadius.md),
+                colors = gymFieldColours(),
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = GymTap.minimum)
-                    .clip(RoundedCornerShape(WindmillRadius.md))
-                    .background(GymSkin.raised)
-                    .focusRequester(focus)
-                    .padding(horizontal = WindmillSpace.x3, vertical = WindmillSpace.x2),
+                    .focusRequester(focus),
             )
-            Text(
-                Program.counter(value),
-                style = GymType.numeral(12),
-                color = GymSkin.inkFaint,
-                modifier = Modifier.padding(start = WindmillSpace.x3),
-            )
+            Program.counter(value)?.let { counted ->
+                Text(
+                    counted,
+                    style = GymType.numeral(12),
+                    color = GymSkin.inkFaint,
+                    modifier = Modifier.padding(start = WindmillSpace.x3),
+                )
+            }
         }
 
         refused?.let { Text(it, style = GymType.numeral(12), color = GymSkin.alarmInk) }
@@ -101,7 +106,7 @@ fun RenameSheet(
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(if (changed) GymSkin.accent else GymSkin.raised)
-                .clickable(enabled = changed, onClick = onRename),
+                .clickable(enabled = changed, role = Role.Button, onClick = onRename),
         ) {
             Text(
                 "Rename",
@@ -115,7 +120,7 @@ fun RenameSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(onClick = onCancel),
+                .clickable(role = Role.Button, onClick = onCancel),
         ) {
             Text("Cancel", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
         }
@@ -136,7 +141,12 @@ private fun ProofBlock(proof: List<Record.Proof>) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
         ) {
-            Text("✓", style = GymType.numeral(13, FontWeight.Bold), color = GymSkin.setDone)
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = GymSkin.setDone,
+                modifier = Modifier.size(15.dp),
+            )
             Text(
                 "Everything follows the name",
                 style = WindmillFont.body(14, FontWeight.SemiBold),

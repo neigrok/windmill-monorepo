@@ -11,13 +11,18 @@
         android:label="Windmill"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Windmill"
+        android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true">
 
         <!-- Recreation mid-flush would put two offline queues on one file. -->
+        <!-- `adjustResize` is the other half of `enableEdgeToEdge`: without it the framework PANS the
+             window for the keyboard while the room's own `imePadding()` insets for it too, and every
+             field the keyboard covers is moved twice. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode|locale|layoutDirection|fontScale|density"
+            android:windowSoftInputMode="adjustResize"
             android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

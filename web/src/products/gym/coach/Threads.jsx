@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { EXPORT_THREADS_HREF, gymApi } from '../gymApi.js';
 import { COACH_HREF, proposalHref, routineHref, THREADS_HREF, threadHref, whenLabel } from '../log.js';
@@ -22,7 +23,7 @@ export function ThreadsList() {
         <Back href={COACH_HREF}>{COACH_TITLE}</Back>
         <p className="gym-read-failed">
           {THREADS_FAILED}
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       </>
     );
@@ -99,7 +100,7 @@ export function ThreadDetail({ id, log }) {
         <Back href={THREADS_HREF}>{THREADS_TITLE}</Back>
         <p className="gym-read-failed">
           {THREAD_FAILED}
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       </>
     );

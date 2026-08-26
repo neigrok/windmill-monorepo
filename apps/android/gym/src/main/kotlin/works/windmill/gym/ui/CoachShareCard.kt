@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -119,7 +120,7 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                .clickable(enabled = state != Coach.State.Working) { act() },
+                .clickable(enabled = state != Coach.State.Working, role = Role.Button) { act() },
         ) {
             Text(
                 card.action,
@@ -134,7 +135,7 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum)
-                    .clickable { revokeLink() },
+                    .clickable(role = Role.Button) { revokeLink() },
             ) {
                 Text(
                     revoke,

@@ -23,15 +23,16 @@ struct RoutineScreen: View {
                 if let routine {
                     head(routine)
                     rows(routine)
-                    if let open = RoutineReadout.openRows(routine, in: store.catalog) { fact(open) }
                     start
                     history(routine)
                 } else if let failure {
                     silence(failure.line("this routine isn’t drawn"))
                 } else {
-                    Text("reading your program…")
+                    ProgressView("reading your program…")
                         .font(GymType.numeral(13))
+                        .tint(skin.inkFaint)
                         .foregroundStyle(skin.inkFaint)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
@@ -39,22 +40,18 @@ struct RoutineScreen: View {
             .padding(.bottom, WindmillSpace.x8)
         }
         .task { await read() }
-    }
-
-    private func head(_ routine: Routine) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
-            HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                Text(routine.name)
-                    .font(WindmillFont.display(30))
-                    .foregroundStyle(skin.ink)
-                Spacer(minLength: 0)
-                Button { onEdit(routine) } label: {
-                    Text("Edit")
-                        .font(WindmillFont.body(13.5, .bold))
-                        .foregroundStyle(skin.accent)
-                        .frame(minHeight: GymTap.minimum)
+        .toolbar {
+            if let routine {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") { onEdit(routine) }
                 }
             }
+        }
+    }
+
+    // The routine's name is the navigation bar's title; this head carries only what the bar cannot.
+    private func head(_ routine: Routine) -> some View {
+        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             HStack(spacing: WindmillSpace.x2) {
                 if routine.isUntested {
                     Text("untested")
@@ -76,11 +73,12 @@ struct RoutineScreen: View {
 
     // Keyed on position, never on the movement: a routine may name one twice, and duplicate `ForEach` ids are undefined.
     private func rows(_ routine: Routine) -> some View {
-        VStack(spacing: WindmillSpace.x2) {
+        VStack(alignment: .leading, spacing: WindmillSpace.x2) {
             ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
                 HStack(spacing: WindmillSpace.x3) {
                     MovementDoor(exerciseId: entry.exerciseId, name: name(of: entry.exerciseId),
-                                 font: WindmillFont.body(15, .bold), ink: skin.ink, open: onMovement)
+                                 font: WindmillFont.body(15, .bold), ink: skin.ink,
+                                 open: onMovement)
                     Spacer(minLength: WindmillSpace.x2)
                     Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
                                         weightKg: entry.targetWeightKg))
@@ -88,10 +86,19 @@ struct RoutineScreen: View {
                         .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
                 }
                 .padding(.horizontal, WindmillSpace.x3)
+                .frame(minHeight: GymTap.minimum)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.surface))
                 .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                     .strokeBorder(skin.line, lineWidth: 1))
+            }
+            // Once, beneath the list, when a row in it is open: the word `open` in a row's target
+            // column says WHICH, and this says what that word means. Never once per row (C1).
+            if let said = TargetEntry.openLineUnder(routine.entries) {
+                Text(said)
+                    .font(GymType.numeral(11.5))
+                    .foregroundStyle(skin.inkFaint)
+                    .padding(.horizontal, WindmillSpace.x1)
             }
         }
     }
@@ -100,18 +107,6 @@ struct RoutineScreen: View {
         let named = Readout.movement(exerciseId, in: store.catalog)
         guard store.catalog.first(where: { $0.id == exerciseId })?.custom == true else { return named }
         return "\(named) · yours"
-    }
-
-    private func fact(_ said: String) -> some View {
-        Text(said)
-            .font(WindmillFont.body(12.5))
-            .foregroundStyle(skin.inkDim)
-            .lineSpacing(3)
-            .padding(WindmillSpace.x3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: WindmillRadius.md).fill(skin.canvas))
-            .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
-                .strokeBorder(skin.line, lineWidth: 1))
     }
 
     // Newest first, creation row last. A row this build cannot classify is dropped rather than guessed at.

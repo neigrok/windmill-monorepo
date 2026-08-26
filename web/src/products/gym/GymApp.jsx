@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button, TabRail, Toast } from '../../design-system/index.js';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
@@ -84,7 +85,7 @@ function SignInPitch({ onSignIn }) {
     <section className="gym-door">
       <h1 className="gym-title">Training log</h1>
       <p className="gym-door-line">Sign in to open your training log.</p>
-      <button type="button" className="gym-door-button" onClick={onSignIn}>Sign in</button>
+      <Button onClick={onSignIn}>Sign in</Button>
     </section>
   );
 }
@@ -116,32 +117,35 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
       </main>
       {TAB_SCREENS.includes(tabOf(screen)) && <TabBar screen={tabOf(screen)} />}
       {log.toast && (
-        <div className="gym-toast" role="status">
-          <span>{log.toast.text}</span>
-          {log.toast.action && (
-            <button
-              type="button"
-              className="gym-toast-undo"
-              onClick={() => { log.toast.action.run(); log.dismissToast(); }}
-            >
-              {log.toast.action.label}
-            </button>
-          )}
-          <button type="button" className="gym-toast-close" onClick={log.dismissToast} aria-label="Dismiss">×</button>
+        <div className="gym-toast-slot" role="status">
+          <Toast
+            tone="neutral"
+            onClose={log.dismissToast}
+            action={log.toast.action && {
+              label: log.toast.action.label,
+              onClick: () => { log.toast.action.run(); log.dismissToast(); },
+            }}
+          >
+            {log.toast.text}
+          </Toast>
         </div>
       )}
     </>
   );
 }
 
-// Three columns here and three in the gym.css grid; they move together.
+// The three rooms, in the design system's rail — which reserves its own height, so no screen under
+// it has to know how tall it is. The list here is the only place the room count is stated.
 function TabBar({ screen }) {
   return (
-    <nav className="gym-tabs">
-      <a className={screen === 'routines' ? 'gym-tab is-on' : 'gym-tab'} href={ROUTINES_HREF}>Routines</a>
-      <a className={screen === 'log' ? 'gym-tab is-on' : 'gym-tab'} href="#/gym/log">The log</a>
-      <a className={screen === 'coach' ? 'gym-tab is-on' : 'gym-tab'} href={COACH_HREF}>Coach</a>
-    </nav>
+    <TabRail
+      label="Gym"
+      items={[
+        { label: 'Routines', href: ROUTINES_HREF, active: screen === 'routines' },
+        { label: 'The log', href: '#/gym/log', active: screen === 'log' },
+        { label: 'Coach', href: COACH_HREF, active: screen === 'coach' },
+      ]}
+    />
   );
 }
 

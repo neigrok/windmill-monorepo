@@ -7,6 +7,8 @@ public struct GymModule: ProductModule {
     public let id = "gym"
     public let label = "Gym"
     public let symbol = "figure.strengthtraining.traditional"
+    // The room draws its own bar, capsule and seat included, so the shell lays nothing over it.
+    public let hostsTopChrome = true
 
     public init() {}
 

@@ -18,6 +18,10 @@ system keyboard whose keys are sized for prose and whose layout moves between lo
 > **The ladder and the keypad are rack controls. They stay. Nobody should "finish the job" wave two
 > started by removing them here too.**
 
+**And the correction is at the rack as well**, so the fix sheet raises the same keypad the logger
+does, on every surface: tapping the weight numeral or the rep value opens the pad rather than the
+system keyboard. A repair mid-session is one-handed for the same reason the set was.
+
 The same logic in one line: *the planning sheet knows the number it wants; the rack is where you find
 out what you can lift.*
 

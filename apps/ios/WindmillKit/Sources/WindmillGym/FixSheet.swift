@@ -16,6 +16,9 @@ struct FixSheet: View {
     @State private var weightKg: Double
     @State private var reps: Int
     @State private var kind: SetKind
+    // A correction at the rack is one-handed too, so the numeral and the rep count are typeable here
+    // exactly as they are in the logger: the same `KeypadSheet`, the same live band (C10).
+    @State private var typing: KeypadEntry.Mode?
 
     init(set: TrainingSet, movement: String, number: String, routine: String?,
          onSave: @escaping (SetFix) -> Void, onDelete: @escaping () -> Void) {
@@ -43,6 +46,17 @@ struct FixSheet: View {
         .padding(WindmillSpace.x5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(skin.surface)
+        .sheet(item: $typing) { mode in
+            KeypadSheet(mode: mode,
+                        current: mode == .weight ? weightKg : Double(reps),
+                        onCommit: { typed in
+                            if mode == .weight { weightKg = typed } else { reps = Int(typed) }
+                            typing = nil
+                        },
+                        onCancel: { typing = nil })
+                .presentationBackground(skin.surface)
+                .presentationDetents([.height(520)])
+        }
     }
 
     private var head: some View {
@@ -60,11 +74,17 @@ struct FixSheet: View {
 
     private var weight: some View {
         HStack(alignment: .lastTextBaseline, spacing: WindmillSpace.x2) {
-            Text(Readout.weight(weightKg))
-                .font(GymType.correction)
-                .foregroundStyle(skin.weightInk)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
+            Button { typing = .weight } label: {
+                Text(Readout.weight(weightKg))
+                    .font(GymType.correction)
+                    .foregroundStyle(skin.weightInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .overlay(alignment: .bottom) { TypeableRule() }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Weight \(Readout.weight(weightKg)) kilograms")
+            .accessibilityHint("Type a weight")
             Text("kg")
                 .font(WindmillFont.body(18, .bold))
                 .foregroundStyle(skin.inkFaint)
@@ -93,21 +113,27 @@ struct FixSheet: View {
                 .font(WindmillFont.body(14))
                 .foregroundStyle(skin.inkDim)
             Spacer(minLength: 0)
-            Button { reps = Ladder.bumpReps(reps, direction: -1) } label: { step("−") }
+            Button { reps = Ladder.bumpReps(reps, direction: -1) } label: { step("minus") }
                 .accessibilityLabel("One rep fewer")
-            Text(String(reps))
-                .font(GymType.numeral(22, .bold))
-                .foregroundStyle(skin.ink)
-                .frame(minWidth: 42)
-                .multilineTextAlignment(.center)
-            Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("+") }
+            Button { typing = .reps } label: {
+                Text(String(reps))
+                    .font(GymType.numeral(22, .bold))
+                    .foregroundStyle(skin.ink)
+                    .overlay(alignment: .bottom) { TypeableRule() }
+                    .frame(minWidth: 42, minHeight: GymTap.minimum)
+                    .multilineTextAlignment(.center)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(reps) reps")
+            .accessibilityHint("Type a rep count")
+            Button { reps = Ladder.bumpReps(reps, direction: 1) } label: { step("plus") }
                 .accessibilityLabel("One rep more")
         }
     }
 
-    private func step(_ glyph: String) -> some View {
-        Text(glyph)
-            .font(WindmillFont.display(19, .semibold))
+    private func step(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(skin.ink)
             .frame(width: GymTap.minimum, height: GymTap.minimum)
             .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)

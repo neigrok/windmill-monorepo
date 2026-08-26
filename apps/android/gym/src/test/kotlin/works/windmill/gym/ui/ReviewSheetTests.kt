@@ -56,7 +56,7 @@ import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class ReviewSheetTests {
     @get:Rule
     val compose = createComposeRule()

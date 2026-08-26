@@ -53,12 +53,13 @@ final class PickerOptionsTests: XCTestCase {
 
     func testTheSixLeadAnUnfilteredListAndAreNotRepeatedInIt() {
         let options = PickerOptions.matching(query: "", catalog: DeviceCatalog.seeded, taken: [])
-        XCTAssertEqual(options.six.map(\.id), PickerOptions.six)
+        XCTAssertEqual(options.six.map(\.id), PickerOptions.openers,
+                       "a log-less account opens on the openers, in their own order")
         XCTAssertEqual(options.six.map(\.name),
                        ["Back Squat", "Bench Press", "Deadlift", "Overhead Press", "Barbell Row",
                         "Chin Up"],
                        "named off the catalog, because a name is what this account calls a movement")
-        XCTAssertTrue(options.matches.allSatisfy { !PickerOptions.six.contains($0.id) })
+        XCTAssertTrue(options.matches.allSatisfy { !PickerOptions.openers.contains($0.id) })
         XCTAssertNil(options.empty)
     }
 

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason, gymApi } from './gymApi.js';
 import {
@@ -35,7 +36,7 @@ export function FinishScreen({ id, log }) {
       <>
         <p className="gym-read-failed">
           The session is saved, but this didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
         <Back href={sessionHref(id)}>Session detail</Back>
       </>

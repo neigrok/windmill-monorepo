@@ -86,9 +86,11 @@ struct CreateMovementSheet: View {
                         guard kept != typed else { return }
                         name = kept
                     }
-                Text(RoutineDraft.counter(name))
-                    .font(GymType.numeral(11))
-                    .foregroundStyle(skin.inkFaint)
+                if let counted = RoutineDraft.counter(name) {
+                    Text(counted)
+                        .font(GymType.numeral(11))
+                        .foregroundStyle(skin.inkFaint)
+                }
             }
             .padding(.horizontal, WindmillSpace.x4)
             .frame(height: GymTap.primary - 8)

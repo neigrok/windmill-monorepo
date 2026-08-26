@@ -1,11 +1,11 @@
 # Native idiom — how the three surfaces are allowed to differ
 
-Gym ships on web, iOS and Android. Until this wave the two phones were **the same custom drawing at
-two sizes**: the same hand-rolled capsule rail, the same bottom-drawn back row, the same bespoke
-switch, the same hand-built list. They differed on about sixty arbitrary numbers and agreed on
-nothing structural. They differed by accident and agreed by accident.
+Gym ships on web, iOS and Android. The two phones used to be **the same custom drawing at two
+sizes**: the same hand-rolled capsule rail, the same bottom-drawn back row, the same bespoke switch,
+the same hand-built list — differing on about sixty arbitrary numbers and agreeing on nothing
+structural.
 
-This brief replaces that with a rule.
+This brief is the rule that replaced that, and the rule is built.
 
 ## The law
 
@@ -24,52 +24,67 @@ nothing on the phone already means it.
 
 ## What follows on each surface
 
-**iOS.** A real `TabView`. A real `NavigationStack`, with titles and toolbar items where the system
-puts them. `List` for anything that is a list. The system's segmented picker, stepper, toggle,
-confirmation dialog, share sheet and progress view. SF Symbols on every affordance that has one.
-Sheets keep their detents.
+**iOS.** A real `TabView` over the room's three tabs. A real `NavigationStack` per tab, its path
+owned by the room and unwound when a session opens or closes, with titles and toolbar items where
+the system puts them and no drawn heading repeating the bar's. `List` with sections for anything
+that is a list, the card frame kept through row backgrounds. `.searchable` in the pickers. The
+system's segmented picker, toggle, menu, alert, share sheet and progress view;
+`ContentUnavailableView` where one action fits. SF Symbols on every affordance that has one. Sheets
+keep their detents, and the finish is a sheet over the session it closed. **No `Stepper`:** the
+room's only choice-shaped settings are fixed lists, and a Stepper needs a value you increment.
 
-**Android.** A real `Scaffold` with a real top app bar and a real navigation bar. Material's list
-item, card, switch, segmented button, chip, text field, snackbar and dialog. Material Symbols on
-every affordance. Modal bottom sheets keep the drag handle: the review sheet and the weigh-in sheet
-show it, and the four older sheets that still pass `null` join them. The room opts in to predictive
-back and draws edge to edge.
+**Android.** A real `Scaffold` with a real top app bar per screen and a real navigation bar drawn
+only while the three tabs are what is on screen. Material's list item, switch, segmented button,
+text field, snackbar and dialog, coloured from the room's **own** `ColorScheme` — gold is absent
+from it, because gold in this room means a personal record. Material icons on every affordance, each
+with its `contentDescription`. Modal bottom sheets keep the drag handle. The room opts in to
+predictive back, draws edge to edge on every version, and pairs that with `adjustResize` — without
+it the keyboard pans the top bar off the screen instead of resizing the window, which is the half
+that is easy to miss.
 
-**Web.** The shared design system, which the gym room reaches for in two room screens — the review
-dialog is the design system's `Dialog`, and the bodyweight chart is its `DotChart` under its `Tabs`
-— while every other control inside `.gym-root` is still a hand-rolled twin: the button, the input,
-the card, the toast, the tabs elsewhere, the tag and the icon. Those twins go.
+**Web.** The shared design system inside `.gym-root`: the rail, the toast, the buttons, the inputs,
+the tags, the icons and the dialog are the design system's, and the twins that used to draw them are
+out of `gym.css`. What stays gym's own is what the law says is ours — the weight numeral, the plate
+ladder, the set row, the proposal diff, the read receipt and the routine card. A dropped-in
+component resolves into the room through **one bridge block per skin** naming only the roles the
+room genuinely answers for itself; every other shared role already resolves through the room's brand
+scope, and re-pointing one back at gym's alias of it is a cycle that resolves to nothing.
 
 Where the design system genuinely lacks something the wave needs — a chat bubble, a diff card, a
-note row, a weight chart — it is **authored in the design system**, not in the gym folder. Roadmap's
-families are roadmap's vocabulary, not the brand's, and gym does not reach across for them either.
+note row, a weight chart, a bottom rail — it is **authored in the design system**, not in the gym
+folder. Roadmap's families are roadmap's vocabulary, not the brand's, and gym does not reach across
+for them either.
 
 ## Back, and the thumb
 
-The house law says controls go to the bottom, and the room drew a back affordance at the bottom of
-every pushed screen to obey it.
+The house law says controls go to the bottom, and the room used to draw a back affordance at the
+bottom of every pushed screen to obey it.
 
 That was a workaround. The shell disabled the system pop gesture, so the room had no back and drew
-one. Restoring a real navigation stack restores the gesture — and **the gesture is already under the
-thumb on both platforms.** The house law governs controls the user must *touch*; a swipe from the
-edge is not one.
-
-**But the iOS leading edge is already taken, and this is the single largest risk in the wave.** The
-shell attaches its go-home swipe to the leading twenty points as a *simultaneous* gesture — the
-modifier whose whole meaning is *do not require exclusivity* — and every navigation stack that exists
-in the app today lives inside a sheet, outside that subtree. So the two gestures have never met.
+one. A real navigation stack restores the gesture — and **the gesture is already under the thumb on
+both platforms.** The house law governs controls the user must *touch*; a swipe from the edge is not
+one. Back is now the platform's: iOS's interactive pop and the bar's own button, Android's system
+back through a handler that says what back means on each screen.
 
 > **The edge is arbitrated by depth, not shared.** A room reports its stack depth outward, and the
 > shell applies its home swipe **only at depth zero**. At a tab root the edge means home; one push
 > deep it means back.
 
-That amends the shell's "two gestures, and nothing else" to "the shell owns the leading edge only at
-the root of a room's navigation stack" — a scope, not a deletion. It is a shell change outside gym's
-files, and **it is prototyped on a simulator before any iOS board is called finished.**
+That scopes the shell's "two gestures, and nothing else" to "the shell owns the leading edge only at
+the root of a room's navigation stack" — a scope, not a deletion — and `superapp-shell.md` carries
+it. **Proven on the simulator, and the proof moved the mechanism:** over a navigation stack's own
+frame the system's edge pan takes the touch outright, so the two never actually fire together; the
+hazard is the strip of screen the stack does not cover — the tab bar's band — where the shell's
+gesture would otherwise run alone and leave the room. So the shell's gesture is **unattached** past
+depth zero, not merely declining. A depth signal wired backwards is still the quiet failure: it
+disables the way home permanently and the room goes on working.
 
 So: **navigation chrome returns to where the platform puts it, and committing actions stay in the
-reach band.** Apply, Save, Log set and Finish live in an iOS bottom safe-area inset or bottom toolbar,
-and in an Android scaffold's bottom bar. Same law, platform spelling.
+reach band.** `Log set` and `Just start logging` live in an iOS bottom safe-area inset and in an
+Android scaffold's bottom bar; **Apply** is the review sheet's own band. Two exceptions are ruled
+elsewhere and are not drift: **Finish** is a toolbar action, not a second full-strength commitment
+beside `Log set` (`16-the-workout.md`), and the editor's **Cancel and Save** are the navigation
+bar's, where the platform puts a draft's two answers (`15-the-routine.md`).
 
 **What earns the reach band, when two actions want it.** The Routines screen wants both *"start
 logging"* and *"make a new routine"*, and only one can be the primary. The tie-breaker is not
@@ -95,22 +110,32 @@ reads as the shell's and not the app's. A hand-rolled rail could hold that. **A 
 cannot** — a fourth slot in a three-tab bar is not a thing either platform draws, and jamming an
 avatar into one is exactly the kind of invention this brief removes.
 
-Both shell seats move into the room's own **top** chrome: the capsule leading, the You seat trailing,
-on each stack root. On Android, which has no shell chrome at all, the avatar is the top app bar's
-single action slot — the seat is the only shell thing on that surface, and the top bar is the honest
-place for it.
+Both shell seats sit in the room's own **top** chrome: the capsule leading, the You seat trailing, on
+each stack root and in the logger. On Android, which has no shell chrome at all, the avatar is the
+top app bar's trailing action — the seat is the only shell thing on that surface, and the top bar is
+the honest place for it. Where the room also wants an action of its own there, the seat keeps the
+trailing slot past its hairline and the room's action sits before it.
 
-That amends two canon lines rather than quietly disagreeing with them. "The last slot in every app's
-own bar" becomes **"the trailing slot of the room's own top bar"**. And the thumb-reach line about top
-corners is narrowed to what it actually means: **no primary or destructive action in a top corner. A
-destination is not an action.**
+That amends two canon lines rather than quietly disagreeing with them, and `superapp-shell.md` and
+`thumb-reach.md` carry both. "The last slot in every app's own bar" is **"the trailing slot of the
+room's own top bar"**. And the thumb-reach line about top corners means what it says: **no primary or
+destructive action in a top corner. A destination is not an action.**
 
-**The reclaimed top eighth is a fiction unless the shell gives it back.** Of the lane the shell
-reserves, most is unavoidable safe area and only about forty-six points belong to Windmill — against a
-forty-four point navigation bar. The inset is applied by the shell, outside the room's view tree, so
-the room cannot reclaim it by drawing differently. Either the shell stops applying that inset for a
-room that hosts the capsule itself, or **native costs vertical space and no board may claim
-otherwise.**
+**The reclaimed top eighth was a fiction until the shell gave it back, and it has.** Of the lane the
+shell reserved, most is unavoidable safe area and only about forty-six points belonged to Windmill —
+against a forty-four point navigation bar. The inset is applied outside the room's view tree, so no
+room can reclaim it by drawing differently; instead a room **declares** that it hosts its own top
+bar, and the shell then lays nothing over it. A room that declares nothing keeps the shell's capsule
+exactly as before.
+
+**A native tab bar's selected state is not the room's to paint.** On iOS 26 the system draws both tab
+labels itself and its own selection capsule behind the selected item, and ignores a room's tint
+outright — so the room applies none there (a tint on a `TabView` is an environment value that
+repaints every control in every tab and each sheet they raise, for nothing). The room's job on that
+platform is the **symbol**. Where a surface does own the selection — Android's navigation bar — it
+may not carry it in colour alone: a filled glyph against an outlined one, a bold label against a
+normal one, and an indicator behind the selected seat, with the brightest ink rather than the accent,
+because the accent against the faint ink separates by barely one to one.
 
 ## Appearance
 
@@ -154,19 +179,25 @@ contrast ratio in the room unassertable — which the house rule against unverif
 The honest cost, said here so it is not discovered later: an Android user who expects Material You
 does not get it in this app.
 
-**And the status bar must follow the resolved skin.** At targetSdk 36 an Android 16 device enforces
-edge-to-edge and ignores the theme's bar colours, so the room is already drawing under the bars there
-and `.systemBarsPadding()` is what holds the layout; the theme still pins the status icons light, so
-turning the room to a light ground would make the clock, the battery and the signal disappear. That
-is a one-line change and a real bug if it is missed.
+**And the status bar must follow the resolved skin.** The room draws edge to edge on every version:
+the activity calls `enableEdgeToEdge` with transparent bars, the theme carries only a window
+background, and the `Scaffold` owns and consumes the insets. The bar-icon style is therefore set in
+**code**, against the dark ground, which is exactly where the Daylight work has to change it —
+turning the room to a light ground without moving that line makes the clock, the battery and the
+signal disappear. One line, and a real bug if it is missed.
 
 ## Type
 
-iOS hard-codes every point size, so **Dynamic Type does nothing there**. Android's sizes are `sp`
-and do scale with the font-scale setting — but there is no named role scale, no tabular digits on
-the non-numeral roles, and no cap or reflow, so at a large scale the 104 sp numeral grows while every
-fixed-height row and fixed-width column does not, and the room **clips** rather than ignores. That
-is the largest accessibility gap in the room and the least visible one.
+iOS hard-codes every point size, so **Dynamic Type does nothing to anything the room draws**. What
+the platform draws now *does* scale — the navigation bar, the tab bar, and the `List` section headers
+and footers the room leaves unstyled — which makes the gap louder rather than smaller: at the largest
+accessibility size a section header grows several times over beside a field that does not move.
+Android's sizes are `sp` and do scale with the font-scale setting — but there is no named role scale
+on the room's own text, and no cap or reflow, so at a large scale the 104 sp numeral grows while
+every fixed-height row and fixed-width column does not, and the room **clips** rather than ignores.
+(Material controls in gym are covered: the room's theme passes a typography built from its own faces,
+tabular on every role.) That is the largest accessibility gap in the room and the
+least visible one.
 
 **Everything that is prose takes the platform's text styles** and scales with them. Nothing on a
 board is specified in points again; each role is a named text style plus a design and a weight —

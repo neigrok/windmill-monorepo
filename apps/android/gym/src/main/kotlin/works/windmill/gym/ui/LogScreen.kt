@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -31,6 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -58,7 +63,9 @@ object LogFold {
         val record: Boolean,
     )
 
-    data class Week(val label: String, val tonnage: String?, val rows: List<Row>)
+    // `startMs` is the week's Monday and its identity: the label carries no year, so two Januaries
+    // five years apart print the same words, and a list may not key two rows the same.
+    data class Week(val startMs: Long, val label: String, val tonnage: String?, val rows: List<Row>)
 
     // `complete` is whether the log has been read to its bottom; only the oldest week may be partial.
     fun weeks(
@@ -74,6 +81,7 @@ object LogFold {
         val oldest = buckets.keys.lastOrNull()
         return buckets.map { (start, sessionsInWeek) ->
             Week(
+                startMs = start,
                 label = Readout.weekOf(start),
                 // One session with no tonnage takes the whole week's caption rather than a short total.
                 tonnage = when {
@@ -106,11 +114,12 @@ object LogFold {
 }
 
 // The reading sits in the head with the title; the one input, the weigh-in chip, is PINNED under the
-// scroll in the reach band — the head scrolls away exactly when a hand reaches for it.
+// list in the reach band — the head scrolls away exactly when a hand reaches for it.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(
     store: TrainingStore,
+    seat: String,
     onOpenSession: (SessionSummary) -> Unit,
     onOpenBodyweight: () -> Unit,
 ) {
@@ -131,60 +140,63 @@ fun LogScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = WindmillSpace.x5)
-                .padding(top = WindmillSpace.x10, bottom = WindmillSpace.x4),
-        ) {
-            Text("The log", style = WindmillFont.display(32), color = GymSkin.ink)
-            headLine(weeks, store.older)?.let {
-                Text(
-                    it,
-                    style = GymType.numeral(13),
-                    color = GymSkin.inkFaint,
-                    modifier = Modifier.padding(top = WindmillSpace.x1),
-                )
-            }
-            BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
-
-            // Three silences: the log said so · the read failed · the log has not answered yet.
-            if (weeks.isEmpty()) {
-                when (store.older) {
-                    Older.End -> Empty()
-                    Older.Failed -> LogFoot(Older.Failed, first = null, onLoad = load)
-                    else -> Unit
+    GymScreen(title = "The log", actions = { YouSeat(seat) }) {
+        Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(
+                    start = WindmillSpace.x5,
+                    end = WindmillSpace.x5,
+                    bottom = WindmillSpace.x4,
+                ),
+            ) {
+                item("head") {
+                    Column {
+                        headLine(weeks, store.older)?.let {
+                            Text(it, style = GymType.numeral(13), color = GymSkin.inkFaint)
+                        }
+                        BodyweightReading(store.latestWeighIn, nowMs, onOpen = onOpenBodyweight)
+                    }
                 }
-                return@Column
-            }
 
-            weeks.forEach { week ->
-                WeekDivider(week)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                    modifier = Modifier.padding(bottom = WindmillSpace.x2),
-                ) {
-                    week.rows.forEach { row -> SessionRow(row, onOpen = { onOpenSession(row.summary) }) }
+                // Three silences: the log said so · the read failed · the log has not answered yet.
+                if (weeks.isEmpty()) {
+                    when (store.older) {
+                        Older.End -> item("empty") { Empty() }
+                        Older.Failed -> item("failed") {
+                            LogFoot(Older.Failed, first = null, onLoad = load)
+                        }
+                        else -> Unit
+                    }
+                    return@LazyColumn
+                }
+
+                weeks.forEach { week ->
+                    item("week:${week.startMs}") { WeekDivider(week) }
+                    items(week.rows, key = { it.summary.id }) { row ->
+                        Box(Modifier.padding(bottom = WindmillSpace.x2)) {
+                            SessionRow(row, onOpen = { onOpenSession(row.summary) })
+                        }
+                    }
+                }
+
+                item("foot") {
+                    LogFoot(
+                        older = store.older,
+                        first = weeks.lastOrNull()?.rows?.lastOrNull()?.summary,
+                        onLoad = load,
+                    )
                 }
             }
-
-            LogFoot(
-                older = store.older,
-                first = weeks.lastOrNull()?.rows?.lastOrNull()?.summary,
-                onLoad = load,
-            )
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = WindmillSpace.x5)
-                .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
-        ) {
-            WeighInChip(onOpen = { weighingIn = true })
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = WindmillSpace.x5)
+                    .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
+            ) {
+                WeighInChip(onOpen = { weighingIn = true })
+            }
         }
     }
 
@@ -259,7 +271,7 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.lg))
             .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClickLabel = "open this session", onClick = onOpen)
             .padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
     ) {
         Row(
@@ -272,14 +284,16 @@ private fun SessionRow(row: LogFold.Row, onOpen: () -> Unit) {
                 Box(
                     Modifier
                         .size(7.dp)
-                        .background(GymSkin.prInk, CircleShape),
+                        .background(GymSkin.prInk, CircleShape)
+                        .semantics { contentDescription = "a record was set" },
                 )
             }
             if (row.onThisDeviceOnly) {
                 Box(
                     Modifier
                         .size(7.dp)
-                        .border(1.5.dp, GymSkin.unsyncedInk, CircleShape),
+                        .border(1.5.dp, GymSkin.unsyncedInk, CircleShape)
+                        .semantics { contentDescription = "on this device only" },
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -328,10 +342,10 @@ private fun LogFoot(older: Older, first: SessionSummary?, onLoad: () -> Unit) {
                 .padding(horizontal = WindmillSpace.x4),
         ) {
             Spacer(Modifier.weight(1f))
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .background(GymSkin.inkFaint, CircleShape),
+            CircularProgressIndicator(
+                color = GymSkin.inkFaint,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(14.dp),
             )
             Text("Loading", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
             Spacer(Modifier.weight(1f))
@@ -350,7 +364,7 @@ private fun FootBox(label: String, ink: Color, line: Color, onTap: () -> Unit) {
             .heightIn(min = GymTap.minimum)
             .padding(top = WindmillSpace.x3)
             .border(1.dp, line, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(onClick = onTap),
+            .clickable(role = Role.Button, onClick = onTap),
     ) {
         Text(label, style = WindmillFont.body(15, FontWeight.SemiBold), color = ink)
     }

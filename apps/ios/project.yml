@@ -18,9 +18,32 @@ packages:
     path: WindmillKit
 
 targets:
+  # The leading edge means two things — the shell's way home at the room's root, the room's own back
+  # once it has pushed — and which one it means can only be settled by a real touch on a real
+  # simulator. That is what `UITests` is for; it is run by this scheme's `test` action.
+  WindmillUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Windmill
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.uitests
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Windmill
+
   Windmill:
     type: application
     platform: iOS
+    scheme:
+      testTargets:
+        - WindmillUITests
     sources:
       - path: App
     dependencies:

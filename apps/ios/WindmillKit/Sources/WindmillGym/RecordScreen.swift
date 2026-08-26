@@ -37,7 +37,11 @@ struct RecordScreen: View {
                 } else if let failure {
                     silence(failure.line("this record isn’t drawn"), retry: true)
                 } else {
-                    silence("reading your log…", retry: false)
+                    ProgressView("reading your log…")
+                        .font(GymType.numeral(13))
+                        .tint(skin.inkFaint)
+                        .foregroundStyle(skin.inkFaint)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .padding(.horizontal, WindmillSpace.x5)
@@ -46,6 +50,13 @@ struct RecordScreen: View {
         }
         // Shaped once, outside the body; a second visit asks again.
         .task { await read() }
+        .toolbar {
+            if page != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Rename") { renaming = true }
+                }
+            }
+        }
         .sheet(isPresented: $renaming) {
             RenameSheet(current: page?.name ?? "",
                         title: "Rename this movement",
@@ -58,24 +69,11 @@ struct RecordScreen: View {
         }
     }
 
+    // The movement's name is the navigation bar's title; Rename is that bar's own action.
     private func head(_ page: Record.Page) -> some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-            HStack(alignment: .firstTextBaseline, spacing: WindmillSpace.x3) {
-                Text(page.name)
-                    .font(WindmillFont.display(30))
-                    .foregroundStyle(skin.ink)
-                Spacer(minLength: 0)
-                Button { renaming = true } label: {
-                    Text("Rename")
-                        .font(WindmillFont.body(13, .bold))
-                        .foregroundStyle(skin.accent)
-                        .frame(minHeight: GymTap.minimum)
-                }
-            }
-            Text(page.subhead)
-                .font(GymType.numeral(12))
-                .foregroundStyle(skin.inkFaint)
-        }
+        Text(page.subhead)
+            .font(GymType.numeral(12))
+            .foregroundStyle(skin.inkFaint)
     }
 
     private func tiles(_ page: Record.Page) -> some View {

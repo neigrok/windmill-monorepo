@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +50,9 @@ private fun Refusal(headline: String, reason: String, onDismiss: () -> Unit) {
             Text(reason, style = GymType.numeral(12), color = GymSkin.inkDim)
         }
         Box(
-            Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onDismiss),
+            Modifier
+                .heightIn(min = GymTap.minimum)
+                .clickable(role = Role.Button, onClick = onDismiss),
             contentAlignment = Alignment.Center,
         ) {
             Text("Dismiss", style = GymType.numeral(12), color = GymSkin.inkFaint)

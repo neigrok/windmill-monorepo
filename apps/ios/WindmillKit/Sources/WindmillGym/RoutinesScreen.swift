@@ -2,6 +2,9 @@ import SwiftUI
 import WindmillPlatform
 
 // Trained most recently first; the row opens the routine and never starts it.
+// The screen's title is the navigation bar's, and `New routine` is a toolbar action the room draws:
+// planning work goes to the top chrome, and the reach band holds what a lifter does with a bar in
+// their hands (`12-native-idiom.md`).
 
 struct RoutinesScreen: View {
     @ObservedObject var store: TrainingStore
@@ -20,56 +23,74 @@ struct RoutinesScreen: View {
 
     @Environment(\.gymSkin) private var skin
 
+    // Every section carries it, empty state included: the room's margin is one number, and a section
+    // that leaves it out draws its content 3pt off the cards above it.
+    private let rowInsets = EdgeInsets(top: 4, leading: WindmillSpace.x5,
+                                       bottom: 4, trailing: WindmillSpace.x5)
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: WindmillSpace.x3) {
-                head
-                RefusalRows(refusals: store.refusals, catalog: store.catalog,
-                            onDismiss: { store.clearRefusals() })
-                waiting
-                if !isSignedIn { claimOffer }
-                if store.routines.isEmpty {
-                    empty
-                } else {
+        List {
+            standing
+            if store.routines.isEmpty {
+                Section { empty }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(rowInsets)
+            } else {
+                Section {
                     ForEach(store.routines) { routine in row(routine) }
-                    newRoutine
-                    justStartLogging
+                } header: {
+                    Text("\(Readout.routineCount(store.routines.count)) · nothing running")
+                        .font(GymType.numeral(11.5))
+                        .foregroundStyle(skin.inkFaint)
                 }
-                if let onConnect {
-                    ConnectInvite(open: onConnect)
-                        .padding(.top, WindmillSpace.x2)
-                }
-                settingsDoor
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(rowInsets)
+            }
+            doors
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, GymTap.minimum)
+        .safeAreaInset(edge: .bottom) { reachBand }
+    }
+
+    // The one thing a lifter does with a bar in their hands, at every scroll position — and only where
+    // the empty state is not already offering it as one of its two.
+    @ViewBuilder
+    private var reachBand: some View {
+        if !store.routines.isEmpty {
+            Button(action: onStartLogging) {
+                Text("Just start logging")
+                    .font(WindmillFont.body(17, .bold))
+                    .foregroundStyle(skin.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: GymTap.primary)
+                    .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
             }
             .padding(.horizontal, WindmillSpace.x5)
-            .padding(.top, WindmillSpace.x10)
-            .padding(.bottom, WindmillSpace.x8)
+            .padding(.bottom, WindmillSpace.x2)
         }
     }
 
-    private var head: some View {
-        VStack(alignment: .leading, spacing: WindmillSpace.x1) {
-            Text("Routines")
-                .font(WindmillFont.display(32))
-                .foregroundStyle(skin.ink)
-            if !store.routines.isEmpty {
-                Text("\(Readout.routineCount(store.routines.count)) · nothing running")
-                    .font(GymType.numeral(13))
-                    .foregroundStyle(skin.inkFaint)
-            }
+    @ViewBuilder
+    private var standing: some View {
+        Section {
+            RefusalRows(refusals: store.refusals, catalog: store.catalog,
+                        onDismiss: { store.clearRefusals() })
+            waiting
+            if !isSignedIn { claimOffer }
         }
-        .padding(.bottom, WindmillSpace.x1)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(rowInsets)
     }
 
     private var empty: some View {
         VStack(spacing: WindmillSpace.x4) {
-            Text("+")
-                .font(WindmillFont.display(28))
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 34, weight: .light))
                 .foregroundStyle(skin.inkFaint)
                 .frame(width: 62, height: 62)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                    .foregroundStyle(skin.lineStrong))
             Text("No routines yet")
                 .font(WindmillFont.body(17, .bold))
                 .foregroundStyle(skin.ink)
@@ -78,6 +99,8 @@ struct RoutinesScreen: View {
                 .foregroundStyle(skin.inkDim)
                 .lineSpacing(5)
                 .multilineTextAlignment(.center)
+            // Two actions of deliberately different weight, which is why this state is drawn by hand
+            // rather than handed to `ContentUnavailableView` — it renders one.
             Button(action: onNew) {
                 Text("Build a routine")
                     .font(WindmillFont.body(17, .bold))
@@ -94,28 +117,10 @@ struct RoutinesScreen: View {
                         .strokeBorder(skin.lineStrong, lineWidth: 1))
             }
         }
+        .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .padding(.vertical, WindmillSpace.x6)
-    }
-
-    private var newRoutine: some View {
-        Button(action: onNew) {
-            Text("New routine")
-                .font(WindmillFont.body(17, .bold))
-                .foregroundStyle(skin.onAccent)
-                .frame(maxWidth: .infinity, minHeight: GymTap.primary)
-                .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
-        }
-        .padding(.top, WindmillSpace.x2)
-    }
-
-    private var justStartLogging: some View {
-        Button(action: onStartLogging) {
-            Text("Just start logging")
-                .font(WindmillFont.body(15, .semibold))
-                .foregroundStyle(skin.accent)
-                .frame(maxWidth: .infinity, minHeight: GymTap.minimum)
-        }
+        .listRowSeparator(.hidden)
     }
 
     // The newest pending proposal, and only while its routine is on screen to be named.
@@ -144,21 +149,34 @@ struct RoutinesScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.raised))
         }
+        .buttonStyle(.plain)
     }
 
-    private var settingsDoor: some View {
-        Button(action: onSettings) {
-            HStack {
-                Text("Gym settings")
-                    .font(GymType.numeral(12.5))
-                    .foregroundStyle(skin.inkFaint)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(skin.inkFaint)
+    @ViewBuilder
+    private var doors: some View {
+        Section {
+            if let onConnect {
+                ConnectInvite(open: onConnect)
             }
-            .frame(minHeight: GymTap.minimum)
+            Button(action: onSettings) {
+                HStack {
+                    Label("Gym settings", systemImage: "gearshape")
+                        .font(GymType.numeral(12.5))
+                        .foregroundStyle(skin.inkFaint)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(skin.inkFaint)
+                }
+                .frame(minHeight: GymTap.minimum)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Gym settings")
         }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(rowInsets)
     }
 
     // The header is the door, not the whole card: a button inside a button on iOS swallows the other.
@@ -186,20 +204,19 @@ struct RoutinesScreen: View {
                         .foregroundStyle(skin.inkFaint)
                 }
                 .frame(minHeight: GymTap.minimum)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             if let newest = pending.first { waiting(newest, of: pending.count) }
+            // A LIST of routines names movements and no targets (C16): the numbers are read on the
+            // routine's own screen, which is where the `open` in a target column is explained. This
+            // card is a door, and a door does not restate what is behind it.
             // Keyed on position, never on the movement: a routine may name one twice, and duplicate ids are undefined.
             ForEach(routine.entries.sorted { $0.position < $1.position }, id: \.position) { entry in
-                HStack(spacing: WindmillSpace.x3) {
-                    MovementDoor(exerciseId: entry.exerciseId,
-                                 name: Readout.movement(entry.exerciseId, in: store.catalog),
-                                 font: WindmillFont.body(14), ink: skin.inkDim, open: onMovement)
-                    Spacer(minLength: WindmillSpace.x2)
-                    Text(Readout.target(sets: entry.targetSets, reps: entry.targetReps,
-                                        weightKg: entry.targetWeightKg))
-                        .font(GymType.numeral(12.5))
-                        .foregroundStyle(entry.isOpen ? skin.inkFaint : skin.targetInk)
-                }
+                MovementDoor(exerciseId: entry.exerciseId,
+                             name: Readout.movement(entry.exerciseId, in: store.catalog),
+                             font: WindmillFont.body(14), ink: skin.inkDim, open: onMovement)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             history(of: routine)
         }
@@ -208,6 +225,7 @@ struct RoutinesScreen: View {
         .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.surface))
         .overlay(RoundedRectangle(cornerRadius: WindmillRadius.lg)
             .strokeBorder(pending.isEmpty ? skin.line : skin.accent, lineWidth: 1))
+        .listRowInsets(rowInsets)
     }
 
     // Counts what is waiting and opens the newest: the ledger keeps one pending proposal per door.
@@ -231,7 +249,9 @@ struct RoutinesScreen: View {
                     .foregroundStyle(skin.accent)
             }
             .frame(minHeight: GymTap.minimum)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     // Most recently decided first: three rows are drawn and the rest are counted.
@@ -263,6 +283,7 @@ struct RoutinesScreen: View {
                     .overlay(RoundedRectangle(cornerRadius: WindmillRadius.md)
                         .strokeBorder(skin.line, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
             }
             if settled.count > 3 {
                 Text("+ \(settled.count - 3) older")

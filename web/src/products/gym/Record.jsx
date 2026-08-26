@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { Button, Input } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { gymApi } from './gymApi.js';
-import { isNameOverCap, NAME_MAX, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
+import { cappedName, isNameOverCap, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
 import { useGymRead } from './useGymRead.js';
@@ -20,6 +21,7 @@ function MovementChooser({ log }) {
   return (
     <MovementPicker
       catalog={log.catalog}
+      sessions={log.summaries}
       query={query}
       onQuery={setQuery}
       onPick={(exerciseId) => { window.location.hash = recordHref(exerciseId); }}
@@ -48,7 +50,7 @@ function OneMovement({ id, log }) {
         <Back href={BACK}>Routines</Back>
         <p className="gym-read-failed">
           The movement didn’t load.
-          <button type="button" className="gym-retry" onClick={view.retry}>Retry</button>
+          <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       </>
     );
@@ -174,21 +176,17 @@ function RenameSheet({ name, record, onClose, onSave }) {
         <div className="gym-sheet-head">
           <span className="gym-sheet-title">Rename this movement</span>
         </div>
-        <div className="gym-name-field">
-          <input
-            className="gym-name-input"
-            value={typed}
-            maxLength={NAME_MAX}
-            aria-label="Movement name"
-            onChange={(event) => setTyped(event.target.value)}
-            autoFocus
-          />
-          {showsNameCount(typed) && (
+        <Input
+          value={typed}
+          ariaLabel="Movement name"
+          onChange={(event) => setTyped(cappedName(event.target.value))}
+          autoFocus
+          trailing={showsNameCount(typed) && (
             <span className={isNameOverCap(typed) ? 'gym-name-count is-over' : 'gym-name-count'}>
               {nameCountLabel(typed)}
             </span>
           )}
-        </div>
+        />
         <section className="gym-follows">
           <p className="gym-follows-head">
             <span className="gym-follows-tick" aria-hidden="true">✓</span>
@@ -203,18 +201,17 @@ function RenameSheet({ name, record, onClose, onSave }) {
             ))}
           </ul>
         </section>
-        <button
-          type="button"
-          className={ready ? 'gym-name-save' : 'gym-name-save is-inert'}
+        <Button
+          full
+          disabled={!ready}
           onClick={async () => {
-            if (!ready) return;
             setSaving(true);
             if (await onSave(typed)) return;
             setSaving(false);
           }}
         >
           Rename
-        </button>
+        </Button>
         <button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>
       </div>
     </div>

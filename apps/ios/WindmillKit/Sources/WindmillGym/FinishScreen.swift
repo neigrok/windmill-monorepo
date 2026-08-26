@@ -115,11 +115,13 @@ public enum Finish {
 }
 
 // The sets travel with it: the queue drops a delivered row the moment its session closes.
-struct FinishedSession: Equatable {
+struct FinishedSession: Equatable, Identifiable {
     let session: Session
     let sets: [TrainingSet]
     let review: Review?
     let isFirst: Bool
+
+    var id: String { session.id }
 
     var routine: String? { session.plan?.routine }
     var slight: Bool { review?.slight ?? false }
@@ -220,6 +222,10 @@ struct FinishScreen: View {
     // Answered by the room after the log said so, never on the tap.
     let kept: Bool
     let coach: CoachDoors
+    // A refusal from `keep` or `discard`. It is drawn HERE, under the control that raised it, because
+    // this sheet covers the room's own note line; the two sites below are mutually exclusive (a
+    // discard is offered only for a slight session, a keep only for one that offers a routine).
+    let failure: String?
     let onKeepRoutine: (String) -> Void
     let onDiscard: () -> Void
     let onDone: () -> Void
@@ -319,6 +325,8 @@ struct FinishScreen: View {
             }
             .disabled(routineName.trimmingCharacters(in: .whitespaces).isEmpty)
 
+            failureLine
+
             Button("Just keep the session", action: onDone)
                 .font(WindmillFont.body(16, .semibold))
                 .foregroundStyle(skin.inkDim)
@@ -345,6 +353,8 @@ struct FinishScreen: View {
                     .font(WindmillFont.body(16, .semibold))
                     .foregroundStyle(skin.alarmInk)
                     .frame(maxWidth: .infinity, minHeight: GymTap.minimum + 6)
+
+                failureLine
             }
         } else if !finished.offersRoutine || kept {
             Button("Done", action: onDone)
@@ -352,6 +362,17 @@ struct FinishScreen: View {
                 .foregroundStyle(skin.onAccent)
                 .frame(maxWidth: .infinity, minHeight: GymTap.primary)
                 .background(RoundedRectangle(cornerRadius: WindmillRadius.lg).fill(skin.accent))
+        }
+    }
+
+    @ViewBuilder
+    private var failureLine: some View {
+        if let failure {
+            Text(failure)
+                .font(GymType.numeral(12.5))
+                .foregroundStyle(skin.alarmInk)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

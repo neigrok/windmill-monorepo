@@ -24,6 +24,7 @@ export { Toast } from './feedback/Toast.jsx';
 
 // navigation
 export { Tabs } from './navigation/Tabs.jsx';
+export { TabRail, RAIL_HEIGHT } from './navigation/TabRail.jsx';
 
 // charts
 export { DotChart } from './charts/DotChart.jsx';

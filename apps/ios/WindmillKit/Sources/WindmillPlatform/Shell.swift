@@ -36,9 +36,10 @@ public struct SuperappView: View {
                     onEnter: { enter($0) }, onYou: { youUp = true })
 
             if let openRoom, let product = products.first(where: { $0.id == openRoom }) {
-                RoomHost(elsewhereRunning: runningElsewhere(than: openRoom), goHome: { leave() }) {
+                RoomHost(hostsTopChrome: product.hostsTopChrome, goHome: { leave() }) {
                     product.room(account)
                 }
+                .environment(\.elsewhereRunning, runningElsewhere(than: openRoom))
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
             }
@@ -145,58 +146,79 @@ private struct SchemeOverride: ViewModifier {
     }
 }
 
-// The home swipe is hand-rolled — a hidden navigation bar disables the system pop — and bound to the
-// leading 20pt only, so a room keeps every other gesture.
+// The home swipe is hand-rolled and bound to the leading 20pt only, so a room keeps every other
+// gesture and a room that draws no navigation bar still has a way home.
+//
+// Depth arbitrates that edge. At the room's root it means home. Once the room has pushed a screen it
+// is that room's back, and the shell's gesture is UNATTACHED there (`including: .subviews`) rather
+// than merely declining in its handler — proved on the simulator: a gesture that only declines still
+// takes the touch everywhere the room's navigation controller does not reach, beside the tab rail for
+// one, and sends the lifter home from a screen they were only stepping back out of.
 private struct RoomHost<Room: View>: View {
-    let elsewhereRunning: Bool
+    let hostsTopChrome: Bool
     let goHome: () -> Void
     @ViewBuilder var room: Room
 
-    @Environment(\.shellActions) private var shell
     @State private var drag: CGFloat = 0
     @State private var chrome: ColorScheme = .light
+    @State private var depth = 0
 
     private let edge: CGFloat = 20
     private let travel: CGFloat = 90
 
     var body: some View {
         room
-            // Read the room's skin before the capsule is added: a preference reduces over the whole
-            // observed subtree, so an inset inside it would land last.
+            // Read what the room says outward before the capsule is added: a preference reduces over
+            // the whole observed subtree, so an inset inside it would land last.
             .onPreferenceChange(RoomChromePreference.self) { chrome = $0 }
-            .safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
-                CapsuleButton(elsewhereRunning: elsewhereRunning)
+            .onPreferenceChange(RoomDepthPreference.self) { depth = $0 }
+            .modifier(ShellCapsuleInset(drawn: !hostsTopChrome, chrome: chrome))
+            .offset(x: drag)
+            .simultaneousGesture(homeSwipe, including: depth == 0 ? .all : .subviews)
+            .animation(.interactiveSpring(duration: 0.25), value: drag)
+    }
+
+    private var homeSwipe: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .onChanged { value in
+                guard value.startLocation.x <= edge, value.translation.width > 0 else { return }
+                drag = value.translation.width
+            }
+            .onEnded { value in
+                guard value.startLocation.x <= edge else { return }
+                if value.translation.width > travel { goHome() }
+                drag = 0
+            }
+    }
+}
+
+// A room that hosts its own top bar seats the capsule in it; the shell lays nothing over that room.
+private struct ShellCapsuleInset: ViewModifier {
+    let drawn: Bool
+    let chrome: ColorScheme
+
+    func body(content: Content) -> some View {
+        if drawn {
+            content.safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
+                CapsuleButton()
                     .environment(\.colorScheme, chrome)
                     .padding(.leading, WindmillSpace.x4)
                     .padding(.bottom, WindmillSpace.x2)
             }
-            .offset(x: drag)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12, coordinateSpace: .global)
-                    .onChanged { value in
-                        guard value.startLocation.x <= edge, value.translation.width > 0 else { return }
-                        drag = value.translation.width
-                    }
-                    .onEnded { value in
-                        guard value.startLocation.x <= edge else { return }
-                        if value.translation.width > travel { goHome() }
-                        drag = 0
-                    }
-            )
-            .animation(.interactiveSpring(duration: 0.25), value: drag)
+        } else {
+            content
+        }
     }
 }
 
-// 38pt, top-left, in the lane every app reserves.
+// 38pt, top-left, in the lane every app reserves. Whether another room is running comes from the
+// environment, so the capsule reads the same in the shell's inset and in a room's own toolbar.
 public struct CapsuleButton: View {
-    private let elsewhereRunning: Bool
-
     @Environment(\.shellActions) private var shell
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.elsewhereRunning) private var elsewhereRunning
 
-    public init(elsewhereRunning: Bool = false) {
-        self.elsewhereRunning = elsewhereRunning
-    }
+    public init() {}
 
     public var body: some View {
         Button { shell.openSwitcher() } label: {

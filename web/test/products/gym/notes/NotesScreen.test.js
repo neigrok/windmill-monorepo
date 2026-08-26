@@ -9,6 +9,11 @@ import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, t
 const realFetch = global.fetch;
 test.afterEach(() => { global.fetch = realFetch; });
 
+// Save is the design system's Button — a component element in a shallow render, so it is found by
+// what it says rather than by a class.
+const saveOf = (tree) => elementsOf(tree)
+  .find((each) => typeof each.type === 'function' && each.props.children === 'Save');
+
 // The notes wire: GET /notes serves `stored`; a PUT on one note answers from `onSave`.
 function notesOnTheWire({ stored = [], onSave }) {
   const wire = [];
@@ -58,8 +63,8 @@ test('a pasted sixty-one-character title is taken whole, counted in alarm, and r
   assert.equal(textOf(counter), '61 of 60 characters');
   assert.equal(counter.props.className.includes('is-over'), true);
 
-  const save = findByClass(screen.tree, 'gym-editor-save')[0];
-  assert.equal(save.props.className.includes('is-inert'), false, 'Save stays tappable over the cap');
+  const save = saveOf(screen.tree);
+  assert.equal(save.props.disabled, undefined, 'Save stays tappable over the cap');
   save.props.onClick();
   await settle();
 
@@ -89,7 +94,7 @@ test('an eleventh note the store refuses leaves the editor open with the sentenc
   const { screen, called } = editorWith(t, NoteEditor, fresh);
 
   findByClass(screen.tree, 'gym-note-title-input')[0].props.onChange({ target: { value: 'Eleventh' } });
-  findByClass(screen.tree, 'gym-editor-save')[0].props.onClick();
+  saveOf(screen.tree).props.onClick();
   await settle();
 
   assert.deepEqual(wire, ['PUT /notes/note_0123456789abcdef']);
@@ -106,7 +111,7 @@ test('a refusal that is not the full account re-reads nothing', async (t) => {
   const { screen, called } = editorWith(t, NoteEditor, fresh);
 
   findByClass(screen.tree, 'gym-note-title-input')[0].props.onChange({ target: { value: 'Long' } });
-  findByClass(screen.tree, 'gym-editor-save')[0].props.onClick();
+  saveOf(screen.tree).props.onClick();
   await settle();
   assert.equal(textOf(findByClass(screen.tree, 'gym-editor-missing')[0]), 'a note runs to 500 bytes');
   assert.equal(called.stale, 0);

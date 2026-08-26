@@ -3,19 +3,23 @@ import Foundation
 // A draft is savable while incomplete: a row with no target is `open` and asks at the rack.
 
 public struct RoutineDraft: Equatable {
-    // Sixty characters is what the counter shows; eighty bytes is the column's cap and the one that refuses a save.
+    // Sixty characters, the cap web and Android draw too, and the only bound a name has. A character
+    // is a CODE POINT here — the unit Postgres `char_length` counts, and the unit the other two
+    // surfaces count — never a grapheme cluster, which `String.count` gives and which no number of
+    // bytes bounds. Sixty code points weigh at most 240 bytes, exactly the store's ceiling, so a name
+    // this client accepts is a name the store takes and nothing here counts bytes.
     public static let maxNameLength = 60
-    public static let maxNameBytes = 80
 
-    public static let suggestions = ["Push C", "Lower B", "Thursday"]
+    // A counter is chrome a short name never carries: it appears in the last fifth of the cap and is
+    // silent before that — the same rule and the same fifth as the note editor's title counter
+    // (`Notes.counterFromCharacters`), because a lifter should not have to learn two rules for the
+    // same idea.
+    public static let counterFromCharacters = 48
 
-    // Where a row with no target at all opens. There is no opening weight: an absent one means whatever you did last time.
-    public static let openingSets = 3
-    public static let openingReps = 5
-
-    // The wire's own bounds, restated where the steppers move.
-    public static let setsRange = 1...20
-    public static let repsRange = 1...100
+    // Why Save is grey, one at a time and never concatenated. The name comes first because there is
+    // no screen in front of the editor that could have asked for one (`Program.missing` is the twin).
+    public static let nameItToSaveIt = "Name it to save it."
+    public static let atLeastOneMovement = "A routine is at least one movement."
 
     // Identity is neither the place nor the movement: a routine may name one movement twice. The id never leaves this device.
     public struct Line: Equatable, Identifiable {
@@ -59,23 +63,30 @@ public struct RoutineDraft: Equatable {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // The denominator is whichever cap binds: characters, or the bytes the column counts.
-    public static func counter(_ name: String) -> String {
-        let full = capped(name + "a").count == name.count
-        return "\(name.count)/\(full ? name.count : maxNameLength)"
+    // nil below the threshold: nothing is drawn.
+    public static func counter(_ name: String) -> String? {
+        let used = name.unicodeScalars.count
+        guard used >= counterFromCharacters else { return nil }
+        return "\(used)/\(maxNameLength)"
     }
 
-    // Cut to whichever bound runs out first, always on a character. Applied where a name is typed, never to one that arrived.
+    // Cut at the cap and always on a whole code point. Applied where a name is typed, never to one that arrived.
     public static func capped(_ typed: String) -> String {
-        var kept = String(typed.prefix(maxNameLength))
-        while kept.utf8.count > maxNameBytes { kept.removeLast() }
-        return kept
+        String(String.UnicodeScalarView(typed.unicodeScalars.prefix(maxNameLength)))
     }
 
     // The log refuses a blank name; everything else may be left open.
     public var isNamed: Bool { !trimmedName.isEmpty }
 
     public var isSavable: Bool { isNamed && !lines.isEmpty }
+
+    // What the draft is still missing, one at a time and in the order the editor meets it; nil once
+    // Save can be pressed. Drawn under the name field, which is where the first of the two is fixed.
+    public var saveRefusal: String? {
+        if !isNamed { return Self.nameItToSaveIt }
+        if lines.isEmpty { return Self.atLeastOneMovement }
+        return nil
+    }
 
     public var write: RoutineWrite {
         RoutineWrite(id: id, name: trimmedName, position: position, entries: entries)
@@ -125,72 +136,12 @@ public struct RoutineDraft: Equatable {
     }
 }
 
-public struct RoutineTarget: Equatable {
-    public var sets: Int
-    // Both may be absent and the absence is the instruction: no rep target is `3 × max`, no weight is last time's.
-    public var reps: Int?
-    public var weightKg: Double?
-
-    // Only the fully open row opens on the draft's opening pair, and not even that row is given a weight.
-    public init(_ entry: RoutineWrite.Entry) {
-        guard let named = entry.targetSets else {
-            sets = RoutineDraft.openingSets
-            reps = RoutineDraft.openingReps
-            weightKg = nil
-            return
-        }
-        sets = named
-        reps = entry.targetReps
-        weightKg = entry.targetWeightKg
-    }
-
-    // Sets and reps clamp into the wire's range rather than holding, so a number from outside it climbs back in.
-    public mutating func bumpSets(_ direction: Int) {
-        sets = min(RoutineDraft.setsRange.upperBound,
-                   max(RoutineDraft.setsRange.lowerBound, sets + direction))
-    }
-
-    // From `max`, either key lands on the opening value.
-    public mutating func bumpReps(_ direction: Int) {
-        guard let named = reps else {
-            reps = RoutineDraft.openingReps
-            return
-        }
-        reps = min(RoutineDraft.repsRange.upperBound, Ladder.bumpReps(named, direction: direction))
-    }
-
-    // What the four keys are drawn against while the row names no weight, and where the first tap lands.
-    public var ladderWeight: Double { weightKg ?? Prefill.emptyBarKg }
-
-    // The same `Ladder` as the rack, pinned by packages/api-contract/gym-ladder.json.
-    public mutating func bump(direction: Int, big: Bool) {
-        guard weightKg != nil else {
-            weightKg = ladderWeight
-            return
-        }
-        weightKg = Ladder.bump(weight: ladderWeight, direction: direction, big: big)
-    }
-
-    public var commitLine: String {
-        "Set · \(Readout.target(sets: sets, reps: reps, weightKg: weightKg))"
-    }
-}
-
 public enum RoutineReadout {
     // The count is today's; the history row's is the one it was created with.
     public static func meta(_ routine: Routine, now: Int64) -> String {
         let movements = routine.entries.count == 1 ? "1 movement" : "\(routine.entries.count) movements"
         guard let created = routine.history.last(where: { $0.kind == .created }) else { return movements }
         return "built \(Readout.when(created.atMs, now: now)) · \(movements)"
-    }
-
-    public static func openRows(_ routine: Routine, in catalog: [Exercise]) -> String? {
-        let open = routine.entries.filter(\.isOpen)
-        guard let only = open.first else { return nil }
-        guard open.count == 1 else {
-            return "\(open.count) movements have no target — they will ask at the rack."
-        }
-        return "\(Readout.movement(only.exerciseId, in: catalog)) has no target — it will ask at the rack."
     }
 
     // No door named means the lifter's own hand.

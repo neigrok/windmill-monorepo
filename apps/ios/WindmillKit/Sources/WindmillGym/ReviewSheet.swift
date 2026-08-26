@@ -38,9 +38,11 @@ struct ReviewSheet: View {
                                 .foregroundStyle(skin.alarmInk)
                                 .lineSpacing(3)
                         } else {
-                            Text("reading the proposal…")
+                            ProgressView("reading the proposal…")
                                 .font(GymType.numeral(13))
+                                .tint(skin.inkFaint)
                                 .foregroundStyle(skin.inkFaint)
+                                .frame(maxWidth: .infinity)
                         }
                     }
                     .padding(.horizontal, WindmillSpace.x5)

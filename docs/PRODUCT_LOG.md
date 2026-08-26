@@ -190,9 +190,11 @@ a truncated axis, gaps left empty, and no goal line, projection or estimate over
 us.
 
 **Native beats house style.** Where the platform has a control, the platform's control wins; where it
-does not, Windmill's vocabulary is identical everywhere. The two phones have been one custom drawing
-at two sizes, and after this they differ on purpose. Gym also stops being dark-only — a room that
-ignores the system Appearance is not a native room.
+does not, Windmill's vocabulary is identical everywhere. The two phones were one custom drawing at
+two sizes; they now differ on purpose — a TabView and navigation stacks on iOS, a Scaffold with the
+platform's bars on Android, the shared design system on the web. Gym still owes the other half of
+that rule: it stops being dark-only, because a room that ignores the system Appearance is not a
+native room.
 
 ## What gym gets from the platform
 

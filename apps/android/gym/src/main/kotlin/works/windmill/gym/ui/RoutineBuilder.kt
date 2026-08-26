@@ -19,22 +19,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,25 +44,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.Prefill
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -82,13 +86,10 @@ val routineDraftSaver: Saver<RoutineDraft?, String> = Saver(
     },
 )
 
-// The three numbers on the target sheet are carried by the sheet stack, because typing a weight leaves
-// that sheet for the pad and comes back.
-private data class Dial(val sets: Int, val reps: Int, val weightKg: Double)
-
+// Two layers, not three: the target sheet's three fields take the platform's own keyboard, so
+// nothing opens a pad over a sheet over a screen.
 private sealed interface BuilderSheet {
-    data class Target(val exerciseId: String, val dialled: Dial? = null) : BuilderSheet
-    data class Weight(val exerciseId: String, val dialled: Dial) : BuilderSheet
+    data class Target(val exerciseId: String) : BuilderSheet
     data object Picker : BuilderSheet
     data class Create(val name: String) : BuilderSheet
 }
@@ -124,6 +125,10 @@ fun RoutineBuilder(
             draft = draft,
             store = store,
             editing = editing,
+            // C19: while a target sheet stands over the list, the SHEET owns the open line's
+            // sentence and the list's copy stands down — one state says it once, never a blessing
+            // behind a scrim beside a refusal in front of it.
+            targeting = sheet is BuilderSheet.Target,
             savable = draft.savable && changed && !saving,
             onDraft = onDraft,
             onOpenTarget = { sheet = BuilderSheet.Target(it) },
@@ -142,37 +147,29 @@ fun RoutineBuilder(
             onDismissRequest = { close() },
             sheetState = sheetState,
             containerColor = GymSkin.surface,
-            dragHandle = null,
         ) {
             when (open) {
                 is BuilderSheet.Target -> TargetSheet(
                     draft = draft,
                     exerciseId = open.exerciseId,
-                    dialled = open.dialled,
                     store = store,
-                    onType = { sheet = BuilderSheet.Weight(open.exerciseId, it) },
-                    onSet = {
-                        onDraft(draft.targeting(open.exerciseId, it.sets, it.reps, it.weightKg))
+                    onSet = { reading ->
+                        when (reading) {
+                            TargetEntry.Reading.Open -> onDraft(draft.opening(open.exerciseId))
+                            is TargetEntry.Reading.Targeted -> onDraft(
+                                draft.targeting(open.exerciseId, reading.sets, reading.reps, reading.weightKg)
+                            )
+                            is TargetEntry.Reading.Refused -> return@TargetSheet
+                        }
                         close()
                     },
-                    onOpen = {
-                        onDraft(draft.opening(open.exerciseId))
-                        close()
-                    },
-                )
-                is BuilderSheet.Weight -> KeypadSheet(
-                    mode = KeypadEntry.Mode.Weight,
-                    current = open.dialled.weightKg,
-                    onCommit = { typed ->
-                        sheet = BuilderSheet.Target(open.exerciseId, open.dialled.copy(weightKg = typed))
-                    },
-                    onCancel = { sheet = BuilderSheet.Target(open.exerciseId, open.dialled) },
                 )
                 BuilderSheet.Picker -> MovementPicker(
                     catalog = store.catalog,
                     taken = draft.entries.map { it.exerciseId },
                     lastSets = null,
                     nowMs = 0,
+                    sessions = store.recent,
                     title = "Add movement",
                     catalogUnread = store.catalogUnread,
                     onPick = {
@@ -181,7 +178,7 @@ fun RoutineBuilder(
                     },
                     onCreate = { sheet = BuilderSheet.Create(it) },
                     modifier = Modifier
-                        .fillMaxHeight(0.92f)
+                        .heightIn(max = pickerMaxHeight())
                         .background(GymSkin.surface)
                         .padding(WindmillSpace.x5),
                     onClose = { close() },
@@ -210,6 +207,7 @@ private fun BuildStep(
     draft: RoutineDraft,
     store: TrainingStore,
     editing: Boolean,
+    targeting: Boolean,
     savable: Boolean,
     onDraft: (RoutineDraft) -> Unit,
     onOpenTarget: (String) -> Unit,
@@ -223,15 +221,25 @@ private fun BuildStep(
     val dropAt = with(LocalDensity.current) { 108.dp.toPx() }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val missing = Program.missing(draft)
 
-    LaunchedEffect(Unit) {
-        if (draft.id == null && draft.name.isEmpty()) {
-            focus.requestFocus()
-            keyboard?.show()
-        }
-    }
+    GymScreen(
+        title = if (editing) "Edit routine" else "New routine",
+        onBack = onCancel,
+        backTo = "the routine you were on",
+        actions = { TopAction("Save", enabled = savable, onClick = onSave) },
+    ) {
+      // Inside the container, beside the field: `Scaffold` subcomposes its content during measure, so
+      // an effect declared outside it asks a `FocusRequester` whose node is not attached yet and
+      // throws out of the composition.
+      LaunchedEffect(Unit) {
+          if (draft.id == null && draft.name.isEmpty()) {
+              focus.requestFocus()
+              keyboard?.show()
+          }
+      }
 
-    Column(
+      Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
         modifier = Modifier
             .fillMaxSize()
@@ -239,90 +247,45 @@ private fun BuildStep(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = WindmillSpace.x8),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Box(
-                contentAlignment = Alignment.CenterStart,
-                modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onCancel),
-            ) {
-                Text("Cancel", style = WindmillFont.body(15), color = GymSkin.inkDim)
-            }
-            Text(
-                if (editing) "Edit routine" else "New routine",
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = GymSkin.ink,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-            )
-            Box(
-                contentAlignment = Alignment.CenterEnd,
+      ) {
+        // The name is the editor's first field and it opens with the keyboard up: there is no
+        // screen in front of this one asking for a string this screen already has a field for.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = draft.name,
+                onValueChange = { onDraft(draft.named(it)) },
+                singleLine = true,
+                label = { Text("Name") },
+                placeholder = { Text("Heavy Thursday") },
+                textStyle = WindmillFont.body(19, FontWeight.Bold),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
+                    autoCorrectEnabled = false,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                shape = RoundedCornerShape(WindmillRadius.md),
+                colors = gymFieldColours(),
                 modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .clickable(enabled = savable, onClick = onSave),
-            ) {
+                    .weight(1f)
+                    .focusRequester(focus)
+                    // `Name` alone is ambiguous read out of the screen it is on.
+                    .semantics { contentDescription = "Routine name" },
+            )
+            Program.counter(draft.name)?.let { counted ->
                 Text(
-                    "Save",
-                    style = WindmillFont.body(15, FontWeight.Bold),
-                    color = if (savable) GymSkin.accent else GymSkin.inkFaint,
-                )
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Text("Name", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BasicTextField(
-                    value = draft.name,
-                    onValueChange = { onDraft(draft.named(it)) },
-                    singleLine = true,
-                    textStyle = WindmillFont.display(24).copy(color = GymSkin.ink),
-                    cursorBrush = SolidColor(GymSkin.accent),
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        autoCorrectEnabled = false,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum + 4.dp)
-                        .focusRequester(focus),
-                    decorationBox = { inner ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (draft.name.isEmpty()) {
-                                Text("Heavy Thursday", style = WindmillFont.display(24), color = GymSkin.inkFaint)
-                            }
-                            inner()
-                        }
-                    },
-                )
-                Text(
-                    Program.counter(draft.name),
+                    counted,
                     style = GymType.numeral(12),
                     color = GymSkin.inkFaint,
+                    modifier = Modifier.padding(start = WindmillSpace.x3),
                 )
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(GymSkin.lineStrong))
         }
 
-        if (draft.name.isEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-                Program.suggestions.forEach { suggestion ->
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .heightIn(min = GymTap.minimum - 8.dp)
-                            .clip(RoundedCornerShape(WindmillRadius.full))
-                            .background(GymSkin.raised)
-                            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
-                            .clickable { onDraft(draft.named(suggestion)) }
-                            .padding(horizontal = WindmillSpace.x4),
-                    ) {
-                        Text(suggestion, style = WindmillFont.body(14), color = GymSkin.inkDim)
-                    }
-                }
-            }
+        // Why Save is grey, one refusal at a time and never concatenated. Naming it comes first
+        // because no screen before this one asked for a name.
+        missing?.let {
+            Text(it, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -363,7 +326,21 @@ private fun BuildStep(
                             },
                         )
                     }
-                    .clickable { onOpenTarget(entry.exerciseId) }
+                    .clickable(role = Role.Button, onClickLabel = "set this movement’s target") {
+                        onOpenTarget(entry.exerciseId)
+                    }
+                    // Law 1: on Android a swipe is half-built until its custom action exists, and this
+                    // swipe is the only way a movement leaves a routine. Law 3: a stroke that begins in
+                    // the edge strip belongs to the system — it is back, which here leaves the draft —
+                    // so the row's own swipe starts away from the edge and never competes for it.
+                    .semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction("Remove") {
+                                onRemove(entry.exerciseId)
+                                true
+                            },
+                        )
+                    }
                     .padding(horizontal = WindmillSpace.x4),
             ) {
                 Text(
@@ -380,6 +357,17 @@ private fun BuildStep(
             }
         }
 
+        // Once beneath the list and never per row: each open row already reads `open` in its own
+        // target column — that word says WHICH, and this sentence says what it means. And never
+        // while a target sheet stands over the list, because the sheet is saying it there.
+        if (!targeting && draft.entries.any { it.targetSets == null }) {
+            Text(
+                TargetEntry.openLine,
+                style = WindmillFont.body(14).copy(lineHeight = 21.sp),
+                color = GymSkin.inkDim,
+            )
+        }
+
         // The dashed slot goes at the ceiling the log itself refuses past.
         if (!draft.full) {
             Box(
@@ -388,9 +376,15 @@ private fun BuildStep(
                     .fillMaxWidth()
                     .heightIn(min = GymTap.primary - 8.dp)
                     .dashedEdge(GymSkin.lineStrong, WindmillRadius.md)
-                    .clickable(onClick = onAdd),
+                    .clickable(role = Role.Button, onClick = onAdd),
             ) {
-                Text("+ Add movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = GymSkin.accent)
+                    Text("Add movement", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
+                }
             }
         }
 
@@ -405,7 +399,7 @@ private fun BuildStep(
                         .weight(1f)
                         .heightIn(min = GymTap.minimum)
                         .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(onClick = onDuplicate),
+                        .clickable(role = Role.Button, onClick = onDuplicate),
                 ) {
                     Text("Duplicate", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
                 }
@@ -415,7 +409,7 @@ private fun BuildStep(
                         .weight(1f)
                         .heightIn(min = GymTap.minimum)
                         .border(1.dp, GymSkin.alarmInk, RoundedCornerShape(WindmillRadius.lg))
-                        .clickable(onClick = onDelete),
+                        .clickable(role = Role.Button, onClick = onDelete),
                 ) {
                     Text("Delete routine", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.alarmInk)
                 }
@@ -426,36 +420,48 @@ private fun BuildStep(
                 color = GymSkin.inkFaint,
             )
         }
+      }
     }
 }
 
 // `Never logged — these are your numbers.` is a fact about this ROUTINE and not the movement.
+//
+// Three fields and no escape hatch, because emptying a field IS the escape and the placeholder says
+// what empty means: no sets is an open line, no reps is `max`, no load is `last time`. The plate
+// LADDER belongs at the rack, where plate granularity is what you are reasoning about; here you
+// already know the number you want. The SIGN is a different thing and stays: no number pad carries a
+// minus, and without it a band-assisted target could not be planned at all.
 @Composable
 private fun TargetSheet(
     draft: RoutineDraft,
     exerciseId: String,
-    dialled: Dial?,
     store: TrainingStore,
-    onType: (Dial) -> Unit,
-    onSet: (Dial) -> Unit,
-    onOpen: () -> Unit,
+    onSet: (TargetEntry.Reading) -> Unit,
 ) {
     val entry = draft.entry(exerciseId)
-    // The dial opens on what came back from the pad, then the row's own targets, then three fives.
-    var sets by remember(exerciseId, dialled) {
-        mutableIntStateOf(dialled?.sets ?: entry?.targetSets ?: RoutineDraft.startingSets)
+    // TEXT AND ITS SELECTION, not text alone: a refused clear has to hand the value back highlighted,
+    // and a plain string cannot say where the caret went.
+    var sets by remember(exerciseId) {
+        mutableStateOf(TextFieldValue(entry?.targetSets?.toString().orEmpty()))
     }
-    var reps by remember(exerciseId, dialled) {
-        mutableIntStateOf(dialled?.reps ?: entry?.targetReps ?: RoutineDraft.startingReps)
+    var reps by remember(exerciseId) {
+        mutableStateOf(TextFieldValue(entry?.targetReps?.toString().orEmpty()))
     }
-    var weightKg by remember(exerciseId, dialled) {
-        mutableDoubleStateOf(dialled?.weightKg ?: entry?.targetWeightKg ?: Prefill.EMPTY_BAR_KG)
+    var weight by remember(exerciseId) {
+        mutableStateOf(TextFieldValue(entry?.targetWeightKg?.let { Readout.weight(it) }.orEmpty()))
     }
+    // The clear that was refused, said until the lifter types again. It is not a reading: the field
+    // kept its value, so nothing about the three numbers changed.
+    var clearRefused by remember(exerciseId) { mutableStateOf<String?>(null) }
+
+    val reading = TargetEntry.reading(sets.text, reps.text, weight.text)
+    val refused = reading as? TargetEntry.Reading.Refused
 
     Column(
         Modifier
             .fillMaxWidth()
             .background(GymSkin.surface)
+            .imePadding()
             .padding(WindmillSpace.x5),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
     ) {
@@ -485,34 +491,81 @@ private fun TargetSheet(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-            Counted("Sets", sets, Modifier.weight(1f)) {
-                sets = (sets + it).coerceIn(1, Program.maxSets)
-            }
-            Counted("Reps", reps, Modifier.weight(1f)) {
-                reps = Ladder.bumpReps(reps, it).coerceAtMost(Program.maxReps)
-            }
+        // What leaving the fields empty MEANS, said where the lifter is deciding it — and said
+        // ABOVE them, beside the never-logged line: everything drawn UNDER a field is that field's
+        // own note, while this is a statement about the whole line. The row keeps the compact
+        // `open` token. A refusal and a blessing of the same state are never drawn together.
+        if (reading == TargetEntry.Reading.Open && clearRefused == null) {
+            Text(
+                TargetEntry.openLine,
+                style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                color = GymSkin.inkDim,
+            )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-            Text("Target weight", style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-                verticalAlignment = Alignment.Bottom,
+        // Four abreast on a phone: the gap is the tightest of the sheet so that three labels and the
+        // sign key all keep their own line at the largest font scale.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TargetField(
+                label = "Sets",
+                value = sets,
+                placeholder = TargetEntry.setsPlaceholder,
+                decimal = false,
+                bad = clearRefused != null || refused?.field == TargetEntry.Field.Sets,
+                modifier = Modifier.weight(1f),
+            ) { typed ->
+                // Clearing sets is how a line is opened, and an open line names neither reps nor a
+                // load — so the clear is refused rather than taking two numbers away silently. The
+                // kept value comes back SELECTED, because the gesture this refusal interrupts is
+                // backspace-then-retype: with the caret after the value the next digit would append
+                // and earn a second refusal for a number nobody typed.
+                val stop = if (typed.text.isBlank()) TargetEntry.clearingSets(reps.text, weight.text) else null
+                clearRefused = stop
+                sets = if (stop == null) typed else TextFieldValue(sets.text, TextRange(0, sets.text.length))
+            }
+            TargetField(
+                label = "Reps",
+                value = reps,
+                placeholder = TargetEntry.repsPlaceholder,
+                decimal = false,
+                bad = refused?.field == TargetEntry.Field.Reps,
+                modifier = Modifier.weight(1.1f),
             ) {
-                BasicText(
-                    Readout.weight(weightKg),
-                    maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 48.sp),
-                    style = GymType.weight.copy(fontSize = 48.sp, lineHeight = 48.sp, color = GymSkin.weightInk),
-                    modifier = Modifier.clickable { onType(Dial(sets, reps, weightKg)) },
-                )
-                Text("kg", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.inkFaint)
-                Spacer(Modifier.weight(1f))
+                clearRefused = null
+                reps = it
+            }
+            TargetField(
+                label = "Weight",
+                value = weight,
+                placeholder = TargetEntry.weightPlaceholder,
+                decimal = true,
+                bad = refused?.field == TargetEntry.Field.Weight,
+                // The widest of the three: it holds a decimal and a sign.
+                modifier = Modifier.weight(1.3f),
+            ) {
+                clearRefused = null
+                weight = it
+            }
+            // The number pad has no minus key, so without this the plan cannot say what the rack can:
+            // band-assisted work is a negative load. `±` and never a bare `−`, because the control is
+            // also the way back to a loaded lift.
+            SignKey {
+                clearRefused = null
+                weight = signFlipped(weight)
             }
         }
 
-        LadderRow(weightKg, onDial = { weightKg = it })
+        // One refusal at a time, and the clear's own outranks the rest because it is what just
+        // happened.
+        val said = clearRefused ?: refused?.said
+        if (said != null) {
+            Text(said, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.alarmInk)
+        } else {
+            Text(TargetEntry.decimalHint, style = GymType.numeral(12), color = GymSkin.inkFaint)
+        }
 
         Box(
             contentAlignment = Alignment.Center,
@@ -520,45 +573,77 @@ private fun TargetSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.primary)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(GymSkin.accent)
-                .clickable { onSet(Dial(sets, reps, weightKg)) },
+                .background(if (refused == null) GymSkin.accent else GymSkin.raised)
+                .clickable(enabled = refused == null, role = Role.Button) { onSet(reading) },
         ) {
             Text(
-                "Set  ·  ${Readout.target(sets, reps, weightKg)}",
+                "Set  ·  ${preview(reading)}",
                 style = WindmillFont.body(17, FontWeight.Bold),
-                color = GymSkin.onAccent,
+                color = if (refused == null) GymSkin.onAccent else GymSkin.inkFaint,
             )
-        }
-
-        // It clears the whole row: the log refuses reps or a weight on a line with no sets.
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = GymTap.minimum + 6.dp)
-                .clickable(onClick = onOpen)
-                .padding(top = WindmillSpace.x1),
-        ) {
-            Text("Leave it open", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text("decide at the rack", style = GymType.numeral(11), color = GymSkin.inkFaint)
         }
     }
 }
 
+// What the three fields name, in the words the row itself will print.
+private fun preview(reading: TargetEntry.Reading): String = when (reading) {
+    TargetEntry.Reading.Open -> Readout.openTarget
+    is TargetEntry.Reading.Targeted -> Readout.target(reading.sets, reading.reps, reading.weightKg)
+    is TargetEntry.Reading.Refused -> "—"
+}
+
+// A sign the lifter can reach without a keyboard that has one. Empty stays empty: a sign with no
+// number behind it is not a load, and an empty weight field already means `last time`.
+private fun signFlipped(typed: TextFieldValue): TextFieldValue {
+    val text = typed.text.trim()
+    if (text.isEmpty()) return typed
+    val flipped = if (text.startsWith("-") || text.startsWith("−")) text.drop(1) else "−$text"
+    return TextFieldValue(flipped, TextRange(flipped.length))
+}
+
 @Composable
-private fun Counted(label: String, value: Int, modifier: Modifier, onStep: (Int) -> Unit) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-        Text(label, style = GymType.numeral(11).copy(letterSpacing = 0.07.em), color = GymSkin.inkFaint)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Step("−") { onStep(-1) }
-            Box(
-                Modifier.weight(1f).sizeIn(minHeight = GymTap.minimum),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(value.toString(), style = GymType.numeral(20, FontWeight.Bold), color = GymSkin.ink)
-            }
-            Step("+") { onStep(1) }
-        }
+private fun SignKey(onFlip: () -> Unit) {
+    Box(
+        Modifier
+            .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
+            .clip(RoundedCornerShape(WindmillRadius.md))
+            .background(GymSkin.raised)
+            .clickable(role = Role.Button, onClickLabel = "Flip the sign", onClick = onFlip)
+            // The glyph reads as nothing out loud, so the control says what it is.
+            .semantics(mergeDescendants = true) { contentDescription = "Flip the sign" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = GymSkin.ink)
     }
+}
+
+@Composable
+private fun TargetField(
+    label: String,
+    value: TextFieldValue,
+    placeholder: String,
+    decimal: Boolean,
+    bad: Boolean,
+    modifier: Modifier,
+    onTyped: (TextFieldValue) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        // A keystroke that does not fit is refused WHOLE rather than truncated: a field that
+        // silently drops the last character types a number nobody chose.
+        onValueChange = { if (it.text.length <= 8) onTyped(it) },
+        singleLine = true,
+        isError = bad,
+        label = { Text(label) },
+        placeholder = { Text(placeholder, maxLines = 1) },
+        textStyle = GymType.numeral(19, FontWeight.Bold),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,
+            autoCorrectEnabled = false,
+        ),
+        shape = RoundedCornerShape(WindmillRadius.md),
+        colors = gymFieldColours(),
+        // `Sets` alone is ambiguous read out of its row; the field says what it targets.
+        modifier = modifier.semantics { contentDescription = "$label target" },
+    )
 }

@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,9 +22,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,7 +59,7 @@ fun SettingsScreen(
     store: TrainingStore,
     isSignedIn: Boolean,
     origin: String,
-    backLabel: String,
+    backTo: String,
     onBack: () -> Unit,
     onNotes: () -> Unit,
     say: (String?) -> Unit,
@@ -72,50 +74,36 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = WindmillSpace.x4)
-            .padding(bottom = WindmillSpace.x8),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-    ) {
-        BackRow(backLabel, onBack)
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Gym", style = WindmillFont.display(30), color = GymSkin.ink)
+    GymScreen(title = "Gym", onBack = onBack, backTo = backTo) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = WindmillSpace.x4)
+                .padding(bottom = WindmillSpace.x8),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
             Text("how this room behaves at the rack", style = GymType.numeral(12), color = GymSkin.inkFaint)
+            Spacer(Modifier.height(WindmillSpace.x1))
+
+            UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
+            RestRow(
+                preferences = preferences,
+                onPick = { write(preferences.copy(restSeconds = it)) },
+                onToggleSound = { write(preferences.copy(restSound = !preferences.restSound)) },
+            )
+            ConfirmRow(
+                preferences = preferences,
+                onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
+                onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
+            )
+            // One caption for the three dials: it answers the question a lifter asks here, looking at them.
+            Caption(Notes.settingsLine)
+            NotesRow(onNotes)
+            ConnectedLogRow(isSignedIn, origin)
+            UnattributedRow(store, isSignedIn, say)
+            ClosingNote()
         }
-        Spacer(Modifier.height(WindmillSpace.x1))
-
-        UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-        RestRow(
-            preferences = preferences,
-            onPick = { write(preferences.copy(restSeconds = it)) },
-            onToggleSound = { write(preferences.copy(restSound = !preferences.restSound)) },
-        )
-        ConfirmRow(
-            preferences = preferences,
-            onToggleHaptic = { write(preferences.copy(confirmHaptic = !preferences.confirmHaptic)) },
-            onToggleSound = { write(preferences.copy(confirmSound = !preferences.confirmSound)) },
-        )
-        // One caption for the three dials: it answers the question a lifter asks here, looking at them.
-        Caption(Notes.settingsLine)
-        NotesRow(onNotes)
-        ConnectedLogRow(isSignedIn, origin)
-        UnattributedRow(store, isSignedIn, say)
-        ClosingNote()
-    }
-}
-
-@Composable
-private fun BackRow(label: String, onBack: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onBack),
-    ) {
-        Text("‹", style = WindmillFont.body(20, FontWeight.SemiBold), color = GymSkin.inkDim)
-        Text(label, style = WindmillFont.body(14, FontWeight.Bold), color = GymSkin.inkDim)
     }
 }
 
@@ -123,36 +111,12 @@ private fun BackRow(label: String, onBack: () -> Unit) {
 @Composable
 private fun UnitsRow(units: Units, onPick: (Units) -> Unit) {
     SettingCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Units", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
-            Spacer(Modifier.weight(1f))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(WindmillRadius.full))
-                    .background(GymSkin.canvas)
-                    .padding(WindmillSpace.x1),
-            ) {
-                Units.entries.forEach { entry ->
-                    val picked = entry == units
-                    Box(
-                        Modifier
-                            .heightIn(min = GymTap.minimum)
-                            .clip(RoundedCornerShape(WindmillRadius.full))
-                            .background(if (picked) GymSkin.accent else Color.Transparent)
-                            .clickable { onPick(entry) }
-                            .padding(horizontal = WindmillSpace.x4),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            entry.wire,
-                            style = GymType.numeral(13, FontWeight.Bold),
-                            color = if (picked) GymSkin.onAccent else GymSkin.inkDim,
-                        )
-                    }
-                }
-            }
-        }
+        Text("Units", style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
+        GymSegmented(
+            options = Units.entries.map { it to it.wire },
+            picked = units,
+            onPick = onPick,
+        )
         Caption("Display only — nothing stored changes.")
         Caption("This phone still draws every weight in kilograms — nothing on this screen converts one. The choice is kept with your gym settings and goes with you when you sign in.")
     }
@@ -167,31 +131,11 @@ private fun RestRow(preferences: GymPreferences, onPick: (Int?) -> Unit, onToggl
             Spacer(Modifier.weight(1f))
             Text(restLabel(preferences.restSeconds), style = GymType.numeral(13), color = GymSkin.inkDim)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            GymPreferences.restChoices.forEach { choice ->
-                val picked = choice == preferences.restSeconds
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = GymTap.minimum)
-                        .clip(RoundedCornerShape(WindmillRadius.md))
-                        .background(if (picked) GymSkin.accentSoft else Color.Transparent)
-                        .border(
-                            1.dp,
-                            if (picked) GymSkin.accent else GymSkin.line,
-                            RoundedCornerShape(WindmillRadius.md),
-                        )
-                        .clickable { onPick(choice) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        restLabel(choice),
-                        style = GymType.numeral(13, if (picked) FontWeight.Bold else FontWeight.Normal),
-                        color = if (picked) GymSkin.accent else GymSkin.inkDim,
-                    )
-                }
-            }
-        }
+        GymSegmented(
+            options = GymPreferences.restChoices.map { it to restLabel(it) },
+            picked = preferences.restSeconds,
+            onPick = onPick,
+        )
         ToggleLine("Sound when it ends", preferences.restSound, onToggleSound)
         // A routine's own rest against a movement outranks this dial, `off` included.
         Caption("A routine can carry its own rest for a movement. That one wins over this dial, off included — and only a change to that routine can move it.")
@@ -223,11 +167,11 @@ private fun NotesRow(onNotes: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .clickable(onClick = onNotes),
+                .clickable(role = Role.Button, onClick = onNotes),
         ) {
             Text(Notes.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
             Spacer(Modifier.weight(1f))
-            Text("›", style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkFaint)
+            Chevron()
         }
     }
 }
@@ -243,12 +187,49 @@ private fun ConnectedLogRow(isSignedIn: Boolean, origin: String) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
-                .clickable { runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) } },
+                .clickable(role = Role.Button, onClickLabel = "open your connections") {
+                    runCatching { web.openUri(ConnectedLog.connectionsUrl(origin)) }
+                },
         ) {
             Text(ConnectedLog.title, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.ink)
             Spacer(Modifier.weight(1f))
-            Text("your connections  ›", style = GymType.numeral(13), color = GymSkin.accent)
+            Text("your connections", style = GymType.numeral(13), color = GymSkin.accent)
+            Chevron()
         }
+        // The routines list no longer pitches this, so the door and the sentence that explains it
+        // both live here.
+        Text(
+            ConnectedLog.sub,
+            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
+            color = GymSkin.inkDim,
+        )
+        // The offer says who it is for BEFORE it is made. This is the pitch's own honesty line — it
+        // rules a lifter out rather than in — and it came off the surface with the routines-list card
+        // that used to carry it, leaving a door that asked for nothing and promised no precondition.
+        Text(
+            ConnectedLog.precondition,
+            style = GymType.numeral(12).copy(lineHeight = 18.sp),
+            color = GymSkin.inkFaint,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(GymSkin.canvas, RoundedCornerShape(WindmillRadius.md))
+                .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.md))
+                .padding(WindmillSpace.x3),
+        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = GymTap.minimum + 6.dp)
+                .clip(RoundedCornerShape(WindmillRadius.md))
+                .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
+                .clickable(role = Role.Button) {
+                    runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                },
+        ) {
+            Text(ConnectedLog.connect, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.accent)
+        }
+        Caption(ConnectedLog.onTheWeb)
         Text(
             ConnectedLog.free,
             style = GymType.numeral(12).copy(lineHeight = 18.sp),
@@ -318,7 +299,7 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .background(if (isSignedIn) GymSkin.accent else GymSkin.canvas)
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         scope.launch {
                             say(null)
                             confirmingDiscard = false
@@ -336,7 +317,7 @@ private fun UnattributedRow(store: TrainingStore, isSignedIn: Boolean, say: (Str
                     .heightIn(min = GymTap.minimum)
                     .clip(RoundedCornerShape(WindmillRadius.md))
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.md))
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         if (!confirmingDiscard) {
                             confirmingDiscard = true
                             return@clickable
@@ -418,6 +399,7 @@ private fun Caption(line: String) {
     Text(line, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
 }
 
+// The platform's switch, so TalkBack reads a switch with a state rather than a coloured box.
 @Composable
 private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
     Row(
@@ -425,31 +407,23 @@ private fun ToggleLine(label: String, on: Boolean, onToggle: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = GymTap.minimum)
-            .clickable(onClick = onToggle),
+            .toggleable(value = on, role = Role.Switch, onValueChange = { onToggle() }),
     ) {
         Text(label, style = WindmillFont.body(14), color = GymSkin.inkDim)
         Spacer(Modifier.weight(1f))
-        Box(
-            Modifier
-                .width(46.dp)
-                .height(27.dp)
-                .clip(RoundedCornerShape(WindmillRadius.full))
-                .background(if (on) GymSkin.accent else GymSkin.canvas)
-                .border(
-                    1.dp,
-                    if (on) GymSkin.accent else GymSkin.lineStrong,
-                    RoundedCornerShape(WindmillRadius.full),
-                )
-                .padding(3.dp),
-            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-        ) {
-            Box(
-                Modifier
-                    .size(21.dp)
-                    .clip(CircleShape)
-                    .background(if (on) GymSkin.onAccent else GymSkin.inkFaint),
-            )
-        }
+        Switch(
+            checked = on,
+            // The row owns the tap, so the switch is drawn rather than separately reachable.
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = GymSkin.onAccent,
+                checkedTrackColor = GymSkin.accent,
+                checkedBorderColor = GymSkin.accent,
+                uncheckedThumbColor = GymSkin.inkFaint,
+                uncheckedTrackColor = GymSkin.canvas,
+                uncheckedBorderColor = GymSkin.lineStrong,
+            ),
+        )
     }
 }
 

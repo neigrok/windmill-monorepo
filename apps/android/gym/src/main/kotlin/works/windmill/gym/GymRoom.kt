@@ -4,25 +4,31 @@ import android.app.Activity
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -35,10 +41,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.domain.Ask
 import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.Bodyweight
@@ -78,7 +83,6 @@ import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymSkin
-import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.GymType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
@@ -99,8 +103,6 @@ import works.windmill.platform.Account
 import works.windmill.platform.auth.PrefsSessions
 import works.windmill.platform.LocalShellActions
 import works.windmill.platform.ProductModule
-import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // Gym's one seam into the superapp.
@@ -119,6 +121,42 @@ internal enum class Tab(val title: String) {
     Log("The log"),
     Coach("Coach"),
 }
+
+// Back has five meanings on this surface and three of them are not pops, which is why the room
+// decides them itself rather than handing the stack to a navigator.
+internal enum class BackMeans {
+    // The finish screen: the session is closed and this screen is the receipt for it.
+    Nothing,
+    // Mid-workout: the logger stays standing. A stroke from the edge with a bar in your hands must
+    // never put the app in the background.
+    StayInTheWorkout,
+    // The editor: back is Cancel and it leaves the whole draft.
+    LeaveTheDraft,
+    PopOnePushedScreen,
+    ReturnToTheRoutinesTab,
+    // The routines home has nothing behind it, so back is the platform's and leaves the app.
+    LeaveTheApp,
+}
+
+internal fun backMeans(
+    finished: Boolean,
+    live: Boolean,
+    building: Boolean,
+    away: Int,
+    tab: Tab,
+): BackMeans = when {
+    finished -> BackMeans.Nothing
+    live -> BackMeans.StayInTheWorkout
+    building -> BackMeans.LeaveTheDraft
+    away > 0 -> BackMeans.PopOnePushedScreen
+    tab != Tab.Routines -> BackMeans.ReturnToTheRoutinesTab
+    else -> BackMeans.LeaveTheApp
+}
+
+// The rail belongs to the three tabs and to nothing else: a live session, a finish, a draft and any
+// pushed screen each take the whole frame, and a bar drawn empty would reserve height for nothing.
+internal fun railStands(finished: Boolean, live: Boolean, building: Boolean, away: Int): Boolean =
+    !finished && !live && !building && away == 0
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
 // crash the restore.
@@ -157,7 +195,8 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 }
 
 // The three tabs, the live session, the finish screen, and the screens a tab can push. The shell
-// owns the capsule, the theme control and billing.
+// owns the theme control and billing; its account seat rides the trailing slot of each root's own
+// top bar, because a native rail has no fourth seat.
 //
 // A live session takes the whole screen, rail included; a pushed screen covers the rail too.
 //
@@ -228,6 +267,9 @@ fun GymRoom(account: Account) {
     // log is the one that says whether the bucket has refilled. Saved: a recreation is not a re-entry,
     // so it must not hand the composer back mid-cap.
     var capped by rememberSaveable { mutableStateOf(false) }
+    // The transient's host. A message with an action and a window lives here; the `note` slot below
+    // stays for what is about the screen you are on and dies when you leave it.
+    val transient = remember { SnackbarHostState() }
 
     // A thread's receipts live exactly as long as that thread is on screen.
     fun pruneReceipts() {
@@ -267,26 +309,18 @@ fun GymRoom(account: Account) {
         receipts = receipts + (door to receipts[door].orEmpty() + line)
     }
 
-    // A pushed screen pops to the tab it came from; a tab that is not home falls back to Routines.
-    // On the finish screen back is claimed and inert. Mid-workout it is the platform's again, which
-    // is why the draft sits inside the `!live` clause.
     val live = store.session != null
-    BackHandler(
-        enabled = finished != null ||
-            (!live && (building != null || away.isNotEmpty() || tab != Tab.Routines)),
-    ) {
-        if (finished != null) return@BackHandler
-        // Back is Cancel: it leaves the whole draft.
-        if (building != null) {
-            building = null
-            return@BackHandler
+    val means = backMeans(finished != null, live, building != null, away.size, tab)
+    BackHandler(enabled = means != BackMeans.LeaveTheApp) {
+        when (means) {
+            BackMeans.Nothing, BackMeans.StayInTheWorkout, BackMeans.LeaveTheApp -> Unit
+            BackMeans.LeaveTheDraft -> building = null
+            BackMeans.PopOnePushedScreen -> back()
+            BackMeans.ReturnToTheRoutinesTab -> {
+                note = null
+                tab = Tab.Routines
+            }
         }
-        if (away.isNotEmpty()) {
-            back()
-            return@BackHandler
-        }
-        note = null
-        tab = Tab.Routines
     }
 
     // `connect` drains what the device is still holding BEFORE it reads the log: a read settles a
@@ -316,6 +350,34 @@ fun GymRoom(account: Account) {
     LaunchedEffect(standingSession) {
         if (store.withheld?.sessionId == standingSession) return@LaunchedEffect
         store.settleWithheld()?.let { note = it.line("that set is still on the log") }
+    }
+
+    // The window's own state, said for as long as the window is open and never a moment longer: the
+    // span is the queue's `undoWindowMs` and never a snackbar default. The key is the TAKEABLE row,
+    // so the instant a settle commits the delete to the wire — the effect above, or the timeout
+    // below — this effect is cancelled and the transient goes down with it. An Undo offered over a
+    // delete already sent would be a lie.
+    val takeable = store.withheld?.takeIf { it.takeable }
+    LaunchedEffect(takeable?.set?.id) {
+        val holding = takeable ?: return@LaunchedEffect
+        val left = holding.untilMs - System.currentTimeMillis()
+        if (left <= 0) return@LaunchedEffect
+        val decided = withTimeoutOrNull(left) {
+            transient.showSnackbar(
+                message = "Deleted ${Readout.effort(holding.set.weightKg, holding.set.reps)}",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Indefinite,
+            )
+        }
+        if (decided == SnackbarResult.ActionPerformed) {
+            // A tap that raced the send by a frame: the log has it, so say so rather than report a
+            // keep that did not happen.
+            if (!store.keepWithheld()) note = "that delete had already gone through — the set is off the log"
+            return@LaunchedEffect
+        }
+        transient.currentSnackbarData?.dismiss()
+        // The send outlives this effect: settling marks the row sent, which is this effect's own key.
+        scope.launch { store.settleWithheld()?.let { note = it.line("that set is still on the log") } }
     }
 
     // ON_STOP is the second net behind ON_PAUSE. The dispose flush is launched UNSTRUCTURED: the
@@ -548,51 +610,69 @@ fun GymRoom(account: Account) {
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(GymSkin.canvas)
-            .systemBarsPadding(),
-    ) {
-        val ended = finished
-        val standing = away.lastOrNull()
-        // What the way back leads to. Names are read off the store, so a rename moves this row too.
-        val beneath = when (val under = away.getOrNull(away.size - 2)) {
-            is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
-            is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
-            is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
-            is Away.Coach -> Ask.title
-            Away.Threads -> Threads.title
-            // The noun, not the thread's title: a title is the lifter's first message verbatim.
-            is Away.Thread -> Threads.conversation
-            Away.Settings -> "Gym"
-            Away.Notes -> Notes.title
-            is Away.NoteEditor -> Notes.title
-            Away.Bodyweight -> Bodyweight.title
-            null -> tab.title
-        }
+    val ended = finished
+    val standing = away.lastOrNull()
+    // What the way back leads to. Names are read off the store, so a rename moves this row too.
+    val beneath = when (val under = away.getOrNull(away.size - 2)) {
+        is Away.Session -> under.summary.plan?.routine ?: Readout.noRoutine
+        is Away.Movement -> Readout.movement(under.exerciseId, store.catalog)
+        is Away.Program -> store.routine(under.routineId)?.name ?: "Routines"
+        is Away.Coach -> Ask.title
+        Away.Threads -> Threads.title
+        // The noun, not the thread's title: a title is the lifter's first message verbatim.
+        is Away.Thread -> Threads.conversation
+        Away.Settings -> "Gym"
+        Away.Notes -> Notes.title
+        is Away.NoteEditor -> Notes.title
+        Away.Bodyweight -> Bodyweight.title
+        null -> tab.title
+    }
+    val railUp = railStands(ended != null, live, building != null, away.size)
+    val youInitial = account.user?.email?.take(1) ?: ""
 
-        // Screens that own an action in this row draw their own instead.
-        if (ended == null && !live && building == null && standing is Away.Session) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-                modifier = Modifier
-                    .heightIn(min = GymTap.minimum)
-                    .padding(horizontal = WindmillSpace.x5)
-                    .clickable { back() },
-            ) {
-                Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-                Text(beneath, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = GymSkin.canvas,
+        snackbarHost = { SnackbarHost(transient) },
+        bottomBar = {
+            val line = note
+            // Nothing at all when there is neither: an empty bar would take the window inset away
+            // from the content below it.
+            if (railUp || line != null) {
+                Column(Modifier.fillMaxWidth().background(GymSkin.canvas)) {
+                    line?.let {
+                        Text(
+                            it,
+                            style = GymType.numeral(12),
+                            color = GymSkin.inkDim,
+                            maxLines = 2,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = WindmillSpace.x5)
+                                .padding(bottom = WindmillSpace.x2),
+                        )
+                    }
+                    if (railUp) {
+                        TabRail(
+                            current = tab,
+                            onPick = { picked ->
+                                note = null
+                                // Entering Coach again offers the composer; whether the allowance is
+                                // back is the log's to say.
+                                if (picked != tab) capped = false
+                                tab = picked
+                            },
+                        )
+                    } else {
+                        Box(Modifier.fillMaxWidth().navigationBarsPadding())
+                    }
+                }
             }
-        }
-
-        // A live session outranks every other screen.
-        Box(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-        ) {
+        },
+    ) { inner ->
+        // Consumed as well as applied: a screen inside that pads itself for the keyboard would
+        // otherwise count the navigation bar twice and leave a gap above the keys.
+        Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
             when {
                 ended != null -> FinishScreen(
                     finished = ended,
@@ -625,14 +705,14 @@ fun GymRoom(account: Account) {
                 standing is Away.Movement -> RecordScreen(
                     exerciseId = standing.exerciseId,
                     store = store,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                 )
                 standing is Away.Settings -> SettingsScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
                     origin = origin,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onNotes = { look(Away.Notes) },
                     say = { note = it },
@@ -640,7 +720,7 @@ fun GymRoom(account: Account) {
                 standing is Away.Notes -> NotesScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
                     onSignIn = LocalShellActions.current.openYou,
@@ -652,7 +732,7 @@ fun GymRoom(account: Account) {
                     note = standing.note,
                     seedTitle = standing.seedTitle,
                     store = store,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onDone = { back() },
                 )
@@ -660,6 +740,8 @@ fun GymRoom(account: Account) {
                     summary = standing.summary,
                     store = store,
                     coach = coach,
+                    backTo = beneath,
+                    onBack = { back() },
                     say = { note = it },
                     onOpenMovement = { look(Away.Movement(it)) },
                 )
@@ -667,7 +749,7 @@ fun GymRoom(account: Account) {
                     routineId = standing.routineId,
                     store = store,
                     isSignedIn = account.isSignedIn,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onStart = { routineId -> open(routineId) },
                     // The page stays underneath, so saving lands back on the routine it came from.
@@ -681,7 +763,7 @@ fun GymRoom(account: Account) {
                 )
                 standing is Away.Bodyweight -> BodyweightScreen(
                     store = store,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     say = { note = it },
                 )
@@ -703,13 +785,13 @@ fun GymRoom(account: Account) {
                     onThreads = { look(Away.Threads) },
                     onNotes = { look(Away.Notes) },
                     origin = origin,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onReview = { review(it.id, it.routineId, Reviewing.coach) },
                 )
                 standing is Away.Threads -> ThreadsScreen(
                     store = store,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     onOpen = { look(Away.Thread(it)) },
                     onAskNew = { askSomethingNew() },
@@ -719,7 +801,7 @@ fun GymRoom(account: Account) {
                     store = store,
                     receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
                     lookedAt = lookedAtIds,
-                    backLabel = beneath,
+                    backTo = beneath,
                     onBack = { back() },
                     // The list reads itself again: a deleted conversation is gone because the log says
                     // so, never because this room crossed a row out.
@@ -728,15 +810,16 @@ fun GymRoom(account: Account) {
                     say = { note = it },
                 )
                 tab == Tab.Log -> LogScreen(
-                    store,
+                    store = store,
+                    seat = youInitial,
                     onOpenSession = { look(Away.Session(it)) },
                     onOpenBodyweight = { look(Away.Bodyweight) },
                 )
                 // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                 // designed stance rather than a 401.
                 tab == Tab.Coach && !account.isSignedIn ->
-                    AskSignedOutStance(onSignIn = LocalShellActions.current.openYou)
-                tab == Tab.Coach && askAbsent -> AskAbsentStance()
+                    AskSignedOutStance(seat = youInitial, onSignIn = LocalShellActions.current.openYou)
+                tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial)
                 tab == Tab.Coach -> AskScreen(
                     store = store,
                     thread = conversation,
@@ -753,15 +836,16 @@ fun GymRoom(account: Account) {
                     onThreads = { look(Away.Threads) },
                     onNotes = { look(Away.Notes) },
                     origin = origin,
-                    backLabel = null,
+                    backTo = null,
                     onBack = null,
+                    seat = youInitial,
                     onReview = { review(it.id, it.routineId, Reviewing.coach) },
                 )
                 else -> RoutinesScreen(
                     store = store,
                     isSignedIn = account.isSignedIn,
-                    origin = origin,
                     lookedAt = lookedAtIds,
+                    seat = youInitial,
                     // The only start home offers; a routine's own start lives on its detail page.
                     onJustStart = { open(null) },
                     onBuild = { building = it },
@@ -772,126 +856,49 @@ fun GymRoom(account: Account) {
                 )
             }
         }
-
-        // Above the rail rather than inside it, because the logger has no rail.
-        note?.let {
-            Text(
-                it,
-                style = GymType.numeral(12),
-                color = GymSkin.inkDim,
-                maxLines = 2,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WindmillSpace.x5)
-                    .padding(bottom = WindmillSpace.x2),
-            )
-        }
-
-        // The rail belongs to the three tabs and to nothing else; the shell's seat goes with it.
-        if (ended == null && !live && building == null && away.isEmpty()) {
-            TabRail(
-                current = tab,
-                onPick = { picked ->
-                    note = null
-                    // Entering Coach again offers the composer; whether the allowance is back is
-                    // the log's to say.
-                    if (picked != tab) capped = false
-                    tab = picked
-                },
-                initial = account.user?.email?.take(1) ?: "",
-            )
-        }
     }
 }
 
-// Three tabs 14dp off each edge, then a hairline, then the shell's seat. A tab's pill is 40 tall and
-// its target is the rail's full 50.
+// The platform's rail, three seats and no fourth: the account seat a hand-rolled rail could carry
+// past a hairline now rides each root's top bar instead.
+//
+// Selection is carried on four channels, not on one colour (ledger `1v`). The tint is the room's
+// BRIGHTEST ink, not its accent: iris `#9A90BE` against the faint ink `#8D8896` separates by 1.17:1
+// and a lifter cannot tell which tab they are on, while `#EDEBF0` against the same faint ink is
+// 2.91:1 — the same number iOS picked, so the two phones close `1v` on one token. Beneath that: a
+// filled glyph selected against an outlined one, a bold label against a normal one, and the
+// indicator on `lineStrong` (`#48444D` on the bar's `#262329`, 1.63:1 — the wash `accentSoft` was
+// 1.06:1 and read as nothing).
 @Composable
-private fun TabRail(current: Tab, onPick: (Tab) -> Unit, initial: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .padding(bottom = WindmillSpace.x2)
-            .height(50.dp)
-            .background(GymSkin.surface, RoundedCornerShape(WindmillRadius.full))
-            .border(1.dp, GymSkin.line, RoundedCornerShape(WindmillRadius.full))
-            .padding(horizontal = 5.dp),
-    ) {
+private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
+    NavigationBar(containerColor = GymSkin.surface, tonalElevation = 0.dp) {
         Tab.entries.forEach { entry ->
-            val selected = entry == current
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable { onPick(entry) },
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(WindmillRadius.full))
-                        .background(if (selected) GymSkin.accentSoft else Color.Transparent),
-                ) {
+            val here = entry == current
+            NavigationBarItem(
+                selected = here,
+                onClick = { onPick(entry) },
+                icon = { Icon(railIcon(entry, here), contentDescription = null) },
+                label = {
                     Text(
                         entry.title,
-                        style = WindmillFont.body(13, if (selected) FontWeight.Bold else FontWeight.SemiBold),
-                        color = if (selected) GymSkin.accent else GymSkin.inkFaint,
+                        maxLines = 1,
+                        fontWeight = if (here) FontWeight.Bold else FontWeight.Normal,
                     )
-                }
-            }
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = GymSkin.ink,
+                    selectedTextColor = GymSkin.ink,
+                    indicatorColor = GymSkin.lineStrong,
+                    unselectedIconColor = GymSkin.inkFaint,
+                    unselectedTextColor = GymSkin.inkFaint,
+                ),
+            )
         }
-        YouSeat(initial = initial)
     }
 }
 
-// The shared account seat, past a hairline so it reads as the shell's. The platform owns the sheet.
-@Composable
-private fun YouSeat(initial: String) {
-    val shell = LocalShellActions.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-    ) {
-        Box(
-            Modifier
-                .width(1.dp)
-                .height(22.dp)
-                .background(Color.White.copy(alpha = 0.14f)),
-        )
-        Box(
-            Modifier
-                .size(GymTap.minimum)
-                .clickable { shell.openYou() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(GymSkin.raised),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (initial.isEmpty()) {
-                    // Nobody signed in yet.
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(GymSkin.inkFaint),
-                    )
-                } else {
-                    Text(
-                        initial.uppercase(),
-                        style = WindmillFont.display(13),
-                        color = GymSkin.ink,
-                    )
-                }
-            }
-        }
-    }
+internal fun railIcon(tab: Tab, selected: Boolean): ImageVector = when (tab) {
+    Tab.Routines -> if (selected) Icons.AutoMirrored.Filled.List else Icons.AutoMirrored.Outlined.List
+    Tab.Log -> if (selected) Icons.Filled.DateRange else Icons.Outlined.DateRange
+    Tab.Coach -> if (selected) Icons.Filled.Face else Icons.Outlined.Face
 }

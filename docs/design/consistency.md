@@ -48,14 +48,14 @@ value first — see F4, which puts it at 3.2:1 with no darker gold in the ramp.
 Android takes a staged version: its skin is a compile-time object read at ~560 sites,
 `LocalWindmillDark` has no producer, and the platform has no Appearance control at all.
 
-**F6 · `--focus-ring` is terracotta inside gym** → re-point in the gym palette block, **both skins**.
-`shadows.css:14` (light) sets `0 0 0 4px var(--accent-terracotta-100)` and `:23` (dark) sets
-`0 0 0 4px rgba(208,138,94,0.4)`; `palettes.css:190` re-points it only for journal, and neither the
-gym block (`palettes.css:199-206`) nor `gym.css` touches it. Gym's brand is iris. **It stops being
-latent in the Coach wave**: it is latent only because every design-system component that reads the
-token — `Button.jsx:60`, `Input.jsx:17`, `IconButton.jsx:34` — is barely used in gym today, and the
-wave rules those replace the hand-rolled twins. After that every focused control rings terracotta on
-pietra beside iris — a second accent that appears only on focus.
+**F6 · a focused control inside gym rings iris, not the family's terracotta** → built 2026-08-26,
+nothing owed. The room answers three shared roles for itself, one named block per skin at the head
+of `gym.css` (`:90-110`): `--focus-ring` in iris, `--field-focus-edge` and `--chip-selected-edge` on
+`--color-brand`, beside `--text-on-accent` and `--color-danger`. That is the whole bridge and there
+is no per-component override anywhere else — every other shared role a design-system component reads
+already resolves to gym's palette through `[data-brand="gym"]`, and re-pointing one back at gym's
+alias of it would be a CSS cycle (`--gym-surface` **is** `var(--surface-card)`). The change stays
+inside `.gym-root`, so `shadows.css`'s terracotta ring still rings everywhere else.
 
 **F7 · gym asks JetBrains Mono 700/800; only 400/500/600 are loaded** → load the faces or restyle.
 `fonts.js` self-hosts three weights. Gym rules ask 700 or 800 on `--font-mono`, so the browser
@@ -559,25 +559,33 @@ would delete unsent diary pages. Both clients now migrate every v1 store forward
 scales — the unscoped blob, the quarantine and the scoped cache — rather than dropping any of
 them. §8.5's sentence and its instruction both need to take that.
 
-**1k · the shell owns the iOS leading edge, and a native NavigationStack wants it too** → a shell
-change, prototyped before the boards ship. `Shell.swift:167-185` attaches the go-home swipe to the
-leading 20pt as a `.simultaneousGesture` — the modifier whose meaning is *do not require
-exclusivity* — and its own comment at `:148` says a hidden navigation bar is what disables the
-system pop. Every `NavigationStack` in the app today lives inside a sheet, outside that subtree, so
-the two gestures have never met. The Coach wave rules the edge is arbitrated by **depth**: the shell
-applies its home swipe only at stack depth 0, and one push deep the edge is the room's back. That
-scopes `superapp-shell.md:21` and `:155` ("two gestures, and nothing else") rather than deleting
-them, and §2.3/§5/§10 take the amendment. Until it is proven on a simulator, every iOS board in the
-wave rests on an untested assumption.
+**1k · the shell owns the iOS leading edge, and a native NavigationStack wants it too** → proven on
+the simulator 2026-08-26, nothing owed. The edge is arbitrated by **depth** and the two gestures
+coexist. `Shell.swift:177` attaches the go-home swipe as `.simultaneousGesture(homeSwipe, including:
+depth == 0 ? .all : .subviews)`; a room writes its depth outward once, at its root
+(`RoomDepthPreference`, `Platform.swift:97`; gym at `GymRoom.swift:139` reports the VISIBLE tab's
+path count and zero whenever the stacks are not what is on screen). What the proof found is not what
+was predicted: over a `NavigationStack`'s own frame the system's screen-edge pan wins the touch
+outright and cancels the shell's drag, so the naive "both fire" outcome never occurs there. The real
+hazard is that the stack does not cover the room — the tab bar's band sits outside its frame, and a
+leading stroke there at depth 1 never meets the navigation controller's recogniser, so a gesture that
+only declines inside its handler still takes that touch and throws the lifter out of a room they were
+only stepping back through. That is why it is **unattached** past depth 0; the negative control
+(`including: .all`, nothing else changed) fails exactly that case and no other. Pinned by real
+touches on iOS 26.3 in `apps/ios/UITests/RoomEdgeGestureUITests.swift`
+(`testTheLeadingEdgeBesideTheTabBarDoesNotLeaveTheRoom` is the load-bearing one).
+`superapp-shell.md:21-23` and `:164` carry the scope.
 
-**1l · the You seat has no slot in a native tab bar** → canon amendment, owed a build.
-`superapp-shell.md:22-23` and `:157` put the You seat "last in every app's own bar, past a
-hairline", and both phones do exactly that (`GymRoom.swift:293`, `GymRoom.kt:848`). At the iOS 17
-floor a native `TabView` has no non-tab trailing slot and an M3 `NavigationBar` has none either, so
-the Coach wave moves both shell seats into the room's own **top** chrome — capsule leading, You
-trailing, on each stack root; on Android the avatar is the top app bar's single action slot. The
-canon line becomes "the trailing slot of the room's own top bar", and `thumb-reach.md:31` narrows to
-what it means: no primary or destructive action in a top corner — a destination is not an action.
+**1l · the You seat has no slot in a native tab bar** → built 2026-08-26, nothing owed. Both shell
+doors sit in the room's own **top** chrome on both phones: on iOS `CapsuleButton()` at
+`.topBarLeading` and `YouSeat()` at `.topBarTrailing` in every stack root's toolbar and in the
+logger's (`GymRoom.swift:211-219`, `:260-270`), with the shell laying no capsule over a room that
+declares `hostsTopChrome` (`GymModule.swift:11`, `Shell.swift:175`); on Android the avatar is the
+top app bar's trailing action, past its own hairline (`ui/GymScreen.kt:194`), and the room has no
+shell chrome besides it. A native `TabView` has no non-tab trailing slot and an M3 `NavigationBar`
+has none either, which is what moved them. `superapp-shell.md:24-26`, `:57` and `:166` read "the
+trailing slot of the room's own bar", and `thumb-reach.md:31-33` is narrowed to what it means: no
+primary or destructive action in a top corner — a destination is not an action.
 
 **1m · the reach law is written in absolute pixels on one frame and applied to three** → restate in
 units. `thumb-reach.md:12-21` gives the bands as pixels on 402 × 874 (top "→ ~120px", bottom "last
@@ -611,27 +619,40 @@ client suites, because a client never rewrites server text. What does not move: 
 and the proposal door `ask` — copy may change, tokens may not (`ARCHITECTURE.md:1135`). The CSV
 export's `from` column is an export value, `lifter`/`coach` (`PgAskThreadRepository.cpp:224`), not
 the JSON enum. The human share is "Share this workout" on every surface (`share/share.js:12`,
-`CoachShare.swift:28`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
-not on the room (`connect.js:5-9`, `ConnectedLog.swift:114`).
+`CoachShare.swift:27`, `CoachShare.kt:61`) and the connect pitch contrasts on where the log lives,
+not on the room (`connect.js:5-7`, `ConnectedLog.swift:111`).
 
 **1s · `set.rpe` is drawn on the web and enterable on no surface** → give it a control or delete
-the render. `Log.jsx:298` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
+the render. `Log.jsx:299` prints it, `FixSheet.jsx` edits weight, reps and kind only, the wire
 already accepts it, and the prompt forbids the model estimating one. The phones carry it as a
 decoded field that no view reads (`Training.swift:152`, `domain/Training.kt:107`). The Coach wave adds a
 set-note field to the fix sheet and rules the same must happen for RPE, or the render goes: a set
 row never prints a number the lifter cannot touch on any surface.
 
-**1v · the gym tab bar carries its entire selected state in two colours that barely differ** → a
-token decision. `brand/base` `#9a90be` against `gym/ink-faint` `#8d8896` is roughly **1.15:1 between
-them** in Instrument. A native iOS tab bar signals selection with tint plus a filled symbol, so the
-symbol carries some of it — but the **labels** are colour-only, and at that separation a lifter
-cannot tell which tab they are on. Either the selected tint moves away from the faint ink, or the
-unselected ink drops further from it. Recorded on the `iOS Tab Bar` component description.
+**1v · a rail may not carry its selected state in colour alone, and on iOS 26 the room does not own
+that colour at all** → re-scoped 2026-08-26; Android is built, iOS is the platform's, and what is
+left is one token question for the surfaces that still honour a tint.
+**Android is closed, measured.** The rail carries selection on four channels, not one:
+`GymSkin.ink` `#EDEBF0` selected against `GymSkin.inkFaint` `#8D8896` (**2.91:1**, up from iris's
+1.17:1), a filled glyph against an outlined one per seat, a bold label against a normal one, and the
+indicator on `lineStrong` `#48444D` over the bar's `#262329` (1.63:1) — `GymRoom.kt:873-898`,
+`railIcon` at `:900-904`.
+**On iOS the question is not answerable by a token.** Sampled on the shipped build (iPhone 17, iOS
+26.3), the system tab bar paints both labels itself — `#FFFFFF` selected against `#F6F3FA`
+unselected, **1.10:1** — draws its own selection capsule (`#47444A` on `#262328`, 1.62:1), and
+ignores `.tint`, `UITabBarAppearance` (standard and scrollEdge) and `unselectedItemTintColor` alike.
+The room therefore applies **no** tint to the TabView: a `.tint` there is an environment value that
+repaints every control in all three tabs and each sheet they raise, buying nothing (`GymRoom.swift`,
+the comment under the TabView). The room's job on that OS is the **symbol**.
+**What remains is the ramp.** No pair in `GymSkin` reaches 3:1 while both members keep 4.5:1 against
+the bar's own ground — the shipped pair is 2.91:1 — so a surface that does honour a tint has no
+passing token to take. Either a brighter selected ink enters the ramp, or 3:1 between two inks stops
+being asked of a control the platform paints.
 
 **1w · `glow/set-done` still carries a Daylight value in the Figma collection** → delete it from the
 light mode. F5's ruling says a token whose mechanism does not exist in a mode should not be given a
 value in that mode, and emitted light does not exist on pietra. `gym.css` declares `--set-done-glow`
-in the dark block only (`:26`) and the light dot draws no shadow (`:582-583`); the shared
+in the dark block only (`:26`) and the light dot draws no shadow (`:592-593`); the shared
 `Gym · Colour` collection still resolves `#7d8c4366` in Daylight. No board in the Coach wave uses it
 in either mode, so nothing depends on it today — which is exactly when to remove it.
 
@@ -715,23 +736,27 @@ target — clear the field instead.* The sixth states the fault and stops. It is
 pins words exists to stop three surfaces inventing seven of them. The fix belongs in the brief, and it
 has to land in one place for all three.
 
-**2i · web's shipped refusal strings are not the pinned ones, and one of them is the wrong band** →
-build it. `web/src/products/gym/logger/entry.js:50` ships *"One decimal point only — 72,5 or 72.5"*,
-`:54` *"Not a number yet — 72,5 reads as 72.5"*, `:57` *"Over 500 kg — check the number"* and `:61`
-*"Whole reps, 1 to 99"*. The first three are the pinned strings with an example or a full stop
-appended, and the pin wins. The fourth is a different fact: 1–99 is the **live logger's** band, while a
-**routine target** is 1–100 (`backend/products/gym/domain/Routine.cpp:23`). The two fields are on two
-screens and only one of them is drawn by this wave, so the pinned *Whole reps, 1 to 100.* is right for
-the target sheet and `entry.js` is right for the set logger — but neither file says which band it is
-enforcing, which is how they drifted.
+**2i · the refusal strings are the pinned ones, and each file says which band it holds** → built
+2026-08-26, nothing owed. Two screens enforce two rep bands and each module now names the other, so
+neither can be read as the other again. The **routine target's** band is 1–100 sets 1–20
+(`Routine.cpp`): `routines.js:16-19` `ENTRY_SETS_MIN/MAX`, `ENTRY_REPS_MIN/MAX`;
+`TargetEntry.setsBand`/`repsBand` (`TargetEntry.swift:22-24`); `TargetEntry.setsBand`/`repsBand`
+(`domain/Program.kt:77-78`). The **live logger's** is 1–99: `LOGGER_REPS_MIN/MAX`
+(`logger/entry.js:14-15`), `KeypadEntry.repsBand` (`KeypadSheet.swift:36`),
+`KeypadEntry.maxLoggedReps` (`KeypadSheet.kt:48`). The pinned bytes are byte-identical across the
+three surfaces on both screens, the rack keypad's four included — *One decimal point only.* · *That
+is not a number yet.* · *Over 500 kg — check the number.* · *Whole reps, 1 to 99.* — and pinned by a
+suite on each surface.
 
-**2j · the picker's seven-row cap is what blocks the empty-query ruling, on every surface** → build it.
-`15-the-routine.md` pins *"An empty query shows the six and then the whole catalogue."* Web has no six
-at all and answers an empty query with the first seven catalogue rows (`logger/movements.js:3, 34-41`).
-Both phones draw the six, and then follow them with seven rows, not a catalogue
-(`PickerOptions.shown = 7`, `apps/ios/.../MovementPicker.swift:7`; `apps/android/.../MovementPicker.kt:50, 112`).
-So no surface implements the ruling today. The cap has to be lifted for the empty query and kept for a
-typed one — the wave-two `R4` board draws the ruling rather than the current code, and its annotation says so.
+**2j · the picker shows the six and then the whole catalogue** → built 2026-08-26, nothing owed. The
+seven-row cap belongs to a **typed** query and to nothing else, on all three surfaces
+(`PICKER_MATCHES` `logger/movements.js:6`; `PickerOptions.shown` `MovementPicker.swift:10`;
+`PickerOptions.shown` `MovementPicker.kt:62`). An empty query draws six under one head — `The six`,
+the same bytes everywhere — and then the catalogue uncapped, under no second head. The six are
+ranked from the account's own log over a **fixed** 50-session window, frozen for the life of an open
+picker so a claim or a poll landing underneath cannot reshuffle them under a thumb, and topped up in
+order from one client-side opener list (`back-squat` · `bench-press` · `deadlift` · `overhead-press`
+· `barbell-row` · `chin-up`) so a log-less account still sees six. Never gated on a first session.
 
 **2k · the Coach-wave boards draw a date shape and a row meta the web cannot produce** → fix the
 boards. On the `Windmill · Gym` Boards page, the Coach section draws `7 movements · last run Sat 16
@@ -748,18 +773,21 @@ belong to another wave and were not touched. That `R2` line now carries a second
 says `from Coach` (`proposals.js:47`, `Proposal.swift:51`, `Proposal.kt:57`), and no board may say
 Ask.
 
-**2l · iOS and Android draw the clear-refusal at two different moments of the same keystroke** →
-decide it once. `15-the-routine.md` pins the words — *Clear reps and weight first — an open line names
-neither.* — and both surfaces draw them verbatim, so the string is not the drift. The frame is. On
-`Windmill · Gym` → Android, `state · Sets refuses to clear while reps or weight hold a value`
-(`260:296`) draws the sets field **already emptied**, caret in an empty box: the character came out and
-the commit is what was pushed back. The new iOS board 9, `iOS · Target sheet — sets refuses to clear`
-(`296:2`), draws the field **still holding its `4`** with the caret behind it: the keystroke itself
-never landed. Those are two different behaviours wearing one sentence, and a lifter who uses both
-phones would feel it — on one the number is gone until they retype it, on the other it never left.
-Nothing in `Routine.cpp:17` picks between them; it only refuses the shape at the boundary. The choice
-belongs in the brief, beside the open question it already carries about whether clearing sets should
-warn before it cascades.
+**2l · the clear-refusal is one moment, and the illegal shape has two ways in** → ruled and built
+2026-08-26 on all three surfaces, nothing owed. Nothing cascades anywhere: clearing sets while reps
+or weight hold a value is **refused in place** — the keystroke never lands, the field keeps its
+value, and the kept value is **selected**, so the next digit replaces the number the lifter was
+trying to be rid of instead of appending to it (`routines.js` `withField`, `Routines.jsx`'s
+`setSelectionRange`; `RoutineBuilderScreens.swift`'s `selectTheKeptValue`; `RoutineBuilder.kt`'s
+`TextRange(0, sets.text.length)`). The words are the pinned *Clear reps and weight first — an open
+line names neither.*
+**The mirror state takes the opposite sentence, because its way out is the opposite act.** A number
+typed onto a line whose sets are already **empty** does land — refusing it would drop what the
+lifter just asked for — and the commit is refused instead, with *Name the sets first — an open line
+names neither.* (`routines.js:177`, `TargetEntry.swift:79`, `domain/Program.kt:91`). Both are one
+refusal per sheet, drawn under the field they belong to, fail-fast: the refused keystroke, then the
+line's shape, then the three fields topmost first. `Routine.cpp` still only refuses the shape at the
+boundary; the interface now says which half is wrong before it gets there.
 
 **2m · the undo window is 9000 ms on every surface** → ruled 2026-08-25, built, nothing owed.
 `SetQueue.swift:48` and `SetQueue.kt:52` declare `undoWindowMs = 9_000`; `fix.js:9` declares
@@ -783,3 +811,37 @@ carry it.
 read *"the count above was taken before they were drawn"*, which records history on a surface whose
 own rule is that docs hold the current state only. It also truncated mid-word. Rewritten to say what
 the budget IS.
+
+**2p · the rack keypad's own words live in code and in no brief** → `16-the-workout.md` takes them.
+That brief keeps the keypad at the rack and says its strings are pinned before anything is drawn,
+but it enumerates none of them. Two are byte-identical on three surfaces and written down nowhere in
+canon: the pad's hint *kg  ·  comma or point both read as a decimal  ·  ± for band-assisted*
+(`logger/entry.js` `WEIGHT_HINT`, `KeypadSheet.swift` and `KeypadSheet.kt` `weightHint`) and its
+empty-buffer line *Enter a number, or cancel to keep {n}*. The only thing holding the hint's bytes
+is one web test that asserts them and names the two phone files in a comment
+(`test/products/gym/logger/entry.test.js`); a phone suite asserts its own constant, not the bytes,
+so a phone can move it and stay green. `15-the-routine.md` pins the four refusals the pad shares
+(with the logger's 1–99 band, `2i`) and both glyph names — `±` → *Flip the sign*, `⌫` → *Delete*;
+these two sentences have no owner at all.
+
+**2q · the picker says one sentence for a catalogue that never loaded, and no brief says it** →
+the brief takes it, or the sentence is canon by grep. *The catalog didn’t load. It comes back when
+you have signal.* ships byte-identical on all three surfaces (`logger/movements.js`,
+`MovementPicker.swift`, `MovementPicker.kt`) and appears in no brief. Each surface's own suite
+asserts its own copy of the bytes, so the three agree by coincidence of review rather than by canon.
+`15-the-routine.md` pins the picker's placeholder, its six and its create door; this is the one state
+of that screen whose words nothing written owns — exactly the shape the same brief's closing rule
+exists to prevent.
+
+**2r · Android pitches the connected log to a lifter who has already connected it** → the surface
+needs the read, or the pitch needs a condition. iOS reads the account's connections once per seat
+and suppresses the invitation when there are any (`ConnectedLogState.invites`, `ConnectedLog.swift`;
+the two call sites in `GymRoom.swift`), and the web's settings row prints what is connected
+(`settings/GymSettingsSection.jsx`). Android has **no connections read anywhere**: its settings row
+is the surface's only connect door, and it draws the pitch, the precondition and *Connect my log*
+unconditionally (`ui/SettingsScreen.kt` `ConnectedLogRow` — only
+`isSignedIn` gates anything there). A second half of the same gap: `ConnectedLog.head`,
+`sundayLabel`, `sundayLine`, `mondayLabel`, `mondayLine` and `truths` (`domain/ConnectedLog.kt`) are
+live constants with no Android drawing, kept because `ConnectedLogTests` enforces that vocabulary
+across surfaces. Either the surface reads its grants, or the ledger records that Android's door is
+deliberately state-blind and those constants are the gate's only reason to exist.

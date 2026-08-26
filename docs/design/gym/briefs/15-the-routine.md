@@ -10,18 +10,15 @@ Everything here obeys three documents already written: `12-native-idiom.md`,
 
 ## The naming step dies
 
-On the web, creating a routine opens a **full-screen interstitial** asking what to call it, with
-suggestion chips and a character counter, before the editor is ever seen; it exists only when the id
-is `new`. Neither phone has one — both open the editor with the name field focused — though iOS
-still draws suggestion chips while the name is empty.
+There is no interstitial on any surface, and no suggestion chips anywhere.
 
 > **The name is the editor's first field.** Tapping *New routine* opens the editor with an empty name
 > field already focused and the keyboard up.
 
 A modal that exists to collect one string, before a screen that has a field for that string, is a
-screen we invented. The suggestion chips go with it — a lifter naming their own training block does
-not need three guesses from us, and `01-context.md` says this room is uninterested in helping you
-feel clever.
+screen we invented. No suggestion chips either — a lifter naming their own training block does not
+need three guesses from us, and `01-context.md` says this room is uninterested in helping you feel
+clever.
 
 **Save waits for a name, and that is the domain's rule rather than ours.** `Routine.cpp:40` refuses a
 routine with an empty name outright — *"a routine needs a name"* — so the choice is between gating Save
@@ -33,10 +30,11 @@ So Save is disabled until the field has a character. That is a field with the ke
 a screen — the interstitial existed because a name is required, and the requirement survives while the
 screen does not.
 
-## The target sheet becomes three fields
+## The target sheet is three fields
 
-Today it offers **five affordances for a three-field object**: tap-to-type, *use last time*, a ± plate
-ladder, *take it to max*, and *leave it open · decide at the rack*.
+It held **five affordances for a three-field object** — tap-to-type, *use last time*, a ± plate
+ladder, *take it to max*, and *leave it open · decide at the rack*. One remains, and it is the
+typing.
 
 > **Three fields — sets, reps, weight. No escape hatch, because clearing the first one *is* the
 > escape.**
@@ -54,13 +52,14 @@ already in the domain and was previously exposed as **two extra buttons**. Now t
 the null, and it explains itself where it is, in one word, instead of in a control the lifter has to
 find and a caption explaining what the control does.
 
-**And *leave it open · decide at the rack* turns out not to be a separate act at all.** The domain
-already says so: `Routine.cpp:17` refuses an entry that names reps or a load without naming sets —
-*"an open entry names no sets, so it names no reps and no weight either."* So an open line is exactly
-a line whose sets are cleared, and clearing that field cascades the other two.
+**And *leave it open · decide at the rack* is not a separate act at all.** The domain says so:
+`Routine.cpp:17` refuses an entry that names reps or a load without naming sets — *"an open entry
+names no sets, so it names no reps and no weight either."* So an open line is exactly a line whose
+sets are cleared — and clearing that field while the other two hold values is **refused**, not
+cascaded. See the strings below: the illegal shape has two ways in and each takes its own sentence.
 
-Five affordances become **three fields**, the escape is one of them, and the rule the domain has always
-enforced is now visible in the interface instead of hidden behind a button that did it silently.
+Five affordances are **three fields**, the escape is one of them, and the rule the domain has always
+enforced is visible in the interface instead of hidden behind a button that did it silently.
 
 **The ± ladder comes off this sheet.** It belongs at the rack, where plate granularity is what you are
 actually reasoning about, and it is drawn there already. In a planning sheet you know the number you
@@ -68,32 +67,38 @@ want; you do not step to it.
 
 ## Which kills the third overlay
 
-The editor opens the target sheet, and on the web and Android the target sheet opens a **custom
-numeric keypad** — three layers deep; on the web both the target sheet and the fix sheet carry a
-comment saying the layering is fragile and is worked around by placing the keypad as a DOM sibling
-rather than fixing it. iOS has no typed target field at all — its keypad sheet belongs to the logger
-— so there the six refusals below are new work rather than a move.
+The editor opens the target sheet, and the target sheet's third layer is **the platform's own
+decimal keyboard** on every surface. Two layers, no custom keypad, no DOM-sibling workaround.
 
-With typed fields, the third layer is **the platform's own decimal keyboard**. Two layers, no
-workaround, and the comment can be deleted rather than inherited.
+The keypad itself is not gone from the product — it is a **rack** control and stays there
+(`16-the-workout.md`), raised from the logger and from the fix sheet on every surface. What the
+planning sheet inherited from it is the refusals, pinned below.
 
 ## The editor after the cuts
 
-- **Nav bar** carries *Cancel* and *Save*. Nothing else is a header button.
+- **Nav bar** carries *Cancel*, *Save* and the overflow. Nothing else is a header button.
 - **The name** is the first field.
 - **The movements** are a list: drag to reorder, swipe to remove, tap to set targets.
 - **Add movement** is the last row of that list, not a floating button.
-- **Delete routine** and **Duplicate** move to the overflow. Duplicate already has a home on the
-  row's own menu in `13-gestures.md`; the editor's foot button was the second of two.
+- **Duplicate** lives in the overflow, and it also has a home on the row's own menu in
+  `13-gestures.md` — one of the two, never both. **Delete routine** stays a row of its own until the
+  withheld delete exists (`13-gestures.md`'s gate), and then it joins the overflow.
 - **History** is a section, not an inline aside.
 
 That is roughly twenty-one buttons down to *Cancel*, *Save*, *Add movement* and an overflow.
 
 ## The movement picker
 
-`.searchable` on iOS, the platform search field on Android — replacing a hand-built text field styled
-as a rounded rectangle. The six most-used movements keep their section; that is a genuine shortcut and
-not chrome.
+`.searchable` on iOS, the platform search field on Android, the design system's `Input` on the web —
+no hand-built field styled as a rounded rectangle. The six keep their section under the head **The
+six**; that is a genuine shortcut and not chrome.
+
+> **The six are the account's own most-trained, ranked over the last fifty sessions that surface
+> holds, and topped up in order from one shared opener list — Back Squat · Bench Press · Deadlift ·
+> Overhead Press · Barbell Row · Chin Up — so a log-less account is offered six it has never
+> trained.** The window is fixed at fifty and frozen on the first non-empty read, for the life of an
+> open picker: paging further back, or a claim landing underneath, may not reshuffle the six under a
+> thumb already reaching for one of them. Never gated on a first session.
 
 **Creating a movement stays inside the picker.** It is the one place a lifter discovers the movement
 they want does not exist yet, and sending them elsewhere to make it loses the search they just typed.
@@ -129,22 +134,49 @@ all three surfaces. They live inline under the field, one at a time:
 | sets outside the domain's band | **Sets, 1 to 20.** |
 | a typed zero | **A zero target is no target — clear the field instead.** |
 
-The field takes **a comma or a point**, and the screen says so once beside it rather than refusing:
-*comma or point, both read as a decimal.* Refusing a comma would be refusing how most of the world
+The field takes **a comma or a point**, and the screen says so once beside it rather than refusing.
+The pinned bytes carry no full stop, because it is a note under a field and not a sentence:
+`comma or point, both read as a decimal`. Refusing a comma would be refusing how most of the world
 writes a number.
 
-**Clearing sets while reps or weight hold values:**
+**The illegal shape has two ways in, and each takes its own sentence, because each has its own way
+out.** Only one refusal is ever drawn at a time — the refused keystroke first, then the line's shape,
+then the three fields topmost first.
 
-> **Clear reps and weight first — an open line names neither.**
+> **Clearing sets while reps or weight hold values: Clear reps and weight first — an open line names
+> neither.** The keystroke does not land: the field **keeps its value and that value is selected**,
+> so the next digit replaces the number rather than appending to it. Retyping a one-digit count is
+> the commonest edit on this sheet and it must not turn `5` into `54`.
+
+> **Typing reps or weight onto a line whose sets are already empty: Name the sets first — an open
+> line names neither.** That keystroke *does* land — refusing it would throw away what the lifter
+> just asked for — and the **commit** is refused instead. Nothing typed is ever dropped in silence,
+> and the remedy named is the one that fits: the other sentence would tell them to clear what they
+> have just typed.
 
 **Save with no name** keeps the two strings the product already ships, shown one at a time, not
 concatenated: *Name it to save it.* then *A routine is at least one movement.*
 
 **The open line** keeps its sentence on every surface, not just one:
-*You decide the numbers at the rack.*
+*You decide the numbers at the rack.* It has **one placement rule**: in the target sheet while the
+line on that sheet is open, drawn **above** the three fields beside the never-logged note (anything
+under a field is that field's own note); and **once** beneath any list of a routine's movements that
+holds an open row — the editor's and the routine's own screen — never once per row. The word `open`
+in a row's target column says *which* rows; the sentence says what that word means, and a list needs
+it said once. It is suppressed while a refusal stands, and while a target sheet stands over the list:
+a blessing and a refusal of the same state are never on screen together.
 
-**The sign control is `±`, everywhere.** A standalone `−` reads as *decrement* in this product — that
-is what it means in the stepper on the adjacent sheet — and it cannot express "back to positive".
+**The sign control is `±`, everywhere**, and **its spoken name is *Flip the sign***. A standalone `−`
+reads as *decrement* in this product — that is what it means in the stepper on the adjacent sheet —
+and it cannot express "back to positive". The name is pinned because the glyph reads as nothing
+aloud, and it is one control met on two screens: the planning sheet's weight field and the rack
+keypad.
+
+**A key that is not a character says what it does.** The rack pad is thirteen keys — a twelve-key
+grid of the ten digits, `±` and the decimal separator, plus `⌫` in the action row. Eleven of them
+speak themselves; the two glyphs do not, so each carries a name: **`±` → *Flip the sign*** and
+**`⌫` → *Delete***. A screen reader left to read the glyphs says "plus minus sign" and "erase to the
+left", or nothing at all.
 
 **The picker's placeholder is `Search {n} movements`**, and `n` is the catalogue's real size. The seed
 is 64. No board invents a larger number to look busy.
@@ -158,16 +190,18 @@ because it found the store would tolerate more; that is a product decision with 
 yet.
 
 **And the counter beside it is `53/60`, appearing in the last fifth** — from 48 characters, silent
-before that. This one got away: the brief pinned the cap and not the counter, and three surfaces
-produced three answers — a new `18 left` form on one, the shipped `53/60` on another, and deletion on
-the third. The shipped form wins, and the threshold matches the note editor's byte counter exactly,
-because a lifter should not have to learn two rules for the same idea.
+before that, and counting **characters** on every surface. The form and the threshold match the note
+editor's counter exactly, because a lifter should not have to learn two rules for the same idea. It
+is the shape a wave gets wrong by leaving it unpinned: a cap without its counter is three surfaces
+inventing three answers.
 
-**A row's `×` is as destructive as a swipe, and takes the same undo.** Where a surface refuses the
-swipe — the web does, correctly, because a pointer drag would then be the only way to remove a line
-and Law 1 forbids a gesture being the only path — the drawn `×` still removes a line from an unsaved
-draft whose only other recovery is Cancel, which discards every other edit. It gets the transient
-undo. **The gate is the act, not the gesture.**
+**Removing a row is as destructive as a swipe, and takes the same undo — and no surface gives it one
+yet.** The web draws an `×` (a pointer drag would otherwise be the only way to remove a line, and Law
+1 forbids a gesture being the only path); both phones remove by a trailing swipe, complete on iOS
+through `.swipeActions` and completed by hand on Android with a declared custom action. All three
+drop the line from an unsaved draft whose only other recovery is Cancel, which discards every other
+edit. All three owe it the transient undo, which lands with the rest of `13-gestures.md`.
+**The gate is the act, not the gesture.**
 
 ## What removing a control obliges you to do
 
@@ -186,7 +220,8 @@ every reviewer flags and no board owns is still a capability that was deleted.
 - **Whether the editor needs a Save at all.** The note editor saves as you leave it, and a routine is
   no more precious. Save exists here because the plan snapshot means a half-edited routine could be
   started mid-edit — but that is an argument for blocking the start, not for a button.
-- **Whether clearing sets should warn before it cascades.** It silently empties reps and weight,
-  because the domain refuses any other shape. That is correct and it is invisible — a lifter who
-  clears sets to retype it loses two numbers they did not mean to lose. The undo rules in
-  `13-gestures.md` may apply, or the field may simply refuse to clear while the other two hold values.
+- **Whether the picker's section head should assert its ranking.** It reads `The six` on all three
+  surfaces and says nothing about *how* they were chosen, which is deliberate: the surface ranks over
+  the log it happens to hold, and a head that claimed *most trained* would be asserting something a
+  page that has read fifty sessions cannot prove about an account. The alternative is a head that
+  says what it counted.

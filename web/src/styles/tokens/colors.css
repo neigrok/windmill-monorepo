@@ -97,6 +97,13 @@
   --color-brand-active: var(--accent-terracotta-700);
   --color-brand-soft: var(--accent-terracotta-50);
 
+  /* ---- The two edges a ROOM may answer for itself: a focused field's, and a selected chip's. Both
+     are the family's terracotta here, so a product whose accent is not terracotta re-points them
+     under its own root and no other room moves. Every other colour these two components draw is a
+     shared role already, and follows the room through `data-brand` on its own. ---- */
+  --field-focus-edge: var(--accent-terracotta-400);
+  --chip-selected-edge: var(--accent-terracotta-400);
+
   /* ---- Node KINDS: colour comes from a node's kind; its tier (locked / available / active /
      complete) is treatment only. Kinds + treatments are the whole node colour API. ---- */
   --kind-terracotta:      var(--accent-terracotta-500);

@@ -23,7 +23,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
@@ -89,10 +89,10 @@ fun BodyweightReading(latest: WeighIn?, nowMs: Long, onOpen: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
         modifier = Modifier
             .heightIn(min = GymTap.minimum)
-            .clickable(onClick = onOpen),
+            .clickable(role = Role.Button, onClickLabel = "open the bodyweight chart", onClick = onOpen),
     ) {
         Text(reading, style = GymType.numeral(13), color = GymSkin.inkDim)
-        Text("›", style = WindmillFont.body(13, FontWeight.SemiBold), color = GymSkin.inkFaint)
+        Chevron()
     }
 }
 
@@ -107,7 +107,7 @@ fun WeighInChip(onOpen: () -> Unit) {
             .clip(RoundedCornerShape(WindmillRadius.full))
             .background(GymSkin.accentSoft)
             .border(1.dp, GymSkin.accent, RoundedCornerShape(WindmillRadius.full))
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = WindmillSpace.x5),
     ) {
         Text(Bodyweight.chip, style = WindmillFont.body(15, FontWeight.Bold), color = GymSkin.accent)
@@ -206,30 +206,21 @@ fun WeighInSheet(
         Text(Bodyweight.sheetTitle(fixedDate), style = WindmillFont.display(22), color = GymSkin.ink)
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-            BasicTextField(
+            OutlinedTextField(
                 value = typed,
                 onValueChange = { typed = it.take(8) },
                 singleLine = true,
                 enabled = !saving,
-                textStyle = GymType.numeral(28, FontWeight.Bold).copy(color = GymSkin.ink),
-                cursorBrush = SolidColor(GymSkin.accent),
+                isError = (said ?: refused) != null,
+                textStyle = GymType.numeral(28, FontWeight.Bold),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, autoCorrectEnabled = false),
+                shape = RoundedCornerShape(WindmillRadius.lg),
+                colors = gymFieldColours(),
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = GymTap.primary)
-                    .clip(RoundedCornerShape(WindmillRadius.lg))
-                    .background(GymSkin.raised)
-                    .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
                     .focusRequester(focus)
                     .semantics { contentDescription = weightField },
-                decorationBox = { inner ->
-                    Box(
-                        Modifier.fillMaxWidth().padding(horizontal = WindmillSpace.x4, vertical = WindmillSpace.x3),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        inner()
-                    }
-                },
             )
             Text(Bodyweight.unit, style = WindmillFont.body(18, FontWeight.Bold), color = GymSkin.inkFaint)
         }
@@ -247,7 +238,15 @@ fun WeighInSheet(
                 .fillMaxWidth()
                 .heightIn(min = GymTap.minimum)
                 .clip(RoundedCornerShape(WindmillRadius.md))
-                .then(if (fixedDate == null) Modifier.clickable { pickingDate = true } else Modifier)
+                .then(
+                    if (fixedDate == null) {
+                        Modifier.clickable(role = Role.Button, onClickLabel = "pick the day") {
+                            pickingDate = true
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = WindmillSpace.x1),
         ) {
             Text("Date", style = WindmillFont.body(14), color = GymSkin.inkDim)
@@ -270,7 +269,7 @@ fun WeighInSheet(
                 .alpha(if (saving) 0.4f else 1f)
                 .clip(RoundedCornerShape(WindmillRadius.lg))
                 .background(GymSkin.accent)
-                .clickable(enabled = !saving) { save() },
+                .clickable(enabled = !saving, role = Role.Button) { save() },
         ) {
             Text(Bodyweight.save, style = WindmillFont.body(17, FontWeight.Bold), color = GymSkin.onAccent)
         }
@@ -281,7 +280,7 @@ fun WeighInSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum + 6.dp)
-                    .clickable(enabled = !saving) { confirmingDelete = true },
+                    .clickable(enabled = !saving, role = Role.Button) { confirmingDelete = true },
             ) {
                 Text(Bodyweight.deleteRow, style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.alarmInk)
             }
@@ -299,7 +298,7 @@ const val weightField = "weight in kilograms"
 @Composable
 fun BodyweightScreen(
     store: TrainingStore,
-    backLabel: String,
+    backTo: String,
     onBack: () -> Unit,
     say: (String?) -> Unit,
 ) {
@@ -322,24 +321,15 @@ fun BodyweightScreen(
     val shown = Bodyweight.windowed(store.bodyweight, window, today)
     val runs = Bodyweight.runs(shown)
 
-    Column(
+    GymScreen(title = Bodyweight.title, onBack = onBack, backTo = backTo) {
+      Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = WindmillSpace.x5)
             .padding(bottom = WindmillSpace.x8),
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier.heightIn(min = GymTap.minimum).clickable(onClick = onBack),
-        ) {
-            Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-        }
-        Text(Bodyweight.title, style = WindmillFont.display(30), color = GymSkin.ink)
-
+      ) {
         if (Bodyweight.windowed(store.bodyweight, ChartWindow.All, today).isEmpty()) {
             Text(Bodyweight.nothingYet, style = WindmillFont.body(15), color = GymSkin.inkDim)
             return@Column
@@ -357,6 +347,7 @@ fun BodyweightScreen(
         if (store.preferences.units == Units.Pounds) {
             Text(Bodyweight.kilogramsOnly, style = GymType.numeral(12).copy(lineHeight = 18.sp), color = GymSkin.inkFaint)
         }
+      }
     }
 
     val open = repairing
@@ -512,7 +503,7 @@ private fun DotChart(
                             .offset { IntOffset(left.roundToPx(), top.roundToPx()) }
                             .size(width = right - left, height = GymTap.minimum)
                             .semantics { contentDescription = label }
-                            .clickable(onClickLabel = "fix this weigh-in") { onDot(dot) },
+                            .clickable(role = Role.Button, onClickLabel = "fix this weigh-in") { onDot(dot) },
                     )
                 }
             }

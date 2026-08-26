@@ -45,6 +45,12 @@ export function renderHook(t, run) {
       return cell.value;
     },
     useCallback(fn, deps) { return dispatcher.useMemo(() => fn, deps); },
+    // Stable per cell and per render, which is the whole contract a caller can rely on.
+    useId() {
+      const cell = cells[cursor] ?? (cells[cursor] = { value: `:r${cursor}:` });
+      cursor += 1;
+      return cell.value;
+    },
     useEffect(effect, deps) {
       const cell = cells[cursor] ?? (cells[cursor] = {});
       cursor += 1;

@@ -74,3 +74,4 @@ public enum GymTap {
     public static let minimum: CGFloat = 46
     public static let primary: CGFloat = 64
 }
+

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -177,6 +177,8 @@ private fun RefusalLine(line: String) {
     )
 }
 
+// Material's own field, dressed by whichever theme is hosting the door: the shell's sheet paints it
+// in the brand's ink, and a room that wraps itself in its own scheme gets that one instead.
 @Composable
 private fun DoorField(
     placeholder: String,
@@ -184,31 +186,18 @@ private fun DoorField(
     keyboardType: KeyboardType = KeyboardType.Text,
     onChange: (String) -> Unit,
 ) {
-    val shape = RoundedCornerShape(WindmillRadius.sm)
-    BasicTextField(
+    OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        textStyle = WindmillFont.body(16).copy(color = WindmillColor.textPrimary.color),
-        cursorBrush = SolidColor(WindmillColor.neutral900.color),
+        textStyle = WindmillFont.body(16),
         singleLine = true,
+        placeholder = { Text(placeholder, style = WindmillFont.body(16)) },
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
             keyboardType = keyboardType,
         ),
-        decorationBox = { inner ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .background(WindmillColor.surfaceCard.color, shape)
-                    .border(1.dp, WindmillColor.borderDefault.color, shape)
-                    .padding(WindmillSpace.x3),
-            ) {
-                if (value.isEmpty()) {
-                    Text(placeholder, style = WindmillFont.body(16), color = WindmillColor.textTertiary.color)
-                }
-                inner()
-            }
-        },
+        shape = RoundedCornerShape(WindmillRadius.sm),
+        modifier = Modifier.fillMaxWidth(),
     )
 }

@@ -234,7 +234,8 @@ final class ThreadListTests: XCTestCase {
         let never = ["unread", "badge", "notification", "notify", "new message", "inbox",
                      "search", "filter", "folder", "pin", "archive", "waiting for you"]
         let spoken = [AskThreads.title, AskThreads.door, AskThreads.askSomethingNew,
-                      AskThreads.meta(9), AskThreads.empty, AskThreads.delete,
+                      AskThreads.meta(9), AskThreads.emptyHead, AskThreads.empty,
+                      AskThreads.delete,
                       AskThreads.deleteNote, AskThreads.reading, AskThreads.fromTheConversation]
 
         for sentence in spoken {
@@ -245,6 +246,10 @@ final class ThreadListTests: XCTestCase {
     }
 
     func testTheEmptyStateDescribesTheSurfaceRatherThanOpeningTheConversation() {
+        // The head is the state, never the screen's own name: a pushed screen says its title once,
+        // in the navigation bar.
+        XCTAssertEqual(AskThreads.emptyHead, "Nothing here yet.")
+        XCTAssertNotEqual(AskThreads.emptyHead, AskThreads.title)
         XCTAssertTrue(AskThreads.empty.contains("in your own words"))
         XCTAssertTrue(AskThreads.empty.contains("with what came of it"))
         XCTAssertFalse(AskThreads.empty.contains("?"))

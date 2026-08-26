@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { backspace, echoOf, isKeyLive, KEYS, openPad, parseEntry, pressKey } from './entry.js';
 
+// C21: the ten digits and the decimal separator speak themselves under a screen reader. The two
+// glyphs do not, so each carries the name that is read in its place — ± in the bytes the routine
+// target's own sign control carries, so one control met on two screens is called one thing.
+const DELETE = '⌫';
+const SPOKEN = { '±': 'Flip the sign', [DELETE]: 'Delete' };
+
 export function Keypad({ mode, current, editing = false, onCommit, onCancel }) {
   const [pad, setPad] = useState(() => openPad(current));
   const entry = parseEntry(pad, mode, current);
@@ -46,6 +52,7 @@ export function Keypad({ mode, current, editing = false, onCommit, onCancel }) {
               key={key}
               type="button"
               className={isKeyLive(key, mode) ? 'gym-key' : 'gym-key is-inert'}
+              aria-label={SPOKEN[key]}
               onClick={() => setPad((held) => pressKey(held, key, mode))}
             >
               {key}
@@ -54,7 +61,7 @@ export function Keypad({ mode, current, editing = false, onCommit, onCancel }) {
         </div>
         <div className="gym-keypad-actions">
           <button type="button" className="gym-keypad-cancel" onClick={onCancel}>Cancel</button>
-          <button type="button" className="gym-keypad-back" onClick={() => setPad(backspace)} aria-label="Backspace">⌫</button>
+          <button type="button" className="gym-keypad-back" onClick={() => setPad(backspace)} aria-label={SPOKEN[DELETE]}>{DELETE}</button>
           <button
             type="button"
             className={entry.valid ? 'gym-keypad-set' : 'gym-keypad-set is-inert'}

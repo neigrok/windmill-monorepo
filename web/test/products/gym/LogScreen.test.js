@@ -105,20 +105,24 @@ test('the log that did not open names its reason, and offers the repair for it',
   const pressed = [];
   const log = (failure) => ({ phase: 'failed', failure, retryBoot: () => pressed.push('retry') });
   const onSignIn = () => pressed.push('sign-in');
+  // The repair is the design system's Button now, so it is a component element and not a class.
+  const repair = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function');
 
   const signedOut = LogNotOpen({ log: log('signed-out'), onSignIn });
-  assert.equal(textOf(signedOut), 'Your sign-in lapsed.Sign in');
-  findByClass(signedOut, 'gym-retry')[0].props.onClick();
+  assert.equal(textOf(signedOut), 'Your sign-in lapsed.');
+  assert.equal(repair(signedOut).props.children, 'Sign in');
+  repair(signedOut).props.onClick();
   assert.deepEqual(pressed, ['sign-in']);
 
   const server = LogNotOpen({ log: log('server'), onSignIn });
-  assert.equal(textOf(server), 'The log didn’t answer.Retry');
+  assert.equal(textOf(server), 'The log didn’t answer.');
   assert.equal(/signal/.test(textOf(server)), false);
-  findByClass(server, 'gym-retry')[0].props.onClick();
+  assert.equal(repair(server).props.children, 'Retry');
+  repair(server).props.onClick();
   assert.deepEqual(pressed, ['sign-in', 'retry']);
 
   const signal = LogNotOpen({ log: log('signal'), onSignIn });
-  assert.equal(textOf(signal), 'The log didn’t load. Open it again when you have signal.Retry');
-  findByClass(signal, 'gym-retry')[0].props.onClick();
+  assert.equal(textOf(signal), 'The log didn’t load. Open it again when you have signal.');
+  repair(signal).props.onClick();
   assert.deepEqual(pressed, ['sign-in', 'retry', 'retry']);
 });

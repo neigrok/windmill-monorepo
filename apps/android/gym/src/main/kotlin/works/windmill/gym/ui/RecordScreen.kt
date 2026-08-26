@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.min
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.MovementRecord
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Record
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
@@ -60,7 +62,7 @@ import works.windmill.platform.design.WindmillSpace
 // `BarRow` rather than in the canvas. A rename moves a NAME and never an id.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, onBack: () -> Unit) {
+fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     var record by remember(exerciseId) { mutableStateOf<MovementRecord?>(null) }
@@ -85,18 +87,20 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Head(
-            backLabel = backLabel,
-            renameable = record != null,
-            onBack = onBack,
-            onRename = {
-                refused = null
-                draft = record?.exercise?.name.orEmpty()
-                renaming = true
-            },
-        )
-
+    GymScreen(
+        title = record?.exercise?.name ?: Readout.movement(exerciseId, store.catalog),
+        onBack = onBack,
+        backTo = backTo,
+        actions = {
+            if (record != null) {
+                TopAction("Rename") {
+                    refused = null
+                    draft = record?.exercise?.name.orEmpty()
+                    renaming = true
+                }
+            }
+        },
+    ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
             modifier = Modifier
@@ -121,7 +125,6 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
             onDismissRequest = { close() },
             sheetState = sheetState,
             containerColor = GymSkin.surface,
-            dragHandle = null,
         ) {
             RenameSheet(
                 title = "Rename this movement",
@@ -154,54 +157,8 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backLabel: String, on
 }
 
 @Composable
-private fun Head(
-    backLabel: String,
-    renameable: Boolean,
-    onBack: () -> Unit,
-    onRename: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .padding(horizontal = WindmillSpace.x4),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-            modifier = Modifier
-                .heightIn(min = GymTap.minimum)
-                .clickable(onClick = onBack),
-        ) {
-            Text("‹", style = WindmillFont.body(19, FontWeight.SemiBold), color = GymSkin.inkDim)
-            Text(backLabel, style = WindmillFont.body(15, FontWeight.SemiBold), color = GymSkin.inkDim)
-        }
-        Spacer(Modifier.weight(1f))
-        if (renameable) HeadAction("Rename", GymSkin.accent, FontWeight.Bold, onRename)
-    }
-}
-
-@Composable
-private fun HeadAction(label: String, ink: Color, weight: FontWeight, onTap: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .heightIn(min = GymTap.minimum)
-            .clickable(onClick = onTap)
-            .padding(horizontal = WindmillSpace.x1),
-    ) {
-        Text(label, style = WindmillFont.body(15, weight), color = ink)
-    }
-}
-
-@Composable
 private fun Body(page: Record.Page) {
-    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
-        Text(page.name, style = WindmillFont.display(30), color = GymSkin.ink)
-        Text(page.subhead, style = GymType.numeral(12), color = GymSkin.inkFaint)
-    }
+    Text(page.subhead, style = GymType.numeral(12), color = GymSkin.inkFaint)
 
     page.nothingYet?.let {
         Text(
@@ -408,7 +365,7 @@ private fun Silence(line: String, retry: (() -> Unit)?) {
                     .fillMaxWidth()
                     .heightIn(min = GymTap.minimum)
                     .border(1.dp, GymSkin.lineStrong, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(onClick = retry),
+                    .clickable(role = Role.Button, onClick = retry),
             ) {
                 Text("Try again", style = WindmillFont.body(16, FontWeight.SemiBold), color = GymSkin.accent)
             }

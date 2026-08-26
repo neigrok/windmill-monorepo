@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- The room draws edge to edge on every version, so the bar colours are the system's and the
+         window only needs a ground behind the first frame. -->
     <style name="Theme.Windmill" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#1C1A1E</item>
-        <item name="android:statusBarColor">#1C1A1E</item>
-        <item name="android:navigationBarColor">#1C1A1E</item>
-        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
